@@ -40,11 +40,12 @@ class HubStore(SecretStore):
         return f"hub deployment {self.config.deployment_id}"
 
     async def _rows(self) -> list[dict]:
-        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
-        data = await hub_get(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, action="env-var")
-        rows = data.get("data") if isinstance(data, dict) and "data" in data else data
+        # Raises on an unreachable hub: an outage must not read as "holds nothing" (a save would then
+        # create instead of update, a forget would report success).
+        rows = await hub_get_or_raise(BuiltinEntityType.DEPLOYMENT, self.config.deployment_id, action="env-var")
         return [r for r in rows or [] if isinstance(r, dict) and r.get("var_type") in _CONFIDENTIAL]
 
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
@@ -69,8 +70,8 @@ class HubStore(SecretStore):
                                self.config.deployment_id, action="env-var")
 
     async def forget(self, names: Iterable[str]) -> tuple[list[str], list[str]]:
-        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
         from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
         held = set(await self.names())

@@ -26,6 +26,7 @@ from flow_sdk.builtin.credential_store import (
     forget_values,
     project_scope,
     scope_of,
+    secret_store_ref,
     user_scope,
     write_value,
 )
@@ -37,7 +38,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
 )
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialDeletedSpec
 from flow_sdk.schema.data_spec.deployment_secrets_spec import store_ref
-from flow_sdk.secrets import VaultNotEnabled
+from flow_sdk.secrets import SecretStore, VaultNotEnabled
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential import Credential
@@ -379,6 +380,29 @@ def _take_dropped(file: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in values.items() if v}
 
 
+async def _declare_on_machine(credential: str, env_vars: list[str]) -> None:
+    """Make ``credential`` declare ``env_vars`` on this machine: its own declaration, else its shipped
+    template (with the template's labels, patterns and provider), else a bare one; an existing
+    declaration keeps every field and only gains the variables it lacks."""
+    existing = await credential_named(credential, None)
+    if existing is None:
+        try:
+            existing = await credential_named(credential, None, declare=True)
+        except CredentialError:  # no template by that name
+            existing = None
+    new = [v for v in env_vars if existing is None or v not in existing.var_names()]
+    if not new:
+        return
+    if existing is None:
+        manifest = {"name": credential, "vars": {v: {} for v in new},
+                    "setup": "Placed on this machine by the hub for its deployment."}
+        await save_credential(manifest=manifest, scope=SCOPE_USER)
+        return
+    manifest = {"name": credential, **{field: getattr(existing, field) for field in _MANIFEST_FIELDS}}
+    manifest["vars"] = {**(existing.vars or {}), **{v: {} for v in new}}
+    await save_credential(manifest=manifest, typeid=str(existing.typeid))
+
+
 async def _declaring(names: list[str], project: Optional["Project"], deployment: "Deployment") -> dict:
     """``{VAR: DeclaredVar}`` for ``names``, declaring on this machine any name nothing here declares —
     a user-scope credential on the laptop does not travel with the repo. Grouped by the credential the
@@ -387,25 +411,16 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
 
     declared = await declared_vars(project)
     missing = [n for n in names if n not in declared]
-    if missing:
-        groups: dict[str, list[str]] = {}
-        agent = await deployment.element()
-        owner = {v: r.name for r in (getattr(agent, "requirements", None) or []) if r.kind == "credential" for v in r.vars}
-        for name in missing:
-            groups.setdefault(owner.get(name, "deployment-secrets"), []).append(name)
-        for credential, vars_ in groups.items():
-            existing = await credential_named(credential, None)
-            manifest = {
-                "name": credential,
-                "vars": {**{v: {} for v in (existing.var_names() if existing else [])}, **{v: {} for v in vars_}},
-                "setup": "Placed on this machine by the hub for its deployment.",
-            }
-            if existing is not None:
-                await save_credential(manifest=manifest, typeid=str(existing.typeid))
-            else:
-                await save_credential(manifest=manifest, scope=SCOPE_USER)
-        declared = await declared_vars(project)
-    return declared
+    if not missing:
+        return declared
+    agent = await deployment.element()
+    owner = {v: r.name for r in (getattr(agent, "requirements", None) or []) if r.kind == "credential" for v in r.vars}
+    groups: dict[str, list[str]] = {}
+    for name in missing:
+        groups.setdefault(owner.get(name, "deployment-secrets"), []).append(name)
+    for credential, env_vars in groups.items():
+        await _declare_on_machine(credential, env_vars)
+    return await declared_vars(project)
 
 
 async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deployment", Placement]:
@@ -432,18 +447,20 @@ async def place_values(deployment_id: str, project_id: str, file: str, environme
     deployment, placement = await _on_this_machine(deployment_id, environment)
     project = await get_project(project_id) if project_id else None
     declared = await _declaring(list(values), project, deployment)
-    placed: list[str] = []
-    failed: dict[str, str] = {}
+    failed: dict[str, str] = {name: "not declared here" for name in values if name not in declared}
+    # One write per store: an env file is rewritten, a vault re-encrypted, once — not once per value.
+    stores: dict = {}
     for name, value in values.items():
-        target = declared.get(name)
-        if target is None:
-            failed[name] = "not declared here"
-            continue
+        if name in declared:
+            ref = secret_store_ref(declared[name].spec, declared[name].scope, name, placement)
+            stores.setdefault(ref.key, (ref, {}))[1][name] = value
+    placed: list[str] = []
+    for ref, batch in stores.values():
         try:
-            await write_value(target.spec, target.scope, name, value, placement)
-            placed.append(name)
+            await SecretStore.from_ref(ref).save(batch, description="placed by the hub for its deployment")
+            placed += batch
         except Exception as e:  # noqa: BLE001 — reported per name, names only
-            failed[name] = type(e).__name__
+            failed.update({name: type(e).__name__ for name in batch})
     return {"placed": sorted(placed), "failed": failed}
 
 
@@ -467,12 +484,12 @@ async def use_mine(deployment_id: str, names: Optional[list[str]] = None) -> dic
     """Copy this computer's values for ``names`` (default: what the deployment's agent needs and its
     store lacks) into the store ``deployment_id`` keeps them in — for a cloud deployment, the hub, which
     places them on its machine. A value is read and written here, never shown or logged:
-    ``{copied, not_here}`` names. A protected deployment refuses: its values are entered directly.
+    ``{copied, not_here, hub_funded}`` names. An LLM provider key is never copied: a deployment is
+    hub-funded (the rule ``_write_values`` enforces). A protected deployment refuses: its values are
+    entered directly.
     """
     from flow_sdk.builtin.credential_resolver import declared_vars, resolve_project_secrets  # noqa: PLC0415
-    from flow_sdk.builtin.credential_store import Placement, secret_store_ref  # noqa: PLC0415
     from flow_sdk.builtin.readiness import project_of, readiness  # noqa: PLC0415
-    from flow_sdk.secrets import SecretStore  # noqa: PLC0415
 
     deployment = await _deployment(deployment_id)
     placement = await Placement.of(deployment)
@@ -484,13 +501,15 @@ async def use_mine(deployment_id: str, names: Optional[list[str]] = None) -> dic
         if agent is None:
             raise CredentialError("name the values to copy: this deployment runs no agent")
         ready = await readiness(agent, deployment)
-        names = list(dict.fromkeys(n for i in ready.value_items(missing_only=True) for n in i.vars))
-    mine = await resolve_project_secrets(project, only=names, placement=await Placement.of(None))
+        names = ready.value_names(missing_only=True)
     declared = await declared_vars(project)
+    funded = sorted(n for n in names if n in declared and declared[n].spec.lm_provider)
+    names = [n for n in names if n not in funded]
+    mine = await resolve_project_secrets(project, only=names, placement=await Placement.of(None))
     stores: dict = {}
     for name, value in mine.items():
         ref = secret_store_ref(declared[name].spec, declared[name].scope, name, placement)
         stores.setdefault(ref.key, (ref, {}))[1][name] = value
     for ref, values in stores.values():
         await SecretStore.from_ref(ref).save(values, description="copied from the owner's computer")
-    return {"copied": sorted(mine), "not_here": sorted(set(names) - set(mine))}
+    return {"copied": sorted(mine), "not_here": sorted(set(names) - set(mine)), "hub_funded": funded}

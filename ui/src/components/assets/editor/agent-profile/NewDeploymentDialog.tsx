@@ -1,9 +1,9 @@
-import { Agent, type AgentReadiness } from '@sdk';
+import { Agent, Deployment, type AgentReadiness, type IDeployment } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
 
-import { errorMessage } from '@src/lib/error-message';
+import { describeApiError, errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
@@ -19,6 +19,12 @@ import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES } from './agent-vocabula
 const DEFAULT_CLOUD_ENVIRONMENT = 'production';
 const ENVIRONMENT_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const RESERVED_ENVIRONMENTS = new Set(['project', 'user', 'development']);
+
+/** What a deploy refused by the readiness gate carries (409 `not_ready`). */
+interface NotReadyData {
+  readiness?: AgentReadiness;
+  deployment?: IDeployment;
+}
 
 /** `local`, or a cloud machine size (`sm` | `md` | `lg`). */
 type DeploymentType = 'local' | (typeof AGENT_MACHINE_SIZES)[number];
@@ -38,7 +44,13 @@ interface NewDeploymentDialogProps {
  * what launching that type needs, and Launch. Only a cloud machine needs the publish checklist
  * (it runs the published definition) and a credential environment; this computer needs neither.
  */
-export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, onLaunched }: NewDeploymentDialogProps) {
+export function NewDeploymentDialog({
+  agent,
+  open,
+  onOpenChange,
+  onMachineSize,
+  onLaunched,
+}: NewDeploymentDialogProps) {
   const { t } = useLingui();
   const [type, setType] = useState<DeploymentType>('local');
   const [launching, setLaunching] = useState(false);
@@ -48,7 +60,7 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
   const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
   // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
   // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
-  const [refused, setRefused] = useState<AgentReadiness | null>(null);
+  const [refused, setRefused] = useState<{ readiness: AgentReadiness; deployment: Deployment } | null>(null);
   const cloud = type !== 'local';
 
   const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud }[] = [
@@ -84,11 +96,13 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
       onOpenChange(false);
       await onLaunched(data.deployment?.id);
     } catch (e) {
-      const data = (e as { response?: { data?: { data?: { code?: string; readiness?: AgentReadiness } } } })?.response
-        ?.data?.data;
-      if (data?.code === 'not_ready' && data.readiness) {
-        setRefused(data.readiness);
-        return;
+      if (describeApiError(e).code === 'not_ready') {
+        // The refusal names the planned placement and what it lacks; its fixes go there.
+        const data = (e as { response?: { data?: { data?: NotReadyData } } }).response?.data?.data;
+        if (data?.readiness && data.deployment) {
+          setRefused({ readiness: data.readiness, deployment: new Deployment(data.deployment) });
+          return;
+        }
       }
       notify.error({
         title: t`Could not launch the deployment`,
@@ -101,7 +115,9 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
   };
 
   const blocked =
-    !agent.enabled || launching || (cloud && (ready === false || !environmentValid || refused?.ready === false));
+    !agent.enabled ||
+    launching ||
+    (cloud && (ready === false || !environmentValid || refused?.readiness.ready === false));
 
   return (
     <Dialog open={open} onOpenChange={(next) => !launching && onOpenChange(next)}>
@@ -166,7 +182,12 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
                 </span>
               </div>
               {refused && (
-                <DeploymentSecretsGate agent={agent} environment={environment} readiness={refused} onChange={setRefused} />
+                <DeploymentSecretsGate
+                  agent={agent}
+                  deployment={refused.deployment}
+                  readiness={refused.readiness}
+                  onChange={(readiness) => setRefused({ ...refused, readiness })}
+                />
               )}
             </>
           ) : (

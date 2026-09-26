@@ -131,6 +131,8 @@ export interface StoreForgotten {
 export interface UseMineResult {
   copied: string[];
   not_here: string[];
+  /** LLM provider keys, never copied: a deployment is hub-funded. */
+  hub_funded: string[];
 }
 
 /** A credential is removed only when no store still holds one of its values. */
@@ -247,7 +249,7 @@ export class CredentialsService {
     const action = this.action('use-mine', 'POST');
     action.bodyParameters = { deployment_id: deploymentId, names: names?.length ? names : null };
     const res = await dataManager.callAction<unknown, Partial<UseMineResult>>(action);
-    return { copied: res?.copied ?? [], not_here: res?.not_here ?? [] };
+    return { copied: res?.copied ?? [], not_here: res?.not_here ?? [], hub_funded: res?.hub_funded ?? [] };
   }
 
   /** Remove a credential and its values from every store. `removed` is false, and the

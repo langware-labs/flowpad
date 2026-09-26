@@ -320,6 +320,12 @@ class Deployment(Entity):
         data = await hub_delete(self.type, self.id, action="authorize", sub_path=provider) or {}
         return list(data.get("revoked") or [])
 
+    async def authorizations(self) -> list[dict]:
+        """The connections this deployment's machine may use (``{provider, permissions}``). Names only."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+
+        return list(await hub_get_or_raise(self.type, self.id, action="authorize") or [])
+
     async def secrets_inventory(self) -> dict:
         """What the hub holds for this deployment: each name with its last write and placement, and the
         connections its machine may use. Names only."""

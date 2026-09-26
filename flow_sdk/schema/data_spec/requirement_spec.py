@@ -10,6 +10,7 @@ from typing import ClassVar
 
 from pydantic import ConfigDict, Field, field_validator
 
+from flow_sdk.schema.data_spec.permission_spec import STATUS_MISSING
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: A credential by name, and the variables of it that are read.
@@ -73,8 +74,12 @@ class ReadinessItemSpec(DataSpec):
     vars: list[str] = Field(default_factory=list)
     #: The connection that grants it — what a cloud deployment's owner authorizes for its machine.
     connection: str = ""
-    #: The one step that fixes a missing item.
+    #: The one step that fixes a missing item, as a sentence.
     fix: str = ""
+    #: The same step as a verb a screen or a CLI acts on: ``use_mine`` (copy this computer's value into
+    #: the deployment's store), ``authorize`` (let the deployment's machine use ``connection``), or empty
+    #: (only ``fix`` says what to do).
+    remedy: str = ""
 
 
 class ReadinessSpec(DataSpec):
@@ -89,14 +94,11 @@ class ReadinessSpec(DataSpec):
     ready: bool
     items: list[ReadinessItemSpec] = Field(default_factory=list)
 
-    def value_items(self, *, missing_only: bool = False) -> list[ReadinessItemSpec]:
-        """The items a stored value satisfies (credentials, variables, API-key permissions) — not what
-        a grant satisfies."""
-        return [i for i in self.items if i.vars and (not missing_only or i.status == "missing")]
-
-    def value_names(self) -> list[str]:
-        """Every variable a deployment's store must hold."""
-        return list(dict.fromkeys(name for item in self.value_items() for name in item.vars))
+    def value_names(self, *, missing_only: bool = False) -> list[str]:
+        """Every variable a deployment's store must hold (``missing_only``: that it does not yet) — the
+        items a stored value satisfies, not what a grant satisfies."""
+        items = (i for i in self.items if not missing_only or i.status == STATUS_MISSING)
+        return list(dict.fromkeys(name for item in items for name in item.vars))
 
 
 __all__ = [

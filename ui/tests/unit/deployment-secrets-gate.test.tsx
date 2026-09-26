@@ -46,6 +46,7 @@ function item(name: string, extra: Partial<AgentReadinessItem> = {}): AgentReadi
     vars: [],
     connection: '',
     fix: `flow credentials set ${name} --stdin`,
+    remedy: 'use_mine',
     ...extra,
   };
 }
@@ -71,37 +72,42 @@ describe('the deploy gate', () => {
   it('"Use mine" copies the item\'s variables into the planned placement and shows the hub\'s new answer', async () => {
     const stripe = item('stripe', { vars: ['STRIPE_KEY'] });
     const a = agent();
-    const plan = vi
-      .spyOn(a, 'planDeployment')
-      .mockResolvedValueOnce({ deployment: DEPLOYMENT as never, readiness: readiness([stripe]) })
-      .mockResolvedValueOnce({
-        deployment: DEPLOYMENT as never,
-        readiness: readiness([{ ...stripe, status: 'declared', where: 'hub' }]),
-      });
-    const useMine = vi.spyOn(credentialsService, 'useMine').mockResolvedValue({ copied: ['STRIPE_KEY'], not_here: [] });
+    const asked = vi
+      .spyOn(a, 'readiness')
+      .mockResolvedValue(readiness([{ ...stripe, status: 'declared', where: 'hub' }]));
+    const useMine = vi
+      .spyOn(credentialsService, 'useMine')
+      .mockResolvedValue({ copied: ['STRIPE_KEY'], not_here: [], hub_funded: [] });
     const onChange = vi.fn();
 
     render(
-      <DeploymentSecretsGate agent={a} environment="production" readiness={readiness([stripe])} onChange={onChange} />,
+      <DeploymentSecretsGate
+        agent={a}
+        deployment={new Deployment(DEPLOYMENT as never)}
+        readiness={readiness([stripe])}
+        onChange={onChange}
+      />,
     );
     fireEvent.click(screen.getByTestId('deployment-secret-use-mine-stripe'));
 
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ ready: true })));
     expect(useMine).toHaveBeenCalledWith(DEPLOYMENT.id, ['STRIPE_KEY']);
-    expect(plan).toHaveBeenCalledWith('production');
+    expect(asked).toHaveBeenCalledWith(DEPLOYMENT.id);
   });
 
   it('a value this computer lacks too says so and offers no "Use mine" again', async () => {
     const stripe = item('stripe', { vars: ['STRIPE_KEY'] });
     const a = agent();
-    vi.spyOn(a, 'planDeployment').mockResolvedValue({
-      deployment: DEPLOYMENT as never,
-      readiness: readiness([stripe]),
-    });
-    vi.spyOn(credentialsService, 'useMine').mockResolvedValue({ copied: [], not_here: ['STRIPE_KEY'] });
+    vi.spyOn(a, 'readiness').mockResolvedValue(readiness([stripe]));
+    vi.spyOn(credentialsService, 'useMine').mockResolvedValue({ copied: [], not_here: ['STRIPE_KEY'], hub_funded: [] });
 
     render(
-      <DeploymentSecretsGate agent={a} environment="production" readiness={readiness([stripe])} onChange={vi.fn()} />,
+      <DeploymentSecretsGate
+        agent={a}
+        deployment={new Deployment(DEPLOYMENT as never)}
+        readiness={readiness([stripe])}
+        onChange={vi.fn()}
+      />,
     );
     fireEvent.click(screen.getByTestId('deployment-secret-use-mine-stripe'));
 
@@ -116,13 +122,19 @@ describe('the deploy gate', () => {
       requirement: { ...item('x').requirement, kind: 'permission', name: 'permission.google.drive.read' },
       connection: 'google',
       fix: 'authorize google for this deployment',
+      remedy: 'authorize',
     });
     const a = agent();
-    vi.spyOn(a, 'planDeployment').mockResolvedValue({ deployment: DEPLOYMENT as never, readiness: readiness([drive]) });
+    vi.spyOn(a, 'readiness').mockResolvedValue(readiness([drive]));
     const authorize = vi.spyOn(Deployment.prototype, 'authorize').mockResolvedValue();
 
     render(
-      <DeploymentSecretsGate agent={a} environment="production" readiness={readiness([drive])} onChange={vi.fn()} />,
+      <DeploymentSecretsGate
+        agent={a}
+        deployment={new Deployment(DEPLOYMENT as never)}
+        readiness={readiness([drive])}
+        onChange={vi.fn()}
+      />,
     );
     fireEvent.click(screen.getByTestId('deployment-secret-authorize-permission.google.drive.read'));
 
@@ -157,7 +169,13 @@ describe('the new deployment dialog', () => {
     const refusal = {
       response: {
         status: 409,
-        data: { data: { code: 'not_ready', readiness: readiness([item('stripe', { vars: ['STRIPE_KEY'] })]) } },
+        data: {
+          data: {
+            code: 'not_ready',
+            readiness: readiness([item('stripe', { vars: ['STRIPE_KEY'] })]),
+            deployment: DEPLOYMENT,
+          },
+        },
       },
     };
     const deploy = vi.spyOn(a, 'deploy').mockRejectedValue(refusal);
