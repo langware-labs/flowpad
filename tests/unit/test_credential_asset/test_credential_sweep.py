@@ -32,7 +32,7 @@ def _manifest(name: str, *env_vars: str, **extra) -> dict:
 async def _both_stores(project) -> list:
     return [
         await save_credential(
-            scope="project", project_id=str(project.id), manifest=_manifest(name, var, value_store=store),
+            scope="project", project_id=str(project.id), manifest=_manifest(name, var), store=store,
             values={var: "value-never-shown"},
         )
         for name, var, store in (("env-one", "SWEEP_ENV", "env"), ("vault-one", "SWEEP_VAULT", "vault"))

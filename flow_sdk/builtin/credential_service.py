@@ -35,13 +35,13 @@ from flow_sdk.schema.data_spec.credential_contract import (
     SCOPE_USER,
 )
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialDeletedSpec
+from flow_sdk.schema.data_spec.deployment_secrets_spec import store_ref
 from flow_sdk.secrets import VaultNotEnabled
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.deployment import Deployment
     from flow_sdk.builtin.project import Project
-    from flow_sdk.secrets import SecretStoreRef
 
 logger = logging.getLogger(__name__)
 
@@ -97,22 +97,10 @@ async def _deployment(deployment_id: Optional[str]) -> "Deployment":
     """The deployment values are read and written at: ``deployment_id``'s, else this computer."""
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
-    if not deployment_id:
-        return await Deployment.this_computer()
-    row = await Deployment.get_by_id(str(deployment_id).removeprefix("deployment-"))
-    if row is None:
-        raise CredentialError("deployment not found")
-    return row
-
-
-def _store_ref(store: str) -> "SecretStoreRef":
-    """A store word from a form or a CLI (``env`` / ``env_file`` / ``vault``) as a store ref."""
-    from flow_sdk.schema.data_spec.deployment_secrets_spec import ENV_FILE, VAULT  # noqa: PLC0415
-
-    refs = {"env": ENV_FILE, "env_file": ENV_FILE, "vault": VAULT}
-    if store not in refs:
-        raise CredentialError(f"unknown store {store!r}; expected one of {sorted(refs)}")
-    return refs[store]
+    try:
+        return await Deployment.resolve(deployment_id or "")
+    except LookupError as e:
+        raise CredentialError(str(e)) from e
 
 
 async def _write_values(spec: "Credential", scope: CredentialScope, values: dict[str, Any], placement: Placement) -> None:
@@ -190,9 +178,6 @@ async def save_credential(
 
     deployment = await _deployment(deployment_id)
     manifest_in = dict(manifest or {})
-    # A form (or an older client) may still send where values live; that belongs to the deployment.
-    store = store or manifest_in.pop("value_store", None) or None
-    manifest_in.pop("environments", None)
     existing = None
     if typeid:
         existing, target_scope, project = await _owned_credential(typeid)
@@ -240,7 +225,11 @@ async def save_credential(
         spec.parent_type_id = str(project.typeid) if project is not None else None
 
     if store and not parsed.lm_provider:
-        await deployment.keep_in(list(parsed.vars), _store_ref(str(store)))
+        try:
+            ref = store_ref(str(store))
+        except ValueError as e:
+            raise CredentialError(str(e)) from e
+        await deployment.keep_in(list(parsed.vars), ref)
     await _write_values(spec, target_scope, dict(values or {}), await Placement.of(deployment))
     await spec.save()
     return spec

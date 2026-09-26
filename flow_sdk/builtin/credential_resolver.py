@@ -33,6 +33,7 @@ from flow_sdk.builtin.credential_store import (
     user_scope,
 )
 from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_USER
+from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential import Credential
@@ -200,12 +201,11 @@ async def placement_for_source(row: Any) -> Placement:
 
 async def known_deployments() -> list["Deployment"]:
     """This computer first, then every other Deployment — every place a value may live."""
-    from flow_sdk.builtin.deployment import KIND_THIS_COMPUTER, Deployment  # noqa: PLC0415
-    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     here = await Deployment.this_computer()
     try:
-        rows = await Deployment.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.NE, operands=["kind", KIND_THIS_COMPUTER])))
+        rows = await Deployment.others()
     except Exception as e:  # noqa: BLE001
         logger.debug("[credentials] could not list deployments: %s", e)
         rows = []
@@ -213,8 +213,13 @@ async def known_deployments() -> list["Deployment"]:
 
 
 async def known_placements() -> list[Placement]:
-    """The placement of every known deployment (:func:`known_deployments`)."""
-    return [await Placement.of(row) for row in await known_deployments()]
+    """The placement of every known deployment (:func:`known_deployments`); one inheriting its
+    binding reads this computer's, looked up once."""
+    here, *rows = await known_deployments()
+    inherited = here.secrets or DeploymentSecretsSpec()
+    return [
+        Placement(row.secrets or inherited, row.environment, str(row.id)) for row in (here, *rows)
+    ]
 
 
 async def attached_env_vars_for(project: Optional["Project"]) -> Optional[list[str]]:
@@ -233,13 +238,13 @@ async def attached_env_vars_for(project: Optional["Project"]) -> Optional[list[s
 
 
 async def resolve_attached_secrets(
-    project: Optional["Project"], *, placement: Optional[Placement] = None
+    project: Optional["Project"], *, process: Any = None, placement: Optional[Placement] = None
 ) -> dict[str, SecretStr]:
-    """The declared values the local node lets ``project``'s processes see.
+    """The declared values the local node lets ``project``'s processes see, at ``placement`` — else
+    where ``process``'s deployment (default: this computer) keeps them.
 
     The one entry point for spawns (worker, terminal, node command). Nothing
-    declared — the common case — returns before the node lookup. ``placement``
-    defaults to this computer's.
+    declared — the common case — returns before the node and placement lookups.
     """
     declared = await declared_vars(project)
     if not declared:
@@ -248,5 +253,5 @@ async def resolve_attached_secrets(
         project,
         only=await attached_env_vars_for(project),
         declared=declared,
-        placement=placement,
+        placement=placement or await placement_for(process),
     )

@@ -353,8 +353,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   } = useCredentials(selectedProject?.id ?? null, credentialDeployment);
   const showCredentialDeployment = (next: string) => {
     if (!currentDock) return;
-    const thisComputer = (credentialStatus.deployments ?? []).find((row) => row.this_computer)?.id;
-    navigation.openDock(currentDock.withOption(CREDENTIAL_DEPLOYMENT_OPTION, next === thisComputer ? null : next));
+    const row = (credentialStatus.deployments ?? []).find((candidate) => candidate.id === next);
+    navigation.openDock(currentDock.withOption(CREDENTIAL_DEPLOYMENT_OPTION, row?.this_computer ? null : next));
   };
   const credentialRows = React.useMemo(() => buildCredentialRows(credentialStatus), [credentialStatus]);
   const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus), [credentialStatus]);

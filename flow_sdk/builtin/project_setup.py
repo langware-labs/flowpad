@@ -96,30 +96,18 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
     )
 
 
-async def _auth_of(source: "DataSource") -> Any:
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
-
-    try:
-        await DataDriver.get(source.provider or "")  # an authored driver's folder loads on first use
-    except Exception:  # noqa: BLE001 — a driver that cannot load needs nothing we can name
-        return None
-    return source._auth()
-
-
 async def collect_requirements(project: "Project", deployment_id: str = "") -> list[SetupRequirementSpec]:
     """Everything ``project`` needs a person (or an agent) to provide, in the order to do it:
     connections first, then credentials, then what cannot be set up here. Read-only."""
-    from flow_sdk import permissions  # noqa: PLC0415
     from flow_sdk.builtin import credential_service  # noqa: PLC0415
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
     from flow_sdk.builtin.readiness import requirements_of_source  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.permission_spec import MECHANISM_OAUTH, provider_of  # noqa: PLC0415
+    from flow_sdk.builtin.readiness import connection_of  # noqa: PLC0415
     from flow_sdk.schema.data_spec.requirement_spec import (  # noqa: PLC0415
-        REQUIREMENT_CONNECTION,
         REQUIREMENT_CREDENTIAL,
-        REQUIREMENT_PERMISSION,
+        REQUIREMENT_VARIABLE,
         RequirementSpec,
     )
 
@@ -135,21 +123,18 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
 
     def need(req: "RequirementSpec", who: str) -> Optional[str]:
         """Fold one requirement into the plan; the variable name when nothing declares it."""
-        if req.kind in (REQUIREMENT_PERMISSION, REQUIREMENT_CONNECTION):
-            mapping = permissions.mapping(req.name) if req.kind == REQUIREMENT_PERMISSION else None
-            if req.kind == REQUIREMENT_PERMISSION and (mapping is None or mapping.mechanism != MECHANISM_OAUTH):
-                return None  # an API key is the credential's to provide; IAM is a deployment's grant
-            provider = (mapping.connector or provider_of(req.name)) if mapping else req.name
+        if grant := connection_of(req):
+            provider, scopes = grant
             entry = oauth.setdefault(provider, {"scopes": [], "used_by": []})
-            entry["scopes"] += [s for s in (mapping.oauth_scopes if mapping else req.scopes) if s not in entry["scopes"]]
+            entry["scopes"] += [s for s in scopes if s not in entry["scopes"]]
             if who not in entry["used_by"]:
                 entry["used_by"].append(who)
         elif req.kind == REQUIREMENT_CREDENTIAL:
             if who not in packs.setdefault(req.name, []):
                 packs[req.name].append(who)
-        else:
+        elif req.kind == REQUIREMENT_VARIABLE:
             return req.name
-        return None
+        return None  # an API key is the credential's to provide; IAM is a deployment's grant
 
     # The same derivation an agent's requirements come from (``builtin/readiness.py``), per source;
     # then what each of the project's agents authored.
@@ -162,10 +147,11 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
                 note=f"needs {', '.join(unclaimed)}, and no credential declares it — add one with `setup` instructions",
             ))
     for agent in await Agent.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)]))):
+        who = str(agent.name or agent.id)
         for req in agent.requirements or []:
-            if not req.derived and (name := need(req, str(agent.name or agent.id))):
-                gaps.append(SetupRequirementSpec(kind=REQUIREMENT_GAP, name=name, used_by=[str(agent.name or agent.id)],
-                                                 note=f"{agent.name} needs {name}, and no credential declares it"))
+            if not req.derived and (name := need(req, who)):
+                gaps.append(SetupRequirementSpec(kind=REQUIREMENT_GAP, name=name, used_by=[who],
+                                                 note=f"{who} needs {name}, and no credential declares it"))
 
     out = [
         SetupRequirementSpec(kind=REQUIREMENT_OAUTH, name=provider, title=provider,

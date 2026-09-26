@@ -29,6 +29,10 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.deployment import Deployment
 
 logger = logging.getLogger("migrate.credential_stores")
 
@@ -54,10 +58,20 @@ class Report:
                if self.stripped else "credentials: no credential says where its values live."]
         out += [f"credentials:   {line}" for line in self.lifted]
         if self.orphans:
-            out.append(f"credentials: no deployment is in these environments; their values stay put: {', '.join(self.orphans)}")
+            out.append("credentials: no deployment is in these environments; their values stay put: "
+                       + ", ".join(self.orphans))
         if self.conflicts:
             out.append(f"credentials: CONFLICT, first store kept: {', '.join(self.conflicts)}")
         return out
+
+
+@dataclass
+class _Plan:
+    """What one deployment's binding gets: ``{VAR: store}`` and extra required variables."""
+
+    row: "Deployment"
+    wanted: dict = field(default_factory=dict)
+    required: set = field(default_factory=set)
 
 
 def credential_files(roots: list[Path]) -> list[Path]:
@@ -77,25 +91,28 @@ def credential_files(roots: list[Path]) -> list[Path]:
 
 
 async def lift(*, dry_run: bool = True, roots: list[Path] | None = None) -> Report:
-    from flow_sdk.builtin.deployment import KIND_THIS_COMPUTER, Deployment
-    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
+    from flow_sdk.builtin.deployment import Deployment
+    from flow_sdk.capsules.atomic import atomic_write
     from flow_sdk.migrations._roots import instance_roots
     from flow_sdk.schema.data_spec.credential_spec import LEGACY_STORE_KEYS
-    from flow_sdk.schema.data_spec.deployment_secrets_spec import ENV_FILE, VAULT
+    from flow_sdk.schema.data_spec.deployment_secrets_spec import STORE_WORDS
 
     report = Report(dry_run=dry_run)
-    stores = {"env": ENV_FILE, "env_file": ENV_FILE, "vault": VAULT}
     here = await Deployment.this_computer(save=not dry_run)
-    others = await Deployment.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.NE, operands=["kind", KIND_THIS_COMPUTER])))
-    #: deployment id -> (row, {VAR: store}, extra required)
-    plans: dict[str, tuple[Deployment, dict, set]] = {}
+    by_environment: dict[str, list[Deployment]] = {}
+    for row in await Deployment.others():
+        by_environment.setdefault(row.environment, []).append(row)
+    plans: dict[str, _Plan] = {}
     placed: dict[tuple[str, str], str] = {}
 
+    def plan_for(row: Deployment) -> "_Plan":
+        return plans.setdefault(str(row.id), _Plan(row))
+
     def keep(row: Deployment, names: list[str], store_word: str) -> None:
-        ref = stores.get(store_word)
+        ref = STORE_WORDS.get(store_word)
         if ref is None:
             return
-        _, wanted, _ = plans.setdefault(str(row.id), (row, {}, set()))
+        wanted = plan_for(row).wanted
         for name in names:
             before = placed.setdefault((str(row.id), name), ref.type)
             if before != ref.type:
@@ -115,21 +132,23 @@ async def lift(*, dry_run: bool = True, roots: list[Path] | None = None) -> Repo
             keep(here, names, str(raw.get("value_store") or "env"))
             for environment, override in (raw.get("environments") or {}).items():
                 override = override or {}
-                rows = [row for row in others if row.environment == environment]
+                rows = by_environment.get(environment, [])
                 if not rows:
                     report.orphans.append(f"{environment} ({path.parent.name})")
                 for row in rows:
                     if override.get("value_store"):
                         keep(row, names, str(override["value_store"]))
                     if override.get("required") is not None:
-                        plans.setdefault(str(row.id), (row, {}, set()))[2].update(override["required"])
+                        plan_for(row).required.update(override["required"])
         report.stripped.append(str(path))
         if not dry_run:
             stripped = {k: v for k, v in raw.items() if k not in LEGACY_STORE_KEYS}
-            path.write_text(json.dumps(stripped, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+            atomic_write(path, (json.dumps(stripped, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
+                         new_mode=path.stat().st_mode & 0o777)
 
     # This computer first: a deployment that copies its binding copies the lifted one.
-    for row, wanted, required in sorted(plans.values(), key=lambda plan: not plan[0].is_this_computer):
+    for plan in sorted(plans.values(), key=lambda plan: not plan.row.is_this_computer):
+        row, wanted, required = plan.row, plan.wanted, plan.required
         binding = await row.secrets_binding()
         for name, ref in wanted.items():
             if binding.store_of(name).key != ref.key:

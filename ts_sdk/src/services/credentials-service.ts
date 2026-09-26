@@ -14,8 +14,10 @@ import { ActionInfo } from '../models/ActionInfo';
 import { isHubOnly } from '../utils/hub-runtime';
 
 export type CredentialScopeName = 'user' | 'project';
-/** Where a deployment keeps a value: `env` (the scope's env file), `vault`, or a remote store type. */
-export type CredentialValueStore = 'env' | 'vault' | (string & {});
+/** A store a form can choose: the scope's env file, or the vault. */
+export type LocalValueStore = 'env' | 'vault';
+/** Where a deployment keeps a value: a local store, or a remote store's type. */
+export type CredentialValueStore = LocalValueStore | (string & {});
 
 /** This computer's credential environment — every other one is a Deployment's `environment`. */
 export const DEFAULT_CREDENTIAL_ENVIRONMENT = 'development';
@@ -61,7 +63,7 @@ export interface CredentialStatusRow {
   /** The environment of the deployment these presences were read for. */
   environment: string;
   /** Where that deployment keeps this credential; `mixed` when its variables are split. */
-  value_store: CredentialValueStore | 'mixed';
+  value_store: CredentialValueStore;
   lm_provider: string;
   state: 'connected' | 'partial' | 'missing';
   vars: CredentialVarStatus[];
@@ -170,7 +172,7 @@ export interface SaveCredentialRequest {
   /** The deployment `values` are written at; this computer when omitted. */
   deployment_id?: string;
   /** Make that deployment keep this credential's variables in this store first. */
-  store?: 'env' | 'vault';
+  store?: LocalValueStore;
 }
 
 export const EMPTY_CREDENTIALS_STATUS: CredentialsStatus = Object.freeze({

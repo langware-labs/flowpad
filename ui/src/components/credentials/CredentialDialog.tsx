@@ -83,14 +83,13 @@ export function CredentialDialog({
 
   const taken = takenInScope(status, d.scope, d.typeid);
   const problems = validateDraft(d, taken);
-  const store = d.store;
   const envFileName = credentialEnvFileName(status.environment);
   const deployment = (status.deployments ?? []).find((row) => row.id === status.deployment_id);
   const isThisComputer = deployment?.this_computer ?? true;
   const file = status.files.find((f) => f.scope === d.scope);
-  const writesToFile = store === 'env' && asksValues(d) && Object.keys(draftValues(d)).length > 0;
+  const writesToFile = d.store === 'env' && asksValues(d) && Object.keys(draftValues(d)).length > 0;
   const fileBlocked = writesToFile && !!file?.blocked;
-  const vaultDisabled = store === 'vault' && !status.vault_enabled;
+  const vaultDisabled = d.store === 'vault' && !status.vault_enabled;
   const locked = namesLocked(d);
   const editsDefinition = asksDefinition(d) && d.mode !== 'template';
   const editsVariables = d.mode === 'custom' || d.mode === 'edit';
@@ -326,7 +325,7 @@ export function CredentialDialog({
                       id="credential-store"
                       label={isThisComputer ? t`Storage` : t`Storage · ${deployment?.name ?? ''}`}
                       fragment="storage"
-                      value={store}
+                      value={d.store}
                       disabled={storeLocked(d)}
                       onChange={(next) => update({ store: next })}
                       options={[

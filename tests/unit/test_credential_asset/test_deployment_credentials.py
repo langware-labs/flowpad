@@ -27,7 +27,7 @@ from flow_sdk.builtin.credential_service import (
 )
 from flow_sdk.builtin.credential_status import credentials_status
 from flow_sdk.builtin.credential_store import Placement
-from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.project import Project
 from flow_sdk.cli.auth.secrets import get_secrets, read_secret
 from flow_sdk.instance_settings import environment as environment_settings
@@ -37,7 +37,8 @@ from flow_sdk.schema.data_spec.credential_contract import (
     normalize_environment,
     vault_name,
 )
-from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT, DeploymentSecretsSpec
+from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT
+from tests.utils.deployments import make_deployment
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -81,17 +82,7 @@ def _manifest(name: str, *env_vars: str, **extra) -> dict:
     return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"Store it: `flow credentials set {name} ...`.", **extra}
 
 
-async def _deployment(environment: str, name: str = "qa", **secrets) -> Deployment:
-    row = Deployment(
-        name=f"{name} ({environment})",
-        kind=KIND_AGENT,
-        parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
-        target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
-        environment=environment,
-        secrets=DeploymentSecretsSpec(**secrets) if secrets else None,
-    )
-    await row.save()
-    return row
+_deployment = make_deployment
 
 
 # ── the contract ───────────────────────────────────────────────────────────

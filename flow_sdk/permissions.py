@@ -11,7 +11,12 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec, PermissionNeedSpec
+from flow_sdk.schema.data_spec.permission_spec import (
+    MECHANISM_OAUTH,
+    PermissionMappingSpec,
+    PermissionNeedSpec,
+    provider_of,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +51,15 @@ def kinds_under(prefix: str) -> list[str]:
     return sorted(kind for kind in declared() if tag_is_within(kind, prefix))
 
 
+def oauth_grant(kind: str) -> Optional[tuple[str, list[str]]]:
+    """``(connection provider, scopes)`` when ``kind`` is granted by OAuth; ``None`` otherwise (an API
+    key is the credential's to provide; IAM is a deployment's grant; an undeclared kind names nothing)."""
+    granted = mapping(kind)
+    if granted is None or granted.mechanism != MECHANISM_OAUTH:
+        return None
+    return granted.connector or provider_of(kind), list(granted.oauth_scopes)
+
+
 def needs_of_driver(name: str) -> list[PermissionNeedSpec]:
     """What a data source of driver ``name`` needs to be allowed to do."""
     from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
@@ -55,4 +69,4 @@ def needs_of_driver(name: str) -> list[PermissionNeedSpec]:
     return [PermissionNeedSpec(permission=kind, why=m.why) for kind, m in permissions.items()]
 
 
-__all__ = ["declared", "kinds_under", "mapping", "needs_of_driver"]
+__all__ = ["declared", "kinds_under", "mapping", "needs_of_driver", "oauth_grant"]

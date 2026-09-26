@@ -1,14 +1,15 @@
 """The value-store contract a credential declaration and its readers share.
 
-A ``Credential`` names environment variables; it never carries a value.
-Values live in exactly one of two stores, chosen by the spec:
+A ``Credential`` names environment variables; it never carries a value, and
+never says where its values live — a Deployment does (``DeploymentSecretsSpec``).
+The two local stores, spelled here:
 
 * ``env``   — the ``.env.local`` file at the scope's root (the project mount, or
   the user's home for a user-scope credential). The default.
 * ``vault`` — the per-instance encrypted store (``flow_sdk/cli/auth/secrets.py``),
   the same thing as the file, encrypted at rest.
 
-Values are kept per ENVIRONMENT. An environment is a Deployment's
+Values are kept per ENVIRONMENT (the deployment's). An environment is a Deployment's
 ``environment``; ``development`` is this computer and always exists. The
 ``development`` locations are the originals, unchanged: ``.env.local`` and
 ``credential.project.<pid>.VAR``. Any other environment gets its own file
@@ -35,7 +36,6 @@ ENV_LOCAL_FILENAME = ".env.local"
 
 VALUE_STORE_ENV = "env"
 VALUE_STORE_VAULT = "vault"
-VALUE_STORES = (VALUE_STORE_ENV, VALUE_STORE_VAULT)
 
 #: The two scopes a credential is authored in — the asset scopes Flowpad already
 #: has. ``system`` (the shipped catalogue) is a template, never a declaration.
