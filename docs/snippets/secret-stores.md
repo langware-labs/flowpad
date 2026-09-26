@@ -126,22 +126,26 @@ prod = await SecretStore.get("env_file", {"env_file_path": str(project.env_file_
 once git excludes that file (a tracked file is refused); a vault write needs the
 vault enabled; empty values are skipped, never cleared.
 
-## 2. A credential uses its store as is
+## 2. A credential's store is the deployment's
 
 ```python
 from flow_sdk.builtin.credential import Credential
+from flow_sdk.builtin.deployment import Deployment
+from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT
 
 spec = await Credential.get("database")  # the current project's, else the user scope's
 names = spec.credentials.names()             # ["DATABASE_URL"]
 
-prod = await spec.secret_store("production")  # the store credential.json names for production
+production = await Deployment.get_by_id(production_id)  # a deployment in the production environment
+await production.keep_in(names, VAULT)                  # it keeps these values in the vault
+prod = await spec.secret_store(production)              # that store, for this credential's scope
 await prod.save({"DATABASE_URL": "postgres://pooler.hosted.example/prod"})
 await prod.validate_keys(names)
 ```
 
-A credential is the one consumer that already knows its store:
-`spec.secret_store(environment)` builds it from `credential.json`, so there is
-nothing to bind.
+A credential says WHAT is needed, never where its values live — a deployment
+does. `spec.secret_store(deployment)` (default: this computer) builds the store
+that deployment keeps this credential's values in, so there is nothing to bind.
 
 ### How `get` resolves a name
 
@@ -177,26 +181,29 @@ it, `DataSourceAmbiguous` (with `candidates`) when several do.
 
 ### Where a credential's store points
 
-`spec.secret_store(environment)` is the only place a credential's scope and
-environment become a config:
+Each Deployment carries its binding (`Deployment.secrets`, a `DeploymentSecretsSpec`):
+a `store`, per-variable `exceptions`, extra `require`d variables and `protected`.
+An agent's local deployment with none reads **this computer**'s
+(`Deployment.this_computer()`), which every process without a deployment of its
+own reads too. `credential_store.secret_store_ref` is the only place a scope, a
+variable and a deployment become a config:
 
-| `value_store`           | config it passes to `SecretStore.get`                                                                                 |
+| store (no config)       | config it passes to `SecretStore.get`                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `env` / `env_file`      | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`                                  |
+| `env_file`              | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`                                  |
 | `vault`                 | `prefix`: `credential.project.<pid>.` / `credential.user.`, with `<env>.` after `credential.` for a named environment |
-| `vault` + `lm_provider` | `entries`: the one `lm_api.<provider>` entry, whatever the variable is called                                         |
+| any, + `lm_provider`    | `entries`: the one `lm_api.<provider>` entry, whatever the variable is called                                         |
 
-`value_store` names a store type, and `environments.<env>.value_store` overrides
-it for one environment:
+A store with a config of its own (a GCP Secret Manager project) is used as is.
+This computer keeping `DATABASE_URL` in the vault, everything else in env files:
 
 ```json
-{ "name": "database", "schema": 2, "value_store": "env",
-  "vars": { "DATABASE_URL": {} },
-  "environments": { "production": { "value_store": "vault" } } }
+{ "store": { "type": "env_file" }, "exceptions": { "DATABASE_URL": { "type": "vault" } } }
 ```
 
-Files spell the env file store `env`; `env_file` is accepted as the same store,
-so no existing `credential.json` changes.
+A `credential.json` written before 0.2.178 said this itself (`value_store`,
+`environments`); it still loads, and the first boot moves those keys onto the
+deployments (`migration_2026_09_credential_stores`).
 
 ## 3. Env vars — what a process receives
 
@@ -204,11 +211,12 @@ so no existing `credential.json` changes.
 import os
 
 from flow_sdk import context
-from flow_sdk.builtin.credential_resolver import resolve_attached_secrets
+from flow_sdk.builtin.credential_resolver import placement_for_deployment, resolve_attached_secrets
 
 project = await context.current_project()
 env = dict(os.environ)
-secrets = await resolve_attached_secrets(project, environment="production")  # each credential → its store → load
+placement = await placement_for_deployment(production_id)          # where that deployment keeps values
+secrets = await resolve_attached_secrets(project, placement=placement)  # each credential → its store → load
 for name, value in secrets.items():
     env.setdefault(name, value.get_secret_value())  # an explicitly set variable still wins
 ```

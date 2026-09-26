@@ -242,6 +242,7 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Tag forwarding: failed to arm ({_e})")
 
+    await _lift_credential_stores()
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_keep_alive_loop()
@@ -399,6 +400,20 @@ async def _prune_orphan_scheduler_jobs() -> None:
 #: moved by the 0.2.178 migration; later: stream_inbox_manager): their folders re-index (or the singleton
 #: self-heals) under the new type, so a row still carrying the old string is dead weight no index sweep reaches.
 RETIRED_TYPES = ("data_source_spec", "credential_spec", "secret_pack", "inbox_manager", "data_source_cursor")
+
+
+async def _lift_credential_stores() -> None:
+    """Where credential values live moves off pre-0.2.178 ``credential.json`` files onto deployments —
+    before anything that reads a credential starts (``migration_2026_09_credential_stores``)."""
+    try:
+        from flow_sdk.migrations.migration_2026_09_credential_stores import lift
+
+        report = await lift(dry_run=False)
+        if report.stripped:
+            for line in report.lines():
+                logging.getLogger(__name__).info("%s", line)
+    except Exception:
+        logging.getLogger(__name__).exception("Credential stores: lift failed")
 
 
 async def _prune_retired_type_rows() -> None:

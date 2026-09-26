@@ -26,7 +26,6 @@ import sys
 from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
-from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
 from flow_sdk.schema.data_spec.project_setup_spec import (
     REQUIREMENT_GAP,
     REQUIREMENT_OAUTH,
@@ -82,8 +81,8 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequir
     )
 
 
-def _from_template(template: "Credential", environment: str, used_by: list[str]) -> SetupRequirementSpec:
-    required = set(template.required_var_names(environment))
+def _from_template(template: "Credential", used_by: list[str]) -> SetupRequirementSpec:
+    required = set(template.required_var_names())
     setup = str(getattr(template, "setup", "") or "")
     return SetupRequirementSpec(
         kind=REQUIREMENT_PACK, name=str(template.name), title=template.title or str(template.name),
@@ -107,15 +106,13 @@ async def _auth_of(source: "DataSource") -> Any:
     return source._auth()
 
 
-async def collect_requirements(
-    project: "Project", environment: str = DEFAULT_ENVIRONMENT
-) -> list[SetupRequirementSpec]:
+async def collect_requirements(project: "Project", deployment_id: str = "") -> list[SetupRequirementSpec]:
     """Everything ``project`` needs a person (or an agent) to provide, in the order to do it:
     connections first, then credentials, then what cannot be set up here. Read-only."""
     from flow_sdk.builtin import credential_service  # noqa: PLC0415
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
 
-    status = await credentials_status(project, environment)
+    status = await credentials_status(project, deployment_id)
     rows: dict[str, "CredentialStatusRowSpec"] = {}
     for row in status.credentials:  # user first, then project: the project's own wins
         rows[row.name] = row
@@ -169,7 +166,7 @@ async def collect_requirements(
         if name in rows:
             out.append(_from_row(rows[name], used_by))
         elif name in by_template:
-            out.append(_from_template(by_template[name], environment, used_by))
+            out.append(_from_template(by_template[name], used_by))
         else:
             out.append(SetupRequirementSpec(
                 kind=REQUIREMENT_GAP, name=name, used_by=used_by,

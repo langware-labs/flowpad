@@ -1,13 +1,15 @@
-"""Credential environments: one declaration, a value per environment.
+"""Where credential values live is a Deployment's: its store, per-variable exceptions, extra requirements.
 
-An environment is a Deployment's ``environment``; ``development`` is this
-computer and keeps the original locations (``.env.local``,
-``credential.project.<pid>.VAR``). A named environment reads its own env file
-(``.env.<env>.local``) and its own vault names. A process's environment is its
-Deployment's, else the instance default, else ``development``.
+A credential says WHAT (``CredentialSpec``); each Deployment says WHERE (``DeploymentSecretsSpec``). This
+computer is one Deployment (``Deployment.this_computer()``) whose binding every process without a
+deployment of its own reads — and an agent's local deployment inherits. A local store is completed per
+scope and the deployment's ``environment``: ``development`` keeps the original locations (``.env.local``,
+``credential.project.<pid>.VAR``), a named environment its own file (``.env.<env>.local``) and vault
+names. A ``credential.json`` written before 0.2.178 still says where; the boot lift moves it.
 """
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,7 +18,7 @@ from unittest.mock import patch
 import pytest
 from dotenv import dotenv_values
 
-from flow_sdk.builtin.credential_resolver import environment_for, known_environments, resolve_project_secrets
+from flow_sdk.builtin.credential_resolver import known_deployments, placement_for, resolve_project_secrets
 from flow_sdk.builtin.credential_service import (
     CredentialError,
     delete_credential,
@@ -24,6 +26,7 @@ from flow_sdk.builtin.credential_service import (
     set_credential_values,
 )
 from flow_sdk.builtin.credential_status import credentials_status
+from flow_sdk.builtin.credential_store import Placement
 from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
 from flow_sdk.builtin.project import Project
 from flow_sdk.cli.auth.secrets import get_secrets, read_secret
@@ -34,7 +37,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     normalize_environment,
     vault_name,
 )
-from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
+from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT, DeploymentSecretsSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -78,13 +81,14 @@ def _manifest(name: str, *env_vars: str, **extra) -> dict:
     return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"Store it: `flow credentials set {name} ...`.", **extra}
 
 
-async def _deployment(environment: str, name: str = "qa") -> Deployment:
+async def _deployment(environment: str, name: str = "qa", **secrets) -> Deployment:
     row = Deployment(
         name=f"{name} ({environment})",
         kind=KIND_AGENT,
         parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         environment=environment,
+        secrets=DeploymentSecretsSpec(**secrets) if secrets else None,
     )
     await row.save()
     return row
@@ -120,52 +124,20 @@ def test_invalid_environment_names_are_refused(name):
         assert normalize_environment(name) == "development"
 
 
-# ── the manifest ───────────────────────────────────────────────────────────
 
-
-def test_an_environment_overrides_the_store_and_the_required_set():
-    parsed = CredentialSpec.model_validate(
-        {
-            "schema": 2,
-            **_manifest("db", "DATABASE_URL", "SENTRY_DSN"),
-            "environments": {"production": {"value_store": "vault", "required": ["DATABASE_URL", "SENTRY_DSN"]}},
-        }
-    )
-    assert parsed.value_store == "env"
-    assert parsed.environments["production"].value_store == "vault"
-
-
-def test_an_environment_cannot_require_an_undeclared_variable():
-    with pytest.raises(ValueError, match="undeclared"):
-        CredentialSpec.model_validate(
-            {"schema": 2, **_manifest("db", "DATABASE_URL"), "environments": {"production": {"required": ["NOPE"]}}}
-        )
-
-
-def test_an_llm_provider_key_has_no_environments():
-    with pytest.raises(ValueError, match="no environments"):
-        CredentialSpec.model_validate(
-            {
-                "schema": 2,
-                **_manifest("openrouter", "OPENROUTER_API_KEY"),
-                "lm_provider": "openrouter",
-                "environments": {"production": {}},
-            }
-        )
-
-
-# ── values per environment ─────────────────────────────────────────────────
+# ── values per deployment ──────────────────────────────────────────────────
 
 
 async def test_a_production_value_lands_in_its_own_gitignored_file(home, project):
     mount = Path(project.fs_storage_mount_path)
+    production = await _deployment("production")
     spec = await save_credential(
         scope="project",
         project_id=str(project.id),
         manifest=_manifest("db", "DATABASE_URL"),
         values={"DATABASE_URL": "postgres://localhost/dev"},
     )
-    await set_credential_values(str(spec.typeid), {"DATABASE_URL": "postgres://hosted/prod"}, "production")
+    await set_credential_values(str(spec.typeid), {"DATABASE_URL": "postgres://hosted/prod"}, str(production.id))
 
     assert dict(dotenv_values(mount / ".env.local")) == {"DATABASE_URL": "postgres://localhost/dev"}
     assert dict(dotenv_values(mount / ".env.production.local")) == {"DATABASE_URL": "postgres://hosted/prod"}
@@ -173,50 +145,63 @@ async def test_a_production_value_lands_in_its_own_gitignored_file(home, project
     assert ".env.local" in ignored and ".env.production.local" in ignored
 
     dev = await resolve_project_secrets(project)
-    prod = await resolve_project_secrets(project, environment="production")
+    prod = await resolve_project_secrets(project, placement=await Placement.of(production))
     assert dev["DATABASE_URL"].get_secret_value() == "postgres://localhost/dev"
     assert prod["DATABASE_URL"].get_secret_value() == "postgres://hosted/prod"
 
 
-async def test_a_vault_override_keeps_production_out_of_every_file(home, project):
+async def test_a_vault_exception_keeps_production_out_of_every_file(home, project):
     mount = Path(project.fs_storage_mount_path)
+    production = await _deployment("production", exceptions={"DATABASE_URL": VAULT})
     spec = await save_credential(
-        scope="project",
-        project_id=str(project.id),
-        manifest=_manifest("db", "DATABASE_URL", environments={"production": {"value_store": "vault"}}),
-        values={"DATABASE_URL": "dev"},
+        scope="project", project_id=str(project.id), manifest=_manifest("db", "DATABASE_URL"), values={"DATABASE_URL": "dev"},
     )
-    await set_credential_values(str(spec.typeid), {"DATABASE_URL": "prod"}, "production")
+    await set_credential_values(str(spec.typeid), {"DATABASE_URL": "prod"}, str(production.id))
 
     assert read_secret(f"credential.production.project.{project.id}.DATABASE_URL") == "prod"
     assert not (mount / ".env.production.local").exists()
     assert dict(dotenv_values(mount / ".env.local")) == {"DATABASE_URL": "dev"}
-    assert (await resolve_project_secrets(project, environment="production"))["DATABASE_URL"].get_secret_value() == "prod"
+    prod = await resolve_project_secrets(project, placement=await Placement.of(production))
+    assert prod["DATABASE_URL"].get_secret_value() == "prod"
 
 
-async def test_status_reads_one_environment_and_lists_every_one(home, project):
-    await _deployment("production")
+async def test_an_agents_local_deployment_reads_what_this_computer_reads(home, project):
+    here = await Deployment.this_computer()
+    await here.keep_in(["DATABASE_URL"], VAULT)
+    local = await _deployment("development", name="agent")  # no binding of its own
+    spec = await save_credential(
+        scope="project", project_id=str(project.id), manifest=_manifest("db", "DATABASE_URL"), values={"DATABASE_URL": "v"},
+    )
+
+    assert read_secret(f"credential.project.{project.id}.DATABASE_URL") == "v"
+    assert (await spec.secret_store(local)).ref.type == "vault"
+    assert local.secrets is None, "inherits, never copies, until it is given its own"
+
+
+async def test_status_reads_one_deployment_and_lists_every_one(home, project):
+    production = await _deployment("production", require=["SENTRY_DSN"])
     spec = await save_credential(
         scope="project",
         project_id=str(project.id),
         manifest={
             "name": "db",
             "vars": {"DATABASE_URL": {}, "SENTRY_DSN": {"required": False}},
-            "environments": {"production": {"required": ["DATABASE_URL", "SENTRY_DSN"]}},
             "setup": "Store it: `flow credentials set db DATABASE_URL=...`.",
         },
         values={"DATABASE_URL": "dev"},
     )
 
     dev = await credentials_status(project)
-    prod = await credentials_status(project, "production")
+    prod = await credentials_status(project, str(production.id))
 
-    assert dev.environments == ["development", "production"]
-    assert (dev.environment, prod.environment) == ("development", "production")
+    here = await Deployment.this_computer()
+    assert [(d.id, d.this_computer) for d in dev.deployments] == [(str(here.id), True), (str(production.id), False)]
+    assert (dev.deployment_id, dev.environment, prod.environment) == (str(here.id), "development", "production")
     dev_row = next(r for r in dev.credentials if r.typeid == str(spec.typeid))
     prod_row = next(r for r in prod.credentials if r.typeid == str(spec.typeid))
-    assert dev_row.state == "connected", "SENTRY_DSN is optional in development"
+    assert dev_row.state == "connected", "SENTRY_DSN is optional on this computer"
     assert prod_row.state == "missing", "production requires both, and has neither"
+    assert [v.store for v in prod_row.vars] == ["env", "env"]
     assert [f.path.endswith(".env.production.local") for f in prod.files if f.scope == "project"] == [True]
     assert all(f.environment == "production" for f in prod.files)
 
@@ -226,9 +211,10 @@ async def test_a_named_environment_file_that_no_gitignore_lists_yet_is_writable(
     write appends `.env.production.local` and verifies with git."""
     mount = Path(project.fs_storage_mount_path)
     (mount / ".gitignore").write_text(".env.local\n")
+    production = await _deployment("production")
     await save_credential(scope="project", project_id=str(project.id), manifest=_manifest("db", "DATABASE_URL"))
 
-    prod = await credentials_status(project, "production")
+    prod = await credentials_status(project, str(production.id))
     project_file = next(f for f in prod.files if f.scope == "project")
     assert (project_file.blocked, project_file.block_code) == (False, None)
 
@@ -237,31 +223,31 @@ async def test_a_tracked_named_environment_file_stays_blocked(home, project):
     mount = Path(project.fs_storage_mount_path)
     (mount / ".env.production.local").write_text("EXISTING=1\n")
     subprocess.run(["git", "add", "-f", ".env.production.local"], cwd=mount, check=True)
+    production = await _deployment("production")
     await save_credential(scope="project", project_id=str(project.id), manifest=_manifest("db", "DATABASE_URL"))
 
-    prod = await credentials_status(project, "production")
+    prod = await credentials_status(project, str(production.id))
     project_file = next(f for f in prod.files if f.scope == "project")
     assert (project_file.blocked, project_file.block_code) == (True, "tracked")
 
 
-async def test_known_environments_are_development_plus_every_deployment(home):
-    await _deployment("staging")
-    await _deployment("production", name="other")
-    await _deployment("production", name="third")
+async def test_known_deployments_are_this_computer_then_every_other(home):
+    staging = await _deployment("staging")
+    production = await _deployment("production", name="other")
 
-    assert await known_environments() == ["development", "production", "staging"]
+    rows = await known_deployments()
+    assert rows[0].is_this_computer and {r.id for r in rows[1:]} == {staging.id, production.id}
+    assert len([r for r in rows if r.is_this_computer]) == 1
+    assert (await Deployment.this_computer()).id == rows[0].id, "found again, never minted twice"
 
 
-async def test_delete_forgets_values_in_every_environment_and_every_store(home, project):
-    await _deployment("production")
+async def test_delete_forgets_values_at_every_deployment_and_every_store(home, project):
+    production = await _deployment("production", exceptions={"DATABASE_URL": VAULT})
     mount = Path(project.fs_storage_mount_path)
     spec = await save_credential(
-        scope="project",
-        project_id=str(project.id),
-        manifest=_manifest("db", "DATABASE_URL", environments={"production": {"value_store": "vault"}}),
-        values={"DATABASE_URL": "dev"},
+        scope="project", project_id=str(project.id), manifest=_manifest("db", "DATABASE_URL"), values={"DATABASE_URL": "dev"},
     )
-    await set_credential_values(str(spec.typeid), {"DATABASE_URL": "prod"}, "production")
+    await set_credential_values(str(spec.typeid), {"DATABASE_URL": "prod"}, str(production.id))
     (mount / ".env.staging.local").write_text("DATABASE_URL=stale\n")
     await _deployment("staging", name="other")
 
@@ -277,48 +263,89 @@ async def test_delete_forgets_values_in_every_environment_and_every_store(home, 
     ]
 
 
-async def test_an_invalid_environment_is_refused_before_anything_is_written(home, project):
-    with pytest.raises(CredentialError, match="valid environment"):
+async def test_an_unknown_deployment_is_refused_before_anything_is_written(home, project):
+    with pytest.raises(CredentialError, match="deployment not found"):
         await save_credential(
             scope="project",
             project_id=str(project.id),
             manifest=_manifest("db", "DATABASE_URL"),
             values={"DATABASE_URL": "x"},
-            environment="Prod!",
+            deployment_id="9b2c0f3e-1a4d-4c5b-8e6f-7a8b9c0d1e2f",
         )
     assert not (Path(project.fs_storage_mount_path) / "agentic-assets").exists()
 
 
 async def test_an_llm_provider_key_cannot_take_a_named_environment_value(home):
+    production = await _deployment("production")
     spec = await save_credential(
         scope="user",
         manifest=_manifest("openrouter", "OPENROUTER_API_KEY", lm_provider="openrouter"),
         values={"OPENROUTER_API_KEY": "sk-or-dev"},
     )
     with pytest.raises(CredentialError, match="hub-funded"):
-        await set_credential_values(str(spec.typeid), {"OPENROUTER_API_KEY": "sk-or-prod"}, "production")
+        await set_credential_values(str(spec.typeid), {"OPENROUTER_API_KEY": "sk-or-prod"}, str(production.id))
 
 
-# ── which environment a process runs in ───────────────────────────────────
+# ── where a process reads ─────────────────────────────────────────────────
 
 
-async def test_a_process_runs_in_its_deployments_environment(home):
-    staging = await _deployment("staging")
+async def test_a_process_reads_where_its_deployment_keeps_values(home):
+    staging = await _deployment("staging", exceptions={"K": VAULT})
 
-    assert await environment_for(SimpleNamespace(deployment_id=staging.id)) == "staging"
+    placement = await placement_for(SimpleNamespace(deployment_id=staging.id))
+    assert (placement.environment, placement.deployment_id, placement.secrets.store_of("K").type) == (
+        "staging", str(staging.id), "vault"
+    )
 
 
-async def test_a_process_without_a_deployment_uses_the_instance_default(home):
+async def test_a_process_without_a_deployment_reads_at_this_computer_in_the_instance_default(home):
     with patch.object(environment_settings.app_config, "get_config", return_value="production"):
-        assert await environment_for(SimpleNamespace(deployment_id=None)) == "production"
-        assert await environment_for(None) == "production"
+        assert (await placement_for(SimpleNamespace(deployment_id=None))).environment == "production"
+        assert (await placement_for(None)).deployment_id == str((await Deployment.this_computer()).id)
 
 
-async def test_nothing_set_falls_back_to_development(home):
+async def test_a_missing_deployment_reads_at_this_computer(home):
     with patch.object(environment_settings.app_config, "get_config", return_value=None):
-        assert await environment_for(SimpleNamespace(deployment_id="missing-deployment")) == "development"
+        placement = await placement_for(SimpleNamespace(deployment_id="0b2c0f3e-1a4d-4c5b-8e6f-7a8b9c0d1e2f"))
+        assert (placement.environment, placement.deployment_id) == ("development", str((await Deployment.this_computer()).id))
 
 
 def test_an_invalid_stored_default_reads_as_development():
     with patch.object(environment_settings.app_config, "get_config", return_value="Not Valid"):
         assert environment_settings.get_default_environment() == "development"
+
+
+# ── the boot lift: a pre-0.2.178 credential.json that still says where ─────
+
+
+async def test_the_lift_moves_where_values_live_onto_deployments_and_runs_once(home, project):
+    from flow_sdk.migrations.migration_2026_09_credential_stores import lift
+
+    production = await _deployment("production")
+    local = await _deployment("development", name="agent")
+    mount = Path(project.fs_storage_mount_path)
+    folder = mount / "agentic-assets" / "credential" / "db"
+    folder.mkdir(parents=True)
+    legacy = {
+        "name": "db", "schema": 2, "setup": "x", "value_store": "vault",
+        "vars": {"DATABASE_URL": {}, "SENTRY_DSN": {"required": False}},
+        "environments": {"production": {"value_store": "env", "required": ["SENTRY_DSN"]}, "staging": {}},
+    }
+    (folder / "credential.json").write_text(json.dumps(legacy))
+
+    dry = await lift(dry_run=True, roots=[mount])
+    assert dry.stripped and "value_store" in json.loads((folder / "credential.json").read_text())
+
+    report = await lift(dry_run=False, roots=[mount])
+
+    here = await Deployment.this_computer()
+    assert {n: r.type for n, r in here.secrets.exceptions.items()} == {"DATABASE_URL": "vault", "SENTRY_DSN": "vault"}
+    prod = await Deployment.get_by_id(production.id)
+    assert prod.secrets.store_of("DATABASE_URL").type == "env_file", "production kept its env file"
+    assert prod.secrets.require == ["SENTRY_DSN"]
+    assert (await Deployment.get_by_id(local.id)).secrets is None, "inherits the lifted vault exception"
+    assert report.orphans == ["staging (db)"]
+    assert set(json.loads((folder / "credential.json").read_text())) == {"name", "schema", "setup", "vars"}
+
+    again = await lift(dry_run=False, roots=[mount])
+    assert again.stripped == [] and again.lifted == []

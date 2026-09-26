@@ -9,7 +9,6 @@ from typing import Optional
 from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
-from flow_sdk.schema.data_spec.credential_spec import CredentialEnvironmentSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
@@ -24,11 +23,14 @@ class CredentialVarStatusSpec(DataSpec):
     help_url: str = ""
     secret: bool = True
     required: bool = True
-    #: A value exists in this credential's own store.
+    #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type.
+    store: str = "env"
+    #: A value exists in that store.
     present: bool = False
-    #: Where a value was found at all: ``env`` / ``vault`` / None.
+    #: Where a value was found at all: ``env`` / ``vault`` / the remote store type / None.
     found_in: Optional[str] = None
-    #: ``missing`` (no value anywhere) or ``wrong-store`` (a value in the other store).
+    #: ``missing`` (no value anywhere), ``wrong-store`` (a value in the other local store) or
+    #: ``unreachable`` (a remote store that could not be asked).
     warning: Optional[str] = None
     #: The typeid of the project credential overriding this user one, if any.
     shadowed_by: Optional[str] = None
@@ -48,14 +50,11 @@ class CredentialStatusRowSpec(DataSpec):
     setup: str = ""
     scope: str
     project_id: Optional[str] = None
-    #: The environment these presences were read for.
+    #: The environment of the deployment these presences were read for.
     environment: str = DEFAULT_ENVIRONMENT
-    #: This credential's store in that environment.
+    #: Where that deployment keeps this credential: ``env`` / ``vault`` / a remote store type, or
+    #: ``mixed`` when its variables are split (each var row says its own).
     value_store: str
-    #: The manifest's own ``value_store`` and per-environment overrides — what an
-    #: edit form must send back so saving never drops another environment's settings.
-    default_value_store: str = "env"
-    environments: dict[str, CredentialEnvironmentSpec] = {}
     lm_provider: str = ""
     #: ``connected`` (every required value present), ``partial`` or ``missing``.
     state: str
@@ -84,14 +83,26 @@ class ScopeFileStatusSpec(DataSpec):
     detected: list[DetectedKeySpec] = []
 
 
+class DeploymentChoiceSpec(DataSpec):
+    """A deployment the Credentials screen can show values for."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    name: str = ""
+    environment: str = DEFAULT_ENVIRONMENT
+    this_computer: bool = False
+
+
 class CredentialsStatusSpec(DataSpec):
     model_config = ConfigDict(frozen=True)
 
     project_id: Optional[str] = None
-    #: The environment this status was read for.
+    #: The deployment this status was read for, and its environment.
+    deployment_id: str = ""
     environment: str = DEFAULT_ENVIRONMENT
-    #: Every environment there is: ``development`` plus each Deployment's.
-    environments: list[str] = [DEFAULT_ENVIRONMENT]
+    #: Every deployment there is: this computer first.
+    deployments: list[DeploymentChoiceSpec] = []
     vault_enabled: bool = False
     credentials: list[CredentialStatusRowSpec] = []
     files: list[ScopeFileStatusSpec] = []

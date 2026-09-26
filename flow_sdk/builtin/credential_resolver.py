@@ -10,9 +10,9 @@ in ``.env.local`` that no credential names stays out of the process.
 Node attachment (``ComputeNode.attached_secrets``) filters the result: ``None``
 means nothing was curated, i.e. every declared variable.
 
-Values are read for ONE environment: the Deployment the process runs under,
-else this instance's default, else ``development`` (:func:`environment_for`).
-Declarations never differ by environment — only where the values are read.
+Values are read at ONE placement (``credential_store.Placement``): the Deployment
+the process runs under, else this computer (:func:`placement_for`). Declarations
+never differ by deployment — only where the values are read.
 """
 from __future__ import annotations
 
@@ -26,20 +26,17 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.credential_store import (
     CredentialScope,
+    Placement,
     project_scope,
     read_values,
     spec_scope_name,
     user_scope,
 )
-from flow_sdk.schema.data_spec.credential_contract import (
-    DEFAULT_ENVIRONMENT,
-    SCOPE_PROJECT,
-    SCOPE_USER,
-    is_valid_environment,
-)
+from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_USER
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.credential import Credential
+    from flow_sdk.builtin.deployment import Deployment
     from flow_sdk.builtin.project import Project
 
 logger = logging.getLogger(__name__)
@@ -145,9 +142,9 @@ async def resolve_project_secrets(
     *,
     only: Optional[Iterable[str]] = None,
     declared: Optional[dict[str, DeclaredVar]] = None,
-    environment: str = DEFAULT_ENVIRONMENT,
+    placement: Optional[Placement] = None,
 ) -> dict[str, SecretStr]:
-    """Resolve every declared variable that ``only`` permits, from ``environment``.
+    """Resolve every declared variable that ``only`` permits, at ``placement`` (default: this computer).
 
     A store that fails is skipped (see ``read_values``) — a missing value must
     never take down a spawn, and a value must never reach a log line.
@@ -159,71 +156,65 @@ async def resolve_project_secrets(
     if not targets:
         return {}
     try:
-        return await read_values(targets, environment)
+        return await read_values(targets, placement or await placement_for_deployment())
     except Exception as e:  # noqa: BLE001
         logger.debug("[credentials] could not resolve values: %s", type(e).__name__)
         return {}
 
 
-async def environment_for(process: Any = None) -> str:
-    """The credential environment ``process`` runs in: its Deployment's (:func:`environment_for_deployment`)."""
-    return await environment_for_deployment(str(getattr(process, "deployment_id", "") or ""))
+async def placement_for(process: Any = None) -> Placement:
+    """Where ``process`` reads its values: its Deployment's placement (:func:`placement_for_deployment`)."""
+    return await placement_for_deployment(str(getattr(process, "deployment_id", "") or ""))
 
 
-async def environment_for_deployment(deployment_id: str = "") -> str:
-    """The ``environment`` of that Deployment; else this instance's default (a cloud box sets it
-    when it adopts its placement); else ``development``. Never raises: a process must start even
-    when the lookup fails.
+async def placement_for_deployment(deployment_id: str = "") -> Placement:
+    """That Deployment's placement; else this computer's. Never raises: a process must start even
+    when the lookup fails (it then reads this computer's default store in the instance's environment).
     """
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
     deployment_id = deployment_id.strip()
-    if deployment_id:
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
-
-        try:
-            deployment = await Deployment.get_by_id(deployment_id)
-        except Exception as e:  # noqa: BLE001
-            logger.debug("[credentials] could not read deployment %s: %s", deployment_id, e)
-            deployment = None
-        environment = str(getattr(deployment, "environment", "") or "").strip()
-        if is_valid_environment(environment):
-            return environment
     try:
-        from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
-
-        return get_default_environment()
+        deployment = await Deployment.get_by_id(deployment_id) if deployment_id else None
+        return await Placement.of(deployment)
     except Exception as e:  # noqa: BLE001
-        logger.debug("[credentials] could not read the default environment: %s", e)
-        return DEFAULT_ENVIRONMENT
+        from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec  # noqa: PLC0415
+
+        logger.debug("[credentials] could not read the placement of %r: %s", deployment_id, e)
+        return Placement(DeploymentSecretsSpec(), get_default_environment())
 
 
-async def environment_for_source(row: Any) -> str:
-    """The credential environment a data source reads its values from.
+async def placement_for_source(row: Any) -> Placement:
+    """Where a data source reads its values.
 
     The Deployment that answers it (``answer_place``); else the deployment this
-    process serves (``FLOW_DEPLOYMENT_ID``); else what :func:`environment_for_deployment`
-    answers with no deployment. A source syncing on a production box must read
-    production values, not ``development``.
+    process serves (``FLOW_DEPLOYMENT_ID``); else this computer. A source syncing
+    on a production box must read production values, not ``development``.
     """
     from flow_sdk.builtin.deployment_process import DEPLOYMENT_ENV  # noqa: PLC0415
 
     placed = str(getattr(row, "answer_place", "") or "").strip() or os.environ.get(DEPLOYMENT_ENV, "")
-    return await environment_for_deployment(placed)
+    return await placement_for_deployment(placed)
 
 
-async def known_environments() -> list[str]:
-    """``development`` first, then every environment a Deployment names, sorted."""
-    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+async def known_deployments() -> list["Deployment"]:
+    """This computer first, then every other Deployment — every place a value may live."""
+    from flow_sdk.builtin.deployment import KIND_THIS_COMPUTER, Deployment  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
+    here = await Deployment.this_computer()
     try:
-        rows = await Deployment.get_all(
-            QueryFilter(match=ExpressionNode(op=QueryOp.NE, operands=["environment", DEFAULT_ENVIRONMENT]))
-        )
+        rows = await Deployment.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.NE, operands=["kind", KIND_THIS_COMPUTER])))
     except Exception as e:  # noqa: BLE001
-        logger.debug("[credentials] could not list deployment environments: %s", e)
+        logger.debug("[credentials] could not list deployments: %s", e)
         rows = []
-    named = {str(row.environment or "").strip() for row in rows}
-    return [DEFAULT_ENVIRONMENT, *sorted(env for env in named if is_valid_environment(env) and env != DEFAULT_ENVIRONMENT)]
+    return [here, *rows]
+
+
+async def known_placements() -> list[Placement]:
+    """The placement of every known deployment (:func:`known_deployments`)."""
+    return [await Placement.of(row) for row in await known_deployments()]
 
 
 async def attached_env_vars_for(project: Optional["Project"]) -> Optional[list[str]]:
@@ -242,13 +233,13 @@ async def attached_env_vars_for(project: Optional["Project"]) -> Optional[list[s
 
 
 async def resolve_attached_secrets(
-    project: Optional["Project"], *, environment: Optional[str] = None
+    project: Optional["Project"], *, placement: Optional[Placement] = None
 ) -> dict[str, SecretStr]:
     """The declared values the local node lets ``project``'s processes see.
 
     The one entry point for spawns (worker, terminal, node command). Nothing
-    declared — the common case — returns before the node lookup. ``environment``
-    defaults to this instance's (``environment_for(None)``).
+    declared — the common case — returns before the node lookup. ``placement``
+    defaults to this computer's.
     """
     declared = await declared_vars(project)
     if not declared:
@@ -257,5 +248,5 @@ async def resolve_attached_secrets(
         project,
         only=await attached_env_vars_for(project),
         declared=declared,
-        environment=environment or await environment_for(None),
+        placement=placement,
     )
