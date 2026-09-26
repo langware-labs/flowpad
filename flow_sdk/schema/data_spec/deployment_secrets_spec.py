@@ -26,6 +26,11 @@ STORE_WORDS = {"env": ENV_FILE, "env_file": ENV_FILE, "vault": VAULT}
 LOCAL_STORE_TYPES = (ENV_FILE.type, VAULT.type)
 
 
+def hub_store(deployment_id: str) -> SecretStoreRef:
+    """A cloud deployment's store: its values held by the hub, placed on its machine when it starts."""
+    return SecretStoreRef(type="hub", config={"deployment_id": deployment_id})
+
+
 def store_ref(word: str) -> SecretStoreRef:
     """The store a word names; raises ``ValueError`` for an unknown one."""
     if word not in STORE_WORDS:
@@ -74,4 +79,6 @@ class DeploymentSecretsSpec(DataSpec):
         return self.model_copy(update={"exceptions": exceptions})
 
 
-__all__ = ["ENV_FILE", "LOCAL_STORE_TYPES", "STORE_WORDS", "VAULT", "DeploymentSecretsSpec", "store_ref", "store_word"]
+__all__ = [
+    "ENV_FILE", "LOCAL_STORE_TYPES", "STORE_WORDS", "VAULT", "DeploymentSecretsSpec", "hub_store", "store_ref", "store_word",
+]

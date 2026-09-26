@@ -158,7 +158,8 @@ async def test_2_start_a_session_on_a_placement(mock_driver, tmp_path):
 
 
 async def test_5_a_machine_of_its_own(monkeypatch):
-    """§5 as written; the hub's legs — publish the agent, boot its machine — answered by a double."""
+    """§5 as written; the hub's legs — publish the agent, plan its placement, boot its machine —
+    answered by a double. The agent needs nothing stored, so the readiness gate lets it through."""
     import flow_sdk.auth
     from flow_sdk.builtin import cloud_deploy
     from flow_sdk.builtin.agent import Agent
@@ -175,12 +176,19 @@ async def test_5_a_machine_of_its_own(monkeypatch):
         published.append((self.name, str(actor)))
         return True
 
-    async def deploy(entity, environment=None):
+    async def deploy(entity, environment=None, *, require=None):
         return {"deployment_id": "dep-1", "entity": entity.name, "environment": environment or "production"}
+
+    async def plan(etype, payload, eid=None, action=None, **_):
+        assert action == "plan_deployment"
+        return {"deployment": {"id": "0f8d0356-504f-466c-a0e9-ee2ac90e4a4b", "name": "researcher (e2b)",
+                               "kind": "runtime.agent", "environment": payload["environment"],
+                               "target": {"provider": "e2b", "scope": "agent"}}}
 
     monkeypatch.setattr(flow_sdk.auth, "login", login)
     monkeypatch.setattr(Agent, "ensure_on_hub", ensure_on_hub)
     monkeypatch.setattr(cloud_deploy, "deploy_entity_to_cloud", deploy)
+    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_post", plan)
     ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
     assert published == [("researcher", str(ns["actor"]))], "publish comes first, as the caller"
     assert ns["receipt"]["entity"] == "researcher"

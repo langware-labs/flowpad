@@ -41,7 +41,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
-from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec
+from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec, hub_store
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
@@ -422,8 +422,14 @@ class Deployment(Entity):
         """
         if not isinstance(payload, dict) or not payload.get("id"):
             return None
+        existing = await cls.get_by_id(str(payload["id"]))
         deployment = cls(**payload)
         deployment.remote = True
+        # Where its values live is this machine's, never the hub's: kept across adoptions. A new cloud
+        # placement keeps them in the hub store, which places them on its machine.
+        deployment.secrets = existing.secrets if existing is not None and existing.secrets is not None else (
+            None if deployment.is_local else DeploymentSecretsSpec(store=hub_store(str(deployment.id)))
+        )
         await deployment.save()
         return deployment.with_element(element)
 
