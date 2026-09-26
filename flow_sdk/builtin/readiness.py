@@ -199,11 +199,12 @@ async def _connection_item(req: RequirementSpec, connector: str, scopes: list[st
         if scopes:
             await connection.validate_scopes(scopes)
     except NotConnected:
-        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where, fix=f"flow connections connect {connector}")
+        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where, connection=connector,
+                                 fix=f"flow connections connect {connector}")
     except MissingScopes as e:
-        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where,
+        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where, connection=connector,
                                  fix=f"reconnect {connector}, granting {', '.join(e.missing)}")
-    return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=where)
+    return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=where, connection=connector)
 
 
 def _values_item(req: RequirementSpec, names: list[str], present: dict[str, tuple[bool, str]], fix: str) -> ReadinessItemSpec:

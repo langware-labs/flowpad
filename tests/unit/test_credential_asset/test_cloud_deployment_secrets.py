@@ -9,6 +9,7 @@ import pytest
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.credential_service import CredentialError, delete_credential, save_credential, use_mine
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.readiness import NotReady
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.secrets import SecretStore
@@ -157,3 +158,35 @@ async def test_flow_credentials_check_and_set_take_a_deployment(home, project, h
     assert (missing.exit_code, ready.exit_code) == (1, 0), (missing.stdout, set_.stdout, ready.stdout)
     assert hub.values[deployment] == {"STRIPE_KEY": VALUE}
     assert VALUE not in set_.stdout
+
+
+def _request(monkeypatch, body: dict):
+    from unittest.mock import AsyncMock
+
+    from flow_sdk.request_context.request_info import RequestInfo
+
+    info = RequestInfo()
+    info.get_post_data = AsyncMock(return_value=body)
+    monkeypatch.setattr("flow_sdk.builtin.agent.get_current_request_info", lambda: info)
+    monkeypatch.setattr("flow_sdk.request_context.methods.get_current_request_info", lambda: info)
+
+
+async def test_the_deploy_dialog_plans_then_authorizes_and_revokes_over_rest(home, project, hub, monkeypatch):
+    agent = await _agent(project)
+
+    _request(monkeypatch, {"environment": "staging"})
+    planned = (await agent.plan_deployment_action()).data
+    deployment = await Deployment.get_by_id(planned["deployment"]["id"])
+    _request(monkeypatch, {"provider": "google"})
+    granted = await deployment.authorize_action()
+    held = (await deployment.secrets_action()).data
+    _request(monkeypatch, {"provider": "google", "revoke": True})
+    revoked = (await deployment.authorize_action()).data
+    _request(monkeypatch, {})
+    refused = await deployment.authorize_action()
+
+    assert planned["deployment"]["environment"] == "staging"
+    assert [(i["requirement"]["name"], i["status"]) for i in planned["readiness"]["items"]] == [("stripe", "missing")]
+    assert granted.status == "SUCCESS" and held["authorizations"] == [{"provider": "google"}]
+    assert revoked == {"revoked": ["google"]} and hub.authorized[str(deployment.id)] == []
+    assert refused.status_code == 400

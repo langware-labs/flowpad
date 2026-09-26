@@ -127,6 +127,12 @@ export interface StoreForgotten {
   error: string;
 }
 
+/** What "use mine" copied into a deployment's store, and what this computer does not hold. Names only. */
+export interface UseMineResult {
+  copied: string[];
+  not_here: string[];
+}
+
 /** A credential is removed only when no store still holds one of its values. */
 export interface CredentialDeleted {
   removed: boolean;
@@ -233,6 +239,15 @@ export class CredentialsService {
     const action = this.action('values', 'POST');
     action.bodyParameters = deploymentId ? { typeid, values, deployment_id: deploymentId } : { typeid, values };
     return dataManager.callAction<unknown, CredentialSaved>(action);
+  }
+
+  /** Copy this computer's values into a deployment's store — for a cloud deployment the hub, which
+   *  places them on its machine. `names` omitted: every value it lacks. Names come back, never a value. */
+  async useMine(deploymentId: string, names?: string[]): Promise<UseMineResult> {
+    const action = this.action('use-mine', 'POST');
+    action.bodyParameters = { deployment_id: deploymentId, names: names?.length ? names : null };
+    const res = await dataManager.callAction<unknown, Partial<UseMineResult>>(action);
+    return { copied: res?.copied ?? [], not_here: res?.not_here ?? [] };
   }
 
   /** Remove a credential and its values from every store. `removed` is false, and the

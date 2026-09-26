@@ -1,4 +1,4 @@
-import { Agent } from '@sdk';
+import { Agent, type AgentReadiness } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
@@ -12,6 +12,7 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 
 import { AgentDeployChecklist } from './AgentDeployChecklist';
+import { DeploymentSecretsGate } from './DeploymentSecretsGate';
 import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES } from './agent-vocabularies';
 
 /** A cloud machine's credential environment when nobody names one. */
@@ -45,6 +46,9 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
   const [ready, setReady] = useState<boolean | null>(null);
   const [environment, setEnvironment] = useState(DEFAULT_CLOUD_ENVIRONMENT);
   const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
+  // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
+  // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
+  const [refused, setRefused] = useState<AgentReadiness | null>(null);
   const cloud = type !== 'local';
 
   const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud }[] = [
@@ -80,6 +84,12 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
       onOpenChange(false);
       await onLaunched(data.deployment?.id);
     } catch (e) {
+      const data = (e as { response?: { data?: { data?: { code?: string; readiness?: AgentReadiness } } } })?.response
+        ?.data?.data;
+      if (data?.code === 'not_ready' && data.readiness) {
+        setRefused(data.readiness);
+        return;
+      }
       notify.error({
         title: t`Could not launch the deployment`,
         message: errorMessage(e, t`Launch failed.`),
@@ -90,7 +100,8 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
     }
   };
 
-  const blocked = !agent.enabled || launching || (cloud && (ready === false || !environmentValid));
+  const blocked =
+    !agent.enabled || launching || (cloud && (ready === false || !environmentValid || refused?.ready === false));
 
   return (
     <Dialog open={open} onOpenChange={(next) => !launching && onOpenChange(next)}>
@@ -109,7 +120,10 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
               role="radio"
               aria-checked={type === value}
               disabled={launching}
-              onClick={() => setType(value)}
+              onClick={() => {
+                setType(value);
+                setRefused(null);
+              }}
               className={cn(
                 'flex items-center gap-3 rounded-md border px-3 py-2 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                 type === value ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
@@ -136,7 +150,10 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
                   className="h-8 w-40 font-mono text-xs"
                   value={environment}
                   disabled={launching}
-                  onChange={(e) => setEnvironment(e.target.value.trim().toLowerCase())}
+                  onChange={(e) => {
+                    setEnvironment(e.target.value.trim().toLowerCase());
+                    setRefused(null);
+                  }}
                   aria-invalid={!environmentValid}
                   data-testid="new-deployment-environment"
                 />
@@ -148,6 +165,9 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
                   )}
                 </span>
               </div>
+              {refused && (
+                <DeploymentSecretsGate agent={agent} environment={environment} readiness={refused} onChange={setRefused} />
+              )}
             </>
           ) : (
             <p className="text-xs text-muted-foreground" data-testid="new-deployment-local-details">

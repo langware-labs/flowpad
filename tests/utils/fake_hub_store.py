@@ -50,6 +50,9 @@ class FakeHubStore:
 
     async def delete(self, etype, eid, action=None, sub_path=None, **_):
         self.calls.append(("DELETE", str(etype), eid, action, sub_path))
+        if action == "authorize":
+            self.authorized[eid] = [p for p in self.authorized.get(eid, []) if p != sub_path]
+            return {"revoked": [sub_path]}
         self.values.get(eid, {}).pop(sub_path, None)
         return {}
 

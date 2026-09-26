@@ -710,6 +710,30 @@ class Deployment(Entity):
         """`POST /deployment/<id>/update` — bring a cloud machine to the published definition."""
         return await self._answer("update", self.update)
 
+    @action.get(action_name="secrets")
+    async def secrets_action(self):
+        """`GET /deployment/<id>/secrets` — what the hub holds for this cloud placement. Names only."""
+        return await self._answer("secrets", self.secrets_inventory)
+
+    @action.post(action_name="authorize")
+    async def authorize_action(self):
+        """`POST /deployment/<id>/authorize  {"provider", "permissions"?}` — let its machine use your
+        connection; `{"provider", "revoke": true}` takes it back."""
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = ((await request_info.get_post_data()) if request_info else None) or {}
+        provider = str(body.get("provider") or "").strip()
+
+        async def run():
+            if not provider:
+                raise DeploymentActionError("provider is required", status_code=400)
+            if body.get("revoke"):
+                return {"revoked": await self.revoke(provider)}
+            return await self.authorize(provider, list(body.get("permissions") or []))
+
+        return await self._answer("authorize", run)
+
     @action.get(action_name="timeline")
     async def timeline_action(self):
         """`GET /deployment/<id>/timeline?limit=&before=&conversation=` — what reached it, what it
@@ -780,10 +804,9 @@ class Deployment(Entity):
     async def save_code_action(self):
         """`POST /deployment/<id>/save_code {text}` — write the file; it runs from the next (re)start."""
         from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
         from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentCode  # noqa: PLC0415
-
-        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
         text = ((await request_info.get_post_data()) or {}).get("text") if request_info else None
@@ -797,9 +820,9 @@ class Deployment(Entity):
     async def restart_action(self):
         """`POST /deployment/<id>/restart` — stop the loop; the supervisor runs the file again at once
         (this write is what tells it), in the same terminal."""
-        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
         import asyncio  # noqa: PLC0415
 
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         if not self.is_local or not self.serving:
