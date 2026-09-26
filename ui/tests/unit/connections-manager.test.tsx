@@ -420,7 +420,8 @@ describe('ConnectionsManager — adding a credential', () => {
       expect.objectContaining({
         scope: 'user',
         project_id: null,
-        manifest: expect.objectContaining({ name: 'twilio', value_store: 'env' }),
+        manifest: expect.objectContaining({ name: 'twilio' }),
+        store: 'env',
         values: { TWILIO_SID: 'sid-1' },
       }),
     );
@@ -477,7 +478,8 @@ describe('ConnectionsManager — adding a credential', () => {
 
   it('a vault credential asks for the vault to be enabled first', async () => {
     h.status = statusWith({ vault_enabled: false });
-    h.templates = [{ ...TWILIO_TEMPLATE, value_store: 'vault' }];
+    // A provider key always lives in the vault.
+    h.templates = [{ ...TWILIO_TEMPLATE, lm_provider: 'openai' }];
     render(<ConnectionsManager projectTypeId={PROJECT} />);
     await openTemplate();
 

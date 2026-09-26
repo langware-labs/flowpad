@@ -4,7 +4,6 @@ import {
   ConnectionState,
   ConnectionStatus,
   type Credential,
-  DEFAULT_CREDENTIAL_ENVIRONMENT,
   FSRef,
   TypeId,
   type OAuthConnection,
@@ -67,8 +66,8 @@ import { Plus } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
-/** The URL option naming the credential environment the table shows; absent means development. */
-const CREDENTIAL_ENVIRONMENT_OPTION = 'env';
+/** The URL option naming the deployment whose values the table shows; absent means this computer. */
+const CREDENTIAL_DEPLOYMENT_OPTION = 'deployment';
 
 export interface ConnectionsManagerProps {
   /**
@@ -344,21 +343,19 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // selected project's when there is one. Status is value-free.
   const selectedProject = project ?? null;
   const { navigation, currentDock } = useDockNavigation();
-  // URL-first: the environment rides in the dock's options, so a reload or a
-  // shared link lands on the same values. Development is the absent option.
-  const credentialEnvironment =
-    currentDock?.options?.[CREDENTIAL_ENVIRONMENT_OPTION] || DEFAULT_CREDENTIAL_ENVIRONMENT;
-  const showCredentialEnvironment = (next: string) => {
-    if (!currentDock) return;
-    navigation.openDock(
-      currentDock.withOption(CREDENTIAL_ENVIRONMENT_OPTION, next === DEFAULT_CREDENTIAL_ENVIRONMENT ? null : next),
-    );
-  };
+  // URL-first: the deployment rides in the dock's options, so a reload or a
+  // shared link lands on the same values. This computer is the absent option.
+  const credentialDeployment = currentDock?.options?.[CREDENTIAL_DEPLOYMENT_OPTION] || null;
   const {
     status: credentialStatus,
     templates: credentialTemplates,
     refresh: refreshCredentials,
-  } = useCredentials(selectedProject?.id ?? null, credentialEnvironment);
+  } = useCredentials(selectedProject?.id ?? null, credentialDeployment);
+  const showCredentialDeployment = (next: string) => {
+    if (!currentDock) return;
+    const thisComputer = (credentialStatus.deployments ?? []).find((row) => row.this_computer)?.id;
+    navigation.openDock(currentDock.withOption(CREDENTIAL_DEPLOYMENT_OPTION, next === thisComputer ? null : next));
+  };
   const credentialRows = React.useMemo(() => buildCredentialRows(credentialStatus), [credentialStatus]);
   const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus), [credentialStatus]);
   const defaultScope = selectedProject ? 'project' : 'user';
@@ -635,7 +632,6 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           draft={credentialDraft.draft}
           projectId={selectedProject?.id ?? null}
           status={credentialStatus}
-          environment={credentialEnvironment}
           onRefresh={refreshCredentials}
           onClose={() => setCredentialDraft(null)}
           onSaved={async (saved) => {
@@ -647,22 +643,22 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       )}
 
       <div className="flex-1 overflow-auto">
-        {/* Which environment the credential rows show and write: development is
-            this computer, every other one is a deployment's. Hidden until a
-            deployment names one. */}
-        {((credentialStatus.environments ?? []).length > 1 || credentialEnvironment !== DEFAULT_CREDENTIAL_ENVIRONMENT) && (
-          <div className="mb-3 flex max-w-5xl items-center gap-2" data-testid="credential-environment">
+        {/* Which deployment the credential rows show and write: this computer, or a
+            deployment (each keeps its own values, in its environment). Hidden until
+            there is another deployment. */}
+        {((credentialStatus.deployments ?? []).length > 1 || !!credentialDeployment) && (
+          <div className="mb-3 flex max-w-5xl items-center gap-2" data-testid="credential-deployment">
             <span className="text-xs text-muted-foreground">
-              <Trans>Credential environment</Trans>
+              <Trans>Values for</Trans>
             </span>
-            <Select value={credentialEnvironment} onValueChange={showCredentialEnvironment}>
-              <SelectTrigger className="h-8 w-48 font-mono text-xs" data-testid="credential-environment-select">
+            <Select value={credentialStatus.deployment_id} onValueChange={showCredentialDeployment}>
+              <SelectTrigger className="h-8 w-64 text-xs" data-testid="credential-deployment-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Array.from(new Set([...(credentialStatus.environments ?? []), credentialEnvironment])).map((env) => (
-                  <SelectItem key={env} value={env} className="font-mono text-xs" data-testid={`credential-environment-${env}`}>
-                    {env === DEFAULT_CREDENTIAL_ENVIRONMENT ? t`development · this computer` : env}
+                {(credentialStatus.deployments ?? []).map((row) => (
+                  <SelectItem key={row.id} value={row.id} className="text-xs" data-testid={`credential-deployment-${row.id}`}>
+                    {row.this_computer ? t`This computer · ${row.environment}` : `${row.name} · ${row.environment}`}
                   </SelectItem>
                 ))}
               </SelectContent>

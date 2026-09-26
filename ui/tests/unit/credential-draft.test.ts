@@ -166,7 +166,6 @@ describe('toSaveRequest', () => {
         help_url: undefined,
         setup_wiki: undefined,
         setup: 'From the Stripe dashboard.',
-        value_store: 'env',
         lm_provider: undefined,
         vars: {
           STRIPE_KEY: { label: undefined, hint: 'the secret key', placeholder: undefined, pattern: undefined, help_url: undefined, secret: true, required: true },
@@ -174,6 +173,7 @@ describe('toSaveRequest', () => {
         },
       },
       values: { STRIPE_KEY: 'sk_test' },
+      store: 'env',
     });
   });
 

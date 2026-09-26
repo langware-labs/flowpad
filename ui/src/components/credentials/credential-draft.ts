@@ -12,7 +12,6 @@
  * - `values`   — set or rotate an existing credential's values.
  */
 import type {
-  CredentialEnvironmentSettings,
   CredentialManifestVar,
   CredentialScopeName,
   Credential,
@@ -20,7 +19,7 @@ import type {
   CredentialValueStore,
   SaveCredentialRequest,
 } from '@sdk';
-import { DEFAULT_CREDENTIAL_ENVIRONMENT, isRequired, isSecret } from '@sdk';
+import { isRequired, isSecret } from '@sdk';
 import { MAX_ENV_VAR_VALUE_LENGTH } from '@src/constants/validation';
 
 export type DraftMode = 'custom' | 'template' | 'pack' | 'edit' | 'values';
@@ -57,10 +56,9 @@ export interface CredentialDraft {
   /** How an agent obtains and stores the values — required to save a definition. */
   setup: string;
   scope: CredentialScopeName;
-  /** The credential's own store — every environment's, unless `environments` overrides it. */
+  /** Where the chosen deployment keeps this credential's values — the deployment's choice, sent
+   *  with the save; the credential itself never says. */
   store: CredentialValueStore;
-  /** Per-environment overrides, kept verbatim so an edit never drops another environment's. */
-  environments: Record<string, CredentialEnvironmentSettings>;
   lmProvider: string;
   vars: DraftVar[];
 }
@@ -146,7 +144,6 @@ export function customDraft(scope: CredentialScopeName): CredentialDraft {
     setup: '',
     scope,
     store: 'env',
-    environments: {},
     lmProvider: '',
     vars: [emptyVar()],
   };
@@ -165,8 +162,7 @@ export function templateDraft(spec: Credential, scope: CredentialScopeName): Cre
     setup: spec.setup || '',
     // A provider key funds every project on this machine: user scope, vault.
     scope: lmProvider ? 'user' : scope,
-    store: lmProvider ? 'vault' : spec.value_store === 'vault' ? 'vault' : 'env',
-    environments: {},
+    store: lmProvider ? 'vault' : 'env',
     lmProvider,
     vars: spec.varNames.map((name) => fromManifestVar(name, spec.vars?.[name])),
   };
@@ -194,8 +190,8 @@ function fromRow(row: CredentialStatusRow, mode: 'edit' | 'values'): CredentialD
     setupWiki: row.setup_wiki ?? '',
     setup: row.setup ?? '',
     scope: row.scope,
-    store: row.default_value_store ?? row.value_store,
-    environments: row.environments ?? {},
+    // As the deployment keeps it: `mixed` (split per variable) or a remote store is kept as is on save.
+    store: row.value_store,
     lmProvider: row.lm_provider,
     vars: row.vars.map((v) =>
       fromManifestVar(v.env_var, {
@@ -220,22 +216,6 @@ export const namesLocked = (d: CredentialDraft) => d.mode === 'template' || d.mo
 export const scopeLocked = (d: CredentialDraft) => !!d.typeid || d.mode === 'pack' || !!d.lmProvider;
 /** A provider key lives in the vault; packed keys already live in the file. */
 export const storeLocked = (d: CredentialDraft) => d.mode === 'values' || d.mode === 'pack' || !!d.lmProvider;
-/** Where this draft keeps values in `environment`: that environment's override, else the credential's store. */
-export function storeIn(d: CredentialDraft, environment: string = DEFAULT_CREDENTIAL_ENVIRONMENT): CredentialValueStore {
-  return d.environments[environment]?.value_store ?? d.store;
-}
-
-/** The draft with `environment`'s store set: the credential's own store for development, an override otherwise. */
-export function withStoreIn(
-  d: CredentialDraft,
-  environment: string,
-  store: CredentialValueStore,
-): Pick<CredentialDraft, 'store' | 'environments'> {
-  if (environment === DEFAULT_CREDENTIAL_ENVIRONMENT && !d.environments[environment]) {
-    return { store, environments: d.environments };
-  }
-  return { store: d.store, environments: { ...d.environments, [environment]: { ...d.environments[environment], value_store: store } } };
-}
 
 /** Only the header fields and variable definitions — values are asked separately. */
 export const asksDefinition = (d: CredentialDraft) => d.mode !== 'values';
@@ -287,12 +267,9 @@ export function draftValues(d: CredentialDraft): Record<string, string> {
   return Object.fromEntries(d.vars.filter((v) => v.value).map((v) => [v.envVar.trim(), v.value]));
 }
 
-export function toSaveRequest(
-  d: CredentialDraft,
-  projectId: string | null,
-  environment: string = DEFAULT_CREDENTIAL_ENVIRONMENT,
-): SaveCredentialRequest {
-  const overrides = realOverrides(d);
+/** The save a draft makes: the definition, its values, and where `deploymentId` (default: this
+ *  computer) keeps them. */
+export function toSaveRequest(d: CredentialDraft, projectId: string | null, deploymentId?: string | null): SaveCredentialRequest {
   const vars: Record<string, CredentialManifestVar> = {};
   for (const v of d.vars) {
     const name = v.envVar.trim();
@@ -317,19 +294,11 @@ export function toSaveRequest(
       help_url: d.helpUrl || undefined,
       setup_wiki: d.setupWiki || undefined,
       setup: d.setup.trim(),
-      value_store: d.store,
       lm_provider: d.lmProvider || undefined,
       vars,
-      ...(Object.keys(overrides).length ? { environments: overrides } : {}),
     },
     values: draftValues(d),
-    ...(environment !== DEFAULT_CREDENTIAL_ENVIRONMENT ? { environment } : {}),
+    ...(!d.lmProvider && (d.store === 'env' || d.store === 'vault') ? { store: d.store as 'env' | 'vault' } : {}),
+    ...(deploymentId ? { deployment_id: deploymentId } : {}),
   };
-}
-
-/** The overrides that actually say something — an empty entry would read as a real one. */
-function realOverrides(d: CredentialDraft): Record<string, CredentialEnvironmentSettings> {
-  return Object.fromEntries(
-    Object.entries(d.environments).filter(([, o]) => o.value_store != null || o.required != null),
-  );
 }
