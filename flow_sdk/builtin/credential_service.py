@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -267,7 +268,7 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
     With ``declare``, a name neither scope has is added from the shipped template of that name —
     into the project, or the user scope for a provider key — with no values.
     """
-    from flow_sdk.builtin.credential import CredentialAmbiguous, CredentialNotFound, Credential  # noqa: PLC0415
+    from flow_sdk.builtin.credential import Credential, CredentialAmbiguous, CredentialNotFound  # noqa: PLC0415
 
     try:
         return await Credential.get(name, project)
@@ -407,14 +408,29 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
     return declared
 
 
-async def place_values(deployment_id: str, project_id: str, file: str) -> dict[str, Any]:
-    """Write the values the hub dropped where ``deployment_id`` reads them: ``{placed, failed}`` names."""
-    from flow_sdk.builtin.credential_store import Placement  # noqa: PLC0415
+async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deployment", Placement]:
+    """Where a deployment's machine reads its values: the row this machine keeps for ``deployment_id``
+    (``adopt_placement`` re-keys the agent's; ``expose-endpoints`` keys a serving one), else this
+    machine's own — the machine IS that deployment, and the hub places before, or without, a successful
+    adopt. The environment is the one the hub sends, never the row's (a serving row carries the
+    instance default); it becomes this instance's default, so the agent and every terminal read it."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.instance_settings.environment import set_default_environment  # noqa: PLC0415
+
+    if environment:
+        environment = set_default_environment(environment)
+    row = (await Deployment.get_by_id(deployment_id) if deployment_id else None) or await Deployment.this_computer()
+    placement = await Placement.of(row)
+    return row, replace(placement, environment=environment) if environment else placement
+
+
+async def place_values(deployment_id: str, project_id: str, file: str, environment: str = "") -> dict[str, Any]:
+    """Write the values the hub dropped where this machine reads them for ``deployment_id``:
+    ``{placed, failed}`` names."""
 
     values = _take_dropped(file)
-    deployment = await _deployment(deployment_id)
+    deployment, placement = await _on_this_machine(deployment_id, environment)
     project = await get_project(project_id) if project_id else None
-    placement = await Placement.of(deployment)
     declared = await _declaring(list(values), project, deployment)
     placed: list[str] = []
     failed: dict[str, str] = {}
@@ -431,12 +447,12 @@ async def place_values(deployment_id: str, project_id: str, file: str) -> dict[s
     return {"placed": sorted(placed), "failed": failed}
 
 
-async def unplace_values(deployment_id: str, project_id: str, names: list[str]) -> dict[str, Any]:
-    """Remove ``names`` from wherever ``deployment_id`` reads them on this machine: ``{removed}``."""
+async def unplace_values(deployment_id: str, project_id: str, names: list[str], environment: str = "") -> dict[str, Any]:
+    """Remove ``names`` from wherever this machine reads them for ``deployment_id``: ``{removed}``."""
     from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
-    from flow_sdk.builtin.credential_store import Placement, forget_in, secret_store_ref  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import forget_in, secret_store_ref  # noqa: PLC0415
 
-    placement = await Placement.of(await _deployment(deployment_id))
+    _, placement = await _on_this_machine(deployment_id, environment)
     project = await get_project(project_id) if project_id else None
     declared = await declared_vars(project)
     refs = [secret_store_ref(declared[n].spec, declared[n].scope, n, placement) for n in names if n in declared]
