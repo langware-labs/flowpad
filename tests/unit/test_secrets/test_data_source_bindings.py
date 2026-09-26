@@ -211,7 +211,7 @@ async def _channel_pack_in_two_environments(project):
         manifest={"name": "channel-pack", "vars": {"CHANNEL_API_KEY": {"label": "key"}}, "setup": "Test pack."},
         values={"CHANNEL_API_KEY": "dev-key"},
     )
-    await set_credential_values(str(spec.typeid), {"CHANNEL_API_KEY": "prod-key"}, "production")
+    await set_credential_values(str(spec.typeid), {"CHANNEL_API_KEY": "prod-key"}, str((await _production_deployment()).id))
 
 
 async def _production_deployment():
@@ -258,7 +258,9 @@ async def test_with_no_deployment_a_source_reads_the_instance_default_environmen
     agent = await _agent_in(project)
     row = make_data_source("channel-test", owner=f"agent-{agent.id}")
     with patch.object(environment_settings.app_config, "get_config", return_value="production"):
+        environment_settings.reset_cache()  # a cloud box adopting its placement sets it the same way
         assert _value(await resolve_credentials(CHANNEL, row), "api_key") == "prod-key"
+    environment_settings.reset_cache()
 
 
 async def test_an_undeclared_credential_resolves_nothing_even_with_a_key_in_config(project):

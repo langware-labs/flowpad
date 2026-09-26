@@ -16,7 +16,7 @@ bound is what it uses, and the binding is saved on the row so every background p
   default) store; otherwise the named machine secret. A config is value-free: never read here.
 * ``credential`` + ``vars`` — ``{value key: env var}`` of a named Credential, resolved for the
   row's owner the way a worker process resolves its secrets (the owning agent's project over the
-  user scope), from the environment of the deployment that answers the row.
+  user scope), where the deployment that answers the row keeps them.
 """
 from __future__ import annotations
 
@@ -58,7 +58,7 @@ async def _declared(auth: AuthSpec, row: Any) -> ResolvedSecrets:
     from flow_sdk.builtin.credential_resolver import (  # noqa: PLC0415
         credentials_in_scope,
         declare,
-        environment_for_source,
+        placement_for_source,
         resolve_project_secrets,
     )
 
@@ -68,7 +68,7 @@ async def _declared(auth: AuthSpec, row: Any) -> ResolvedSecrets:
     if not pairs:
         return ResolvedSecrets()
     loaded = await resolve_project_secrets(
-        project, only=auth.vars.values(), declared=declare(pairs), environment=await environment_for_source(row)
+        project, only=auth.vars.values(), declared=declare(pairs), placement=await placement_for_source(row)
     )
     values = {}
     for key, var in auth.vars.items():

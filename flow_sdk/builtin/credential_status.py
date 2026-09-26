@@ -1,33 +1,38 @@
 """The value-free status of every credential a project (and the user) declares,
-in one environment.
+at one deployment (default: this computer).
 
 Reads each store once: one env-file listing and one git probe per scope root,
-and one vault listing. Values are never read.
+one vault listing, and one name listing per remote store a variable lives in.
+Values are never read.
 """
 from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING, Optional
 
-from flow_sdk.builtin.credential_resolver import credentials_in_scope, declare, known_environments
-from flow_sdk.builtin.credential_store import CredentialScope, project_scope, user_scope
-from flow_sdk.schema.data_spec.credential_contract import (
-    DEFAULT_ENVIRONMENT,
-    VALUE_STORE_ENV,
-    VALUE_STORE_VAULT,
-    normalize_environment,
+from flow_sdk.builtin.credential_resolver import (
+    credentials_in_scope,
+    declare,
+    known_deployments,
+    placement_for_deployment,
 )
+from flow_sdk.builtin.credential_store import CredentialScope, Placement, project_scope, secret_store_ref, user_scope
+from flow_sdk.schema.data_spec.credential_contract import VALUE_STORE_ENV, VALUE_STORE_VAULT
 from flow_sdk.schema.data_spec.credential_status_spec import (
     CredentialsStatusSpec,
     CredentialStatusRowSpec,
     CredentialVarStatusSpec,
+    DeploymentChoiceSpec,
     DetectedKeySpec,
     ScopeFileStatusSpec,
 )
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.project import Project
+    from flow_sdk.secrets import SecretStoreRef
+
+#: A local store type → the word the screen uses for it.
+_LOCAL = {"env_file": VALUE_STORE_ENV, "vault": VALUE_STORE_VAULT}
 
 
 def _vault_names() -> tuple[bool, set[str]]:
@@ -64,51 +69,60 @@ def _file_status(scope: CredentialScope, environment: str) -> tuple[dict, list[d
     return head, list_env_local(scope.root, environment)
 
 
-def _in_vault(
-    spec: "Credential", scope: CredentialScope, env_var: str, names: set[str], environment: str
-) -> bool:
-    """Whether the vault holds this variable — checked for either store, so a
-    value kept in the store the credential does not read shows as ``wrong-store``."""
-    from flow_sdk.schema.data_spec.credential_contract import vault_name  # noqa: PLC0415
-
-    try:
-        name = vault_name(
-            scope=scope.scope,
-            project_id=scope.project_id,
-            env_var=env_var,
-            lm_provider=spec.lm_provider or "",
-            environment=environment,
-        )
-    except ValueError:  # a hand-authored provider key outside its rules has no vault name
-        return False
-    return name in names
+def _vault_entry(ref: "SecretStoreRef", env_var: str) -> str:
+    return (ref.config.get("entries") or {}).get(env_var) or f"{ref.config.get('prefix', '')}{env_var}"
 
 
-async def credentials_status(
-    project: Optional["Project"], environment: str = DEFAULT_ENVIRONMENT
-) -> CredentialsStatusSpec:
-    environment = normalize_environment(environment)
+async def _remote_names(refs: list["SecretStoreRef"]) -> dict[tuple[str, str], Optional[set[str]]]:
+    """``{ref.key: names}`` for each remote store; ``None`` for one that could not be asked."""
+    from flow_sdk.secrets import SecretStore  # noqa: PLC0415
+
+    async def names(ref: "SecretStoreRef") -> Optional[set[str]]:
+        try:
+            return set(await SecretStore.from_ref(ref).names())
+        except Exception:  # noqa: BLE001 — reported per variable as unreachable
+            return None
+
+    unique = list({ref.key: ref for ref in refs}.values())
+    return dict(zip((ref.key for ref in unique), await asyncio.gather(*(names(ref) for ref in unique))))
+
+
+async def credentials_status(project: Optional["Project"], deployment_id: str = "") -> CredentialsStatusSpec:
+    placement: Placement = await placement_for_deployment(deployment_id)
+    environment = placement.environment
     pairs = await credentials_in_scope(project)
     declared = declare(pairs)
-    (vault_enabled, vault_names), environments = await asyncio.gather(
-        asyncio.to_thread(_vault_names), known_environments()
-    )
+    (vault_enabled, vault_names), deployments = await asyncio.gather(asyncio.to_thread(_vault_names), known_deployments())
 
     scopes = [user_scope()] + ([project_scope(project)] if project is not None else [])
     files = await asyncio.gather(*(asyncio.to_thread(_file_status, s, environment) for s in scopes))
     env_keys = {s.key: {row["key"] for row in rows} for s, (_, rows) in zip(scopes, files)}
 
+    refs = {(str(spec.id), name): secret_store_ref(spec, scope, name, placement) for spec, scope in pairs for name in spec.var_names()}
+    remote = await _remote_names([ref for ref in refs.values() if ref.type not in _LOCAL])
+
     rows: list[CredentialStatusRowSpec] = []
     for spec, scope in pairs:
         keys = env_keys.get(scope.key, set())
-        store = spec.store_for(environment)
         var_rows: list[CredentialVarStatusSpec] = []
-        required = set(spec.required_var_names(environment))
+        required = set(placement.required(spec))
+        stores: set[str] = set()
         for env_var, var in (spec.vars or {}).items():
+            ref = refs[(str(spec.id), env_var)]
+            store = _LOCAL.get(ref.type, ref.type)
+            stores.add(store)
             in_env = env_var in keys
-            in_vault = _in_vault(spec, scope, env_var, vault_names, environment)
-            present = in_vault if store == VALUE_STORE_VAULT else in_env
-            found_in = VALUE_STORE_VAULT if in_vault else (VALUE_STORE_ENV if in_env else None)
+            vault_ref = ref if ref.type == "vault" else secret_store_ref(spec, scope, env_var, _as_vault(placement))
+            in_vault = _vault_entry(vault_ref, env_var) in vault_names
+            if ref.type in _LOCAL:
+                present = in_vault if ref.type == "vault" else in_env
+                found_in = VALUE_STORE_VAULT if in_vault else (VALUE_STORE_ENV if in_env else None)
+                warning = None if present else ("wrong-store" if found_in else "missing")
+            else:
+                held = remote.get(ref.key)
+                present = held is not None and env_var in held
+                found_in = store if present else None
+                warning = None if present else ("unreachable" if held is None else "missing")
             winner = declared.get(env_var)
             shadowed_by = str(winner.spec.typeid) if winner is not None and winner.spec.id != spec.id else None
             var_rows.append(
@@ -121,9 +135,10 @@ async def credentials_status(
                     help_url=var.help_url,
                     secret=var.secret,
                     required=env_var in required,
+                    store=store,
                     present=present,
                     found_in=found_in,
-                    warning=None if present else ("wrong-store" if found_in else "missing"),
+                    warning=warning,
                     shadowed_by=shadowed_by,
                 )
             )
@@ -148,9 +163,7 @@ async def credentials_status(
                 scope=scope.scope,
                 project_id=scope.project_id,
                 environment=environment,
-                value_store=store,
-                default_value_store=spec.value_store,
-                environments=dict(spec.environments or {}),
+                value_store=stores.pop() if len(stores) == 1 else "mixed",
                 lm_provider=spec.lm_provider or "",
                 state=state,
                 vars=var_rows,
@@ -170,9 +183,23 @@ async def credentials_status(
 
     return CredentialsStatusSpec(
         project_id=str(project.id) if project is not None else None,
+        deployment_id=placement.deployment_id,
         environment=environment,
-        environments=environments if environment in environments else [*environments, environment],
+        deployments=[
+            DeploymentChoiceSpec(
+                id=str(row.id), name=row.name or "", environment=row.environment or environment,
+                this_computer=row.is_this_computer,
+            )
+            for row in deployments
+        ],
         vault_enabled=vault_enabled,
         credentials=rows,
         files=file_rows,
     )
+
+
+def _as_vault(placement: Placement) -> Placement:
+    """The same placement with everything in the vault — where a value kept in the wrong store is looked for."""
+    from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT, DeploymentSecretsSpec  # noqa: PLC0415
+
+    return Placement(DeploymentSecretsSpec(store=VAULT), placement.environment, placement.deployment_id)

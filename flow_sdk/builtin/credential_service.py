@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from flow_sdk.builtin.credential_store import (
     CredentialScope,
+    Placement,
     forget_values,
     project_scope,
     scope_of,
@@ -32,21 +33,19 @@ from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
     SCOPE_USER,
-    normalize_environment,
 )
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialDeletedSpec
 from flow_sdk.secrets import VaultNotEnabled
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.project import Project
     from flow_sdk.builtin.credential import Credential
+    from flow_sdk.builtin.deployment import Deployment
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.secrets import SecretStoreRef
 
 logger = logging.getLogger(__name__)
 
-_MANIFEST_FIELDS = (
-    "title", "description", "icon_name", "help_url", "setup_wiki", "setup", "value_store", "lm_provider", "vars",
-    "environments",
-)
+_MANIFEST_FIELDS = ("title", "description", "icon_name", "help_url", "setup_wiki", "setup", "lm_provider", "vars")
 
 
 class CredentialError(ValueError):
@@ -94,22 +93,35 @@ async def _owned_credential(typeid: str) -> tuple["Credential", CredentialScope,
     return spec, scope, project
 
 
-def _environment(environment: Optional[str]) -> str:
-    try:
-        return normalize_environment(environment)
-    except ValueError as e:
-        raise CredentialError(str(e)) from e
+async def _deployment(deployment_id: Optional[str]) -> "Deployment":
+    """The deployment values are read and written at: ``deployment_id``'s, else this computer."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+    if not deployment_id:
+        return await Deployment.this_computer()
+    row = await Deployment.get_by_id(str(deployment_id).removeprefix("deployment-"))
+    if row is None:
+        raise CredentialError("deployment not found")
+    return row
 
 
-async def _write_values(
-    spec: "Credential", scope: CredentialScope, values: dict[str, Any], environment: str = DEFAULT_ENVIRONMENT
-) -> None:
+def _store_ref(store: str) -> "SecretStoreRef":
+    """A store word from a form or a CLI (``env`` / ``env_file`` / ``vault``) as a store ref."""
+    from flow_sdk.schema.data_spec.deployment_secrets_spec import ENV_FILE, VAULT  # noqa: PLC0415
+
+    refs = {"env": ENV_FILE, "env_file": ENV_FILE, "vault": VAULT}
+    if store not in refs:
+        raise CredentialError(f"unknown store {store!r}; expected one of {sorted(refs)}")
+    return refs[store]
+
+
+async def _write_values(spec: "Credential", scope: CredentialScope, values: dict[str, Any], placement: Placement) -> None:
     from flow_sdk.builtin.env_local_store import EnvLocalNotWritable  # noqa: PLC0415
 
     unknown = sorted(set(values) - set(spec.vars or {}))
     if unknown:
         raise CredentialError(f"{', '.join(unknown)} is not a variable of this credential")
-    if spec.lm_provider and environment != DEFAULT_ENVIRONMENT and any(values.values()):
+    if spec.lm_provider and placement.environment != DEFAULT_ENVIRONMENT and any(values.values()):
         raise CredentialError("an LLM provider key has no per-environment value; deployments are hub-funded")
     for env_var, value in values.items():
         pattern = spec.vars[env_var].pattern
@@ -119,7 +131,7 @@ async def _write_values(
     try:
         for env_var, value in values.items():
             if value is not None and str(value) != "":
-                await write_value(spec, scope, env_var, str(value), environment)
+                await write_value(spec, scope, env_var, str(value), placement)
     except (EnvLocalNotWritable, VaultNotEnabled) as e:
         raise CredentialError(str(e), code=e.code) from e
 
@@ -160,9 +172,12 @@ async def save_credential(
     project_id: Optional[str] = None,
     typeid: Optional[str] = None,
     values: Optional[dict[str, Any]] = None,
-    environment: Optional[str] = None,
+    deployment_id: Optional[str] = None,
+    store: Optional[str] = None,
 ) -> "Credential":
-    """Create a credential in a scope, or update one; then write any values into ``environment``."""
+    """Create a credential in a scope, or update one; then write any values where ``deployment_id``
+    (default: this computer) keeps them. ``store`` (``env`` / ``vault``) first makes that deployment
+    keep this credential's variables there — the choice a form offers, never part of the credential."""
     from flow_sdk.assets.creation import destination_in  # noqa: PLC0415
     from flow_sdk.builtin.asset_placement import resolve_default_harness, resolve_destination  # noqa: PLC0415
     from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
@@ -173,8 +188,11 @@ async def save_credential(
     )
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
-    environment = _environment(environment)
+    deployment = await _deployment(deployment_id)
     manifest_in = dict(manifest or {})
+    # A form (or an older client) may still send where values live; that belongs to the deployment.
+    store = store or manifest_in.pop("value_store", None) or None
+    manifest_in.pop("environments", None)
     existing = None
     if typeid:
         existing, target_scope, project = await _owned_credential(typeid)
@@ -221,18 +239,21 @@ async def save_credential(
         spec.project_id = target_scope.project_id
         spec.parent_type_id = str(project.typeid) if project is not None else None
 
-    await _write_values(spec, target_scope, dict(values or {}), environment)
+    if store and not parsed.lm_provider:
+        await deployment.keep_in(list(parsed.vars), _store_ref(str(store)))
+    await _write_values(spec, target_scope, dict(values or {}), await Placement.of(deployment))
     await spec.save()
     return spec
 
 
 async def set_credential_values(
-    typeid: str, values: dict[str, Any], environment: Optional[str] = None
+    typeid: str, values: dict[str, Any], deployment_id: Optional[str] = None
 ) -> "Credential":
-    """Set or rotate ``environment``'s values. Empty values are skipped, never cleared."""
-    environment = _environment(environment)
+    """Set or rotate the values ``deployment_id`` (default: this computer) reads. Empty values are
+    skipped, never cleared."""
+    placement = await Placement.of(await _deployment(deployment_id))
     spec, target_scope, _ = await _owned_credential(typeid)
-    await _write_values(spec, target_scope, dict(values or {}), environment)
+    await _write_values(spec, target_scope, dict(values or {}), placement)
     return spec
 
 
@@ -278,7 +299,7 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
 
 
 async def set_credential_by_name(
-    name: str, values: dict[str, Any], *, project_id: Optional[str] = None, environment: Optional[str] = None
+    name: str, values: dict[str, Any], *, project_id: Optional[str] = None, deployment_id: Optional[str] = None
 ) -> "Credential":
     """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed."""
     project = await get_project(project_id)
@@ -287,7 +308,7 @@ async def set_credential_by_name(
     if not any(str(v or "") for v in (values or {}).values()):
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
-    return await set_credential_values(str(spec.typeid), values, environment)
+    return await set_credential_values(str(spec.typeid), values, deployment_id)
 
 
 async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "Credential":
@@ -304,7 +325,7 @@ async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "C
 
 
 async def delete_credential(typeid: str) -> CredentialDeletedSpec:
-    """Remove a credential and every value it owns, in every environment's store.
+    """Remove a credential and every value it owns, in every store a known deployment keeps it in.
 
     Vault entries and ``.env*`` lines alike (a scope never lets two credentials declare one
     variable, so every value found is this credential's). The credential itself is removed only
@@ -312,10 +333,10 @@ async def delete_credential(typeid: str) -> CredentialDeletedSpec:
     names each store that kept something or could not be reached.
     """
     from flow_sdk.assets.asset import Asset  # noqa: PLC0415
-    from flow_sdk.builtin.credential_resolver import known_environments  # noqa: PLC0415
+    from flow_sdk.builtin.credential_resolver import known_placements  # noqa: PLC0415
+
     spec, target_scope, _ = await _owned_credential(typeid)
-    environments = [*await known_environments(), *(spec.environments or {})]
-    stores = await forget_values(spec, target_scope, environments)
+    stores = await forget_values(spec, target_scope, await known_placements())
     kept = {name for store in stores for name in store.kept}
     deleted = {name for store in stores for name in store.deleted} - kept
     names = spec.var_names()

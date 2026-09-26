@@ -54,7 +54,6 @@ async def credentials_action() -> ApiResponse:
     try:
         if method == "GET" and sub_path == "status":
             from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
-            from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT  # noqa: PLC0415
 
             params = request_info.request.query_params
             project_id = params.get("project_id")
@@ -62,7 +61,7 @@ async def credentials_action() -> ApiResponse:
             if project_id and project is None:
                 return ApiFailResponse(message="project not found")
             try:
-                status = await credentials_status(project, params.get("environment") or DEFAULT_ENVIRONMENT)
+                status = await credentials_status(project, params.get("deployment_id") or "")
             except ValueError as e:
                 return ApiFailResponse(message=str(e))
             return ApiSuccessResponse(data=status.model_dump(mode="json"))
@@ -75,18 +74,19 @@ async def credentials_action() -> ApiResponse:
                     project_id=payload.get("project_id"),
                     typeid=payload.get("typeid"),
                     values=payload.get("values") or {},
-                    environment=payload.get("environment"),
+                    deployment_id=payload.get("deployment_id"),
+                    store=payload.get("store"),
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "values":
                 spec = await set_credential_values(
-                    payload.get("typeid") or "", payload.get("values") or {}, payload.get("environment")
+                    payload.get("typeid") or "", payload.get("values") or {}, payload.get("deployment_id")
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "set":
                 spec = await set_credential_by_name(
                     payload.get("name") or "", payload.get("values") or {},
-                    project_id=payload.get("project_id"), environment=payload.get("environment"),
+                    project_id=payload.get("project_id"), deployment_id=payload.get("deployment_id"),
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "declare":

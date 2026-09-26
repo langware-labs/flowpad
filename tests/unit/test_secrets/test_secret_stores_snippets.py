@@ -34,18 +34,30 @@ async def _run(heading: str, namespace: dict | None = None, *, nth: int = 0) -> 
 
 @pytest.fixture
 async def database(in_project):
-    """The ``database`` credential the page uses: env file in development, vault in production."""
+    """The ``database`` credential the page uses, with a development value in this project's env file."""
     return await save_credential(
         scope="project",
         project_id=str(in_project.id),
         manifest={
             "name": "database",
             "vars": {"DATABASE_URL": {"label": "Database URL"}},
-            "environments": {"production": {"value_store": "vault"}},
             "setup": "Store it: `flow credentials set database DATABASE_URL=...`.",
         },
         values={"DATABASE_URL": "postgres://localhost:54322/dev"},
     )
+
+
+@pytest.fixture
+async def production(in_project):
+    """A deployment in the production environment — the ``production_id`` the page's fences name."""
+    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+
+    row = Deployment(
+        name="database (production)", kind=KIND_AGENT, parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
+        target={"provider": "e2b", "scope": "machine", "location": "sandbox"}, environment="production",
+    )
+    await row.save()
+    return row
 
 
 async def _session_free(provider: str, monkeypatch) -> None:
@@ -105,8 +117,8 @@ async def test_1_another_type_and_a_named_environment(in_project):
 # ── 2. A credential ─────────────────────────────────────────────────────────
 
 
-async def test_2_a_credential_uses_its_store_as_is(database, in_project):
-    ns = await _run("2. A credential uses its store as is")
+async def test_2_a_credentials_store_is_the_deployments(database, production, in_project):
+    ns = await _run("2. A credential's store is the deployment's", {"production_id": production.id})
 
     assert ns["names"] == ["DATABASE_URL"]
     assert read_secret(f"credential.production.project.{in_project.id}.DATABASE_URL") == "postgres://pooler.hosted.example/prod"
@@ -121,10 +133,13 @@ async def test_2_get_resolves_a_name_and_raises_rather_than_guesses(database, in
 # ── 3. Env vars ─────────────────────────────────────────────────────────────
 
 
-async def test_3_a_process_receives_the_environments_values(database, in_project):
-    await (await database.secret_store("production")).save({"DATABASE_URL": "postgres://prod"})
+async def test_3_a_process_receives_the_deployments_values(database, production, in_project):
+    from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT
 
-    ns = await _run("3. Env vars")
+    await production.keep_in(["DATABASE_URL"], VAULT)
+    await (await database.secret_store(production)).save({"DATABASE_URL": "postgres://prod"})
+
+    ns = await _run("3. Env vars", {"production_id": production.id})
 
     assert ns["secrets"]["DATABASE_URL"].get_secret_value() == "postgres://prod"
     assert ns["env"]["DATABASE_URL"] == "postgres://prod"

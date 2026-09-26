@@ -59,20 +59,33 @@ async def test_two_credentials_of_one_name_in_the_answering_scope_are_ambiguous(
     assert ambiguous.value.candidates == [str(spec.typeid) for spec in twins]
 
 
-async def test_a_credential_names_its_store_per_environment(home, in_project):
+async def _deployment(environment: str, **secrets):
+    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+    from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec
+
+    row = Deployment(
+        name=f"db ({environment})", kind=KIND_AGENT, parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
+        target={"provider": "e2b", "scope": "machine", "location": "sandbox"}, environment=environment,
+        secrets=DeploymentSecretsSpec(**secrets) if secrets else None,
+    )
+    await row.save()
+    return row
+
+
+async def test_a_credential_names_its_store_per_deployment(home, in_project):
+    from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT
+
     mount = Path(in_project.fs_storage_mount_path)
     spec = await save_credential(
-        scope="project",
-        project_id=str(in_project.id),
-        manifest=_manifest("database", "DATABASE_URL", environments={"production": {"value_store": "vault"}}),
+        scope="project", project_id=str(in_project.id), manifest=_manifest("database", "DATABASE_URL"),
     )
 
     assert spec.credentials.names() == ["DATABASE_URL"]
-    development = await spec.secret_store()
-    assert development.ref.model_dump() == {"type": "env_file", "config": {"env_file_path": str(mount / ".env.local")}}
-    staging = await spec.secret_store("staging")
+    here = await spec.secret_store()
+    assert here.ref.model_dump() == {"type": "env_file", "config": {"env_file_path": str(mount / ".env.local")}}
+    staging = await spec.secret_store(await _deployment("staging"))
     assert staging.ref.config == {"env_file_path": str(mount / ".env.staging.local")}
-    production = await spec.secret_store("production")
+    production = await spec.secret_store(await _deployment("production", store=VAULT))
     assert production.ref.model_dump() == {
         "type": "vault",
         "config": {"prefix": f"credential.production.project.{in_project.id}."},
@@ -83,11 +96,14 @@ async def test_a_credential_names_its_store_per_environment(home, in_project):
     assert read_secret(f"credential.production.project.{in_project.id}.DATABASE_URL") == "postgres://prod"
 
 
-async def test_env_file_is_accepted_as_the_env_store_spelling(home, in_project):
-    spec = await save_credential(scope="user", manifest=_manifest("personal", "QA_USER", value_store="env_file"))
+async def test_a_form_store_choice_is_kept_by_this_computer_not_the_credential(home, in_project):
+    from flow_sdk.builtin.deployment import Deployment
 
-    assert spec.value_store == "env"
-    assert (await spec.secret_store()).ref.config == {"env_file_path": str(home / ".env.local")}
+    spec = await save_credential(scope="user", manifest=_manifest("personal", "QA_USER"), store="vault")
+
+    assert "value_store" not in spec.model_dump()
+    assert (await Deployment.this_computer()).secrets.store_of("QA_USER").type == "vault"
+    assert (await spec.secret_store()).ref.config == {"prefix": "credential.user."}
 
 
 async def test_a_template_has_no_store(home):

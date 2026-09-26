@@ -41,6 +41,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
+from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+    from flow_sdk.secrets import SecretStoreRef
 
 #: What is placed. The ``compute.node`` kind is a desktop — a machine placed for
 #: a human rather than for an agent; from inside the box the two are identical
@@ -63,6 +65,8 @@ if TYPE_CHECKING:
 KIND_AGENT = "runtime.agent"
 KIND_WEB = "runtime.web"
 KIND_NODE = "compute.node"
+#: This computer itself: the place every process with no deployment of its own reads its credentials in.
+KIND_THIS_COMPUTER = "compute.this_computer"
 
 #: Providers that place a resource on a ComputeNode, so ``origin.external_id``
 #: names that node. An inventoried ``gcp`` resource is not node-backed — its
@@ -202,6 +206,15 @@ class Deployment(Entity):
         description="Credential environment: development (this computer) or a named one (production, staging, ...)",
     )
 
+    #: Where this placement's credential values live (the WHERE a credential never says). ``None``:
+    #: this computer's — an agent's local deployment reads what the rest of this machine reads.
+    #: PRIVATE: a store binding names this machine's files and vault.
+    secrets: DeploymentSecretsSpec | None = APIField(
+        default=None,
+        sharing=Sharing.PRIVATE,
+        description="Where credential values live here: a store, per-variable exceptions, extra required variables",
+    )
+
     #: Which of an element's deployments on one provider this is: ``""`` the default one, else a
     #: short name ("2", "3", …). How one agent runs in several places on this computer.
     slot: str = APIField(default="", description="Which of the element's deployments on this provider ('' = the default)")
@@ -223,6 +236,57 @@ class Deployment(Entity):
     def with_element(self, element: Optional[Entity]) -> "Deployment":
         """Attach the already-loaded deployed element. Returns self, for chaining."""
         self._element = element
+        return self
+
+    # ── this computer ─────────────────────────────────────────────────────
+
+    @classmethod
+    async def this_computer(cls, *, save: bool = True) -> "Deployment":
+        """This instance's own placement — found, else created (a lookup, never a minted key).
+        ``save=False`` (a dry run) returns an unsaved one instead of creating it.
+
+        Its ``environment`` follows the instance default (``development``; a cloud box adopts
+        ``production``), and its ``secrets`` are the binding every process without a deployment of
+        its own reads with — terminals, ``flow credentials``, project setup.
+        """
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+        from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
+
+        environment = get_default_environment()
+        rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["kind", KIND_THIS_COMPUTER])))
+        row = min(rows, key=lambda r: str(r.created_date or "")) if rows else None
+        if row is None:
+            row = cls(
+                name="This computer",
+                kind=KIND_THIS_COMPUTER,
+                target=DeploymentTarget(provider="local", scope="machine", location="this computer"),
+                environment=environment,
+                secrets=DeploymentSecretsSpec(),
+            )
+            if save:
+                await row.save()
+        elif save and (row.environment != environment or row.secrets is None):
+            row.environment = environment
+            row.secrets = row.secrets or DeploymentSecretsSpec()
+            await row.save()
+        return row
+
+    @property
+    def is_this_computer(self) -> bool:
+        return kind_matches(KIND_THIS_COMPUTER, self.kind)
+
+    async def secrets_binding(self) -> DeploymentSecretsSpec:
+        """Where this placement's values live: its own binding, else this computer's."""
+        if self.secrets is not None:
+            return self.secrets
+        return (await type(self).this_computer()).secrets or DeploymentSecretsSpec()
+
+    async def keep_in(self, env_vars: list[str], store: "SecretStoreRef") -> "Deployment":
+        """Keep ``env_vars``' values in ``store`` here: an exception on this placement's own binding
+        (a placement that inherited this computer's gets a copy first). Existing values are not moved."""
+        binding = await self.secrets_binding()
+        self.secrets = binding.with_store(list(env_vars), store)
+        await self.save()
         return self
 
     # ── convergence ───────────────────────────────────────────────────────

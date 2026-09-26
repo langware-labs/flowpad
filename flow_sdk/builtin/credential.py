@@ -10,9 +10,8 @@ Flowpad already has:
 * the shipped assistant project — ``system`` scope, a read-only TEMPLATE that
   declares nothing until it is added to one of the two scopes above.
 
-Where the values live is ``value_store``: the scope's ``.env.local`` or the
-encrypted vault (``credential_contract``), per environment — ``environments``
-overrides the store or the required set for a named one. The manifest is
+Where the values live is never the credential's: each Deployment says it
+(``DeploymentSecretsSpec``; ``credential_store.Placement``). The manifest is
 value-free, structurally: every parse runs through ``assert_value_free``.
 """
 from __future__ import annotations
@@ -24,23 +23,13 @@ from pydantic import field_validator
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
-from flow_sdk.schema.data_spec.credential_contract import (
-    DEFAULT_ENVIRONMENT,
-    SCOPE_PROJECT,
-    SCOPE_SYSTEM,
-    SCOPE_USER,
-    VALUE_STORE_ENV,
-    normalize_environment,
-)
-from flow_sdk.schema.data_spec.credential_spec import (
-    CURRENT_SCHEMA,
-    CredentialEnvironmentSpec,
-    CredentialVarSpec,
-)
+from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_SYSTEM, SCOPE_USER
+from flow_sdk.schema.data_spec.credential_spec import CURRENT_SCHEMA, CredentialVarSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.requirements import SecretRequirements
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.deployment import Deployment
     from flow_sdk.builtin.project import Project
     from flow_sdk.secrets import SecretStore
 
@@ -74,14 +63,12 @@ class Credential(Entity):
     setup_wiki: str = APIField(default="")
     #: How an agent obtains and stores the values (``CredentialSpec.setup``).
     setup: str = APIField(default="")
-    value_store: str = APIField(default=VALUE_STORE_ENV)
     lm_provider: str = APIField(default="")
     vars: dict[str, CredentialVarSpec] = APIField(default_factory=dict)
-    environments: dict[str, CredentialEnvironmentSpec] = APIField(default_factory=dict)
 
     _api_visible: ClassVar[bool] = True
 
-    @field_validator("vars", "environments", mode="before")
+    @field_validator("vars", mode="before")
     @classmethod
     def _project_nested(cls, value: Any, info: Any) -> Any:
         """Read each nested entry field by field, dropping keys the model does not name.
@@ -93,17 +80,11 @@ class Credential(Entity):
         """
         if not isinstance(value, dict):
             return value
-        model = CredentialVarSpec if info.field_name == "vars" else CredentialEnvironmentSpec
-        known = set(model.model_fields)
+        known = set(CredentialVarSpec.model_fields)
         return {
             name: {k: v for k, v in spec.items() if k in known} if isinstance(spec, dict) else spec
             for name, spec in value.items()
         }
-
-    def store_for(self, environment: str = DEFAULT_ENVIRONMENT) -> str:
-        """Where this credential's values live in ``environment``."""
-        override = (self.environments or {}).get(environment)
-        return (override and override.value_store) or self.value_store
 
     @property
     def is_template(self) -> bool:
@@ -114,12 +95,9 @@ class Credential(Entity):
         """Every variable this credential is made of, in manifest order."""
         return list(self.vars or {})
 
-    def required_var_names(self, environment: str = DEFAULT_ENVIRONMENT) -> list[str]:
+    def required_var_names(self) -> list[str]:
         """The variables that must have a value for the credential to be connected
-        in ``environment`` — the environment's own list when it names one."""
-        override = (self.environments or {}).get(environment)
-        if override is not None and override.required is not None:
-            return [name for name in self.vars or {} if name in set(override.required)]
+        (a deployment may require more: ``Placement.required``)."""
         return [name for name, spec in (self.vars or {}).items() if spec.required]
 
     @property
@@ -127,15 +105,21 @@ class Credential(Entity):
         """The names this credential needs a store to hold — the same accessor a data source has."""
         return SecretRequirements(self.var_names())
 
-    async def secret_store(self, environment: str = DEFAULT_ENVIRONMENT) -> "SecretStore":
-        """The store ``credential.json`` names for ``environment``, configured for this row's scope."""
-        from flow_sdk.builtin.credential_store import scope_of, secret_store_ref  # noqa: PLC0415
+    async def secret_store(self, deployment: Optional["Deployment"] = None) -> "SecretStore":
+        """The store ``deployment`` (default: this computer) keeps this credential's values in,
+        configured for this row's scope. Raises ``LookupError`` when its variables are split
+        across stores there — ask per variable (``credential_store.secret_store_ref``)."""
+        from flow_sdk.builtin.credential_store import Placement, scope_of, secret_store_ref  # noqa: PLC0415
         from flow_sdk.secrets import SecretStore  # noqa: PLC0415
 
         scope, _ = await scope_of(self)
         if scope is None:
             raise LookupError(f"credential {self.name!r} is a template or its project is gone; it has no store")
-        return SecretStore.from_ref(secret_store_ref(self, scope, normalize_environment(environment)))
+        placement = await Placement.of(deployment)
+        refs = {ref.key: ref for ref in (secret_store_ref(self, scope, name, placement) for name in self.var_names())}
+        if len(refs) != 1:
+            raise LookupError(f"credential {self.name!r} keeps its variables in {len(refs)} stores here; ask per variable")
+        return SecretStore.from_ref(next(iter(refs.values())))
 
     @classmethod
     async def get(cls, name: str, project: Optional["Project"] = None) -> "Credential":

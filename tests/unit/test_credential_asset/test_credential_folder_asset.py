@@ -63,7 +63,7 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
     ent = await Entity.get_by_asset_ref(str(folder))
     assert ent is not None, "the walker did not pick up the manifest"
     assert ent.type == "credential"
-    assert (ent.name, ent.title, ent.value_store) == ("twilio", "Twilio", "env")
+    assert (ent.name, ent.title) == ("twilio", "Twilio")
     assert sorted(ent.vars) == ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]
     assert ent.vars["TWILIO_AUTH_TOKEN"].secret is True
     assert ent.vars["TWILIO_ACCOUNT_SID"].secret is False
@@ -147,12 +147,14 @@ def test_the_shipped_gmail_definition_is_valid():
     assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
     assert manifest.vars["GMAIL_ADDRESS"].secret is False
     assert manifest.vars["GMAIL_APP_PASSWORD"].secret is True
-    assert manifest.value_store == "env"
 
 
-def test_the_store_defaults_to_the_env_file():
-    assert CredentialSpec.model_validate({**TWILIO}).value_store == "env"
-    assert CredentialSpec.model_validate({**TWILIO, "value_store": "vault"}).value_store == "vault"
+def test_a_credential_never_says_where_its_values_live():
+    """WHERE is a deployment's (``DeploymentSecretsSpec``). A manifest written before 0.2.178 still
+    loads: its store keys are dropped on read, and the boot lift moves them onto deployments."""
+    legacy = {**TWILIO, "value_store": "vault", "environments": {"production": {"value_store": "env"}}}
+    parsed = CredentialSpec.model_validate(legacy)
+    assert "value_store" not in parsed.model_dump() and "environments" not in parsed.model_dump()
 
 
 @pytest.mark.parametrize(
@@ -161,7 +163,6 @@ def test_the_store_defaults_to_the_env_file():
         ({"schema": 1}, "unsupported schema"),
         ({"vars": {}}, "no variables"),
         ({"vars": {"9BAD": {"label": "x"}}}, "invalid env var name"),
-        ({"value_store": "s3"}, "unknown store"),
         ({"name": "has space"}, "a name is a folder name"),
         ({"unknown_key": 1}, "unknown key"),
     ],
@@ -186,8 +187,7 @@ def test_the_shipped_llm_definitions_are_valid(folder, expected):
     assert manifest.lm_provider == provider
     assert list(manifest.vars) == [env_var]
     assert manifest.vars[env_var].secret is True
-    # A provider key funds the machine: it lives in the vault, always.
-    assert manifest.value_store == "vault"
+    # A provider key funds the machine: its value lives in the vault entry the funding resolver reads.
 
 
 def test_a_provider_key_is_stored_where_the_funding_resolver_reads():
@@ -206,10 +206,6 @@ def test_a_provider_key_is_stored_where_the_funding_resolver_reads():
         ({"lm_provider": "flowpad"}, "the hub login is the key; there is nothing to store"),
         ({"lm_provider": "cohere"}, "not a provider this box can hold a key for"),
         ({"lm_provider": "openai"}, "a provider names ONE key, and TWILIO declares two"),
-        (
-            {"lm_provider": "openai", "value_store": "env", "vars": {"OPENAI_API_KEY": {}}},
-            "a provider key is never written to a file",
-        ),
     ],
 )
 def test_lm_provider_authoring_rules_are_load_errors(override, why):
