@@ -17,6 +17,7 @@ import type {
   Credential,
   CredentialStatusRow,
   CredentialValueStore,
+  LocalValueStore,
   SaveCredentialRequest,
 } from '@sdk';
 import { isRequired, isSecret } from '@sdk';
@@ -214,6 +215,9 @@ export const valuesDraft = (row: CredentialStatusRow) => fromRow(row, 'values');
 export const namesLocked = (d: CredentialDraft) => d.mode === 'template' || d.mode === 'pack' || d.mode === 'values';
 /** Scope is chosen once, at creation; a provider key is always the user's. */
 export const scopeLocked = (d: CredentialDraft) => !!d.typeid || d.mode === 'pack' || !!d.lmProvider;
+/** A store the form can set; `mixed` (split per variable) or a remote store is left as the deployment has it. */
+const isLocal = (store: CredentialValueStore): store is LocalValueStore => store === 'env' || store === 'vault';
+
 /** A provider key lives in the vault; packed keys already live in the file. */
 export const storeLocked = (d: CredentialDraft) => d.mode === 'values' || d.mode === 'pack' || !!d.lmProvider;
 
@@ -298,7 +302,7 @@ export function toSaveRequest(d: CredentialDraft, projectId: string | null, depl
       vars,
     },
     values: draftValues(d),
-    ...(!d.lmProvider && (d.store === 'env' || d.store === 'vault') ? { store: d.store as 'env' | 'vault' } : {}),
+    ...(!d.lmProvider && isLocal(d.store) ? { store: d.store } : {}),
     ...(deploymentId ? { deployment_id: deploymentId } : {}),
   };
 }

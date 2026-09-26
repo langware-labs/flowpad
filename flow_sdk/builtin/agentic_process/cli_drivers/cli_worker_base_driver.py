@@ -569,7 +569,7 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     This must only be called on spawn-time env dicts. It must not mutate
     AgentOptions.env_vars because those are persisted and rendered.
     """
-    from flow_sdk.builtin.credential_resolver import placement_for, resolve_attached_secrets  # noqa: PLC0415
+    from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     project = None
@@ -586,8 +586,7 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     # None = nothing curated on this node, i.e. every declared variable. With no
     # project, only user-scope credentials apply. Values come from where the process's
     # Deployment keeps them, else this computer.
-    placement = await placement_for(process)
-    for env_var, value in (await resolve_attached_secrets(project, placement=placement)).items():
+    for env_var, value in (await resolve_attached_secrets(project, process=process)).items():
         # setdefault, not assignment: an explicitly-set env var wins.
         env.setdefault(env_var, value.get_secret_value())
 

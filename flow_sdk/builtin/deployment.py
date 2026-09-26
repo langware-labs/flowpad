@@ -242,17 +242,16 @@ class Deployment(Entity):
 
     @classmethod
     async def this_computer(cls, *, save: bool = True) -> "Deployment":
-        """This instance's own placement — found, else created (a lookup, never a minted key).
+        """This instance's own placement — found, else created once (a lookup, never a minted key).
         ``save=False`` (a dry run) returns an unsaved one instead of creating it.
 
-        Its ``environment`` follows the instance default (``development``; a cloud box adopts
-        ``production``), and its ``secrets`` are the binding every process without a deployment of
-        its own reads with — terminals, ``flow credentials``, project setup.
+        Its ``secrets`` are the binding every process without a deployment of its own reads with —
+        terminals, ``flow credentials``, project setup. Its environment is not stored: it is the
+        instance default (``development``; a cloud box adopts ``production``), read as it is now.
         """
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
         from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
 
-        environment = get_default_environment()
         rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["kind", KIND_THIS_COMPUTER])))
         row = min(rows, key=lambda r: str(r.created_date or "")) if rows else None
         if row is None:
@@ -260,15 +259,30 @@ class Deployment(Entity):
                 name="This computer",
                 kind=KIND_THIS_COMPUTER,
                 target=DeploymentTarget(provider="local", scope="machine", location="this computer"),
-                environment=environment,
                 secrets=DeploymentSecretsSpec(),
             )
             if save:
                 await row.save()
-        elif save and (row.environment != environment or row.secrets is None):
-            row.environment = environment
-            row.secrets = row.secrets or DeploymentSecretsSpec()
-            await row.save()
+        row.environment = get_default_environment()
+        return row
+
+    @classmethod
+    async def others(cls) -> "list[Deployment]":
+        """Every deployment but this computer."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        return await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.NE, operands=["kind", KIND_THIS_COMPUTER])))
+
+    @classmethod
+    async def resolve(cls, deployment_id: str = "") -> "Deployment":
+        """The deployment ``deployment_id`` names (an id or a ``deployment-`` typeid); empty is this
+        computer. Raises ``LookupError`` for one that does not exist."""
+        deployment_id = str(deployment_id or "").strip().removeprefix("deployment-")
+        if not deployment_id:
+            return await cls.this_computer()
+        row = await cls.get_by_id(deployment_id)
+        if row is None:
+            raise LookupError("deployment not found")
         return row
 
     @property

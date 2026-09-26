@@ -10,6 +10,7 @@ from flow_sdk.builtin.credential_service import save_credential
 from flow_sdk.builtin.credential import CredentialAmbiguous, CredentialNotFound, Credential
 from flow_sdk.builtin.credential_store import user_scope
 from flow_sdk.cli.auth.secrets import read_secret
+from tests.utils.deployments import make_deployment
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -59,17 +60,6 @@ async def test_two_credentials_of_one_name_in_the_answering_scope_are_ambiguous(
     assert ambiguous.value.candidates == [str(spec.typeid) for spec in twins]
 
 
-async def _deployment(environment: str, **secrets):
-    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
-    from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec
-
-    row = Deployment(
-        name=f"db ({environment})", kind=KIND_AGENT, parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
-        target={"provider": "e2b", "scope": "machine", "location": "sandbox"}, environment=environment,
-        secrets=DeploymentSecretsSpec(**secrets) if secrets else None,
-    )
-    await row.save()
-    return row
 
 
 async def test_a_credential_names_its_store_per_deployment(home, in_project):
@@ -83,9 +73,9 @@ async def test_a_credential_names_its_store_per_deployment(home, in_project):
     assert spec.credentials.names() == ["DATABASE_URL"]
     here = await spec.secret_store()
     assert here.ref.model_dump() == {"type": "env_file", "config": {"env_file_path": str(mount / ".env.local")}}
-    staging = await spec.secret_store(await _deployment("staging"))
+    staging = await spec.secret_store(await make_deployment("staging"))
     assert staging.ref.config == {"env_file_path": str(mount / ".env.staging.local")}
-    production = await spec.secret_store(await _deployment("production", store=VAULT))
+    production = await spec.secret_store(await make_deployment("production", store=VAULT))
     assert production.ref.model_dump() == {
         "type": "vault",
         "config": {"prefix": f"credential.production.project.{in_project.id}."},

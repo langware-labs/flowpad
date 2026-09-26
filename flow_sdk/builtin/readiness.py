@@ -14,15 +14,13 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
 from flow_sdk.schema.data_spec.permission_spec import (
     MECHANISM_API_KEY,
-    MECHANISM_OAUTH,
     STATUS_DECLARED,
     STATUS_MISSING,
     STATUS_VERIFIED,
-    provider_of,
 )
 from flow_sdk.schema.data_spec.requirement_spec import (
     REQUIREMENT_CONNECTION,
@@ -46,26 +44,51 @@ _VAR_REF = re.compile(r"^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$")
 # ── requirements ──────────────────────────────────────────────────────────────
 
 
-async def _credential_for(names: dict[str, str], project: Any) -> dict[str, str]:
+async def auth_of(source: "DataSource") -> Any:
+    """``source``'s driver ``auth`` — its driver loaded first (an authored driver's folder loads on
+    first use); ``None`` when the driver cannot load: it needs nothing we can name."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+
+    try:
+        await DataDriver.get(source.provider or "")
+    except Exception:  # noqa: BLE001
+        return None
+    return source._auth()
+
+
+def connection_of(req: RequirementSpec) -> Optional[tuple[str, list[str]]]:
+    """``(connection provider, scopes)`` a requirement is granted through, or ``None`` when no
+    connection grants it (a credential, a variable, an API-key or IAM permission)."""
+    from flow_sdk import permissions  # noqa: PLC0415
+
+    if req.kind == REQUIREMENT_CONNECTION:
+        return req.name, list(req.scopes)
+    if req.kind == REQUIREMENT_PERMISSION:
+        return permissions.oauth_grant(req.name)
+    return None
+
+
+async def _owners(names: Iterable[str], project: Any) -> dict[str, str]:
     """``{VAR: credential name}`` for the variables a declared credential (else a shipped template)
-    declares — the project's own over the user's, as a process would resolve them."""
-    from flow_sdk.builtin.credential_resolver import credentials_in_scope  # noqa: PLC0415
+    declares — the owner a process in ``project`` would read (``credential_resolver.declare``)."""
+    from flow_sdk.builtin.credential_resolver import credentials_in_scope, declare  # noqa: PLC0415
     from flow_sdk.builtin.credential_service import shipped_templates  # noqa: PLC0415
 
-    owner: dict[str, str] = {}
-    for spec, _ in [*[(t, None) for t in await shipped_templates()], *await credentials_in_scope(project)]:
-        for var in spec.var_names():
+    names = set(names)
+    declared = declare(await credentials_in_scope(project))
+    owner = {name: str(declared[name].spec.name) for name in names if name in declared}
+    for template in await shipped_templates():
+        for var in template.var_names():
             if var in names:
-                owner[var] = str(spec.name)
+                owner.setdefault(var, str(template.name))
     return owner
 
 
 async def requirements_of_source(source: "DataSource", project: Any = None) -> list[RequirementSpec]:
     """What one data source needs, from its driver: permissions, a credential, variables."""
     from flow_sdk import permissions  # noqa: PLC0415
-    from flow_sdk.builtin.project_setup import _auth_of  # noqa: PLC0415
 
-    auth = await _auth_of(source)
+    auth = await auth_of(source)
     if auth is None:
         return []
     used_by = [str(source.name or source.id)]
@@ -81,7 +104,7 @@ async def requirements_of_source(source: "DataSource", project: Any = None) -> l
                                    derived=True, used_by=used_by))
     names = list(auth.env) if auth.env else list(auth.secrets)
     if names:
-        owner = await _credential_for({n: n for n in names}, project)
+        owner = await _owners(names, project)
         by_credential: dict[str, list[str]] = {}
         for name in names:
             if name in owner:
@@ -111,12 +134,18 @@ def merge(requirements: list[RequirementSpec]) -> list[RequirementSpec]:
     return list(merged.values())
 
 
-async def derive_requirements(agent: "Agent") -> list[RequirementSpec]:
-    """Everything ``agent`` needs, from what it owns right now."""
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+async def _project_of(agent: "Agent") -> Any:
+    from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
 
-    project = await Project.get_by_id(str(agent.project_id)) if getattr(agent, "project_id", None) else None
+    return await owning_project(agent)
+
+
+async def derive_requirements(agent: "Agent", project: Any = None) -> list[RequirementSpec]:
+    """Everything ``agent`` needs, from what it owns right now (``project``: its own, looked up
+    when not given)."""
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    project = project or await _project_of(agent)
     out: list[RequirementSpec] = []
     for source in await DataSource.find_owned(agent.typeid):
         out += await requirements_of_source(source, project)
@@ -125,7 +154,7 @@ async def derive_requirements(agent: "Agent") -> list[RequirementSpec]:
         for value in (spec.env or {}).values():
             if match := _VAR_REF.match(str(value).strip()):
                 refs.setdefault(match.group(1), f"mcp:{spec.name}")
-    owner = await _credential_for(refs, project)
+    owner = await _owners(refs, project)
     for var, user in refs.items():
         kind = REQUIREMENT_CREDENTIAL if var in owner else REQUIREMENT_VARIABLE
         out.append(RequirementSpec(kind=kind, name=owner.get(var, var), vars=[var] if var in owner else [],
@@ -133,10 +162,10 @@ async def derive_requirements(agent: "Agent") -> list[RequirementSpec]:
     return merge(out)
 
 
-async def requirements(agent: "Agent") -> list[RequirementSpec]:
+async def requirements(agent: "Agent", project: Any = None) -> list[RequirementSpec]:
     """The agent's requirements now: its authored entries, then what it owns."""
     authored = [r for r in agent.requirements or [] if not r.derived]
-    return merge([*authored, *await derive_requirements(agent)])
+    return merge([*authored, *await derive_requirements(agent, project)])
 
 
 async def refresh_requirements(agent: "Agent") -> bool:
@@ -178,40 +207,46 @@ def _values_item(req: RequirementSpec, names: list[str], present: dict[str, tupl
 
 async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -> ReadinessSpec:
     """Does ``deployment`` (default: this computer) satisfy ``agent``'s requirements?"""
+    import asyncio  # noqa: PLC0415
+
     from flow_sdk import permissions  # noqa: PLC0415
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
-    from flow_sdk.builtin.credential_store import Placement  # noqa: PLC0415
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
-    placement = await Placement.of(deployment)
-    project = await Project.get_by_id(str(agent.project_id)) if getattr(agent, "project_id", None) else None
-    status = await credentials_status(project, placement.deployment_id)
+    deployment_id = str(deployment.id) if deployment is not None else ""
+    project = await _project_of(agent)
+    status, wanted = await asyncio.gather(credentials_status(project, deployment_id), requirements(agent, project))
     rows = {row.name: row for row in status.credentials}  # user first, then project: the project's own wins
     present = {v.env_var: (v.present, v.store) for row in status.credentials for v in row.vars}
 
-    items: list[ReadinessItemSpec] = []
-    for req in await requirements(agent):
+    async def item(req: RequirementSpec) -> ReadinessItemSpec:
         if req.kind == REQUIREMENT_CREDENTIAL:
             row = rows.get(req.name)
             names = req.vars or ([v.env_var for v in row.vars if v.required] if row else [])
-            items.append(_values_item(req, names, present, f"flow credentials set {req.name} --stdin"))
-        elif req.kind == REQUIREMENT_VARIABLE:
-            items.append(_values_item(req, [req.name], present, f"declare a credential with {req.name}"))
-        elif req.kind == REQUIREMENT_CONNECTION:
-            items.append(await _connection_item(req, req.name, req.scopes))
-        else:
-            mapping = permissions.mapping(req.name)
-            if mapping is not None and mapping.mechanism == MECHANISM_OAUTH:
-                items.append(await _connection_item(req, mapping.connector or provider_of(req.name), mapping.oauth_scopes))
-            elif mapping is not None and mapping.mechanism == MECHANISM_API_KEY and mapping.api_key:
-                items.append(_values_item(req, [mapping.api_key], present, f"store {mapping.api_key}"))
-            else:
-                items.append(ReadinessItemSpec(requirement=req, status=STATUS_MISSING,
-                                               fix="no grant for this permission here yet" if mapping else "no asset declares this permission"))
+            return _values_item(req, names, present, f"flow credentials set {req.name} --stdin")
+        if req.kind == REQUIREMENT_VARIABLE:
+            return _values_item(req, [req.name], present, f"declare a credential with {req.name}")
+        if grant := connection_of(req):
+            return await _connection_item(req, *grant)
+        mapping = permissions.mapping(req.name)
+        if mapping is not None and mapping.mechanism == MECHANISM_API_KEY and mapping.api_key:
+            return _values_item(req, [mapping.api_key], present, f"store {mapping.api_key}")
+        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING,
+                                 fix="no grant for this permission here yet" if mapping else "no asset declares this permission")
+
+    items = list(await asyncio.gather(*(item(req) for req in wanted)))
     return ReadinessSpec(
-        agent_id=str(agent.id), deployment_id=placement.deployment_id, environment=placement.environment,
-        ready=all(item.status != STATUS_MISSING for item in items), items=items,
+        agent_id=str(agent.id), deployment_id=status.deployment_id, environment=status.environment,
+        ready=all(i.status != STATUS_MISSING for i in items), items=items,
     )
 
 
-__all__ = ["derive_requirements", "merge", "readiness", "refresh_requirements", "requirements", "requirements_of_source"]
+__all__ = [
+    "auth_of",
+    "connection_of",
+    "derive_requirements",
+    "merge",
+    "readiness",
+    "refresh_requirements",
+    "requirements",
+    "requirements_of_source",
+]

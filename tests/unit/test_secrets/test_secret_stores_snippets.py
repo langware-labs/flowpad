@@ -50,14 +50,9 @@ async def database(in_project):
 @pytest.fixture
 async def production(in_project):
     """A deployment in the production environment — the ``production_id`` the page's fences name."""
-    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+    from tests.utils.deployments import make_deployment
 
-    row = Deployment(
-        name="database (production)", kind=KIND_AGENT, parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
-        target={"provider": "e2b", "scope": "machine", "location": "sandbox"}, environment="production",
-    )
-    await row.save()
-    return row
+    return await make_deployment("production", name="database")
 
 
 async def _session_free(provider: str, monkeypatch) -> None:

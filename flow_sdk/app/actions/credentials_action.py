@@ -68,14 +68,20 @@ async def credentials_action() -> ApiResponse:
         if method == "POST":
             payload = await request_info.get_post_data() or {}
             if sub_path == "save":
+                manifest = dict(payload.get("manifest") or {})
+                # An older client still says where values live in the manifest: that is the
+                # deployment's now, so it becomes the store choice. Per-environment overrides
+                # have no meaning here any more (the boot lift moved existing ones).
+                legacy_store = manifest.pop("value_store", None)
+                manifest.pop("environments", None)
                 spec = await save_credential(
-                    manifest=payload.get("manifest") or {},
+                    manifest=manifest,
                     scope=payload.get("scope"),
                     project_id=payload.get("project_id"),
                     typeid=payload.get("typeid"),
                     values=payload.get("values") or {},
                     deployment_id=payload.get("deployment_id"),
-                    store=payload.get("store"),
+                    store=payload.get("store") or legacy_store,
                 )
                 return ApiSuccessResponse(data=_summary(spec))
             if sub_path == "values":

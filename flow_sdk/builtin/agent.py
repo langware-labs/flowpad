@@ -282,8 +282,9 @@ class Agent(Entity):
     )
 
     # ── requirements ──────────────────────────────────────────────────────
-    # What the agent needs wherever it runs (``builtin/readiness.py``). Derived entries are refreshed
-    # when an owned data source is saved; authored ones are kept. Names only, never a value.
+    # What the agent needs wherever it runs (``builtin/readiness.py``): a snapshot written when the
+    # agent is published, so it travels with it; readiness always derives it afresh. Authored entries
+    # are kept. Names only, never a value.
     requirements: Optional[list[RequirementSpec]] = APIField(
         default=None,
         description="What this agent needs to run anywhere: credentials, permissions, variables. Names only.",
@@ -732,10 +733,10 @@ class Agent(Entity):
         from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         request_info = get_current_request_info()
-        deployment_id = str((request_info.get_param("deployment_id") if request_info else None) or "").strip()
-        deployment = await Deployment.get_by_id(deployment_id) if deployment_id else None
-        if deployment_id and deployment is None:
-            return ApiFailResponse(message="deployment not found", status_code=404)
+        try:
+            deployment = await Deployment.resolve((request_info.get_param("deployment_id") if request_info else None) or "")
+        except LookupError as e:
+            return ApiFailResponse(message=str(e), status_code=404)
         return ApiSuccessResponse(data=(await readiness(self, deployment)).model_dump(mode="json"))
 
     # ── the mailbox ───────────────────────────────────────────────────────

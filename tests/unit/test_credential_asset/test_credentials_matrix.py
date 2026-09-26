@@ -59,7 +59,7 @@ async def test_user_env_writes_the_home_env_file_without_a_gitignore(home, proje
 
 async def test_user_vault_writes_a_user_vault_entry_and_no_file(home, project):
     await save_credential(
-        scope="user", manifest=_manifest("personal", "QA_USER", value_store="vault"), values={"QA_USER": "u2"}
+        scope="user", manifest=_manifest("personal", "QA_USER"), store="vault", values={"QA_USER": "u2"}
     )
 
     assert read_secret("credential.user.QA_USER") == "u2"
@@ -82,7 +82,7 @@ async def test_project_vault_is_scoped_to_that_project(home, project):
     await save_credential(
         scope="project",
         project_id=str(project.id),
-        manifest=_manifest("team", "QA_PROJ", value_store="vault"),
+        manifest=_manifest("team", "QA_PROJ"), store="vault",
         values={"QA_PROJ": "p2"},
     )
 
@@ -95,7 +95,7 @@ async def test_project_vault_is_scoped_to_that_project(home, project):
 async def test_every_combination_is_connected_and_injected(home, project, scope, store):
     project_id = str(project.id) if scope == "project" else None
     spec = await save_credential(
-        scope=scope, project_id=project_id, manifest=_manifest("pack", "QA_KEY", value_store=store), values={"QA_KEY": "v"}
+        scope=scope, project_id=project_id, manifest=_manifest("pack", "QA_KEY"), store=store, values={"QA_KEY": "v"}
     )
 
     row = _row(await credentials_status(project), str(spec.typeid))
@@ -233,7 +233,7 @@ async def test_a_disabled_vault_blocks_the_save_and_creates_no_folder(home, proj
 
     with pytest.raises(CredentialError) as excinfo:
         await save_credential(
-            scope="user", manifest=_manifest("personal", "QA_USER", value_store="vault"), values={"QA_USER": "u"}
+            scope="user", manifest=_manifest("personal", "QA_USER"), store="vault", values={"QA_USER": "u"}
         )
 
     assert excinfo.value.code == "vault-disabled"
@@ -272,7 +272,7 @@ async def test_an_invalid_manifest_is_refused(home, project, manifest, message):
 
 async def test_rotating_a_value_keeps_the_location(home, project):
     spec = await save_credential(
-        scope="user", manifest=_manifest("personal", "QA_USER", value_store="vault"), values={"QA_USER": "old"}
+        scope="user", manifest=_manifest("personal", "QA_USER"), store="vault", values={"QA_USER": "old"}
     )
     names_before = _vault_names()
 
@@ -307,7 +307,7 @@ async def test_deleting_a_vault_credential_removes_values_and_folder(home, proje
     spec = await save_credential(
         scope="project",
         project_id=str(project.id),
-        manifest=_manifest("team", "QA_PROJ", value_store="vault"),
+        manifest=_manifest("team", "QA_PROJ"), store="vault",
         values={"QA_PROJ": "p"},
     )
 
@@ -342,7 +342,7 @@ async def test_a_store_that_cannot_remove_keeps_the_credential_as_the_handle_to_
     monkeypatch.setattr(VaultStore, "forget", refuses)
     spec = await save_credential(
         scope="project", project_id=str(project.id),
-        manifest=_manifest("team", "QA_PROJ", value_store="vault"), values={"QA_PROJ": "p"},
+        manifest=_manifest("team", "QA_PROJ"), store="vault", values={"QA_PROJ": "p"},
     )
 
     result = await delete_credential(str(spec.typeid))
@@ -360,11 +360,11 @@ async def test_deleting_one_project_credential_leaves_another_projects_value(hom
     await other.save()
     mine = await save_credential(
         scope="project", project_id=str(project.id),
-        manifest=_manifest("team", "QA_SAME", value_store="vault"), values={"QA_SAME": "mine"},
+        manifest=_manifest("team", "QA_SAME"), store="vault", values={"QA_SAME": "mine"},
     )
     await save_credential(
         scope="project", project_id=str(other.id),
-        manifest=_manifest("team", "QA_SAME", value_store="vault"), values={"QA_SAME": "theirs"},
+        manifest=_manifest("team", "QA_SAME"), store="vault", values={"QA_SAME": "theirs"},
     )
 
     await delete_credential(str(mine.typeid))
@@ -391,7 +391,7 @@ async def test_a_catalogue_template_is_read_only(home, project):
 
 async def test_a_value_in_the_other_store_is_reported_as_wrong_store(home, project):
     (home / ".env.local").write_text('QA_USER="in-the-file"\n')
-    spec = await save_credential(scope="user", manifest=_manifest("personal", "QA_USER", value_store="vault"))
+    spec = await save_credential(scope="user", manifest=_manifest("personal", "QA_USER"), store="vault")
 
     var = _row(await credentials_status(None), str(spec.typeid)).vars[0]
 

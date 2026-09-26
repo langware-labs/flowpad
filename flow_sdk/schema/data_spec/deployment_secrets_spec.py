@@ -20,6 +20,22 @@ from flow_sdk.secrets.store import SecretStoreRef
 ENV_FILE = SecretStoreRef(type="env_file")
 #: A value kept in this instance's encrypted vault.
 VAULT = SecretStoreRef(type="vault")
+#: The words a form, a CLI or a pre-0.2.178 manifest names a local store by.
+STORE_WORDS = {"env": ENV_FILE, "env_file": ENV_FILE, "vault": VAULT}
+#: Store types completed per credential scope (the rest are remote and used as configured).
+LOCAL_STORE_TYPES = (ENV_FILE.type, VAULT.type)
+
+
+def store_ref(word: str) -> SecretStoreRef:
+    """The store a word names; raises ``ValueError`` for an unknown one."""
+    if word not in STORE_WORDS:
+        raise ValueError(f"unknown store {word!r}; expected one of {sorted(STORE_WORDS)}")
+    return STORE_WORDS[word]
+
+
+def store_word(ref: SecretStoreRef) -> str:
+    """How a screen names ``ref``: ``env`` / ``vault``, else the store type."""
+    return {ENV_FILE.type: "env", VAULT.type: "vault"}.get(ref.type, ref.type)
 
 
 class DeploymentSecretsSpec(DataSpec):
@@ -34,7 +50,8 @@ class DeploymentSecretsSpec(DataSpec):
     exceptions: dict[str, SecretStoreRef] = Field(default_factory=dict)
     #: Variables that must have a value HERE, beyond each credential's own required ones.
     require: list[str] = Field(default_factory=list)
-    #: Values only in a remote store, never copied in from another deployment (enforced by sharing).
+    #: Values only in a remote store, never copied in from another deployment. Declared now; enforced
+    #: when values can be shared between deployments.
     protected: bool = False
 
     @field_validator("exceptions")
@@ -57,4 +74,4 @@ class DeploymentSecretsSpec(DataSpec):
         return self.model_copy(update={"exceptions": exceptions})
 
 
-__all__ = ["ENV_FILE", "VAULT", "DeploymentSecretsSpec"]
+__all__ = ["ENV_FILE", "LOCAL_STORE_TYPES", "STORE_WORDS", "VAULT", "DeploymentSecretsSpec", "store_ref", "store_word"]

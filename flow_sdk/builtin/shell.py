@@ -156,12 +156,12 @@ async def _with_attached_project_secrets(
     """
     try:
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
-        from flow_sdk.builtin.credential_resolver import placement_for, resolve_attached_secrets  # noqa: PLC0415
+        from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
         project = await Project.get_by_id(str(project_id)) if project_id else None
         process = await AgenticProcess.get_by_id(str(process_id)) if process_id else None
-        resolved = await resolve_attached_secrets(project, placement=await placement_for(process))
+        resolved = await resolve_attached_secrets(project, process=process)
         if not resolved:
             return extra_env
         # Explicit ``extra_env`` wins over a declared value.

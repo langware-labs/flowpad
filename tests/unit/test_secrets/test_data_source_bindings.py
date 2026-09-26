@@ -215,17 +215,9 @@ async def _channel_pack_in_two_environments(project):
 
 
 async def _production_deployment():
-    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+    from tests.utils.deployments import make_deployment
 
-    row = Deployment(
-        name="channel (production)",
-        kind=KIND_AGENT,
-        parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
-        target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
-        environment="production",
-    )
-    await row.save()
-    return row
+    return await make_deployment("production", name="channel")
 
 
 async def test_a_source_answered_by_a_production_deployment_reads_production_values(project):
