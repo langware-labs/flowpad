@@ -22,6 +22,7 @@ from flow_sdk.secrets.errors import MissingSecrets, NoCurrentProject, UnknownSec
 
 if TYPE_CHECKING:
     from flow_sdk.connections import ConnectionRequirements
+    from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,8 @@ class SecretStore:
     config_spec: ClassVar[type[DataSpec]]
     #: ``{provider: scopes}`` a store that acts as an account needs; a local store declares none.
     connection_scopes: ClassVar[Mapping[str, tuple[str, ...]]] = {}
+    #: The same need as a permission (``flow_sdk/permissions.py``): what the account must be allowed to do.
+    permissions: ClassVar[Mapping[str, "PermissionMappingSpec"]] = {}
 
     def __init__(self, config: DataSpec, *, connection: str = "") -> None:
         self.config = config

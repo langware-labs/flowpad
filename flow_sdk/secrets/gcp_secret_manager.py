@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Iterable, 
 import httpx
 from pydantic import ConfigDict, Field, SecretStr
 
+from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.secrets.errors import SecretStoreError, StoreAccessDenied, StoreNeedsConnection
 from flow_sdk.secrets.store import SecretStore, plain_values, register_store
@@ -60,6 +61,12 @@ class GcpSecretManagerStore(SecretStore):
     type_name: ClassVar[str] = "gcp_secret_manager"
     config_spec: ClassVar[type[DataSpec]] = GcpSecretManagerConfig
     connection_scopes: ClassVar[Mapping[str, tuple[str, ...]]] = {"google": (CLOUD_PLATFORM,)}
+    permissions: ClassVar[Mapping[str, PermissionMappingSpec]] = {
+        "permission.google.secret_manager.access": PermissionMappingSpec(
+            mechanism="oauth", connector="google", oauth_scopes=[CLOUD_PLATFORM],
+            why="Read and write the secrets under this store's prefix.",
+        ),
+    }
     config: GcpSecretManagerConfig
 
     # ── addressing ──────────────────────────────────────────────────────────

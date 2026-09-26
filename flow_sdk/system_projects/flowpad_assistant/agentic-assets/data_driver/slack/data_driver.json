@@ -9,6 +9,16 @@
   "auth": {
     "connector": "slack"
   },
+  "permissions": {
+    "permission.slack.channels.read": {
+      "mechanism": "oauth",
+      "why": "Read the channels the app is in."
+    },
+    "permission.slack.chat.write": {
+      "mechanism": "oauth",
+      "why": "Post replies as the app."
+    }
+  },
   "config": {
     "channel": {
       "type": "text",

@@ -6,6 +6,7 @@ from typing import Any, ClassVar, Optional
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec, validate_permission
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 CURRENT_SCHEMA = 1
@@ -186,6 +187,10 @@ class DataDriverSpec(DataSpec):
     requires: dict[str, str] = Field(default_factory=dict)
     #: `{connector, scopes}`, `{env: [...]}` or `{secrets: {...}}`. Never a value.
     auth: Optional[AuthSpec] = None
+    #: What this driver needs to be allowed to do, by permission (``permission.google.drive.read``),
+    #: and how each is granted. ``auth`` stays the wire truth; this is the vocabulary requirements,
+    #: readiness and consent speak (``flow_sdk/permissions.py``).
+    permissions: dict[str, PermissionMappingSpec] = Field(default_factory=dict)
     #: Supported reflect modes, head first as the default. A list because the
     #: picker must not offer a mode that silently fails.
     reflect: list[str] = Field(default_factory=lambda: ["record"])
@@ -209,6 +214,13 @@ class DataDriverSpec(DataSpec):
         value = str(value or "").strip()
         if not value:
             raise ValueError("manifest has no name")
+        return value
+
+    @field_validator("permissions")
+    @classmethod
+    def _named_permissions(cls, value: dict[str, PermissionMappingSpec]) -> dict[str, PermissionMappingSpec]:
+        for name in value:
+            validate_permission(name)
         return value
 
     @field_validator("manifest_schema")

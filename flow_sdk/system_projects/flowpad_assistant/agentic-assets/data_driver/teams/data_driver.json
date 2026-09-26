@@ -13,6 +13,22 @@
       "ChannelMessage.Send"
     ]
   },
+  "permissions": {
+    "permission.microsoft.teams.messages.read": {
+      "mechanism": "oauth",
+      "oauth_scopes": [
+        "ChannelMessage.Read.All"
+      ],
+      "why": "Read the channel’s messages."
+    },
+    "permission.microsoft.teams.messages.send": {
+      "mechanism": "oauth",
+      "oauth_scopes": [
+        "ChannelMessage.Send"
+      ],
+      "why": "Reply in the channel."
+    }
+  },
   "config": {
     "channel": {
       "type": "text",
