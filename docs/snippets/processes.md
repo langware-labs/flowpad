@@ -75,6 +75,7 @@ author time, not at spawn.
 ## 3. Launch an agent and read the answer
 
 ```python
+from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agentic_process import AgenticProcess
 
 agent = await Agent.get_one({"name": "researcher"})
@@ -170,7 +171,10 @@ cv_reviewed.value.body.path                      # <record>/execution/output/bod
 
 ## The spec
 
-```python
+A listing of the shape, not a program — `tests/unit/test_processes_snippets.py` checks it names exactly
+the real class's fields.
+
+```pyi
 class McpSpec(DataSpec):                 # flow_sdk/schema/data_spec/mcp_spec.py
     spec_kind = "mcp.server"
     name: NonBlank

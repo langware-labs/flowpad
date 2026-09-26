@@ -62,6 +62,8 @@ assert there.is_local is False                 # ...and never claims to be here
 ## 2. Start a session on a placement
 
 ```python
+from flow_sdk.builtin.agentic_process import AgenticProcess
+
 answer = await agent.launch("Find three sources on X.", wait=True)   # local by default
 answer = await agent.launch("...", deployment=here, wait=True)       # the same, explicit
 proc = await AgenticProcess.get_by_typeid(answer.executor)           # the process, when you need it
@@ -88,7 +90,7 @@ no first turn — keyed to the agent through `target_typeid_str`:
 
 ```python
 session = await agent.use()                    # acts in the agent's own project
-session = await agent.use(project_id=other)    # acts in another project's checkout
+session = await agent.use(project_id=OTHER_PROJECT)   # acts in another project's checkout
 ```
 
 The primitive under both is the placement's own verb — not saved, not started:
@@ -129,13 +131,18 @@ hub and comes back down the bridge — nothing is written locally in that case.
 
 ## 5. A machine of its own
 
-Live only — it needs a hub login and publishes through git; no test runs this fence.
+Live it needs a hub login and publishes through git; `tests/unit/test_agent_deployment_snippets.py` runs
+this fence as written with the hub's two legs (publish, deploy) answered by a double.
 
 ```python
 import flow_sdk
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.user import User
 
 await flow_sdk.auth.login()
-receipt = await agent.deploy_to_cloud(actor)   # actor: the caller's TypeId; publishes through git first
+agent = await Agent.by_name("researcher")
+actor = (await User.get_local()).typeid        # the caller
+receipt = await agent.deploy_to_cloud(actor)   # publishes through git first
 ```
 
 Deliberately no node and no principal: "were either passable from here they
@@ -223,8 +230,11 @@ it folded away. A new deployment's file is the stock loop, `flow_sdk/builtin/dep
 async def answer_every_message(engine, channels, bound, every=None):
     async with workflow(consumer_of(engine.deployment)):  # this deployment's durable position
         async for page in pages(*(StreamInbox.of(c) for c in channels), poll_every=every, poll=False):
+            if stopping():
+                continue  # paused mid-page: left unacked, handed over again next time
             for message in page:
                 if is_history(message, bound[page.source_id]):   # there before the agent took the channel
+                    console.info("· %s  written before the channel was bound: history, not answered", page.source_id)
                     await skip_message(message)
                     continue
                 await answer(engine, message)                    # gates → turn → reply on its channel

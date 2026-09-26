@@ -107,20 +107,23 @@ you want.
 `model` defaults to the endpoint's `md` slug; name a tier to pick a cheaper or stronger one.
 
 ```python
+endpoint = await LLMEndpoint.ensure_for_secret("openrouter")   # the key stored in §2
 reply = await endpoint.create_completion(
     "You answer with a single digit.",
     "What is four minus one?",
     model=endpoint.models["sm"],
 )
 
-data = await endpoint.create_completion(sys, user, json_reply=True)   # parsed, fences stripped
-async for chunk in await endpoint.create_completion(sys, user, stream=True):
+system, user = "Answer as JSON.", 'Give {"answer": 3}.'
+data = await endpoint.create_completion(system, user, json_reply=True)   # parsed, fences stripped
+async for chunk in await endpoint.create_completion(system, user, stream=True):
     print(chunk, end="")
 ```
 
 ## 6. Embeddings, catalogs and probes
 
 ```python
+texts = ["a hot day in July", "a cold night in January"]
 vectors = await endpoint.create_embeddings(texts)          # one vector per text, in order
 models = await endpoint.list_models(embeddings_only=True)  # OpenRouter filters server-side
 result = await endpoint.probe()                            # {ok, status, message}; never raises

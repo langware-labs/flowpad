@@ -58,6 +58,11 @@ LONG_TIER = "# long tier"
 TYPED = {"token": "sk-live-1"}
 
 
+@pytest.fixture(autouse=True)
+def _isolated_kinds(isolated_kinds):
+    """Each test's shapes register their kinds for that test only (``isolated_kinds``)."""
+
+
 def fences(lang: str) -> list[str]:
     return re.findall(rf"```{lang}\n(.*?)```", DOC.read_text(), re.S)
 
@@ -109,7 +114,8 @@ async def _person_answers() -> None:
         await asyncio.sleep(0.01)
 
 
-FAST = [f for f in fences("python") if not f.lstrip().startswith(LONG_TIER)]
+SETUP = "# setup"
+FAST = [f for f in fences("python") if not f.lstrip().startswith((LONG_TIER, SETUP))]
 
 
 @pytest.fixture(autouse=True)
@@ -124,7 +130,7 @@ def _no_browser(monkeypatch):
 
 def test_the_page_has_its_fences():
     assert len(FAST) == 6 and len(fences("pyi")) == 2
-    assert len(fences("python")) - len(FAST) == 2, "the agent and prompt fences are the long tier's"
+    assert len(fences("python")) - len(FAST) == 3, "the setup fence, and the long tier's agent and prompt fences"
 
 
 @pytest.mark.parametrize("index", range(len(FAST)))
@@ -169,3 +175,18 @@ def test_every_listing_names_exactly_the_real_fields(name, fields):
 
 def test_exe_data_declares_no_kind_of_its_own():
     assert "spec_kind" not in ExeData.__dict__
+
+
+@pytest.mark.asyncio
+async def test_the_page_runs_in_order_as_one_session(monkeypatch, tmp_path):
+    """Every fast-tier fence, verbatim and in order after the setup fence — what a reader pastes. A person
+    answers §7's question; the long tier's §9 and §10 are ``tests/long_tests/test_call_returns_live.py``'s."""
+    from tests.utils.snippets import run_page
+
+    monkeypatch.chdir(tmp_path)
+    person = asyncio.create_task(_person_answers())
+    try:
+        ns = await run_page("call-returns.md", until="## 9.")
+    finally:
+        person.cancel()
+    assert ns["tmp"].is_dir()

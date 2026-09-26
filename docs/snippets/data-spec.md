@@ -12,19 +12,30 @@ whole IO model.
 ## 1. Declare a shape
 
 ```python
+from flow_sdk.schema.data_spec import DataSpec
+
 class Endpoint(DataSpec):
     host: str = "localhost"
     port: int
 ```
 
 ```python
+from pydantic import ValidationError
+
 Endpoint(port=8099)                  # host='localhost' port=8099
 Endpoint(port=8099).model_dump()     # {'host': 'localhost', 'port': 8099}
-
-Endpoint(port="nope")                # ValidationError: port — wrong type
-Endpoint(port=1, prot=2)             # ValidationError: prot — a typo is not a field
-Endpoint(port=1).port = 2            # ValidationError — a spec is frozen
 Endpoint(port=1).model_copy(update={"port": 2})   # the way to change one
+
+for wrong in ({"port": "nope"}, {"port": 1, "prot": 2}):
+    try:
+        Endpoint(**wrong)
+    except ValidationError as refused:
+        refused.errors()[0]["loc"]   # ('port',) — wrong type; ('prot',) — a typo is not a field
+
+try:
+    Endpoint(port=1).port = 2
+except ValidationError:
+    pass                             # a spec is frozen
 ```
 
 **`frozen`** — a spec is a value. Nothing edits one in place and hands it on;
@@ -117,6 +128,8 @@ Each kind of work answers with its own subclass (`CliResult`, `PromptResult`,
 [call-returns](call-returns.md).
 
 ```python
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
+
 async def bind(port: int) -> ReturnedValue:
     return ReturnedValue(exit_code=ExitCode.OK, value=port, detail=f"bound :{port}")
 
@@ -157,8 +170,25 @@ The caller then reads `answer.value` and it is already that shape — no parsing
 no re-validation. A value that does NOT match is a failure, not a warning:
 
 ```python
+import sys
+import tempfile
+from pathlib import Path
+
+from flow_sdk.core.compute_op import run_op
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+
+class NetEndpoint(DataSpec):
+    spec_kind: ClassVar[str] = "net.endpoint"
+    host: str
+    port: int
+
+pick_port = ComputeOpSpec.model_validate({
+    "name": "pick-port", "subkind": "cli", "output_spec_kind": "net.endpoint",
+    "exe_data": {"commands": {sys.platform: """echo '{"host": "h", "port": "nope"}'"""}},
+})
+answer = await run_op(pick_port, trusted=True, workdir=Path(tempfile.mkdtemp()))
 answer.exit_code   # ExitCode.NOT_YET
-answer.detail      # "… returned a value that is not a net.endpoint — …"
+answer.detail      # "pick-port: returned a value that is not a net.endpoint — …"
 ```
 
 Otherwise a caller binds a broken value into the next call, and the breakage
@@ -198,6 +228,7 @@ chain = Toolchain(
     ops=[Op(name="pick-port", steps=[Step(name="probe", setup="lsof -i",
                                           endpoint=Endpoint(port=9000))])],
 )
+root = Path("dev-toolchain")
 chain.save(root)
 ```
 
@@ -267,6 +298,8 @@ document and becomes its own file. Everything else is a value and rides inside
 its parent's json.
 
 ```python
+from flow_sdk.schema.data_spec.markdown_spec import MarkdownSpec
+
 class Op(DataSpec):
     endpoint: Endpoint = Endpoint(port=0)   # a value    -> inside op.json
     notes: MarkdownSpec = MarkdownSpec()    # a document -> notes.md

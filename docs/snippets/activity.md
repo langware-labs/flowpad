@@ -104,8 +104,10 @@ than finished, and recording it as completed would be a lie the receipt carries 
 ## 4. Read it back
 
 ```python
-from flow_sdk.activity import monitor
+from flow_sdk.activity import Activity, monitor
 
+Activity.get("index").total(10).inc_success()     # a run in progress to read
+Activity.get("index/pdf").current("a.pdf")
 spec = monitor.get("index")            # ActivityProgressSpec, frozen — or None once gone
 spec.state, spec.done, spec.total, spec.errors_count, spec.skipped
 spec.children[0].current
@@ -135,6 +137,7 @@ It is also the duplicate-start gate — there is no separate slot to take:
 act = Activity.get("index")
 if act.state == "running":
     raise RuntimeError(f"index already running since {act.spec().started_at}")
+# RuntimeError: index already running since … — the run above is still going
 ```
 
 And it is the only thing that knows when each activity last moved, so it is the only thing

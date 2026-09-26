@@ -30,10 +30,15 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 DOC = Path(__file__).resolve().parents[2] / "docs" / "snippets" / "wizards.md"
 
 
+@pytest.fixture(autouse=True)
+def _isolated_kinds(isolated_kinds):
+    """Each test's shapes register their kinds for that test only (``isolated_kinds``)."""
+
+
 def fences() -> list[str]:
     import re
 
-    return re.findall(r"```python\n(.*?)```", DOC.read_text(), re.S)
+    return [f for f in re.findall(r"```python\n(.*?)```", DOC.read_text(), re.S) if not f.lstrip().startswith("# setup")]
 
 
 FENCES = fences()
@@ -62,3 +67,12 @@ async def test_every_fence_runs_as_written(index, tmp_path):
     exec("async def __fence():\n" + textwrap.indent(body, "    "), scope)
     await scope["__fence"]()
     record_run(FENCES[index])
+
+
+async def test_the_page_runs_in_order_as_one_session(tmp_path, monkeypatch):
+    """Every fence, verbatim and in order after the setup fence — what a reader pastes."""
+    from tests.utils.snippets import run_page
+
+    monkeypatch.chdir(tmp_path)
+    ns = await run_page("wizards.md")
+    assert ns["tmp"].is_dir()

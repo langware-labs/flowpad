@@ -303,3 +303,29 @@ async def test_14_write_your_own_driver():
     fresh = lambda: ns["ZenSource"](ns["SourceBinding"](config={}, account_key="zen"))  # noqa: E731
     results = await run_all(Subject(source=fresh, seeded=tuple(fresh().origin(k) for k in ("q1", "q2", "q3"))))
     assert results and not {name: err for name, err in results.items() if err is not None}, results
+
+
+async def test_8_reply_through_the_source():
+    """§8 as written: answer an ingested message through its source, then wait for the other side's reply."""
+    import asyncio
+    import uuid
+
+    from flow_sdk.ingest.sync import sync_source
+    from tests.utils.fake_source import scripted_provider
+
+    with scripted_provider("agentmail") as mail:
+        mail.push({"name": "Invoice?", "body": "did it arrive?", "author": "alice@example.com", "thread_key": "t1"})
+        src = DataSource(name=f"mail {uuid.uuid4().hex[:6]}", provider="agentmail",
+                         config={"inbox": "reply-demo@agentmail.to"})
+        await src.save()
+        await sync_source(src)
+
+        async def alice_answers():
+            await mail.sent_event.wait()
+            mail.push({"body": "Great, thanks!", "author": "alice@example.com", "thread_key": "t1",
+                       "reply_to_external_id": mail.sent[-1]["external_id"]})
+
+        answering = asyncio.create_task(alice_answers())
+        ns = await _section("8.", {"SOURCE": src.name})
+        await answering
+    assert mail.sent[-1]["to"] == "alice@example.com" and ns["reply"].body == "Great, thanks!"

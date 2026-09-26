@@ -154,3 +154,19 @@ async def test_6_the_opening_program_runs_as_shown_on_every_channel(worker, chan
         await run_fence_until(OPENING[channel], {}, script.settled, filename=f"{DOC} § 6 ({channel})")
     assert worker.received_prompts[-1] == f"hello on {channel}"
     assert len(script.sent) == 1 and script.sent[0]["text"].startswith("Mock reply")
+
+
+async def test_5_values_only_runs_as_written():
+    """§5, verbatim: three messages, three answers to "who does a reply go to"."""
+    from tests.utils.snippets import run_fence
+
+    ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
+    assert ns["reply"].to == ["alice@example.com"] and ns["reply"].subject == "Re: Probe coffee?"
+
+
+async def test_6_every_channel_line_constructs():
+    """§6's second fence — the one line each channel changes — runs as written."""
+    from tests.utils.snippets import run_fence
+
+    ns = await run_fence(fence_under(doc(DOC), "6.", nth=1), {}, filename=f"{DOC} §6b")
+    assert ns["stream_inbox"].provider == "whatsapp"

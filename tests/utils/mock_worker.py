@@ -413,6 +413,19 @@ class _MockDriverMixin:
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         return _tail_status(transcript_path)
 
+    def load_history(self, process) -> list:
+        """The turn's history, read from the transcript this mock wrote — the claude format, parsed by the
+        claude driver's own reader, so a caller reads a mock turn exactly as it reads a real one."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
+            entry_to_flowdata,  # noqa: PLC0415
+        )
+        from flow_sdk.transcript_analyzer import AgentTranscriptFile  # noqa: PLC0415
+
+        path = self.transcript_path(process)
+        if path is None or not path.exists():
+            return []
+        return [fd for entry in AgentTranscriptFile("claude", path).entries for fd in entry_to_flowdata(entry)]
+
     def has_resumable_session(self, process) -> bool:
         path = self._transcripts.get(process.id)
         return path is not None and path.exists()
