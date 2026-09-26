@@ -1239,3 +1239,33 @@ async def test_the_llm_endpoints_page_runs_in_order(monkeypatch, tmp_path):
 
     live = Path(__file__).resolve().parents[1] / "loginless_e2e" / "agentic_process_snippet.py"
     assert script.strip("\n") == live.read_text().strip("\n"), "§7's script is the file the Docker leg runs"
+
+
+async def test_call_returns_10_a_model_no_tools_runs_as_written(monkeypatch, tmp_path):
+    """``call-returns.md`` §10, verbatim after the page's setup fence, on a box whose default LLM source is
+    an API key (stored in this test's own instance): the prompt op answers through the provider's wire,
+    which is the one thing doubled. The live leg is ``tests/long_tests/test_call_returns_live.py``."""
+    from types import SimpleNamespace
+
+    import openai
+
+    from flow_sdk.lm_api import set_lm_api
+    from tests.utils.snippets import doc, fences, run_fence
+
+    class _OpenAI:
+        def __init__(self, **_kw):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._chat))
+
+        async def _chat(self, **_params):
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="pong"))])
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _OpenAI)
+    set_lm_api("sk-or-test", "openrouter")
+    monkeypatch.chdir(tmp_path)
+
+    page = fences(doc("call-returns.md"))
+    setup = next(f for f in page if f.lstrip().startswith("# setup"))
+    tenth = next(f for f in page if "Say the single word: pong" in f)
+    ns = await run_fence(setup, {}, filename="call-returns.md setup")
+    ns = await run_fence(tenth, ns, filename="call-returns.md §10")
+    assert type(ns["answer"]).__name__ == "PromptResult" and "pong" in ns["answer"].text.lower()
