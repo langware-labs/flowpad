@@ -411,8 +411,13 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.CAPABILITIES: _m(_NONE, label="Capabilities", aliases=("checks", "system checks")),
     ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows", aliases=("workflows",)),
     ViewType.SIGNALS: _m(_NONE, label="Events"),
+    # Pointer `[drivers[/<driverName>]]`: the drivers live UNDER the sources, and all
+    # three levels fold into one tab chip (ui/src/components/data-sources/data-sources-pointer.ts).
     ViewType.DATA_SOURCES: _m(
-        _NONE, label="Data sources", aliases=("connectors", "integrations", "ingestion", "sources")
+        _OPT,
+        folds_pointer=True,
+        label="Data sources",
+        aliases=("connectors", "integrations", "ingestion", "sources"),
     ),
     ViewType.RAG: _m(
         _NONE,

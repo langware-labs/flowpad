@@ -474,8 +474,8 @@
     },
     "data-sources": {
       "addressable": true,
-      "pointer": "none",
-      "folds_pointer": false,
+      "pointer": "optional",
+      "folds_pointer": true,
       "scope_keyed": false,
       "folds_sub_pointer": false,
       "chrome": "workspace"
