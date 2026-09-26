@@ -42,6 +42,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
+from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.data_spec._form import ShapeForm
 
@@ -278,6 +279,14 @@ class Agent(Entity):
         default=None,
         description="The agent's own phone number — country code and national number — the one its "
         "WhatsApp channel answers on.",
+    )
+
+    # ── requirements ──────────────────────────────────────────────────────
+    # What the agent needs wherever it runs (``builtin/readiness.py``). Derived entries are refreshed
+    # when an owned data source is saved; authored ones are kept. Names only, never a value.
+    requirements: Optional[list[RequirementSpec]] = APIField(
+        default=None,
+        description="What this agent needs to run anywhere: credentials, permissions, variables. Names only.",
     )
 
     _api_visible: ClassVar[bool] = True
@@ -671,9 +680,13 @@ class Agent(Entity):
             publish_git_asset,  # noqa: PLC0415
         )
 
+        from flow_sdk.builtin.readiness import refresh_requirements  # noqa: PLC0415
+
         project = await owning_project(self)
         if project is not None:
             await project.ensure_on_hub()
+        # What it needs travels with it: the commit below carries the current requirements.
+        await refresh_requirements(self)
         await publish_git_asset(self, actor)
         return True
 
@@ -698,6 +711,32 @@ class Agent(Entity):
         return ApiSuccessResponse(
             data={"agent_id": self.id, "published": published, "already_on_hub": not published}
         )
+
+    # ── requirements and readiness ────────────────────────────────────────
+
+    @action.get(action_name="requirements")
+    async def requirements_action(self):
+        """`GET /agent/<id>/requirements` — what this agent needs to run anywhere. Names only."""
+        from flow_sdk.builtin.readiness import requirements  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in await requirements(self)])
+
+    @action.get(action_name="readiness")
+    async def readiness_action(self):
+        """`GET /agent/<id>/readiness?deployment_id=` — does that deployment (default: this computer)
+        satisfy each requirement? Names only."""
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        deployment_id = str((request_info.get_param("deployment_id") if request_info else None) or "").strip()
+        deployment = await Deployment.get_by_id(deployment_id) if deployment_id else None
+        if deployment_id and deployment is None:
+            return ApiFailResponse(message="deployment not found", status_code=404)
+        return ApiSuccessResponse(data=(await readiness(self, deployment)).model_dump(mode="json"))
 
     # ── the mailbox ───────────────────────────────────────────────────────
 

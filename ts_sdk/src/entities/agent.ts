@@ -38,6 +38,34 @@ export interface AgentAutoLaunchState {
  * capsules. The backend refreshes this projection after a document write.
  * `system_prompt` is the Markdown body; profile controls submit typed field patches.
  */
+/** One thing an agent needs (`agent.requirement`). Never a value. */
+export interface AgentRequirement {
+  kind: 'credential' | 'permission' | 'connection' | 'variable';
+  name: string;
+  vars: string[];
+  scopes: string[];
+  on: string;
+  why: string;
+  derived: boolean;
+  used_by: string[];
+}
+
+/** One requirement at one deployment: `verified` (checked), `declared` (present, unverifiable) or `missing`. */
+export interface AgentReadinessItem {
+  requirement: AgentRequirement;
+  status: 'verified' | 'declared' | 'missing';
+  where: string;
+  fix: string;
+}
+
+export interface AgentReadiness {
+  agent_id: string;
+  deployment_id: string;
+  environment: string;
+  ready: boolean;
+  items: AgentReadinessItem[];
+}
+
 @registerEntity
 export class Agent extends APIEntity<Agent> {
   static type: string = 'agent';
@@ -356,6 +384,17 @@ export class Agent extends APIEntity<Agent> {
    * Agent's mail surface — everything else about a mailbox (its allowlist, its
    * lifecycle) belongs to `AgentMailbox`, which this hydrates.
    */
+  /** What this agent needs to run anywhere — credentials, permissions, variables. Names only. */
+  async requirements(): Promise<AgentRequirement[]> {
+    return (await this.get<AgentRequirement[] | null>('requirements')) ?? [];
+  }
+
+  /** Does that deployment (default: this computer) satisfy each requirement? Names only. */
+  async readiness(deploymentId?: string): Promise<AgentReadiness | null> {
+    const qs = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : '';
+    return this.get<AgentReadiness | null>(`readiness${qs}`);
+  }
+
   async mailboxState(): Promise<AgentMailboxState> {
     return normalizeAgentMailboxState(await this.get<AgentMailboxStateWire>('mailbox_state'));
   }
