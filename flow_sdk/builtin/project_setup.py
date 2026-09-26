@@ -109,8 +109,19 @@ async def _auth_of(source: "DataSource") -> Any:
 async def collect_requirements(project: "Project", deployment_id: str = "") -> list[SetupRequirementSpec]:
     """Everything ``project`` needs a person (or an agent) to provide, in the order to do it:
     connections first, then credentials, then what cannot be set up here. Read-only."""
+    from flow_sdk import permissions  # noqa: PLC0415
     from flow_sdk.builtin import credential_service  # noqa: PLC0415
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+    from flow_sdk.builtin.readiness import requirements_of_source  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.permission_spec import MECHANISM_OAUTH, provider_of  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.requirement_spec import (  # noqa: PLC0415
+        REQUIREMENT_CONNECTION,
+        REQUIREMENT_CREDENTIAL,
+        REQUIREMENT_PERMISSION,
+        RequirementSpec,
+    )
 
     status = await credentials_status(project, deployment_id)
     rows: dict[str, "CredentialStatusRowSpec"] = {}
@@ -122,39 +133,39 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
     packs: dict[str, list[str]] = {row.name: [PROJECT] for row in status.credentials if row.scope == "project"}
     gaps: list[SetupRequirementSpec] = []
 
-    def pack_for(env_var: str) -> Optional[str]:
-        """The credential that declares ``env_var``: one in scope, else a shipped template."""
-        for row in rows.values():
-            if env_var in {v.env_var for v in row.vars}:
-                return row.name
-        return next((str(t.name) for t in templates if env_var in t.var_names()), None)
+    def need(req: "RequirementSpec", who: str) -> Optional[str]:
+        """Fold one requirement into the plan; the variable name when nothing declares it."""
+        if req.kind in (REQUIREMENT_PERMISSION, REQUIREMENT_CONNECTION):
+            mapping = permissions.mapping(req.name) if req.kind == REQUIREMENT_PERMISSION else None
+            if req.kind == REQUIREMENT_PERMISSION and (mapping is None or mapping.mechanism != MECHANISM_OAUTH):
+                return None  # an API key is the credential's to provide; IAM is a deployment's grant
+            provider = (mapping.connector or provider_of(req.name)) if mapping else req.name
+            entry = oauth.setdefault(provider, {"scopes": [], "used_by": []})
+            entry["scopes"] += [s for s in (mapping.oauth_scopes if mapping else req.scopes) if s not in entry["scopes"]]
+            if who not in entry["used_by"]:
+                entry["used_by"].append(who)
+        elif req.kind == REQUIREMENT_CREDENTIAL:
+            if who not in packs.setdefault(req.name, []):
+                packs[req.name].append(who)
+        else:
+            return req.name
+        return None
 
+    # The same derivation an agent's requirements come from (``builtin/readiness.py``), per source;
+    # then what each of the project's agents authored.
     for source in await project_sources(project):
-        auth = await _auth_of(source)
-        if auth is None:
-            continue
         who = str(source.name or source.provider)
-        if auth.connector:
-            entry = oauth.setdefault(auth.connector, {"scopes": [], "used_by": []})
-            entry["scopes"] += [s for s in auth.scopes if s not in entry["scopes"]]
-            entry["used_by"].append(who)
-            continue
-        if auth.credential:
-            packs.setdefault(auth.credential, []).append(who)
-            continue
-        # env / secrets: each name from whichever credential declares it (one source may span several).
-        unclaimed = []
-        for env_var in list(auth.env) or list(auth.secrets):
-            name = pack_for(env_var)
-            if name is None:
-                unclaimed.append(env_var)
-            elif who not in packs.setdefault(name, []):
-                packs[name].append(who)
+        unclaimed = [name for req in await requirements_of_source(source, project) if (name := need(req, who))]
         if unclaimed:
             gaps.append(SetupRequirementSpec(
                 kind=REQUIREMENT_GAP, name=who, used_by=[who],
                 note=f"needs {', '.join(unclaimed)}, and no credential declares it — add one with `setup` instructions",
             ))
+    for agent in await Agent.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)]))):
+        for req in agent.requirements or []:
+            if not req.derived and (name := need(req, str(agent.name or agent.id))):
+                gaps.append(SetupRequirementSpec(kind=REQUIREMENT_GAP, name=name, used_by=[str(agent.name or agent.id)],
+                                                 note=f"{agent.name} needs {name}, and no credential declares it"))
 
     out = [
         SetupRequirementSpec(kind=REQUIREMENT_OAUTH, name=provider, title=provider,
