@@ -69,3 +69,47 @@ async def test_only_a_file_inside_the_drop_folder_is_ever_read(home, project, tm
         await place_values(str(deployment.id), str(project.id), str(outside))
     assert outside.exists(), "never deleted either"
     assert stat.S_IMODE(drop_folder().stat().st_mode) == 0o700
+
+
+@pytest.fixture
+def instance_config(monkeypatch):
+    """This instance's config.json in memory: the default environment set here must not outlive the test."""
+    from flow_sdk.cli import app_config
+
+    held: dict = {}
+    monkeypatch.setattr(app_config, "get_config", lambda key, default=None: held.get(key, default))
+    monkeypatch.setattr(app_config, "set_config", lambda key, value: held.__setitem__(key, value))
+    return held
+
+
+async def test_a_machine_that_never_adopted_the_hubs_id_places_at_its_own_placement(home, project, instance_config):
+    """The hub places before, or without, a successful ``adopt_placement`` (it races the box's index):
+    the machine IS the deployment, so the values land where this machine reads, in its environment."""
+    from flow_sdk.builtin.deployment import Deployment
+    from flow_sdk.instance_settings.environment import get_default_environment
+
+    unknown = "3b8b2362-4500-47d6-a5ca-f88f89d85602"
+    await save_credential(scope="project", project_id=str(project.id),
+                          manifest={"name": "stripe", "vars": {"STRIPE_KEY": {}}, "setup": "x"})
+
+    outcome = await place_values(unknown, str(project.id), _drop({"STRIPE_KEY": "sk-placed"}), "production")
+
+    assert outcome == {"placed": ["STRIPE_KEY"], "failed": {}}
+    assert get_default_environment() == "production", "terminals and the agent read the deployment's environment"
+    values = await resolve_project_secrets(project, placement=await Placement.of(await Deployment.this_computer()))
+    assert {k: v.get_secret_value() for k, v in values.items()} == {"STRIPE_KEY": "sk-placed"}
+    assert await unplace_values(unknown, str(project.id), ["STRIPE_KEY"], "production") == {"removed": ["STRIPE_KEY"]}
+
+
+async def test_the_environment_the_hub_sends_wins_over_a_serving_row_under_the_same_id(home, project, instance_config):
+    """``expose-endpoints`` keys a serving row by the hub's id, in the instance default environment; a
+    rotation placed at that row's environment would land in the development file."""
+    serving = await make_deployment("development", name="served")
+    await save_credential(scope="project", project_id=str(project.id),
+                          manifest={"name": "stripe", "vars": {"STRIPE_KEY": {}}, "setup": "x"})
+
+    await place_values(str(serving.id), str(project.id), _drop({"STRIPE_KEY": "sk-rotated"}), "production")
+
+    mount = Path(project.fs_storage_mount_path)
+    assert "sk-rotated" in (mount / ".env.production.local").read_text()
+    assert not (mount / ".env.local").exists() or "sk-rotated" not in (mount / ".env.local").read_text()

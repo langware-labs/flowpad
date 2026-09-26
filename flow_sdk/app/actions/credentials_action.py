@@ -107,13 +107,15 @@ async def credentials_action() -> ApiResponse:
                 from flow_sdk.builtin.credential_service import place_values  # noqa: PLC0415
 
                 return ApiSuccessResponse(data=await place_values(
-                    payload.get("deployment_id") or "", payload.get("project_id") or "", payload.get("file") or ""
+                    payload.get("deployment_id") or "", payload.get("project_id") or "", payload.get("file") or "",
+                    payload.get("environment") or "",
                 ))
             if sub_path == "unplace":
                 from flow_sdk.builtin.credential_service import unplace_values  # noqa: PLC0415
 
                 return ApiSuccessResponse(data=await unplace_values(
-                    payload.get("deployment_id") or "", payload.get("project_id") or "", list(payload.get("names") or [])
+                    payload.get("deployment_id") or "", payload.get("project_id") or "", list(payload.get("names") or []),
+                    payload.get("environment") or "",
                 ))
             if sub_path == "use-mine":
                 from flow_sdk.builtin.credential_service import use_mine  # noqa: PLC0415
