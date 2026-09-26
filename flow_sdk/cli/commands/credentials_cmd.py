@@ -98,24 +98,26 @@ def status_row(status: dict, name: str) -> Optional[dict]:
     return next((row for row in rows if row.get("scope") == "project"), rows[0] if rows else None)
 
 
-def _status(project_id: Optional[str]) -> dict:
+def _status(project_id: Optional[str], deployment_id: Optional[str] = None) -> dict:
     port = discover_port(required=False)
     if port is not None:
-        params = {"project_id": pid} if (pid := _project_id(port, project_id)) else None
-        return get_graph_json(f"{_url(port)}/status", params=params, on_error=_refused) or {}
+        params = {"project_id": pid} if (pid := _project_id(port, project_id)) else {}
+        if deployment_id:
+            params["deployment_id"] = deployment_id
+        return get_graph_json(f"{_url(port)}/status", params=params or None, on_error=_refused) or {}
 
     async def here() -> dict:
         from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
 
-        return (await credentials_status(await _project(project_id))).model_dump(mode="json")
+        return (await credentials_status(await _project(project_id), deployment_id or "")).model_dump(mode="json")
 
     return _here(here())
 
 
-def _set(name: str, values: dict[str, str], project_id: Optional[str]) -> dict:
+def _set(name: str, values: dict[str, str], project_id: Optional[str], deployment_id: Optional[str] = None) -> dict:
     port = discover_port(required=False)
     if port is not None:
-        payload = {"name": name, "values": values, "project_id": _project_id(port, project_id)}
+        payload = {"name": name, "values": values, "project_id": _project_id(port, project_id), "deployment_id": deployment_id}
         return post_graph_json(f"{_url(port)}/set", payload, on_error=_refused)
 
     async def here() -> dict:
@@ -123,7 +125,9 @@ def _set(name: str, values: dict[str, str], project_id: Optional[str]) -> dict:
 
         project = await _project(project_id)
         try:
-            spec = await set_credential_by_name(name, values, project_id=str(project.id) if project else None)
+            spec = await set_credential_by_name(
+                name, values, project_id=str(project.id) if project else None, deployment_id=deployment_id
+            )
         except CredentialError as e:
             fail(EXIT_NOT_YET, e.code or "REFUSED", str(e))
         return {"typeid": str(spec.typeid), "name": spec.name, "scope": spec.scope}
@@ -204,13 +208,18 @@ def _missing(row: Optional[dict]) -> list[str]:
     return [v["env_var"] for v in row.get("vars") or [] if v.get("required") and not v.get("present")]
 
 
+_DEPLOYMENT = typer.Option("--deployment", help="A deployment id (default: this computer).")
+
+
 @credentials_app.command("check")
 def check_credential(
     name: Annotated[str, typer.Argument(help="The credential's name (e.g. telegram).")],
     project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
+    deployment: Annotated[Optional[str], _DEPLOYMENT] = None,
 ) -> None:
-    """Exit 0 when every value NAME needs in development is present; 1 when not. Prints no value."""
-    row = status_row(_status(project), name)
+    """Exit 0 when every value NAME needs at the deployment (default: this computer) is present; 1
+    when not. Prints no value."""
+    row = status_row(_status(project, deployment), name)
     missing = _missing(row)
     ready = row is not None and row.get("state") == "connected"
     ok({"name": name, "declared": row is not None, "ready": ready, "missing": missing})
@@ -249,14 +258,17 @@ def set_credential(
     project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
     inputs: Annotated[bool, typer.Option("--from-inputs", help="Take the values a `flow project setup` step was given.")] = False,
     stdin: Annotated[bool, typer.Option("--stdin", help="Read VAR=VALUE lines from stdin — how an agent stores a value it must not print.")] = False,
+    deployment: Annotated[Optional[str], _DEPLOYMENT] = None,
 ) -> None:
-    """Store NAME's values in development. A name not declared yet is added from its template."""
+    """Store NAME's values where the deployment (default: this computer) keeps them — for a cloud
+    deployment, the hub, which places them on its machine. A name not declared yet is added from its
+    template."""
     values: dict[str, Any] = {
         **(from_inputs(name) if inputs else {}), **_pairs(_stdin_pairs() if stdin else []), **_pairs(assignments or []),
     }
     if not any(values.values()):
         fail(EXIT_NOT_YET, "NO_VALUE", f"no value given for {name}")
-    stored = _set(name, values, project)
+    stored = _set(name, values, project, deployment)
     ok({"name": name, "stored": sorted(k for k, v in values.items() if v), "typeid": stored.get("typeid")})
 
 
@@ -300,3 +312,46 @@ def audit(
     if result["found"]:
         fail(EXIT_NOT_YET, "LEFTOVERS", f"{len(result['found'])} leftover secret(s)", result)
     ok(result)
+
+
+@credentials_app.command("diff")
+def diff(
+    first: Annotated[str, typer.Argument(help="A deployment id, or 'here' for this computer.")],
+    second: Annotated[str, typer.Argument(help="Another deployment id, or 'here'.")],
+    project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
+) -> None:
+    """Which variables each deployment has a value for, and where it keeps them. Names only."""
+    def presence(deployment: str) -> dict[str, dict]:
+        status = _status(project, None if deployment == "here" else deployment)
+        return {v["env_var"]: {"present": v.get("present"), "store": v.get("store")}
+                for row in status.get("credentials") or [] for v in row.get("vars") or []}
+
+    a, b = presence(first), presence(second)
+    rows = [{"name": n, first: a.get(n), second: b.get(n)} for n in sorted(set(a) | set(b))]
+    ok({"differ": [r for r in rows if (r[first] or {}).get("present") != (r[second] or {}).get("present")], "all": rows})
+
+
+@credentials_app.command("use-mine")
+def use_mine_cmd(
+    deployment: Annotated[str, typer.Argument(help="The deployment whose store gets this computer's values.")],
+    name: Annotated[Optional[list[str]], typer.Option("--name", help="A variable to copy (repeatable; default: what it lacks).")] = None,
+) -> None:
+    """Copy this computer's values into the deployment's store — for a cloud deployment the hub, which
+    places them on its machine. Values move machine to hub; nothing is printed but names."""
+    port = discover_port(required=False)
+    payload = {"deployment_id": deployment, "names": name or None}
+    if port is not None:
+        result = post_graph_json(f"{_url(port)}/use-mine", payload, on_error=_refused)
+    else:
+        async def here() -> dict:
+            from flow_sdk.builtin.credential_service import CredentialError, use_mine  # noqa: PLC0415
+
+            try:
+                return await use_mine(deployment, name or None)
+            except CredentialError as e:
+                fail(int(ExitCode.REFUSED), e.code or "REFUSED", str(e))
+
+        result = _here(here())
+    ok(result)
+    if result.get("not_here"):
+        raise typer.Exit(EXIT_NOT_YET)

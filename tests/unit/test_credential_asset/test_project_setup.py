@@ -172,6 +172,18 @@ async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, 
     assert "ai-telegram" not in [s.id for s in no_ai.steps]
 
 
+async def test_a_deployment_setup_stores_and_checks_where_that_deployment_keeps_values(project, templates, monkeypatch):
+    _sources(monkeypatch, "telegram")
+    reqs = await project_setup.collect_requirements(project, "d-1")
+
+    _wizard, ops = project_setup.compile_setup(project.id, reqs, deployment_id="d-1")
+
+    for name in ("store-telegram", "ai-telegram"):
+        assert "--deployment d-1" in ops[name].completion_check.command_for("linux")
+    assert "--deployment d-1" in ops["store-telegram"].exe_data.command_for("linux")
+    assert "--deployment d-1 --stdin" in ops["ai-telegram"].exe_data.prompt
+
+
 # ── run: `flow project setup`, its shell bridged into the real CLI ───────────
 
 

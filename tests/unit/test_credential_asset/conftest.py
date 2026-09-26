@@ -86,10 +86,10 @@ def run_flow(monkeypatch):
     from flow_sdk.cli import flow_cli
     from flow_sdk.cli.commands import credentials_cmd
 
-    async def run(*argv: str):
+    async def run(*argv: str, input: str | None = None):
         running = asyncio.get_running_loop()
         monkeypatch.setattr(credentials_cmd, "discover_port", lambda required=True: None)
         monkeypatch.setattr(credentials_cmd, "_here", lambda coro: asyncio.run_coroutine_threadsafe(coro, running).result())
-        return await asyncio.to_thread(CliRunner().invoke, flow_cli.app, list(argv))
+        return await asyncio.to_thread(CliRunner().invoke, flow_cli.app, list(argv), input=input)
 
     return run
