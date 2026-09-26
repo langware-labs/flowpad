@@ -61,6 +61,17 @@ def test_cloud_origin_declares_the_triple_and_never_the_local_ids():
     assert set(CloudOriginLocal.model_fields) == {"data_source_id", "source_item_id"}
 
 
+def test_the_local_half_is_a_frozen_data_spec():
+    from pydantic import ValidationError
+
+    from flow_sdk.schema.data_spec.spec import DataSpec
+
+    local = CloudOriginLocal(data_source_id=_DS_ID)
+    assert isinstance(local, DataSpec)
+    with pytest.raises(ValidationError):
+        local.data_source_id = "other"
+
+
 def test_a_row_written_before_the_split_and_the_triple_still_loads():
     legacy = FlowMessage(
         text="hello",

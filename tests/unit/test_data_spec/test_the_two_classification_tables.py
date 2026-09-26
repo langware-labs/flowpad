@@ -45,6 +45,7 @@ SHAPE_PACKAGES = (
     "flow_sdk.builtin",
     "flow_sdk.core",
     "flow_sdk.db",
+    "flow_sdk.fs_store",
     "flow_sdk.schema",
     "flow_sdk.secrets",
     "flow_sdk.sources",

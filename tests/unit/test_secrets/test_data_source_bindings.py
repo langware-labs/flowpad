@@ -202,6 +202,65 @@ async def test_a_credential_resolves_from_the_owning_agents_project_declaration(
     assert resolved.shape == AuthShape.SECRETS and _value(resolved, "api_key") == "from-project-env-local"
 
 
+async def _channel_pack_in_two_environments(project):
+    """``channel-pack`` with a development value and a production value."""
+    from flow_sdk.builtin.credential_service import save_credential, set_credential_values
+
+    spec = await save_credential(
+        scope="project", project_id=str(project.id),
+        manifest={"name": "channel-pack", "vars": {"CHANNEL_API_KEY": {"label": "key"}}, "setup": "Test pack."},
+        values={"CHANNEL_API_KEY": "dev-key"},
+    )
+    await set_credential_values(str(spec.typeid), {"CHANNEL_API_KEY": "prod-key"}, "production")
+
+
+async def _production_deployment():
+    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+
+    row = Deployment(
+        name="channel (production)",
+        kind=KIND_AGENT,
+        parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
+        target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
+        environment="production",
+    )
+    await row.save()
+    return row
+
+
+async def test_a_source_answered_by_a_production_deployment_reads_production_values(project):
+    await _channel_pack_in_two_environments(project)
+    agent = await _agent_in(project)
+    placed = await _production_deployment()
+    row = make_data_source("channel-test", owner=f"agent-{agent.id}", answer_place=str(placed.id))
+
+    assert _value(await resolve_credentials(CHANNEL, row), "api_key") == "prod-key"
+
+
+async def test_an_unplaced_source_reads_the_environment_of_the_deployment_this_process_serves(project, monkeypatch):
+    from flow_sdk.builtin.deployment_process import DEPLOYMENT_ENV
+
+    await _channel_pack_in_two_environments(project)
+    agent = await _agent_in(project)
+    row = make_data_source("channel-test", owner=f"agent-{agent.id}")
+    assert _value(await resolve_credentials(CHANNEL, row), "api_key") == "dev-key"
+
+    monkeypatch.setenv(DEPLOYMENT_ENV, str((await _production_deployment()).id))
+    assert _value(await resolve_credentials(CHANNEL, row), "api_key") == "prod-key"
+
+
+async def test_with_no_deployment_a_source_reads_the_instance_default_environment(project):
+    from unittest.mock import patch
+
+    from flow_sdk.instance_settings import environment as environment_settings
+
+    await _channel_pack_in_two_environments(project)
+    agent = await _agent_in(project)
+    row = make_data_source("channel-test", owner=f"agent-{agent.id}")
+    with patch.object(environment_settings.app_config, "get_config", return_value="production"):
+        assert _value(await resolve_credentials(CHANNEL, row), "api_key") == "prod-key"
+
+
 async def test_an_undeclared_credential_resolves_nothing_even_with_a_key_in_config(project):
     agent = await _agent_in(project)
     row = make_data_source("channel-test", owner=f"agent-{agent.id}", config={"api_key": "from-config"})

@@ -70,3 +70,26 @@ async def project(home, tmp_path):
     p.fs_storage_mount_path = str(mount)
     await p.save()
     return p
+
+
+@pytest.fixture
+def run_flow(monkeypatch):
+    """``await run_flow("credentials", ...)``: the real ``flow`` CLI, in-process against this test's DB.
+
+    The command's service coroutines run on the test's own loop (``_here``) while Typer runs in a
+    thread; no backend is discovered.
+    """
+    import asyncio
+
+    from typer.testing import CliRunner
+
+    from flow_sdk.cli import flow_cli
+    from flow_sdk.cli.commands import credentials_cmd
+
+    async def run(*argv: str):
+        running = asyncio.get_running_loop()
+        monkeypatch.setattr(credentials_cmd, "discover_port", lambda required=True: None)
+        monkeypatch.setattr(credentials_cmd, "_here", lambda coro: asyncio.run_coroutine_threadsafe(coro, running).result())
+        return await asyncio.to_thread(CliRunner().invoke, flow_cli.app, list(argv))
+
+    return run

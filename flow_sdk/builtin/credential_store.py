@@ -30,6 +30,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     VALUE_STORE_VAULT,
     vault_name,
 )
+from flow_sdk.schema.data_spec.credential_status_spec import StoreForgottenSpec
 from flow_sdk.secrets import SecretStore, SecretStoreRef, load_all
 
 if TYPE_CHECKING:
@@ -153,27 +154,35 @@ async def read_values(
     return out
 
 
+async def forget_in(refs: Iterable[SecretStoreRef], names: Iterable[str]) -> list[StoreForgottenSpec]:
+    """Remove ``names`` from every store in ``refs`` (each place once), one report per store.
+
+    A store that raises is reported with its error and every name counted as kept — a store is
+    never silently skipped.
+    """
+    names = list(dict.fromkeys(names))
+    reports: list[StoreForgottenSpec] = []
+    seen: set[tuple[str, str]] = set()
+    for ref in refs:
+        if ref.key in seen:
+            continue
+        seen.add(ref.key)
+        store = SecretStore.from_ref(ref)
+        report = {"type": ref.type, "where": store.where}
+        try:
+            deleted, kept = await store.forget(names)
+        except Exception as e:  # noqa: BLE001 — reported, never raised past the other stores
+            reports.append(StoreForgottenSpec(**report, kept=names, error=f"{type(e).__name__}: {e}"))
+            continue
+        reports.append(StoreForgottenSpec(**report, deleted=deleted, kept=kept))
+    return reports
+
+
 async def forget_values(
     spec: "SecretPack",
     scope: CredentialScope,
     environments: Iterable[str] = (DEFAULT_ENVIRONMENT,),
-) -> tuple[list[str], list[str]]:
-    """Delete the values a credential owns in every given environment: ``(deleted, kept)`` names.
-
-    Vault entries are Flowpad's own and are removed. Env file lines are the
-    user's and are always kept, so a variable read from a file in any
-    environment is reported as kept.
-    """
-    names = spec.var_names()
-    deleted: set[str] = set()
-    kept: set[str] = set()
-    seen: set[tuple[str, str]] = set()
-    for environment in environments:
-        ref = secret_store_ref(spec, scope, environment)
-        if ref.key in seen:
-            continue
-        seen.add(ref.key)
-        gone, stay = await SecretStore.from_ref(ref).forget(names)
-        deleted.update(gone)
-        kept.update(stay)
-    return [n for n in names if n in deleted and n not in kept], [n for n in names if n in kept]
+) -> list[StoreForgottenSpec]:
+    """Delete the values a credential owns in every given environment's store, one report each."""
+    refs = [secret_store_ref(spec, scope, environment) for environment in environments]
+    return await forget_in(refs, spec.var_names())

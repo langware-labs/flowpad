@@ -374,8 +374,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   };
   const [pendingDeleteCredential, setPendingDeleteCredential] = React.useState<CredentialRow | null>(null);
 
-  /** What Delete will actually do, said before it happens: vault values go,
-   *  `.env.local` lines stay. */
+  /** What Delete will actually do, said before it happens: its values go from
+   *  every store they were saved to — the vault and every `.env*` file. */
   const credentialDeleteDescription = React.useMemo(() => {
     const row = pendingDeleteCredential;
     if (!row) return '';
@@ -384,7 +384,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       return t`${row.title} is removed from ${where}, and its values are deleted from the vault.`;
     }
     const names = row.vars.map((v) => v.envVar).join(', ');
-    return t`${row.title} is removed from ${where}. ${names} stay in .env.local — Flowpad never removes lines from that file.`;
+    return t`${row.title} is removed from ${where}, and ${names} are deleted from every .env file they were saved to.`;
   }, [pendingDeleteCredential, t]);
 
   const [usageForced, setUsageForced] = React.useState(false);
@@ -948,10 +948,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         <DetectedKeys groups={detectedGroups} onPack={packDetected} />
       </div>
 
-      {/* Delete says what will actually happen, BEFORE it happens: the one case
-          where Delete is not total — lines in the user's own `.env.local`,
-          which Flowpad never removes — is named here rather than discovered
-          afterwards. */}
+      {/* Delete says what will actually happen, BEFORE it happens: every value
+          goes, from the vault and from each `.env*` file it was saved to. */}
       <ConfirmDialog
         open={!!pendingDeleteCredential}
         onOpenChange={(open) => {
@@ -967,19 +965,23 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           if (!row) return;
           void (async () => {
             try {
-              const { kept } = await credentialsService.remove(row.typeid);
+              const result = await credentialsService.remove(row.typeid);
               await refreshCredentials();
-              // Report what the BACKEND did, not what the dialog predicted: the
-              // driver decides, and a value could have moved stores since the
-              // table was painted.
-              notify.success({
-                title: t`${row.title} deleted`,
-                // No singular/plural split here, unlike the dialog: "stayed"
-                // reads the same for one name or several.
-                ...(kept.length
-                  ? { message: t`${kept.join(', ')} stayed in .env.local.` }
-                  : {}),
-              });
+              // Report what the BACKEND did, not what the dialog predicted: a
+              // store that kept a value keeps the credential too, as the handle
+              // to retry.
+              if (!result.removed) {
+                const stuck = result.stores
+                  .filter((s) => s.error || s.kept.length)
+                  .map((s) => s.where)
+                  .join(', ');
+                notify.error({
+                  title: t`${row.title} was not fully deleted`,
+                  message: t`${result.kept.join(', ')} could not be removed from ${stuck}.`,
+                });
+                return;
+              }
+              notify.success({ title: t`${row.title} deleted` });
             } catch (error) {
               notify.error({
                 title: t`Could not delete ${row.title}`,
