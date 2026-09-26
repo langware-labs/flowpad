@@ -259,8 +259,12 @@ def touch(reason: str) -> None:
         except Exception:  # noqa: BLE001
             logger.warning("[stream-inbox] recompute failed (%s)", reason, exc_info=True)
 
+    from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
+
     try:
-        asyncio.get_running_loop().create_task(_run())
+        # Detached: held until it finishes (never collected mid-write), and outside the caller's
+        # request transaction — a touch inside a request must not write into a session that closes.
+        create_detached_task(_run(), name=f"stream-inbox:{reason}")
     except RuntimeError:
         # No running loop (sync/startup context) — the bootstrap/startup
         # repair recompute converges the projection.

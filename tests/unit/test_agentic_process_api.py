@@ -437,7 +437,20 @@ async def test_run_returns_the_failed_turn_instead_of_raising():
          patch.object(AgenticProcess, "send", new_callable=AsyncMock), \
          patch.object(AgenticProcess, "wait", new_callable=AsyncMock), \
          patch.object(AgenticProcess, "fetch_worker_status", return_value=WorkerStatus.ERROR):
-        answer = await AgenticProcess.run("do it", workdir="/tmp")
+        # The PTY path is the one the patches above stand in for. Without pty_mode=True, run() takes the
+        # headless default and spawns a REAL worker none of these patches reach.
+        answer = await AgenticProcess.run("do it", workdir="/tmp", pty_mode=True)
+    assert isinstance(answer, PromptResult)
+    assert answer.exit_code is ExitCode.NOT_YET
+    assert answer.executor and answer.executor.startswith("agentic_process-")
+
+
+async def test_run_returns_a_failed_headless_turn_instead_of_raising(mock_driver, tmp_path):
+    """The same answer on ``run()``'s default, headless path: a turn that ended in error is a
+    ``NOT_YET`` answer naming its process — on the mock worker, so no real CLI is spawned."""
+    mock_driver()
+    with patch.object(AgenticProcess, "fetch_worker_status", return_value=WorkerStatus.ERROR):
+        answer = await AgenticProcess.run("do it", workdir=str(tmp_path))
     assert isinstance(answer, PromptResult)
     assert answer.exit_code is ExitCode.NOT_YET
     assert answer.executor and answer.executor.startswith("agentic_process-")
