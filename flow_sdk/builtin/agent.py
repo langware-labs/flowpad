@@ -916,8 +916,7 @@ class Agent(Entity):
         # machine is paid for. The hub checks the same names again (``require``).
         deployment = await self.plan_deployment(environment)
         ready = await readiness(self, deployment)
-        missing = ready.value_items(missing_only=True)
-        if missing:
+        if not ready.ready:
             raise NotReady(ready)
         return await deploy_entity_to_cloud(self, environment, require=ready.value_names())
 

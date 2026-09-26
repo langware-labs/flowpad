@@ -13,6 +13,7 @@ class FakeHubStore:
         self.values: dict[str, dict[str, str]] = {}
         self.calls: list[tuple] = []
         self.deploys: list[dict] = []
+        self.authorized: dict[str, list[str]] = {}
 
     def deployment(self, agent_typeid: str, environment: str) -> dict:
         return {"id": self._ids.setdefault((agent_typeid, environment), str(uuid.uuid4())), "name": f"agent ({environment})",
@@ -25,6 +26,9 @@ class FakeHubStore:
         self.calls.append(("GET", str(etype), eid, action, sub_path))
         if action == "env-var":
             return [{"name": n, "var_type": "api_key", "visible_value": "****"} for n in self.values.get(eid, {})]
+        if action == "secrets":
+            return {"secrets": [{"name": n} for n in self.values.get(eid, {})],
+                    "authorizations": [{"provider": p} for p in self.authorized.get(eid, [])]}
         return None
 
     async def post(self, etype, payload, eid=None, action=None, sub_path=None, **_):
@@ -32,6 +36,9 @@ class FakeHubStore:
         if action == "env-var":
             self.values.setdefault(eid, {})[payload["name"]] = payload["value"]
             return {"name": payload["name"]}
+        if action == "authorize":
+            self.authorized.setdefault(eid, []).append(payload["provider"])
+            return {"provider": payload["provider"]}
         if action == "plan_deployment":
             return {"deployment": self.deployment(f"agent-{eid}", payload["environment"])}
         return None

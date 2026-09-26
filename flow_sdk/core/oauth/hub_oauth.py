@@ -224,6 +224,13 @@ async def hub_credential_value(credentials_name: str, *, verify_held: bool = Tru
     Connections UI and would render a duplicate provider line.
     """
     from flow_sdk.core.oauth.hub_providers import _cloud_user_id  # noqa: PLC0415
+    from flow_sdk.instance_settings.runtime import get_assigned_compute_node  # noqa: PLC0415
+
+    # On a deployment's machine: the box is its agent, not a person — it asks for the token its
+    # deployment's owner authorized, through the route that answers only a key bound to this machine.
+    node = get_assigned_compute_node()
+    if node:
+        return await _machine_connection_token(node, credentials_name)
 
     user_id = _cloud_user_id()
     if not user_id:
@@ -377,3 +384,20 @@ def _is_loopback(origin: str) -> bool:
     from urllib.parse import urlparse  # noqa: PLC0415
 
     return (urlparse(origin).hostname or "").lower() in ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+
+
+async def _machine_connection_token(node: str, credentials_name: str) -> Optional[str]:
+    """This machine's authorized token for ``credentials_name``; ``None`` when not authorized (the hub
+    answers 404 for every refusal). Never cached here: a revocation holds from the next ask."""
+    from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+
+    node_id = node.split("-", 1)[1] if node.startswith("compute_node-") else node
+    try:
+        data = await hub_get(BuiltinEntityType.COMPUTE_NODE, node_id, action="connection-token", sub_path=credentials_name)
+    except HubError as e:
+        logger.debug("[oauth] this machine has no authorized %r: %s", credentials_name, e.status_code)
+        return None
+    value = data.get("value") if isinstance(data, dict) else None
+    return str(value) if value else None

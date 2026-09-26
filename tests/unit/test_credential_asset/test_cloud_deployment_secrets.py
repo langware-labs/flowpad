@@ -66,7 +66,7 @@ async def test_the_deploy_is_refused_until_use_mine_fills_the_store(home, projec
 
     with pytest.raises(NotReady) as refused:
         await agent.deploy_to_cloud("user-1", "production")
-    assert [i.requirement.name for i in refused.value.readiness.value_items(missing_only=True)] == ["stripe"]
+    assert [i.requirement.name for i in refused.value.readiness.items if i.status == "missing"] == ["stripe"]
     assert hub.deploys == [], "no machine is paid for"
 
     deployment = await agent.plan_deployment("production")
@@ -105,3 +105,22 @@ async def test_deleting_a_credential_removes_its_value_from_the_hub_too(home, pr
 
 async def _published(self, actor, force=False):
     return False
+
+
+async def test_an_oauth_need_on_a_cloud_deployment_needs_the_owners_authorization(home, project, hub, monkeypatch):
+    from flow_sdk.builtin.readiness import readiness
+    from flow_sdk.schema.data_spec.connection_spec import ConnectionSpec
+    from tests.utils.connection_rows import fake_connections
+
+    agent = Agent(name="cloud-slack", project_id=str(project.id),
+                  requirements=[RequirementSpec(kind="connection", name="slack")])
+    await agent.save()
+    fake_connections(monkeypatch, {"slack": ConnectionSpec(provider="slack", display_name="Slack", connected=True)})
+    deployment = await agent.plan_deployment("production")
+
+    before = (await readiness(agent, deployment)).items
+    assert [(i.status, i.fix) for i in before] == [("missing", "authorize slack for this deployment")]
+
+    await deployment.authorize("slack", ["permission.slack.chat.write"])
+    after = await readiness(agent, deployment)
+    assert after.ready and after.items[0].status == "verified"
