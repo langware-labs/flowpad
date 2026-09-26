@@ -55,6 +55,10 @@ export interface AgentReadinessItem {
   requirement: AgentRequirement;
   status: 'verified' | 'declared' | 'missing';
   where: string;
+  /** The variables a store must hold for it — empty for what a grant satisfies. */
+  vars: string[];
+  /** The connection that grants it — what a cloud deployment's owner authorizes for its machine. */
+  connection: string;
   fix: string;
 }
 
@@ -64,6 +68,12 @@ export interface AgentReadiness {
   environment: string;
   ready: boolean;
   items: AgentReadinessItem[];
+}
+
+/** A planned cloud placement and its readiness (`POST agent/<id>/plan_deployment`). */
+export interface AgentPlannedDeployment {
+  deployment: IDeployment;
+  readiness: AgentReadiness;
 }
 
 @registerEntity
@@ -327,6 +337,16 @@ export class Agent extends APIEntity<Agent> {
   async deploy(environment?: string, provider?: 'local'): Promise<AgentDeployResult> {
     const body = { ...(environment ? { environment } : {}), ...(provider ? { provider } : {}) };
     return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
+  }
+
+  /**
+   * The cloud placement this agent will have in `environment` (default `production`), before it
+   * has a machine, and whether it is ready: each missing value can be filled ("use mine",
+   * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
+   * `deploy`, which is refused (409 `not_ready`) until it is.
+   */
+  async planDeployment(environment?: string): Promise<AgentPlannedDeployment> {
+    return (await this.post('plan_deployment', environment ? { environment } : undefined)) as AgentPlannedDeployment;
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */

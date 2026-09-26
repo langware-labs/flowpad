@@ -40,20 +40,20 @@ from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.schema.types import EntityType
-from flow_sdk.schema.data_spec._form import ShapeForm
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.blocks import MessageBlock
-    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
     from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 logger = logging.getLogger(__name__)
 
@@ -680,7 +680,6 @@ class Agent(Entity):
             owning_project,  # noqa: PLC0415
             publish_git_asset,  # noqa: PLC0415
         )
-
         from flow_sdk.builtin.readiness import refresh_requirements  # noqa: PLC0415
 
         project = await owning_project(self)
@@ -738,6 +737,23 @@ class Agent(Entity):
         except LookupError as e:
             return ApiFailResponse(message=str(e), status_code=404)
         return ApiSuccessResponse(data=(await readiness(self, deployment)).model_dump(mode="json"))
+
+    @action.post(action_name="plan_deployment")
+    async def plan_deployment_action(self):
+        """`POST /agent/<id>/plan_deployment  {"environment"}` — the cloud placement before its machine,
+        and whether it is ready: what a deploy dialog lists, with "use mine" per missing value."""
+        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        body = await self._body()
+        try:
+            deployment = await self.plan_deployment(str(body.get("environment") or "").strip() or None)
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"plan failed: {exc}", status_code=502)
+        return ApiSuccessResponse(data={
+            "deployment": deployment.model_dump(mode="json"),
+            "readiness": (await readiness(self, deployment)).model_dump(mode="json"),
+        })
 
     # ── the mailbox ───────────────────────────────────────────────────────
 

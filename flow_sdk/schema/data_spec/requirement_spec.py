@@ -71,6 +71,8 @@ class ReadinessItemSpec(DataSpec):
     where: str = ""
     #: The variables a store must hold for it — empty for what a grant satisfies (a connection).
     vars: list[str] = Field(default_factory=list)
+    #: The connection that grants it — what a cloud deployment's owner authorizes for its machine.
+    connection: str = ""
     #: The one step that fixes a missing item.
     fix: str = ""
 

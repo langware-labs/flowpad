@@ -158,6 +158,26 @@ export const DEPLOYMENT_TIMELINE_TAG = 'deployment.timeline';
  * `gcp`). The row is parented to the deployed element and holds the same id on
  * the hub and here, so a cloud placement is adopted rather than re-minted.
  */
+
+/** One value the hub holds for a cloud placement. Names only; `ts` is epoch seconds. */
+export interface DeploymentSecretRow {
+  name: string;
+  written?: number;
+  placed?: { ts: number; event: 'placed' | 'unplaced' | string; detail?: string };
+}
+
+/** A connection a cloud placement's machine may use (`Deployment.authorize`). */
+export interface DeploymentAuthorizationRow {
+  provider: string;
+  permissions: string[];
+  ts?: number;
+}
+
+export interface DeploymentSecretsInventory {
+  secrets: DeploymentSecretRow[];
+  authorizations: DeploymentAuthorizationRow[];
+}
+
 @registerEntity
 export class Deployment extends APIEntity<Deployment> implements IDeployment {
   static type: string = 'deployment';
@@ -251,6 +271,24 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   /** Bring a cloud machine to the published definition (the hub re-clones and re-indexes it). */
   async update(): Promise<Record<string, unknown>> {
     return ((await this.post('update')) ?? {}) as Record<string, unknown>;
+  }
+
+  /** What the hub holds for this cloud placement — each value's name, last write and last placement
+   *  on its machine, and the connections its machine may use. Names only. */
+  async secretsInventory(): Promise<DeploymentSecretsInventory> {
+    const data = await this.get<Partial<DeploymentSecretsInventory> | null>('secrets');
+    return { secrets: data?.secrets ?? [], authorizations: data?.authorizations ?? [] };
+  }
+
+  /** Let this placement's machine use your `provider` connection: it asks the hub for a fresh token
+   *  when it needs one; your refresh token never leaves the hub. */
+  async authorize(provider: string, permissions: string[] = []): Promise<void> {
+    await this.post('authorize', { provider, permissions });
+  }
+
+  /** Take `provider` back: the machine's next token ask is refused. */
+  async revoke(provider: string): Promise<void> {
+    await this.post('authorize', { provider, revoke: true });
   }
 
   /** What this placement serves — for a cloud placement, as the hub has it now (held here at the hub's ids). */
