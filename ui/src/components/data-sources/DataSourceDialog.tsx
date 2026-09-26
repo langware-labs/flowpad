@@ -62,7 +62,7 @@ function statusFor(enabled: boolean, current: SourceStatus): SourceStatus {
 }
 
 /** The one config-shaped field that is NOT stored in `config` — it is the
- *  entity's own `inbound_allowed_senders`. Named once here so the seed, the
+ *  entity's own `allowed_senders`. Named once here so the seed, the
  *  submit-time extraction and the pre-fill all agree on the reserved key. */
 const ALLOWED_SENDERS_KEY = 'allowed_senders';
 
@@ -72,7 +72,7 @@ function draftFrom(source: DataSource, spec?: DataDriver): SourceDraft {
   for (const [key, field] of specFields(spec)) {
     // `allowed_senders` reads the real entity field, never `config` — it was
     // never written there (see `submit`'s extraction below).
-    const raw = key === ALLOWED_SENDERS_KEY ? { [key]: source.inbound_allowed_senders } : (source.config ?? {});
+    const raw = key === ALLOWED_SENDERS_KEY ? { [key]: source.allowed_senders } : (source.config ?? {});
     fields[key] = fieldValue(key, field, raw);
     if (field.choices) picked[key] = pickedFrom(key, field, raw);
   }
@@ -177,7 +177,7 @@ export function DataSourceDialog({
       // `allowed_senders` shares the manifest-driven field/picker machinery
       // (so a provider that offers it gets the same picker-or-type UX as any
       // other choosable field, with no bespoke render code) but it is NOT a
-      // `config` entry — it is the entity's own `inbound_allowed_senders`.
+      // `config` entry — it is the entity's own `allowed_senders`.
       // Pull it back out here, the one place a manifest field's destination
       // can differ from `config`.
       const allowedSenders = Array.isArray(config[ALLOWED_SENDERS_KEY])
@@ -196,7 +196,7 @@ export function DataSourceDialog({
           editing.poll_interval_seconds !== draft.poll_interval_seconds ||
           editing.window_days !== draft.window_days ||
           editing.thread_timeout_seconds !== draft.thread_timeout_seconds ||
-          JSON.stringify(editing.inbound_allowed_senders ?? []) !== JSON.stringify(allowedSenders);
+          JSON.stringify(editing.allowed_senders ?? []) !== JSON.stringify(allowedSenders);
         editing.name = nextName;
         editing.status = nextStatus;
         editing.account_key = account;
@@ -204,7 +204,7 @@ export function DataSourceDialog({
         editing.poll_interval_seconds = draft.poll_interval_seconds;
         editing.window_days = draft.window_days;
         editing.thread_timeout_seconds = draft.thread_timeout_seconds;
-        editing.inbound_allowed_senders = allowedSenders;
+        editing.allowed_senders = allowedSenders;
         await editing.save();
         if (changed) editing.markEdit();
         notify.success({ title: t`Updated ${editing.name}` });
@@ -222,7 +222,7 @@ export function DataSourceDialog({
           window_days: draft.window_days,
           thread_timeout_seconds: draft.thread_timeout_seconds,
           owner: owner ? owner.toString() : null,
-          inbound_allowed_senders: allowedSenders,
+          allowed_senders: allowedSenders,
         });
         await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
         notify.success({ title: t`Added ${source.name}` });

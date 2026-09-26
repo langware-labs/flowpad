@@ -107,20 +107,23 @@ you want.
 `model` defaults to the endpoint's `md` slug; name a tier to pick a cheaper or stronger one.
 
 ```python
+endpoint = await LLMEndpoint.ensure_for_secret("openrouter")   # the key stored in §2
 reply = await endpoint.create_completion(
     "You answer with a single digit.",
     "What is four minus one?",
     model=endpoint.models["sm"],
 )
 
-data = await endpoint.create_completion(sys, user, json_reply=True)   # parsed, fences stripped
-async for chunk in await endpoint.create_completion(sys, user, stream=True):
+system, user = "Answer as JSON.", 'Give {"answer": 3}.'
+data = await endpoint.create_completion(system, user, json_reply=True)   # parsed, fences stripped
+async for chunk in await endpoint.create_completion(system, user, stream=True):
     print(chunk, end="")
 ```
 
 ## 6. Embeddings, catalogs and probes
 
 ```python
+texts = ["a hot day in July", "a cold night in January"]
 vectors = await endpoint.create_embeddings(texts)          # one vector per text, in order
 models = await endpoint.list_models(embeddings_only=True)  # OpenRouter filters server-side
 result = await endpoint.probe()                            # {ok, status, message}; never raises
@@ -216,7 +219,8 @@ Flash, Qwen3 Coder 30B) after the same single bind.
 Pinned by `tests/long_tests/test_loginless_in_docker.py`, which runs exactly those two commands
 in a clean container (`tests/loginless_e2e/`) holding no hub key, no provider key and no
 `FLOWPAD_HUB_URL`; the resolver and binding rules are pinned by
-`tests/unit/test_llm_source_resolution.py` and `tests/unit/test_hub_llm_endpoint.py`.
+`tests/unit/test_llm_source_resolution.py` and `tests/unit/test_hub_llm_endpoint.py`. The script itself
+also runs as written on any box with an LLM source of its own — `tests/long_tests/test_llm_endpoints_script.py`.
 
 The admin's half is four hub calls (`tests/loginless_e2e/make_public_endpoint.py`) — create a
 root, give it a provider key, **cap it in money**, open it:

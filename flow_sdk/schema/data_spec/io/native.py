@@ -27,7 +27,8 @@ Only ``save`` treats them differently.
 
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional
 
 from pydantic_core import core_schema
 
@@ -45,13 +46,22 @@ def _carrier_schema(inner: Any) -> Any:
 
 
 class Text(str):
-    """A string that is a document's content, not one of its fields."""
+    """A string that is a document's content, not one of its fields.
+
+    ``path`` is the file it lives in: set by ``load`` (the file it was read from) and by ``save`` (the file
+    it was written to) — one ``names.field_file`` rule, so ``value.body.path`` is where ``save`` puts it.
+    ``None`` for a value that has never touched disk.
+    """
+
+    path: Optional[Path] = None
 
     __get_pydantic_core_schema__ = _carrier_schema(core_schema.str_schema)
 
 
 class Binary(bytes):
-    """Bytes that are a file, not a field. Written as ``<field><ext>``."""
+    """Bytes that are a file, not a field. Written as ``<field><ext>``; ``path`` as on ``Text``."""
+
+    path: Optional[Path] = None
 
     #: What a bare ``Binary`` is written as when nothing says otherwise.
     ext: str = ".bin"

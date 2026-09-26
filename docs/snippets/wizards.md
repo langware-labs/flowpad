@@ -17,12 +17,27 @@ on a Linux box.
 
 ---
 
+Every fence below runs in one session, after this one — the names they use and a folder to work in:
+
+```python
+# setup
+import tempfile
+from pathlib import Path
+
+from flow_sdk.core.wizard.runner import MAX_WIZARD_DEPTH, Resolved, run_wizard
+from flow_sdk.schema.data_spec.compute_op_spec import CliOp, ComputeOpSpec
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, WizardResult
+from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
+
+tmp = Path(tempfile.mkdtemp())       # the folder the steps below work in
+```
+
 ## 1. Order, and a step that had nothing to do
 
 ```python
 marker = ComputeOpSpec(name="marker", subkind="cli",
-                       exe_data=CliOp(commands={"darwin": "touch done.txt"}),
-                       completion_check=CliOp(commands={"darwin": "test -f done.txt"}))
+                       exe_data=CliOp(commands={"darwin": "touch done.txt", "linux": "touch done.txt"}),
+                       completion_check=CliOp(commands={"darwin": "test -f done.txt", "linux": "test -f done.txt"}))
 
 async def resolve(name):
     return Resolved(marker, trusted=True)
@@ -47,10 +62,10 @@ and then found everything else in place did NOT do nothing.
 
 ```python
 port = ComputeOpSpec(name="port", subkind="cli", output_spec_kind="int",
-                     exe_data=CliOp(commands={"darwin": "echo 8080"}))
+                     exe_data=CliOp(commands={"darwin": "echo 8080", "linux": "echo 8080"}))
 record = ComputeOpSpec(name="record", subkind="cli",
-                       exe_data=CliOp(commands={"darwin": 'echo "$FLOWPAD_WIZARD_INPUT_PORT" > port.txt'}),
-                       completion_check=CliOp(commands={"darwin": "test -s port.txt"}))
+                       exe_data=CliOp(commands={"darwin": 'echo "$FLOWPAD_WIZARD_INPUT_PORT" > port.txt', "linux": 'echo "$FLOWPAD_WIZARD_INPUT_PORT" > port.txt'}),
+                       completion_check=CliOp(commands={"darwin": "test -s port.txt", "linux": "test -s port.txt"}))
 ops = {"port": port, "record": record}
 
 async def resolve(name):
@@ -80,11 +95,11 @@ never which command runs.
 
 ```python
 attempt = ComputeOpSpec(name="attempt", subkind="cli",
-                        exe_data=CliOp(commands={"darwin": "false"}),
-                        completion_check=CliOp(commands={"darwin": "test -f tool"}))
+                        exe_data=CliOp(commands={"darwin": "false", "linux": "false"}),
+                        completion_check=CliOp(commands={"darwin": "test -f tool", "linux": "test -f tool"}))
 fallback = ComputeOpSpec(name="fallback", subkind="cli",
-                         exe_data=CliOp(commands={"darwin": "touch tool"}),
-                         completion_check=CliOp(commands={"darwin": "test -f tool"}))
+                         exe_data=CliOp(commands={"darwin": "touch tool", "linux": "touch tool"}),
+                         completion_check=CliOp(commands={"darwin": "test -f tool", "linux": "test -f tool"}))
 ops = {"attempt": attempt, "fallback": fallback}
 
 async def resolve(name):
@@ -119,7 +134,7 @@ would be `NOT_YET` and name it.
 
 ```python
 stamp = ComputeOpSpec(name="stamp", subkind="cli", output_spec_kind="string",
-                      exe_data=CliOp(commands={"darwin": "echo ok"}))
+                      exe_data=CliOp(commands={"darwin": "echo ok", "linux": "echo ok"}))
 
 async def resolve(name):
     return Resolved(stamp, trusted=True)

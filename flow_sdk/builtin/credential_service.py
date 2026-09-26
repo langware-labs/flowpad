@@ -37,8 +37,8 @@ from flow_sdk.schema.data_spec.credential_contract import (
 from flow_sdk.secrets import VaultNotEnabled
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.secret_pack import SecretPack
     from flow_sdk.builtin.project import Project
+    from flow_sdk.builtin.secret_pack import SecretPack
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +188,7 @@ async def save_credential(
     if not parsed.setup.strip():
         raise CredentialError(
             "a credential needs setup instructions: how to obtain its values and store them "
-            f"(`flow credentials set {parsed.name} VAR=…`)"
+            f"(piped as `VAR=VALUE` lines into `flow credentials set {parsed.name} --stdin`)"
         )
     if parsed.lm_provider and target_scope.scope != SCOPE_USER:
         raise CredentialError("an LLM provider key funds every project, so it can only be added for the user")
@@ -287,6 +287,19 @@ async def set_credential_by_name(
         raise CredentialError("no value given")
     spec = await credential_named(name, project, declare=True)
     return await set_credential_values(str(spec.typeid), values, environment)
+
+
+async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "SecretPack":
+    """``flow credentials declare``: save ``manifest`` in the project — updating the project's own
+    credential of that name in place, so declaring twice is declaring once. (``save_credential``
+    stays create-or-refuse: a dialog creating a second ``telegram`` must not overwrite the first.)"""
+    project = await get_project(project_id)
+    if project is None:
+        raise CredentialError("project not found")
+    own = await credential_named(str(manifest.get("name") or ""), project)
+    if own is not None and own.scope == SCOPE_PROJECT:
+        return await save_credential(manifest=manifest, typeid=str(own.typeid))
+    return await save_credential(manifest=manifest, scope=SCOPE_PROJECT, project_id=project_id)
 
 
 async def delete_credential(typeid: str) -> dict[str, list[str]]:

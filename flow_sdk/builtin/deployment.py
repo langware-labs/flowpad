@@ -619,6 +619,72 @@ class Deployment(Entity):
 
         return ApiSuccessResponse(data=(await threads(self)).model_dump(mode="json"))
 
+    def _local_process(self):
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentProcess  # noqa: PLC0415
+
+        return DeploymentProcess(
+            deployment_id=str(self.id), shell_id=deployment_process.shell_id_of(self),
+            file=str(deployment_process.file_of(self)), command=deployment_process.command_of(self),
+            pid=deployment_process.pid_of(self), serving=bool(self.serving),
+        )
+
+    @action.get(action_name="process")
+    async def process_action(self):
+        """`GET /deployment/<id>/process` — a local deployment's process: its file, its terminal, its pid."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.is_local:
+            return ApiFailResponse(message="only a local deployment runs a process here", status_code=400)
+        return ApiSuccessResponse(data=(await asyncio.to_thread(self._local_process)).model_dump(mode="json"))
+
+    @action.get(action_name="code")
+    async def code_action(self):
+        """`GET /deployment/<id>/code` — the text of the Python file a local deployment runs."""
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentCode  # noqa: PLC0415
+
+        if not self.is_local:
+            return ApiFailResponse(message="only a local deployment runs a file here", status_code=400)
+        path = deployment_process.file_of(self)
+        return ApiSuccessResponse(data=DeploymentCode(file=str(path), text=path.read_text(encoding="utf-8")).model_dump(mode="json"))
+
+    @action.post(action_name="save_code")
+    async def save_code_action(self):
+        """`POST /deployment/<id>/save_code {text}` — write the file; it runs from the next (re)start."""
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentCode  # noqa: PLC0415
+
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        text = ((await request_info.get_post_data()) or {}).get("text") if request_info else None
+        if not self.is_local or not isinstance(text, str):
+            return ApiFailResponse(message="a local deployment's file takes {text: <python>}", status_code=400)
+        path = deployment_process.file_of(self)
+        path.write_text(text, encoding="utf-8")
+        return ApiSuccessResponse(data=DeploymentCode(file=str(path), text=text).model_dump(mode="json"))
+
+    @action.post(action_name="restart")
+    async def restart_action(self):
+        """`POST /deployment/<id>/restart` — stop the loop; the supervisor runs the file again at once
+        (this write is what tells it), in the same terminal."""
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.is_local or not self.serving:
+            return ApiFailResponse(message="only a running local deployment restarts", status_code=400)
+        if not await asyncio.to_thread(deployment_process.stop, self):
+            return ApiFailResponse(message="its process did not stop", status_code=500)
+        await self.save()
+        return ApiSuccessResponse(data=(await asyncio.to_thread(self._local_process)).model_dump(mode="json"))
+
     @action.get(action_name="runs")
     async def runs_action(self):
         """`GET /deployment/<id>/runs?limit=` — the latest runs on a cloud machine; the hub bounds ``limit``."""
@@ -687,6 +753,7 @@ class Deployment(Entity):
         """
         from flow_sdk.builtin.agent import worker_type_value  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.agentic_process import selected_worker_type  # noqa: PLC0415
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
         agent = await self._require_agent()
@@ -746,7 +813,7 @@ class Deployment(Entity):
             # interactive worker pass pty_mode=True and start it themselves.
             pty_mode=options.pop("pty_mode", False),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
-            worker_type=worker_type_value(worker_override or agent.worker_type),
+            worker_type=worker_type_value(worker_override or agent.worker_type or await selected_worker_type()),
             project_id=options.pop("project_id", None) or agent.project_id,
             load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
             additional_dirs=list(agent.additional_dirs or []),
@@ -763,10 +830,11 @@ class Deployment(Entity):
             deployment_id=self.id,
             **options,
         )
-        _prepare_output_folder(process)
         return process
 
-    async def launch(self, prompt: str, *, wait: bool = False, **options) -> "PromptResult":
+    async def launch(
+        self, prompt: str, *, wait: bool = False, input: Any = None, output_spec: Any = None, **options
+    ) -> "PromptResult":
         """``create_process`` + save + run the first turn — answered as a
         ``PromptResult`` whose ``executor`` names the process. Never raises for
         an outcome.
@@ -777,19 +845,28 @@ class Deployment(Entity):
         ``AgenticProcess.run`` reads it. Not taken is NOT_YET (``busy`` when a
         turn is in flight); a disabled agent is REFUSED, a missing one NOT_FOUND.
         A caller that needs the process resolves it from ``executor``.
-        """
-        from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
 
+        ``input`` / ``output_spec``: typed folder I/O — see ``process_io``; the agent's declared ``input`` /
+        ``output`` apply when omitted, and the output is read back only with ``wait=True``.
+        """
+        from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
+            check_declared_input,
+            declared_output_spec,
+            prepare_io,
+            resolve_output_spec,
+            take_turn,
+        )
+
+        agent = await self.agent()
+        spec = resolve_output_spec(output_spec) or declared_output_spec(getattr(agent, "output", None))
+        check_declared_input(input, getattr(agent, "input", None))
         try:
             proc = await self.create_process(prompt, **options)
         except AgentUnavailable as gone:
             return gone.answer()
+        prepare_io(proc, input=input, output_spec=spec)
         await proc.save()
-        taken = await proc.send_turn(prompt)
-        if not taken.ok or not wait:
-            return taken
-        await proc.wait()
-        return _build_run_result(proc)
+        return await take_turn(proc, prompt, spec, wait=wait)
 
     async def use(self, *, owner=None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
@@ -899,32 +976,6 @@ class Deployment(Entity):
             if observation and (observation.window_start is None or observation.window_end is None):
                 raise ValueError(f"{kind.value} observation requires a declared window")
         return value
-
-
-def _prepare_output_folder(process: "AgenticProcess") -> None:
-    """Give a non-flow run the same output convention a flow node gets.
-
-    The FOLDER is already universal — every process serializes
-    ``<record>/execution/{input,output,assets}``. What was flow-only is the
-    CONVENTION: only ``_agent_instruction`` ever told an agent that an output
-    folder exists, so a run launched from an Agent produced artifacts nowhere
-    and the runs UI showed "no files" for it.
-
-    Two lines, mirroring the flow engine: materialize the folder before the run
-    (the id is minted at construction, so the path is known pre-save), and say
-    where it is. Best-effort — a read-only disk must not fail the launch.
-    """
-    try:
-        output = process._record_dir() / "execution" / "output"
-        output.mkdir(parents=True, exist_ok=True)
-    except Exception:  # noqa: BLE001
-        return
-    existing = str(process.context_data.get("instructions") or "").strip()
-    line = (
-        f"Write any files you produce to: `{output}/`\n"
-        "Anything left there is collected as this run's output and shown in the UI."
-    )
-    process.context_data["instructions"] = "\n\n".join(p for p in (existing, line) if p)
 
 
 __all__ = ["KIND_AGENT", "KIND_NODE", "KIND_WEB", "NODE_PROVIDERS", "Deployment"]

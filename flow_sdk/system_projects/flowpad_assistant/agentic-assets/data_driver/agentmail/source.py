@@ -18,11 +18,12 @@ from urllib.parse import quote
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, OutcomeUnknown, Rejected, Unsupported
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
@@ -48,7 +49,7 @@ class AgentMailConfig(SourceConfig):
     base_url: str = ""
 
 
-class AgentMailSource(EmailAddressing, Source):
+class AgentMailSource(EmailAddressing, MessageSource):
 
     Config = AgentMailConfig
     provider = "agentmail"

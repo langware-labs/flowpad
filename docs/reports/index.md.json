@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "reports",
   "folder_name": "reports",
-  "inputs_hash": "57c1bfe5440a0dd0a4c18213c5a98ad3488128d6728d7e41c4ea50a59e002297",
+  "inputs_hash": "b9f50096468010f11a676e565982cfdd7372d6f4f302fb731793678735a9c6a2",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Validation records for completed refactors: what was run, what passed, and the gates each change had to clear. Evidence that a migration landed, not instructions for doing one.",
@@ -14,28 +14,28 @@
       "name": "asset-filesystem-refactor.md",
       "rel_path": "asset-filesystem-refactor.md",
       "title": "Filesystem asset refactor validation",
-      "summary": "Validation record for the filesystem asset refactor: test-suite results, asset gates, UI gates, and the fixture problems the first full run exposed.",
-      "content_hash": "18aad4b646066db302040b6126303387181a991ca6f7606c1d462499279a4e5b",
-      "size_bytes": 9088
+      "summary": "2026-09-11 validation report for the filesystem asset refactor: library boundary, automated suite results and live checks.",
+      "content_hash": "993d5a13878d511846b252c33a008ac5de1c1bd399c3ed86ef0e3fc3d0343eea",
+      "size_bytes": 9137
     },
     {
       "name": "filesystem-asset-library-validation.md",
       "rel_path": "filesystem-asset-library-validation.md",
-      "title": "Filesystem asset library consolidation \u2014 2026-09-13",
-      "summary": "Validation report for the flow_sdk/assets consolidation: Asset identity, the application/library boundary, and the isolation and filesystem checks proving it.",
-      "content_hash": "e1d4c06edc94fe2b51db0fe6f8d81e7c5a43fca1a590a9a28f61a29f1ffdbcef",
-      "size_bytes": 8062
+      "title": "Filesystem asset library consolidation — 2026-09-13",
+      "summary": "2026-09-13 report on consolidating the flow_sdk/assets filesystem library: identity, occurrences, import boundaries and implementation checks.",
+      "content_hash": "9257dbc30833ea3f006a055b0e7862c29421f6284cf3fdb5fd97f9b0151e5383",
+      "size_bytes": 8111
     },
     {
       "name": "worker-asset-availability.md",
       "rel_path": "worker-asset-availability.md",
       "title": "Worker asset availability validation",
-      "summary": "Validation report on whether a selected worker actually discovers skills and agents: 32 native probes across four CLIs, and the corrections made.",
-      "content_hash": "1fae289f70a78f8d50edc0084183cf32824456ccd6fc43904cab7a6107b1c67d",
-      "size_bytes": 4303
+      "summary": "2026-09-10 validation of which skills and agents each worker harness actually discovers across launch modes; parity still in progress.",
+      "content_hash": "30c332b863dc16f399cf2090907704c05c16eeca4bd67a34c57c13f2df9931ae",
+      "size_bytes": 4352
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-19T23:43:15.588810+00:00",
+  "generated_at": "2026-09-25T12:04:30Z",
   "latest_process_ref": ""
 }

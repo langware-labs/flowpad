@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "snippets",
   "folder_name": "snippets",
-  "inputs_hash": "6c5406a16ecdccb19bf2c22c22a1f9d96c97884af4e1cb426e97bd628fe5419a",
+  "inputs_hash": "f7d6b2f836466f67180f84bc54bfbc386f869578d79932e446e674cd887f40c8",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
@@ -14,9 +14,9 @@
       "name": "README.md",
       "rel_path": "README.md",
       "title": "Snippets — the dev onboarding shelf",
-      "summary": "Conventions for the dev snippets shelf: short runnable SDK Python, one file per category, each pinned by a test; values travel as DataSpec.",
-      "content_hash": "9acfde7f753f8f0a0db75772b4c09eefeb20bcf1c70addac1af25611e7a8cfbd",
-      "size_bytes": 5855
+      "summary": "Index of the tested developer snippet pages: each category, what it shows, and the test that pins every fence.",
+      "content_hash": "40144c4f66493fde801e06c5449c820d1fa19f0a6491c36c20da00fd870967ed",
+      "size_bytes": 6225
     },
     {
       "name": "activity.md",
@@ -30,41 +30,41 @@
       "name": "agent-deployment.md",
       "rel_path": "agent-deployment.md",
       "title": "Agent deployment — snippets",
-      "summary": "Snippets for placing an agent: Deployment rows, launching a session that answers a PromptResult, serve loops answering channels, reading and stopping placements, dedicated machines.",
-      "content_hash": "ef158cf7a636b92a4815224cf142a54773f5612df30361c5012a717a1ead2757",
-      "size_bytes": 6498
+      "summary": "Snippets for placing an agent, starting sessions, reading placements, pausing, serving it your own way, and running it locally.",
+      "content_hash": "ccde2f1f6f04323ab7575e6173a9b70e0534102ec833dea39cad8f15819836a5",
+      "size_bytes": 12530
     },
     {
       "name": "agent-email.md",
       "rel_path": "agent-email.md",
       "title": "Agent email",
-      "summary": "Snippet: allocate an agent's mailbox and answer each incoming email through the agent with a threaded reply via its StreamInbox.",
-      "content_hash": "a6ce31f8a73793b6afc9710db102142b30bd6f99092e3a9ab0cce9879204ea43",
-      "size_bytes": 4360
+      "summary": "Snippet: allocate an agent mailbox, listen for mail with StreamInbox, run the agent and send threaded replies.",
+      "content_hash": "534f530f9485b6ee110484dee832395fabdc7d4b26bdf66837e613aa8fe5644c",
+      "size_bytes": 4383
     },
     {
       "name": "agent-helpdesk.md",
       "rel_path": "agent-helpdesk.md",
       "title": "Agent help desk",
-      "summary": "Giving an Agent a hub help desk: bind_channel adopts the desk as an agent-owned source, and the stream inbox runtime answers every ticket.",
-      "content_hash": "4033b001a40f33d5ba5d050eaeb94616b51b661a6169f2b4f457c4ba8c9d2694",
-      "size_bytes": 1946
+      "summary": "Snippet: bind a hub help desk to an agent so it answers the desk's conversations as the agent.",
+      "content_hash": "ef840b95a08a888706ece60aa2e2e79e51366540a10a129067dadeacb979f353",
+      "size_bytes": 1969
     },
     {
       "name": "agents-on-channels.md",
       "rel_path": "agents-on-channels.md",
       "title": "An agent on a channel — snippets",
-      "summary": "Snippets for putting an agent on a messaging channel like WhatsApp: the credential, the app-runs-it variant, and the your-process-runs-the-loop variant.",
-      "content_hash": "b9a3de8c243936d483cf933e96e2caeee652313742a40c849c9780ba556e2639",
-      "size_bytes": 5482
+      "summary": "Put an agent on WhatsApp: declare the credential, let the app answer, or run the answering loop yourself.",
+      "content_hash": "f94e6598150ee8cd3ec219b4e2d0c7c21a3747cfe1ca50bb4a836770f2d62603",
+      "size_bytes": 6206
     },
     {
       "name": "call-returns.md",
       "rel_path": "call-returns.md",
       "title": "Call → ExitCode → Return",
-      "summary": "The call-return contract, every fence tested: ComputeOp as one call per subkind, ReturnedValue subclasses, busy as a field, no raised outcomes, role timeouts, ask, wizard, agent continuation.",
-      "content_hash": "80aaf9b989242f23efe64b41fe67d147a5cba0bea33583ecb59ef911167a84d6",
-      "size_bytes": 17718
+      "summary": "The one-answer contract: ComputeOp calls, ReturnedValue and its subclasses including PromptResult files, exit codes, timeouts and wizards.",
+      "content_hash": "4600f8fb7b4774fdc7430e7bbe24b17f7737c7237d2d821d0289d587ad3d25b3",
+      "size_bytes": 17898
     },
     {
       "name": "compute-ops.md",
@@ -102,9 +102,9 @@
       "name": "gmail-source.md",
       "rel_path": "gmail-source.md",
       "title": "Gmail source",
-      "summary": "Creating a Gmail data source from the shipped driver, with the app password read from the environment and never stored on the DataSource row.",
-      "content_hash": "13821d3379cef2fe0de4a88e8bcdd5ea3c19ee24a76e6e0289d0f15343f0da2c",
-      "size_bytes": 758
+      "summary": "Snippet: create a Gmail data source from the shipped driver with credentials read from .env.local, never stored.",
+      "content_hash": "a0177a3161e093485921b5e7ef0849d8b0b16e8eb06a4fa24991c3557c7b8515",
+      "size_bytes": 807
     },
     {
       "name": "llm-endpoints.md",
@@ -118,9 +118,9 @@
       "name": "message-block.md",
       "rel_path": "message-block.md",
       "title": "Simple message block",
-      "summary": "Runnable snippet for the process-local MessageBlock: prompt in, reply out, with no address, provider, mailbox or persisted rows.",
-      "content_hash": "39038b106b395fa70e9379ccf6b3f8a646155cf2880c14ddd8a2dc62d1fb1472",
-      "size_bytes": 1021
+      "summary": "Snippet: send a prompt through a process-local MessageBlock and let an Agent reply, with no worker named.",
+      "content_hash": "852fcb8409f077d52c4f251e7cbf91ce839e18e09a3384b63f8191e2da2dfb48",
+      "size_bytes": 995
     },
     {
       "name": "pipes.md",
@@ -134,9 +134,9 @@
       "name": "processes.md",
       "rel_path": "processes.md",
       "title": "Processes and agents — snippets",
-      "summary": "Runnable snippets for processes and agents: attaching MCP servers to a process or agent, per-harness rendering, and launching an agent to read its PromptResult answer.",
-      "content_hash": "3a90e019904bdae6854f6ee55c5552da13dd83982500cd50bcfd1a93d3e0768a",
-      "size_bytes": 5866
+      "summary": "Process and agent snippets: MCP servers, launching and reading answers, and typed folder in/out with run(input, output_spec).",
+      "content_hash": "33b8190522a84ab6bf4cbe902e972393e7a11c4f37d4866547cc8acda76fa716",
+      "size_bytes": 8215
     },
     {
       "name": "rag.md",
@@ -150,17 +150,17 @@
       "name": "secret-stores.md",
       "rel_path": "secret-stores.md",
       "title": "Secret stores",
-      "summary": "SecretStore and Connection: how a consumer declares the names and scopes it needs, gets a provider, and binds it onto the row.",
-      "content_hash": "a26acf0b15c8f640485ee33cb8bbae39a87bbd8ec0fcff81cdb4fb012a4ae0cc",
-      "size_bytes": 21679
+      "summary": "Secret stores: load, save and validate named secrets, credentials per environment, binding stores and connections, flow project setup.",
+      "content_hash": "26776eee30f8e81a6d6672dac06b779759e26b67813a1183e36e7119eede06e1",
+      "size_bytes": 25279
     },
     {
       "name": "service-endpoints.md",
       "rel_path": "service-endpoints.md",
       "title": "Service endpoints — snippets",
-      "summary": "ServiceEndpoint snippets: what a placement answers on, reaching endpoints, web-app endpoints, cloud boxes, hub-served endpoints and an agent's chat.",
-      "content_hash": "2e77a1e5786759a84a49dee4c0efa618353b8e3e86152948f43f3141f6abd996",
-      "size_bytes": 7404
+      "summary": "ServiceEndpoint snippets: what a placement answers on, the service proxy, web app endpoints, cloud boxes and an agent's chat.",
+      "content_hash": "4c66987f9782d2564e257c7960dcaffd4ec69addc6c3d87d80a7470d2f032a8a",
+      "size_bytes": 7829
     },
     {
       "name": "wizards.md",
@@ -180,6 +180,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-23T19:02:04Z",
+  "generated_at": "2026-09-25T12:04:30Z",
   "latest_process_ref": ""
 }

@@ -31,8 +31,8 @@ const specsQuery = new QueryRequest({
  *  identity and re-trigger the dialog effect that depends on it. */
 const EMPTY: DataDriver[] = [];
 
-export function useSourceSpecs() {
-  const { data: specs = EMPTY } = useEntitiesQuery<DataDriver>(specsQuery);
+export function useSourceSpecs(options?: { enabled?: boolean }) {
+  const { data: specs = EMPTY } = useEntitiesQuery<DataDriver>(specsQuery, options);
   // `name` is the registry key AND the folder name AND the asset id — one noun,
   // so a lookup needs nothing else.
   const byName = useMemo(() => new Map(specs.map((s) => [s.name, s])), [specs]);

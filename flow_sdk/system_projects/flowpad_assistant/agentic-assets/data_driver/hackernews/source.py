@@ -18,6 +18,7 @@ from flow_sdk.sources import http
 from flow_sdk.sources.base import CollectionSource
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import RecordSource
 from flow_sdk.sources.values.items import FeedItemData, SourceItemSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 
@@ -43,7 +44,7 @@ class HackerNewsConfig(SourceConfig):
     base_url: str = ""
 
 
-class HackerNewsSource(CollectionSource):
+class HackerNewsSource(RecordSource, CollectionSource):
 
     Config = HackerNewsConfig
     provider = "hackernews"

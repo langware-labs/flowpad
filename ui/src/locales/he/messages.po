@@ -17,6 +17,10 @@ msgstr ""
 msgid " — not set"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid " · not secret"
+msgstr ""
+
 #: src/components/asset-counters/agent-counters.tsx
 msgid " · paused"
 msgstr ""
@@ -325,6 +329,8 @@ msgstr "{0} עדכני · {1} מיושן · {2} חלקי · {3} שגיאה"
 
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 msgid "{0} deleted"
@@ -462,6 +468,11 @@ msgstr "{0} הודעות"
 msgid "{0} messages · {1} turns"
 msgstr ""
 
+#. placeholder {0}: row.missing.length
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+msgid "{0} missing"
+msgstr ""
+
 #. placeholder {0}: item.messageCount
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "{0} msgs"
@@ -516,6 +527,8 @@ msgid "records_on_disk"
 msgstr "רשומות בדיסק"
 
 #. placeholder {0}: saved.title
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 msgid "{0} saved"
 msgstr ""
@@ -1470,6 +1483,10 @@ msgstr ""
 msgid "Add context folder"
 msgstr "הוסיפו תיקיית הקשר"
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+msgid "Add credential"
+msgstr ""
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Add data source"
 msgstr "הוספת מקור נתונים"
@@ -2377,6 +2394,10 @@ msgstr "הוספה לתור הפרומפטים של העובד הנוכחי, מ�
 
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Applied to each member's own default endpoint; a member's budget can only be narrower."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "Applies to"
 msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -4222,6 +4243,8 @@ msgstr "שורת שותף-כתיבה לקומיטים ב-Git"
 msgid "code"
 msgstr "קוד"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Code"
 msgstr ""
@@ -4478,6 +4501,10 @@ msgstr "חישוב הבדלים…"
 msgid "Config"
 msgstr ""
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Config fields"
+msgstr ""
+
 #: src/components/hooks-manager/index.tsx
 msgid "Configure Claude Code hooks and triggers to automate workflows"
 msgstr "הגדר וו-וצקים וטריגרים של Claude Code כדי לאוטומט סקריפטים"
@@ -4627,6 +4654,10 @@ msgstr "החיבור אומת"
 #: src/components/connections-manager.tsx
 msgid "Connections"
 msgstr "חיבורים"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Console"
+msgstr ""
 
 #: src/components/token-plan/ConsumptionPanel.tsx
 msgid "Consumption"
@@ -5094,6 +5125,8 @@ msgstr "לא היה ניתן למחוק"
 #. placeholder {0}: connection.provider
 #. placeholder {0}: e.name
 #. placeholder {0}: org.name
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/use-source-delete.ts
@@ -5242,7 +5275,7 @@ msgstr ""
 msgid "Could not open skill"
 msgstr "לא הצליח לפתוח כישור"
 
-#: src/components/data-sources/SourceMenu.tsx
+#: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
 msgstr ""
 
@@ -5372,6 +5405,10 @@ msgstr ""
 msgid "Could not resolve this folder"
 msgstr "לא ניתן לפתור את התיקייה"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Could not restart"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Could not resume the cloud machine"
 msgstr ""
@@ -5388,6 +5425,7 @@ msgstr ""
 msgid "Could not run the connection test."
 msgstr "לא ניתן להריץ בדיקת חיבור."
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not run the snippet"
 msgstr ""
@@ -5924,6 +5962,7 @@ msgstr "יוצר..."
 msgid "Creating…"
 msgstr "יוצר..."
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Credential"
 msgstr ""
@@ -5936,8 +5975,10 @@ msgstr ""
 msgid "Credential environment this place reads"
 msgstr ""
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/credentials-view/CredentialsView.tsx
 #: src/components/quick-create/registry.ts
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/types/ViewType.ts
 msgid "Credentials"
@@ -6261,8 +6302,11 @@ msgstr "מאציל אל"
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/connections-manager.tsx
@@ -6306,8 +6350,9 @@ msgstr "מחק את \"{0}\" מה-keychain של מערכת ההפעלה? לא נ�
 
 #. placeholder {0}: c.displayName
 #. placeholder {0}: row.label
-#. placeholder {0}: s.name
+#. placeholder {0}: row.title
 #: src/components/account/secrets-section.tsx
+#: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -6324,10 +6369,12 @@ msgstr "מחק {0} הקשרים?"
 msgid "Delete {0} credential?"
 msgstr "למחוק את אישור {0}?"
 
+#. placeholder {0}: deleting?.title ?? ''
 #. placeholder {0}: org.name
 #. placeholder {0}: pendingDeleteCredential?.title ?? ''
-#. placeholder {0}: request?.name ?? 'asset'
+#: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -7217,6 +7264,15 @@ msgstr ""
 msgid "Drill by"
 msgstr "התמקד לפי"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Driver"
+msgstr ""
+
+#: src/components/data-sources/DataSourcesView.tsx
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+msgid "Drivers"
+msgstr ""
+
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/drag-drop-overlay.tsx
@@ -7328,6 +7384,7 @@ msgstr "קצוות לפי סוג"
 
 #: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -7875,6 +7932,10 @@ msgstr ""
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Every project is selected"
 msgstr "כל הפרויקטים נבחרים"
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "every project, unless one declares its own"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Every selection"
@@ -8474,6 +8535,10 @@ msgstr ""
 msgid "Fallbacks"
 msgstr ""
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Family"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/i18n/pref-labels.ts
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -8573,6 +8638,8 @@ msgstr "תצורת הצעות קבצים"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/assets/useAssetsModel.tsx
+#: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
@@ -8889,6 +8956,8 @@ msgstr "המקד את הגרף המקומי כאן"
 msgid "Focused"
 msgstr "במיקוד"
 
+#: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
@@ -8987,6 +9056,11 @@ msgstr "הועבר משיחה אחרת"
 #: src/components/credentials/DetectedKeys.tsx
 #~ msgid "Found in .env.local in your home folder"
 #~ msgstr ""
+
+#. placeholder {0}: v.found_in
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "found in {0}, not where it is declared"
+msgstr ""
 
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Found in {fileName} in your home folder"
@@ -9834,6 +9908,10 @@ msgstr "כיצד מצבי הפרטיות פועלים"
 msgid "How to finish setup"
 msgstr "כיצד להשלים את ההגדרה"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "How to get the values"
+msgstr ""
+
 #: src/components/html-preview/HtmlPreview.tsx
 msgid "HTML preview"
 msgstr "תצוגה מקדימה של HTML"
@@ -10510,6 +10588,8 @@ msgstr "אבחנות בעיות שנרשמו על ידי העוזר. לחץ על
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 msgstr ""
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 msgid "It may be only partly removed."
 msgstr ""
@@ -10536,6 +10616,11 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "its own servers"
+msgstr ""
+
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "Its values are removed from where they are stored; runs that read them will no longer find them."
 msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx
@@ -10660,12 +10745,18 @@ msgstr "נדרש גישה למפתחות כדי להשלים כניסה ל-Flowp
 msgid "Keychain approval was not granted"
 msgstr "אישור מחזיק המפתחות לא ניתן"
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+msgid "Keys and tokens this agent's runs can read"
+msgstr ""
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "kind"
 msgstr "סוג"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
+#: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Kind"
@@ -11154,6 +11245,10 @@ msgstr "מפתחות LLM"
 #: src/types/ViewType.ts
 msgid "LLM sources"
 msgstr "מקורות LLM"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "load error"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -11964,6 +12059,7 @@ msgstr ""
 msgid "Message Thread"
 msgstr "שרשור הודעות"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "הודעות"
@@ -11975,6 +12071,10 @@ msgstr "מטריקות"
 #: src/components/cron-view/CronForm.tsx
 msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "דקה שעה יום חודש יום שבוע — או \"30s\" / \"5m\" לקביעת מרווח"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Minimize the process"
+msgstr ""
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -11992,6 +12092,10 @@ msgstr "קל"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "missing"
+msgstr ""
 
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Missing"
@@ -12063,6 +12167,11 @@ msgstr ""
 #. placeholder {0}: next[0]
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Model pinned to {0}"
+msgstr ""
+
+#. placeholder {0}: source.lm_provider
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "model provider · {0}"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -12202,6 +12311,7 @@ msgstr "לא זמין"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -12580,6 +12690,10 @@ msgstr "הבדיקה המתוזמנת הבאה"
 msgid "next: {0}"
 msgstr "הבא: {0}"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "no"
+msgstr ""
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
 msgstr "אין גישה למאגר הזה. יש לחבר את חשבון ה-GitHub אם המאגר פרטי, או לבדוק את כתובת ה-URL."
@@ -12841,6 +12955,10 @@ msgstr "אין מסמך נבחר"
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "No document to show here."
+msgstr ""
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "No driver named {name} is installed."
 msgstr ""
 
 #: src/components/graph-view/ui/NodeDetails.tsx
@@ -13596,6 +13714,7 @@ msgstr "צמתים"
 msgid "Non-empty"
 msgstr "לא ריק"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "none"
 msgstr "ללא"
@@ -13613,6 +13732,10 @@ msgstr "אף אחד"
 #: src/components/quick-create/ScopeSelection.tsx
 #~ msgid "None (project root)"
 #~ msgstr "ללא (שורש הפרויקט)"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "None yet."
+msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Normal text"
@@ -13717,6 +13840,10 @@ msgstr ""
 msgid "Not runnable here"
 msgstr "לא ניתן להפעיל כאן"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Not saved"
+msgstr ""
+
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "Not set"
 #~ msgstr "לא מוגדר"
@@ -13737,6 +13864,10 @@ msgstr "אין התחברות פעילה — יש להתחבר מחדש"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
 msgstr "טרם התחיל"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Not started yet — its terminal appears when the deployment first runs."
+msgstr ""
 
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Not used by any credential yet. Pack the keys that belong together into one credential."
@@ -14193,6 +14324,15 @@ msgstr "פתח הערה"
 msgid "Open Context"
 msgstr "פתח הקשר"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Open data_driver.json"
+msgstr ""
+
+#: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourceRow.tsx
+msgid "Open data_source.json"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Open DB Folder"
 msgstr "פתח תיקיית בסיס נתונים"
@@ -14235,6 +14375,10 @@ msgstr "פתח תיקייה"
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Open Folder"
 msgstr "פתח תיקייה"
+
+#: src/components/data-sources/OpenFolderButton.tsx
+msgid "Open folder: {path}"
+msgstr ""
 
 #: src/components/status-bar.tsx
 #: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
@@ -14478,6 +14622,11 @@ msgstr "פתח טרמינל ({modLabel}+T)"
 msgid "Open terminal in {workdir}"
 msgstr "פתח טרמינל ב-{workdir}"
 
+#. placeholder {0}: source.provider
+#: src/components/data-sources/DataSourceRow.tsx
+msgid "Open the {0} driver"
+msgstr ""
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
 msgstr "פתחו את דף {PRIVACY_WIKI_PAGE}"
@@ -14652,6 +14801,10 @@ msgstr "הפעולה נכשלה"
 msgid "Optional — leave blank for home"
 msgstr "אופציונלי — השאר ריק עבור בית"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "optional · not set"
+msgstr ""
+
 #: src/components/artifacts/artifact-form.tsx
 msgid "Optional description"
 msgstr "תיאור אופציונלי"
@@ -14798,6 +14951,14 @@ msgstr "פלט: {0}"
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Overfetch"
 msgstr "הבאה יתרה"
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "Overridden"
+msgstr ""
+
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+msgid "overridden by the project's"
+msgstr ""
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Override"
@@ -15470,6 +15631,8 @@ msgstr "בעיות שנמצאו"
 msgid "process"
 msgstr "תהליך"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/types/ViewType.ts
 msgid "Process"
@@ -15513,6 +15676,7 @@ msgstr "תמונת פרופיל:"
 msgid "Progress"
 msgstr "התקדמות"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "project"
 msgstr "פרויקט"
@@ -16230,6 +16394,7 @@ msgstr ""
 msgid "Recorded"
 msgstr "נרשם"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/types/ViewType.ts
 msgid "Records"
@@ -16915,6 +17080,8 @@ msgstr "תגובה"
 msgid "responses"
 msgstr "תשובות"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/journey/JourneyTray.tsx
@@ -17347,6 +17514,11 @@ msgstr "פועל"
 msgid "Running"
 msgstr "פועל"
 
+#. placeholder {0}: process?.pid
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Running · pid {0}"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Running /context…"
 msgstr "הרצת /context…"
@@ -17412,9 +17584,9 @@ msgstr "הרצות על הקובץ הזה"
 msgid "Runs only while this computer is awake"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#~ msgid "Runtime"
-#~ msgstr ""
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Runtime"
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Sample prompts"
@@ -17538,6 +17710,10 @@ msgstr "שמירת גרסה"
 msgid "Saved"
 msgstr "נשמר"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Saved — Restart runs it"
+msgstr ""
+
 #. placeholder {0}: payload.assetLabel
 #. placeholder {1}: result.version ?? ''
 #: src/components/code-editor/AssetCompareView.tsx
@@ -17565,6 +17741,7 @@ msgid "Saving..."
 msgstr "שמירה..."
 
 #: src/components/account/secrets-section.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -18189,6 +18366,10 @@ msgstr "שולח ב{0}: \"{sendingText}\""
 msgid "Sending…"
 msgstr "משלח…"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Sends replies"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Sent"
 msgstr "נשלח"
@@ -18374,6 +18555,11 @@ msgstr "סשנים ({0})"
 msgid "Sessions that used this skill — analyze, improve, commit"
 msgstr "סשנים שהשתמשו במיומנות הזו — ניתוח, שיפור, commit"
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "set"
+msgstr ""
+
 #: src/components/token-plan/BudgetHero.tsx
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Set budget"
@@ -18469,6 +18655,7 @@ msgstr "הגדירו את הפרויקט"
 msgid "Set up team budget"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Set values"
 msgstr ""
@@ -18501,6 +18688,10 @@ msgstr "ההגדרה נכשלה"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
 msgstr "הגדרת Git"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Setup guide"
+msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Setup instructions"
@@ -18837,6 +19028,10 @@ msgstr "הצג מיומנויות מערכת"
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Show the other files this turn touched"
 msgstr "הצג את שאר הקבצים שהתור הזה נגע בהם"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Show the process"
+msgstr ""
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"
@@ -19309,12 +19504,17 @@ msgstr "סוג המקור"
 msgid "Source:"
 msgstr "מקור:"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Sources"
 msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Sources + filters + limits"
+msgstr ""
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Sources using this driver"
 msgstr ""
 
 #: src/components/assets/editor/mcp/McpViewer.tsx
@@ -19686,6 +19886,10 @@ msgstr "עצירת חוקים"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
 msgstr "עצור"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Stopped"
+msgstr ""
 
 #. placeholder {0}: (result.duration_s ?? 0).toFixed(2)
 #: src/components/code-editor/SnippetView.tsx
@@ -20346,6 +20550,10 @@ msgstr ""
 msgid "The document could not be read."
 msgstr ""
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
+msgstr ""
+
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The encrypted vault is not enabled on this machine yet."
@@ -20477,6 +20685,10 @@ msgstr ""
 msgid "the other participant"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "The project declares the same variables; its values are the ones its runs get."
+msgstr ""
+
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "The project was not linked to the cloud."
 msgstr "הפרויקט לא קושר לענן."
@@ -20598,6 +20810,10 @@ msgstr "הערך מאוחסן במחזיק המפתחות של מערכת ההפ
 #: src/components/connections-manager/credential-value-form.tsx
 #~ msgid "The value is written to this project's .env.local and stays on this machine."
 #~ msgstr ""
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "the vault"
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -20767,6 +20983,10 @@ msgstr ""
 msgid "This conversation no longer exists or is unavailable."
 msgstr "שיחה זו כבר אינה קיימת או אינה זמינה."
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "This credential no longer exists."
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "This deployment"
 msgstr ""
@@ -20781,6 +21001,10 @@ msgstr "המסמך הזה"
 
 #: src/components/vfs-markdown-pane.tsx
 msgid "This document no longer exists."
+msgstr ""
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "This driver takes no config."
 msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
@@ -21040,6 +21264,10 @@ msgstr ""
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "this project's own desk"
 msgstr "מרכז העזרה של הפרויקט הזה"
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "this project's runs"
+msgstr ""
 
 #: src/components/ask/AskView.tsx
 msgid "This question is no longer waiting."
@@ -22149,6 +22377,10 @@ msgstr "בשימוש על ידי"
 msgid "Used in transcript"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "user"
+msgstr ""
+
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -22284,6 +22516,10 @@ msgstr ""
 msgid "Values are kept in this project's {0}"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "Values live in"
+msgstr ""
+
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
 msgstr ""
@@ -22300,6 +22536,7 @@ msgstr ""
 msgid "Variable name"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Variables"
 msgstr ""
@@ -22457,6 +22694,10 @@ msgstr "צפייה ב-Skill"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "View the changes in this file"
 msgstr "הצגת השינויים בקובץ הזה"
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "View the drivers every source is made from"
+msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "View the session transcript"
@@ -22922,6 +23163,10 @@ msgstr "זיכרון xterm: <0>{0}</0> נתחים ({1})"
 #: src/components/version-popover/version-popover.tsx
 msgid "yanked"
 msgstr "הסור"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "yes"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Yes"

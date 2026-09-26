@@ -1,4 +1,4 @@
-"""DataSource — a configured remote system of record we sync from.
+"""DataSource — a configured source we sync from: files, records or messages (its driver's family).
 
 The filesystem indexer walks roots; this walks a remote API. One DataSource owns
 the relationship with one remote account or feed set: which driver, what it needs
@@ -24,7 +24,7 @@ from math import ceil
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing, persist_policy
@@ -47,6 +47,7 @@ from flow_sdk.secrets.store import SecretStoreRef
 from flow_sdk.utils.serialization import iso_to_utc
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.conversation import Conversation  # noqa: F401
     from flow_sdk.connections import ConnectionRequirements
     from flow_sdk.secrets.requirements import SecretRequirements
 
@@ -206,16 +207,10 @@ class DataSource(Entity):
     #: Unset: every place holding it answers, as before places existed.
     answer_place: Optional[str] = APIField(default=None, description="The Deployment that answers this source")
 
-    # The mailbox allowlist, cached for the gate that runs on every inbound
-    # message (`AgentMailbox.allowed`). The HUB owns this policy; this is a copy,
-    # refreshed on every reconcile, and it is never read to answer "what is the
-    # policy" — only to apply it without a network call.
-    #
-    # Deliberately NOT inside `config`, for the reason the reflection block below
-    # gives: `config` is provider-opaque and shareable, and these are third
-    # parties' personal addresses. PRIVATE, like `origin`: a fact about this
-    # machine that must not travel to a receiver or back to the hub.
-    inbound_allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
+    #: Who may drive the owning agent through this line (``agent_serve.admits``); empty admits nobody unless
+    #: the driver is ``open_inbound``. Third parties' addresses: PRIVATE, row-only — never in the shareable
+    #: ``config`` (a form's field is moved here), and a re-read file leaves it as it is.
+    allowed_senders: list[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE, persist=Persist.FALSE)
 
     # ── reflection — HOW the payload becomes locally present ──
     #
@@ -281,6 +276,36 @@ class DataSource(Entity):
     connection: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     _api_visible: ClassVar[bool] = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def _allowlist_off_config(cls, data):
+        """``allowed_senders`` lands on the row, never in the shareable ``config`` — however a form or a
+        caller passed it. A row written before the rename carries ``inbound_allowed_senders``."""
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        if "inbound_allowed_senders" in data:
+            legacy = data.pop("inbound_allowed_senders")
+            data.setdefault("allowed_senders", legacy)
+        config = data.get("config")
+        if isinstance(config, dict) and "allowed_senders" in config:
+            config = dict(config)
+            moved = config.pop("allowed_senders")
+            data["config"] = config
+            if not data.get("allowed_senders"):
+                data["allowed_senders"] = moved
+        if isinstance(data.get("allowed_senders"), (list, tuple)):
+            data["allowed_senders"] = [s for s in (str(x).strip() for x in data["allowed_senders"]) if s]
+        return data
+
+    @field_validator("owner", mode="before")
+    @classmethod
+    def _owner_entity(cls, owner):
+        """``owner`` takes the entity itself (an ``Agent``) as well as its ``TypeId``."""
+        if owner is not None and not isinstance(owner, (str, dict, TypeId)) and getattr(owner, "typeid", None) is not None:
+            return owner.typeid
+        return owner
 
     @model_validator(mode="before")
     @classmethod
@@ -447,18 +472,33 @@ class DataSource(Entity):
             _RUNTIME_WRITE.reset(runtime)
             _SUPPRESS_STORE.reset(token)
 
-    async def _refuse_duplicate_account(self) -> None:
-        """One source per (driver, account, owner) on this machine: the same mailbox polled twice
-        ingests every message twice. The owner stays in the key — a user and an agent may each watch
-        the same account."""
+    async def _existing_account(self) -> "Optional[DataSource]":
+        """The source this owner already has on the same account, if any — one source per (driver,
+        account, owner) on this machine: the same mailbox polled twice ingests every message twice. The
+        owner stays in the key — a user and an agent may each watch the same account."""
         driver = self._driver()
         key = getattr(driver, "identity_config_key", "") if driver is not None else ""
         value = (self.config or {}).get(key) if key else None
+        if isinstance(value, dict):  # a picked choice (`{id, name}`) names its account by id
+            value = value.get("id")
         if not isinstance(value, str) or not value.strip():
-            return
+            return None
         existing = await type(self).find_for_account(self.provider, key, value, owner=self.owner)
-        if existing is not None and str(existing.id) != str(self.id):
-            raise ValueError(f"{value} is already watched by the data source {existing.name or existing.id!s}")
+        return existing if existing is not None and str(existing.id) != str(self.id) else None
+
+    async def _adopt(self, existing: "DataSource", *args, **kwargs):
+        """Save onto the source this owner already has on the account instead of minting a twin: every
+        field the caller SET (name, config, allowlist, cadence — or an identity it just stamped) is written
+        to that row; what it left alone — cursor, health — stays the row's. ``self`` then IS that row."""
+        for name in self.model_fields_set - _NOT_ADOPTED:
+            value = getattr(self, name)
+            if name == "config":
+                value = {**(existing.config or {}), **(value or {})}
+            setattr(existing, name, value)
+        result = await existing.save(*args, **kwargs)
+        for name in type(existing).model_fields:
+            object.__setattr__(self, name, getattr(existing, name))
+        return result
 
     @classmethod
     async def find_for_account(
@@ -531,6 +571,24 @@ class DataSource(Entity):
         if driver is None:
             raise RuntimeError(f"no driver for {self.provider}")
         return driver.outbound_spec(self).reply_to(item, body=body, attachments=attachments)
+
+    async def start(self, *, to: str, body: str, subject: str = "") -> "Conversation":
+        """Open a conversation with *to* on this line — send the email, place the call, write the first chat
+        message — and answer the Conversation it is. Its ``address`` is *to*, so it can be continued
+        (``Conversation.send``) before anyone answers."""
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import conversation_of  # noqa: PLC0415
+
+        driver = self._driver()
+        if driver is None or not driver.sends:
+            raise RuntimeError(f"the {self.provider} driver cannot send")
+        outcome = await driver.send(self, thread_key="", to=to, text=body, subject=subject)
+        item = await SourceItem.get_one({"data_source_id": str(self.id), "external_id": outcome.external_id}) if outcome.external_id else None
+        conversation_id = await conversation_of(item, source=self) if item is not None else None
+        if not conversation_id:
+            raise RuntimeError(f"the {self.provider} message to {to} was {outcome.status.value} but not recorded here")
+        return await Conversation.get_one({"id": conversation_id})
 
     async def send(self, spec: MessageSpec) -> SendOutcome:
         """Deliver one outbound message through this source's driver.
@@ -951,7 +1009,9 @@ class DataSource(Entity):
                     setattr(self, name, getattr(stored, name))
             return await super().save(*args, **kwargs)
         if not self.exist_in_db:
-            await self._refuse_duplicate_account()
+            existing = await self._existing_account()
+            if existing is not None:
+                return await self._adopt(existing, *args, **kwargs)
         if not self.exist_in_db or self.status == SourceStatus.NEW.value:
             # An authored source's folder loads on first use, so the create rules below can ask its
             # class. The poller's per-tick re-save of an existing row never pays for the lookup.
@@ -998,7 +1058,7 @@ class DataSource(Entity):
         the poller's case on every tick.
         """
         driver = self._driver()
-        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.reflects
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.is_object
         return stuck or not self.exist_in_db
 
     async def _spec(self) -> "Optional[object]":
@@ -1043,7 +1103,7 @@ class DataSource(Entity):
         source never pays a spec read on the poller's per-tick re-save.
         """
         driver = self._driver()
-        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.reflects
+        stuck = self.reflect in ("", ReflectMode.RECORD.value) and driver is not None and driver.is_object
         if self.exist_in_db and not stuck:
             return
         modes = list(getattr(spec, "reflect", None) or []) if spec is not None else []
@@ -1060,7 +1120,7 @@ class DataSource(Entity):
         (`origin_for`), pure path arithmetic; a driver with no tree leaves it
         unset, and an unknown provider changes nothing."""
         driver = self._driver()
-        if driver is None or not driver.reflects:
+        if driver is None or not driver.is_object:
             return
         try:
             self.origin = driver.origin_for(self)
@@ -1382,6 +1442,13 @@ RUNTIME_FIELDS: tuple[str, ...] = tuple(
     if name in DataSource.__annotations__  # this type's own, not the Entity base's
     and persist_policy(field) == Persist.FALSE
 )
+
+
+#: What a person authors on a source — the fields of ``data_source.json`` — by their row names.
+#: What construction sets on every row, so it says nothing about what the caller meant: never written onto
+#: an adopted row.
+_NOT_ADOPTED = frozenset({"id", "type", "env_vars", "expand"})
+
 
 
 def remove_source_folder(asset_ref: Optional[str]) -> None:

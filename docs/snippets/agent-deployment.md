@@ -32,9 +32,7 @@ from flow_sdk.builtin.agent import Agent
 
 agent = Agent(
     name="researcher",
-    worker_type="claude",
     model="sm",
-    permission_mode="bypassPermissions",
     system_prompt="You research; you do not summarize.",
 )
 await agent.save()
@@ -64,6 +62,8 @@ assert there.is_local is False                 # ...and never claims to be here
 ## 2. Start a session on a placement
 
 ```python
+from flow_sdk.builtin.agentic_process import AgenticProcess
+
 answer = await agent.launch("Find three sources on X.", wait=True)   # local by default
 answer = await agent.launch("...", deployment=here, wait=True)       # the same, explicit
 proc = await AgenticProcess.get_by_typeid(answer.executor)           # the process, when you need it
@@ -90,7 +90,7 @@ no first turn — keyed to the agent through `target_typeid_str`:
 
 ```python
 session = await agent.use()                    # acts in the agent's own project
-session = await agent.use(project_id=other)    # acts in another project's checkout
+session = await agent.use(project_id=OTHER_PROJECT)   # acts in another project's checkout
 ```
 
 The primitive under both is the placement's own verb — not saved, not started:
@@ -131,13 +131,18 @@ hub and comes back down the bridge — nothing is written locally in that case.
 
 ## 5. A machine of its own
 
-Live only — it needs a hub login and publishes through git; no test runs this fence.
+Live it needs a hub login and publishes through git; `tests/unit/test_agent_deployment_snippets.py` runs
+this fence as written with the hub's two legs (publish, deploy) answered by a double.
 
 ```python
 import flow_sdk
+from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.user import User
 
 await flow_sdk.auth.login()
-receipt = await agent.deploy_to_cloud(actor)   # actor: the caller's TypeId; publishes through git first
+agent = await Agent.by_name("researcher")
+actor = (await User.get_local()).typeid        # the caller
+receipt = await agent.deploy_to_cloud(actor)   # publishes through git first
 ```
 
 Deliberately no node and no principal: "were either passable from here they
@@ -204,8 +209,10 @@ ones (`"2"`, `"3"`, …) answer only what names them. Each gets its `chat` endpo
 channel — at launch.
 
 ```python
+from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
+agent = await Agent.by_name("researcher")
 first = await agent.run_locally()               # a process on this computer running the agent loop
 second = await agent.run_locally()              # one more — its own process, its own chat
 assert (first.slot, second.slot) == ("", "2") and first.serving and second.serving
@@ -214,22 +221,34 @@ chat = await ServiceEndpoint.find_existing(str(second.typeid), "chat")
 assert chat.backend.type == "channel"           # POST v1/chat/completions → a message → its loop answers
 ```
 
-The app starts each process (`FLOW_DEPLOYMENT_ID` names the deployment; `FLOW_INSTANCE` is inherited),
-records it on the row, adopts it alive after an app restart, starts it again if it dies, and stops it
-when the deployment stops serving or the agent is switched off. What the process runs is the whole
-loop — this, kept running (`flow_sdk/builtin/agent_loop.py`):
+Each deployment runs its own Python file — `~/.flow/instances/<instance>/deployments/<id>.py`, typed as
+`python <file> <id>` into the deployment's terminal (a PTY the page shows live, under its thread). The
+file is a code snippet: the agent loop itself, shown and editable, its imports and the line that runs
+it folded away. A new deployment's file is the stock loop, `flow_sdk/builtin/deployment_loop.py`:
 
 ```python
-deployment = await Deployment.get_by_id(os.environ["FLOW_DEPLOYMENT_ID"])
-agent = await deployment.agent()
-await serve(agent, deployment, sources=await answered_sources(agent, deployment))
+async def answer_every_message(engine, channels, bound, every=None):
+    async with workflow(consumer_of(engine.deployment)):  # this deployment's durable position
+        async for page in pages(*(StreamInbox.of(c) for c in channels), poll_every=every, poll=False):
+            if stopping():
+                continue  # paused mid-page: left unacked, handed over again next time
+            for message in page:
+                if is_history(message, bound[page.source_id]):   # there before the agent took the channel
+                    console.info("· %s  written before the channel was bound: history, not answered", page.source_id)
+                    await skip_message(message)
+                    continue
+                await answer(engine, message)                    # gates → turn → reply on its channel
+            await page.ack()
 ```
 
-— re-read every few seconds (a channel added is served from when it was added, never swallowed as
-history), started again after a failure, ended when the deployment is. `run_locally(snippet=path)`
-runs that Python file instead of the stock loop. A real process is proven by
-`tests/long_tests/test_local_deployment_process.py`: two deployments, two processes, each answering
-its own chat over HTTP, and stopping one ends only its process.
+and the file ends with `main("<id>", loop=answer_every_message)` (`agent_loop.main`): the deployment's
+lock (a second copy leaves at once), its console lines on the terminal, and the loop started again
+whenever the channels it answers change. Edit the loop and press Restart; the app types the command
+again in the same terminal. The app adopts a running loop after its own restart (the lock says who
+runs), starts it again if it dies (a Ctrl-C counts), and stops it when the deployment stops serving or
+the agent is switched off. `run_locally(snippet=path)` runs that file instead. Proven by
+`tests/long_tests/test_local_deployment_process.py` (two deployments, two terminals, each answering its
+own chat) and live in a browser by `tests/e2e/deployment_process_validate.cjs`.
 
 ## From TypeScript and HTTP
 

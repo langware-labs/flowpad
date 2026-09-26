@@ -29,11 +29,16 @@ agentic-assets/data_source/work_gmail/
 ```
 
 The file (`DataSourceSpec`) is what a person authors and nothing the engine writes: status,
-health, the cursor, the next poll and discovered identities are row-only (`Persist.FALSE`), and the
-engine saves them with `save_runtime()`, which never touches the file. The config is value-free —
+health, the cursor, the next poll, discovered identities and the allowlist (`allowed_senders`,
+PRIVATE: who may drive the source is this machine's business) are row-only (`Persist.FALSE`), and the
+engine saves them with `save_runtime()`, which never touches the file — a re-read of the file leaves
+them as they are. The config is value-free —
 a secret is a credential the driver declares. A folder that arrives by copy, clone or share
 indexes in `setup` ("Received — connect your own account, then press Verify."), and one owner
-watches one account once. Deleting the source removes its folder with the items it ingested; a
+watches one account once: `save()` of a new source for an account its owner already watches adopts
+that row (`find_for_account` on the driver's `identity_config_key`) — the authored fields and the
+config merged onto it, its cursor kept — instead of minting a twin. `owner=` takes the entity itself
+(an `Agent`) or its `TypeId`; a source an Agent owns is that agent's channel, the one way to give it one. Deleting the source removes its folder with the items it ingested; a
 row with no folder (one written before sources were files) is removed at boot.
 
 `agentic-assets/<family>/` is where a native asset lives (glossary), and the main
@@ -69,9 +74,9 @@ call, recorded with its date and reason in `EXCEPTIONS` in
 **Declare the minimum, discover the rest.** Every manifest key below is something the
 runtime cannot work out for itself. Two rules keep it that way:
 
-* **The class is authoritative for what it is.** Traits (`durable_cursor`,
-  `reflects`, `stamps_identity`, `open_inbound`, …) are ClassVars on the source
-  class; a manifest copy would be "authoritative-looking, owned by nobody, and
+* **The class is authoritative for what it is.** Its family is the base it extends
+  (`ObjectSource` / `RecordSource` / `MessageSource`), and traits (`durable_cursor`,
+  `stamps_identity`, `open_inbound`, …) are ClassVars on the source class or its family; a manifest copy would be "authoritative-looking, owned by nobody, and
   silently corrected later". A `traits` key in a manifest is a **load error**.
 * **Presence beats declaration.** A capability is a protocol the class implements,
   discovered by `isinstance` — `DataSource.save()` decides SETUP vs ACTIVE from
@@ -135,7 +140,7 @@ and its `source.py` declares the rules for that field:
 class RssConfig(SourceConfig):
     feed_url: Annotated[str, StringConstraints(pattern=r"^https?://")]
 
-class RssSource(CollectionSource):
+class RssSource(RecordSource, CollectionSource):
     Config = RssConfig
 ```
 
@@ -208,7 +213,9 @@ directories. Folder supports three modes (`none, copy, symlink`) and git and gdr
 two (`none, copy`).
 
 **`record` may not appear in a multi-element list.** A source lands its payload in
-the graph as a record or on disk as an asset; asking for both gets neither.
+the graph as a record or on disk as an asset; asking for both gets neither. The modes are the
+family's: an `ObjectSource` lists filesystem modes, a `RecordSource` / `MessageSource` has
+`[record]` — `load_driver` refuses any other pairing.
 
 ### `config` — form hints; the rules are the driver's `Config`
 
@@ -257,8 +264,8 @@ never a frontend table.
 | `provider` | `name` is the registry key |
 | `runtime` | the folder answers it (below) |
 | `traits` | ClassVars on the source class |
-| `payload` | `reflect: record` means record; anything else means bytes |
-| `sends` | the class implements `Messaging` and `message_for`; the row computes it |
+| `payload` / `family` | the base the class extends (`ObjectSource` / `RecordSource` / `MessageSource`); the row computes `family` |
+| `sends` | the class is a `MessageSource` implementing `Messaging` and `message_for`; the row computes it |
 | `needs_setup` | the class is `Verifiable` |
 | `account_key` VALUE | lives on the `DataSource` row; the manifest only marks WHICH form field supplies it |
 | `id` | carried by the asset's identity carrier, never written into the manifest |

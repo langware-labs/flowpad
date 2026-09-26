@@ -42,9 +42,6 @@ class VoiceBrowserSource(VoiceChannel):
     #: A line with nobody on it cannot be spoken into: a send then is a draft, kept for when they call.
     sends_may_draft: ClassVar[bool] = True
 
-    #: Calls on the line from this process, by caller: what ``say_to`` speaks into.
-    _live: ClassVar[dict[str, Any]] = {}
-
     def _model(self) -> str:
         return str(self.config.get("model") or "").strip() or realtime.DEFAULT_MODEL
 
@@ -71,8 +68,7 @@ class VoiceBrowserSource(VoiceChannel):
             client, call.call_id, greet=GREETING,
             update=realtime.session_config(instructions=instructions, model=self._model(), voice=self._voice()),
         )
-        type(self)._live[call.caller] = session
-        return _Forgetting(session, lambda: type(self)._live.pop(call.caller, None))
+        return self.hold(call, session)
 
     async def reject(self, call: IncomingCall) -> None:
         await realtime.RealtimeCallSession(self.client(), call.call_id).hangup()
@@ -80,31 +76,5 @@ class VoiceBrowserSource(VoiceChannel):
     async def say_to(self, person: str, text: str) -> MessageItem:
         """Said into the person's live call. A browser line reaches nobody who is not on it, so with no
         call the message is a draft (no ``sent_at``) — the outcome says so rather than pretending."""
-        session = type(self)._live.get(person)
-        if session is None:
-            return self.said(person, text, f"draft-{secrets.token_hex(6)}", sent_at=None)
-        await session.say(text)
-        return self.said(person, text, f"say-{secrets.token_hex(6)}")
-
-
-class _Forgetting:
-    """A call session that forgets its caller's line when the call ends."""
-
-    def __init__(self, session, forget):
-        self._session, self._forget = session, forget
-
-    async def events(self):
-        try:
-            async for event in self._session.events():
-                yield event
-        finally:
-            self._forget()
-
-    async def resolve(self, ask_id: str, answer: str) -> None:
-        await self._session.resolve(ask_id, answer)
-
-    async def say(self, text: str) -> None:
-        await self._session.say(text)
-
-    async def hangup(self) -> None:
-        await self._session.hangup()
+        said = await self.say_live(person, text)
+        return said if said is not None else self.said(person, text, f"draft-{secrets.token_hex(6)}", sent_at=None)

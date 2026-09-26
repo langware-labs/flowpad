@@ -22,10 +22,11 @@ from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional
 
 from pydantic import StringConstraints
 
-from flow_sdk.sources.base import Altitude, Source, positive_int
+from flow_sdk.sources.base import Altitude, positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import InvalidCursor, Rejected, SourceError, SourceUnavailable
+from flow_sdk.sources.families import ObjectSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -77,12 +78,11 @@ class GitConfig(SourceConfig):
     branch: str = "HEAD"
 
 
-class GitSource(Source):
+class GitSource(ObjectSource):
 
     Config = GitConfig
     provider = "git"
     altitude = Altitude.IN_PROCESS
-    reflects = True
     local_tree_key = "repo"
     durable_cursor = True
     page_size = MAX_PAGE_SIZE

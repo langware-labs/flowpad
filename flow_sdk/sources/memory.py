@@ -18,12 +18,13 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.base import Altitude, CollectionSource
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import NotFound, Unsupported
+from flow_sdk.sources.families import MessageSource, RecordSource
 from flow_sdk.sources.values.items import MessageData, MessageItem, SourceItemSpec, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.query import DataQuery, MessageQuery
 
 
-class MemoryStore(CollectionSource):
+class MemoryStore(RecordSource, CollectionSource):
     """Records of exactly one payload schema."""
 
     provider = "memory"
@@ -110,7 +111,7 @@ class MemorySource(MemoryStore):
         self._records.pop(self._scope.key(origin), None)
 
 
-class MemoryMessages(MemoryStore):
+class MemoryMessages(MessageSource, MemoryStore):
     """Conversations of ``MessageData`` supporting history, send, reply and draft."""
 
     schema = MessageData

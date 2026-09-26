@@ -26,18 +26,19 @@ from flow_sdk.sources.base import CollectionSource
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import InvalidCursor, Rejected
+from flow_sdk.sources.families import RecordSource
 from flow_sdk.sources.values._types import NonBlank
 from flow_sdk.sources.values.items import FeedItemData, SourceItemSpec
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
-from flow_sdk.sources.values.query import DataQuery
+from flow_sdk.sources.values.query import DataQuery, RecordQuery
 
 _ATOM = "{http://www.w3.org/2005/Atom}"
 #: Marks a cursor as a resume token, not a page continuation.
 _RESUME = "resume:"
 
 
-class FeedQuery(DataQuery):
+class FeedQuery(RecordQuery):
     """The entries of one feed."""
 
     spec_kind: ClassVar[str] = "source.query.feed"
@@ -53,7 +54,7 @@ class RssConfig(SourceConfig):
     feed_url: Annotated[str, StringConstraints(pattern=r"^https?://")]
 
 
-class RssSource(CollectionSource):
+class RssSource(RecordSource, CollectionSource):
 
     Config = RssConfig
     provider = "rss"

@@ -50,7 +50,7 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
     # `reflect` is a property of the SOURCE, knowable before any I/O: a reflecting source has no
     # record destination, and with a mode that has no reflector its files would be dropped while
     # the cursor advanced past them.
-    if stype.reflects and get_reflector(source.reflect) is None:
+    if stype.is_object and get_reflector(source.reflect) is None:
         await _fail_source(source, "reflect_mode", f"reflect={source.reflect!r} cannot place files; pick a filesystem mode", now)
         return report
 

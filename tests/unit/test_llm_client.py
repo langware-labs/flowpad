@@ -376,3 +376,15 @@ async def test_a_transport_failure_is_reported_not_swallowed(monkeypatch):
     _install_httpx(monkeypatch, raises=httpx.ConnectError("no route"))
     with pytest.raises(LLMUpstreamError):
         await LLMClient.for_dialect("anthropic", api_key="k").create_completion("s", "u")
+
+
+@pytest.mark.asyncio
+async def test_llm_endpoints_1_runs_as_written(monkeypatch):
+    """``docs/snippets/llm-endpoints.md`` §1, verbatim: the key from ``OPENROUTER_API_KEY``, no database."""
+    from tests.utils.snippets import doc, fence_under, run_fence
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    recorder = _install_openai(monkeypatch, reply=_text_reply("Paris"))
+    ns = await run_fence(fence_under(doc("llm-endpoints.md"), "1."), {}, filename="llm-endpoints.md §1")
+    assert len(ns["vectors"]) == 2 and recorder["api_key"] == "sk-or-test"
+    assert "openrouter.ai" in str(recorder["base_url"])

@@ -67,6 +67,10 @@ What each line does:
 Control flow is Python, not configuration:
 
 ```python
+from flow_sdk.blocks import EmailMessageSpec, StreamInbox
+from flow_sdk.builtin.agent_registry import get_agent
+
+agent = await get_agent("email-summarizer")
 stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY, senders=["boss@corp.com"])
 
 async with agent.process_messages():
@@ -176,30 +180,78 @@ adopt.
 
 ## 5. Values only
 
-The unit pins in `tests/unit/test_blocks_email.py`. Useful when you want the
-shapes without a provider.
+Run as written by `tests/unit/test_workflows_snippets.py`; the rules each spec owns are pinned
+in `tests/unit/test_blocks_email.py`. Useful when you want the shapes without a provider.
 
 ```python
+from pydantic import ValidationError
+
 from flow_sdk.blocks import EmailMessageSpec, PromptResult, SlackMessageSpec, TelegramMessageSpec
+from flow_sdk.builtin.source_item import SourceItem
 
-reply = EmailMessageSpec.reply_to(m, body="yes!")
-reply.to                      # [m.author_external_id]
-reply.thread_key              # m.thread_key
-reply.reply_to_external_id    # m.external_id
-reply.subject                 # "Re: <m.name>", never stacked
+# m: a message as `listen()` delivers it — here, three built by hand
+mail = SourceItem(provider="agentmail", kind="content.message.email", external_id="<m1@provider>",
+                  name="Probe coffee?", thread_key="thr-1", author_external_id="alice@example.com", body="are we on?")
+chat = SourceItem(provider="telegram", kind="content.message.chat", external_id="12345/7",
+                  thread_key="12345/7", author_external_id="12345", body="hi")
+post = SourceItem(provider="slack", kind="content.message.chat", external_id="1700000000.000100",
+                  thread_key="1700000000.000100", author_external_id="U1", origin_namespace="T1/C0123456789", body="ship it?")
 
-reply.body = "edited"         # raises: frozen
-EmailMessageSpec(to=["a@b"], body="x", cc=["nope"])   # raises: extra="forbid"
+reply = EmailMessageSpec.reply_to(mail, body="yes!")
+reply.to                      # ['alice@example.com'] — the author
+reply.thread_key              # 'thr-1'
+reply.reply_to_external_id    # '<m1@provider>'
+reply.subject                 # 'Re: Probe coffee?', never stacked
+
+try:
+    reply.body = "edited"
+except ValidationError:
+    pass                      # frozen
+try:
+    EmailMessageSpec(to=["a@b"], body="x", cc=["nope"])
+except ValidationError:
+    pass                      # extra="forbid"
 
 PromptResult.satisfied("The agent replied.", text="done")   # what a turn returns
 
-SlackMessageSpec.reply_to(m, body="x").to      # [channel id] — from m.origin_namespace
-TelegramMessageSpec.reply_to(m, body="x").to   # [chat id] — the leading part of thread_key
+TelegramMessageSpec.reply_to(chat, body="x").to   # ['12345'] — the chat: the leading part of thread_key
+SlackMessageSpec.reply_to(post, body="x").to      # ['C0123456789'] — the channel, from origin_namespace
 ```
 
 Three channels, three answers to "who does a reply go to": email to the
 author, Telegram to the chat, Slack to the channel's thread. Each spec owns
 that rule, so the loop body is the same line in all three.
+
+## 6. The opening program
+
+The SDK site opens with this program: §4's loop with the channel written in. Pinned by
+`tests/unit/test_workflows_snippets.py` exactly as shown, on each of the four channels.
+
+```python
+from flow_sdk.blocks import StreamInbox, workflow
+from flow_sdk.builtin.agent_registry import get_agent
+
+async with workflow("any-channel"):
+    # one word = one channel: gmail, slack, telegram, whatsapp
+    stream_inbox = StreamInbox("support@acme.com", provider="gmail")
+    agent = await get_agent("channel-helper")
+
+    async with agent.process_messages():
+        async for m in stream_inbox.listen():
+            out = await agent.process_message(m)
+            # the reply is addressed the way this channel replies
+            await m.reply(await m.reply_spec(body=out.text))
+```
+
+On another channel it is the same program with this one line changed:
+
+```python
+from flow_sdk.blocks import StreamInbox
+
+stream_inbox = StreamInbox("C0123456789", provider="slack")
+stream_inbox = StreamInbox("@acme_support_bot", provider="telegram")
+stream_inbox = StreamInbox("106540352242922", provider="whatsapp")
+```
 
 ## Limits today
 

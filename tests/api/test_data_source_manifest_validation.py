@@ -10,8 +10,8 @@ from pydantic import StringConstraints
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_runtime import DRIVERS
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import RecordSource
 
 pytestmark = pytest.mark.asyncio
 
@@ -21,7 +21,7 @@ class _StrictConfig(SourceConfig):
     feed: Annotated[str, StringConstraints(pattern=r"^https?://")] = "http://default"
 
 
-class _Strict(Source):
+class _Strict(RecordSource):
     provider = "api_strict_provider"
     Config = _StrictConfig
 

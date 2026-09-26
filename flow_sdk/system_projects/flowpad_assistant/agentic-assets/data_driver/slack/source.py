@@ -25,10 +25,11 @@ from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, 
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -67,13 +68,13 @@ class SlackConfig(SourceConfig):
     retired_list = ("channels", "channel")
 
     channel: Union[Annotated[str, StringConstraints(pattern=r"^[CGD][A-Z0-9]{6,}$")], ChoiceEntry]
-    #: Who may drive the channel; the row keeps it as ``inbound_allowed_senders``.
+    #: Who may drive the channel; the row keeps it as ``allowed_senders``.
     allowed_senders: list[str] = []
     #: Empty is Slack itself; a test points a row at a local double. Never a secret.
     base_url: str = ""
 
 
-class SlackSource(Source):
+class SlackSource(MessageSource):
 
     Config = SlackConfig
     provider = "slack"

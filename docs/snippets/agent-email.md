@@ -15,7 +15,6 @@ await flow_sdk.auth.login()
 
 pirate = Agent(
     name="pirate",
-    worker_type="claude",
     model="sm",
     system_prompt="Answer like a pirate. Include 'arr' in every reply.",
 )
@@ -43,8 +42,8 @@ async with pirate.process_messages():
             await message.reply(EmailMessageSpec.reply_to(message, body=output.text))
 ```
 
-Pinned by `tests/unit/test_agent_email_snippet.py` (Hub legs stubbed, scripted
-mail, mock worker) and live by `tests/hub_tests/test_agent_email_conversation.py`.
+Both fences run as written by `tests/unit/test_agent_email_snippet.py` (the Hub's mailbox API
+doubled, the `cloud_email` driver over its in-process mailbox, a mock worker) and live by `tests/hub_tests/test_agent_email_conversation.py`.
 
 `allocate_mailbox()` is the one door, and it is login-gated and idempotent.
 **Nothing is allocated until you call it** — the address is billable and

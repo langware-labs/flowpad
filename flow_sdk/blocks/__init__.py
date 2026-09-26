@@ -427,10 +427,8 @@ class StreamInbox:
 
     async def ensure_source(self):
         """The ``DataSource`` behind this block — adopted if one already watches
-        the address, else created. Public because binding a channel to an agent
-        (``Agent.bind_channel``) needs exactly this adoption rule, gate included;
-        a second copy of it is a second place for the connection check to be
-        forgotten.
+        the address, else created — ``DataSource.save`` adopts the same way, and
+        this adds the connection check before any row exists.
         """
         if self._source is not None:
             return self._source

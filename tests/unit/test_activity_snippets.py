@@ -125,3 +125,13 @@ async def test_snippet_7_scope():
 
     assert [s.path for s in monitor.list(subject_entity="agentic_process-abc")] == ["run"]
     assert [s.path for s in monitor.list()] == ["index"]
+
+
+async def test_the_page_runs_in_order_as_one_session(capsys):
+    """Every fence on the page, verbatim and in order, as one reader's session."""
+    from tests.utils.snippets import run_page
+
+    ns = await run_page("activity.md")
+    assert "cannot block" in capsys.readouterr().out, "§3: blocking a finished row is refused"
+    assert ns["spec"].children[0].current == "a.pdf" and ns["spec"].fraction() == 0.1
+    assert isinstance(ns["__raised__"], RuntimeError), "§5: a second run is refused while one is going"

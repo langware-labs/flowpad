@@ -79,10 +79,10 @@ def processes(monkeypatch):
     running: dict[str, int] = {}
     started: list[str] = []
 
-    def start(deployment):
+    async def start(deployment):
         started.append(str(deployment.id))
         running[str(deployment.id)] = len(started)
-        return {"flowpad.process.pid": str(len(started))}
+        return {deployment_process.SHELL_LABEL: f"shell-{len(started)}"}
 
     def alive(deployment):
         return str(deployment.id) in running
@@ -107,7 +107,7 @@ async def test_a_running_deployment_gets_its_process_once(mail_db, processes):
     await server.reconcile()  # alive: kept, never a twin
 
     assert started == [str(deployment.id)] and server.running() == {str(deployment.id)}
-    assert deployment_process.recorded(await Deployment.get_by_id(deployment.id)).pid == 1, "recorded on the deployment"
+    assert deployment_process.shell_id_of(await Deployment.get_by_id(deployment.id)) == "shell-1", "its terminal is recorded"
 
 
 async def test_a_process_left_by_a_previous_app_is_adopted_not_doubled(mail_db, processes):

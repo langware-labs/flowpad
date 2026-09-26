@@ -76,6 +76,12 @@ def wire(monkeypatch):
     state["cloud"] = None
     monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: state["cloud"] is not None)
     monkeypatch.setattr("flow_sdk.cli.app_config.get_user", lambda: {"id": state["cloud"]})
+    state["address"] = []
+
+    async def _conversation_one(_q):
+        return SimpleNamespace(address=state["address"])
+
+    monkeypatch.setattr("flow_sdk.builtin.conversation.Conversation.get_one", _conversation_one)
     monkeypatch.setattr("flow_sdk.builtin.data_source.DataSource.get_one", _source_one)
     monkeypatch.setattr("flow_sdk.builtin.source_item.SourceItem.get_one", _item_one)
     # A real driver answers `outbound_spec()`; the default is the email rule.
@@ -141,6 +147,16 @@ class TestItRepliesToTheCorrespondent:
         wire["items"] = {"mine": _item("mine", "me@x.to", "Hello")}
         with pytest.raises(ChannelSendUnavailable, match="no one else"):
             await resolve_reply_target(CONVERSATION)
+
+    @pytest.mark.asyncio
+    async def test_a_thread_we_started_is_continued_to_whom_it_is_with(self, wire):
+        # The conversation records who it is with (its first message's recipients), so the one we
+        # started can be written to again before anyone answers — on its own thread.
+        wire["messages"] = [_message(LOCAL_USER_ID, "mine")]
+        wire["items"] = {"mine": _item("mine", "me@x.to", "Hello")}
+        wire["address"] = ["dana@x.io"]
+        target = await resolve_reply_target(CONVERSATION)
+        assert (target.to, target.thread_key) == ("dana@x.io", "t-1")
 
     @pytest.mark.asyncio
     async def test_agent_scope_ignores_a_newer_message_from_another_source(self, wire):

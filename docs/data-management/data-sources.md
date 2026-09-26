@@ -118,7 +118,17 @@ Every data source is a **self-contained asset folder**,
 `agentic-assets/data_driver/<name>/` (the shipped ones under
 `flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/`): the manifest,
 a `source.py` holding one `Source` class, any helper modules beside it (`transport.py`),
-its `tests/` and its editor. The class implements the access protocols it can honour
+its `tests/` and its editor. The class extends one **family** (`flow_sdk/sources/families.py`) —
+what its items ARE — and the loader refuses a class that extends `Source` directly:
+
+| Family | Items | Lands as | Shipped |
+|---|---|---|---|
+| `ObjectSource` | files (`FileItem`) | reflected onto disk, indexed as assets; a page of changes is a `SourceChange` | folder, gcs, gdrive, git |
+| `RecordSource` | records (`RecordData`: `FeedItemData`, a provider's `IssueData`) | `SourceItem` rows, updated in place when their digest moves | rss, hackernews |
+| `MessageSource` (a `RecordSource`) | messages (`MessageData`) in conversations | `SourceItem`s, projected into the stream inbox; answered through the source | the other 15 |
+
+The family is declared (it is the payload shape and the destination); the class then implements
+the access protocols it can honour the access protocols it can honour
 (`Listable`, `Readable`, `Messaging`, `Verifiable`, `Choosing`,
 `Identified`, `StableHandle`) — a capability is discovered by `isinstance`, never
 declared. A source answers *what is there* and *what changed since a cursor*; it never
@@ -174,13 +184,14 @@ application reads, so the engine asks the type rather than probing.
 | `kind` (on the type) | — | Ontology kind of the **source** row (`datasource.feed.rss`); stamped by `sync_source` |
 | `ns` | `""` (ours) | Whose ontology the shapes this driver registers belong to. A driver OUTSIDE the shipped tree must name one — its own, or its project's — or `load_driver` refuses it, because otherwise a kind it declares lands in ours and can take a shipped one's name. Every kind it mints is prefixed `--<ns>--`; ours is the default and is never written. See [`ontology.md`](../ontology.md) |
 | `durable_cursor` | `False` | Whether `ChangePage.resume_cursor` is persisted and resumed |
-| `reflects` | `False` | The payload is files for reflection, never records |
 | `pages_per_pass` | `None` | Page chain cap per traversal |
 | `attention_poll_seconds` | `None` | Sub-tick cadence while watched (see *Attention*). Telegram declares 5 |
-| `stamps_identity` | `True` | Whether this source's bytes are ours to write to |
+| `stamps_identity` | `True` | `ObjectSource` only: whether this source's files are ours to write an identity into |
+| `local_tree_key` | `""` | `ObjectSource` only: the config key naming a tree read in place (`root`, `repo`); empty when the bytes are pulled into a cache |
 | `identity_config_key` | `address` | The config field naming WHICH remote account a source serves — the natural key a caller (e.g. `blocks.StreamInbox`) matches on to reuse a source |
 | `connection` | `None` | The machine connection it reads with (`google`, `slack`), checked before a row exists |
-| `open_inbound` | `False` | Strangers are the point (a help desk): an empty allowlist admits everyone |
+| `open_inbound` | `False` | `MessageSource` only: strangers are the point (a help desk): an empty allowlist admits everyone |
+| `echoes_sends` / `sends_may_draft` | `True` / `False` | `MessageSource` only: a send comes back as its own record; a send may land as a draft |
 
 Setup (`Verifiable.verify`), a picker (`Choosing.choices`), identity (`Identified.whoami`)
 and a targeted reply lookup (`find_reply`, Gmail's In-Reply-To scan) come from the
@@ -266,19 +277,23 @@ retired (`Config.retired_list`, e.g. rss `feed_urls` → `feed_url`) is split in
 one source per entry by `migrate_list_configs()`; a list that cannot split stays
 and parks with `config.<field> is required`.
 
-## The two destinations
+## Three families, two destinations
 
 A source's payload lands **either** in the graph as a record **or** on disk as an
-asset, never both. Which one is chosen by the source (`reflect`), not the driver:
-the same folder could reasonably be mirrored either way, and a driver deciding it
-would be deciding policy with only transport knowledge.
+asset, never both. The family decides which: an `ObjectSource` reflects (a filesystem
+mode), a `RecordSource` or `MessageSource` lands as `record`. Among its family's modes the
+SOURCE picks (`reflect`), not the driver: the same folder could reasonably be indexed in place
+or mirrored, and a driver deciding it would be deciding policy with only transport knowledge.
+`load_driver` refuses a manifest whose `reflect` modes are not its family's, and a `MessageSource`
+that is not `Messaging` with `message_for` (`check_family`, `flow_sdk/ingest/driver_registry.py`) —
+so "does it send" (`DataDriver.sends`) is the family itself.
 
 `ingest_items` stays the single chokepoint for `SourceItem` writes; reflection is
 a second destination *beside* it rather than a branch inside it.
 
 | Mode | Bytes | Notes |
 |---|---|---|
-| `record` | none — the graph | Every message-shaped driver. The default |
+| `record` | none — the graph | Every `RecordSource` and `MessageSource`. The default |
 | `none` | indexed where they sit | The watched tree is itself a walk root |
 | `copy` | duplicated into the project | Relative structure is preserved, so folder-layout assets survive |
 | `symlink` | linked into the project | **Presentation only** — see below |
@@ -399,10 +414,11 @@ can overlap (see *Known gaps*).
    provider can resume from it. Nothing outside the source reads it.
 4. Declare only what the source can promise. A class that claims a capability it does
    not honour is worse than one that omits it.
-5. Decide the destination — a record source yields messages or feed items, a reflecting
-   source yields `FileItem`s and never produces a `SourceItem`.
-6. If the bytes are not yours to write, set `stamps_identity = False` and give the class
-   an `origin_id_for` classmethod.
+5. Pick the family — extend `ObjectSource` (yields `FileItem`s, never a `SourceItem`),
+   `RecordSource` (yields `RecordData`) or `MessageSource` (yields `MessageData`, and sends).
+   One provider with two kinds of stream is two drivers (Jira: issues and their comments).
+6. On an `ObjectSource` whose bytes are not yours to write, set `stamps_identity = False` and
+   give the class an `origin_id_for` classmethod.
 7. Write the manifest beside it, `data_driver.json` — `kind`, `auth`, `config`,
    `reflect`, and `ns` if the driver is not shipped by us. The create form is generated
    from its `config` block; nothing in `ui/` is edited, and nothing is registered

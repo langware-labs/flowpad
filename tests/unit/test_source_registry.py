@@ -18,11 +18,11 @@ from flow_sdk.ingest.driver_registry import DriverLoadError, content_hash, load_
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 SOURCE = '''
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import RecordSource
 from .helper import GREETING
 
 
-class WikiSource(Source):
+class WikiSource(RecordSource):
     provider = "{name}"
     greeting = GREETING
 '''
@@ -71,7 +71,7 @@ def test_a_folder_with_no_source_py_says_so(tmp_path):
 
 
 def test_exactly_one_source_class(tmp_path):
-    two = SOURCE + "\n\nclass OtherSource(Source):\n    provider = 'other'\n"
+    two = SOURCE + "\n\nclass OtherSource(RecordSource):\n    provider = 'other'\n"
     with pytest.raises(DriverLoadError, match="exactly one Source subclass"):
         load_driver(_folder(tmp_path, source=two))
 
@@ -81,6 +81,42 @@ def test_the_class_names_the_manifests_source(tmp_path):
     (folder / "source.py").write_text(SOURCE.format(name="not-wiki"))
     with pytest.raises(DriverLoadError, match="manifest names 'wiki'"):
         load_driver(folder)
+
+
+def test_a_driver_extends_one_family(tmp_path):
+    """``Source`` alone is no family: the author picks files, records or messages — and a message source
+    that cannot answer is refused, so "sends" is the family and nothing else."""
+    bare = SOURCE.replace("from flow_sdk.sources.families import RecordSource", "from flow_sdk.sources.base import Source")
+    with pytest.raises(DriverLoadError, match="extends Source directly"):
+        load_driver(_folder(tmp_path, source=bare.replace("(RecordSource)", "(Source)")))
+    mute = SOURCE.replace("RecordSource", "MessageSource")
+    with pytest.raises(DriverLoadError, match="must send and reply"):
+        load_driver(_folder(tmp_path, name="mute", source=mute))
+
+
+def test_the_manifest_reflect_modes_are_the_familys(tmp_path):
+    """A file source lands on disk (filesystem modes); a record or message source lands as records."""
+    files = SOURCE.replace("RecordSource", "ObjectSource")
+    with pytest.raises(DriverLoadError, match="cannot offer reflect `record`"):
+        load_driver(_folder(tmp_path, name="drive", source=files))
+    folder = _folder(tmp_path, name="table")
+    body = json.loads((folder / "data_driver.json").read_text())
+    (folder / "data_driver.json").write_text(json.dumps({**body, "reflect": ["copy"]}))
+    with pytest.raises(DriverLoadError, match=r'must be \["record"\]'):
+        load_driver(folder)
+
+
+def test_every_shipped_driver_has_the_family_its_items_are():
+    """The shipped split, pinned: four file sources, two record sources, and every channel a message source."""
+    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT
+
+    families: dict[str, list[str]] = {}
+    for folder in sorted(SHIPPED_ROOT.iterdir()):
+        if (folder / "data_driver.json").is_file():
+            families.setdefault(load_driver(folder).cls.family.value, []).append(folder.name)
+    assert families["object"] == ["folder", "gcs", "gdrive", "git"]
+    assert families["record"] == ["hackernews", "rss"]
+    assert len(families["message"]) == 15 and "slack" in families["message"]
 
 
 def test_an_import_error_is_a_load_error_naming_the_file(tmp_path):

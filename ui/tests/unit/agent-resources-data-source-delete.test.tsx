@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@src/components/agent-resources/AgentSchedulesSection', () => ({ AgentSchedulesSection: () => null }));
+vi.mock('@src/components/agent-resources/AgentCredentialsSection', () => ({ AgentCredentialsSection: () => null }));
 vi.mock('@src/hooks/useContext', () => ({
   useContext: () => ({ activeEntityTypeId: h.activeEntityTypeId }),
 }));

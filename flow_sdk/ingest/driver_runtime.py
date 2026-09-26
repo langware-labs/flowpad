@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest.legacy_lift import envelope_of
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import Credentials
@@ -38,11 +38,12 @@ from flow_sdk.sources.protocols import (
     Choosing,
     Identified,
     Listable,
-    Messaging,
     StableHandle,
     Verdict,
     Verifiable,
 )
+from flow_sdk.sources.values.items import UserProfile
+from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 from flow_sdk.utils.kind_registry import KindRegistry
@@ -321,9 +322,18 @@ class DriverRuntime:
         return self._shipped
 
     # ── traits the application reads ───────────────────────────────────────
+    # The family is read off the class (``self.cls.family``): ``DataDriver`` serializes it as a field of
+    # the same name, so the runtime never shadows it with a property.
+    @property
+    def is_object(self) -> bool:
+        """A file source: its items are reflected onto disk, never kept as records."""
+        return self.cls.family is Family.OBJECT
+
     @property
     def can_send(self) -> bool:
-        return issubclass(self.cls, Messaging) and callable(getattr(self.cls, "message_for", None))
+        """A channel that answers. A message source is ``Messaging`` with ``message_for`` — ``load_driver``
+        refuses one that is not — so the family is the answer."""
+        return self.cls.family is Family.MESSAGE
 
     @property
     def has_setup(self) -> bool:
@@ -340,7 +350,7 @@ class DriverRuntime:
 
     @property
     def open_inbound(self) -> bool:
-        return self.cls.open_inbound
+        return self.can_send and self.cls.open_inbound
 
     @property
     def identity_config_key(self) -> str:
@@ -356,26 +366,27 @@ class DriverRuntime:
 
     @property
     def stamps_identity(self) -> bool:
+        """May reflection write our identity into this source's files (a file source's question)."""
         return self.cls.stamps_identity
-
-    @property
-    def reflects(self) -> bool:
-        return self.cls.reflects
 
     def channel_for(self, row: Any) -> str:
         """The user-facing channel a row reaches; a file source has none."""
-        if self.cls.reflects:
+        if self.is_object:
             return ""
         return str(self.cls.origin_kind_for(getattr(row, "config", None) or {}) or "")
 
     def outbound_spec(self, row: Any) -> type["MessageSpec"]:
         """The spec class that knows WHO a reply on this channel is addressed to."""
-        declared = self.cls.outbound_spec()
+        declared = self.cls.outbound_spec() if self.can_send else None
         if declared is not None:
             return declared
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
 
         return EmailMessageSpec
+
+    def permalink(self, external_id: str, thread_key: str = "") -> str:
+        """The channel's own link for a record its provider gave no URL; ``""`` for a non-channel."""
+        return self.cls.permalink(external_id, thread_key) if self.can_send else ""
 
     # ── instances ───────────────────────────────────────────────────────────
     def create_source(self, config: "SourceConfig | dict | None" = None, *, name: str, **authored: Any) -> "DataSource":
@@ -416,7 +427,7 @@ class DriverRuntime:
         """Where a REMOTE file source's bytes land: under this instance, not a project, so deleting
         the source can take its cache without touching anything a person wrote. ``None`` for a
         source with no remote bytes."""
-        if not self.cls.reflects or self.cls.local_tree_key:
+        if not self.is_object or self.cls.local_tree_key:
             return None
         override = (getattr(row, "config", None) or {}).get("cache_root")
         if override:
@@ -428,6 +439,8 @@ class DriverRuntime:
     def tree_root(self, row: Any) -> Optional[Path]:
         """The tree every ref of a reflecting source is relative to: the local tree the source reads
         in place, else its cache. ``None`` when the row does not name one yet."""
+        if not self.is_object:
+            return None
         key = self.cls.local_tree_key
         if not key:
             return self.cache_root(row)
@@ -437,8 +450,6 @@ class DriverRuntime:
     def origin_for(self, row: Any) -> Any:
         """The tree, as the origin a reflecting row is stamped with on save; ``None`` for a record
         source or a row that names no tree yet."""
-        if not self.cls.reflects:
-            return None
         root = self.tree_root(row)
         if root is None:
             return None
@@ -491,7 +502,7 @@ class DriverRuntime:
                     break
             # An idle traversal hands back no new resume point: the position it started from stands.
             carried = (resume or started_at) if cls.durable_cursor else None
-            if cls.reflects:
+            if self.is_object:
                 return await self._files(row, source, items, removed, moved, carried, dict(position.manifest), complete=complete)
             return self._records(row, items, carried, floor, moved_on=carried != started_at)
 
@@ -614,7 +625,12 @@ class DriverRuntime:
             await self._stamp(row, source)
         # A transport whose connector may only DRAFT reports the draft with no `sent_at`; one that
         # records its own copy says so on the payload.
-        drafted = bool(getattr(type(source), "sends_may_draft", False)) and sent.data.sent_at is None
+        if to and not getattr(sent.data, "recipients", None):
+            # Whom we sent it to is known here even when the provider's answer does not say — a
+            # conversation we open is addressed by it.
+            to_whom = UserProfile(origin=CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=to), address=to)
+            sent = sent.model_copy(update={"data": sent.data.model_copy(update={"recipients": (to_whom,)})})
+        drafted = self.cls.sends_may_draft and sent.data.sent_at is None
         recorded = bool(getattr(sent.data, "recorded", False))
         if not drafted and not recorded:
             recorded = await self._record(row, source, sent)

@@ -14,9 +14,6 @@ Everything below runs in-process against the session DB, and every `python`
 fence is run as written by `tests/unit/test_data_sources_snippets.py`. Deeper
 reading: [docs/data-management/data-sources.md](../data-management/data-sources.md).
 
-```python
-```
-
 ## 1. Connect a feed and sync it once
 
 Pinned by `tests/unit/test_data_sources_snippets.py`.
@@ -54,12 +51,13 @@ The config keys are the manifest's, one dict per provider:
 | `git`         | `repo: str`, `branch`                                                | `repo`                  | —                                       |
 | `agentmail`   | `inbox`, `base_url`                                                  | `inbox`                 | machine secret `ingest_api.agentmail`   |
 | `telegram`    | `base_url`                                                           | stamped from `getMe`    | `telegram` pack: `TELEGRAM_BOT_TOKEN`   |
-| `slack`       | `channel` (one id, or a picked `{id, name}`), `allowed_senders`      | `channel`               | the Slack connection                    |
+| `slack`       | `channel` (one id, or a picked `{id, name}`); `allowed_senders` moves onto the row | `channel`               | the Slack connection                    |
 | `gdrive`      | `drive` (empty = My Drive), `cache_root`, `base_url`                 | —                       | the Google connection                   |
 | `gcs`         | `bucket`, `project`, `prefix`, `cache_root`, `base_url`              | `bucket`                | the Google connection                   |
 | `gmail`       | `address`                                                            | `address`               | `GMAIL_ADDRESS`, `GMAIL_APP_PASSWORD`   |
 | `cloud_email` | `address` (`agent_id` is filled from the owner)                      | `agent_id`              | —                                       |
 | `agent`       | `connector`, `harness`, `mailbox`, `agent`, `subagent`, `max_items`  | `connector`             | the harness's own                       |
+| `voice_phone` | `number`, `project` (OpenAI `proj_…`), `voice`, `model`, `base_url`, `twilio_base_url` | `number`  | `OPENAI_API_KEY`, `OPENAI_WEBHOOK_SECRET`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` |
 
 Each driver declares its config as a typed `Config` in its `source.py`: `save()` of a new source
 validates it whole (`ValueError: config.feed_url is required`) and shapes what you typed (`"5"`
@@ -68,7 +66,9 @@ project may share — so it lives in the store the driver's `auth` names.
 
 ## 2. Reuse instead of duplicate
 
-A second source for the same account is a lookup, never a fresh row.
+A second source for the same account is a lookup, never a fresh row. `save()` does it for you — a
+new source for an account its owner already watches adopts that row — and the lookup is there when
+you want the row before deciding.
 
 ```python
 from flow_sdk.builtin.data_driver import DataDriver
@@ -88,6 +88,8 @@ The natural key is the config field the manifest marks `account_key: true`
 `SourceItem.body` is FTS-indexed straight from the row.
 
 ```python
+from flow_sdk.builtin.source_item import SourceItem
+
 hits = await SourceItem.search("zebrafish", limit=10)
 ```
 
@@ -151,10 +153,12 @@ poller uses, so a re-run converges instead of duplicating. Pinned by
 `tests/unit/test_ingest_write_route.py`.
 
 ```python
+from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import SourceItemSpec
 from flow_sdk.ingest.ingestor import ingest_items
 from flow_sdk.ingest.models import IngestMode
 
+src = await DataSource.get(SOURCE)     # the source these items belong to, by name
 items = [
     SourceItemSpec(
         data_source_id=src.id,
@@ -189,6 +193,9 @@ row; the HTTP route of the same name is a thin wrapper over it. Pinned by
 `tests/unit/test_data_sources_snippets.py` and `tests/unit/test_data_source_actions.py`.
 
 ```python
+from flow_sdk.builtin.data_source import DataSource
+
+src = await DataSource.get(SOURCE)
 await src.verify()          # connection + setup probe → status ACTIVE or SETUP
 await src.poll_now()        # mark due; the heartbeat picks it up within 60s
 await src.replay(since=None)   # re-emit item events from what is stored
@@ -217,10 +224,15 @@ source until `poll_now` un-latches it.
 ## 8. Reply through the source
 
 Drivers that can send (`gmail`, `agentmail`, `telegram`, `slack`, `cloud_email`, `agent`)
-expose one contract. Pinned by `tests/unit/test_data_source_messaging.py`.
+expose one contract. Pinned by `tests/unit/test_data_source_messaging.py`, and run as written
+by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
-from flow_sdk.builtin.source_item import EmailMessageSpec
+from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
+
+src = await DataSource.get(SOURCE)
+item = (await SourceItem.get_all({"data_source_id": str(src.id)}))[-1]   # a message it ingested
 
 outcome = await src.send(
     EmailMessageSpec(
@@ -249,7 +261,7 @@ Pinned by `tests/unit/test_data_sources_snippets.py`.
 ```python
 from flow_sdk.builtin.data_source import DataSource
 
-picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT, "base_url": BASE_URL})
+picks = await DataSource.choices_for("gcs", "bucket", {"project": PROJECT})
 
 [(c.id, c.name) for c in picks.items]  # what this credential can actually see
 picks.detail  # why the list is empty, when it is
@@ -289,7 +301,7 @@ from flow_sdk.ingest.reflect import ReflectMode
 
 driver = await DataDriver.get("gdrive")
 src = driver.create_source(
-    driver.create_config(cache_root=CACHE_ROOT, base_url=BASE_URL),  # `drive=...` for a shared drive; empty = My Drive
+    driver.create_config(cache_root=CACHE_ROOT),  # `drive=...` for a shared drive; empty = My Drive
     name="My Drive",
     reflect=ReflectMode.COPY.value,
     reflect_into=DESTINATION,
@@ -308,8 +320,7 @@ that says so (`No Google credential on this machine…`); the row parks in
 `setup` and nothing is fetched. Once it is, files land in `cache_root` under
 Drive's own folder names and are reflected into `reflect_into` like a folder
 source's. The report's `created`/`updated` count *records*, so they stay 0 for
-a file source: look at the tree. Leave `base_url` out in real use; it exists so
-a test can point the source at a loopback Drive.
+a file source: look at the tree.
 
 ## 11. Consume a source yourself
 
@@ -362,3 +373,67 @@ async with await merge(support, sales).open() as live:
 
 There is no `merged.send`: a new message needs a channel, so call `send` on the source you mean.
 A push-only source has no pages to read and is refused at `open()`.
+
+## 13. Three families: files, records, messages
+
+Every driver's class extends one family — what its items ARE, and so where they land. An
+`ObjectSource` yields files, reflected onto disk and indexed as assets (§4, §10). A `RecordSource`
+yields records, kept as `SourceItem` rows updated in place (§1). A `MessageSource` is a record
+source of messages in conversations, threaded into the stream inbox and answered through the
+source (§8). The row says which as `family`; only a message source `sends`.
+
+```python
+from flow_sdk.builtin.data_driver import DataDriver
+
+drive = await DataDriver.get("gdrive")
+rss = await DataDriver.get("rss")
+slack = await DataDriver.get("slack")
+
+families = (drive.family, rss.family, slack.family)    # ("object", "record", "message")
+answers = (drive.sends, rss.sends, slack.sends)        # (False, False, True)
+```
+
+A provider with two kinds of stream is two drivers: a Jira issue tracker is a `RecordSource`
+of issues, and each issue's comments a `MessageSource`.
+
+## 14. Write your own driver
+
+A driver's class extends its family and, for a listing, `CollectionSource`: three methods, and
+paging, `get` and `iterate` come free. This one keeps its table in memory; a real one reads an API
+in `_scan` (the shipped `hackernews` driver is 130 lines). Pinned by
+`tests/unit/test_data_sources_snippets.py`, which also runs the SDK's conformance kit on it.
+
+```python
+from typing import Any, Optional
+
+from flow_sdk.sources.base import CollectionSource
+from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import RecordSource
+from flow_sdk.sources.values.items import RecordData, SourceItemSpec
+
+ROWS = {"q1": "Simple is better than complex.", "q2": "Flat is better than nested.", "q3": "Readability counts."}
+
+
+class ZenSource(RecordSource, CollectionSource):
+    Config = SourceConfig
+    provider = "zen"
+
+    async def _scan(self, query: Any) -> list[tuple[str, str]]:   # list what exists, in key order
+        return sorted(ROWS.items())
+
+    async def _lookup(self, key: str) -> Optional[str]:           # find one by key
+        return ROWS.get(key)
+
+    def _item(self, key: str, raw: str) -> SourceItemSpec:        # one raw record -> a typed item
+        return SourceItemSpec(origin=self.origin(key), data=RecordData(title=key, text=raw))
+
+
+async with ZenSource(SourceBinding(config={}, account_key="zen")) as zen:   # the account it reads as
+    page = await zen.fetch(page_size=2)
+    [item.data.text for item in page.items]        # the first two, in key order
+    await zen.get(zen.origin("q3"))                # one by key
+```
+
+Put it in `agentic-assets/data_driver/zen/source.py` beside a `data_driver.json` naming it, and
+it loads like the shipped ones.

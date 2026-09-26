@@ -97,7 +97,9 @@ def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested:
             # ``_document_text`` reads it rather than this branch.
             text = str(held or "")
             if text:
-                (root / names.field_file(name, ".md")).write_text(text, encoding="utf-8")
+                path = root / names.field_file(name, ".md")
+                path.write_text(text, encoding="utf-8")
+                held.path = path  # ``Text.path``: where it now lives
         elif held is None:
             continue
         elif place is Placement.DOCUMENT:
@@ -105,7 +107,9 @@ def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested:
             path.write_text(_document_text(held), encoding="utf-8")
         elif place is Placement.FILE_BYTES:
             ext = getattr(type(held), "ext", ".bin")
-            (root / names.field_file(name, ext)).write_bytes(bytes(held))
+            path = root / names.field_file(name, ext)
+            path.write_bytes(bytes(held))
+            held.path = path  # ``Binary.path``
         elif place is Placement.DIR_LIST:
             folder = root / name
             folder.mkdir(parents=True, exist_ok=True)

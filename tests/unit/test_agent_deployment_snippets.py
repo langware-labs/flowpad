@@ -35,7 +35,12 @@ def home(fresh_user_scope):
 
 
 async def _placed() -> dict:
-    """§1, both fences, in one namespace — what §3 and §4 read on."""
+    """§1, both fences, in one namespace — what §3 and §4 read on. The session's test DB holds any
+    "researcher" an earlier test placed; the fences find theirs by name, so exactly one must answer."""
+    from flow_sdk.builtin.agent import Agent
+
+    for other in await Agent.get_all({"name": "researcher"}):
+        await other.delete()
     ns = await run_fence(fence_under(doc(DOC), "1."), {}, filename=f"{DOC} §1")
     return await run_fence(fence_under(doc(DOC), "1.", nth=1), ns, filename=f"{DOC} §1b")
 
@@ -63,7 +68,7 @@ async def _owned_source(provider: str, double, owner: Agent):
     """A verified channel the agent owns, its position on the double taken — as a connected one is."""
     source = make_data_source(
         provider, name=f"acme {provider}", config=dict(double.config), owner=owner.typeid,
-        status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[double.sender], **dict(double.fields),
+        status=SourceStatus.ACTIVE.value, allowed_senders=[double.sender], **dict(double.fields),
     )
     await source.save()
     await sync_source(source)
@@ -133,3 +138,69 @@ async def test_7_run_it_on_this_computer():
     ns = await run_fence(fence_under(doc(DOC), "7."), await _placed(), filename=f"{DOC} §7")
     assert ns["first"].id == ns["here"].id, "the default slot IS the placement §1 made — now running"
     assert ns["chat"].backend.type == "channel"
+
+
+async def test_2_start_a_session_on_a_placement(mock_driver, tmp_path):
+    """§2, every fence as written, on §1's placements: launch here, refused there, a session, a draft."""
+    from flow_sdk.builtin.project import Project
+
+    mock_driver(lambda turn: "Three sources.")
+    (tmp_path / "other").mkdir()
+    other = Project(name="other", fs_storage_mount_path=str(tmp_path / "other"))
+    await other.save()
+    ns = await _placed()
+    ns["OTHER_PROJECT"] = str(other.id)
+    for nth in range(4):
+        ns = await run_fence(fence_under(doc(DOC), "2.", nth=nth), ns, filename=f"{DOC} §2[{nth}]")
+        if nth == 1:
+            assert ns["answer"].exit_code.name == "NOT_APPLICABLE" and ns["answer"].ran is False
+    assert ns["draft"].context_data["instructions"]
+
+
+async def test_5_a_machine_of_its_own(monkeypatch):
+    """§5 as written; the hub's legs — publish the agent, boot its machine — answered by a double."""
+    import flow_sdk.auth
+    from flow_sdk.builtin import cloud_deploy
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
+    await _placed()
+    await get_or_create_local_user()
+    published: list = []
+
+    async def login(*_a, **_k):
+        return None
+
+    async def ensure_on_hub(self, actor, *, force=False):
+        published.append((self.name, str(actor)))
+        return True
+
+    async def deploy(entity, environment=None):
+        return {"deployment_id": "dep-1", "entity": entity.name, "environment": environment or "production"}
+
+    monkeypatch.setattr(flow_sdk.auth, "login", login)
+    monkeypatch.setattr(Agent, "ensure_on_hub", ensure_on_hub)
+    monkeypatch.setattr(cloud_deploy, "deploy_entity_to_cloud", deploy)
+    ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
+    assert published == [("researcher", str(ns["actor"]))], "publish comes first, as the caller"
+    assert ns["receipt"]["entity"] == "researcher"
+
+
+async def test_7_the_shown_loop_is_the_shipped_one():
+    """§7's second fence quotes the stock loop: it is that function's code (its docstring aside), and it
+    defines as written."""
+    import ast
+    import inspect
+
+    from flow_sdk.builtin.deployment_loop import answer_every_message
+
+    def code(source: str) -> str:
+        fn = ast.parse(source).body[0]
+        if ast.get_docstring(fn) is not None:
+            fn.body = fn.body[1:]
+        return ast.dump(fn)
+
+    fence = fence_under(doc(DOC), "7.", nth=1)
+    assert code(fence) == code(inspect.getsource(answer_every_message)), "the page shows the shipped loop"
+    ns = await run_fence(fence, {}, filename=f"{DOC} §7b")
+    assert callable(ns["answer_every_message"])

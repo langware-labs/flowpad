@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
-inputs_hash: 6cf4b7747b2a5108822bd15d054fa716fe9f47aed983dbd21ce95f1334414f1a
+inputs_hash: 1516ecd85ab2a877027c68c457e7ba9b5724000192074bd601cbb9bc393a24b5
 template_version: 1
 prompt_version: 1
 parent_ref: ''
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-23T19:02:12Z'
+generated_at: '2026-09-25T12:04:30Z'
 latest_process_ref: ''
 file_count: 53
 subfolder_count: 14
@@ -20,7 +20,7 @@ subfolder_count: 14
 ## Files
 - [Record System Requirements](CLAUDE.md) — The record-system rules: disk is the source of truth, FSRef as the declarative file reference, FSRecord as the single record class, and per-type TypeInfo slots.
 - [AgenticProcess Architecture](agentic-process.md) — AgenticProcess architecture: the durable entity behind an agent run, execution routing on pty_mode versus tab visibility on visible, wizard runtime, status, reconnect and replay.
-- [Agentic process outputs](agentic_process_outputs.md) — What an agentic run produces: the derivation layer turning transcript shape into meaning, the Artifact recording outputs, and the bus lane keeping clients current.
+- [Agentic process outputs](agentic_process_outputs.md) — How agent runs surface outputs: display, artifacts, workdir versus declared-output modes, and how results reach the client.
 - [Agent Management](agents-management.md) — Top-level index for agent management: the Agent identity versus each AgenticProcess execution, Deployment, the authoring bundle, and links to focused documents.
 - [API Routing Specification](api-routing.md) — API routing specification: graph URL structure, parsing algorithm, implicit action mapping, action registry, dedicated routes, RequestInfo and frontend ActionInfo/DataManager routing.
 - [Server Boot & Bootstrap Flows](boot.md) — How the backend gets from process start to serving requests: startup flows, what runs inline versus detached, and the sub-100ms bootstrap budget.
@@ -40,7 +40,7 @@ subfolder_count: 14
 - [Frontend Debug Cheatsheet](frontend-debug-cheatsheet.md) — Browser-console recipes for debugging the running frontend: the registered debug globals, bootstrap and WebSocket health, entity cache, and data or PTY bugs.
 - [FSRef — declarative file/folder references](fs-ref.md) — FSRef, the declarative file and folder reference used throughout records: its class family, indexer walk tags, and read-only inheritance.
 - [fs_store: Record System Architecture](fs_store.md) — Directory page for the fs_store package: no single FsStore class exists; a table routes each subject to its current home under data-management.
-- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Cross-walk of our nouns against Claude Code's and OpenClaw's: provider mirrors versus ours, the three contexts, type·subkind·kind, naming rules and capability fields.
+- [Glossary — our nouns vs. the ecosystem's](glossary.md) — Glossary cross-walking Flowpad nouns with Claude Code and OpenClaw, marking provider mirrors versus Flowpad-owned entities.
 - [Icons](icons.md) — Icons: the backend names the glyph, the frontend resolves it, with names in the repo's one dot-tag grammar so collisions cannot arise.
 - [Flowpad](intro.md) — What Flowpad is: secure, AI-native collaborative agent work, the collaborative context conversation, and the use cases it addresses.
 - [Listen Webhook Pipeline](listen_webhook.md) — The webhook listen pipeline: how Claude Code hooks and hook_op envelopes reach POST /webhook/listen, get routed by type, become FlowData, and render.
@@ -58,7 +58,7 @@ subfolder_count: 14
 - [Credentials and secrets](secret_share.md) — Credentials as SecretPack assets: the named environment-variable set, its project/user/system scopes, folder-capsule identity, and where values are stored and injected.
 - [Session Share Spec](session_share_spec.md) — Transferring a worker session between machines: project path encoding, experiment results, where paths appear in a transcript, and the transfer algorithm.
 - [shellMode vs Direct / Agentic PTY](shell-claude-session-api.md) — How a plain shell terminal differs from an agent running over a PTY: creation paths, entity model, shell_mode, titles and recovery.
-- [Staging OAuth validation — 2026-09-12](staging-oauth-validation.md) — Results of the 2026-09-12 staging OAuth validation: per-provider pass table, local token copies bound to the cloud account, and the delegated-sandbox login limitation.
+- [Staging OAuth validation — 2026-09-12](staging-oauth-validation.md) — 2026-09-12 staging OAuth validation: provider-by-provider results on the local app and staging hub with verified identities.
 - [System Agents](system_agents.md) — System agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one — distinct from the launchable Agent entity.
 - [Tab Management](tab-management.md) — The Tab entity as the one membership system for content and terminal tabs: ids derived from DockPointer, the SDK TabManager, and the design history.
 - [Tags — the unified event bus](tags.md) — Tags, the unified event bus: a tag is an opaque dot-separated string the bus never interprets, with one grammar owner and two match semantics.

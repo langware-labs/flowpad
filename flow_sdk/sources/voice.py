@@ -8,9 +8,10 @@ any of them is the channel ``voice``, a thread per person, one message per sente
 
 * **Channel.** ``origin_kind = "voice"`` for every voice driver, the way two WhatsApp transports
   share ``whatsapp`` — a person's calls read as one kind of conversation whichever way they came in.
-* **Addressing.** A call IS the thread: ``<account>/calls`` scopes it and ``<person>/<call id>``
-  keys it, so each call is one conversation, start to end. A voice message outside any call (the
-  note a dial leaves before the call exists) is the person's own thread, keyed by their address.
+* **Addressing.** A call IS the thread: ``<account>/calls`` scopes it and ``<person>/<call>`` keys
+  it (``IncomingCall.conversation_key``: the dial's token for a call we placed — so the note the dial
+  leaves and the call are one conversation — else the call's id). A voice message outside any call is
+  the person's own thread, keyed by their address.
   A sentence lives in ``<account>/calls/<person>``. Replies quote nothing — speech has no quote.
 * **The key.** Calls run on ``OPENAI_API_KEY`` from the source's credential (``auth.env``: the
   project's store, then the process environment), else the key this machine stored for OpenAI.
@@ -19,9 +20,10 @@ any of them is the channel ``voice``, a thread per person, one message per sente
 from __future__ import annotations
 
 import os
+import secrets
 from typing import Any, ClassVar, Optional
 
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.call import IncomingCall
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -48,12 +50,15 @@ def person_profile(kind: str, account: str, address: str, name: str = "") -> Use
                        name=name or None, address=address)
 
 
-class VoiceChannel(Source):
+class VoiceChannel(MessageSource):
     """The shared half of a voice source. A driver subclasses it and adds its transport."""
 
     origin_kind: ClassVar[str] = VOICE
     #: What ``send`` returns is the only copy of it: speech is not echoed back as a record.
     echoes_sends: ClassVar[bool] = False
+    #: Calls on the line in this process, by (driver, person): the session ``say_to`` speaks into, and the
+    #: call's conversation key.
+    _live: ClassVar[dict[tuple[str, str], tuple[Any, str]]] = {}
 
     @classmethod
     def outbound_spec(cls) -> type:
@@ -67,8 +72,8 @@ class VoiceChannel(Source):
         """The address this source answers at — its identity config value."""
         return str(self.config.get(type(self).identity_config_key) or self.binding.account_key or "").strip()
 
-    def thread(self, person: str) -> CloudOrigin:
-        return thread_origin(self._scope.kind, self.account, person)
+    def thread(self, person: str, call: str = "") -> CloudOrigin:
+        return thread_origin(self._scope.kind, self.account, person, call)
 
     def ours(self) -> UserProfile:
         return person_profile(self._scope.kind, self.account, self.account, self.binding.persona.name if self.binding.persona else "")
@@ -136,8 +141,9 @@ class VoiceChannel(Source):
 
         raise Unsupported(f"{type(self).__name__} cannot say anything outside a call")
 
-    def said(self, person: str, text: str, key: str, **extra: Any) -> MessageItem:
-        """What we said to ``person``, as the item ``send`` answers with."""
+    def said(self, person: str, text: str, key: str, *, call: str = "", **extra: Any) -> MessageItem:
+        """What we said to ``person`` — in the call ``call`` (its conversation key) when there is one —
+        as the item ``send`` answers with."""
         from datetime import datetime, timezone  # noqa: PLC0415
 
         from flow_sdk.sources.values.call import VoiceTurnData  # noqa: PLC0415
@@ -145,8 +151,29 @@ class VoiceChannel(Source):
         extra.setdefault("sent_at", datetime.now(timezone.utc))
         return MessageItem(
             origin=sentence_origin(self._scope.kind, self.account, person, key),
-            data=VoiceTurnData(text=text, conversation=self.thread(person), sender=self.ours(), **extra),
+            data=VoiceTurnData(text=text, conversation=self.thread(person, call), sender=self.ours(), **extra),
         )
+
+    # ── a live call: what the transport's ``accept`` holds, and ``say_to`` speaks into ──
+    def hold(self, call: IncomingCall, session):
+        """Register *session* as *call*'s live line; answers it wrapped to forget the line when the call ends."""
+        key, entry = (self.provider, call.caller), (session, call.conversation_key)
+        VoiceChannel._live[key] = entry
+
+        def forget() -> None:
+            if VoiceChannel._live.get(key) is entry:  # a later call from the same person keeps its own line
+                VoiceChannel._live.pop(key, None)
+
+        return _Forgetting(session, forget)
+
+    async def say_live(self, person: str, text: str) -> Optional[MessageItem]:
+        """Speak *text* into *person*'s live call and answer what was said — ``None`` when they are on none."""
+        live = VoiceChannel._live.get((self.provider, person))
+        if live is None:
+            return None
+        session, call = live
+        await session.say(text)
+        return self.said(person, text, f"say-{secrets.token_hex(6)}", call=call)
 
     def _person_of(self, data: MessageData) -> str:
         if data.conversation is not None:
@@ -164,6 +191,29 @@ class VoiceChannel(Source):
 
     async def reject(self, call: IncomingCall) -> None:
         return None
+
+
+class _Forgetting:
+    """A call session that forgets its person's line when the call ends."""
+
+    def __init__(self, session, forget):
+        self._session, self._forget = session, forget
+
+    async def events(self):
+        try:
+            async for event in self._session.events():
+                yield event
+        finally:
+            self._forget()
+
+    async def resolve(self, ask_id: str, answer: str) -> None:
+        await self._session.resolve(ask_id, answer)
+
+    async def say(self, text: str) -> None:
+        await self._session.say(text)
+
+    async def hangup(self) -> None:
+        await self._session.hangup()
 
 
 __all__ = ["CALLS", "VOICE", "VoiceChannel", "person_profile", "sentence_origin", "thread_origin"]

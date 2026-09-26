@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent",
   "folder_name": "agent",
-  "inputs_hash": "d90778a96791c8e20f903b77b1306119483085bdd6324970585eda08c3f8c38e",
+  "inputs_hash": "45ccaf40b47826822ef9c74720842589f8a83a6a4136be73df59ec273f11abb1",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "The AgenticProcess entity up close: the four-axis status model that says what a worker is doing and on what evidence, and a tour of its persisted fields, actions and public TypeScript surface.",
@@ -19,15 +19,23 @@
       "size_bytes": 11167
     },
     {
+      "name": "chief-of-staff.md",
+      "rel_path": "chief-of-staff.md",
+      "title": "Chief of Staff — an agent that delegates through a task ledger",
+      "summary": "Chief of Staff agents answer fast and delegate longer work to SubAgent staff through the task ledger; per-turn answer/subagent/task choice and harness rendering.",
+      "content_hash": "485846141354baedcb37b4e43c91310a4494fe9edc0e8bdfc2680a9cde21ece5",
+      "size_bytes": 4961
+    },
+    {
       "name": "interface.md",
       "rel_path": "interface.md",
       "title": "AgenticProcess interface — rendered demo",
-      "summary": "Rendered interface-card tour of AgenticProcess: persisted fields, state rules, helper types, every entity action and the TypeScript SDK.",
-      "content_hash": "76f69f7107deb6d130d797b471f84e7b30dddc4bac88548ad28066016a2b0719",
-      "size_bytes": 28878
+      "summary": "Rendered interface-fence tour of AgenticProcess: Python entity methods including run(input, output_spec), its 42 HTTP actions, and the TypeScript SDK surface.",
+      "content_hash": "2e26044b4af9420d23a7493e40c0da1b87d539e86392ec3e0f0033e8e797194d",
+      "size_bytes": 29237
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-22T11:53:02.515204+00:00",
+  "generated_at": "2026-09-25T12:04:30Z",
   "latest_process_ref": ""
 }

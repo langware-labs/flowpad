@@ -296,3 +296,14 @@ def test_a_declared_file_slot_comes_back_as_a_file_not_a_folder(tmp_path):
 
     back = FolderLayout().read(tmp_path, example_type, dataset_id="ds")[0]
     assert (back.input, back.output) == (example.input, example.output)
+
+
+def test_a_text_knows_the_file_save_and_load_use(tmp_path):
+    """``Text.path`` is one ``names.field_file`` rule on both sides: where ``save`` wrote it is where
+    ``load`` read it from. A value that never touched disk has none."""
+    note = Doc(title="t", body="# hi")
+    assert note.body.path is None
+    save(note, tmp_path)
+    assert note.body.path == tmp_path / "body.md"
+    loaded = load(Doc, tmp_path)
+    assert loaded.body.path == tmp_path / "body.md" and loaded == note

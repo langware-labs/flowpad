@@ -55,6 +55,7 @@ import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 import { DEFAULT_GRAPH_PRESENTATION, type GraphPresentation } from '@src/types/GraphPresentation';
 import { credentialsPointer } from '@src/components/credentials-view/credentials-pointer';
+import { dataSourcesPointer, type DataSourcesRoute } from '@src/components/data-sources/data-sources-pointer';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -148,7 +149,7 @@ export const CHILD_PARAM = 'child';
 export const CHILD_SECTION_PARAM = 'child_section';
 const CHILD_SEGMENT = 'child';
 /** The sections a child can be opened from. */
-export const CHILD_SECTIONS = ['channel', 'data_source', 'schedule', 'mcp', 'skill', 'doc', 'deployment'] as const;
+export const CHILD_SECTIONS = ['channel', 'data_source', 'schedule', 'mcp', 'skill', 'doc', 'deployment', 'credential'] as const;
 export type ChildSection = (typeof CHILD_SECTIONS)[number];
 
 function isChildSection(value: string | undefined): value is ChildSection {
@@ -2179,6 +2180,14 @@ export class DockPointer implements IDockPointer {
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     return new DockPointer(ViewType.CREDENTIALS, credentialsPointer(tab, projectId), {}, layout);
+  }
+
+  /**
+   * Create dock pointer for the Data sources screen — its source list, its driver
+   * list, or one driver. `dataSourcesPointer` owns the grammar.
+   */
+  static forDataSources(route?: DataSourcesRoute, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.DATA_SOURCES, dataSourcesPointer(route), {}, layout);
   }
 
   /**

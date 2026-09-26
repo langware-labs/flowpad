@@ -139,9 +139,16 @@ class DataDriver(DriverRuntime, Entity):
 
     @computed_field
     @property
+    def family(self) -> Optional[str]:
+        """``object`` / ``record`` / ``message`` — the base the driver's class extends (files, records,
+        messages); None for a driver nothing has loaded. Computed at serialization for ``sends``'s reason."""
+        driver = self._loaded()
+        return driver.cls.family.value if driver is not None else None
+
+    @computed_field
+    @property
     def sends(self) -> bool:
-        """Whether a source of this driver is a MessageSource — its class can push a reply back to the
-        channel.
+        """Whether a source of this driver answers on its channel: a MessageSource that sends.
 
         Computed at serialization, not derived by the indexer like ``runtime``: the answer lives on
         the source CLASS, and importing source code from inside the indexer's per-record sync

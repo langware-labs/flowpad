@@ -227,6 +227,30 @@ def register_prompt_task(process_id: str, task: asyncio.Task) -> None:
     task.add_done_callback(finished)
 
 
+def prompt_task_active(process_id: str) -> bool:
+    """A headless turn's task is still running its tail (slot release, turn-end bookkeeping)."""
+    task = _PROMPT_TASKS.get(process_id)
+    return task is not None and not task.done()
+
+
+async def selected_worker_type() -> "str | None":
+    """The worker a new process gets when none is named: the harness selected in settings.
+
+    ``None`` leaves the choice to ``get_driver`` — when ``FLOWPAD_DEFAULT_WORKER`` is set (the explicit
+    env hook wins) or nothing is selected (its default, ``claude``). Resolved once, at process creation.
+    """
+    import os  # noqa: PLC0415
+
+    if os.environ.get("FLOWPAD_DEFAULT_WORKER"):
+        return None
+    try:
+        from flow_sdk.core.capabilities.registry import resolve_default_worker_type  # noqa: PLC0415
+
+        return await resolve_default_worker_type()
+    except Exception:  # noqa: BLE001 — no selection is an answer: the driver default applies
+        return None
+
+
 def prompt_lock_locked(process_id: str) -> bool:
     """True when a prompt turn holds the per-process lock.
 
@@ -974,27 +998,47 @@ class AgenticProcess(Entity):
         cls,
         instruction: str,
         workdir: str | None = None,
+        *,
+        input: Any = None,
+        output_spec: Any = None,
         **kwargs,
     ) -> "PromptResult":
-        """One-shot: create → start → send → wait → answer → stop.
+        """One-shot: create → send → wait → answer → stop. Answers a ``PromptResult`` — ``text`` is the
+        agent's last message, ``executor`` the process; an error, an interrupted end or a worker that never
+        started is ``NOT_YET``, never a raise.
 
-        Answers with a ``PromptResult`` — ``text`` is the reply, ``executor``
-        the process. An error or interrupted end is ``NOT_YET``, never a raise —
-        and so is a worker that never started: the context manager discarded
-        ``start_pty``'s failure, so ``send`` raised "No shell linked" instead.
+        ``input`` / ``output_spec``: typed folder I/O — see ``process_io``. Headless by default
+        (``pty_mode=True`` for the interactive transport); ``workdir`` defaults to the caller's cwd;
+        an unnamed worker is the harness selected in settings.
         """
+        from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
+            finish_io,
+            prepare_io,
+            resolve_output_spec,
+            take_turn,
+        )
         from flow_sdk.schema.data_spec.returned_value_spec import PromptResult  # noqa: PLC0415
 
+        spec = resolve_output_spec(output_spec)
+        kwargs.setdefault("pty_mode", False)
+        if not kwargs.get("worker_type"):
+            kwargs["worker_type"] = await selected_worker_type()
+        if not workdir and not kwargs.get("project_id"):
+            # A worker needs a cwd; a script's own is the one it means (``run_op``'s rule).
+            workdir = str(Path.cwd())
         proc = cls(workdir=workdir, **kwargs)
-        started = await proc.start_pty()
-        if isinstance(started, ApiFailResponse):
-            return PromptResult.not_yet(
-                started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
-            )
+        prepare_io(proc, input=input, output_spec=spec)
         try:
+            if not proc.pty_mode:
+                return await take_turn(proc, instruction, spec)
+            started = await proc.start_pty()
+            if isinstance(started, ApiFailResponse):
+                return PromptResult.not_yet(
+                    started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
+                )
             await proc.send(instruction)
             await proc.wait()
-            return _build_run_result(proc)
+            return await finish_io(proc, _build_run_result(proc), spec)
         finally:
             await proc.exit()
 
@@ -2152,7 +2196,8 @@ class AgenticProcess(Entity):
         own. Holding out for the slot also means the NEXT turn is admitted
         rather than refused as in flight.
 
-        Polling interval: 2s. Raises TimeoutError if timeout elapses first.
+        Polling interval: 2s, or the driver's ``transcript_poll_seconds`` when shorter. Raises
+        TimeoutError if timeout elapses first.
 
         ``on_status`` observes the status this loop ALREADY reads on every
         iteration. It exists so a caller that blocks here for up to half an hour
@@ -2175,7 +2220,7 @@ class AgenticProcess(Entity):
                 return
             if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(min(2.0, float(getattr(self.driver, "transcript_poll_seconds", 2.0))))
 
     async def waitForIdle(self, timeout: float | None = None) -> None:
         """Block until the worker is ready for input (``is_ready_for_input(self)``).
@@ -6641,6 +6686,13 @@ class AgenticProcess(Entity):
             assets_str = str(assets_path)
             if assets_str not in dirs:
                 dirs.append(assets_str)
+        # The run's input folder — pasted files and a ``run(input=…)`` DataSpec — is mounted, not just
+        # named in a prompt, so the worker can read it under its own permissions.
+        from flow_sdk.builtin.agentic_process.process_io import input_dir  # noqa: PLC0415
+
+        input_folder = input_dir(self)
+        if input_folder.is_dir() and str(input_folder) not in dirs:
+            dirs.append(str(input_folder))
         if not self.assistant_enabled:
             return dirs
         from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
@@ -6718,6 +6770,7 @@ class AgenticProcess(Entity):
         summary silently drops caller instructions.
         """
         explicit = str((self.context_data or {}).get("instructions") or "").strip()
+        io = str((self.context_data or {}).get("io_instructions") or "").strip()  # ``process_io.prepare_io``
         summary = (await self.resolve_context_summary()) or ""
         always = self._resolve_always_use_skills_block()
         # A Chief of Staff reads its open tasks every turn — resolved now, not at launch.
@@ -6726,7 +6779,7 @@ class AgenticProcess(Entity):
             from flow_sdk.tasks.cos import open_tasks_block  # noqa: PLC0415
 
             tasks = await open_tasks_block(self)
-        return "\n\n".join(p for p in (explicit, summary, always, tasks) if p) or None
+        return "\n\n".join(p for p in (explicit, io, summary, always, tasks) if p) or None
 
     def _resolve_always_use_skills_block(self) -> str:
         """The project's ``always_use_skills`` as a system-prompt directive.
@@ -7319,8 +7372,11 @@ class AgenticProcess(Entity):
 
     @action.get(action_name="input-dir")
     async def get_input_dir(self):
-        """Return the absolute path of this process's input directory, creating it if needed."""
-        input_dir = self._record_dir() / "input"
+        """The process's one input folder (``<record>/execution/input``), created if needed — where pasted
+        files and ``run(input=…)`` land, and what ``resolved_add_dirs`` mounts."""
+        from flow_sdk.builtin.agentic_process.process_io import input_dir as _input_dir  # noqa: PLC0415
+
+        input_dir = _input_dir(self)
         input_dir.mkdir(parents=True, exist_ok=True)
 
         shell = await self.shell()

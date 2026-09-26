@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-66704284-b246-51c2-849b-cf3c916f33de
-inputs_hash: 0f9313e09e5f0c7dc1e81e4b2c2c1a8c6eb2b5be31ed9c84be88e03b6279798f
+inputs_hash: fc1fa459991c4e17e88615586f8183a100b0b29dafe120fc734d8f7e8c688e2e
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-22T21:26:04.324663+00:00'
+generated_at: '2026-09-25T12:04:30Z'
 latest_process_ref: ''
 file_count: 26
 subfolder_count: 0
@@ -22,7 +22,7 @@ subfolder_count: 0
 - [Asset management](asset-management.md) — flow_sdk.assets — filesystem asset discovery, identity resolution, install, removal, projection and inventory, built on frozen Asset and AssetFolder values.
 - [ComputeNode `fs-records` Action](compute-node-fs-records.md) — The fs-records CRUD action on ComputeNode over disk-backed typed records: type and path routing, the write path, and when to prefer the Entity API.
 - [Data source assets](data-source-asset.md) — Data sources as folder assets: data_driver.json manifest plus source.py discovered by convention, and the separate DataSource asset holding config, owner and cadence.
-- [Data Sources UI (Frontend)](data-sources-ui.md) — The Data Sources screen frontend: the grid, source cards with lifecycle and health, the driver-driven add/edit dialog, replay, pause and delete flows.
+- [Data Sources UI (Frontend)](data-sources-ui.md) — Frontend Data Sources screen: grid, cards, add/edit dialog driven by DataDrivers, menus, replay, and liveness display.
 - [Data sources](data-sources.md) — Data sources: one DataSource reads one stream via a driver, owning query, cursor and origin, and the fetch-to-SourceItem ingestion pipeline.
 - [DataSpec — shape as Pydantic, the spec as the layout](data-spec.md) — DataSpec design: every shape is Pydantic, runtime shapes compile via DataSpec.parse, spec_kind links shapes to the registry, and an asset's disk layout is its class.
 - [Database Architecture](database.md) — SQLite layer architecture: one async engine, pooling, pragmas, BEGIN IMMEDIATE on writers, batched indexer commits with writer-lock hand-over, and driver session resolution.

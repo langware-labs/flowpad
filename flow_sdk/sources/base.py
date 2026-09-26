@@ -45,8 +45,23 @@ class Altitude(StrEnum):
     IN_PROCESS = "in_process"
 
 
+class Family(StrEnum):
+    """What a source's items ARE, and so where they land. Declared by the base a driver extends —
+    ``ObjectSource``, ``RecordSource`` or ``MessageSource`` (``flow_sdk.sources.families``) — never
+    set by hand. Capabilities (``ByteStore``, ``Mutable``, ``Messaging``) stay discovered."""
+
+    #: Files: reflected onto disk and indexed as assets; a page of changes is a ``SourceChange``.
+    OBJECT = "object"
+    #: Records: ``SourceItem`` rows, updated in place when their content changes.
+    RECORD = "record"
+    #: Messages: records threaded into the stream inbox, answered through the source.
+    MESSAGE = "message"
+
+
 class Source:
     # ── traits ──────────────────────────────────────────────────────────────
+    #: The family, from the base the driver extends. Unset on ``Source`` itself: a driver must pick one.
+    family: ClassVar[Family]
     #: Registry key and manifest ``name``.
     provider: ClassVar[str] = ""
     #: The origin ``kind`` this source stamps; defaults to ``provider``.
@@ -55,10 +70,6 @@ class Source:
     page_size: ClassVar[int] = DEFAULT_PAGE_SIZE
     #: The source hands back a ``resume_cursor`` the application may persist across sessions.
     durable_cursor: ClassVar[bool] = False
-    #: Strangers are the point of this channel (a help desk): an empty allowlist admits everyone.
-    open_inbound: ClassVar[bool] = False
-    #: The source's bytes are ours to write an identity into.
-    stamps_identity: ClassVar[bool] = True
     #: Sub-tick poll cadence while someone is watching; ``None`` means the provider does not tolerate it.
     attention_poll_seconds: ClassVar[Optional[int]] = None
     #: Pages one pass may read; ``None`` reads a traversal to its end. A provider whose rate cap
@@ -68,11 +79,6 @@ class Source:
     identity_config_key: ClassVar[str] = "address"
     #: The machine-level connection this source reads with, when the credential is not in the row.
     connection: ClassVar[Optional[str]] = None
-    #: The payload is files placed on disk (reflection), not records in the graph.
-    reflects: ClassVar[bool] = False
-    #: The config key naming the local tree a reflecting source reads in place (``root``,
-    #: ``repo``). Empty on a reflecting source: its bytes are remote, pulled into a cache.
-    local_tree_key: ClassVar[str] = ""
     #: The typed config this driver takes (``flow_sdk.sources.config.SourceConfig``). The manifest's
     #: ``config`` catalog holds only the form hints for these fields; the loader checks they agree.
     Config: ClassVar[Optional[type["SourceConfig"]]] = None
@@ -95,23 +101,6 @@ class Source:
     def configure(cls, row: Any) -> Mapping[str, Any]:
         """Config the application derives for a row beyond what it stores (the agent a mailbox serves)."""
         return {}
-
-    @classmethod
-    def outbound_spec(cls) -> Optional[type]:
-        """The message spec that knows who a reply on this channel is addressed to; ``None`` means email's."""
-        return None
-
-    @classmethod
-    def origin_id_for(cls, row: Any, ref: str, root: Any) -> str:
-        """The identity reflection resolves an unstamped file at ``ref`` (under ``root``) on — a handle
-        that survives a rename. ``""`` means the source-relative path is the best there is."""
-        return ""
-
-    @classmethod
-    def permalink(cls, external_id: str, thread_key: str = "") -> str:
-        """A link into the channel's own UI for a record the provider gave no URL — a formula, never
-        a fetch, because the link is digested. ``""`` when the channel cannot be addressed."""
-        return ""
 
     def __init__(self, binding: SourceBinding) -> None:
         if not isinstance(binding, SourceBinding):
@@ -390,4 +379,4 @@ async def _settle(future: "asyncio.Future[T]", undo: Optional[Callable[[T], obje
         undo(future.result())
 
 
-__all__ = ["Altitude", "CollectionSource", "Scope", "Source", "positive_int"]
+__all__ = ["Altitude", "CollectionSource", "Family", "Scope", "Source", "positive_int"]

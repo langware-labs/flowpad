@@ -327,6 +327,16 @@ The folder FSRefs are entity fields filled in from `_record_dir()`
 
 * `assets_folder` (`execution/assets/`)
 
+`execution/input/` is the process's one input folder: `run(input=…)` saves a DataSpec
+there, pasted and dropped files land there (the `input-dir` action), and
+`resolved_add_dirs` mounts it for the worker. `execution/output/` is used only when a run
+declares its output (`run(output_spec=…)`): the agent is told to write that DataSpec's
+layout there, and it is loaded back into the answer's `value`; by default a process works
+in its `workdir` instead (`builtin/agentic_process/process_io.py`). The turn-end reindex skips this whole record
+folder — it is the run's I/O, not project content. Startup retention keeps the newest
+200 records, not counting a record whose `execution/output/` holds a file younger than
+30 days (`fs_store/operations/record_retention.py`).
+
 ### Prompt Queue
 
 There are no TTL-backed `PropertyRecord` descriptors. `AgenticProcess.queue` is a

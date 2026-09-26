@@ -1,12 +1,16 @@
 """``flow credentials ...`` — a project's credentials by name, from the command line.
 
+    flow credentials declare <manifest.json>       — declare a credential in this folder's project
     flow credentials check <name>                  — are its values present? (exit code)
     flow credentials set <name> VAR=VALUE …        — store values (declares it from its template)
+    flow credentials set <name> --stdin            — store VAR=VALUE lines read from stdin
     flow credentials set <name> --from-inputs      — store what a wizard step was given
 
-Both are what ``flow project setup`` runs: ``check`` is every key step's completion check, and
-``set`` is how a typed answer — or an agent following the credential's ``setup`` — stores a value.
-Neither ever prints a value.
+``declare`` is how a project says what it needs; ``check`` and ``set`` are what ``flow project setup``
+runs: ``check`` is every key step's completion check, and ``set`` is how a typed answer — or an agent
+following the credential's ``setup`` — stores a value. An agent stores through ``--stdin``, piping the
+value from where it is produced: an argument is visible to every process on the box and lands in the
+agent's transcript. None of them ever prints a value.
 
 Exit codes are ``ExitCode``'s, because a wizard check reads them:
 
@@ -20,7 +24,10 @@ service functions either way (``builtin/credential_service``).
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import typer
@@ -120,6 +127,47 @@ def _set(name: str, values: dict[str, str], project_id: Optional[str]) -> dict:
     return _here(here())
 
 
+def _declare(manifest: dict, project_id: Optional[str]) -> dict:
+    """Declare ``manifest`` in the project — the cwd's, minted when the folder has none."""
+    port = discover_port(required=False)
+    if port is not None:
+        pid = project_id or project_for_path(port, os.getcwd(), create=True)
+        return post_graph_json(f"{_url(port)}/declare", {"manifest": manifest, "project_id": pid}, on_error=_refused)
+
+    async def here() -> dict:
+        from flow_sdk.builtin.credential_service import CredentialError, declare_credential  # noqa: PLC0415
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        project = await (Project.get_by_id(project_id) if project_id else Project.recover_by_path(os.getcwd()))
+        if project is None:
+            fail(EXIT_INVALID_ARG, "NO_PROJECT", f"no project {project_id}" if project_id
+                 else f"{os.getcwd()} cannot be a project folder; pass --project or cd into one")
+        try:
+            spec = await declare_credential(manifest, project_id=str(project.id))
+        except CredentialError as e:
+            fail(EXIT_NOT_YET, e.code or "REFUSED", str(e))
+        return {"typeid": str(spec.typeid), "name": spec.name, "scope": spec.scope, "project_id": str(project.id)}
+
+    return _here(here())
+
+
+@credentials_app.command("declare")
+def declare_credential(
+    manifest: Annotated[Path, typer.Argument(help="A secret_pack.json manifest: name, vars, setup (no values).")],
+    project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's, created if none).")] = None,
+) -> None:
+    """Declare the credential MANIFEST describes in the project. It must say how its values are
+    obtained (``setup``); it never carries a value."""
+    try:
+        body = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        fail(EXIT_INVALID_ARG, "INVALID_ARG", f"cannot read {manifest}: {e}")
+    if not isinstance(body, dict):
+        fail(EXIT_INVALID_ARG, "INVALID_ARG", f"{manifest} is not a JSON object")
+    saved = _declare(body, project)
+    ok({key: saved.get(key) for key in ("name", "typeid", "scope", "project_id")})
+
+
 def _missing(row: Optional[dict]) -> list[str]:
     if row is None:
         return []
@@ -138,6 +186,11 @@ def check_credential(
     ok({"name": name, "declared": row is not None, "ready": ready, "missing": missing})
     if not ready:
         raise typer.Exit(EXIT_NOT_YET)
+
+
+def _stdin_pairs() -> list[str]:
+    """``VAR=VALUE`` lines from stdin; blank lines and ``#`` comments skipped."""
+    return [line for line in map(str.strip, sys.stdin.read().splitlines()) if line and not line.startswith("#")]
 
 
 def _pairs(assignments: list[str]) -> dict[str, str]:
@@ -165,9 +218,12 @@ def set_credential(
     assignments: Annotated[Optional[list[str]], typer.Argument(help="VAR=VALUE pairs.")] = None,
     project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
     inputs: Annotated[bool, typer.Option("--from-inputs", help="Take the values a `flow project setup` step was given.")] = False,
+    stdin: Annotated[bool, typer.Option("--stdin", help="Read VAR=VALUE lines from stdin — how an agent stores a value it must not print.")] = False,
 ) -> None:
     """Store NAME's values in development. A name not declared yet is added from its template."""
-    values: dict[str, Any] = {**(from_inputs(name) if inputs else {}), **_pairs(assignments or [])}
+    values: dict[str, Any] = {
+        **(from_inputs(name) if inputs else {}), **_pairs(_stdin_pairs() if stdin else []), **_pairs(assignments or []),
+    }
     if not any(values.values()):
         fail(EXIT_NOT_YET, "NO_VALUE", f"no value given for {name}")
     stored = _set(name, values, project)

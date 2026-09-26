@@ -92,7 +92,7 @@ def _source_action(source_id: str, action: str, payload: Optional[dict] = None, 
 def types() -> None:
     specs = _rows(_get("data_driver"))
     ok({"types": [
-        {k: s.get(k) for k in ("name", "title", "kind", "sends", "load_error", "auth", "runtime")} for s in specs if isinstance(s, dict)
+        {k: s.get(k) for k in ("name", "title", "kind", "family", "sends", "load_error", "auth", "runtime")} for s in specs if isinstance(s, dict)
     ]})
 
 

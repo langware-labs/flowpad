@@ -1,11 +1,13 @@
 """Startup record-retention housekeeping.
 
-Keeps only the most recent N records per type under ``<records_root>/<type>/``.
+Keeps only the most recent N records per type under ``<records_root>/<type>/`` — except a
+record holding run output younger than ``OUTPUT_KEEP_DAYS``, which the cap does not count.
 Currently applies to shell + agentic_process shadow records. Not related to the
 deprecated state.json/PropertyRecord machinery.
 """
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from flow_sdk.fs_store.record_paths import get_default_records_root
@@ -13,6 +15,23 @@ from flow_sdk.fs_store.record_paths import get_default_records_root
 
 MAX_SHELL_RECORDS = 200
 MAX_AGENTIC_RECORDS = 200
+
+
+#: How long a record holding run output is kept regardless of the count cap.
+OUTPUT_KEEP_DAYS = 30
+
+
+def _holds_recent_output(record: Path, now: float) -> bool:
+    """``record/execution/output`` has a file, and the newest one is younger than ``OUTPUT_KEEP_DAYS``."""
+    output = record / "execution" / "output"
+    newest = 0.0
+    try:
+        for p in output.rglob("*"):
+            if p.is_file():
+                newest = max(newest, p.stat().st_mtime)
+    except OSError:
+        return False
+    return newest > 0 and now - newest < OUTPUT_KEEP_DAYS * 86400
 
 
 def _cleanup_records(record_type: str, max_keep: int) -> int:
@@ -24,6 +43,12 @@ def _cleanup_records(record_type: str, max_keep: int) -> int:
         return 0
 
     dirs = [d for d in root.iterdir() if d.is_dir()]
+    if len(dirs) <= max_keep:
+        return 0
+    # A run's declared OUTPUT is what its caller came for: a record holding output newer than
+    # ``OUTPUT_KEEP_DAYS`` is outside the count cap (``answer.value.save(path)`` is the durable copy).
+    now = time.time()
+    dirs = [d for d in dirs if not _holds_recent_output(d, now)]
     if len(dirs) <= max_keep:
         return 0
 

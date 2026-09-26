@@ -36,7 +36,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
@@ -104,16 +104,19 @@ async def resolve_thread(
         return thread
     from flow_sdk.db import get_db_driver  # noqa: PLC0415
 
+    retired, last = None, None
     async with _thread_lock(), get_db_driver().write_transaction():
         thread = await find_thread(channel, key, owner, data_source_id)
-        if thread is not None and await timed_out(thread, timeout_seconds, at):
+        last = await last_message_at(thread) if thread is not None and timeout_seconds and at is not None else None
+        if thread is not None and quiet_past(last, timeout_seconds, at):
+            retired = thread
             thread = None  # quiet past the timeout: it stays as it is, and the next thread begins
         if thread is not None:
             if not thread.owner or not thread.data_source_id:
                 thread.owner = thread.owner or owner
                 thread.data_source_id = data_source_id
                 await thread.save(notify=False)
-            return thread
+            return thread  # no retirement on this path: the thread found is current
         # Both ids are ordinary uuid4s, minted here at birth and looked up ever
         # after. `conversation_id` is authoritative from this moment: a merge
         # repoints it, which is the whole reason nothing re-derives it from the
@@ -132,7 +135,10 @@ async def resolve_thread(
             name=title,
         )
         await thread.save(notify=False)
-        return thread
+    if retired is not None:
+        # Outside the writer lock: the retired thread's conversation ended with its last message.
+        await end_conversation(retired.conversation_id, last)
+    return thread
 
 
 def quiet_past(last: Optional[datetime], timeout_seconds: Optional[int], at: datetime) -> bool:
@@ -143,15 +149,30 @@ def quiet_past(last: Optional[datetime], timeout_seconds: Optional[int], at: dat
 
 async def timed_out(thread, timeout_seconds: Optional[int], at: Optional[datetime]) -> bool:
     """Whether *thread* was quiet longer than ``timeout_seconds`` before ``at``. A message older than
-    the thread's newest (a backfill) never ends it; a thread younger than the timeout cannot have
-    ended, so it costs no read."""
+    the thread's newest (a backfill) never ends it. Judged on message time only: the thread row's
+    own creation is ingest time, another clock (a backfilled message is older than its row)."""
+    if not timeout_seconds or at is None:
+        return False
+    return quiet_past(await last_message_at(thread), timeout_seconds, at)
+
+
+async def last_message_at(thread) -> Optional[datetime]:
+    """The thread's newest message time — message time, never the row's ingest clock."""
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
-    born = iso_to_utc(getattr(thread, "created_date", None))
-    if not timeout_seconds or at is None or (born is not None and not quiet_past(born, timeout_seconds, at)):
-        return False
     rows = await FlowMessage.get_all({"match": {"thread_id": str(thread.id)}, "order_by": {"sent_at": "desc"}, "limit": 1})
-    return quiet_past(iso_to_utc(rows[0].occurred_at) if rows else None, timeout_seconds, at)
+    return iso_to_utc(rows[0].occurred_at) if rows else None
+
+
+async def end_conversation(conversation_id: str, at: Optional[datetime] = None) -> None:
+    """Mark a conversation ended at *at* (a call hung up, a chat retired by the timeout). Once."""
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+
+    conversation = await Conversation.get_one({"id": conversation_id}) if conversation_id else None
+    if conversation is None or conversation.ended_at is not None:
+        return
+    conversation.ended_at = at or datetime.now(timezone.utc)
+    await conversation.save(notify=False)
 
 
 #: How many un-projected items one reconcile pass will catch up. A first Gmail
@@ -245,6 +266,15 @@ def channel_of(source) -> str:
     return (getattr(source, "channel", "") or getattr(source, "provider", "") or "").strip()
 
 
+async def conversation_of(item, *, source=None) -> Optional[str]:
+    """Project *item* and answer the id of the conversation it landed in, or ``None`` when it placed nowhere."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    placed = await project_source_item(item, source=source)
+    message = await FlowMessage.get_by_id(placed[0]) if placed is not None else None
+    return str(message.conversation_id) if message is not None and message.conversation_id else None
+
+
 async def project_source_item(
     item,
     *,
@@ -323,10 +353,14 @@ async def project_source_item(
     )
     # A born-`flowpad` conversation (a help desk ticket) takes the source's channel here;
     # a source channel is never overwritten (`Conversation.adopt_channel`).
-    if conversation.adopt_channel(channel, str(source.id)):
+    changed = conversation.adopt_channel(channel, str(source.id))
+    ours = item.is_ours(source)
+    if stamp_conversation(conversation, item, ours=ours):
+        changed = True
+    if changed:
         await conversation.save(notify=False)
 
-    sender, sender_name = await _sender_for(item, source, channel)
+    sender, sender_name = await _sender_for(item, source, channel, ours=ours)
     # The message row is resolved by its reference column. FIRST placement
     # runs under the shared lock: two lanes (sync ingest + the projected-tag
     # handler) can otherwise both prove "no row" before either inserts — that
@@ -354,6 +388,33 @@ async def project_source_item(
     )
 
 
+def stamp_conversation(conversation, item, *, ours: bool) -> bool:
+    """What a message tells its conversation about itself: when it began, and who it is with.
+
+    ``started_at`` is the first message's time (message time, not ingest). ``address`` is who the
+    conversation is with as the channel addresses them: each other side's sender joins it; a message
+    WE wrote first names them through its recipients — so a conversation we started can be continued.
+    Answers whether anything changed (the caller saves)."""
+    from email.utils import getaddresses  # noqa: PLC0415
+
+    changed = False
+    when = iso_to_utc(item.occurred_at) if item.occurred_at else None
+    if when is not None and (conversation.started_at is None or when < conversation.started_at):
+        conversation.started_at, changed = when, True
+    if not ours:
+        who = [str(item.author_external_id).strip()] if (item.author_external_id or "").strip() else []
+    elif not conversation.address:
+        who = [addr for _name, addr in getaddresses(list(item.recipients or [])) if addr]
+    else:
+        who = []
+    known = {_fold(a) for a in conversation.address or []}
+    joined = [w for w in who if _fold(w) not in known]
+    if joined:
+        conversation.address = [*(conversation.address or []), *joined]
+        changed = True
+    return changed
+
+
 def _origins(item, source, channel: str, key: str):
     """The two halves of a projected message's provenance. `origin` travels
     with the message (the channel chip, "open in Gmail") and is the row's own
@@ -365,8 +426,8 @@ def _origins(item, source, channel: str, key: str):
     # The connector's link when it gives one; otherwise the channel's own address
     # formula (the channel's source class says it), so "Open in Gmail" works for records
     # whose provider never supplied a URL. None when neither has one.
-    channel_type = DataDriver.loaded(channel)
-    url = item.permalink or (channel_type.cls.permalink(item.external_id or "", key) if channel_type else "") or None
+    channel_type = None if item.permalink else DataDriver.loaded(channel)
+    url = item.permalink or (channel_type.permalink(item.external_id or "", key) if channel_type else "") or None
     origin = _origin_of(item, source).model_copy(update={"url": url})
     origin_local = CloudOriginLocal(data_source_id=item.data_source_id or "", source_item_id=item.id or "")
     return origin, origin_local
@@ -585,7 +646,7 @@ def display_name_of(raw: str, address: str) -> str:
     return name or text or address
 
 
-async def _sender_for(item, source, channel: str) -> tuple[MessageSender, str]:
+async def _sender_for(item, source, channel: str, *, ours: Optional[bool] = None) -> tuple[MessageSender, str]:
     """``(sender, sender_name)`` — who wrote this item, typed, and what to call them.
 
     Load-bearing, not cosmetic. The unread rule gates on the sender
@@ -598,7 +659,7 @@ async def _sender_for(item, source, channel: str) -> tuple[MessageSender, str]:
 
     address = (item.author_external_id or "").strip()
     display = display_name_of(item.author_display or "", address)
-    if item.is_ours(source):
+    if item.is_ours(source) if ours is None else ours:
         # An AGENT's mailbox is not the user's. Attributing its sent copies to
         # the human would put words in their mouth — the owner would appear to
         # have written replies they never saw. Same reasoning as
@@ -623,8 +684,8 @@ def agent_id_of(source) -> str:
     else in this file.
 
     An agent-owned source answers the same question without that key: a channel
-    is not allocated to an agent, it is BOUND to one (``Agent.bind_channel``),
-    and the binding is the ``owner``. Reading it here is what lets one rule serve
+    is not allocated to an agent, it is OWNED by one (``create_source(owner=agent)``),
+    and that is the ``owner``. Reading it here is what lets one rule serve
     both — otherwise every reader (the turn, the attribution, the outbound
     persona) would have to learn a second spelling of "whose agent is this".
     Config still wins, so a mailbox row is untouched.

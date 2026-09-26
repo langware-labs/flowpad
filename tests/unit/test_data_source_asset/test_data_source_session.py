@@ -12,6 +12,7 @@ from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource, migrate_list_configs
 from flow_sdk.sources.base import CollectionSource
 from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import RecordSource
 from flow_sdk.sources.values.items import FeedItemData, SourceItemSpec
 from flow_sdk.sources.values.query import DataQuery
 from tests.fixtures.identity import index_path
@@ -30,7 +31,7 @@ class _ShelfConfig(SourceConfig):
     shelf: str
 
 
-class _Shelf(CollectionSource):
+class _Shelf(RecordSource, CollectionSource):
     provider = "session-shelf-test"
     Config = _ShelfConfig
     identity_config_key = "shelf"
@@ -204,9 +205,7 @@ async def test_a_reply_goes_through_the_source_that_owns_the_items_origin(scope)
 
 async def test_a_push_only_source_is_refused_at_open(scope):
     from flow_sdk.ingest.session import merge
-    from flow_sdk.sources.base import Source
-
-    class _PushOnly(Source):
+    class _PushOnly(RecordSource):
         provider = "session-push-only-test"
 
     DataDriver.register(DataDriver.for_class(_PushOnly, kind="datasource.test.push"))

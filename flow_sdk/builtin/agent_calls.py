@@ -132,6 +132,7 @@ async def _hold(engine, driver, live_source, source, call: IncomingCall, entry: 
     from flow_sdk.builtin.agent_serve import Turn, admits  # noqa: PLC0415
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import end_conversation  # noqa: PLC0415
 
     if not admits(source, call.caller):
         logger.info("[voice] call %s from an unlisted caller on %s refused", call.call_id, source.id)
@@ -166,7 +167,8 @@ async def _hold(engine, driver, live_source, source, call: IncomingCall, entry: 
             break
     if asking:
         await asyncio.gather(*asking, return_exceptions=True)
-    await record(driver, source, call, CallEvent(kind="said", text=CALL_ENDED, item_id="end"))
+    ended = await record(driver, source, call, CallEvent(kind="said", text=CALL_ENDED, item_id="end"))
+    await end_conversation(ended or conversation or "")  # the line is down
     return conversation
 
 
@@ -185,21 +187,13 @@ async def record(driver, source, call: IncomingCall, event: CallEvent) -> Option
     """One sentence as a message in the call's thread; answers the conversation id it was placed in."""
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.sources.values.event import DataSourceEvent, EventKind  # noqa: PLC0415
-    from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import conversation_of  # noqa: PLC0415
 
     item = sentence_item(source, driver, call, event)
     result = await driver.ingest_events(source, [DataSourceEvent(id=item.origin.key, kind=EventKind.UPSERT, origin=item.origin, item=item)])
     ids = [i for i in result.get("ids") or [] if i]
     row = await SourceItem.get_by_id(ids[0]) if ids else None
-    if row is None:
-        return None
-    placed = await project_source_item(row, source=source)
-    if placed is None:
-        return None
-    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-
-    fm = await FlowMessage.get_by_id(placed[0])
-    return str(fm.conversation_id) if fm is not None and fm.conversation_id else None
+    return await conversation_of(row, source=source) if row is not None else None
 
 
 def sentence_item(source, driver, call: IncomingCall, event: CallEvent):
@@ -222,8 +216,9 @@ def sentence_item(source, driver, call: IncomingCall, event: CallEvent):
         data=VoiceTurnData(
             text=event.text,
             call_id=call.call_id,
-            conversation=thread_origin(kind, account, call.caller, call.call_id),
+            conversation=thread_origin(kind, account, call.caller, call.conversation_key),
             sender=person_profile(kind, account, address, name),
+            recipients=(person_profile(kind, account, call.caller),) if ours else (),
             sent_at=datetime.now(timezone.utc),
             attachments=attachments,
         ),

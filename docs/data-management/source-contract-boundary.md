@@ -25,10 +25,12 @@ async with await source.open() as live:              # a DataSource: its driver 
 ```
 
 Values are frozen `DataSpec`s: `CloudOrigin(kind, namespace, key, url|None)` (identity is the
-triple), `SourceItemSpec(origin, data)`, `FileData`, `MessageData` (+ `UserProfile` for sender and
-recipients), `DataPage`, the `DataQuery` family, `DataSourceEvent`. Capabilities are protocols
-discovered by `isinstance` (`Readable`, `Listable`, `Mutable`, `ByteStore`, `Messaging`, `Drafting`),
-never declared. Failures are one `SourceError` family (`AccessDenied`, `SourceUnavailable`,
+triple), `SourceItemSpec(origin, data)`, `FileData`, `RecordData`, `MessageData` (+ `UserProfile` for
+sender and recipients), `DataPage`, the `DataQuery` family, `DataSourceEvent`. A source class extends one
+**family** — `ObjectSource` (files), `RecordSource` (records) or `MessageSource` (a record source of
+messages) — which is declared, because it is what the items ARE and where the application lands them;
+the conformance kit checks the listed items match it. Capabilities are protocols discovered by
+`isinstance` (`Readable`, `Listable`, `Mutable`, `ByteStore`, `Messaging`, `Drafting`), never declared. Failures are one `SourceError` family (`AccessDenied`, `SourceUnavailable`,
 `NotFound`, `Unsupported`, `InvalidCursor`, `Rejected`, `OutcomeUnknown`), each also subclassing the
 closest built-in. A source class is the same object whether it ships in `flow_sdk`, is authored as an
 asset and runs in a source host, or is reached over REST from a worker — the conformance kit
