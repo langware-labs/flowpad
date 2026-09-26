@@ -933,7 +933,7 @@ class Agent(Entity):
         deployment = await self.plan_deployment(environment)
         ready = await readiness(self, deployment)
         if not ready.ready:
-            raise NotReady(ready)
+            raise NotReady(ready, deployment)
         return await deploy_entity_to_cloud(self, environment, require=ready.value_names())
 
     async def plan_deployment(self, environment: str | None = None) -> "Deployment":
@@ -993,7 +993,11 @@ class Agent(Entity):
             return ApiFailResponse(
                 status_code=409,
                 message=str(exc),
-                data={"code": "not_ready", "readiness": exc.readiness.model_dump(mode="json")},
+                data={
+                    "code": "not_ready",
+                    "readiness": exc.readiness.model_dump(mode="json"),
+                    "deployment": exc.deployment.model_dump(mode="json") if exc.deployment else None,
+                },
             )
         except AssetPublishError as exc:
             # Deploy publishes the agent through git first, so every publish

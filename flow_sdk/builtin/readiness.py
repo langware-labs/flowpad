@@ -184,8 +184,10 @@ async def refresh_requirements(agent: "Agent") -> bool:
 class NotReady(RuntimeError):
     """A deploy refused by the readiness gate: ``readiness`` names each missing value and its fix."""
 
-    def __init__(self, readiness: ReadinessSpec):
+    def __init__(self, readiness: ReadinessSpec, deployment: Optional["Deployment"] = None):
         self.readiness = readiness
+        #: The placement that was refused — where its fixes go.
+        self.deployment = deployment
         missing = ", ".join(i.requirement.name for i in readiness.items if i.status == STATUS_MISSING)
         super().__init__(f"not ready to deploy: {missing} missing")
 
@@ -207,11 +209,14 @@ async def _connection_item(req: RequirementSpec, connector: str, scopes: list[st
     return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=where, connection=connector)
 
 
-def _values_item(req: RequirementSpec, names: list[str], present: dict[str, tuple[bool, str]], fix: str) -> ReadinessItemSpec:
+def _values_item(
+    req: RequirementSpec, names: list[str], present: dict[str, tuple[bool, str]], fix: str, remedy: str = ""
+) -> ReadinessItemSpec:
     missing = [n for n in names if not present.get(n, (False, ""))[0]]
     where = ", ".join(sorted({present[n][1] for n in names if n in present})) or "no store declares it"
     if missing or not names:
-        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where, fix=fix, vars=list(names))
+        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where, fix=fix, vars=list(names),
+                                 remedy=remedy if names else "")
     return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where=where, vars=list(names))
 
 
@@ -224,32 +229,39 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
 
     deployment_id = str(deployment.id) if deployment is not None else ""
     project = await project_of(agent)
-    status, wanted = await asyncio.gather(credentials_status(project, deployment_id), requirements(agent, project))
-    rows = {row.name: row for row in status.credentials}  # user first, then project: the project's own wins
-    present = {v.env_var: (v.present, v.store) for row in status.credentials for v in row.vars}
     # A cloud machine uses a connection only through the owner's authorization for THAT deployment;
     # holding the connection on this computer is not enough.
     cloud = deployment is not None and deployment.remote and not deployment.is_local
-    authorized = {a.get("provider") for a in (await deployment.secrets_inventory()).get("authorizations") or []} if cloud else set()
+
+    status, wanted = await asyncio.gather(credentials_status(project, deployment_id), requirements(agent, project))
+    # Asked only when something is granted through a connection: most agents need no hub round trip.
+    authorized = (
+        {str(a.get("provider")) for a in await deployment.authorizations()}
+        if cloud and any(connection_of(req) for req in wanted) else set()
+    )
+    rows = {row.name: row for row in status.credentials}  # user first, then project: the project's own wins
+    present = {v.env_var: (v.present, v.store) for row in status.credentials for v in row.vars}
+    # A cloud deployment's missing value is filled by copying this computer's ("use mine").
+    use_mine = "use_mine" if cloud else ""
 
     async def item(req: RequirementSpec) -> ReadinessItemSpec:
         if req.kind == REQUIREMENT_CREDENTIAL:
             row = rows.get(req.name)
             names = req.vars or ([v.env_var for v in row.vars if v.required] if row else [])
-            return _values_item(req, names, present, f"flow credentials set {req.name} --stdin")
+            return _values_item(req, names, present, f"flow credentials set {req.name} --stdin", use_mine)
         if req.kind == REQUIREMENT_VARIABLE:
-            return _values_item(req, [req.name], present, f"declare a credential with {req.name}")
+            return _values_item(req, [req.name], present, f"declare a credential with {req.name}", use_mine)
         if grant := connection_of(req):
             held = await _connection_item(req, *grant)
             if not cloud or held.status == STATUS_MISSING:
                 return held
             if grant[0] in authorized:
                 return held.model_copy(update={"where": f"{held.where}, authorized for this deployment"})
-            return held.model_copy(update={"status": STATUS_MISSING,
+            return held.model_copy(update={"status": STATUS_MISSING, "remedy": "authorize",
                                            "fix": f"authorize {grant[0]} for this deployment"})
         mapping = permissions.mapping(req.name)
         if mapping is not None and mapping.mechanism == MECHANISM_API_KEY and mapping.api_key:
-            return _values_item(req, [mapping.api_key], present, f"store {mapping.api_key}")
+            return _values_item(req, [mapping.api_key], present, f"store {mapping.api_key}", use_mine)
         return ReadinessItemSpec(requirement=req, status=STATUS_MISSING,
                                  fix="no grant for this permission here yet" if mapping else "no asset declares this permission")
 

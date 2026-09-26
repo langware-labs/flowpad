@@ -11,9 +11,16 @@ import pytest
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.credential_resolver import resolve_project_secrets
-from flow_sdk.builtin.credential_service import CredentialError, drop_folder, place_values, save_credential, unplace_values
+from flow_sdk.builtin.credential_service import (
+    CredentialError,
+    drop_folder,
+    place_values,
+    save_credential,
+    unplace_values,
+)
 from flow_sdk.builtin.credential_store import Placement
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
+from tests.unit.test_credential_asset.test_project_setup import templates  # noqa: F401
 from tests.utils.deployments import make_deployment
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -113,3 +120,23 @@ async def test_the_environment_the_hub_sends_wins_over_a_serving_row_under_the_s
     mount = Path(project.fs_storage_mount_path)
     assert "sk-rotated" in (mount / ".env.production.local").read_text()
     assert not (mount / ".env.local").exists() or "sk-rotated" not in (mount / ".env.local").read_text()
+
+
+async def test_a_placed_name_is_declared_from_its_shipped_template(home, project, instance_config, templates):  # noqa: F811
+    """The laptop's credential does not travel with the repo; the box declares it from the catalogue
+    entry the agent's requirements name, keeping its labels — not a bare invented one."""
+    from flow_sdk.builtin.credential_resolver import declared_vars
+    from flow_sdk.builtin.credential_service import template_named
+
+    agent = Agent(name="bot-agent", project_id=str(project.id),
+                  requirements=[RequirementSpec(kind="credential", name="telegram", vars=["TELEGRAM_BOT_TOKEN"])])
+    await agent.save()
+    deployment = await make_deployment("production", name="bot")
+    deployment.parent_type_id = str(agent.typeid)
+    await deployment.save()
+
+    outcome = await place_values(str(deployment.id), str(project.id), _drop({"TELEGRAM_BOT_TOKEN": "123:abc"}))
+
+    assert outcome == {"placed": ["TELEGRAM_BOT_TOKEN"], "failed": {}}
+    declared, template = (await declared_vars(project))["TELEGRAM_BOT_TOKEN"].spec, await template_named("telegram")
+    assert declared.setup == template.setup and declared.vars["TELEGRAM_BOT_TOKEN"] == template.vars["TELEGRAM_BOT_TOKEN"]

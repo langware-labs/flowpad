@@ -60,6 +60,8 @@ export interface AgentReadinessItem {
   /** The connection that grants it — what a cloud deployment's owner authorizes for its machine. */
   connection: string;
   fix: string;
+  /** The fix as a verb: `use_mine` (copy this computer's value), `authorize` (grant `connection`), or empty. */
+  remedy: '' | 'use_mine' | 'authorize';
 }
 
 export interface AgentReadiness {

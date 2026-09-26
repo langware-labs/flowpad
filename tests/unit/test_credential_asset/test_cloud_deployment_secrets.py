@@ -67,11 +67,13 @@ async def test_the_deploy_is_refused_until_use_mine_fills_the_store(home, projec
 
     with pytest.raises(NotReady) as refused:
         await agent.deploy_to_cloud("user-1", "production")
-    assert [i.requirement.name for i in refused.value.readiness.items if i.status == "missing"] == ["stripe"]
+    assert [(i.requirement.name, i.remedy) for i in refused.value.readiness.items if i.status == "missing"] == [
+        ("stripe", "use_mine")
+    ]
     assert hub.deploys == [], "no machine is paid for"
 
     deployment = await agent.plan_deployment("production")
-    assert await use_mine(str(deployment.id)) == {"copied": ["STRIPE_KEY"], "not_here": []}
+    assert await use_mine(str(deployment.id)) == {"copied": ["STRIPE_KEY"], "not_here": [], "hub_funded": []}
     assert hub.values[str(deployment.id)] == {"STRIPE_KEY": VALUE}
 
     await agent.deploy_to_cloud("user-1", "production")
@@ -190,3 +192,17 @@ async def test_the_deploy_dialog_plans_then_authorizes_and_revokes_over_rest(hom
     assert granted.status == "SUCCESS" and held["authorizations"] == [{"provider": "google"}]
     assert revoked == {"revoked": ["google"]} and hub.authorized[str(deployment.id)] == []
     assert refused.status_code == 400
+
+
+async def test_use_mine_never_copies_an_llm_provider_key(home, project, hub):
+    """A deployment is hub-funded: the key a laptop pays its own model calls with stays on the laptop."""
+    agent = await _agent(project)
+    await save_credential(scope="user", manifest={"name": "openrouter", "vars": {"OPENROUTER_API_KEY": {}},
+                                                  "setup": "x", "lm_provider": "openrouter"},
+                          values={"OPENROUTER_API_KEY": "sk-or-mine"})
+    deployment = await agent.plan_deployment("production")
+
+    result = await use_mine(str(deployment.id), ["OPENROUTER_API_KEY"])
+
+    assert result == {"copied": [], "not_here": [], "hub_funded": ["OPENROUTER_API_KEY"]}
+    assert "OPENROUTER_API_KEY" not in hub.values.get(str(deployment.id), {})

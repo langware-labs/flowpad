@@ -9,18 +9,19 @@ import {
   type DeploymentSecretsInventory,
 } from '@sdk';
 
-import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
+import { formatTimeAgoShort } from '@src/utils/format-time-ago';
 
-import { DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { BusyButton, DeploymentSecretsGate } from './DeploymentSecretsGate';
 
 interface AgentPlaceSecretsProps {
   agent: Agent;
   deployment: Deployment;
 }
 
-const when = (ts?: number) => (ts ? new Date(ts * 1000).toLocaleString() : '—');
+/** An audit timestamp (epoch seconds) the way the agent profile shows times. */
+const when = (ts?: number) => formatTimeAgoShort(ts ? ts * 1000 : null);
 
 /**
  * A cloud placement's secrets as the hub holds them: each value's name, when it was last written
@@ -61,17 +62,14 @@ export function AgentPlaceSecrets({ agent, deployment }: AgentPlaceSecretsProps)
   if (!inventory) return <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
 
   const small = (label: string, key: string, run: () => Promise<unknown>, testId: string) => (
-    <Button
-      size="sm"
+    <BusyButton
+      label={label}
+      testId={testId}
       variant="outline"
-      className="h-6 px-2 text-xs"
+      busy={busy === key}
       disabled={busy !== null}
       onClick={() => void act(key, run)}
-      data-testid={testId}
-    >
-      {busy === key && <Loader2 className="me-1 h-3 w-3 animate-spin" />}
-      {label}
-    </Button>
+    />
   );
 
   return (
@@ -79,9 +77,13 @@ export function AgentPlaceSecrets({ agent, deployment }: AgentPlaceSecretsProps)
       {readiness && !readiness.ready && (
         <DeploymentSecretsGate
           agent={agent}
-          environment={deployment.environment}
+          deployment={deployment}
           readiness={readiness}
-          onChange={() => void load()}
+          onChange={(next) => {
+            // The gate already re-asked readiness; only what the hub holds is re-read.
+            setReadiness(next);
+            void deployment.secretsInventory().then(setInventory);
+          }}
         />
       )}
       <section className="flex flex-col gap-1">

@@ -390,12 +390,14 @@ async def _machine_connection_token(node: str, credentials_name: str) -> Optiona
     """This machine's authorized token for ``credentials_name``; ``None`` when not authorized (the hub
     answers 404 for every refusal). Never cached here: a revocation holds from the next ask."""
     from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+    from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
 
-    node_id = node.split("-", 1)[1] if node.startswith("compute_node-") else node
     try:
-        data = await hub_get(BuiltinEntityType.COMPUTE_NODE, node_id, action="connection-token", sub_path=credentials_name)
+        data = await hub_get_or_raise(
+            BuiltinEntityType.COMPUTE_NODE, node.removeprefix("compute_node-"),
+            action="connection-token", sub_path=credentials_name,
+        )
     except HubError as e:
         logger.debug("[oauth] this machine has no authorized %r: %s", credentials_name, e.status_code)
         return None

@@ -26,6 +26,8 @@ class FakeHubStore:
         self.calls.append(("GET", str(etype), eid, action, sub_path))
         if action == "env-var":
             return [{"name": n, "var_type": "api_key", "visible_value": "****"} for n in self.values.get(eid, {})]
+        if action == "authorize":
+            return [{"provider": p, "permissions": []} for p in self.authorized.get(eid, [])]
         if action == "secrets":
             return {"secrets": [{"name": n} for n in self.values.get(eid, {})],
                     "authorizations": [{"provider": p} for p in self.authorized.get(eid, [])]}
@@ -65,6 +67,7 @@ def install(monkeypatch) -> FakeHubStore:
     fake = FakeHubStore()
     for name in ("get", "post", "put", "delete"):
         monkeypatch.setattr(f"flow_sdk.cloud_client.transport.hub_http.hub_{name}", getattr(fake, name))
+    monkeypatch.setattr("flow_sdk.cloud_client.transport.hub_http.hub_get_or_raise", fake.get)
     monkeypatch.setattr("flow_sdk.builtin.cloud_deploy.deploy_entity_to_cloud", fake.deploy)
     return fake
 
