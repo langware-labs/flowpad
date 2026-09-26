@@ -186,7 +186,7 @@ class NotReady(RuntimeError):
 
     def __init__(self, readiness: ReadinessSpec):
         self.readiness = readiness
-        missing = ", ".join(i.requirement.name for i in readiness.value_items(missing_only=True))
+        missing = ", ".join(i.requirement.name for i in readiness.items if i.status == STATUS_MISSING)
         super().__init__(f"not ready to deploy: {missing} missing")
 
 
@@ -226,6 +226,10 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
     status, wanted = await asyncio.gather(credentials_status(project, deployment_id), requirements(agent, project))
     rows = {row.name: row for row in status.credentials}  # user first, then project: the project's own wins
     present = {v.env_var: (v.present, v.store) for row in status.credentials for v in row.vars}
+    # A cloud machine uses a connection only through the owner's authorization for THAT deployment;
+    # holding the connection on this computer is not enough.
+    cloud = deployment is not None and deployment.remote and not deployment.is_local
+    authorized = {a.get("provider") for a in (await deployment.secrets_inventory()).get("authorizations") or []} if cloud else set()
 
     async def item(req: RequirementSpec) -> ReadinessItemSpec:
         if req.kind == REQUIREMENT_CREDENTIAL:
@@ -235,7 +239,13 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
         if req.kind == REQUIREMENT_VARIABLE:
             return _values_item(req, [req.name], present, f"declare a credential with {req.name}")
         if grant := connection_of(req):
-            return await _connection_item(req, *grant)
+            held = await _connection_item(req, *grant)
+            if not cloud or held.status == STATUS_MISSING:
+                return held
+            if grant[0] in authorized:
+                return held.model_copy(update={"where": f"{held.where}, authorized for this deployment"})
+            return held.model_copy(update={"status": STATUS_MISSING,
+                                           "fix": f"authorize {grant[0]} for this deployment"})
         mapping = permissions.mapping(req.name)
         if mapping is not None and mapping.mechanism == MECHANISM_API_KEY and mapping.api_key:
             return _values_item(req, [mapping.api_key], present, f"store {mapping.api_key}")

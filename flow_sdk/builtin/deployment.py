@@ -303,6 +303,30 @@ class Deployment(Entity):
         await self.save()
         return self
 
+    # ── a cloud placement's secrets, held by the hub ──────────────────────
+
+    async def authorize(self, provider: str, permissions: list[str] | None = None) -> dict:
+        """Let this deployment's machine use your ``provider`` connection: it asks the hub for a fresh
+        token when it needs one; your refresh token never leaves the hub. Revoke with :meth:`revoke`."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+        return await hub_post(self.type, {"provider": provider, "permissions": list(permissions or [])},
+                              self.id, "authorize") or {}
+
+    async def revoke(self, provider: str) -> list[str]:
+        """Take back ``provider``: the machine's next token ask is refused."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+
+        data = await hub_delete(self.type, self.id, action="authorize", sub_path=provider) or {}
+        return list(data.get("revoked") or [])
+
+    async def secrets_inventory(self) -> dict:
+        """What the hub holds for this deployment: each name with its last write and placement, and the
+        connections its machine may use. Names only."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+        return await hub_get(self.type, self.id, action="secrets") or {"secrets": [], "authorizations": []}
+
     # ── convergence ───────────────────────────────────────────────────────
 
     @classmethod
