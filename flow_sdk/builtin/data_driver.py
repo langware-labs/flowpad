@@ -33,6 +33,7 @@ from flow_sdk.schema.data_spec.data_driver_spec import (
     FieldHints,
     Runtime,
 )
+from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
@@ -69,6 +70,7 @@ class DataDriver(DriverRuntime, Entity):
     manifest_schema: int = APIField(default=CURRENT_SCHEMA)
     requires: dict[str, str] = APIField(default_factory=dict)
     auth: Optional[AuthSpec] = APIField(default=None)
+    permissions: dict[str, PermissionMappingSpec] = APIField(default_factory=dict)
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)
