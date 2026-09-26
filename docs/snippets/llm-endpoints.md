@@ -219,7 +219,8 @@ Flash, Qwen3 Coder 30B) after the same single bind.
 Pinned by `tests/long_tests/test_loginless_in_docker.py`, which runs exactly those two commands
 in a clean container (`tests/loginless_e2e/`) holding no hub key, no provider key and no
 `FLOWPAD_HUB_URL`; the resolver and binding rules are pinned by
-`tests/unit/test_llm_source_resolution.py` and `tests/unit/test_hub_llm_endpoint.py`.
+`tests/unit/test_llm_source_resolution.py` and `tests/unit/test_hub_llm_endpoint.py`. The script itself
+also runs as written on any box with an LLM source of its own — `tests/long_tests/test_llm_endpoints_script.py`.
 
 The admin's half is four hub calls (`tests/loginless_e2e/make_public_endpoint.py`) — create a
 root, give it a provider key, **cap it in money**, open it:
