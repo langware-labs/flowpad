@@ -162,7 +162,7 @@ def test_all_declared_spec_bindings_are_aligned():
     ("data_driver", "data_driver.json", None),
     ("mcp", "mcp.json", None),
     ("micro_app", "webapp.json", None),
-    ("secret_pack", "secret_pack.json", None),
+    ("credential", "credential.json", None),
     ("project_manifest", "project_manifest.json", None),
 ])
 def test_published_folder_contracts_remain_compatible(name, main, layout):

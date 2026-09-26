@@ -1,4 +1,4 @@
-"""The one credential resolver: a manifest's ``auth`` and a ``DataSource`` row → ``Credentials``.
+"""The one credential resolver: a manifest's ``auth`` and a ``DataSource`` row → ``ResolvedSecrets``.
 
 A source never reads the environment, the secret store or the connection store itself; it declares
 in its manifest which of three shapes it reads with, and the application resolves that shape here.
@@ -14,7 +14,7 @@ bound is what it uses, and the binding is saved on the row so every background p
   current project's ``.env.local``), then the process environment for any still missing.
 * ``secrets`` — ``{value key: machine secret name}``, loaded by value key from the bound (or
   default) store; otherwise the named machine secret. A config is value-free: never read here.
-* ``credential`` + ``vars`` — ``{value key: env var}`` of a named SecretPack, resolved for the
+* ``credential`` + ``vars`` — ``{value key: env var}`` of a named Credential, resolved for the
   row's owner the way a worker process resolves its secrets (the owning agent's project over the
   user scope), from the environment of the deployment that answers the row.
 """
@@ -27,14 +27,14 @@ from typing import Any, Optional
 from pydantic import SecretStr
 
 from flow_sdk.schema.data_spec.data_driver_spec import AuthSpec
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 logger = logging.getLogger(__name__)
 
 
-async def resolve_credentials(auth: Optional[AuthSpec], row: Any) -> Credentials:
+async def resolve_credentials(auth: Optional[AuthSpec], row: Any) -> ResolvedSecrets:
     if auth is None:
-        return Credentials()
+        return ResolvedSecrets()
     if auth.connector:
         return await _connector(str(getattr(row, "connection", "") or "") or auth.connector)
     if auth.credential:
@@ -46,15 +46,15 @@ async def resolve_credentials(auth: Optional[AuthSpec], row: Any) -> Credentials
             for name in auth.env
             if (value := stored.get(name) or str(os.environ.get(name) or "").strip())
         }
-        return Credentials(shape=AuthShape.ENV, values=values) if values else Credentials()
+        return ResolvedSecrets(shape=AuthShape.ENV, values=values) if values else ResolvedSecrets()
     values = {}
     for key, secret_name in auth.secrets.items():
         if value := stored.get(key) or (_machine_secret(secret_name) if secret_name else ""):
             values[key] = SecretStr(value)
-    return Credentials(shape=AuthShape.SECRETS, values=values) if values else Credentials()
+    return ResolvedSecrets(shape=AuthShape.SECRETS, values=values) if values else ResolvedSecrets()
 
 
-async def _declared(auth: AuthSpec, row: Any) -> Credentials:
+async def _declared(auth: AuthSpec, row: Any) -> ResolvedSecrets:
     from flow_sdk.builtin.credential_resolver import (  # noqa: PLC0415
         credentials_in_scope,
         declare,
@@ -66,7 +66,7 @@ async def _declared(auth: AuthSpec, row: Any) -> Credentials:
     # Only the named credential's specs: another spec declaring the same variable must not win it.
     pairs = [(spec, scope) for spec, scope in await credentials_in_scope(project) if spec.name == auth.credential]
     if not pairs:
-        return Credentials()
+        return ResolvedSecrets()
     loaded = await resolve_project_secrets(
         project, only=auth.vars.values(), declared=declare(pairs), environment=await environment_for_source(row)
     )
@@ -74,7 +74,7 @@ async def _declared(auth: AuthSpec, row: Any) -> Credentials:
     for key, var in auth.vars.items():
         if value := loaded[var].get_secret_value().strip() if var in loaded else "":
             values[key] = SecretStr(value)
-    return Credentials(shape=AuthShape.SECRETS, values=values) if values else Credentials()
+    return ResolvedSecrets(shape=AuthShape.SECRETS, values=values) if values else ResolvedSecrets()
 
 
 async def _owner_project(row: Any) -> Any:
@@ -102,12 +102,12 @@ async def _stored_values(row: Any, names: list[str]) -> dict[str, str]:
     return {name: text for name, value in loaded.items() if (text := value.get_secret_value().strip())}
 
 
-async def _connector(provider: str) -> Credentials:
+async def _connector(provider: str) -> ResolvedSecrets:
     from flow_sdk.core.oauth.provider_registry import app_credentials_name, token_for  # noqa: PLC0415
 
     app = app_credentials_name(provider)
     token = (await token_for(provider, name=app) if app else None) or await token_for(provider)
-    return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else Credentials()
+    return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else ResolvedSecrets()
 
 
 def _machine_secret(name: str) -> str:

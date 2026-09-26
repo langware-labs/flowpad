@@ -26,7 +26,7 @@ from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.testing import Subject, checks_for
 
 SlackSource = asset_module("slack").SlackSource
@@ -63,7 +63,7 @@ def _message(ts: str, text: str, **extra) -> dict:
 
 def _credentials(token):
     async def resolve(_row):
-        return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else Credentials()
+        return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(token)) if token else ResolvedSecrets()
 
     return resolve
 
@@ -166,7 +166,7 @@ async def test_conformance(check, fake_slack):
     binding = SourceBinding(
         account_key="T1",
         config={"channel": "C1", "base_url": fake_slack},
-        credentials=Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("xoxb-test")),
+        credentials=ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("xoxb-test")),
     )
     probe = SlackSource(binding)
     await check.run(Subject(

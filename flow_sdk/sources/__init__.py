@@ -11,7 +11,7 @@ built on it, never dependencies of it. See ``docs/data-management/source-contrac
 
 from flow_sdk.sources.base import Altitude, CollectionSource, Family, Source
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.errors import (
     AccessDenied,
     InvalidCursor,
@@ -77,7 +77,7 @@ __all__ = [
     "Choosing",
     "CloudOrigin",
     "CollectionSource",
-    "Credentials",
+    "ResolvedSecrets",
     "DataPage",
     "DataQuery",
     "DataSourceEvent",

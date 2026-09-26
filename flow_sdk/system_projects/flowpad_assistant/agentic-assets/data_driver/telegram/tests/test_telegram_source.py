@@ -24,7 +24,7 @@ from flow_sdk.ingest.driver_runtime import SendStatus
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.testing import Subject, checks_for
 
 MAX_TEXT_LEN = asset_module("telegram").MAX_TEXT_LEN
@@ -90,7 +90,7 @@ class _Bot:
 def _token(monkeypatch):
     """The token is the ``telegram`` credential (TELEGRAM_BOT_TOKEN), never config."""
     async def resolve(_row):
-        return Credentials(shape=AuthShape.SECRETS, values={"bot_token": SecretStr(TOKEN)})
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={"bot_token": SecretStr(TOKEN)})
 
     monkeypatch.setattr(DataDriver.loaded("telegram"), "credentials_for", resolve)
 
@@ -122,7 +122,7 @@ def _update(update_id, **message):
 async def test_conformance(check, bot):
     bot.updates = [_update(900000 + n, message_id=n) for n in (1, 2, 3)]
     binding = SourceBinding(
-        config={"base_url": bot.base}, credentials=Credentials(shape=AuthShape.SECRETS, values={"bot_token": SecretStr(TOKEN)})
+        config={"base_url": bot.base}, credentials=ResolvedSecrets(shape=AuthShape.SECRETS, values={"bot_token": SecretStr(TOKEN)})
     )
     probe = TelegramSource(binding)
     await check.run(Subject(

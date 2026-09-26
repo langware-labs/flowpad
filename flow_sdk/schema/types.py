@@ -264,7 +264,7 @@ class EntityType(StrEnum):
     #: The authored definition of a NAMED SET OF ENV VARS a provider needs
     #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
     #: declared, in user or project scope.
-    SECRET_PACK = "secret_pack"
+    CREDENTIAL = "credential"
     # One thread of ingested cloud messages (a Gmail thread, a Slack
     # `thread_ts`). MANY threads may point at ONE conversation — that is the
     # merge seam, and why the conversation id is not derived from the thread.

@@ -36,14 +36,14 @@ TWILIO = {
 }
 
 SHIPPED_ROOT = (
-    Path(__file__).resolve().parents[3] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/secret_pack"
+    Path(__file__).resolve().parents[3] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/credential"
 )
 
 
 def _seed(root: Path, name: str, manifest: dict) -> Path:
-    folder = root / "agentic-assets" / "secret_pack" / name
+    folder = root / "agentic-assets" / "credential" / name
     folder.mkdir(parents=True)
-    (folder / "secret_pack.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (folder / "credential.json").write_text(json.dumps(manifest), encoding="utf-8")
     return folder
 
 
@@ -51,7 +51,7 @@ async def _index(root: Path) -> None:
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope="user"))
     idx.add_function(RecordType.USER_HOME_FOLDER, repo_assets_fn)
-    await idx.index(IndexerOptions(verbose=False, types=[RecordType.SECRET_PACK]))
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.CREDENTIAL]))
 
 
 @pytest.mark.asyncio
@@ -62,7 +62,7 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
 
     ent = await Entity.get_by_asset_ref(str(folder))
     assert ent is not None, "the walker did not pick up the manifest"
-    assert ent.type == "secret_pack"
+    assert ent.type == "credential"
     assert (ent.name, ent.title, ent.value_store) == ("twilio", "Twilio", "env")
     assert sorted(ent.vars) == ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]
     assert ent.vars["TWILIO_AUTH_TOKEN"].secret is True
@@ -72,14 +72,14 @@ async def test_a_manifest_folder_becomes_an_entity(folder_db, tmp_path):
 @pytest.mark.asyncio
 async def test_an_indexed_credential_gets_a_v4_id_written_beside_it(folder_db, tmp_path):
     """Identity is a writable capsule: minted once, kept with the folder, not in
-    secret_pack.json (a definition carries no id of its own)."""
+    credential.json (a definition carries no id of its own)."""
     folder = _seed(tmp_path, "twilio", TWILIO)
 
     await _index(tmp_path)
 
     ent = await Entity.get_by_asset_ref(str(folder))
     assert uuid.UUID(str(ent.id)).version == 4
-    assert "id" not in json.loads((folder / "secret_pack.json").read_text())
+    assert "id" not in json.loads((folder / "credential.json").read_text())
 
 
 @pytest.mark.asyncio
@@ -100,9 +100,9 @@ def test_a_row_stored_by_an_earlier_build_still_loads():
     """A stored row may carry variable fields this build no longer has
     (`sod_name`). One such row must not fail every credential query — the
     manifest on disk stays strict, the row is read field by field."""
-    from flow_sdk.builtin.secret_pack import SecretPack
+    from flow_sdk.builtin.credential import Credential
 
-    row = SecretPack.model_validate(
+    row = Credential.model_validate(
         {
             "name": "anthropic-key",
             "vars": {"ANTHROPIC_API_KEY": {"label": "API key", "sod_name": "lm_api.anthropic", "secret": True}},
@@ -118,7 +118,7 @@ def test_a_row_stored_by_an_earlier_build_still_loads():
 
 
 def test_the_type_is_a_creatable_asset_with_a_writable_id():
-    info = SchemaRegistry.get("secret_pack")
+    info = SchemaRegistry.get("credential")
 
     assert info.creatable is True
     assert info.identity_carrier.writable is True
@@ -141,7 +141,7 @@ def test_every_shipped_template_commits_a_unique_v4_id(folder):
 
 
 def test_the_shipped_gmail_definition_is_valid():
-    manifest = CredentialSpec.model_validate(json.loads((SHIPPED_ROOT / "gmail/secret_pack.json").read_text()))
+    manifest = CredentialSpec.model_validate(json.loads((SHIPPED_ROOT / "gmail/credential.json").read_text()))
 
     assert manifest.name == "gmail"
     assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
@@ -181,7 +181,7 @@ SHIPPED_LM = {
 @pytest.mark.parametrize("folder, expected", sorted(SHIPPED_LM.items()))
 def test_the_shipped_llm_definitions_are_valid(folder, expected):
     provider, env_var = expected
-    manifest = CredentialSpec.model_validate(json.loads((SHIPPED_ROOT / folder / "secret_pack.json").read_text()))
+    manifest = CredentialSpec.model_validate(json.loads((SHIPPED_ROOT / folder / "credential.json").read_text()))
 
     assert manifest.lm_provider == provider
     assert list(manifest.vars) == [env_var]

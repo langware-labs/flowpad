@@ -15,7 +15,7 @@ import type {
   CredentialEnvironmentSettings,
   CredentialManifestVar,
   CredentialScopeName,
-  SecretPack,
+  Credential,
   CredentialStatusRow,
   CredentialValueStore,
   SaveCredentialRequest,
@@ -152,7 +152,7 @@ export function customDraft(scope: CredentialScopeName): CredentialDraft {
   };
 }
 
-export function templateDraft(spec: SecretPack, scope: CredentialScopeName): CredentialDraft {
+export function templateDraft(spec: Credential, scope: CredentialScopeName): CredentialDraft {
   const lmProvider = spec.lm_provider || '';
   return {
     mode: 'template',

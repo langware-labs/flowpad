@@ -1,11 +1,11 @@
-"""SecretPack — a named set of environment variables, and the only way to
+"""Credential — a named set of environment variables, and the only way to
 declare secrets.
 
 Where the folder lives is the declaration's scope, using the asset scopes
 Flowpad already has:
 
-* ``<project>/agentic-assets/secret_pack/<name>/`` — declared for that project.
-* ``~/agentic-assets/secret_pack/<name>/`` — declared for the user (every project
+* ``<project>/agentic-assets/credential/<name>/`` — declared for that project.
+* ``~/agentic-assets/credential/<name>/`` — declared for the user (every project
   on this machine).
 * the shipped assistant project — ``system`` scope, a read-only TEMPLATE that
   declares nothing until it is added to one of the two scopes above.
@@ -57,10 +57,10 @@ class CredentialAmbiguous(NameAmbiguous):
     plural = "credentials"
 
 
-class SecretPack(Entity):
+class Credential(Entity):
     """The ROW; its shape on disk is ``CredentialSpec`` (``TypeInfo.asset_spec``)."""
 
-    type: str = APIField(default=EntityType.SECRET_PACK.value)
+    type: str = APIField(default=EntityType.CREDENTIAL.value)
 
     # A folder-backed asset, so it OWNS its path. PRIVATE: the path is this
     # machine's and means nothing to a receiver.
@@ -128,7 +128,7 @@ class SecretPack(Entity):
         return SecretRequirements(self.var_names())
 
     async def secret_store(self, environment: str = DEFAULT_ENVIRONMENT) -> "SecretStore":
-        """The store ``secret_pack.json`` names for ``environment``, configured for this row's scope."""
+        """The store ``credential.json`` names for ``environment``, configured for this row's scope."""
         from flow_sdk.builtin.credential_store import scope_of, secret_store_ref  # noqa: PLC0415
         from flow_sdk.secrets import SecretStore  # noqa: PLC0415
 
@@ -138,7 +138,7 @@ class SecretPack(Entity):
         return SecretStore.from_ref(secret_store_ref(self, scope, normalize_environment(environment)))
 
     @classmethod
-    async def get(cls, name: str, project: Optional["Project"] = None) -> "SecretPack":
+    async def get(cls, name: str, project: Optional["Project"] = None) -> "Credential":
         """The credential named ``name``: ``project``'s (default: the current project's), else the
         user scope's. Raises :class:`CredentialNotFound` or :class:`CredentialAmbiguous`."""
         from flow_sdk import context  # noqa: PLC0415

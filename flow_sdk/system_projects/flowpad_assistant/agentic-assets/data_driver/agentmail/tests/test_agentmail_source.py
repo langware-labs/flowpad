@@ -21,7 +21,7 @@ from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.testing import Subject, checks_for
 
 SECRET_NAME = asset_module("agentmail").SECRET_NAME
@@ -98,7 +98,7 @@ def _view(prior=None, *, cursor=None):
 @pytest.mark.parametrize("check", checks_for(AgentMailSource), ids=str)
 async def test_conformance(check, mail):
     mail.messages = [{**MSG, "message_id": f"<m{n}@x>", "timestamp": f"2026-08-02T0{n}:00:00.000Z"} for n in (1, 2, 3)]
-    binding = SourceBinding(config={"inbox": INBOX, "base_url": mail.base}, credentials=Credentials(shape=AuthShape.SECRETS, values={"api_key": SecretStr("am_test")}))
+    binding = SourceBinding(config={"inbox": INBOX, "base_url": mail.base}, credentials=ResolvedSecrets(shape=AuthShape.SECRETS, values={"api_key": SecretStr("am_test")}))
     probe = AgentMailSource(binding)
     await check.run(Subject(
         source=lambda: AgentMailSource(binding),

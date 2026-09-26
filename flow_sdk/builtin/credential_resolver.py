@@ -39,24 +39,24 @@ from flow_sdk.schema.data_spec.credential_contract import (
 )
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.secret_pack import SecretPack
+    from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.project import Project
 
 logger = logging.getLogger(__name__)
 
-CredentialPairs = list[tuple["SecretPack", CredentialScope]]
+CredentialPairs = list[tuple["Credential", CredentialScope]]
 
 
 @dataclass(frozen=True)
 class DeclaredVar:
     env_var: str
-    spec: "SecretPack"
+    spec: "Credential"
     scope: CredentialScope
 
 
 async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
     """The credentials a process in ``project`` sees: user first, then project."""
-    from flow_sdk.builtin.secret_pack import SecretPack  # noqa: PLC0415
+    from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
     user = user_scope()
@@ -68,7 +68,7 @@ async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
 
     users: CredentialPairs = []
     projects: CredentialPairs = []
-    for spec in await SecretPack.get_all(QueryFilter(match=match)):
+    for spec in await Credential.get_all(QueryFilter(match=match)):
         name = spec_scope_name(spec)
         if name == SCOPE_USER and _declared_under(spec, user):
             users.append((spec, user))
@@ -78,7 +78,7 @@ async def credentials_in_scope(project: Optional["Project"]) -> CredentialPairs:
     return users + projects
 
 
-def _declared_under(spec: "SecretPack", scope: CredentialScope) -> bool:
+def _declared_under(spec: "Credential", scope: CredentialScope) -> bool:
     """Whether this row still has a document, in the scope it claims.
 
     Two orthogonal ways a row stops being a declaration, and it takes both to
@@ -95,7 +95,7 @@ def _declared_under(spec: "SecretPack", scope: CredentialScope) -> bool:
     across homes.)
 
     *It is gone.* The folder was deleted and the row outlived it. Nothing prunes
-    a fileless ``secret_pack`` — ``prune_fileless_data_sources`` covers a NULL
+    a fileless ``credential`` — ``prune_fileless_data_sources`` covers a NULL
     ``asset_ref`` on a data source, not a path that stopped existing.
 
     Either way the variables get injected into a process and snapshotted into a

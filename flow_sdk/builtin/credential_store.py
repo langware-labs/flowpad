@@ -34,7 +34,7 @@ from flow_sdk.schema.data_spec.credential_status_spec import StoreForgottenSpec
 from flow_sdk.secrets import SecretStore, SecretStoreRef, load_all
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.secret_pack import SecretPack
+    from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.project import Project
 
 logger = logging.getLogger(__name__)
@@ -68,13 +68,13 @@ def project_scope(project: "Project") -> CredentialScope:
     return CredentialScope(SCOPE_PROJECT, str(project.id), root_for_scope(Scope.PROJECT, project_mount=mount))
 
 
-def spec_scope_name(spec: "SecretPack") -> Optional[str]:
+def spec_scope_name(spec: "Credential") -> Optional[str]:
     """``user`` / ``project`` / ``system`` for a spec row, or None if unplaced."""
     scope = getattr(spec, "scope", None)
     return scope if scope in (SCOPE_USER, SCOPE_PROJECT, SCOPE_SYSTEM) else None
 
 
-async def scope_of(spec: "SecretPack") -> tuple[Optional[CredentialScope], Optional["Project"]]:
+async def scope_of(spec: "Credential") -> tuple[Optional[CredentialScope], Optional["Project"]]:
     """The scope a spec row declares for, and its project when project-scoped.
 
     ``(None, None)`` for templates and rows whose project is gone.
@@ -92,7 +92,7 @@ async def scope_of(spec: "SecretPack") -> tuple[Optional[CredentialScope], Optio
 
 
 def secret_store_ref(
-    spec: "SecretPack", scope: CredentialScope, environment: str = DEFAULT_ENVIRONMENT
+    spec: "Credential", scope: CredentialScope, environment: str = DEFAULT_ENVIRONMENT
 ) -> SecretStoreRef:
     """The store ``spec`` keeps ``environment``'s values in, for ``scope``. No I/O."""
     if spec.store_for(environment) == VALUE_STORE_VAULT:
@@ -118,7 +118,7 @@ def secret_store_ref(
 
 
 async def write_value(
-    spec: "SecretPack",
+    spec: "Credential",
     scope: CredentialScope,
     env_var: str,
     value: str,
@@ -134,7 +134,7 @@ async def write_value(
 
 
 async def read_values(
-    targets: Iterable[tuple["SecretPack", CredentialScope, str]],
+    targets: Iterable[tuple["Credential", CredentialScope, str]],
     environment: str = DEFAULT_ENVIRONMENT,
 ) -> dict[str, SecretStr]:
     """``environment``'s values for ``(spec, scope, env_var)`` targets, keyed by env var.
@@ -179,7 +179,7 @@ async def forget_in(refs: Iterable[SecretStoreRef], names: Iterable[str]) -> lis
 
 
 async def forget_values(
-    spec: "SecretPack",
+    spec: "Credential",
     scope: CredentialScope,
     environments: Iterable[str] = (DEFAULT_ENVIRONMENT,),
 ) -> list[StoreForgottenSpec]:

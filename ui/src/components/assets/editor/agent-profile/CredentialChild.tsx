@@ -15,7 +15,7 @@ import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 
 /**
- * One credential, nested in the agent editor (`…/child/credential/<secret_pack typeid>`): what it
+ * One credential, nested in the agent editor (`…/child/credential/<credential typeid>`): what it
  * is, where its values live, and which of its variables are set — read from the same status the
  * resources menu and the Connections screen read (`credentialsService.status`), picked by the URL's
  * typeid. Values are never shown; Set values and Edit open the one credential form.

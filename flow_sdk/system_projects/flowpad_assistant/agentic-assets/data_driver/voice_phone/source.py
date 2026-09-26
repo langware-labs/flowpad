@@ -29,7 +29,7 @@ from xml.sax.saxutils import escape
 from flow_sdk.external_apis.voice import realtime
 from flow_sdk.sources import http
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.credentials import Credentials
+from flow_sdk.sources.credentials import ResolvedSecrets
 from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.call import IncomingCall
@@ -115,7 +115,7 @@ class VoicePhoneSource(VoiceChannel):
         return caller if headers.get(DIAL_HEADER.lower()) in cls._dialled else dialled
 
     @classmethod
-    def webhook_authentic(cls, headers: Mapping[str, str], body: bytes, credentials: Credentials) -> bool:
+    def webhook_authentic(cls, headers: Mapping[str, str], body: bytes, credentials: ResolvedSecrets) -> bool:
         if "webhook-signature" in headers:
             stored = credentials.values.get("OPENAI_WEBHOOK_SECRET")
             return realtime.authentic(headers, body, stored.get_secret_value() if stored is not None else "")

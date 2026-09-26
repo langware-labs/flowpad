@@ -151,7 +151,7 @@ const CASES: Case[] = [
 ];
 
 /**
- * Put a driver's secret values where its manifest's `auth` reads them — a SecretPack (`credential` +
+ * Put a driver's secret values where its manifest's `auth` reads them — a Credential (`credential` +
  * `vars`) in this instance's vault, or a machine secret (`secrets`) — and return the undo. `null` when
  * this instance already holds a real one: the matrix never overwrites, or deletes, a person's secret.
  */

@@ -40,7 +40,7 @@ from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 if TYPE_CHECKING:
     from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.project import Project
-    from flow_sdk.builtin.secret_pack import SecretPack
+    from flow_sdk.builtin.credential import Credential
     from flow_sdk.schema.data_spec.credential_status_spec import CredentialStatusRowSpec
 
 #: The agent every AI rung runs — "reaches one ComputeOp goal after the cheap attempt failed".
@@ -82,7 +82,7 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequir
     )
 
 
-def _from_template(template: "SecretPack", environment: str, used_by: list[str]) -> SetupRequirementSpec:
+def _from_template(template: "Credential", environment: str, used_by: list[str]) -> SetupRequirementSpec:
     required = set(template.required_var_names(environment))
     setup = str(getattr(template, "setup", "") or "")
     return SetupRequirementSpec(

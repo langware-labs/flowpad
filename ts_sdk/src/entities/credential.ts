@@ -1,9 +1,9 @@
 /**
- * SecretPack — a named set of environment variables, and the only way to
- * declare secrets (flow_sdk/builtin/secret_pack.py).
+ * Credential — a named set of environment variables, and the only way to
+ * declare secrets (flow_sdk/builtin/credential.py).
  *
  * Where the folder lives is its scope: a project (`<project>/agentic-assets/
- * secret_pack/<name>/`), the user (`~/agentic-assets/secret_pack/<name>/`), or the
+ * credential/<name>/`), the user (`~/agentic-assets/credential/<name>/`), or the
  * shipped catalogue (`system` — a template, added to one of the other two).
  * `value_store` says where its values live: the scope's `.env.local` or the
  * encrypted vault. Declaring, filling and removing go through
@@ -42,7 +42,7 @@ export function isSecret(v: CredentialVar | undefined): boolean {
   return v?.secret !== false;
 }
 
-export interface ISecretPack extends IEntity {
+export interface ICredential extends IEntity {
   title?: string;
   description?: string;
   icon_name?: string;
@@ -61,11 +61,11 @@ export interface ISecretPack extends IEntity {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface SecretPack extends EntityMerge<ISecretPack> {}
+export interface Credential extends EntityMerge<ICredential> {}
 
 @registerEntity
-export class SecretPack extends APIEntity<SecretPack> implements ISecretPack {
-  static type: string = 'secret_pack';
+export class Credential extends APIEntity<Credential> implements ICredential {
+  static type: string = 'credential';
 
   title: string = '';
   description: string = '';
@@ -84,7 +84,7 @@ export class SecretPack extends APIEntity<SecretPack> implements ISecretPack {
    * emits every initializer above AFTER `super(json)`, so a list-query row would
    * otherwise arrive with `vars` as `{}`.
    */
-  constructor(json: ISecretPack | undefined = undefined) {
+  constructor(json: ICredential | undefined = undefined) {
     super(json as never);
     if (json) dataManager.deepAssign(this, json);
   }

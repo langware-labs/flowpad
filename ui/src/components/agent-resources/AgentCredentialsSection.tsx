@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { KeyRound, Plus, Trash2 } from 'lucide-react';
-import { dataContext, credentialsService, type SecretPack } from '@sdk';
+import { dataContext, credentialsService, type Credential } from '@sdk';
 import { NavigatorSection } from '@src/components/navigator-panel/NavigatorSection';
 import { AddConnectionDialog } from '@src/components/connections-manager/add-connection-dialog';
 import { buildCredentialRows, type CredentialRow } from '@src/components/credentials-view/credential-rows';
@@ -108,7 +108,7 @@ export function AgentCredentialsSection() {
         providers={[]}
         specs={addable}
         onPickProvider={() => undefined}
-        onPickCredential={(spec: SecretPack) => {
+        onPickCredential={(spec: Credential) => {
           setAdding(false);
           setDraft(templateDraft(spec, scope));
         }}

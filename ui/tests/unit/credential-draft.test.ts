@@ -4,7 +4,7 @@
  * builds one of these drafts and saves it the same way.
  */
 import { describe, expect, it } from 'vitest';
-import { SecretPack, type CredentialStatusRow } from '@sdk';
+import { Credential, type CredentialStatusRow } from '@sdk';
 import {
   asksValues,
   customDraft,
@@ -23,7 +23,7 @@ import {
 } from '@src/components/credentials/credential-draft';
 
 const gmail = () =>
-  new SecretPack({
+  new Credential({
     name: 'gmail',
     title: 'Gmail',
     scope: 'system',
@@ -35,7 +35,7 @@ const gmail = () =>
   } as never);
 
 const openrouter = () =>
-  new SecretPack({
+  new Credential({
     name: 'openrouter',
     title: 'OpenRouter',
     scope: 'system',
@@ -45,7 +45,7 @@ const openrouter = () =>
   } as never);
 
 const statusRow = (over: Partial<CredentialStatusRow> = {}): CredentialStatusRow => ({
-  typeid: 'secret_pack-1',
+  typeid: 'credential-1',
   name: 'stripe',
   title: 'Stripe',
   description: 'Payments',
@@ -96,7 +96,7 @@ describe('building a draft', () => {
     const edit = editDraft(statusRow());
     const values = valuesDraft(statusRow());
 
-    expect(edit.typeid).toBe('secret_pack-1');
+    expect(edit.typeid).toBe('credential-1');
     expect(scopeLocked(edit)).toBe(true);
     expect(asksValues(edit)).toBe(false);
     expect(values.mode).toBe('values');
@@ -189,7 +189,7 @@ describe('toSaveRequest', () => {
   it('an update names the credential, not a scope', () => {
     const req = toSaveRequest(editDraft(statusRow()), 'p1');
 
-    expect(req.typeid).toBe('secret_pack-1');
+    expect(req.typeid).toBe('credential-1');
     expect(req.scope).toBeUndefined();
   });
 

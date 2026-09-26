@@ -22,7 +22,7 @@ from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.testing import Subject, checks_for
 
 WhatsAppSource = asset_module("whatsapp").WhatsAppSource
@@ -55,7 +55,7 @@ def _secrets_for(row) -> dict[str, str]:
 @pytest.fixture(autouse=True)
 def _credential(monkeypatch):
     async def resolve(row):
-        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in _secrets_for(row).items() if v})
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in _secrets_for(row).items() if v})
 
     monkeypatch.setattr(DataDriver.loaded("whatsapp"), "credentials_for", resolve)
     yield
@@ -73,7 +73,7 @@ def _source(**config) -> DataSource:
 def _binding() -> SourceBinding:
     return SourceBinding(
         config={"phone_number_id": PHONE_ID, **LOOPBACK},
-        credentials=Credentials(shape=AuthShape.SECRETS, values={"access_token": SecretStr("EAAG-test")}),
+        credentials=ResolvedSecrets(shape=AuthShape.SECRETS, values={"access_token": SecretStr("EAAG-test")}),
     )
 
 

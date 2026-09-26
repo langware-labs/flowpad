@@ -3,7 +3,7 @@ import {
   ConnectionKind,
   ConnectionState,
   ConnectionStatus,
-  type SecretPack,
+  type Credential,
   DEFAULT_CREDENTIAL_ENVIRONMENT,
   FSRef,
   TypeId,
@@ -584,7 +584,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     void handleConnect(providerName.toLowerCase());
   };
 
-  const pickCredential = (spec: SecretPack) => {
+  const pickCredential = (spec: Credential) => {
     setAddOpen(false);
     openDraft(templateDraft(spec, defaultScope));
   };

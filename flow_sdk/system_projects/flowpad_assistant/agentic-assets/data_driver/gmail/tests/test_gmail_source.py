@@ -19,7 +19,7 @@ from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.testing import Subject, checks_for
 
 GmailSource = asset_module("gmail").GmailSource
@@ -155,7 +155,7 @@ def _view(prior=None, *, cursor=None, window_start=None):
 async def test_conformance(check, gmail):
     for n in (1, 2, 3):
         gmail.deliver(_raw(message_id=f"<m{n}@x>", in_reply_to=""), "9988")
-    binding = SourceBinding(config={"address": ADDRESS}, credentials=Credentials(shape=AuthShape.ENV, values={"GMAIL_APP_PASSWORD": SecretStr(PASSWORD)}))
+    binding = SourceBinding(config={"address": ADDRESS}, credentials=ResolvedSecrets(shape=AuthShape.ENV, values={"GMAIL_APP_PASSWORD": SecretStr(PASSWORD)}))
     probe = GmailSource(binding)
     await check.run(Subject(
         source=lambda: GmailSource(binding),

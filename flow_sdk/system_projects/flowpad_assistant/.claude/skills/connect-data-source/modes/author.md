@@ -59,7 +59,7 @@ shipped `agent` transport, configured per `references/mapping.md`. Read
 - `auth` is exactly ONE of `{connector, scopes}` (an OAuth connection),
   `{env: [NAMES]}` (the operator's environment), `{secrets: {value_key: machine
   secret name}}` (a store or machine secret) or `{credential: pack, vars: {value_key: VAR}}`
-  (a SecretPack). Never a credential value, and never a config field: a config lands in
+  (a Credential). Never a credential value, and never a config field: a config lands in
   `data_source.json`. The source reads what it declares from `self.credentials`.
 - No `traits`, no `fetch.py`, no `FETCH.md` — all refused at load. Traits are
   ClassVars on the class.

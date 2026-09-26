@@ -32,7 +32,7 @@ from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.credentials import Credentials
+from flow_sdk.sources.credentials import ResolvedSecrets
 from flow_sdk.sources.errors import Rejected, SourceError
 from flow_sdk.sources.protocols import (
     Choosing,
@@ -252,8 +252,8 @@ async def _pull(source: Source, wanted: list) -> None:
 # ── binding a row ──────────────────────────────────────────────────────────────
 
 
-def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: Optional[Persona] = None) -> SourceBinding:
-    credentials = credentials or Credentials()
+def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, persona: Optional[Persona] = None) -> SourceBinding:
+    credentials = credentials or ResolvedSecrets()
     # A secret the resolver lifted out of the row never also rides in ``config``.
     driver = DRIVERS.get_or_none(str(getattr(row, "provider", "") or ""))
     # A stored config, read as well as it still validates.
@@ -403,13 +403,13 @@ class DriverRuntime:
         return DataSource(provider=self.provider, name=name, kind=self.kind, config=dict(config or {}), **authored)
 
     # ── binding ─────────────────────────────────────────────────────────────
-    async def credentials_for(self, row: Any) -> Credentials:
+    async def credentials_for(self, row: Any) -> ResolvedSecrets:
         """What the row reads with, resolved from the manifest's ``auth``."""
         from flow_sdk.ingest.credentials import resolve_credentials  # noqa: PLC0415
 
         return await resolve_credentials(self.manifest.auth if self.manifest is not None else None, row)
 
-    async def open(self, row: Any, *, persona: bool = False, credentials: Optional[Credentials] = None) -> Source:
+    async def open(self, row: Any, *, persona: bool = False, credentials: Optional[ResolvedSecrets] = None) -> Source:
         """The configured source (not yet in a session). A configuration the class refuses is a
         person's to fix. ``credentials`` already resolved for this row skip the second resolve."""
         credentials = credentials if credentials is not None else await self.credentials_for(row)

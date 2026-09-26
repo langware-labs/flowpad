@@ -13,7 +13,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 from .test_whatsapp_source import APP_SECRET, WA_ID, _Graph, _text, _webhook, sign
 
@@ -51,9 +51,9 @@ class Double:
             self._server.__exit__(*exc)
             self._server = None
 
-    async def credentials(self, _row) -> Credentials:
+    async def credentials(self, _row) -> ResolvedSecrets:
         """The in-process stand-in for ``DataDriver.credentials_for``: the whatsapp credential, never config."""
-        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
 
     def handshake(self) -> dict:
         """Meta's one-time subscribe query, carrying this Double's verify token."""

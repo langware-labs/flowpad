@@ -15,7 +15,7 @@ import {
 } from '@src/components/credentials/credential-draft';
 
 const row = (over: Partial<CredentialStatusRow> = {}): CredentialStatusRow => ({
-  typeid: 'secret_pack-1',
+  typeid: 'credential-1',
   name: 'db',
   title: 'Database',
   description: '',

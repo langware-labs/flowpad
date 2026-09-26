@@ -27,7 +27,7 @@ from pydantic import StringConstraints
 from flow_sdk.sources import http
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.credentials import Credentials
+from flow_sdk.sources.credentials import ResolvedSecrets
 from flow_sdk.sources.errors import (
     AccessDenied,
     NotFound,
@@ -147,7 +147,7 @@ class WhatsAppSource(MessageSource):
         return ""
 
     @classmethod
-    def webhook_authentic(cls, headers: Mapping[str, str], body: bytes, credentials: Credentials) -> bool:
+    def webhook_authentic(cls, headers: Mapping[str, str], body: bytes, credentials: ResolvedSecrets) -> bool:
         """Meta's ``X-Hub-Signature-256: sha256=<hex hmac of the raw body>`` under the app secret. A row
         with no app secret accepts nothing."""
         import hashlib  # noqa: PLC0415
