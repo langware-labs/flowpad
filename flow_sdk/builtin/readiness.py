@@ -134,7 +134,7 @@ def merge(requirements: list[RequirementSpec]) -> list[RequirementSpec]:
     return list(merged.values())
 
 
-async def _project_of(agent: "Agent") -> Any:
+async def project_of(agent: "Agent") -> Any:
     from flow_sdk.builtin.asset_publishing import owning_project  # noqa: PLC0415
 
     return await owning_project(agent)
@@ -145,7 +145,7 @@ async def derive_requirements(agent: "Agent", project: Any = None) -> list[Requi
     when not given)."""
     from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 
-    project = project or await _project_of(agent)
+    project = project or await project_of(agent)
     out: list[RequirementSpec] = []
     for source in await DataSource.find_owned(agent.typeid):
         out += await requirements_of_source(source, project)
@@ -181,6 +181,15 @@ async def refresh_requirements(agent: "Agent") -> bool:
 # ── readiness ─────────────────────────────────────────────────────────────────
 
 
+class NotReady(RuntimeError):
+    """A deploy refused by the readiness gate: ``readiness`` names each missing value and its fix."""
+
+    def __init__(self, readiness: ReadinessSpec):
+        self.readiness = readiness
+        missing = ", ".join(i.requirement.name for i in readiness.value_items(missing_only=True))
+        super().__init__(f"not ready to deploy: {missing} missing")
+
+
 async def _connection_item(req: RequirementSpec, connector: str, scopes: list[str]) -> ReadinessItemSpec:
     from flow_sdk.connections import Connection, MissingScopes, NotConnected  # noqa: PLC0415
 
@@ -201,8 +210,8 @@ def _values_item(req: RequirementSpec, names: list[str], present: dict[str, tupl
     missing = [n for n in names if not present.get(n, (False, ""))[0]]
     where = ", ".join(sorted({present[n][1] for n in names if n in present})) or "no store declares it"
     if missing or not names:
-        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where, fix=fix)
-    return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where=where)
+        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where, fix=fix, vars=list(names))
+    return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where=where, vars=list(names))
 
 
 async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -> ReadinessSpec:
@@ -213,7 +222,7 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
 
     deployment_id = str(deployment.id) if deployment is not None else ""
-    project = await _project_of(agent)
+    project = await project_of(agent)
     status, wanted = await asyncio.gather(credentials_status(project, deployment_id), requirements(agent, project))
     rows = {row.name: row for row in status.credentials}  # user first, then project: the project's own wins
     present = {v.env_var: (v.present, v.store) for row in status.credentials for v in row.vars}

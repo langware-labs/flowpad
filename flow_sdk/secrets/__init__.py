@@ -20,6 +20,7 @@ from flow_sdk.secrets.gcp_secret_manager import (  # registers ``gcp_secret_mana
     GcpSecretManagerConfig,
     GcpSecretManagerStore,
 )
+from flow_sdk.secrets.hub import HubStore, HubStoreConfig  # registers ``hub``
 from flow_sdk.secrets.requirements import SecretRequirements
 from flow_sdk.secrets.store import SecretStore, SecretStoreRef, load_all, register_store
 from flow_sdk.secrets.vault import VaultConfig, VaultStore  # registers ``vault``
@@ -29,6 +30,8 @@ __all__ = [
     "EnvFileStore",
     "GcpSecretManagerConfig",
     "GcpSecretManagerStore",
+    "HubStore",
+    "HubStoreConfig",
     "MissingSecrets",
     "NoCurrentProject",
     "SecretRequirements",

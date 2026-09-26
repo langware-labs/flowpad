@@ -132,7 +132,7 @@ hub and comes back down the bridge — nothing is written locally in that case.
 ## 5. A machine of its own
 
 Live it needs a hub login and publishes through git; `tests/unit/test_agent_deployment_snippets.py` runs
-this fence as written with the hub's two legs (publish, deploy) answered by a double.
+this fence as written with the hub's three legs (publish, plan the placement, deploy) answered by a double.
 
 ```python
 import flow_sdk
@@ -148,7 +148,10 @@ receipt = await agent.deploy_to_cloud(actor)   # publishes through git first
 Deliberately no node and no principal: "were either passable from here they
 would be passable from anywhere." The hub mints the ComputeNode, provisions the
 Identity, logs the box in as the agent, and the returned row is adopted **at
-the hub's id** (`Deployment.adopt_from_hub`) — never re-minted. Live only; the
+the hub's id** (`Deployment.adopt_from_hub`) — never re-minted. The deploy is
+refused (`NotReady`, naming each missing value) until the placement's store —
+the hub — holds every value the agent needs: `use_mine(deployment_id)` copies
+this computer's; the hub places them on the machine when it starts. Live only; the
 unit tier stops at the refusal in §2.
 
 ## 6. Serve it your way — you pick the channels and the routing

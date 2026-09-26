@@ -340,3 +340,141 @@ async def delete_credential(typeid: str) -> CredentialDeletedSpec:
         kept=[n for n in names if n in kept],
         stores=stores,
     )
+
+
+# ── on a deployment's machine: the values the hub places ──────────────────────
+#
+# The hub places a deployment's stored values on its machine when it starts, and wipes them before a
+# pause (hub ``app/services/deployment_secrets.py``). Values arrive in a file the hub writes into the drop
+# folder handed out here — never in a request body, which the hub's transport passes on a command line —
+# and are written exactly where this machine's own lookup reads them (``write_value`` at the
+# deployment's placement), so every process here sees them like any local value.
+
+
+def drop_folder() -> Path:
+    """The private (0700) folder the hub drops a values file into."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    folder = Path(get_instance_settings().instance_dir) / "credential-drop"
+    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    folder.chmod(0o700)
+    return folder
+
+
+def _take_dropped(file: str) -> dict[str, str]:
+    """Read and delete a dropped values file; only a file inside the drop folder is ever read."""
+    import json  # noqa: PLC0415
+
+    path = Path(file).resolve()
+    if path.parent != drop_folder().resolve() or not path.is_file():
+        raise CredentialError("not a dropped values file")
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    finally:
+        path.unlink(missing_ok=True)
+    values = raw.get("values") if isinstance(raw, dict) else None
+    if not isinstance(values, dict):
+        raise CredentialError("the dropped file holds no values")
+    return {str(k): str(v) for k, v in values.items() if v}
+
+
+async def _declaring(names: list[str], project: Optional["Project"], deployment: "Deployment") -> dict:
+    """``{VAR: DeclaredVar}`` for ``names``, declaring on this machine any name nothing here declares —
+    a user-scope credential on the laptop does not travel with the repo. Grouped by the credential the
+    agent's requirements name for it; the rest in one ``deployment-secrets`` credential."""
+    from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
+
+    declared = await declared_vars(project)
+    missing = [n for n in names if n not in declared]
+    if missing:
+        groups: dict[str, list[str]] = {}
+        agent = await deployment.element()
+        owner = {v: r.name for r in (getattr(agent, "requirements", None) or []) if r.kind == "credential" for v in r.vars}
+        for name in missing:
+            groups.setdefault(owner.get(name, "deployment-secrets"), []).append(name)
+        for credential, vars_ in groups.items():
+            existing = await credential_named(credential, None)
+            manifest = {
+                "name": credential,
+                "vars": {**{v: {} for v in (existing.var_names() if existing else [])}, **{v: {} for v in vars_}},
+                "setup": "Placed on this machine by the hub for its deployment.",
+            }
+            if existing is not None:
+                await save_credential(manifest=manifest, typeid=str(existing.typeid))
+            else:
+                await save_credential(manifest=manifest, scope=SCOPE_USER)
+        declared = await declared_vars(project)
+    return declared
+
+
+async def place_values(deployment_id: str, project_id: str, file: str) -> dict[str, Any]:
+    """Write the values the hub dropped where ``deployment_id`` reads them: ``{placed, failed}`` names."""
+    from flow_sdk.builtin.credential_store import Placement  # noqa: PLC0415
+
+    values = _take_dropped(file)
+    deployment = await _deployment(deployment_id)
+    project = await get_project(project_id) if project_id else None
+    placement = await Placement.of(deployment)
+    declared = await _declaring(list(values), project, deployment)
+    placed: list[str] = []
+    failed: dict[str, str] = {}
+    for name, value in values.items():
+        target = declared.get(name)
+        if target is None:
+            failed[name] = "not declared here"
+            continue
+        try:
+            await write_value(target.spec, target.scope, name, value, placement)
+            placed.append(name)
+        except Exception as e:  # noqa: BLE001 — reported per name, names only
+            failed[name] = type(e).__name__
+    return {"placed": sorted(placed), "failed": failed}
+
+
+async def unplace_values(deployment_id: str, project_id: str, names: list[str]) -> dict[str, Any]:
+    """Remove ``names`` from wherever ``deployment_id`` reads them on this machine: ``{removed}``."""
+    from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import Placement, forget_in, secret_store_ref  # noqa: PLC0415
+
+    placement = await Placement.of(await _deployment(deployment_id))
+    project = await get_project(project_id) if project_id else None
+    declared = await declared_vars(project)
+    refs = [secret_store_ref(declared[n].spec, declared[n].scope, n, placement) for n in names if n in declared]
+    reports = await forget_in(refs, names)
+    return {"removed": sorted({n for r in reports for n in r.deleted})}
+
+
+# ── "use mine": this computer's values into a deployment's store ──────────────
+
+
+async def use_mine(deployment_id: str, names: Optional[list[str]] = None) -> dict[str, Any]:
+    """Copy this computer's values for ``names`` (default: what the deployment's agent needs and its
+    store lacks) into the store ``deployment_id`` keeps them in — for a cloud deployment, the hub, which
+    places them on its machine. A value is read and written here, never shown or logged:
+    ``{copied, not_here}`` names. A protected deployment refuses: its values are entered directly.
+    """
+    from flow_sdk.builtin.credential_resolver import declared_vars, resolve_project_secrets  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import Placement, secret_store_ref  # noqa: PLC0415
+    from flow_sdk.builtin.readiness import project_of, readiness  # noqa: PLC0415
+    from flow_sdk.secrets import SecretStore  # noqa: PLC0415
+
+    deployment = await _deployment(deployment_id)
+    placement = await Placement.of(deployment)
+    if placement.secrets.protected:
+        raise CredentialError("a protected deployment's values are entered directly, never copied in", code="protected")
+    agent = await deployment.element()
+    project = await project_of(agent) if agent is not None else None
+    if names is None:
+        if agent is None:
+            raise CredentialError("name the values to copy: this deployment runs no agent")
+        ready = await readiness(agent, deployment)
+        names = list(dict.fromkeys(n for i in ready.value_items(missing_only=True) for n in i.vars))
+    mine = await resolve_project_secrets(project, only=names, placement=await Placement.of(None))
+    declared = await declared_vars(project)
+    stores: dict = {}
+    for name, value in mine.items():
+        ref = secret_store_ref(declared[name].spec, declared[name].scope, name, placement)
+        stores.setdefault(ref.key, (ref, {}))[1][name] = value
+    for ref, values in stores.values():
+        await SecretStore.from_ref(ref).save(values, description="copied from the owner's computer")
+    return {"copied": sorted(mine), "not_here": sorted(set(names) - set(mine))}

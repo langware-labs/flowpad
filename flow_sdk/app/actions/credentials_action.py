@@ -98,6 +98,28 @@ async def credentials_action() -> ApiResponse:
             if sub_path == "declare":
                 spec = await declare_credential(payload.get("manifest") or {}, project_id=payload.get("project_id") or "")
                 return ApiSuccessResponse(data=_summary(spec))
+            # On a deployment's machine: the hub places the deployment's values (``credential_service``).
+            if sub_path == "drop":
+                from flow_sdk.builtin.credential_service import drop_folder  # noqa: PLC0415
+
+                return ApiSuccessResponse(data={"dir": str(drop_folder())})
+            if sub_path == "place":
+                from flow_sdk.builtin.credential_service import place_values  # noqa: PLC0415
+
+                return ApiSuccessResponse(data=await place_values(
+                    payload.get("deployment_id") or "", payload.get("project_id") or "", payload.get("file") or ""
+                ))
+            if sub_path == "unplace":
+                from flow_sdk.builtin.credential_service import unplace_values  # noqa: PLC0415
+
+                return ApiSuccessResponse(data=await unplace_values(
+                    payload.get("deployment_id") or "", payload.get("project_id") or "", list(payload.get("names") or [])
+                ))
+            if sub_path == "use-mine":
+                from flow_sdk.builtin.credential_service import use_mine  # noqa: PLC0415
+
+                names = payload.get("names")
+                return ApiSuccessResponse(data=await use_mine(payload.get("deployment_id") or "", list(names) if names else None))
             if sub_path == "audit":
                 from flow_sdk.builtin.credential_sweep import sweep_local  # noqa: PLC0415
 

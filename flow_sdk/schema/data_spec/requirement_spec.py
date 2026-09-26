@@ -69,6 +69,8 @@ class ReadinessItemSpec(DataSpec):
     status: str
     #: Where it was looked for: a store, a connection.
     where: str = ""
+    #: The variables a store must hold for it — empty for what a grant satisfies (a connection).
+    vars: list[str] = Field(default_factory=list)
     #: The one step that fixes a missing item.
     fix: str = ""
 
@@ -84,6 +86,15 @@ class ReadinessSpec(DataSpec):
     environment: str
     ready: bool
     items: list[ReadinessItemSpec] = Field(default_factory=list)
+
+    def value_items(self, *, missing_only: bool = False) -> list[ReadinessItemSpec]:
+        """The items a stored value satisfies (credentials, variables, API-key permissions) — not what
+        a grant satisfies."""
+        return [i for i in self.items if i.vars and (not missing_only or i.status == "missing")]
+
+    def value_names(self) -> list[str]:
+        """Every variable a deployment's store must hold."""
+        return list(dict.fromkeys(name for item in self.value_items() for name in item.vars))
 
 
 __all__ = [

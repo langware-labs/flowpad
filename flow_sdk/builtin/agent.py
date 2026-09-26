@@ -909,9 +909,32 @@ class Agent(Entity):
         hub directly.
         """
         from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady, readiness  # noqa: PLC0415
 
         await self.ensure_on_hub(actor)
-        return await deploy_entity_to_cloud(self, environment)
+        # The readiness gate: the placement's store must hold every value the agent needs before a
+        # machine is paid for. The hub checks the same names again (``require``).
+        deployment = await self.plan_deployment(environment)
+        ready = await readiness(self, deployment)
+        missing = ready.value_items(missing_only=True)
+        if missing:
+            raise NotReady(ready)
+        return await deploy_entity_to_cloud(self, environment, require=ready.value_names())
+
+    async def plan_deployment(self, environment: str | None = None) -> "Deployment":
+        """The cloud placement this agent will have in ``environment`` — the hub's row, adopted here —
+        before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent."""
+        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
+
+        environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
+        data = await hub_post(self.type, {"environment": environment}, self.id, "plan_deployment") or {}
+        deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
+        if deployment is None:
+            raise RuntimeError("the hub returned no deployment to plan")
+        return deployment
 
     @action.post(action_name="deploy")
     async def deploy_action(self):
@@ -942,6 +965,7 @@ class Agent(Entity):
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
         from flow_sdk.schema.data_spec.credential_contract import is_valid_environment  # noqa: PLC0415
 
         environment = str(body.get("environment") or "").strip() or None
@@ -949,6 +973,13 @@ class Agent(Entity):
             return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
         try:
             data = await self.deploy_to_cloud(actor, environment)
+        except NotReady as exc:
+            # The gate: nothing is deployed, and each missing value is named with its fix.
+            return ApiFailResponse(
+                status_code=409,
+                message=str(exc),
+                data={"code": "not_ready", "readiness": exc.readiness.model_dump(mode="json")},
+            )
         except AssetPublishError as exc:
             # Deploy publishes the agent through git first, so every publish
             # precondition is a deploy precondition. These are the caller's
