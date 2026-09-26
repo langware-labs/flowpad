@@ -110,6 +110,24 @@ export interface CredentialSaved {
   project_id: string | null;
 }
 
+/** What deleting a credential did in ONE store. Names only. */
+export interface StoreForgotten {
+  type: string;
+  where: string;
+  deleted: string[];
+  kept: string[];
+  /** Why the store could not be checked; every name counts as kept. */
+  error: string;
+}
+
+/** A credential is removed only when no store still holds one of its values. */
+export interface CredentialDeleted {
+  removed: boolean;
+  deleted: string[];
+  kept: string[];
+  stores: StoreForgotten[];
+}
+
 export interface CredentialManifestVar {
   label?: string;
   hint?: string;
@@ -217,12 +235,13 @@ export class CredentialsService {
     return dataManager.callAction<unknown, CredentialSaved>(action);
   }
 
-  /** Remove a credential. `kept` names variables whose lines stay in `.env.local`. */
-  async remove(typeid: string): Promise<{ deleted: string[]; kept: string[] }> {
+  /** Remove a credential and its values from every store. `removed` is false, and the
+   *  credential stays, when a store still holds a value (`kept`) or could not be reached. */
+  async remove(typeid: string): Promise<CredentialDeleted> {
     const action = this.action('delete', 'POST');
     action.bodyParameters = { typeid };
-    const res = await dataManager.callAction<unknown, { deleted?: string[]; kept?: string[] }>(action);
-    return { deleted: res?.deleted ?? [], kept: res?.kept ?? [] };
+    const res = await dataManager.callAction<unknown, Partial<CredentialDeleted>>(action);
+    return { removed: !!res?.removed, deleted: res?.deleted ?? [], kept: res?.kept ?? [], stores: res?.stores ?? [] };
   }
 }
 

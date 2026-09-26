@@ -44,7 +44,7 @@ connection's token as one of its secrets.
 | `await store.save(values)`                     | writes `{ENV_VAR_NAME: str or SecretStr}`; an empty value is skipped     |
 | `await store.names()`                          | the names the store holds — never values                                 |
 | `await store.validate_keys(names)`             | nothing; raises `MissingSecrets` naming what the store lacks             |
-| `await store.forget(names)`                    | `(deleted, kept)` — vault entries go, env file lines stay                |
+| `await store.forget(names)`                    | `(deleted, kept)` — vault entries and env file lines go; others stay     |
 | `store.ref`                                    | the store as a value (`{type, config}`) — what a binding saves           |
 | `await SecretPack.get(name, project=None)` | the credential with that name                                            |
 | `await spec.secret_store(environment)`         | the store `secret_pack.json` names for that environment                   |
@@ -397,6 +397,9 @@ pack written before it existed still loads, and setup reports it as having no AI
 question empty is how a person hands that credential to the AI. Values travel ask → the run →
 the environment of `flow credentials set`; nothing prints them, and the CLI log keeps names only.
 Running it again is the resume: whatever holds is skipped. The environment is `development`.
+`flow credentials delete <name>` removes a credential and its values from every store, and
+`flow credentials audit` checks that nothing deleted is still stored anywhere
+([secret_share](../secret_share.md#deleting--nothing-left-behind)).
 
 ## What each call replaced
 

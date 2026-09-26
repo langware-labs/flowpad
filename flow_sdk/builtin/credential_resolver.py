@@ -17,6 +17,7 @@ Declarations never differ by environment — only where the values are read.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Optional
@@ -165,13 +166,16 @@ async def resolve_project_secrets(
 
 
 async def environment_for(process: Any = None) -> str:
-    """The credential environment ``process`` runs in.
+    """The credential environment ``process`` runs in: its Deployment's (:func:`environment_for_deployment`)."""
+    return await environment_for_deployment(str(getattr(process, "deployment_id", "") or ""))
 
-    The ``environment`` of the Deployment it was created under; else this
-    instance's default (a cloud box sets it when it adopts its placement); else
-    ``development``. Never raises: a process must start even when the lookup fails.
+
+async def environment_for_deployment(deployment_id: str = "") -> str:
+    """The ``environment`` of that Deployment; else this instance's default (a cloud box sets it
+    when it adopts its placement); else ``development``. Never raises: a process must start even
+    when the lookup fails.
     """
-    deployment_id = str(getattr(process, "deployment_id", "") or "").strip()
+    deployment_id = deployment_id.strip()
     if deployment_id:
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
@@ -190,6 +194,20 @@ async def environment_for(process: Any = None) -> str:
     except Exception as e:  # noqa: BLE001
         logger.debug("[credentials] could not read the default environment: %s", e)
         return DEFAULT_ENVIRONMENT
+
+
+async def environment_for_source(row: Any) -> str:
+    """The credential environment a data source reads its values from.
+
+    The Deployment that answers it (``answer_place``); else the deployment this
+    process serves (``FLOW_DEPLOYMENT_ID``); else what :func:`environment_for_deployment`
+    answers with no deployment. A source syncing on a production box must read
+    production values, not ``development``.
+    """
+    from flow_sdk.builtin.deployment_process import DEPLOYMENT_ENV  # noqa: PLC0415
+
+    placed = str(getattr(row, "answer_place", "") or "").strip() or os.environ.get(DEPLOYMENT_ENV, "")
+    return await environment_for_deployment(placed)
 
 
 async def known_environments() -> list[str]:

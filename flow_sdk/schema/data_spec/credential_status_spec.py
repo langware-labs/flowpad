@@ -95,3 +95,61 @@ class CredentialsStatusSpec(DataSpec):
     vault_enabled: bool = False
     credentials: list[CredentialStatusRowSpec] = []
     files: list[ScopeFileStatusSpec] = []
+
+
+class StoreForgottenSpec(DataSpec):
+    """What deleting a credential did in ONE store. Names only."""
+
+    model_config = ConfigDict(frozen=True)
+
+    #: The store type: ``env_file`` / ``vault`` / ``gcp_secret_manager`` / ...
+    type: str
+    #: Where it is: a file path, a vault prefix, a secret project.
+    where: str
+    deleted: list[str] = []
+    #: Still there: the store refused or failed to remove them.
+    kept: list[str] = []
+    #: Why the store could not be checked at all; every name counts as kept.
+    error: str = ""
+
+
+class CredentialDeletedSpec(DataSpec):
+    """The result of deleting a credential: removed only when no store still holds a value."""
+
+    model_config = ConfigDict(frozen=True)
+
+    removed: bool
+    deleted: list[str] = []
+    kept: list[str] = []
+    stores: list[StoreForgottenSpec] = []
+
+
+class LeftoverSpec(DataSpec):
+    """A secret still stored somewhere it should not be. The name, never the value."""
+
+    model_config = ConfigDict(frozen=True)
+
+    store: str
+    where: str
+    name: str
+
+
+class UncheckedSpec(DataSpec):
+    """A store the sweep could not read: unchecked is not clean."""
+
+    model_config = ConfigDict(frozen=True)
+
+    store: str
+    where: str
+    error: str
+
+
+class SweepSpec(DataSpec):
+    """``flow credentials audit``: what is left of deleted credentials, projects, agents and deployments."""
+
+    model_config = ConfigDict(frozen=True)
+
+    clean: bool
+    found: list[LeftoverSpec] = []
+    unchecked: list[UncheckedSpec] = []
+    checked: list[str] = []

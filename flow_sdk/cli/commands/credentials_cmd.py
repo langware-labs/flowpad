@@ -5,6 +5,8 @@
     flow credentials set <name> VAR=VALUE …        — store values (declares it from its template)
     flow credentials set <name> --stdin            — store VAR=VALUE lines read from stdin
     flow credentials set <name> --from-inputs      — store what a wizard step was given
+    flow credentials delete <name>                 — remove it and its values from every store
+    flow credentials audit --project … --name …    — is anything deleted still stored anywhere?
 
 ``declare`` is how a project says what it needs; ``check`` and ``set`` are what ``flow project setup``
 runs: ``check`` is every key step's completion check, and ``set`` is how a typed answer — or an agent
@@ -17,6 +19,8 @@ Exit codes are ``ExitCode``'s, because a wizard check reads them:
     0  every value it needs in development is present   (set: stored)
     1  not yet: something is missing                     (set: refused — no value, a bad value)
     2  the request itself was wrong
+    7  delete: a store still holds a value, or could not be reached — the credential stays
+       audit: a store could not be read (unchecked is not clean; audit exits 1 on a leftover)
 
 Over HTTP when a backend runs (it holds the SQLite writer), in-process when none does — the same
 service functions either way (``builtin/credential_service``).
@@ -127,6 +131,32 @@ def _set(name: str, values: dict[str, str], project_id: Optional[str]) -> dict:
     return _here(here())
 
 
+def _delete(typeid: str) -> dict:
+    port = discover_port(required=False)
+    if port is not None:
+        return post_graph_json(f"{_url(port)}/delete", {"typeid": typeid}, on_error=_refused)
+
+    async def here() -> dict:
+        from flow_sdk.builtin.credential_service import CredentialError, delete_credential  # noqa: PLC0415
+
+        try:
+            return (await delete_credential(typeid)).model_dump(mode="json")
+        except CredentialError as e:
+            fail(EXIT_NOT_YET, e.code or "REFUSED", str(e))
+
+    return _here(here())
+
+
+def _audit(payload: dict) -> dict:
+    """This instance's stores (``sweep_local``): the backend's when one runs."""
+    port = discover_port(required=False)
+    if port is not None:
+        return post_graph_json(f"{_url(port)}/audit", payload, on_error=_refused)
+    from flow_sdk.builtin.credential_sweep import sweep_local  # noqa: PLC0415
+
+    return _here(sweep_local(**payload)).model_dump(mode="json")
+
+
 def _declare(manifest: dict, project_id: Optional[str]) -> dict:
     """Declare ``manifest`` in the project — the cwd's, minted when the folder has none."""
     port = discover_port(required=False)
@@ -228,3 +258,45 @@ def set_credential(
         fail(EXIT_NOT_YET, "NO_VALUE", f"no value given for {name}")
     stored = _set(name, values, project)
     ok({"name": name, "stored": sorted(k for k, v in values.items() if v), "typeid": stored.get("typeid")})
+
+
+@credentials_app.command("delete")
+def delete_credential_cmd(
+    name: Annotated[str, typer.Argument(help="The credential's name (e.g. telegram).")],
+    project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
+) -> None:
+    """Remove NAME — the project's own before the user's — and its values from every store:
+    the vault and every ``.env*`` file, in every environment. Prints what each store did, names only."""
+    row = status_row(_status(project), name)
+    if row is None:
+        fail(int(ExitCode.NOT_FOUND), "NOT_FOUND", f"no credential named {name}")
+    result = _delete(str(row.get("typeid") or ""))
+    if not result.get("removed"):
+        fail(int(ExitCode.REFUSED), "NOT_REMOVED", f"{name} was not fully deleted", result)
+    ok({"name": name, **result})
+
+
+@credentials_app.command("audit")
+def audit(
+    project: Annotated[Optional[str], typer.Option("--project", help="A deleted (or deleting) project's id.")] = None,
+    agent: Annotated[Optional[str], typer.Option("--agent", help="A deleted agent's id.")] = None,
+    deployment: Annotated[Optional[list[str]], typer.Option("--deployment", help="A deleted deployment's id (repeatable).")] = None,
+    name: Annotated[Optional[list[str]], typer.Option("--name", help="A deleted variable's name (repeatable).")] = None,
+    root: Annotated[Optional[list[str]], typer.Option("--root", help="Another folder whose .env* files to read.")] = None,
+    hub_root: Annotated[Optional[str], typer.Option("--hub-root", help="A local hub checkout: read its secret store.")] = None,
+    e2b: Annotated[bool, typer.Option("--e2b", help="List live e2b sandboxes labelled with the agent (E2B_API_KEY).")] = False,
+) -> None:
+    """Sweep every store for what should be gone. Names only. Exit 1 on a leftover, 7 when a store could not be read."""
+    from flow_sdk.builtin.credential_sweep import SweepSpec, merge, sweep_outside  # noqa: PLC0415
+
+    local = _audit({"project_id": project or "", "names": name or [], "roots": [str(Path(r).resolve()) for r in root or []]})
+    outside = _here(sweep_outside(
+        ids=[project or "", agent or "", *(deployment or [])], agent_id=agent or "",
+        hub_root=Path(hub_root).resolve() if hub_root else None, e2b=e2b,
+    ))
+    result = merge(SweepSpec.model_validate(local), outside).model_dump(mode="json")
+    if result["unchecked"]:
+        fail(int(ExitCode.REFUSED), "UNCHECKED", "a store could not be read", result)
+    if result["found"]:
+        fail(EXIT_NOT_YET, "LEFTOVERS", f"{len(result['found'])} leftover secret(s)", result)
+    ok(result)

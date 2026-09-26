@@ -252,7 +252,7 @@ async def test_known_environments_are_development_plus_every_deployment(home):
     assert await known_environments() == ["development", "production", "staging"]
 
 
-async def test_delete_forgets_vault_values_in_every_environment_and_keeps_file_lines(home, project):
+async def test_delete_forgets_values_in_every_environment_and_every_store(home, project):
     await _deployment("production")
     mount = Path(project.fs_storage_mount_path)
     spec = await save_credential(
@@ -262,13 +262,19 @@ async def test_delete_forgets_vault_values_in_every_environment_and_keeps_file_l
         values={"DATABASE_URL": "dev"},
     )
     await set_credential_values(str(spec.typeid), {"DATABASE_URL": "prod"}, "production")
+    (mount / ".env.staging.local").write_text("DATABASE_URL=stale\n")
+    await _deployment("staging", name="other")
 
     result = await delete_credential(str(spec.typeid))
 
     names = {row["name"] for row in get_secrets()}
     assert f"credential.production.project.{project.id}.DATABASE_URL" not in names
-    assert dict(dotenv_values(mount / ".env.local")) == {"DATABASE_URL": "dev"}, "the user's file lines stay"
-    assert result["kept"] == ["DATABASE_URL"]
+    assert dict(dotenv_values(mount / ".env.local")) == {}
+    assert dict(dotenv_values(mount / ".env.staging.local")) == {}
+    assert (result.removed, result.deleted) == (True, ["DATABASE_URL"])
+    assert sorted((s.type, s.deleted == ["DATABASE_URL"]) for s in result.stores) == [
+        ("env_file", True), ("env_file", True), ("vault", True)
+    ]
 
 
 async def test_an_invalid_environment_is_refused_before_anything_is_written(home, project):

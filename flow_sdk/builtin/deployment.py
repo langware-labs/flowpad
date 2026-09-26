@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import BaseModel, PrivateAttr, field_validator
 
@@ -164,6 +164,10 @@ class PlacementOrigin(BaseModel):
 
 class Deployment(Entity):
     """A provider-neutral placement and observation record."""
+
+    # A remote placement's hub row owns the machine: deleting here without the hub would leave
+    # the machine running with no handle to it.
+    owns_hub_delete: ClassVar[bool] = True
 
     type: str = APIField(default=EntityType.DEPLOYMENT.value)
     name: str = APIField(description="Display name")
@@ -464,6 +468,13 @@ class Deployment(Entity):
             return await self._set_serving(False)
         return await self._set_node_state("pause", "paused")
 
+    async def delete(self):
+        """Delete the placement: a process serving it here is stopped first, and a remote one is
+        deleted on the hub first (``owns_hub_delete``) — the hub stops its machine."""
+        if self._runs_here():
+            await self._stop_process()
+        return await super().delete()
+
     async def resume(self) -> bool:
         """Start a paused machine again. The counterpart of :meth:`pause`, same routing."""
         if self._runs_here():
@@ -478,16 +489,21 @@ class Deployment(Entity):
     async def _set_serving(self, serving: bool) -> bool:
         """Stop (or start) this deployment's process. Stopping ends it now — and, not serving, the
         app's supervisor will not start it again; starting is the supervisor's (``serving``)."""
+        self.serving = serving
+        self.status = self.status.model_copy(update={"provider_state": "running" if serving else "paused"})
+        await self.save()
+        if not serving:
+            await self._stop_process()
+        return True
+
+    async def _stop_process(self) -> None:
+        """End this deployment's process here, if it runs."""
         import asyncio  # noqa: PLC0415
 
         from flow_sdk.builtin import deployment_process  # noqa: PLC0415
 
-        self.serving = serving
-        self.status = self.status.model_copy(update={"provider_state": "running" if serving else "paused"})
-        await self.save()
-        if not serving and deployment_process.alive(self):
+        if deployment_process.alive(self):
             await asyncio.to_thread(deployment_process.stop, self)
-        return True
 
     async def _set_node_state(self, verb: str, provider_state: str) -> bool:
         """Pause or resume the machine: through the hub for a remote placement, else on the node here."""

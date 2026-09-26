@@ -34,6 +34,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     SCOPE_USER,
     normalize_environment,
 )
+from flow_sdk.schema.data_spec.credential_status_spec import CredentialDeletedSpec
 from flow_sdk.secrets import VaultNotEnabled
 
 if TYPE_CHECKING:
@@ -302,18 +303,30 @@ async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "S
     return await save_credential(manifest=manifest, scope=SCOPE_PROJECT, project_id=project_id)
 
 
-async def delete_credential(typeid: str) -> dict[str, list[str]]:
-    """Remove a credential: its folder, and the vault values it owns in every environment.
+async def delete_credential(typeid: str) -> CredentialDeletedSpec:
+    """Remove a credential and every value it owns, in every environment's store.
 
-    Env file lines are the user's and are always kept.
+    Vault entries and ``.env*`` lines alike (a scope never lets two credentials declare one
+    variable, so every value found is this credential's). The credential itself is removed only
+    when no store still holds one of its values — otherwise it stays, the handle to retry, and the report
+    names each store that kept something or could not be reached.
     """
     from flow_sdk.assets.asset import Asset  # noqa: PLC0415
     from flow_sdk.builtin.credential_resolver import known_environments  # noqa: PLC0415
-
     spec, target_scope, _ = await _owned_credential(typeid)
     environments = [*await known_environments(), *(spec.environments or {})]
-    deleted, kept = await forget_values(spec, target_scope, environments)
-    if spec.asset_ref and Path(spec.asset_ref).is_dir():
-        Asset.from_path(spec.asset_ref).remove()
-    await spec.delete()
-    return {"deleted": deleted, "kept": kept}
+    stores = await forget_values(spec, target_scope, environments)
+    kept = {name for store in stores for name in store.kept}
+    deleted = {name for store in stores for name in store.deleted} - kept
+    names = spec.var_names()
+    removed = not kept
+    if removed:
+        if spec.asset_ref and Path(spec.asset_ref).is_dir():
+            Asset.from_path(spec.asset_ref).remove()
+        await spec.delete()
+    return CredentialDeletedSpec(
+        removed=removed,
+        deleted=[n for n in names if n in deleted],
+        kept=[n for n in names if n in kept],
+        stores=stores,
+    )

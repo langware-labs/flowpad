@@ -140,6 +140,9 @@ class Agent(Entity):
     ``AgentSpec`` (``TypeInfo.asset_spec``); that ``agent.json`` is the main file
     and the folder names the agent is ``TypeInfo``'s (the serializer's)."""
 
+    # A remote agent's hub row owns its deployments, machines, mailbox and stored secrets.
+    owns_hub_delete: ClassVar[bool] = True
+
     type: str = APIField(default=EntityType.AGENT.value)
     _mailbox: AgentMailbox | None = PrivateAttr(default=None)
     # A removed field passed by a caller was silently dropped (email_allowed_senders).

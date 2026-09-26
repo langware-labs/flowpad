@@ -114,6 +114,11 @@ class SecretStore:
             connection=self.connection,
         )
 
+    @property
+    def where(self) -> str:
+        """The place in words — a path, a prefix, a project — for a report. Never a value."""
+        return json.dumps(self.ref.config, sort_keys=True)
+
     # ── the verbs ───────────────────────────────────────────────────────────
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
         """``{name: SecretStr}`` for the names the store holds; a missing name is absent."""

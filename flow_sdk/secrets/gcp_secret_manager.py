@@ -77,6 +77,10 @@ class GcpSecretManagerStore(SecretStore):
         return f"{API_ROOT}/projects/{self.config.gcp_project}/secrets"
 
     # ── the verbs ───────────────────────────────────────────────────────────
+    @property
+    def where(self) -> str:
+        return f"{self.config.gcp_project}/{self.config.prefix}"
+
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
         wanted = self._secret_ids(names)
         out: dict[str, SecretStr] = {}
