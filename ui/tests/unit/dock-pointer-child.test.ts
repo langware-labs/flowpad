@@ -36,7 +36,7 @@ describe('a nested child view', () => {
 
   it('a credential opens nested in its agent', () => {
     const agent = DockPointer.fromUrl(`/dock/assets/editor/agent/typeid/${AGENT}`);
-    const CRED = 'secret_pack-55555555-5555-4555-8555-555555555555';
+    const CRED = 'credential-55555555-5555-4555-8555-555555555555';
     const page = agent.withChild('credential', CRED);
     expect(page.toUrl()).toContain(`/typeid/${AGENT}/child/credential/${CRED}`);
     expect(DockPointer.fromUrl(page.toUrl()).child).toEqual({ section: 'credential', typeId: CRED });

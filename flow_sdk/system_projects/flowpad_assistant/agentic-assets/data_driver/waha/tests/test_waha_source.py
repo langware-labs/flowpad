@@ -20,7 +20,7 @@ from flow_sdk.ingest.legacy_lift import envelope_of
 from flow_sdk.ingest.testing import local_http_server
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.testing import Subject, checks_for
 
 waha = asset_module("waha")
@@ -57,7 +57,7 @@ def _credential(monkeypatch):
     saved = dict(SECRETS)
 
     async def resolve(_row):
-        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in SECRETS.items() if v})
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in SECRETS.items() if v})
 
     monkeypatch.setattr(DataDriver.loaded("waha"), "credentials_for", resolve)
     yield
@@ -71,7 +71,7 @@ def _source(base: str = "http://127.0.0.1:9", **extra) -> DataSource:
 
 def _binding(base: str = "http://127.0.0.1:9") -> SourceBinding:
     values = {"api_key": SecretStr(API_KEY), "webhook_hmac": SecretStr(HMAC_KEY)}
-    return SourceBinding(config=_config(base), account_key=ME, credentials=Credentials(shape=AuthShape.SECRETS, values=values))
+    return SourceBinding(config=_config(base), account_key=ME, credentials=ResolvedSecrets(shape=AuthShape.SECRETS, values=values))
 
 
 def _message(message_id: str, body: str, *, chat: str = CHAT, **extra) -> dict:
@@ -129,11 +129,11 @@ def test_an_address_is_kept_raw_and_a_bare_number_gains_its_server():
 
 
 def test_a_delivery_is_authentic_only_under_the_sessions_key():
-    body, creds = b'{"event":"message"}', Credentials(shape=AuthShape.SECRETS, values={"webhook_hmac": SecretStr(HMAC_KEY)})
+    body, creds = b'{"event":"message"}', ResolvedSecrets(shape=AuthShape.SECRETS, values={"webhook_hmac": SecretStr(HMAC_KEY)})
     assert WahaSource.webhook_authentic({"x-webhook-hmac": sign(body)}, body, creds) is True
     assert WahaSource.webhook_authentic({"x-webhook-hmac": sign(body, "guess")}, body, creds) is False
     assert WahaSource.webhook_authentic({}, body, creds) is False
-    assert WahaSource.webhook_authentic({"x-webhook-hmac": sign(body)}, body, Credentials()) is False
+    assert WahaSource.webhook_authentic({"x-webhook-hmac": sign(body)}, body, ResolvedSecrets()) is False
 
 
 # ── the contract, over a WAHA double ─────────────────────────────────────────

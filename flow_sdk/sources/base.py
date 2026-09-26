@@ -24,7 +24,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk.sources import _paging
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.credentials import Credentials
+from flow_sdk.sources.credentials import ResolvedSecrets
 from flow_sdk.sources.errors import AccessDenied, NotFound, SourceError, SourceUnavailable, Unsupported
 from flow_sdk.sources.values.event import ChangeHandler, DataSourceEvent
 from flow_sdk.sources.values.items import SourceItemSpec
@@ -148,7 +148,7 @@ class Source:
         return self.binding.config
 
     @property
-    def credentials(self) -> Credentials:
+    def credentials(self) -> ResolvedSecrets:
         return self.binding.credentials
 
     @property

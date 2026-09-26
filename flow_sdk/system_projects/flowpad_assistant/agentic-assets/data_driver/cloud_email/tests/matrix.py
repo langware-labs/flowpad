@@ -50,9 +50,9 @@ class Double:
             CloudEmailSource.build = self._original_build  # type: ignore[method-assign]
 
     async def credentials(self, _row):
-        from flow_sdk.sources.credentials import Credentials  # noqa: PLC0415
+        from flow_sdk.sources.credentials import ResolvedSecrets  # noqa: PLC0415
 
-        return Credentials()
+        return ResolvedSecrets()
 
     def deliver(self, text: str, *, sender: str, thread: str | None = None, subject: str = "Round trip") -> dict:
         self._delivered += 1

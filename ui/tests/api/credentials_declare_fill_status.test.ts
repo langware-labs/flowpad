@@ -118,7 +118,7 @@ describe('credentials: declare → flow project setup (AI rung) → status', () 
     await fs.mkdir(mount, { recursive: true });
     execFileSync('git', ['init', '--quiet'], { cwd: mount }); // `.env.local` must be ignorable to be written
     await fs.writeFile(path.join(mount, 'service.url'), `${ENDPOINT}\n`);
-    const manifest = JSON.parse(readFileSync(path.join(FIXTURE, 'secret_pack.json'), 'utf-8'));
+    const manifest = JSON.parse(readFileSync(path.join(FIXTURE, 'credential.json'), 'utf-8'));
     const declared = await sdk.credentialsService.save({ scope: 'project', project_id: project.id, manifest });
     expect(declared.name).toBe('demo-service');
 

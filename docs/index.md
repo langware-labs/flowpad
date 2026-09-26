@@ -55,7 +55,7 @@ subfolder_count: 14
 - [PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)](pty-sync.md) — The PTY line-synchronization model — PtySyncSession, VirtualTerminal, XtermAdapter — and the annotation gutter's absolute buffer-row coordinates.
 - [PTY / xterm Terminal System Specification](pty-terminal-spec.md) — PTY terminal system across OS process, backend sessions, WebSocket transport and xterm.js: byte paths, framed stream persistence, attach-time replay, resize alignment and the two renderers.
 - [Renderable code fences](renderable-fences.md) — How a code fence opts into being drawn: the render-only NodeView over Milkdown code blocks, the renderer registry, and why markdown stays byte-identical.
-- [Credentials and secrets](secret_share.md) — Credentials as SecretPack assets: the named environment-variable set, its project/user/system scopes, folder-capsule identity, and where values are stored and injected.
+- [Credentials and secrets](secret_share.md) — Credentials as Credential assets: the named environment-variable set, its project/user/system scopes, folder-capsule identity, and where values are stored and injected.
 - [Session Share Spec](session_share_spec.md) — Transferring a worker session between machines: project path encoding, experiment results, where paths appear in a transcript, and the transfer algorithm.
 - [shellMode vs Direct / Agentic PTY](shell-claude-session-api.md) — How a plain shell terminal differs from an agent running over a PTY: creation paths, entity model, shell_mode, titles and recovery.
 - [Staging OAuth validation — 2026-09-12](staging-oauth-validation.md) — 2026-09-12 staging OAuth validation: provider-by-provider results on the local app and staging hub with verified identities.

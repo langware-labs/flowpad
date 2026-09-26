@@ -11,7 +11,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 from .test_telegram_source import CHAT, TOKEN, _Bot
 
@@ -47,7 +47,7 @@ class Double:
 
     async def credentials(self, _row):
         """The in-process stand-in for ``DataDriver.credentials_for``: the manifest's ``bot_token`` var."""
-        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
 
     def deliver(self, text: str, *, sender: str, thread: Optional[str] = None) -> dict:
         """A message from chat ``sender`` arriving now, queued for the next ``getUpdates``. ``thread``

@@ -21,7 +21,7 @@ from typer.testing import CliRunner
 from flow_sdk.builtin import credential_service, project_setup
 from flow_sdk.builtin.credential_service import CredentialError, save_credential
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.secret_pack import SecretPack
+from flow_sdk.builtin.credential import Credential
 from flow_sdk.cli.commands import credentials_cmd, project_cmd
 from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_OAUTH, REQUIREMENT_PACK
@@ -29,15 +29,15 @@ from flow_sdk.schema.data_spec.returned_value_spec import CliResult, PromptResul
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-SHIPPED = Path(project_setup.__file__).parents[1] / "system_projects/flowpad_assistant/agentic-assets/secret_pack"
+SHIPPED = Path(project_setup.__file__).parents[1] / "system_projects/flowpad_assistant/agentic-assets/credential"
 TOKEN = "123456:telegram-token-never-printed"
 
 
-def _template(name: str) -> SecretPack:
+def _template(name: str) -> Credential:
     """A shipped catalogue entry as the index holds it: a ``system``-scope row."""
-    spec = CredentialSpec.model_validate(json.loads((SHIPPED / name / "secret_pack.json").read_text()))
+    spec = CredentialSpec.model_validate(json.loads((SHIPPED / name / "credential.json").read_text()))
     fields = {f: getattr(spec, f) for f in credential_service._MANIFEST_FIELDS}
-    return SecretPack(name=spec.name, scope="system", manifest_schema=spec.manifest_schema, **fields)
+    return Credential(name=spec.name, scope="system", manifest_schema=spec.manifest_schema, **fields)
 
 
 @pytest.fixture
@@ -65,9 +65,9 @@ def _sources(monkeypatch, *providers: str) -> None:
 
 
 async def test_every_shipped_credential_carries_setup_instructions():
-    repo_packs = Path(__file__).parents[3] / "agentic-assets/secret_pack"
+    repo_packs = Path(__file__).parents[3] / "agentic-assets/credential"
     folders = [*SHIPPED.iterdir(), *(repo_packs.iterdir() if repo_packs.is_dir() else [])]
-    manifests = [json.loads((f / "secret_pack.json").read_text()) for f in folders if (f / "secret_pack.json").is_file()]
+    manifests = [json.loads((f / "credential.json").read_text()) for f in folders if (f / "credential.json").is_file()]
     assert manifests
     bare = [m["name"] for m in manifests if not str(m.get("setup") or "").strip()]
     assert bare == [], "a credential Flowpad ships must say how to obtain and store its values"
@@ -325,21 +325,21 @@ def _manifest(tmp_path, body: dict) -> str:
 async def test_declare_puts_the_credential_in_the_project_and_twice_is_once(project, cli, tmp_path):
     first = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {})
     assert first.ok, first.stdout
-    folder = Path(project.fs_storage_mount_path) / "agentic-assets/secret_pack/demo-service"
-    assert json.loads((folder / "secret_pack.json").read_text())["vars"].keys() == DEMO["vars"].keys()
+    folder = Path(project.fs_storage_mount_path) / "agentic-assets/credential/demo-service"
+    assert json.loads((folder / "credential.json").read_text())["vars"].keys() == DEMO["vars"].keys()
 
     again = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, {**DEMO, "title": "Demo 2"}),
                                                     "--project", project.id], {})
     assert again.ok, again.stdout
     assert json.loads(again.stdout)["typeid"] == json.loads(first.stdout)["typeid"], "updated in place, not a twin"
-    assert json.loads((folder / "secret_pack.json").read_text())["title"] == "Demo 2"
+    assert json.loads((folder / "credential.json").read_text())["title"] == "Demo 2"
 
 
 async def test_declare_refuses_a_credential_that_does_not_say_how_it_is_set_up(project, cli, tmp_path):
     bare = {k: v for k, v in DEMO.items() if k != "setup"}
     said = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, bare), "--project", project.id], {})
     assert not said.ok and "setup instructions" in said.stdout + said.stderr
-    assert not (Path(project.fs_storage_mount_path) / "agentic-assets/secret_pack/demo-service").exists()
+    assert not (Path(project.fs_storage_mount_path) / "agentic-assets/credential/demo-service").exists()
 
 
 async def test_set_stdin_stores_checks_the_pattern_and_prints_no_value(project, cli, tmp_path):

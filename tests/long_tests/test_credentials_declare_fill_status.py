@@ -4,7 +4,7 @@ The literal commands, a real backend, the mock worker as the agent — ``tests.u
 a few lines of Python that do what a model following the credential's ``setup`` does, so this pins
 the I/O between the pieces, not how well a model reads instructions:
 
-1. ``flow credentials declare secret_pack.json`` in a bare folder — the folder becomes a project, the
+1. ``flow credentials declare credential.json`` in a bare folder — the folder becomes a project, the
    credential its own;
 2. ``flow project setup`` with nobody at the terminal — every question left empty, so the AI rung runs;
 3. the values are in the project's ``.env.local``, on their patterns, and ``flow credentials check``
@@ -65,7 +65,7 @@ def test_declared_credential_is_filled_by_the_ai_rung_and_reported(live_backend,
     declared = _flow(project_dir, transcripts, "credentials", "declare", str(MANIFEST_PATH))
     assert declared.returncode == 0, declared.stderr[-2000:]
     project_id = json.loads(declared.stdout.splitlines()[-1])["project_id"]
-    assert (project_dir / "agentic-assets/secret_pack/demo-service/secret_pack.json").is_file()
+    assert (project_dir / "agentic-assets/credential/demo-service/credential.json").is_file()
 
     # 2. setup, nobody at the terminal: every question left empty → the AI rung.
     done = _flow(project_dir, transcripts, "project", "setup", "--json")

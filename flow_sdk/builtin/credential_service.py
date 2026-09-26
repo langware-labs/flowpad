@@ -39,7 +39,7 @@ from flow_sdk.secrets import VaultNotEnabled
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.project import Project
-    from flow_sdk.builtin.secret_pack import SecretPack
+    from flow_sdk.builtin.credential import Credential
 
 logger = logging.getLogger(__name__)
 
@@ -65,23 +65,23 @@ async def get_project(project_id: Optional[str]) -> Optional["Project"]:
     return await Project.get_by_id(str(project_id))
 
 
-async def get_credential(typeid_or_id: str) -> Optional["SecretPack"]:
+async def get_credential(typeid_or_id: str) -> Optional["Credential"]:
     from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
-    from flow_sdk.builtin.secret_pack import SecretPack  # noqa: PLC0415
+    from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
     raw = str(typeid_or_id or "").strip()
     if not raw:
         return None
     if is_valid_uuid(raw):
-        return await SecretPack.get_by_id(raw)
+        return await Credential.get_by_id(raw)
     try:
-        return await SecretPack.get_by_id(TypeId(raw).id)
+        return await Credential.get_by_id(TypeId(raw).id)
     except ValueError:
         return None
 
 
-async def _owned_credential(typeid: str) -> tuple["SecretPack", CredentialScope, Optional["Project"]]:
+async def _owned_credential(typeid: str) -> tuple["Credential", CredentialScope, Optional["Project"]]:
     """A user or project credential with a live scope — never a template."""
     spec = await get_credential(typeid)
     if spec is None:
@@ -102,7 +102,7 @@ def _environment(environment: Optional[str]) -> str:
 
 
 async def _write_values(
-    spec: "SecretPack", scope: CredentialScope, values: dict[str, Any], environment: str = DEFAULT_ENVIRONMENT
+    spec: "Credential", scope: CredentialScope, values: dict[str, Any], environment: str = DEFAULT_ENVIRONMENT
 ) -> None:
     from flow_sdk.builtin.env_local_store import EnvLocalNotWritable  # noqa: PLC0415
 
@@ -161,11 +161,11 @@ async def save_credential(
     typeid: Optional[str] = None,
     values: Optional[dict[str, Any]] = None,
     environment: Optional[str] = None,
-) -> "SecretPack":
+) -> "Credential":
     """Create a credential in a scope, or update one; then write any values into ``environment``."""
     from flow_sdk.assets.creation import destination_in  # noqa: PLC0415
     from flow_sdk.builtin.asset_placement import resolve_default_harness, resolve_destination  # noqa: PLC0415
-    from flow_sdk.builtin.secret_pack import SecretPack  # noqa: PLC0415
+    from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_spec import (  # noqa: PLC0415
         CURRENT_SCHEMA,
@@ -204,16 +204,16 @@ async def save_credential(
         for name, value in fields.items():
             setattr(spec, name, value)
     else:
-        spec = SecretPack(name=parsed.name, manifest_schema=CURRENT_SCHEMA, **fields)
+        spec = Credential(name=parsed.name, manifest_schema=CURRENT_SCHEMA, **fields)
         family = resolve_destination(
-            EntityType.SECRET_PACK,
+            EntityType.CREDENTIAL,
             target_scope.scope,
             default_worker=await resolve_default_harness(),
             project_mount=target_scope.root if target_scope.scope == SCOPE_PROJECT else None,
         )
         if family is None:
             raise CredentialError("credentials cannot be created in this scope")
-        folder = destination_in(family, SchemaRegistry.get(EntityType.SECRET_PACK), parsed.name)
+        folder = destination_in(family, SchemaRegistry.get(EntityType.CREDENTIAL), parsed.name)
         if folder.exists():
             raise CredentialError(f"a credential named {parsed.name!r} already exists in this scope", code="exists")
         spec.asset_ref = str(folder)
@@ -228,7 +228,7 @@ async def save_credential(
 
 async def set_credential_values(
     typeid: str, values: dict[str, Any], environment: Optional[str] = None
-) -> "SecretPack":
+) -> "Credential":
     """Set or rotate ``environment``'s values. Empty values are skipped, never cleared."""
     environment = _environment(environment)
     spec, target_scope, _ = await _owned_credential(typeid)
@@ -236,31 +236,31 @@ async def set_credential_values(
     return spec
 
 
-async def shipped_templates() -> list["SecretPack"]:
+async def shipped_templates() -> list["Credential"]:
     """The catalogue: every credential Flowpad ships as a template, by name."""
-    from flow_sdk.builtin.secret_pack import SecretPack  # noqa: PLC0415
+    from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
     from flow_sdk.schema.data_spec.credential_contract import SCOPE_SYSTEM  # noqa: PLC0415
 
     match = ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_SYSTEM])
-    return sorted(await SecretPack.get_all(QueryFilter(match=match)), key=lambda spec: str(spec.name))
+    return sorted(await Credential.get_all(QueryFilter(match=match)), key=lambda spec: str(spec.name))
 
 
-async def template_named(name: str) -> Optional["SecretPack"]:
+async def template_named(name: str) -> Optional["Credential"]:
     """The shipped catalogue entry named ``name``, or ``None``."""
     return next((spec for spec in await shipped_templates() if spec.name == name), None)
 
 
-async def credential_named(name: str, project: Optional["Project"], *, declare: bool = False) -> Optional["SecretPack"]:
+async def credential_named(name: str, project: Optional["Project"], *, declare: bool = False) -> Optional["Credential"]:
     """The credential ``name`` as ``project`` sees it (its own, else the user's).
 
     With ``declare``, a name neither scope has is added from the shipped template of that name —
     into the project, or the user scope for a provider key — with no values.
     """
-    from flow_sdk.builtin.secret_pack import CredentialAmbiguous, CredentialNotFound, SecretPack  # noqa: PLC0415
+    from flow_sdk.builtin.credential import CredentialAmbiguous, CredentialNotFound, Credential  # noqa: PLC0415
 
     try:
-        return await SecretPack.get(name, project)
+        return await Credential.get(name, project)
     except CredentialAmbiguous as e:
         raise CredentialError(str(e)) from e
     except CredentialNotFound:
@@ -279,7 +279,7 @@ async def credential_named(name: str, project: Optional["Project"], *, declare: 
 
 async def set_credential_by_name(
     name: str, values: dict[str, Any], *, project_id: Optional[str] = None, environment: Optional[str] = None
-) -> "SecretPack":
+) -> "Credential":
     """``flow credentials set``: fill ``name``'s values, declaring it from its template if needed."""
     project = await get_project(project_id)
     if project_id and project is None:
@@ -290,7 +290,7 @@ async def set_credential_by_name(
     return await set_credential_values(str(spec.typeid), values, environment)
 
 
-async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "SecretPack":
+async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "Credential":
     """``flow credentials declare``: save ``manifest`` in the project — updating the project's own
     credential of that name in place, so declaring twice is declaring once. (``save_credential``
     stays create-or-refuse: a dialog creating a second ``telegram`` must not overwrite the first.)"""

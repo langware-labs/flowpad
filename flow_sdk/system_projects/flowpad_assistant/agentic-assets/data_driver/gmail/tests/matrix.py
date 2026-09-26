@@ -16,7 +16,7 @@ from typing import Optional
 from pydantic import SecretStr
 
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 from .test_gmail_source import ADDRESS, ALL_MAIL, PASSWORD, _Gmail, _Imap, _Smtp
 
@@ -253,8 +253,8 @@ class Double:
             server.server_close()
         self._servers = []
 
-    async def credentials(self, _row) -> Credentials:
-        return Credentials(shape=AuthShape.ENV, values={k: SecretStr(v) for k, v in self.secrets.items()})
+    async def credentials(self, _row) -> ResolvedSecrets:
+        return ResolvedSecrets(shape=AuthShape.ENV, values={k: SecretStr(v) for k, v in self.secrets.items()})
 
     def deliver(self, text: str, *, sender: str, thread: Optional[str] = None) -> dict:
         """An inbound message arriving now, in INBOX and All Mail. ``thread`` is the Message-ID it

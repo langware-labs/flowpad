@@ -9,7 +9,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 from .test_slack_source import _FakeSlack
 
@@ -46,9 +46,9 @@ class Double:
         if server is not None:
             server.__exit__(*exc)
 
-    async def credentials(self, _row) -> Credentials:
+    async def credentials(self, _row) -> ResolvedSecrets:
         """The in-process stand-in for ``DataDriver.credentials_for``: the connector token."""
-        return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr(self.secrets["token"]))
+        return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(self.secrets["token"]))
 
     def deliver(self, text: str, *, sender: str, thread: str | None = None) -> dict:
         """A message ``sender`` writes into the channel now (its ts is the wall clock, later than any

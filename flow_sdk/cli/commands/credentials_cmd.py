@@ -93,7 +93,7 @@ def _project_id(port: Optional[int], project_id: Optional[str]) -> Optional[str]
 
 
 def status_row(status: dict, name: str) -> Optional[dict]:
-    """The row ``name`` resolves to — the project's own before the user's (``SecretPack.get``'s order)."""
+    """The row ``name`` resolves to — the project's own before the user's (``Credential.get``'s order)."""
     rows = [row for row in status.get("credentials") or [] if row.get("name") == name]
     return next((row for row in rows if row.get("scope") == "project"), rows[0] if rows else None)
 
@@ -183,7 +183,7 @@ def _declare(manifest: dict, project_id: Optional[str]) -> dict:
 
 @credentials_app.command("declare")
 def declare_credential(
-    manifest: Annotated[Path, typer.Argument(help="A secret_pack.json manifest: name, vars, setup (no values).")],
+    manifest: Annotated[Path, typer.Argument(help="A credential.json manifest: name, vars, setup (no values).")],
     project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's, created if none).")] = None,
 ) -> None:
     """Declare the credential MANIFEST describes in the project. It must say how its values are

@@ -9,7 +9,7 @@ import pytest
 
 from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, asset_module, load_module
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -20,7 +20,7 @@ matrix = load_module(SHIPPED_ROOT / "voice_phone" / "tests", "matrix")
 async def _source(double, *, drop: str = "", **config) -> "VoicePhoneSource":
     values = (await double.credentials(None)).values
     values = {k: v for k, v in values.items() if k != drop}
-    return VoicePhoneSource(SourceBinding(config={**double.config, **config}, credentials=Credentials(shape=AuthShape.ENV, values=values)))
+    return VoicePhoneSource(SourceBinding(config={**double.config, **config}, credentials=ResolvedSecrets(shape=AuthShape.ENV, values=values)))
 
 
 async def test_a_line_on_the_account_is_ready():

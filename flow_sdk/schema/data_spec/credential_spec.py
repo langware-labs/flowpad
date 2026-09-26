@@ -1,6 +1,6 @@
-"""``secret_pack.json`` — the on-disk shape of a ``SecretPack``.
+"""``credential.json`` — the on-disk shape of a ``Credential``.
 
-A credential is a named set of environment variables (a "secret pack"). The
+A credential is a named set of environment variables. The
 manifest declares them; it never carries a value. Where the values live is one
 field, ``value_store``: the scope's ``.env.local`` (default) or the encrypted
 vault. See ``credential_contract``.
@@ -88,9 +88,9 @@ class CredentialEnvironmentSpec(DataSpec):
 
 
 class CredentialSpec(DataSpec):
-    """``secret_pack.json`` — the shape, with every authoring rule as a validator."""
+    """``credential.json`` — the shape, with every authoring rule as a validator."""
 
-    main_file: ClassVar[str | None] = "secret_pack.json"
+    main_file: ClassVar[str | None] = "credential.json"
 
     model_config = ConfigDict(populate_by_name=True)  # extra="forbid" is DataSpec's
 

@@ -4,7 +4,7 @@ One requirement per thing a person has to provide:
 
 * ``oauth`` — a connection a data source acts through (``auth.connector``), with the union of the
   scopes every requester needs;
-* ``pack`` — a credential (a SecretPack) the project declares or a data source names, with the
+* ``pack`` — a credential (a Credential) the project declares or a data source names, with the
   values it still lacks in development;
 * ``gap`` — something the project needs that nothing declares how to provide. Reported, never run.
 

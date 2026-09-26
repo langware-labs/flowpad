@@ -214,14 +214,14 @@ async def test_9_ask_a_provider_what_you_can_pick(monkeypatch):
     from pydantic import SecretStr
 
     from flow_sdk.builtin.data_driver import DataDriver
-    from flow_sdk.sources.credentials import AuthShape, Credentials
+    from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
     await _gcs_spec()
 
     # The one thing a loopback server cannot supply: the credential comes from the
     # machine's connection store, not over the wire.
     async def _token(_row):
-        return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
+        return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
 
     monkeypatch.setattr(DataDriver.loaded("gcs"), "credentials_for", _token)
 
@@ -257,7 +257,7 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
     """
     from flow_sdk.builtin.data_driver import DataDriver
     from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
-    from flow_sdk.sources.credentials import Credentials
+    from flow_sdk.sources.credentials import ResolvedSecrets
 
     drive = load_module(SHIPPED_ROOT / "gdrive" / "tests", "test_gdrive_source")
     cache, dest = tmp_path / "cache", tmp_path / "dest"
@@ -269,7 +269,7 @@ async def test_10_a_source_behind_a_connection(tmp_path, monkeypatch):
         point_driver_at(monkeypatch, "gdrive", "DRIVE_API_BASE", base)
         env = {"CACHE_ROOT": str(cache), "DESTINATION": str(dest)}
 
-        monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", drive._credentials(Credentials()))
+        monkeypatch.setattr(DataDriver.loaded("gdrive"), "credentials_for", drive._credentials(ResolvedSecrets()))
         ns = await _section("10.", dict(env))
         assert ns["verdict"]["ready"] is False
         assert "Google" in ns["verdict"]["detail"]

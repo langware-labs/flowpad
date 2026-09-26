@@ -1,6 +1,6 @@
 import {
   Agent,
-  SecretPack,
+  Credential,
   credentialsService,
   SubAgent,
   dataManager,
@@ -216,7 +216,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     },
   },
   {
-    type: SecretPack.type,
+    type: Credential.type,
     label: msg`Credentials`,
     wikiword: 'Credentials',
     allowedScopes: ['user', 'project'],

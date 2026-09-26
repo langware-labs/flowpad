@@ -12,7 +12,7 @@ from pydantic import SecretStr
 
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.testing import local_http_server
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 from . import test_waha_source as t
 
@@ -22,7 +22,7 @@ def case(monkeypatch, tmp_path):
     session = f"matrix{uuid.uuid4().hex[:12]}"
 
     async def credential(_row):  # the waha credential, never config
-        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in t.SECRETS.items()})
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in t.SECRETS.items()})
 
     monkeypatch.setattr(DataDriver.loaded("waha"), "credentials_for", credential)
     monkeypatch.setattr(t, "SESSION", session)
@@ -70,8 +70,8 @@ class Double:
             self._server.__exit__(*exc)
             self._server = None
 
-    async def credentials(self, _row) -> Credentials:
-        return Credentials(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
+    async def credentials(self, _row) -> ResolvedSecrets:
+        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in self.secrets.items()})
 
     def pair(self) -> None:
         """The phone scans the QR that verify left the session waiting on: the session is WORKING."""

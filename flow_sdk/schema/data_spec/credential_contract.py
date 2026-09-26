@@ -1,6 +1,6 @@
 """The value-store contract a credential declaration and its readers share.
 
-A ``SecretPack`` names environment variables; it never carries a value.
+A ``Credential`` names environment variables; it never carries a value.
 Values live in exactly one of two stores, chosen by the spec:
 
 * ``env``   — the ``.env.local`` file at the scope's root (the project mount, or

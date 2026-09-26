@@ -1,7 +1,7 @@
 """``demo-service`` — a credential whose values need no outside account, and the agent that fills it.
 
 One fixture for every tier that drives the declare → ``flow project setup`` → status path: the
-manifest is ``secret_pack.json`` beside this file (the TS tier reads it too), and :func:`follow_setup`
+manifest is ``credential.json`` beside this file (the TS tier reads it too), and :func:`follow_setup`
 is the mock worker's turn (``MOCK_BEHAVIOR=tests.utils.demo_credential:follow_setup``). It does what a
 model following the credential's ``setup`` does — takes the store command from its prompt and pipes
 the setup's values into it — so a test pins the I/O between the pieces, not a model's reading.
@@ -16,7 +16,7 @@ import re
 import subprocess
 from pathlib import Path
 
-MANIFEST_PATH = Path(__file__).with_name("secret_pack.json")
+MANIFEST_PATH = Path(__file__).with_name("credential.json")
 KEY_PATTERN = json.loads(MANIFEST_PATH.read_text())["vars"]["DEMO_API_KEY"]["pattern"]
 ENDPOINT = "https://demo.example.test/api"
 #: The values, produced inside the pipe the way the manifest's ``setup`` says.

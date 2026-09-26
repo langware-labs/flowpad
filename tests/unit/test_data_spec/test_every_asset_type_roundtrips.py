@@ -78,7 +78,7 @@ VALID: dict[str, dict] = {
     "source_item": {"occurred_at": "2026-01-02T03:04:05+00:00"},
     # `value_store` is env|vault, `lm_provider` is a closed set, and an
     # lm_provider credential must live in the vault rather than the environment
-    "secret_pack": {
+    "credential": {
         "value_store": "vault",
         "lm_provider": "anthropic",
         "manifest_schema": 2,

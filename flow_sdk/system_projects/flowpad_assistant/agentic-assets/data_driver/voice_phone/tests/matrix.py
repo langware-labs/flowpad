@@ -12,7 +12,7 @@ from pydantic import SecretStr
 
 from flow_sdk.external_apis.voice.testing import FakeRealtime, incoming_call, sign
 from flow_sdk.ingest.testing import local_http_server
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 NUMBER = "+14155550100"
 SECRET = "whsec_" + base64.b64encode(b"voice-matrix-webhook-secret").decode()
@@ -45,7 +45,7 @@ class Double:
         await self.fake.__aexit__(*exc)
 
     async def credentials(self, _row):
-        return Credentials(shape=AuthShape.ENV, values={
+        return ResolvedSecrets(shape=AuthShape.ENV, values={
             "OPENAI_API_KEY": SecretStr("sk-test"), "OPENAI_WEBHOOK_SECRET": SecretStr(SECRET),
             "TWILIO_ACCOUNT_SID": SecretStr("AC" + "0" * 32), "TWILIO_AUTH_TOKEN": SecretStr("twilio-token"),
         })
@@ -108,7 +108,7 @@ def case(monkeypatch, tmp_path):
         return 201, json.dumps({"sid": f"CA{len(dials):032d}", "status": "queued"}).encode(), {"Content-Type": "application/json"}
 
     async def credentials(_row):
-        return Credentials(shape=AuthShape.ENV, values={
+        return ResolvedSecrets(shape=AuthShape.ENV, values={
             "OPENAI_API_KEY": SecretStr("sk-test"), "OPENAI_WEBHOOK_SECRET": SecretStr(SECRET),
             "TWILIO_ACCOUNT_SID": SecretStr("AC" + "0" * 32), "TWILIO_AUTH_TOKEN": SecretStr("twilio-token"),
         })

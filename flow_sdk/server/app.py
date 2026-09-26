@@ -395,10 +395,10 @@ async def _prune_orphan_scheduler_jobs() -> None:
         logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
 
 
-#: Entity types renamed without a migration (0.2.170: data_driver, secret_pack; later: stream_inbox_manager):
-#: their folders re-index (or the singleton self-heals) under the new type, so a row still carrying the
-#: old string is dead weight no index sweep reaches.
-RETIRED_TYPES = ("data_source_spec", "credential_spec", "inbox_manager", "data_source_cursor")
+#: Entity types renamed (0.2.170: data_driver, secret_pack; 0.2.178: secret_pack → credential, its folders
+#: moved by the 0.2.178 migration; later: stream_inbox_manager): their folders re-index (or the singleton
+#: self-heals) under the new type, so a row still carrying the old string is dead weight no index sweep reaches.
+RETIRED_TYPES = ("data_source_spec", "credential_spec", "secret_pack", "inbox_manager", "data_source_cursor")
 
 
 async def _prune_retired_type_rows() -> None:

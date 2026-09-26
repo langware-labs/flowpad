@@ -1,6 +1,6 @@
-"""Type metadata for SECRET_PACK — a named set of environment variables.
+"""Type metadata for CREDENTIAL — a named set of environment variables.
 
-A REPO folder asset at ``agentic-assets/secret_pack/<name>/secret_pack.json``, found
+A REPO folder asset at ``agentic-assets/credential/<name>/credential.json``, found
 by the shared ``repo_assets_fn`` walker in any walked container: a project mount
 (project scope), the user's home (user scope) and the shipped assistant project
 (system scope — templates).
@@ -15,19 +15,19 @@ from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
 
-SECRET_PACK = TypeInfo(
-    type_name=EntityType.SECRET_PACK,
+CREDENTIAL = TypeInfo(
+    type_name=EntityType.CREDENTIAL,
     icon="KeyRound",
     display_name="Credentials",
     api_visible=True,
     creatable=True,
     # The row is authoritative once created in-app: an edit rewrites
-    # secret_pack.json from the row.
+    # credential.json from the row.
     owns_main_ref=True,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     asset_class="repo",
-    family="secret_pack",
+    family="credential",
     asset_spec=CredentialSpec,
     fts_content=("name", "description"),
     identity_carrier=folder_json_identity(),

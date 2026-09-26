@@ -27,7 +27,7 @@ export * from './graph_context';
 export * from './capability';
 export * from './data-source';
 export * from './data-driver';
-export * from './secret-pack';
+export * from './credential';
 export * from './agent-mailbox';
 export * from './source-item';
 export * from './dataset';

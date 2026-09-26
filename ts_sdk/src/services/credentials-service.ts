@@ -1,8 +1,8 @@
 /**
- * Credentials — declare, fill and remove secret packs in the user or project
+ * Credentials — declare, fill and remove credentials in the user or project
  * scope (flow_sdk/app/actions/credentials_action.py).
  *
- * A credential is a `SecretPack` folder: a named set of environment
+ * A credential is a `Credential` folder: a named set of environment
  * variables. Its values live in the scope's `.env.local` (default) or the
  * encrypted vault. Nothing here ever returns a value — status carries names and
  * presence only. A refused write carries a fixable `error_code` in the standard
