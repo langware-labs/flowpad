@@ -14,9 +14,6 @@ Everything below runs in-process against the session DB, and every `python`
 fence is run as written by `tests/unit/test_data_sources_snippets.py`. Deeper
 reading: [docs/data-management/data-sources.md](../data-management/data-sources.md).
 
-```python
-```
-
 ## 1. Connect a feed and sync it once
 
 Pinned by `tests/unit/test_data_sources_snippets.py`.
@@ -227,10 +224,15 @@ source until `poll_now` un-latches it.
 ## 8. Reply through the source
 
 Drivers that can send (`gmail`, `agentmail`, `telegram`, `slack`, `cloud_email`, `agent`)
-expose one contract. Pinned by `tests/unit/test_data_source_messaging.py`.
+expose one contract. Pinned by `tests/unit/test_data_source_messaging.py`, and run as written
+by `tests/unit/test_data_sources_snippets.py`.
 
 ```python
-from flow_sdk.builtin.source_item import EmailMessageSpec
+from flow_sdk.builtin.data_source import DataSource
+from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
+
+src = await DataSource.get(SOURCE)
+item = (await SourceItem.get_all({"data_source_id": str(src.id)}))[-1]   # a message it ingested
 
 outcome = await src.send(
     EmailMessageSpec(

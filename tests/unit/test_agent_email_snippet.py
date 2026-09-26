@@ -1,23 +1,21 @@
-"""``docs/snippets/agent-email.md``, run as written with the Hub legs stubbed.
+"""``docs/snippets/agent-email.md``, both fences run as written, in order.
 
-``flow_sdk.auth.login`` and ``Agent.allocate_mailbox`` reach the Hub; here they answer a fake
-allocation. The mail is a ``ScriptedSource`` under ``cloud_email`` and the worker is the mock.
-The live leg is ``tests/hub_tests/test_agent_email_conversation.py``.
+The Hub is the one thing not here: ``flow_sdk.auth.login`` is stubbed and the mailbox backend is a
+stateful double of the Hub's mailbox API (get / enable / configure / disable / delete), so
+``allocate_mailbox`` and every mailbox verb run their own code. The mail is a ``ScriptedSource`` under
+``cloud_email`` and the worker is the mock. The live leg is ``tests/hub_tests/test_agent_email_conversation.py``.
 """
 
 from __future__ import annotations
 
-import re
-from types import SimpleNamespace
-
 import pytest
 
 import flow_sdk
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
-from tests.utils.fake_source import scripted_provider
 from tests.utils.mock_worker import MockDriver
-from tests.utils.snippets import compile_fence, doc, fences, run_fence_until
+from tests.utils.snippets import doc, fences, run_fence, run_fence_until
 
 pytestmark = [
     pytest.mark.timeout(30),  # do not increase timeout without approval
@@ -25,58 +23,83 @@ pytestmark = [
 ]
 
 
-async def test_the_agent_email_program_runs_verbatim(monkeypatch, tmp_path):
+class _HubMailboxes:
+    """The Hub's mailbox API as a double: one mailbox per agent, policy normalized the way the Hub does."""
+
+    kind = "flowpad-hub"
+
+    def __init__(self):
+        self.rows: dict[str, dict] = {}
+
+    async def get_mailbox(self, agent_id):
+        return dict(self.rows[agent_id]) if agent_id in self.rows else None
+
+    async def enable_mailbox(self, agent_id, **options):
+        row = self.rows.setdefault(agent_id, {
+            "typeid": f"agent_mailbox-{mint_uuid()}", "agent_typeid": f"agent-{agent_id}",
+            "address": "pirate@hub.test", "display_name": "pirate", "provider": "agentmail",
+            "provider_inbox_id": f"mbx-{mint_uuid()}", "allowed_senders": [], "filters": {},
+        })
+        row["status"] = "active"
+        if "allowed_senders" in options:
+            row["allowed_senders"] = [str(a).strip().lower() for a in options["allowed_senders"]]
+        return dict(row)
+
+    async def configure_mailbox(self, agent_id, settings):
+        row = self.rows[agent_id]
+        if "allowed_senders" in settings:
+            row["allowed_senders"] = [str(a).strip().lower() for a in settings["allowed_senders"]]
+        if "filters" in settings:
+            row["filters"] = dict(settings["filters"])
+        return dict(row)
+
+    async def disable_mailbox(self, agent_id):
+        self.rows[agent_id]["status"] = "disabled"
+        return dict(self.rows[agent_id])
+
+    async def delete_mailbox(self, agent_id):
+        return self.rows.pop(agent_id, None) is not None
+
+
+async def test_the_page_runs_as_written(monkeypatch, tmp_path):
+    import asyncio
+
+    from flow_sdk.builtin.data_driver import DataDriver
+    from tests.unit._stream_inbox_matrix import double_for
+
     worker = MockDriver(tmp_path / "mock-transcripts")
     monkeypatch.setattr("flow_sdk.builtin.agentic_process.agentic_process.get_driver", lambda _t: worker)
 
     async def login():
         return {"user": "stub"}
 
+    hub = _HubMailboxes()
     monkeypatch.setattr(flow_sdk.auth, "login", login)
+    monkeypatch.setattr("flow_sdk.builtin.agent_mailbox_driver.get_agent_mailbox_driver", lambda *_a, **_k: hub)
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.hub_auth_available", lambda *_a, **_k: True)
 
-    allocation = SimpleNamespace(address="pirate@hub.test", allowed_senders=["captain@gmail.com"])
+    # The fence names its agent, and message-block.md names one "pirate" too: the page makes it afresh.
+    for other in await Agent.get_all({"name": "pirate"}):
+        await other.delete()
 
-    async def allocate_mailbox(self, **_options):
-        object.__setattr__(self, "_mailbox", allocation)  # `mailbox` is a read-only view of it
-        return allocation
+    loop, verbs = fences(doc("agent-email.md"))
+    with double_for("cloud_email") as mail:       # the real cloud_email driver over an in-process mailbox
+        monkeypatch.setattr(DataDriver.loaded("cloud_email"), "credentials_for", mail.credentials)
+        mail.deliver("where is the treasure?", sender="captain@gmail.com", subject="Ahoy")
+        answered = asyncio.Event()
 
-    monkeypatch.setattr(Agent, "allocate_mailbox", allocate_mailbox)
+        async def until_answered():
+            while not mail.sent():
+                await asyncio.sleep(0.02)
+            answered.set()
 
-    # The fence names its agent, and an Agent is an asset on disk: two pages creating
-    # "pirate" collide on the file, whichever order they run. Run this one under a name of
-    # its own; the page on disk stays verbatim.
-    from flow_sdk.api.api_types.identifier import mint_uuid
-
-    agent_name = f"pirate-{mint_uuid()}"
-
-    try:
-        with scripted_provider("cloud_email") as mail:
-            mail.push(
-                {"name": "Ahoy", "body": "where is the treasure?", "author": "captain@gmail.com", "thread_key": "t1"}
-            )
-            source, verbs = fences(doc("agent-email.md"))
-            source = source.replace('name="pirate"', f'name="{agent_name}"')
-            ns = await run_fence_until(source, {}, mail.settled, filename="agent-email.md")
-
+        watcher = asyncio.create_task(until_answered())
+        try:
+            ns = await run_fence_until(loop, {}, answered, filename="agent-email.md")
+        finally:
+            watcher.cancel()
         assert worker.received_prompts == ["where is the treasure?"]
-        assert len(mail.sent) == 1 and mail.sent[0]["to"] == "captain@gmail.com"
-        assert ns["pirate"].mailbox is allocation
+        assert isinstance(ns["allocated"], AgentMailbox) and ns["pirate"].mailbox.address == "pirate@hub.test"
 
-        # The second fence is the mailbox's own verbs. It cannot run here — it
-        # needs a live mailbox — but it must not drift either, so it is compiled
-        # (a syntax error fails) and every `mailbox.<verb>` it names is checked
-        # against the real entity. A rename that skipped the docs fails here.
-        compile_fence(verbs, "agent-email.md#verbs")
-        named = set(re.findall(r"\.mailbox\.(\w+)", verbs))
-        assert named, "the verbs fence stopped demonstrating mailbox.<verb>"
-        # Fields and methods both: `mailbox.filters` is a pydantic field, which is
-        # not a class attribute, and the docs are free to show either.
-        known = set(AgentMailbox.model_fields) | {a for a in dir(AgentMailbox) if not a.startswith("_")}
-        missing = sorted(named - known)
-        assert not missing, f"agent-email.md documents missing AgentMailbox members: {missing}"
-    finally:
-        from flow_sdk.builtin.agent_registry import get_agent
-
-        created = await get_agent(agent_name)
-        if created is not None:
-            await created.delete()
+        ns = await run_fence(verbs, ns, filename="agent-email.md#verbs")   # the mailbox's own verbs, in order
+    assert hub.rows == {}, "release() deletes the Hub's mailbox"

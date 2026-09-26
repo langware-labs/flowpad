@@ -70,11 +70,13 @@ async def test_3_launch_read_the_answer_and_release_the_worker(initialize_test_d
 
     mock(lambda turn: "Three bullets.")
     await _researcher()
-    ns = await run_fence(fence_under(doc(DOC), "3."), {"Agent": Agent}, filename=f"{DOC} §3")
+    ns = await run_fence(fence_under(doc(DOC), "3."), {}, filename=f"{DOC} §3")
     assert ns["answer"].ok and ns["answer"].text == "Three bullets."
     assert ns["proc"].typeid is not None
     ns = await run_fence(fence_under(doc(DOC), "3.", nth=1), ns, filename=f"{DOC} §3 artifacts")
     assert ns["produced"] == []
+    ns = await run_fence(fence_under(doc(DOC), "3.", nth=2), ns, filename=f"{DOC} §3 history")
+    assert ns["said"] == ["Three bullets."], "the assistant's last chat element is the answer"
     await run_fence(fence_under(doc(DOC), "3.", nth=3), ns, filename=f"{DOC} §3 exit")
 
 
@@ -94,3 +96,16 @@ async def test_4_a_cv_in_is_a_cv_out(initialize_test_db, mock):
     path = answer.value.body.path  # the page's comment: <record>/execution/output/body.md
     assert path.parts[-3:] == ("execution", "output", "body.md") and path.read_text() == answer.value.body
     assert driver.received_prompts == ["Review and improve the CV, save it with _reviewed"]
+
+
+def test_the_spec_listing_names_exactly_the_real_fields():
+    """"The spec" is a ``pyi`` listing of McpSpec: every field it names is real, and none is missing."""
+    import re
+
+    from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from tests.utils.snippets import fences
+
+    (listing,) = [f for f in fences(doc(DOC), "pyi") if "class McpSpec" in f]
+    listed = set(re.findall(r"^    (\w+):", listing, re.M)) | set(re.findall(r"^    (\w+) =", listing, re.M))
+    assert listed - {"spec_kind"} == set(McpSpec.model_fields), sorted(set(McpSpec.model_fields) ^ (listed - {"spec_kind"}))
+    assert McpSpec.spec_kind == re.search(r'spec_kind = "([^"]+)"', listing).group(1)

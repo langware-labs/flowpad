@@ -62,6 +62,9 @@ async def test_snippet_2_mirror_one_folder_into_another(tree):
 async def test_snippet_3_react_to_a_change(tree):
     """`on_tag` returns its own unsubscribe, and the payload names what moved."""
     src, _ = tree
+    printed: list[tuple] = []
+    ns = await run_fence(fence_under(doc("pipes.md"), "3."), {"print": lambda *a: printed.append(a)},
+                         filename="pipes.md §3")          # the fence as written; its print is watched
     seen: list[dict] = []
     off = on_tag("ingest.*.change.received", lambda event: seen.append(event.data))
     try:
@@ -70,7 +73,9 @@ async def test_snippet_3_react_to_a_change(tree):
         emit_change("src-1", "folder", refs=[str(src / "alpha.md")], tombstones=[])
     finally:
         off()
+        ns["off"]()                                         # the fence's own unsubscribe
 
+    assert printed and printed[0][0] == "src-1" and printed[0][1] == [str(src / "alpha.md")]
     assert seen and seen[0]["source_id"] == "src-1"
     assert seen[0]["refs"] == [str(src / "alpha.md")]
     # Identity and a locator, never content — that is what makes a replay harmless.

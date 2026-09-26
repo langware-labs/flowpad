@@ -22,6 +22,11 @@ pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 PAGE = "data-spec.md"
 
 
+@pytest.fixture(autouse=True)
+def _isolated_kinds(isolated_kinds):
+    """Each test's shapes register their kinds for that test only (``isolated_kinds``)."""
+
+
 def _namespace(**names) -> dict:
     """A fence's namespace, backed by a REAL module.
 
@@ -375,3 +380,16 @@ async def test_snippet_8_an_agent_is_a_dataspec(tmp_path, monkeypatch):
     folder = tmp_path / ns["folder"]
     assert (folder / "agent.json").exists() and (folder / "system_prompt.md").read_text().startswith("You answer")
     assert ns["AgentSpec"].load(ns["folder"]) == ns["spec"]
+
+
+# ── the page, in order ───────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_the_page_runs_in_order_as_one_session(tmp_path, monkeypatch):
+    """Every fence on the page, verbatim and in order, the way a reader pastes them into one REPL."""
+    from tests.utils.snippets import run_page
+
+    monkeypatch.chdir(tmp_path)
+    ns = await run_page(PAGE, _namespace())
+    assert ns["answer"].ok is False and "net.endpoint" in ns["answer"].detail
+    assert (tmp_path / "dev-toolchain" / "toolchain.json").exists() and (tmp_path / "q3-plan" / "body.md").exists()

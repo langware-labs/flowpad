@@ -382,3 +382,13 @@ def _clean_activity_monitor():
     monitor.clear()
     yield
     monitor.clear()
+
+
+@pytest.fixture
+def isolated_kinds(monkeypatch):
+    """The kinds a test's shapes register live for that test only. A docs page run in order declares
+    the same kind more than once, as a reader re-running a cell would, and a kind names exactly one shape."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    for attr in ("_kinds", "_kind_of_shape"):
+        monkeypatch.setattr(SchemaRegistry, attr, getattr(SchemaRegistry, attr).copy())
