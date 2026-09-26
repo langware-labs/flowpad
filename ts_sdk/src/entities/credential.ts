@@ -5,9 +5,9 @@
  * Where the folder lives is its scope: a project (`<project>/agentic-assets/
  * credential/<name>/`), the user (`~/agentic-assets/credential/<name>/`), or the
  * shipped catalogue (`system` — a template, added to one of the other two).
- * `value_store` says where its values live: the scope's `.env.local` or the
- * encrypted vault. Declaring, filling and removing go through
- * `credentialsService`.
+ * Where its values live is a deployment's, never the credential's (this computer
+ * keeps them in the scope's `.env.local` unless told otherwise). Declaring,
+ * filling and removing go through `credentialsService`.
  */
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
@@ -50,7 +50,6 @@ export interface ICredential extends IEntity {
   setup_wiki?: string;
   /** How an agent obtains and stores the values (`flow project setup`'s AI setup). */
   setup?: string;
-  value_store?: 'env' | 'vault';
   /** The LLM API provider this credential's single key funds, if any. */
   lm_provider?: string;
   vars?: Record<string, CredentialVar>;
@@ -74,7 +73,6 @@ export class Credential extends APIEntity<Credential> implements ICredential {
   help_url: string = '';
   setup_wiki: string = '';
   setup: string = '';
-  value_store: 'env' | 'vault' = 'env';
   lm_provider: string = '';
   vars: Record<string, CredentialVar> = {};
   manifest_schema: number = 2;

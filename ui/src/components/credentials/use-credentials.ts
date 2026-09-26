@@ -4,7 +4,6 @@ import {
   Credential,
   QueryRequest,
   credentialsService,
-  DEFAULT_CREDENTIAL_ENVIRONMENT,
   EMPTY_CREDENTIALS_STATUS,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -33,13 +32,13 @@ export const CREDENTIALS_STATUS_KEY = ['credentials-status'] as const;
  * `.env.local` elsewhere shows up on return — and `refresh` invalidates it after
  * a write.
  */
-export function useCredentials(projectId: string | null, environment: string = DEFAULT_CREDENTIAL_ENVIRONMENT) {
+export function useCredentials(projectId: string | null, deploymentId: string | null = null) {
   const { data: specs = NO_SPECS } = useEntitiesQuery<Credential>(credentialSpecsQuery);
   const templates = useMemo(() => specs.filter((spec) => spec.isTemplate), [specs]);
 
   const { data, isPending } = useQuery({
-    queryKey: [...CREDENTIALS_STATUS_KEY, projectId ?? '', environment],
-    queryFn: () => credentialsService.status(projectId, environment),
+    queryKey: [...CREDENTIALS_STATUS_KEY, projectId ?? '', deploymentId ?? ''],
+    queryFn: () => credentialsService.status(projectId, deploymentId),
     refetchOnWindowFocus: true,
   });
 

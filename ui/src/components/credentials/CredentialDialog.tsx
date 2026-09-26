@@ -4,7 +4,6 @@ import { ChevronDown, ChevronRight, Info, Plus, X } from 'lucide-react';
 import {
   credentialEnvFileName,
   credentialsService,
-  DEFAULT_CREDENTIAL_ENVIRONMENT,
   secretApprovalGate,
   type CredentialSaved,
   type CredentialScopeName,
@@ -29,11 +28,9 @@ import {
   hasProblems,
   namesLocked,
   scopeLocked,
-  storeIn,
   storeLocked,
   toSaveRequest,
   validateDraft,
-  withStoreIn,
   type CredentialDraft,
   type DraftProblem,
   type DraftVar,
@@ -50,9 +47,8 @@ export interface CredentialDialogProps {
   onClose: () => void;
   /** The selected project, when there is one — required for project scope. */
   projectId: string | null;
+  /** Read at one deployment: values are written there, and the Storage select sets where it keeps them. */
   status: CredentialsStatus;
-  /** The environment values are written into and the Storage select sets; `development` by default. */
-  environment?: string;
   /** Re-read status (after enabling the vault). */
   onRefresh: () => void | Promise<void>;
   onSaved: (saved: CredentialSaved) => void | Promise<void>;
@@ -71,7 +67,6 @@ export function CredentialDialog({
   onClose,
   projectId,
   status,
-  environment = DEFAULT_CREDENTIAL_ENVIRONMENT,
   onRefresh,
   onSaved,
 }: CredentialDialogProps) {
@@ -88,9 +83,10 @@ export function CredentialDialog({
 
   const taken = takenInScope(status, d.scope, d.typeid);
   const problems = validateDraft(d, taken);
-  const store = storeIn(d, environment);
-  const envFileName = credentialEnvFileName(environment);
-  const isDevelopment = environment === DEFAULT_CREDENTIAL_ENVIRONMENT;
+  const store = d.store;
+  const envFileName = credentialEnvFileName(status.environment);
+  const deployment = (status.deployments ?? []).find((row) => row.id === status.deployment_id);
+  const isThisComputer = deployment?.this_computer ?? true;
   const file = status.files.find((f) => f.scope === d.scope);
   const writesToFile = store === 'env' && asksValues(d) && Object.keys(draftValues(d)).length > 0;
   const fileBlocked = writesToFile && !!file?.blocked;
@@ -127,7 +123,7 @@ export function CredentialDialog({
         return d.title;
     }
   })();
-  const title = isDevelopment || !asksValues(d) ? baseTitle : t`${baseTitle} · ${environment}`;
+  const title = isThisComputer || !asksValues(d) ? baseTitle : t`${baseTitle} · ${deployment?.name ?? ''}`;
 
   const save = async () => {
     setAttempted(true);
@@ -137,8 +133,8 @@ export function CredentialDialog({
     try {
       const saved =
         d.mode === 'values' && d.typeid
-          ? await credentialsService.setValues(d.typeid, draftValues(d), environment)
-          : await credentialsService.save(toSaveRequest(d, projectId, environment));
+          ? await credentialsService.setValues(d.typeid, draftValues(d), status.deployment_id)
+          : await credentialsService.save(toSaveRequest(d, projectId, status.deployment_id));
       await onSaved(saved);
     } catch (error) {
       const { code, message } = describeApiError(error, t`The credentials could not be saved.`);
@@ -328,11 +324,11 @@ export function CredentialDialog({
                     />
                     <FieldSelect<CredentialValueStore>
                       id="credential-store"
-                      label={isDevelopment ? t`Storage` : t`Storage · ${environment}`}
+                      label={isThisComputer ? t`Storage` : t`Storage · ${deployment?.name ?? ''}`}
                       fragment="storage"
                       value={store}
                       disabled={storeLocked(d)}
-                      onChange={(next) => update(withStoreIn(d, environment, next))}
+                      onChange={(next) => update({ store: next })}
                       options={[
                         { value: 'env', label: t`${envFileName} file` },
                         { value: 'vault', label: t`Encrypted vault` },
