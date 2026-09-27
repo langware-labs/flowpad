@@ -121,8 +121,8 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
         agentRef.current.markEdit();
         // A saved agent.md in a git checkout is auto-committed server-side
         // (`asset_versioning`), which moves the branch ahead of its remote with
-        // no event of its own. Say so on the preflight channel, so the deploy
-        // checklist re-asks and offers Push instead of claiming nothing is pending.
+        // no event of its own. Say so on the preflight channel, so the Git share
+        // surfaces re-ask instead of claiming nothing is pending.
         invalidateGitPreflight(agentRef.current.typeId);
       }
       return saved;
@@ -240,11 +240,15 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
           >
             {hub ? (
               <Trans>Published version — edit it on the author's computer</Trans>
-            ) : !version ? null : !version.has_repo ? (
-              <Trans>Not in a git repository — can't be published</Trans>
-            ) : version.published ? (
+            ) : !version ? null : version.published ? (
               <span>
-                <Trans>Published</Trans> <code className="rounded bg-muted px-1 font-mono">{commitShort}</code>
+                <Trans>Published</Trans>
+                {commitShort && (
+                  <>
+                    {' '}
+                    <code className="rounded bg-muted px-1 font-mono">{commitShort}</code>
+                  </>
+                )}
               </span>
             ) : (
               <Trans>Not published yet</Trans>

@@ -143,9 +143,17 @@ export function bootstrapCommand(): string {
   return installSnippet('').slice(0, 3).join(' && ');
 }
 
-export type Provenance = { kind: 'git'; label: string; href: string | null; provider: string } | { kind: 'local' } | null;
+export type Provenance =
+  | { kind: 'git'; label: string; href: string | null; provider: string }
+  | { kind: 'hub_repo' }
+  | { kind: 'local' }
+  | null;
 
-/** Where the row's bytes come from, as a label and (for git) a page to open. */
+/**
+ * Where the row's bytes come from, as a label and (for git) a page to open. A
+ * `hub_repo` origin is the project's own repository on the hub — there is no
+ * provider page for it, so it has no link.
+ */
 export function provenanceOf(origin: Record<string, unknown> | null | undefined): Provenance {
   if (!origin || typeof origin !== 'object') return null;
   if (origin.kind === 'git') {
@@ -158,6 +166,7 @@ export function provenanceOf(origin: Record<string, unknown> | null | undefined)
       provider: String(o.provider ?? ''),
     };
   }
+  if (origin.kind === 'hub_repo') return { kind: 'hub_repo' };
   if (origin.kind === 'local') return { kind: 'local' };
   return null;
 }
@@ -184,14 +193,23 @@ export function styleOf(state: PublishedState | null): { chip: string; border: s
 /**
  * Why the document is not on the hub — one key per cause the hub or the desk
  * can report; the component turns it into a sentence. `null` when it is there.
+ *
+ * Hub rows (`body_reason`): `type_not_git`, `not_on_hub` (nothing registered it,
+ * e.g. the project is not linked), `not_uploaded` (registered, but the document
+ * never reached the project's hub repo).
+ *
+ * Desk rows (`hub_body`): skipped `type_not_git` | `project_not_linked` |
+ * `no_actor`; failed with the publish code — `asset_conflict` (the hub and this
+ * desk both changed the asset) gets its own sentence, every other failure is
+ * `publish_failed`.
  */
 export type BodyCopyKey =
   | 'type_not_git'
-  | 'not_on_hub_local'
-  | 'not_on_hub_git'
-  | 'not_materialized'
+  | 'not_on_hub'
+  | 'not_uploaded'
   | 'project_not_linked'
-  | 'github_not_connected'
+  | 'no_actor'
+  | 'asset_conflict'
   | 'publish_failed';
 
 export function bodyCopyKey(item: DiscoverItem): BodyCopyKey | null {
@@ -199,12 +217,13 @@ export function bodyCopyKey(item: DiscoverItem): BodyCopyKey | null {
   if (desk && desk.status !== 'published') {
     if (desk.code === 'type_not_git') return 'type_not_git';
     if (desk.code === 'project_not_linked') return 'project_not_linked';
-    if (desk.code === 'github_not_connected') return 'github_not_connected';
+    if (desk.code === 'no_actor') return 'no_actor';
+    if (desk.code === 'asset_conflict') return 'asset_conflict';
     return 'publish_failed';
   }
   const body = item.body;
   if (!body || item.bodyRef) return null;
   if (body.body_reason === 'type_not_git') return 'type_not_git';
-  if (body.body_reason === 'not_materialized') return 'not_materialized';
-  return item.origin?.kind === 'local' ? 'not_on_hub_local' : 'not_on_hub_git';
+  if (body.body_reason === 'not_uploaded') return 'not_uploaded';
+  return 'not_on_hub';
 }
