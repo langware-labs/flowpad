@@ -57,7 +57,7 @@ test.describe('MCP UI Vibe demo', () => {
       expect(prompt).toContain('design');
       expect(prompt).toContain(UPLOAD_NAME);
       expect(prompt).toContain(UPLOAD_TEXT);
-      expect(prompt).toContain('Reply with the exact marker MCP_UI_RECEIVED');
+      expect(prompt).not.toContain('MCP_UI_RECEIVED');  // the agent decides how to answer
     } finally {
       await destroyVibeFixture(request, fixture);
     }
