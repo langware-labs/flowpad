@@ -77,7 +77,9 @@ async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     results = await asyncio.gather(*(answer(engine, _Message(n, sent), source=source) for n in range(1, 4)))
 
     assert results == [True, True, True]
-    assert sent == [f"reply to burst {n} (quoting burst {n})" for n in range(1, 4)]
+    # The turn opens with the person's words; a channel that takes files then says where to put ours.
+    assert [s.splitlines()[0] for s in sent] == [f"reply to burst {n}" for n in range(1, 4)]
+    assert [s.rsplit(" (quoting ", 1)[1] for s in sent] == [f"burst {n})" for n in range(1, 4)]
 
 
 async def _async(value):

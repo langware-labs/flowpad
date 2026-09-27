@@ -85,8 +85,9 @@ async def test_a_session_routes_the_turn_and_is_found_again(engine):
     assert await answer(engine, second, session="customer/972500000000") is True
 
     assert list(engine.sessions) == ["customer/972500000000"], "the caller's session, not the conversation"
-    assert engine.sessions["customer/972500000000"].prompts == ["invoice one", "invoice two"]
-    assert first.replies == ["re: invoice one"] and second.replies == ["re: invoice two"]
+    # The turn opens with the person's words (a channel that takes files then says where to put ours).
+    assert [p.splitlines()[0] for p in engine.sessions["customer/972500000000"].prompts] == ["invoice one", "invoice two"]
+    assert [r.splitlines()[0] for r in first.replies + second.replies] == ["re: invoice one", "re: invoice two"]
 
 
 async def test_without_a_session_the_message_answers_in_its_conversation(engine):
@@ -99,8 +100,8 @@ async def test_a_process_the_caller_holds_takes_the_turn(engine):
     m = _Message("urgent")
 
     assert await answer(engine, m, process=desk) is True
-    assert desk.prompts == ["urgent"] and engine.sessions == {}
-    assert m.replies == ["re: urgent"]
+    assert [p.splitlines()[0] for p in desk.prompts] == ["urgent"] and engine.sessions == {}
+    assert [r.splitlines()[0] for r in m.replies] == ["re: urgent"]
 
 
 async def test_routing_does_not_open_the_gate_and_a_gated_message_is_acked(engine):
