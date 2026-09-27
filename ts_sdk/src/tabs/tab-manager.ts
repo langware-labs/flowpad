@@ -257,6 +257,11 @@ export class TabManager {
    * `tabs_changed` broadcast, so re-listing on every click bought nothing but a
    * round trip on the switch path — the one place a switch is felt.
    */
+  /** A list has been adopted — an empty snapshot now means "no tabs", not "not loaded yet". */
+  isHydrated(): boolean {
+    return this.hydrated;
+  }
+
   async snapshotOrRefresh(): Promise<readonly Tab[]> {
     return this.hydrated ? this.snapshot : this.refresh();
   }
