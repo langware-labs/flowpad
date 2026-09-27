@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro';
-import { type APIEntity, dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
+import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';

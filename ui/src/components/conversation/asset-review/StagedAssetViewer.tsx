@@ -1,8 +1,7 @@
-import { dataManager, MessageAttachment, type StagedFilesResponse } from '@sdk';
-import { isFolderShape } from '@sdk/FlowSync/schema';
+import { MessageAttachment, type StagedFilesResponse } from '@sdk';
 import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { AssetReadOnlyProvider } from '@src/components/assets/editor/read-only';
 import { workerForSessionType } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
@@ -10,39 +9,34 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { StagedTranscriptPreview } from './StagedTranscriptPreview';
 
-/** The deepest directory every staged path shares ('' when they share none). */
-function commonDir(paths: string[]): string {
-  const dirs = paths.map((p) => p.split('/').slice(0, -1));
-  const first = dirs[0] ?? [];
-  let depth = first.length;
-  for (const dir of dirs) {
-    let i = 0;
-    while (i < depth && dir[i] === first[i]) i++;
-    depth = i;
+/**
+ * What review opens for a staged copy. Where the backend located the asset by its
+ * type's shape (`asset_root`), the type's own viewer opens it there, as that type; a
+ * copy without that shape (a raw file, a header-only row) opens its main file in the
+ * viewer the extension picks, as no type.
+ */
+function reviewTarget(listing: StagedFilesResponse, assetType: string): { pointer: string; assetType?: string } | null {
+  const typeEditor = editorForType(assetType);
+  if (listing.asset_root != null && typeEditor) {
+    const root = listing.asset_root ? `${listing.abs_root}/${listing.asset_root}` : listing.abs_root;
+    return { pointer: AssetDocPointer.forVfs(typeEditor, root).toPointer(), assetType };
   }
-  return first.slice(0, depth).join('/');
-}
-
-/** The staged file a review opens first: the type's declared main, else the first
- *  file outside a dot-folder (a `.flow/` capsule is identity, not content). */
-function mainStagedFile(listing: StagedFilesResponse): string | null {
-  const paths = listing.files.map((f) => f.path);
-  return listing.main_file ?? paths.find((p) => !p.split('/').some((seg) => seg.startsWith('.'))) ?? paths[0] ?? null;
+  if (!listing.main_file) return null;
+  return { pointer: AssetDocPointer.forVfs(editorForPath(listing.main_file), `${listing.abs_root}/${listing.main_file}`).toPointer() };
 }
 
 /**
  * Review of a received, not-yet-installed attachment. Review is always BY PATH:
- * the staged copy under the message's record data, opened in the same viewer the
- * dock uses — the one the asset's type declares (a deck folder, a skill, a
- * markdown doc), or for a raw file the one its extension picks (pdf, image, video,
- * audio, html, code). The staged copy has no record until install, so nothing
- * here resolves by TypeId; "Open" after install is the by-record path.
+ * the staged copy under the message's record data, in the same viewer the dock
+ * uses. The copy has no record until install, so nothing here resolves by TypeId;
+ * "Open" after install is the by-record path.
  *
  * Forced read-only: the copy is the sender's, and a save would write into staging.
  */
 export function StagedAssetViewer({ attachment }: { attachment: MessageAttachment }) {
   const [listing, setListing] = useState<StagedFilesResponse | null>(null);
   const [error, setError] = useState(false);
+  const assetType = attachment.asset_type ?? '';
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +59,9 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachment.id]);
 
+  const target = useMemo(() => (listing ? reviewTarget(listing, assetType) : null), [listing, assetType]);
+  const occurrence = useMemo(() => ({ assetType: target?.assetType }), [target?.assetType]);
+
   if (error) {
     return (
       <div className="py-6 text-center text-sm text-muted-foreground">
@@ -79,8 +76,7 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
       </div>
     );
   }
-  const main = mainStagedFile(listing);
-  if (!main) {
+  if (!target || !listing.main_file) {
     return (
       <div className="py-6 text-center text-sm text-muted-foreground">
         <Trans>Nothing to review — the attachment has no files.</Trans>
@@ -89,36 +85,19 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
   }
 
   // A worker transcript renders from its staged file directly (server-side parse by path).
-  const transcriptWorker = workerForSessionType(attachment.asset_type);
-  if (transcriptWorker && main.endsWith('.jsonl')) {
+  const transcriptWorker = workerForSessionType(assetType);
+  if (transcriptWorker && listing.main_file.endsWith('.jsonl')) {
     return (
       <div className="max-h-[50vh] overflow-y-auto pe-1">
-        <StagedTranscriptPreview workerType={transcriptWorker} path={`${listing.abs_root}/${main}`} />
+        <StagedTranscriptPreview workerType={transcriptWorker} path={`${listing.abs_root}/${listing.main_file}`} />
       </div>
     );
   }
 
-  const assetType = attachment.asset_type ?? '';
-  const paths = listing.files.map((f) => f.path);
-  const shape = dataManager.getTypeInfo(assetType)?.shape;
-  const typeEditor = editorForType(assetType);
-  // A folder-shaped type opens at its folder (its viewer owns the layout) — but
-  // only when the staged copy HAS that layout. A copy without the declared main
-  // (a header-only task row) opens its file by extension instead.
-  let editor = typeEditor ?? editorForPath(main);
-  let rel = main;
-  if (typeEditor && isFolderShape(shape)) {
-    const declaredMain = shape.main ? paths.find((p) => p.split('/').pop() === shape.main) : undefined;
-    if (declaredMain) rel = declaredMain.split('/').slice(0, -1).join('/');
-    else if (!shape.main) rel = commonDir(paths);
-    else editor = editorForPath(main);
-  }
-  const pointer = AssetDocPointer.forVfs(editor, rel ? `${listing.abs_root}/${rel}` : listing.abs_root).toPointer();
-
   return (
     <div className="h-[55vh] overflow-hidden rounded border border-border" data-testid="staged-review">
-      <AssetReadOnlyProvider value>
-        <AssetEditorRouter key={pointer} pointer={pointer} />
+      <AssetReadOnlyProvider value={occurrence}>
+        <AssetEditorRouter key={target.pointer} pointer={target.pointer} />
       </AssetReadOnlyProvider>
     </div>
   );

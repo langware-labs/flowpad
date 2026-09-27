@@ -392,7 +392,8 @@ function MarkdownEditorContent({
   // normal chrome for every authority, while Git/OS actions are enabled only
   // when the ref is actually backed by a local compute node.
   const gitComputeNodeId = fsRef.localComputeNodeId;
-  const revisionsEnabled = variant !== 'plain' && gitComputeNodeId !== null;
+  // Read-only (a plain variant, a staged review copy) has no history to show.
+  const revisionsEnabled = !readOnly && gitComputeNodeId !== null;
   const gitFileDir = fsRef.parent.path;
   const gitFileName = fsRef.path.slice(fsRef.path.lastIndexOf('/') + 1);
   const revisionStatus = useAssetRevisionStatus(
