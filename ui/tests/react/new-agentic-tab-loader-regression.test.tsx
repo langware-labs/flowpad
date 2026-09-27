@@ -15,6 +15,8 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TerminalPool } from '@src/components/terminal/TerminalPool';
+import { terminalPool } from '@src/components/terminal/terminal-pool';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 import {
   AgenticProcess,
@@ -116,6 +118,8 @@ function TerminalWorkspace() {
       <div style={{ height: 320 }}>
         <TabbedTerminal className="h-full" />
       </div>
+      {/* RootLayout mounts the pool that owns terminal runtimes; the body is a slot. */}
+      <TerminalPool />
     </div>
   );
 }
@@ -312,6 +316,7 @@ describe('new agentic-process loader handoff', () => {
   });
 
   afterEach(async () => {
+    terminalPool.resetForTests();
     vi.restoreAllMocks();
     tabManager.adoptGlobal([]);
     resetTabContentLifecycleForTests();
