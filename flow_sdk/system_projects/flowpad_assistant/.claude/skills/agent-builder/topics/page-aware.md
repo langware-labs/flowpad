@@ -62,7 +62,9 @@ agent?.enqueue('Can you help me with this step?\n<page-event type="help_requeste
 - **Wake sparingly.** Every `enqueue` is a turn the user watches; a quiet
   `setDisplayContext` costs nothing.
 - For an `.mcp.html` page, rendering and one-shot form submissions are the `mcp-ui`
-  skill's; the snippet above is the same.
+  skill's; the snippet above is the same. A submission reaches the agent as a message
+  starting `MCP_UI_SUBMISSION {json}`: describe it in the prompt's *Events* section, and
+  have the agent answer the person in plain words — never with a protocol marker.
 
 ## The agent side
 
