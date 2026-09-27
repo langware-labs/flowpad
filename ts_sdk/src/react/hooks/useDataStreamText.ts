@@ -1,4 +1,5 @@
-import { FlowData, FlowDataEvents, FlowDataType } from '@sdk';
+import { FlowData, FlowDataType } from '../../flow_processing/flow-data';
+import { FlowDataEvents } from '../../flow_processing/flow-events';
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 
 /**

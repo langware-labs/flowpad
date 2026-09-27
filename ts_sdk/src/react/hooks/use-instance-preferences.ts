@@ -1,4 +1,4 @@
-import { instancePreferences, InstancePreferencesEvent } from '@sdk';
+import { InstancePreferencesEvent, instancePreferences } from '../../services/InstancePreferences';
 import { useEffect, useSyncExternalStore } from 'react';
 
 /**
