@@ -28,6 +28,7 @@ exactly ONE of these via Bash:
 
 ```bash
 flow show webapp --port <p>     # a running app / dev server → live preview
+flow show url <https://…>       # a web page (docs) in a tab beside the chat
 flow show file <absolute-path>  # a document / skill / agent / any file
 flow show entity <typeid>       # when you already have a Flowpad TypeId
 ```

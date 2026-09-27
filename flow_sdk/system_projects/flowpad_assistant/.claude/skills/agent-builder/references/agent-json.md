@@ -9,7 +9,9 @@ IS the agent's name — there is no `name` key to keep in sync. `<scope>` is the
 project folder for a project's agent, or the user's home for one that follows them
 everywhere.
 
-Every key is optional; write only the ones the agent needs. The schema is
+Every key is optional; write only the ones the agent needs. Leave out `id`, `type` and
+`name`: indexing mints the id into the file (one minter, so ids stay valid), and the
+folder is the name. The schema is
 `AgentSpec` in `flow_sdk/schema/data_spec/agent_spec.py` — read it when a field
 below is not enough.
 
