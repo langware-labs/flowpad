@@ -74,7 +74,6 @@ interface CompactExecutionInputProps {
    */
   draftScope?: string;
   handleRef?: Ref<CompactExecutionInputHandle>;
-  onFocus?: () => void;
 }
 
 /**
@@ -106,7 +105,6 @@ export function CompactExecutionInput({
   saveDraft = true,
   draftScope,
   handleRef,
-  onFocus,
 }: CompactExecutionInputProps) {
   const { t } = useLingui();
   const scope = saveDraft ? draftScope : undefined;
@@ -347,7 +345,6 @@ export function CompactExecutionInput({
         rows={1}
         aria-label={t`Message the agent`}
         className="min-h-[48px] w-full resize-none overflow-y-hidden rounded-xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-primary disabled:opacity-50"
-        onFocus={onFocus}
         data-testid="entity-execution-input"
       />
       {showHistoryList && (

@@ -34,7 +34,6 @@ interface ChatComposerBarProps {
   onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
   /** Forwarded to the composer so the owner can insert text at its caret. */
   composerRef?: Ref<CompactExecutionInputHandle>;
-  onComposerFocus?: () => void;
 }
 
 /**
@@ -45,7 +44,7 @@ interface ChatComposerBarProps {
  * queue, and interrupts the in-flight turn via `interruptTurn()`. Status + busy
  * come from the gold entity, reflected live.
  */
-export function ChatComposerBar({ process, onPasteImages, composerRef, onComposerFocus }: ChatComposerBarProps) {
+export function ChatComposerBar({ process, onPasteImages, composerRef }: ChatComposerBarProps) {
   const { t } = useLingui();
   const plan = useChatPlanMode();
 
@@ -114,7 +113,6 @@ export function ChatComposerBar({ process, onPasteImages, composerRef, onCompose
       onStop={handleStop}
       onPasteImages={onPasteImages}
       handleRef={composerRef}
-      onFocus={onComposerFocus}
       animateEnqueue
       draftScope={process.id}
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
