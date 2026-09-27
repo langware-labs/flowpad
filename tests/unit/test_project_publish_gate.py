@@ -1,108 +1,74 @@
-"""The GitHub token gate applies to GitHub origins only.
+"""Linking a Project to the cloud needs a signed-in actor and a cloud login — nothing else.
 
-The hub clones what a share advertises, and the token is what makes a PRIVATE
-GitHub clone possible. A ``file://`` or self-hosted remote needs no GitHub
-account, so demanding the token there refused shares that would have worked —
-and made the two-instance share journey untestable without a human's GitHub.
-
-The order the gate runs in is the contract under test: preflight resolves the
-origin FIRST, then the provider decides whether a token is required.
+Its published assets travel through the project's hub-hosted repository, so the
+folder's own git state never blocks: it need not be a checkout, have a remote,
+be clean, or have GitHub connected. When the folder IS a clean, pushed checkout
+its ``GitOrigin`` is returned as an informational pointer.
 """
+from pathlib import Path
+
 import pytest
 
 from flow_sdk.app.actions.project_publish import ProjectPublishBlocked, assert_project_publishable
-from flow_sdk.fs_store.origin.git_origin import GitOrigin
+from tests.unit.agent._seed import seed_project
+from tests.unit.conftest import git_cmd
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ACTOR = "user-3f1a9c2e-5b6d-4e7f-8a90-1b2c3d4e5f60"
 
 
-class _Project:
-    id = "0c9f5b1e-7a2d-4c3b-9e8f-6d5a4b3c2e1f"
-
-
-class _Credentials:
-    api_key = "test-key"
-
-
-def _origin(provider: str) -> GitOrigin:
-    return GitOrigin(provider=provider, owner="teacher", name="ai-course", branch="main")
-
-
 @pytest.fixture
-def gate(monkeypatch):
-    """Drive the gate's collaborators; each test sets the two that matter."""
-    import flow_sdk.app.actions.git_share_preflight_action as preflight_mod
-    import flow_sdk.cli.auth.credentials as credentials_mod
-    import flow_sdk.core.oauth.github_credentials as github_mod
-
-    state = {"origin": _origin("file"), "token": None, "token_calls": 0}
-
-    async def _preflight(entity_type, entity_id):
-        return {"available": True, "reason": None, "code": None,
-                "git_origin": state["origin"].model_dump(mode="python")}
-
-    async def _token(actor):
-        state["token_calls"] += 1
-        return state["token"]
-
-    monkeypatch.setattr(preflight_mod, "git_share_preflight", _preflight)
-    monkeypatch.setattr(credentials_mod, "load_credentials", lambda: _Credentials())
-    monkeypatch.setattr(github_mod, "get_github_token", _token)
+def logged_in(monkeypatch):
+    """The cloud login is the one collaborator that needs a live hub; everything
+    else (the project row, its folder, git) is real."""
+    state = {"key": "hub-key"}
+    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.resolve_hub_api_key", lambda **_: state["key"])
     return state
 
 
-async def test_file_origin_publishes_without_a_github_token(gate):
-    gate["origin"] = _origin("file")
+async def test_a_plain_folder_links_without_any_git(tmp_path: Path, logged_in):
+    project = await seed_project(tmp_path / "plain")
 
-    origin = await assert_project_publishable(_Project(), ACTOR)
-
-    assert origin.provider == "file"
-    assert gate["token_calls"] == 0, "a non-GitHub origin must not even ask for a GitHub token"
+    assert await assert_project_publishable(project, ACTOR) is None
 
 
-async def test_github_origin_still_requires_a_token(gate):
-    gate["origin"] = _origin("github")
-    gate["token"] = None
+async def test_a_dirty_checkout_still_links(git_remote, logged_in):
+    repo = git_remote.make_checkout(github_url="https://github.com/teacher/ai-course.git")
+    project = await seed_project(repo)
+    (repo / "uncommitted.md").write_text("work in progress\n", encoding="utf-8")
 
-    with pytest.raises(ProjectPublishBlocked) as excinfo:
-        await assert_project_publishable(_Project(), ACTOR)
-
-    assert excinfo.value.code == "github_not_connected"
-    # The refusal carries the origin it refused, so the dialog can name the repo.
-    assert excinfo.value.data()["git_origin"]["name"] == "ai-course"
+    assert await assert_project_publishable(project, ACTOR) is None
 
 
-async def test_github_origin_with_a_token_publishes(gate):
-    gate["origin"] = _origin("github")
-    gate["token"] = "ghp_token"
+async def test_a_clean_pushed_checkout_advertises_its_origin(git_remote, logged_in):
+    repo = git_remote.make_checkout(github_url="https://github.com/teacher/ai-course.git")
+    project = await seed_project(repo)
+    git_cmd(repo, "add", "-A")
+    if git_cmd(repo, "status", "--porcelain"):
+        git_cmd(repo, "commit", "-q", "-m", "project files")
+    git_cmd(repo, "push", "-q", "origin", "main")
 
-    origin = await assert_project_publishable(_Project(), ACTOR)
+    origin = await assert_project_publishable(project, ACTOR)
 
-    assert origin.provider == "github"
+    assert origin is not None
+    assert (origin.provider, origin.owner, origin.name, origin.branch) == ("github", "teacher", "ai-course", "main")
 
 
-async def test_cloud_login_is_still_checked_before_any_git_work(gate, monkeypatch):
-    import flow_sdk.cli.auth.credentials as credentials_mod
-
-    monkeypatch.setattr(credentials_mod, "load_credentials", lambda: None)
+async def test_an_anonymous_actor_is_refused(tmp_path: Path, logged_in):
+    project = await seed_project(tmp_path / "anon")
 
     with pytest.raises(ProjectPublishBlocked) as excinfo:
-        await assert_project_publishable(_Project(), ACTOR)
+        await assert_project_publishable(project, None)
 
-    assert excinfo.value.code == "cloud_login_required"
+    assert (excinfo.value.code, excinfo.value.status_code) == ("authenticated_user_required", 401)
 
 
-async def test_an_unavailable_preflight_refuses_with_its_own_code(gate, monkeypatch):
-    import flow_sdk.app.actions.git_share_preflight_action as preflight_mod
-
-    async def _dirty(entity_type, entity_id):
-        return {"available": False, "reason": "Uncommitted changes", "code": "dirty-tree", "git_origin": None}
-
-    monkeypatch.setattr(preflight_mod, "git_share_preflight", _dirty)
+async def test_a_missing_cloud_login_is_refused(tmp_path: Path, logged_in):
+    logged_in["key"] = None
+    project = await seed_project(tmp_path / "offline")
 
     with pytest.raises(ProjectPublishBlocked) as excinfo:
-        await assert_project_publishable(_Project(), ACTOR)
+        await assert_project_publishable(project, ACTOR)
 
-    assert excinfo.value.code == "dirty-tree"
+    assert (excinfo.value.code, excinfo.value.status_code) == ("cloud_login_required", 401)

@@ -55,6 +55,16 @@ def _asset_rel_path(mount: Path, asset_root: Path) -> str:
     return rel
 
 
+def publish_asset_payload(project_id: str, asset_type: str, asset_id: str, rel_path: str) -> dict:
+    """What ``project/publish_asset`` receives: coordinates only.
+
+    The asset's bytes already sit in the project's hub repo at ``rel_path``; the
+    hub reads its fields from that tree, so nothing about the asset's content or
+    this machine's paths is sent.
+    """
+    return {"project": {"id": project_id}, "asset": {"type": asset_type, "id": asset_id}, "rel_path": rel_path}
+
+
 async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     """Push ``entity`` into its project's hub repo and register it there.
 
@@ -133,7 +143,7 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         asset_typeid=str(entity.typeid),
     )
 
-    payload = {"project": {"id": project.id}, "asset": {"type": entity.get_type(), "id": entity.id}, "rel_path": rel_path}
+    payload = publish_asset_payload(project.id, entity.get_type(), entity.id, rel_path)
     try:
         hub_result = await hub_post("project", payload, action="publish_asset")
     except HubError as exc:
