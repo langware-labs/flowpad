@@ -36,6 +36,36 @@ function answersOf(result: WizardResult | null | undefined): WizardStepAnswer[] 
   return Object.entries(result?.steps ?? {}).map(([step_id, answer]) => ({ ...answer, step_id }));
 }
 
+/** Shape of ONE op's own answer — just the fields `rungTrail` reads, present
+ *  on a CliResult/PromptResult regardless of which one a step settled on. */
+interface OpAnswerShape {
+  ran?: boolean;
+  executor?: string | null;
+  steps?: Record<string, OpAnswerShape>;
+}
+
+/** Which rungs a step's goal actually went through, oldest first — derived
+ *  from the SAME durable answer already shown, never a new fetch or a live
+ *  subscription. Persists after a run ends, which is the point: "validated"
+ *  alone means the check already passed and nothing else ran; "validated,
+ *  cli" means the base command is what got there; "validated, cli, agent"
+ *  means the command alone did not and the agent fallback was reached
+ *  (whether or not it, in turn, succeeded — the step's own icon says that).
+ *
+ * A step here is usually itself a nested wizard (ask, then install) — the
+ * ladder belongs to "install", the goal these rungs are all attempts AT, not
+ * to "ask", which is a different question entirely.
+ */
+export function rungTrail(outcome: WizardStepAnswer | null | undefined): string[] {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  const install = asShape?.steps?.install ?? asShape ?? null;
+  if (!install) return [];
+  const trail = ['validated'];
+  if (install.ran) trail.push('cli');
+  if (install.executor) trail.push('agent');
+  return trail;
+}
+
 /** One step, as the debugger sees it: what it is doing now, and what it answered. */
 export interface WizardRunStep {
   step_id: string;

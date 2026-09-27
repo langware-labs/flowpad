@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.wizard.runner import run_wizard
-from flow_sdk.core.wizard.state import record_result, run_dir
+from flow_sdk.core.wizard.state import record_result, reset_run, run_dir
 from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -67,6 +67,18 @@ async def execute_wizard(
     """
     workdir: "Path" = run_dir(wizard_id)
     workdir.mkdir(parents=True, exist_ok=True)
+
+    # Archive the previous run and start this one's record BLANK, before we
+    # even try to take the slot — so a person watching sees every step go back
+    # to "not reached" first, then fill in one at a time, never the previous
+    # run's leftovers sitting there until the whole new run finishes. This
+    # takes (and releases) the SAME lock `execute_wizard` is about to take
+    # below; `reset_run` already refuses (returns `None`) when another run
+    # holds it, which doubles as this call's own busy check — see its own
+    # docstring for why it must run BEFORE, never from inside, that acquire.
+    if reset_run(wizard_id) is None:
+        return WizardResult.held(f"{spec.name or wizard_id} {ALREADY_RUNNING}")
+    await _notify_wizard_watchers(wizard_id)
 
     # TRY-acquire, never wait. `instances.atomic.locked` blocks indefinitely,
     # which is right for a few-filesystem-ops critical section and wrong here: a
@@ -109,7 +121,26 @@ async def execute_wizard(
     # outcome of a first-launch setup survives as one log line and the wizard
     # reports "has not run on this machine yet", which is false.
     record_result(wizard_id, result)
+    await _notify_wizard_watchers(wizard_id)
     return result
+
+
+async def _notify_wizard_watchers(wizard_id: str) -> None:
+    """Push the current `run_state` to anyone watching this wizard's entity.
+
+    `run_state` lives in `run.json`, not on the row — `record_result` and
+    `reset_run` both write straight to that file, so neither one calling
+    `.save()`/`.update()` would even be honest (no FIELD ON THE ROW changed).
+    `notify_updated()` is the established seam for exactly this shape: re-send
+    the entity as it now reads without writing anything — `AgenticProcess`
+    does the same at its own turn-start/turn-end for `worker_status`, which is
+    computed the same way `run_state` is.
+    """
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+
+    wizard = await Wizard.get_by_id(wizard_id)
+    if wizard is not None:
+        await wizard.notify_updated()
 
 
 def activity_path_for(wizard_id: str, asset_ref: str) -> str:

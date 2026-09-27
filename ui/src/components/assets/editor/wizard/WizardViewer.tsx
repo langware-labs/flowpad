@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
 import { ActionInfo, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import {
   CheckCircle2,
   Circle,
@@ -27,7 +28,7 @@ import { useSideWindows } from '@src/navigation/useSideWindows';
 import { WizardDebugger } from './WizardDebugger';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
-import { stepStatus, useWizardRun } from './useWizardRun';
+import { rungTrail, stepStatus, useWizardRun } from './useWizardRun';
 import { LIVE_STATE, type WizardDoc } from './wizard-doc';
 
 /** The document beside `wizard.json` — the file the editor owns. */
@@ -70,6 +71,18 @@ function WizardIcon({ className }: { className?: string }) {
 export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }) {
   const mainRef = useMemo(() => fsRef.child(MAIN_FILE), [fsRef]);
   const { doc, error } = useJsonDoc<WizardDoc>(mainRef);
+
+  // A run started from ANYWHERE else — Settings' "Run setup again", a trigger,
+  // another tab — writes `run_state` on this same entity, but the prop this
+  // component was handed is a snapshot from whenever the page was opened. The
+  // caller (`AssetEditorRouter`) does not watch it, so without this, this page
+  // would go on showing that stale snapshot even after the run it reports on
+  // has long finished. `watch: true` is what keeps it live regardless of who
+  // started the run; the fallback to the prop is only for the render before
+  // this subscription's first tick lands.
+  const { data: liveWizard } = useEntity<Wizard>(wizard.typeId, { watch: true });
+  const current = liveWizard ?? wizard;
+
   // Keyed on the path so a different wizard remounts with its own draft rather
   // than carrying the previous one's fields into it. The body renders BEFORE
   // the document arrives — the run panel is readable from the entity payload
@@ -80,7 +93,7 @@ export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }
   // remount when the file arrives and discard anything already on screen — an
   // open approval panel, a half-typed answer — because the read resolves a tick
   // or two after the first paint. `useWizardDoc` adopts the document instead.
-  return <WizardViewerBody key={mainRef.path} wizard={wizard} mainRef={mainRef} initial={doc} docError={error} />;
+  return <WizardViewerBody key={mainRef.path} wizard={current} mainRef={mainRef} initial={doc} docError={error} />;
 }
 
 function WizardViewerBody({
@@ -293,15 +306,29 @@ function WizardViewerBody({
             {joinedSteps.map(({ step_id, live, outcome }) => {
               // Live wins while the run is in flight — it is the fresher of the
               // two — and the durable answer takes over once it settles.
-              const status = live && runView.live ? LIVE_STATE[live.state]?.status : stepStatus(outcome);
+              const stepIsLive = Boolean(live && runView.live);
+              const status = stepIsLive ? LIVE_STATE[live!.state]?.status : stepStatus(outcome);
               const style = STEP_STYLE[status ?? ''] ?? STEP_STYLE.not_reached;
               const { Icon } = style;
               // A step still in flight spins.
               const spin = status === 'running';
+              // Which rungs the goal actually went through, kept around after
+              // the step settles — the live text above already covers the
+              // in-flight case, so this only shows once there's a durable
+              // answer and nothing is actively overriding it.
+              const trail = stepIsLive ? [] : rungTrail(outcome);
               return (
                 <li key={step_id} className="flex items-start gap-2 text-sm" data-testid={`wizard-step-${step_id}`}>
                   <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
                   <span className="mt-0.5 shrink-0 font-mono text-xs text-muted-foreground">{step_id}</span>
+                  {trail.length > 0 && (
+                    <span
+                      className="mt-0.5 shrink-0 text-xs text-muted-foreground/60"
+                      data-testid={`wizard-step-${step_id}-rungs`}
+                    >
+                      ({trail.join(' → ')})
+                    </span>
+                  )}
                   {live?.current || outcome?.detail ? (
                     <span className="min-w-0 flex-1 text-muted-foreground">— {live?.current || outcome?.detail}</span>
                   ) : null}
