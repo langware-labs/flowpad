@@ -45,6 +45,10 @@ export function SettingsSection() {
   const [runningSetup, setRunningSetup] = useState(false);
   const handleRunSetup = useCallback(async () => {
     setRunningSetup(true);
+    // Close the dialog right away, not once setup finishes: the wizard raises
+    // its own questions and popups as it runs, and this dialog sitting on top
+    // of them is exactly what "run setup again" should get out of the way of.
+    window.dispatchEvent(new Event('close-account-dialog'));
     try {
       const answer = await apiClient.post<{ llm_source: ReturnedValue; wizard: WizardResult }>(
         '/api/v1/onboarding/setup',
@@ -65,6 +69,26 @@ export function SettingsSection() {
       });
     } finally {
       setRunningSetup(false);
+    }
+  }, [t]);
+
+  // TEMPORARY — DEBUG ONLY, for testing the `llm-setup` wizard end to end.
+  // Remove this button and handler once that work ships — see FLOWPAD-2171.
+  const [hidingTools, setHidingTools] = useState(false);
+  const handleHideTools = useCallback(async () => {
+    setHidingTools(true);
+    try {
+      const answer = await apiClient.post<{ hidden: string[]; already_hidden: string[]; not_found: string[] }>(
+        '/api/v1/onboarding/debug/hide-tools',
+      );
+      notify.success({
+        title: t`Tools hidden`,
+        message: t`hidden: ${answer.hidden.join(', ') || '–'} · already hidden: ${answer.already_hidden.join(', ') || '–'} · not found: ${answer.not_found.join(', ') || '–'}`,
+      });
+    } catch (err) {
+      notify.error({ title: t`Could not hide tools`, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setHidingTools(false);
     }
   }, [t]);
 
@@ -125,9 +149,21 @@ export function SettingsSection() {
           <Trans>Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch.</Trans>
         }
         control={
-          <Button size="sm" variant="outline" onClick={() => void handleRunSetup()} disabled={runningSetup}>
-            {runningSetup ? <Trans>Running…</Trans> : <Trans>Run setup again</Trans>}
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => void handleRunSetup()} disabled={runningSetup}>
+              {runningSetup ? <Trans>Running…</Trans> : <Trans>Run setup again</Trans>}
+            </Button>
+            {/* TEMPORARY DEBUG BUTTON — remove before shipping, see FLOWPAD-2171. */}
+            <Button
+              size="sm"
+              onClick={() => void handleHideTools()}
+              disabled={hidingTools}
+              className="border-orange-500 bg-orange-500 text-white hover:bg-orange-600 hover:text-white"
+              title="DEBUG ONLY — renames jq/rg/claude/python(3)/git/node off PATH (never uninstalls) so the wizard treats them as freshly missing. Remove this button before shipping."
+            >
+              {hidingTools ? <Trans>Hiding…</Trans> : <Trans>DEBUG: hide 6 tools</Trans>}
+            </Button>
+          </div>
         }
       />
 

@@ -99,6 +99,9 @@ class _Seams:
     shell: Shell
     launch: Launch
     say: Callable[[str], None]
+    #: The Wizard entity running this op, when there is one — threaded through
+    #: to `_ask` so a question raised mid-wizard can point back to it.
+    wizard_id: str = ""
 
 
 async def check_op(
@@ -172,6 +175,7 @@ async def run_op(
     shell: Shell = run_shell,
     launch: Launch = launch_step_process,
     on_status: Optional[Callable[[str], None]] = None,
+    wizard_id: str = "",
 ) -> ReturnedValue:
     """Reach the goal or produce the value, or say precisely why not. Never raises."""
     exe = spec.exe_data
@@ -197,6 +201,7 @@ async def run_op(
         shell=shell,
         launch=launch,
         say=say,
+        wizard_id=wizard_id,
     )
     say(f"{spec.display_label}: {spec.subkind}")
     answer = await _attempt(spec, before, executor=executor, seams=seams)
@@ -297,6 +302,7 @@ async def _call_and_check(
         shell=seams.shell,
         launch=seams.launch,
         say=seams.say,
+        wizard_id=seams.wizard_id,
     )
     if not call.duration_s:
         call = call.model_copy(update={"duration_s": time.monotonic() - started})
@@ -443,7 +449,9 @@ async def _cli(
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
-async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
+async def _ask(
+    spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], wizard_id: str = "", **_: Any
+) -> AskResult:
     """Put the op's declared output to a person and wait for the answer.
 
     A bounded time, unless the op is ``until_answered``. Asked here when this
@@ -470,6 +478,7 @@ async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], 
         submit_label=spec.exe_data.submit_label,
         cancel_label=spec.exe_data.cancel_label,
         secret=spec.exe_data.secret,
+        wizard_id=wizard_id,
     )
 
 

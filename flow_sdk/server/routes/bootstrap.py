@@ -1590,6 +1590,50 @@ async def onboarding_setup():
     )
 
 
+#: The `llm-setup` wizard's own 6 tools, by the binary name each one's
+#: `completion_check` actually looks for on PATH — never the wizard step id,
+#: which is a different spelling (``claude-code`` the step, ``claude`` the
+#: binary; ``python`` the step, ``python3``/``python`` the two names its check
+#: tries either of).
+_DEBUG_TOOL_BINARIES = ["jq", "rg", "claude", "python3", "python", "git", "node"]
+
+
+@router.post("/api/v1/onboarding/debug/hide-tools")
+async def onboarding_debug_hide_tools() -> ApiSuccessResponse[dict]:
+    """DEBUG ONLY — temporary, for testing the `llm-setup` wizard end to end.
+
+    Makes every one of its 6 tools look freshly missing again, by renaming each
+    binary found on PATH to ``<name>.flowpad-debug-disabled`` — never deleting
+    or uninstalling anything, and easily reversible by hand (rename it back).
+    Running the wizard again re-installs whatever this hid, which is the whole
+    point: it lets `Run setup again` be tested from a clean slate repeatedly
+    without actually uninstalling git/python/node from the box.
+
+    Remove this route and its button once the wizard work is done — see
+    FLOWPAD-2171.
+    """
+    combined_path = os.environ.get("PATH", "") + os.pathsep + str(Path.home() / ".local" / "bin")
+    hidden: List[str] = []
+    already_hidden: List[str] = []
+    not_found: List[str] = []
+    for name in _DEBUG_TOOL_BINARIES:
+        found = shutil.which(name, path=combined_path)
+        if not found:
+            not_found.append(name)
+            continue
+        path = Path(found)
+        target = path.with_name(path.name + ".flowpad-debug-disabled")
+        if target.exists():
+            already_hidden.append(name)
+            continue
+        try:
+            path.rename(target)
+            hidden.append(name)
+        except OSError as exc:
+            not_found.append(f"{name} ({exc})")
+    return ApiSuccessResponse[dict](data={"hidden": hidden, "already_hidden": already_hidden, "not_found": not_found})
+
+
 # ---------------------------------------------------------------------------
 # File system setup (migrated from desktop_loader.py:init_desktop_entities)
 # ---------------------------------------------------------------------------

@@ -80,15 +80,7 @@ export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }
   // remount when the file arrives and discard anything already on screen — an
   // open approval panel, a half-typed answer — because the read resolves a tick
   // or two after the first paint. `useWizardDoc` adopts the document instead.
-  return (
-    <WizardViewerBody
-      key={mainRef.path}
-      wizard={wizard}
-      mainRef={mainRef}
-      initial={doc}
-      docError={error}
-    />
-  );
+  return <WizardViewerBody key={mainRef.path} wizard={wizard} mainRef={mainRef} initial={doc} docError={error} />;
 }
 
 function WizardViewerBody({
@@ -226,9 +218,7 @@ function WizardViewerBody({
         <WizardIcon className="h-5 w-5 text-muted-foreground" />
         <div className="flex-1">
           <h2 className="text-base font-medium">{wizard.name}</h2>
-          {wizard.description ? (
-            <p className="text-sm text-muted-foreground">{wizard.description}</p>
-          ) : null}
+          {wizard.description ? <p className="text-sm text-muted-foreground">{wizard.description}</p> : null}
         </div>
         {/* A CONVERSATIONAL wizard has no steps and cannot be run from here: its
             agent needs the caller's prompt and payload, which only the surface
@@ -250,15 +240,11 @@ function WizardViewerBody({
                 title={t`Archive this run and start the record fresh. It stays approved to run.`}
                 data-testid="wizard-reset"
               >
-                {resetting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                )}
+                {resetting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
                 <Trans>Reset</Trans>
               </Button>
             </AdvancedOnly>
-            <Button onClick={run} disabled={busy} data-testid="wizard-run">
+            <Button onClick={() => void run()} disabled={busy} data-testid="wizard-run">
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               <Trans>Run</Trans>
             </Button>
@@ -273,15 +259,9 @@ function WizardViewerBody({
       )}
 
       {askApproval ? (
-        <section
-          className="rounded-md border border-destructive/40 bg-destructive/5 p-3"
-          data-testid="wizard-approval"
-        >
+        <section className="rounded-md border border-destructive/40 bg-destructive/5 p-3" data-testid="wizard-approval">
           <p className="text-sm">
-            <Trans>
-              "{wizard.name}" is not shipped with Flowpad. Running it executes commands on this
-              machine.
-            </Trans>
+            <Trans>"{wizard.name}" is not shipped with Flowpad. Running it executes commands on this machine.</Trans>
           </p>
           <div className="mt-2 flex gap-2">
             <Button size="sm" onClick={() => void approveAndRun()} data-testid="wizard-approve">
@@ -299,7 +279,10 @@ function WizardViewerBody({
           wizard disappeared" indistinguishable from "there was never a wizard
           here". This is the diagnostic. */}
       {wizard.document_error || docError ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive" data-testid="wizard-document-error">
+        <p
+          className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive"
+          data-testid="wizard-document-error"
+        >
           {wizard.document_error || docError}
         </p>
       ) : null}
@@ -316,11 +299,11 @@ function WizardViewerBody({
               // A step still in flight spins.
               const spin = status === 'running';
               return (
-                <li key={step_id} className="flex items-center gap-2 text-sm" data-testid={`wizard-step-${step_id}`}>
-                  <Icon className={`h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
-                  <span className="font-mono text-xs text-muted-foreground">{step_id}</span>
+                <li key={step_id} className="flex items-start gap-2 text-sm" data-testid={`wizard-step-${step_id}`}>
+                  <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
+                  <span className="mt-0.5 shrink-0 font-mono text-xs text-muted-foreground">{step_id}</span>
                   {live?.current || outcome?.detail ? (
-                    <span className="text-muted-foreground">— {live?.current || outcome?.detail}</span>
+                    <span className="min-w-0 flex-1 text-muted-foreground">— {live?.current || outcome?.detail}</span>
                   ) : null}
                 </li>
               );
@@ -329,10 +312,7 @@ function WizardViewerBody({
         </section>
       ) : conversational ? (
         <p className="text-sm text-muted-foreground">
-          <Trans>
-            This wizard runs as a conversation with {wizard.agent}, started from wherever it
-            is offered.
-          </Trans>
+          <Trans>This wizard runs as a conversation with {wizard.agent}, started from wherever it is offered.</Trans>
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
@@ -369,17 +349,18 @@ function WizardViewerBody({
   // surface you consult while editing the steps beside it, and the drawer is
   // the app's one place for that (`useSideWindows` — same architecture as the
   // markdown editor's backlinks and the terminal's windows).
-  const railTabs: TabDescriptor[] = conversational || !isAdvanced ? [] : [
-    {
-      id: RUN_DETAIL_WINDOW,
-      label: t`Run detail`,
-      icon: ListTree,
-      description: t`Every command this wizard ran, and what it printed`,
-    },
-  ];
-  const openTabs = railTabs
-    .filter((tab) => windows.includes(tab.id))
-    .map((tab) => ({ ...tab, closable: true }));
+  const railTabs: TabDescriptor[] =
+    conversational || !isAdvanced
+      ? []
+      : [
+          {
+            id: RUN_DETAIL_WINDOW,
+            label: t`Run detail`,
+            icon: ListTree,
+            description: t`Every command this wizard ran, and what it printed`,
+          },
+        ];
+  const openTabs = railTabs.filter((tab) => windows.includes(tab.id)).map((tab) => ({ ...tab, closable: true }));
 
   return (
     <div className="flex h-full w-full" data-testid="wizard-viewer-shell">

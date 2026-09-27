@@ -63,6 +63,12 @@ class Question:
     cancel_label: str = ""
     #: The answer is a secret: whoever draws the field masks it, and nothing echoes it.
     secret: bool = False
+    #: The Wizard entity this question is a step of, when it is one — its
+    #: TypeId's uuid half. Empty for an op run outside any wizard. This is the
+    #: one thread back from a settled question to the run that is still going:
+    #: without it, answering felt like the last step, even when five more were
+    #: about to run right after.
+    wizard_id: str = ""
     _future: "asyncio.Future" = field(repr=False, default=None)  # type: ignore[assignment]
 
     def to_payload(self) -> dict:
@@ -78,6 +84,7 @@ class Question:
             "kind": self.shape if isinstance(self.shape, str) else None,
             "fields": self.fields,
             "secret": self.secret,
+            "wizard_id": self.wizard_id,
         }
 
 
@@ -124,6 +131,7 @@ def open_question(
     submit_label: str = "",
     cancel_label: str = "",
     secret: bool = False,
+    wizard_id: str = "",
 ) -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
@@ -139,6 +147,7 @@ def open_question(
         submit_label=submit_label,
         cancel_label=cancel_label,
         secret=secret,
+        wizard_id=wizard_id,
         _future=asyncio.get_event_loop().create_future(),
     )
     _PENDING[question.id] = question
@@ -229,6 +238,7 @@ async def ask_person(
     submit_label: str = "",
     cancel_label: str = "",
     secret: bool = False,
+    wizard_id: str = "",
 ) -> "AskResult":
     """Raise one question here and answer with what the person did.
 
@@ -248,6 +258,7 @@ async def ask_person(
         submit_label=submit_label,
         cancel_label=cancel_label,
         secret=secret,
+        wizard_id=wizard_id,
     )
     shown = await raise_question(question)
     if timeout is None and not shown:
@@ -287,6 +298,7 @@ async def ask_through_backend(
     submit_label: str = "",
     cancel_label: str = "",
     secret: bool = False,
+    wizard_id: str = "",
 ) -> "AskResult":
     """:func:`ask_person`, run by the backend for a process that is not it.
 
@@ -308,6 +320,7 @@ async def ask_through_backend(
         "submit_label": submit_label,
         "cancel_label": cancel_label,
         "secret": secret,
+        "wizard_id": wizard_id,
     }
     try:
         async with flow_service() as lease:

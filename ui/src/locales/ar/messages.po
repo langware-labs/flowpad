@@ -3325,6 +3325,7 @@ msgstr ""
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
@@ -3406,7 +3407,7 @@ msgstr ""
 msgid "Cancel"
 msgstr "إلغاء"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/use-ask-question.ts
 msgid "Cancelled."
 msgstr ""
 
@@ -4064,6 +4065,7 @@ msgstr "جاري استنساخ المستودع وفهرسته."
 msgid "Cloning…"
 msgstr "جارِ الاستنساخ…"
 
+#: src/components/ask/AskModal.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -5186,6 +5188,10 @@ msgstr "تعذر منح الوصول"
 msgid "Could not give this project access to {0}."
 msgstr "تعذر منح هذا المشروع صلاحية الوصول إلى {0}."
 
+#: src/components/account/settings-section.tsx
+msgid "Could not hide tools"
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
 msgstr ""
@@ -6148,6 +6154,10 @@ msgstr "يتضمن مستوى التصحيح استدعاءات الخطافات
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Debug logging"
 msgstr "تسجيل التصحيح"
+
+#: src/components/account/settings-section.tsx
+msgid "DEBUG: hide 6 tools"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -9404,6 +9414,10 @@ msgstr "للأعلى"
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "تم استقبال مرجع يبدو نسبياً مع عدة مقاطع: <0>{ref}</0>"
 
+#: src/components/ask/use-ask-question.ts
+msgid "Got it — your answer was sent."
+msgstr ""
+
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
 msgstr ""
@@ -9621,6 +9635,13 @@ msgstr "الملفات المخفية"
 msgid "Hidden from your stream inbox"
 msgstr "مخفي من صندوق التدفق الوارد الخاص بك"
 
+#. placeholder {0}: answer.hidden.join(', ') || '–'
+#. placeholder {1}: answer.already_hidden.join(', ') || '–'
+#. placeholder {2}: answer.not_found.join(', ') || '–'
+#: src/components/account/settings-section.tsx
+msgid "hidden: {0} · already hidden: {1} · not found: {2}"
+msgstr ""
+
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
 msgid "Hide {0}"
@@ -9682,6 +9703,10 @@ msgstr "إخفاء الرحلة الموجهة"
 
 #: src/components/credentials/SecretValueInput.tsx
 msgid "Hide value"
+msgstr ""
+
+#: src/components/account/settings-section.tsx
+msgid "Hiding…"
 msgstr ""
 
 #: src/components/machine-overview/metrics-chart.tsx
@@ -11471,6 +11496,7 @@ msgstr "جاري التحميل..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
@@ -14919,6 +14945,10 @@ msgstr "المجلد الأب للاستنساخ فيه…"
 msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
 msgstr ""
 
+#: src/components/ask/AskView.tsx
+msgid "Part of a setup — see its progress"
+msgstr ""
+
 #: src/components/webapp-display/messages.tsx
 msgid "Part of your app didn't load."
 msgstr "لم يتم تحميل جزء من تطبيقك."
@@ -18009,6 +18039,11 @@ msgstr "عرض كل النتائج ({0}) →"
 msgid "See all sources"
 msgstr ""
 
+#: src/components/ask/AskModal.tsx
+#: src/components/ask/AskView.tsx
+msgid "See setup progress"
+msgstr ""
+
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
 msgstr "يبدو أن هناك محاولة لاستنساخ مستودع Git خاص. يجب الاتصال بـ GitHub لإتمام العملية."
@@ -18165,6 +18200,7 @@ msgstr "شريط أدوات التحديد"
 msgid "Self-Summary"
 msgstr "الملخص الذاتي"
 
+#: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
@@ -20270,8 +20306,8 @@ msgid "Test trigger"
 msgstr "اختبار المحفز"
 
 #: src/components/ask/AskView.tsx
-msgid "Thank you — sent."
-msgstr ""
+#~ msgid "Thank you — sent."
+#~ msgstr ""
 
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
@@ -21120,7 +21156,7 @@ msgstr ""
 msgid "this project's own desk"
 msgstr "مكتب المساعدة الخاص بهذا المشروع"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/use-ask-question.ts
 msgid "This question is no longer waiting."
 msgstr ""
 
@@ -21606,6 +21642,10 @@ msgstr "الأدوات"
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
 msgid "Tools"
 msgstr "الأدوات"
+
+#: src/components/account/settings-section.tsx
+msgid "Tools hidden"
+msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tools Used"

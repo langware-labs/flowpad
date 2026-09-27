@@ -44,6 +44,7 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { queryClient } from '@sdk/lazy';
 import { PrimaryContentProvider } from '@sdk/react/primary-content';
 import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
+import { AskModalRoot } from '@src/components/ask/AskModal';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
@@ -152,6 +153,10 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <WikiModalRoot />
         <RunPreviewRoot />
         <FilePreviewRoot />
+        {/* A ComputeOp `ask` raised on this live tab — see `use-ui-command-listener`.
+            Mounted at the root like every other global overlay, so it opens over
+            whatever page is showing rather than replacing it. */}
+        <AskModalRoot />
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
         {!isHubOnly() && <AddAssetDialogRoot />}

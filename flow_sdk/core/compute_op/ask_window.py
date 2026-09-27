@@ -2,15 +2,18 @@
 
 Two ways in, tried in order, and neither is a new surface:
 
-1. **A live browser tab** — a targeted ``ui_command`` sends it to the ask view
-   IN THE DOCK: the question replaces the content area, and the rail (user
-   avatar, login) and the tab strip stay where they are. The person is still
-   inside the app, and answering returns them to where they were.
+1. **A live browser tab** — a targeted ``ui_command`` opens the question as a
+   MODAL, on top of whatever the person is already looking at. If that happens
+   to be a wizard's own progress page, it stays visible right behind the
+   dialog — nothing about that page has to know a question exists. Answering
+   or cancelling just closes the dialog; there was never anywhere to "go back"
+   to, because nothing was ever navigated away from.
 2. **No tab** — open a browser at the chrome-less ``win/`` URL on THIS backend:
    that window exists only for this question, so there is no app around it to
-   keep. A question is only ever raised in the process that serves the answer
-   routes (``ask.ask_person``), so the window points back at the one place its
-   answer can land.
+   keep, and no page that could stay visible behind a dialog. A question is
+   only ever raised in the process that serves the answer routes
+   (``ask.ask_person``), so the window points back at the one place its answer
+   can land.
 
 Degrading to nothing is a legitimate outcome, not a failure: a headless box, a
 test, or ``FLOWPAD_NO_BROWSER`` all mean the question is registered and nobody
@@ -55,14 +58,17 @@ async def raise_question(question, *, try_window: bool = True) -> bool:
 
 
 async def _push_to_live_tab(question) -> bool:
-    """Send the active tab to the question. False when no tab is listening.
+    """Open the question as a MODAL on the active tab. False when none is listening.
 
     Targeted, not broadcast, and the absence of a tab is the ANSWER here rather
     than an error: it is what makes the second route run. A broadcast would
     have reported success into an empty room, and no window would ever open.
 
-    No ``layout``: the frame lands in the dock. Sending the tab to ``win/`` used
-    to strand the person on a chrome-less screen with no way back but a restart.
+    Never a navigation: this used to send the tab to ``navigate_dock`` (the ask
+    view replacing the content area), which meant leaving whatever the person
+    was looking at — a wizard's own progress page included — to see a question
+    that was itself often about that same wizard. A modal needs nothing about
+    the tab's CURRENT screen; it opens on top of it, whatever it is.
     """
     try:
         from flow_sdk.notifications.ui_command import send_ui_command  # noqa: PLC0415
@@ -74,8 +80,7 @@ async def _push_to_live_tab(question) -> bool:
         _connection_id, socket = target
         await send_ui_command(
             socket,
-            "navigate_dock",
-            view_type=ASK_VIEW,
+            "open_ask_modal",
             pointer=question.id,
         )
         return True
