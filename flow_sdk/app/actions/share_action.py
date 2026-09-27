@@ -22,6 +22,9 @@ from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+# ``ShareInvitee`` is re-exported: callers import it from here.
+from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee as ShareInvitee
 from flow_sdk.schema.data_spec.share_request_spec import ShareRequestSpec
 
 logger = logging.getLogger(__name__)

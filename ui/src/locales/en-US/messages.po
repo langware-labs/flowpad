@@ -800,8 +800,8 @@ msgid "{people, plural, one {# person will be invited.} other {# people will be 
 msgstr "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-#~ msgid "{projectName} shared"
-#~ msgstr "{projectName} shared"
+msgid "{projectName} shared"
+msgstr "{projectName} shared"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
@@ -2050,8 +2050,8 @@ msgid "Already focused"
 msgstr "Already focused"
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "Already has access"
-msgstr "Already has access"
+#~ msgid "Already has access"
+#~ msgstr "Already has access"
 
 #: src/components/connections-manager/credential-value-form.tsx
 #~ msgid "already in .env.local"
@@ -2072,8 +2072,8 @@ msgid "Already installed in a project — uninstall first"
 msgstr "Already installed in a project — uninstall first"
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "Already invited"
-msgstr "Already invited"
+#~ msgid "Already invited"
+#~ msgstr "Already invited"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Already launched in this project"
@@ -4092,7 +4092,6 @@ msgstr "Cloning…"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
-#: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -5209,8 +5208,8 @@ msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "Could not invite"
-msgstr "Could not invite"
+#~ msgid "Could not invite"
+#~ msgstr "Could not invite"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
@@ -7947,8 +7946,8 @@ msgstr "Every team and budget inside {0} is deleted with it. This cannot be undo
 #~ msgstr "Every value is already on this machine — nothing to type."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-#~ msgid "Everyone in {teamName} has been invited."
-#~ msgstr "Everyone in {teamName} has been invited."
+msgid "Everyone in {teamName} has been invited."
+msgstr "Everyone in {teamName} has been invited."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its skills travel with its files, over Git."
@@ -10557,8 +10556,8 @@ msgid "Invite people"
 msgstr "Invite people"
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "Invited"
-msgstr "Invited"
+#~ msgid "Invited"
+#~ msgstr "Invited"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
@@ -13172,8 +13171,8 @@ msgid "No members"
 msgstr "No members"
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "No members to invite"
-msgstr "No members to invite"
+#~ msgid "No members to invite"
+#~ msgstr "No members to invite"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No members yet — invite someone below."
@@ -13756,8 +13755,8 @@ msgstr "Not in a git repository — can't be published"
 #~ msgstr "Not installed"
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "Not invited"
-msgstr "Not invited"
+#~ msgid "Not invited"
+#~ msgstr "Not invited"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
@@ -20255,8 +20254,8 @@ msgid "Teams inside this team"
 msgstr "Teams inside this team"
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "Teams not expanded"
-msgstr "Teams not expanded"
+#~ msgid "Teams not expanded"
+#~ msgstr "Teams not expanded"
 
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Temperature ≤"
@@ -20359,12 +20358,12 @@ msgid "That project has no local workdir"
 msgstr "That project has no local workdir"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
-#~ msgid "That project is no longer available."
-#~ msgstr "That project is no longer available."
+msgid "That project is no longer available."
+msgstr "That project is no longer available."
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "That's you"
-msgstr "That's you"
+#~ msgid "That's you"
+#~ msgstr "That's you"
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -21975,8 +21974,8 @@ msgid "Unknown list"
 msgstr "Unknown list"
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "Unknown person"
-msgstr "Unknown person"
+#~ msgid "Unknown person"
+#~ msgstr "Unknown person"
 
 #. placeholder {0}: draft.provider
 #: src/components/data-sources/source-form.ts
@@ -23119,8 +23118,8 @@ msgid "You can close this window."
 msgstr "You can close this window."
 
 #: src/components/share-to-conversation/ShareInviteSummary.tsx
-msgid "You can't list this team's members"
-msgstr "You can't list this team's members"
+#~ msgid "You can't list this team's members"
+#~ msgstr "You can't list this team's members"
 
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
