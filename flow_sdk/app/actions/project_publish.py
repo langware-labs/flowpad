@@ -8,37 +8,19 @@ by re-implementing it — and a re-implementation that is 90% right is worse tha
 no CLI, because it would publish a project under weaker preconditions than the
 button enforces.
 
-The gates, in order, all of them fail-closed:
+The gates, in order, both fail-closed:
 
 1. an authenticated actor,
-2. cloud credentials,
-3. the authoritative git preflight (clean tree, named branch, pushed, supported
-   origin). The frontend never shells git; this is the only verdict.
-4. a GitHub token — but only when the origin that passed the preflight is
-   actually on GitHub. The token exists so the recipient's clone can reach a
-   private GitHub repo; demanding it for a ``file://`` or self-hosted remote
-   refused a share that needs no GitHub account at all, which is why this gate
-   runs AFTER the preflight that resolves the provider.
+2. a live cloud login.
 
-The origin that passed the preflight is the one carried forward — re-deriving
-it afterwards would open a window where the advertised commit is not the one
-that was checked.
+The folder's own git state never blocks: published assets travel through the
+project's hub-hosted repository. When the folder is a clean, pushed checkout,
+its ``GitOrigin`` is returned as an informational pointer.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Optional
-
-logger = logging.getLogger(__name__)
-
-#: Fail-closed preflight verdict, used when the probe itself raises.
-_STATUS_FAILURE = {
-    "available": False,
-    "reason": "Couldn't read the repository's Git status.",
-    "code": "status-failure",
-    "git_origin": None,
-}
 
 
 class ProjectPublishBlocked(Exception):

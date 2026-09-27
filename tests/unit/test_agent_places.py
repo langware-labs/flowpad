@@ -239,8 +239,42 @@ async def test_version_counts_what_is_not_published(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_version_of_an_agent_published_into_its_hub_repo(tmp_path, monkeypatch):
+    """Once published into the project's hub repo, the version compares the folder
+    with the published tree — the project folder itself is not a git repository."""
+    from flow_sdk.assets import hub_repo_sync
+    from flow_sdk.assets.git_publish import GitAuthor
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
+
+    monkeypatch.setattr(hub_repo_sync, "mirror_root", lambda repo_id: tmp_path / "mirrors" / repo_id)
+    hub = tmp_path / "hub.git"
+    subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main", str(hub)], check=True)
+    agent = await _agent(tmp_path, "places-hub-version")
+    folder = Path(agent.asset_ref)
+    rel = "agentic-assets/agent/places-hub-version"
+    repo = HubRepoOrigin(repo="git_repo-" + uuid.uuid4().hex)
+    mirror = hub_repo_sync.HubRepoMirror(
+        root=hub_repo_sync.mirror_root(repo.repo_id), clone_url=str(hub), branch="main", token="hub-token"
+    )
+    synced = await hub_repo_sync.sync_asset_with_hub(
+        mirror=mirror, asset_root=folder, rel_path=rel, is_file=False, last_tree=None,
+        author=GitAuthor(name="t", email="t@t"), asset_typeid=str(agent.typeid),
+    )
+    agent.remote = True
+    agent.origin = HubRepoOrigin(repo=repo.repo, rel_path=rel, head_commit=synced.head_commit, tree=synced.tree)
+
+    state = version_state(agent)
+    assert not (folder.parents[2] / ".git").exists()
+    assert state == {"published": True, "published_commit": synced.head_commit, "has_repo": True, "pending_changes": 0}
+
+    (folder / "system_prompt.md").write_text((folder / "system_prompt.md").read_text() + "\nMore.\n")
+    assert version_state(agent)["pending_changes"] == 1
+
+
+@pytest.mark.asyncio
 async def test_publish_force_republishes_an_agent_already_on_the_hub(tmp_path, monkeypatch):
     from flow_sdk.builtin import asset_publishing
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
     from flow_sdk.fs_store.type_id import TypeId
 
     calls: list[str] = []
@@ -255,13 +289,20 @@ async def test_publish_force_republishes_an_agent_already_on_the_hub(tmp_path, m
     monkeypatch.setattr(asset_publishing, "owning_project", _no_project)
     agent = await _agent(tmp_path, "places-publish")
     agent.remote = True
-    object.__setattr__(agent, "origin", {"kind": "git", "head_commit": "abc"})
     actor = TypeId(type="user", id="11111111-2222-4333-8444-555555555555")
 
-    assert await agent.ensure_on_hub(actor) is False
-    assert calls == []
-    assert await agent.ensure_on_hub(actor, force=True) is True
+    # A legacy GitHub origin is not "on the hub": the next deploy republishes it.
+    object.__setattr__(agent, "origin", {"kind": "git", "head_commit": "abc"})
+    assert await agent.ensure_on_hub(actor) is True
     assert calls == [agent.id]
+
+    agent.origin = HubRepoOrigin(
+        repo="git_repo-" + "1" * 32, rel_path="agentic-assets/agent/places-publish", head_commit="c" * 40, tree="t" * 40
+    )
+    assert await agent.ensure_on_hub(actor) is False
+    assert calls == [agent.id]
+    assert await agent.ensure_on_hub(actor, force=True) is True
+    assert calls == [agent.id, agent.id]
 
 
 @pytest.mark.asyncio

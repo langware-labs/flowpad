@@ -666,22 +666,22 @@ class Agent(Entity):
     # ── publish ───────────────────────────────────────────────────────────
 
     async def ensure_on_hub(self, actor: TypeId, *, force: bool = False) -> bool:
-        """Publish this repository-backed agent through the canonical Git path.
+        """Publish this agent into its project's hub-hosted repository.
 
         An Agent is not a loose deployment payload. It is an asset inside its
-        owning Project's repository, so publication must commit that asset path,
-        push it, and register its ``GitOrigin`` under the already-published
-        Project. The Hub can then clone the whole repository into the sandbox.
+        owning Project, so publication pushes that asset path into the project's
+        hub repo and registers it there (``publish_git_asset``); the hub can then
+        clone the repository into the sandbox.
 
-        ``remote=True`` without ``git_origin`` is legacy partial state produced by
-        the old field-only share path. Treat it as unpublished so the next deploy
-        repairs the row rather than preserving a deployment that cannot load its
-        files (notably ``avatar.png``).
+        ``remote=True`` without a hub-repo origin is legacy state (the old
+        field-only share path, or a GitHub origin). Treat it as unpublished so
+        the next deploy repairs the row rather than preserving a deployment that
+        cannot load its files (notably ``avatar.png``).
         """
         from flow_sdk.builtin.agent_places import hub_origin  # noqa: PLC0415
 
-        # Published means "in its project's hub repo". A legacy GitHub/flow-cloud origin
-        # is republished into the hub repo on the next deploy.
+        # Published means "in its project's hub repo"; any other origin is
+        # republished into the hub repo on the next deploy.
         if self.remote and hub_origin(self) is not None and not force:
             return False
 

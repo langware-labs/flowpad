@@ -1,24 +1,20 @@
-"""Application service for publishing one file-backed asset through Git."""
+"""The contract of publishing one file-backed asset into its project's hub repo."""
 
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
-
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, field_validator
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.schema.data_spec import DataSpec
 
 
 class AssetPublishCode(StrEnum):
     NOT_GIT_BACKED = "not_git_backed"
     PROJECT_NOT_PUBLISHED = "project_not_published"
+    # No longer raised by a publish (the hub repo needs neither GitHub nor a
+    # pushed branch); kept only while ui/ still branches on these wire codes.
     GITHUB_NOT_CONNECTED = "github_not_connected"
-    ORIGIN_INVALID = "origin_invalid"
     BRANCH_AHEAD = "branch_ahead"
-    BRANCH_DIVERGED = "branch_diverged"
-    PUSH_REJECTED = "push_rejected"
     HUB_PUBLISH_FAILED = "hub_publish_failed"
     ASSET_CONFLICT = "asset_conflict"
 
@@ -45,14 +41,7 @@ _PUBLISH_FAILURE: dict[AssetPublishCode, PublishFailure] = {
     AssetPublishCode.GITHUB_NOT_CONNECTED: PublishFailure(
         status=409, remedy="Publishing pushes the asset to its project's repository, so the connection must exist first."
     ),
-    AssetPublishCode.ORIGIN_INVALID: PublishFailure(status=409, remedy="Check the project's git remote."),
     AssetPublishCode.BRANCH_AHEAD: PublishFailure(status=409, remedy="Push the project's branch first."),
-    AssetPublishCode.BRANCH_DIVERGED: PublishFailure(
-        status=409, remedy="Reconcile the project's branch with its remote first."
-    ),
-    AssetPublishCode.PUSH_REJECTED: PublishFailure(
-        status=502, remedy="The remote refused the push — check access to the repository."
-    ),
     AssetPublishCode.HUB_PUBLISH_FAILED: PublishFailure(
         status=502, remedy="The hub could not accept it; try again shortly."
     ),
@@ -118,16 +107,6 @@ class GitAuthor(DataSpec):
         return value
 
 
-class AssetGitReceipt(DataSpec):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    changed: bool
-    repo_root: Path = Field(exclude=True)
-    branch: str
-    head_commit: str
-    origin: PortableGitOrigin
-
-
 class AssetPublishResult(DataSpec):
     project: dict
     asset: dict
@@ -136,26 +115,9 @@ class AssetPublishResult(DataSpec):
 
 
 __all__ = [
-    "AssetGitReceipt",
     "AssetPublishCode",
     "AssetPublishError",
     "AssetPublishResult",
     "GitAuthor",
 ]
 
-
-def asset_relative_path(repo_root: Path, asset_root: Path) -> str:
-    lexical = Path(asset_root).absolute()
-    try:
-        relative = lexical.relative_to(repo_root)
-    except ValueError as exc:
-        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is outside its Git checkout") from exc
-    rel = PurePosixPath(*relative.parts).as_posix()
-    if not rel or rel == "." or ".git" in PurePosixPath(rel).parts:
-        raise AssetPublishError(AssetPublishCode.ORIGIN_INVALID, "Asset path is not publishable")
-    probe = lexical if lexical.exists() else lexical.parent
-    try:
-        probe.resolve(strict=True).relative_to(repo_root.resolve())
-    except (OSError, ValueError) as exc:
-        raise AssetPublishError(AssetPublishCode.ORIGIN_INVALID, "Asset path escapes its Git checkout") from exc
-    return rel
