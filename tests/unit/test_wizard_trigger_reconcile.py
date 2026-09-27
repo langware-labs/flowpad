@@ -250,28 +250,66 @@ async def test_a_run_that_did_not_finish_tells_the_person_what_is_missing(monkey
         await _cleanup(wizard, trigger)
 
 
+def test_resolving_the_llm_source_needs_no_indexed_entity(monkeypatch):
+    """A plain shell call, not a ComputeOp — it must not depend on the
+    system-content index having found any row yet (that race is exactly what
+    made `run_llm_setup` answer "not installed" on a fresh first boot)."""
+    import asyncio
+    import sys
+
+    from flow_sdk.core.compute import exec as compute_exec
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+    from flow_sdk.server.builtin_triggers import _resolve_llm_source
+
+    seen: dict = {}
+
+    async def _shell(command, *, timeout_seconds, workdir, platform, **_):
+        seen.update(command=command, timeout_seconds=timeout_seconds, platform=platform)
+        return CliResult.of_process(command, 0)
+
+    monkeypatch.setattr(compute_exec, "run_shell", _shell)
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    result = asyncio.run(_resolve_llm_source())
+
+    assert result.ok
+    # This interpreter's own flow_cli module, not a bare `flow` that depends on
+    # PATH — see `_flow_cli`'s docstring for why.
+    assert sys.executable in seen["command"]
+    assert "flow_sdk.cli.flow_cli" in seen["command"]
+    assert "llm set auto" in seen["command"]
+    assert seen["platform"] == "linux"
+
+
+def test_flow_cli_never_depends_on_path():
+    """`_flow_cli` builds an absolute-interpreter command on every platform —
+    darwin/linux included, not only the win32 branch that looked different."""
+    from flow_sdk.server.builtin_triggers import _flow_cli
+
+    for platform in ("darwin", "linux", "win32"):
+        command = _flow_cli("llm", "set", "auto", platform=platform)
+        assert "flow_sdk.cli.flow_cli" in command
+        assert "llm" in command and "auto" in command
+        assert "command -v flow" not in command and "Get-Command flow" not in command
+
+
 @pytest.mark.parametrize("funded", [True, False])
 @async_context
 async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monkeypatch, funded):
     """The source comes BEFORE the wizard and outside it; without one the wizard
     still runs (its plain commands need none), and the notice names the source."""
-    from flow_sdk.builtin import compute_op
     from flow_sdk.config import system_projects_root
     from flow_sdk.core.wizard import execute as wizard_execute
     from flow_sdk.notifications import desktop
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server.builtin_triggers import LLM_SOURCE_OP, _run_llm_setup_trigger
+    from flow_sdk.server import builtin_triggers
+    from flow_sdk.server.builtin_triggers import _run_llm_setup_trigger
 
     order: list[str] = []
 
-    class _Source:
-        async def run(self):
-            order.append("llm source")
-            return CliResult.satisfied("funded") if funded else CliResult.not_yet("skipped")
-
-    async def _by_name(name):
-        assert name == LLM_SOURCE_OP
-        return _Source()
+    async def _resolve_source():
+        order.append("llm source")
+        return CliResult.satisfied("funded") if funded else CliResult.not_yet("skipped")
 
     async def _wizard(spec, **kwargs):
         order.append("wizard")
@@ -282,7 +320,7 @@ async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monke
     async def _notify(notify_type, **kwargs):
         told.append(kwargs)
 
-    monkeypatch.setattr(compute_op.ComputeOp, "by_name", staticmethod(_by_name))
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
     monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
     monkeypatch.setattr(desktop, "notify_desktop", _notify)
 

@@ -592,12 +592,22 @@ function HarnessListRow({
  * `flowpad-connection-row.tsx` documents: `flowpad_cloud` registers no OAuth flow, so
  * `OAUTH_FLOW_COMPLETE` never fires and the hook's only path for clearing its spinner never runs.
  */
-function FlowpadListRow() {
+function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
   const { t } = useLingui();
   const { login, cloudUrl } = useCloudStatus();
   const [busy, setBusy] = useState(false);
   const loggedIn = login.status === 'logged_in';
   const signingIn = busy || login.status === 'logging_in';
+
+  // The OAuth-style flow this awaits can settle `login.status` a moment after its own promise
+  // resolves, not necessarily within it — watching the FLIP here (never on mount, when a
+  // returning user is already signed in) is what catches it either way, without a second
+  // "did we just do this" flag of its own.
+  const wasLoggedIn = useRef(loggedIn);
+  useEffect(() => {
+    if (loggedIn && !wasLoggedIn.current) onConnected();
+    wasLoggedIn.current = loggedIn;
+  }, [loggedIn, onConnected]);
 
   const connect = async () => {
     if (loggedIn) return;
@@ -1507,6 +1517,10 @@ function MappingView({ onBack }: { onBack: () => void }) {
 export function HarnessLoginModalRoot() {
   const { open, payload, setOpen } = useHarnessLoginStore();
   const [selected, setSelected] = useState<string | null>(null);
+  // A row just finished connecting — confirmed IN PLACE rather than by closing, so the person
+  // can see it landed before deciding whether they are done here or have more to connect.
+  // `null` outside the banner's own moment; string is what it says.
+  const [justConnected, setJustConnected] = useState<string | null>(null);
   const [defaultKind, setDefaultKind] = useState<string | null>(
     () => capabilityManager.getSnapshot('harness').resolvedKind ?? null,
   );
@@ -1555,11 +1569,13 @@ export function HarnessLoginModalRoot() {
     if (!open) {
       wasOpen.current = false;
       setSelected(null);
+      setJustConnected(null);
       return;
     }
     if (wasOpen.current) return;
     wasOpen.current = true;
     setSelected(payload?.kind ?? null);
+    setJustConnected(null);
     void refreshKeys();
   }, [open, payload, refreshKeys]);
 
@@ -1619,7 +1635,38 @@ export function HarnessLoginModalRoot() {
                 that asks the user for nothing they do not already have, so reading order hands
                 them that before it asks them to pick a vendor or find a key. */}
             <div className="mt-4 flex flex-col gap-2">
-              <FlowpadListRow />
+              {justConnected ? (
+                <div
+                  data-testid="harness-just-connected"
+                  className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm"
+                >
+                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                    <Check className="h-4 w-4" />
+                    {justConnected}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="just-connected-keep-open"
+                      onClick={() => setJustConnected(null)}
+                    >
+                      <Trans>Keep browsing</Trans>
+                    </Button>
+                    <Button
+                      size="sm"
+                      data-testid="just-connected-close"
+                      onClick={() => {
+                        markHarnessGateSeen();
+                        setOpen(false);
+                      }}
+                    >
+                      <Trans>Close</Trans>
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              <FlowpadListRow onConnected={() => setJustConnected(i18n._(msg`Signed in to FlowPad.`))} />
 
               {/* The one label the tick column needs.
                   With the "Default assistant" dropdown gone, which assistant is default is
