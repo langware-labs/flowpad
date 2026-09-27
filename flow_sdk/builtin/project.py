@@ -57,8 +57,8 @@ from flow_sdk.schema.data_spec.share_result_spec import (
 )
 
 if TYPE_CHECKING:
-    from flow_sdk.app.actions.share_action import ShareInvitee
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
+    from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 log = logging.getLogger(__name__)
 
