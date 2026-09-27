@@ -83,5 +83,5 @@ def test_pointer_bearing_screens_are_shown_with_their_pointer():
     for view, meta in VIEW_META.items():
         if not meta.addressable or view in EVENTS_TWINS:
             continue
-        wanted = f"`{view.value}/<id>`" if meta.pointer is PointerRequirement.REQUIRED else f"`{view.value}`"
+        wanted = f"`{view.value}/{meta.pointer_form}`" if meta.pointer is PointerRequirement.REQUIRED else f"`{view.value}`"
         assert wanted in source, f"{view.value} should appear as {wanted}"

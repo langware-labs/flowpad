@@ -343,6 +343,12 @@ class ViewMeta:
     label: str = ""  # English, agent-facing: "Search indexes", not "rag"
     aliases: tuple[str, ...] = ()  # what a user might call it, lowercase
     pages: tuple[str, ...] = ("desk",)  # which PageId(s) render it
+    #: How the pointer is written in the address (``agent/<id>/stream_inbox``), and
+    #: the regex a pointer must fullmatch when the view has only one shape. Empty =
+    #: any pointer. Without it ``flow show view agent/<id>`` validated, then the UI's
+    #: only agent route read it as a malformed stream-inbox URL.
+    pointer_form: str = "<id>"
+    pointer_shape: str = ""
 
 
 #: The table below builds rows directly. ``pointer`` leads and ``addressable``
@@ -444,8 +450,11 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # Same: a bare project dock is the assets workspace (see the PROJECT arm in
     # `content-panel.tsx`, which documents exactly that and was unaddressable).
     ViewType.PROJECT: _m(_OPT, label="Collaboration", aliases=("room",), pages=("desk", "hub")),
-    # `<agentId>/stream_inbox` — the id leads, so the pointer is required.
-    ViewType.AGENT: _m(_REQ, label="Agent"),
+    # `<agentId>/stream_inbox` — the id leads, so the pointer is required. The agent
+    # ITSELF is an entity: `flow show entity agent-<id>` opens its editor.
+    ViewType.AGENT: _m(
+        _REQ, label="Agent stream inbox", pointer_form="<id>/stream_inbox", pointer_shape=r"[^/]+/stream_inbox"
+    ),
     ViewType.STREAM_INBOX: _m(_NONE, label="Stream Inbox", aliases=("messages",)),
     ViewType.CONVERSATION: _m(_REQ, folds_sub_pointer=True, label="Conversation", pages=("desk", "hub")),
     ViewType.SPEC: _m(_REQ, label="Spec"),
