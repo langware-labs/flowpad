@@ -68,12 +68,12 @@ agent?.enqueue('Can you help me with this step?\n<page-event type="help_requeste
 
 ## The agent side
 
-- The state reaches the agent as a block on its next turn:
-  `<display-context target="…" version="N" updated_at="…">{ JSON }</display-context>`.
-  Today that per-turn block is delivered in chats started from the app (they load
-  the display instructions). In any other session, the agent reads the state itself
-  with `flow context display` — write that command into the prompt's *What you know*
-  section either way, as the fallback.
+- **The agent reads the state with `flow context display`** — on every worker. Write
+  that into the prompt's *What you know* section as the move before any answer about
+  the page. Today a Claude worker also gets it pushed as a block on each turn,
+  `<display-context target="…" version="N" updated_at="…">{ JSON }</display-context>`;
+  Copilot, Codex and OpenCode workers do not, so a prompt that only waits for the
+  block leaves them blind.
 - The state is only current while **this** page is the one shown; showing something
   else drops it.
 - In the prompt, describe the state field by field (the *What you know* section) and
