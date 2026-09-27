@@ -310,6 +310,18 @@ export function ConversationView({
   // hub's own conversations, which never reply through a local source.
   const channelSpec = conversation?.channel_spec ?? null;
   const channel = channelSpec?.transport === ChannelTransport.Source ? channelSpec.name : undefined;
+  // The message the composer answers — local composer state, not navigation (nothing is shown
+  // differently; the next send quotes it).
+  const [replyTo, setReplyTo] = useState<FlowMessage | null>(null);
+  useEffect(() => setReplyTo(null), [conversationId]);
+  const channelTraits = channel ? { quotes: !!channelSpec?.quotes, reacts: !!channelSpec?.reacts } : null;
+  const quotedFor = (fm: FlowMessage | null) => {
+    const parent = fm?.reply_to_id ? messagesById.get(fm.reply_to_id) : undefined;
+    if (!parent) return null;
+    const jump = () =>
+      document.querySelector(`[data-testid="message-bubble-${parent.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return { sender: parent.sender_name || parent.envelope?.sender?.name || t`Someone`, text: parent.text ?? '', onJump: jump };
+  };
 
   // Attention-driven polling: while this source-backed conversation is the
   // SELECTED dock, keep its DataSource due (request_poll on an interval) so
@@ -439,6 +451,9 @@ export function ConversationView({
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
           showEmailHeaders={!!agentId}
+          channelTraits={channelTraits}
+          quoted={quotedFor(fm)}
+          onReply={channel ? setReplyTo : undefined}
         />
       );
     }
@@ -805,6 +820,9 @@ export function ConversationView({
         placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
         agentId={agentId ?? undefined}
         sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
+        channelAcceptsFiles={!!channelSpec?.accepts_attachments}
+        replyTo={replyTo ? { id: replyTo.id ?? '', sender: replyTo.sender_name || t`Someone`, text: replyTo.text ?? '', inThread: !channelSpec?.quotes } : null}
+        onClearReply={() => setReplyTo(null)}
       />
     </div>
   );

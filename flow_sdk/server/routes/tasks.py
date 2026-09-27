@@ -132,9 +132,11 @@ async def conversation_reply(conversation_id: str, request: Request):
 
     body = await _body(request)
     text = str(body.get("text") or "").strip()
-    if not text:
+    files = [str(p) for p in (body.get("files") or []) if str(p or "").strip()]
+    if not text and not files:
         return ApiFailResponse(message="nothing to say")
-    return await dispatch_channel_reply(conversation_id, text=text)
+    reply_to = str(body.get("reply_to") or "").strip() or None
+    return await dispatch_channel_reply(conversation_id, text=text, reply_to=reply_to, files=files)
 
 
 __all__ = ["VERBS", "router"]

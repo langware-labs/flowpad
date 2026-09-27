@@ -21,6 +21,11 @@ export interface IChannelSpec {
   home: boolean;
   transport: ChannelTransport;
   accepts_attachments: boolean;
+  /** A reply to one message quotes it where the recipient reads (WhatsApp, Telegram); false: the
+   *  reply only lands in that message's thread (email, Slack) — say "Reply in thread". */
+  quotes?: boolean;
+  /** People can put an emoji on a message here, and so can we. */
+  reacts?: boolean;
   needs_cloud_login: boolean;
   hosts_sessions: boolean;
 }
