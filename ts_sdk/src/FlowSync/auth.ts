@@ -62,11 +62,6 @@ export interface LogoutData {
   message?: string;
 }
 
-/**
- * Extract all UTM parameters from the current URL.
- * Returns an object with all query params starting with 'utm_'.
- */
-
 export class AuthManager extends EventEmitter {
   _currentUser: any = null;
 

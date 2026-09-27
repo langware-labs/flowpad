@@ -22,8 +22,8 @@
  * Both rules are about EAGER edges only — `import type` is erased, and a dynamic
  * `await import()` runs after load — so those do not count.
  */
-import { readFileSync, readdirSync, statSync } from 'fs';
-import path from 'path';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const SDK_SRC = path.resolve(__dirname, '../../../ts_sdk/src');
@@ -37,11 +37,20 @@ function sdkFiles(dir: string = SDK_SRC): string[] {
   });
 }
 
-/** Source with comments removed, so a specifier inside one is not read as an import. */
+/**
+ * Source with comments removed, so a specifier inside one is not read as an import.
+ * Memoised: three tests and the closure walk all scan the same ~700 files.
+ */
+const sources = new Map<string, string>();
 function code(file: string): string {
-  return readFileSync(file, 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/^[ \t]*\/\/.*$/gm, '');
+  let src = sources.get(file);
+  if (src === undefined) {
+    src = readFileSync(file, 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^[ \t]*\/\/.*$/gm, '');
+    sources.set(file, src);
+  }
+  return src;
 }
 
 function resolveSpecifier(from: string, spec: string): string | null {
