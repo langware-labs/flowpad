@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ActivityProgressSpec } from '@sdk/activity';
-import { isTerminal } from '@sdk/activity';
+import { deepestRunning, isTerminal } from '@sdk/activity';
 import { ExitCode, type Wizard, type WizardResult, type WizardRunDetail } from '@sdk';
 
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
@@ -140,11 +140,20 @@ export function useWizardRun(wizard: Wizard) {
     (stepIds: string[]): { steps: WizardRunStep[]; orphaned: WizardStepAnswer[] } => {
       const byId = new Map(outcomes.map((o) => [o.step_id, o]));
       const children = root?.children ?? [];
-      const steps = stepIds.map((step_id) => ({
-        step_id,
-        live: children.find((child) => child.name === step_id) ?? null,
-        outcome: byId.get(step_id) ?? null,
-      }));
+      const steps = stepIds.map((step_id) => {
+        const node = children.find((child) => child.name === step_id) ?? null;
+        // A step here is usually itself a nested wizard (ask, then install),
+        // so ITS own `current` is never set — only `label` is. The granular
+        // phase text ("checking…", "…: cli", "…: agent") is written on
+        // whichever descendant is actually doing the work right now, so surface
+        // THAT node instead of the one that merely carries this step's name.
+        const active = node ? deepestRunning(node) : null;
+        return {
+          step_id,
+          live: active ?? node,
+          outcome: byId.get(step_id) ?? null,
+        };
+      });
       const known = new Set(stepIds);
       return { steps, orphaned: outcomes.filter((o) => !known.has(o.step_id)) };
     },

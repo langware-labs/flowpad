@@ -1598,23 +1598,46 @@ async def onboarding_setup():
 _DEBUG_TOOL_BINARIES = ["jq", "rg", "claude", "python3", "python", "git", "node"]
 
 
-@router.post("/api/v1/onboarding/debug/hide-tools")
-async def onboarding_debug_hide_tools() -> ApiSuccessResponse[dict]:
+def _brew_formula_of(resolved: Path) -> Optional[str]:
+    """The Homebrew formula that owns *resolved*, when it is a Homebrew symlink
+    into a Cellar — parsed from the REALPATH rather than a hardcoded name table,
+    since a formula's name does not always match the binary it installs
+    (``ripgrep`` -> ``rg``) and a versioned one doesn't match at all
+    (``python@3.12``). ``None`` means: not Homebrew's, remove the file itself.
+    """
+    parts = resolved.parts
+    if "Cellar" in parts:
+        i = parts.index("Cellar")
+        if i + 1 < len(parts):
+            return parts[i + 1]
+    return None
+
+
+@router.post("/api/v1/onboarding/debug/remove-tools")
+async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
     """DEBUG ONLY — temporary, for testing the `llm-setup` wizard end to end.
 
-    Makes every one of its 6 tools look freshly missing again, by renaming each
-    binary found on PATH to ``<name>.flowpad-debug-disabled`` — never deleting
-    or uninstalling anything, and easily reversible by hand (rename it back).
-    Running the wizard again re-installs whatever this hid, which is the whole
-    point: it lets `Run setup again` be tested from a clean slate repeatedly
-    without actually uninstalling git/python/node from the box.
+    ACTUALLY UNINSTALLS every one of its 6 tools found on this box — `brew
+    uninstall --force` for anything Homebrew manages, deleting the file
+    directly for anything else (e.g. Claude Code's own curl-installed binary).
+
+    A binary on a read-only system volume (Apple's own `/usr/bin/git`) cannot
+    be removed this way at all — that is reported in `not_found` alongside the
+    OS error, not silently skipped.
+
+    Then runs the wizard CHECK-ONLY right here — the icons in the wizard's own
+    page are its LAST COMPLETED run's record (`run_state`), never a live
+    filesystem check, so removing a binary alone would leave them exactly as
+    green as before until something re-runs the wizard. Check-only is that
+    something: it reports what is genuinely true right now, WITHOUT asking to
+    install anything — the actual install flow, with its live per-step
+    progress, is still `Run setup again`'s job, one click away.
 
     Remove this route and its button once the wizard work is done — see
     FLOWPAD-2171.
     """
     combined_path = os.environ.get("PATH", "") + os.pathsep + str(Path.home() / ".local" / "bin")
-    hidden: List[str] = []
-    already_hidden: List[str] = []
+    removed: List[str] = []
     not_found: List[str] = []
     for name in _DEBUG_TOOL_BINARIES:
         found = shutil.which(name, path=combined_path)
@@ -1622,16 +1645,37 @@ async def onboarding_debug_hide_tools() -> ApiSuccessResponse[dict]:
             not_found.append(name)
             continue
         path = Path(found)
-        target = path.with_name(path.name + ".flowpad-debug-disabled")
-        if target.exists():
-            already_hidden.append(name)
-            continue
+        formula = _brew_formula_of(path.resolve())
         try:
-            path.rename(target)
-            hidden.append(name)
+            if formula:
+                proc = await asyncio.create_subprocess_exec(
+                    "brew",
+                    "uninstall",
+                    "--force",
+                    formula,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _stdout, stderr = await proc.communicate()
+                if proc.returncode != 0:
+                    not_found.append(f"{name} (brew uninstall {formula} failed: {stderr.decode().strip()[:200]})")
+                    continue
+                removed.append(f"{name} (brew: {formula})")
+            else:
+                path.unlink()
+                removed.append(name)
         except OSError as exc:
             not_found.append(f"{name} ({exc})")
-    return ApiSuccessResponse[dict](data={"hidden": hidden, "already_hidden": already_hidden, "not_found": not_found})
+
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+    from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD  # noqa: PLC0415
+
+    wizard = await Wizard.get_one({"name": LLM_SETUP_WIZARD})
+    wizard_result = None
+    if wizard is not None:
+        result = await wizard.run(check_only=True)
+        wizard_result = result.model_dump(mode="json")
+    return ApiSuccessResponse[dict](data={"removed": removed, "not_found": not_found, "wizard": wizard_result})
 
 
 # ---------------------------------------------------------------------------

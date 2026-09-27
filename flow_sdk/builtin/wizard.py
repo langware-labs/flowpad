@@ -18,6 +18,7 @@ Progress is not stored here either: a run reports through the shared Activity
 mechanism, addressed at ``wizard/<name>`` with this entity as its subject, so a wizard
 run appears in the same footer chip as an index walk and a Claude session.
 """
+
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Optional
@@ -174,7 +175,9 @@ class Wizard(Entity):
         except Exception:  # noqa: BLE001 — a run summary must never fail a fetch
             return {"result": None, "approved": False}
 
-    async def run(self, *, approved: bool = False, unattended: bool = False) -> "WizardResult":
+    async def run(
+        self, *, approved: bool = False, unattended: bool = False, check_only: bool = False
+    ) -> "WizardResult":
         """Run this wizard, and answer what it did. Never raises for an outcome.
 
         The OOP twin of ``ComputeOp.run``: a caller in Python drives the entity,
@@ -190,6 +193,10 @@ class Wizard(Entity):
         usually before a browser exists, so entity scope addressed a complete
         progress tree to an audience of zero. It changes only WHO SEES the run,
         never who may start one — ``execute_wizard`` holds the wizard's slot.
+
+        ``check_only`` reports what is true right now — stamped into
+        ``run_state`` like any other run — without asking, installing or
+        spawning anything. See ``execute_wizard``.
         """
         from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
         from flow_sdk.core.wizard.runner import wizard_refused  # noqa: PLC0415
@@ -215,9 +222,13 @@ class Wizard(Entity):
         if not (approved or self.is_system()):
             return wizard_refused(self.name)
         return await execute_wizard(
-            str(self.id), spec, self.asset_ref or "",
-            trusted=True, approved=approved,
+            str(self.id),
+            spec,
+            self.asset_ref or "",
+            trusted=True,
+            approved=approved,
             subject_entity=None if unattended else str(self.typeid),
+            check_only=check_only,
         )
 
     @action.post(action_name="run")
@@ -238,8 +249,8 @@ class Wizard(Entity):
         answers (``REFUSED`` / ``NOT_APPLICABLE``), decided in ``run`` so a
         trigger meets them too.
         """
-        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
         from flow_sdk.core.wizard.state import is_approved, record_approval  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         approved = False
         if not self.is_system():
@@ -286,7 +297,8 @@ class Wizard(Entity):
         reason = (
             "This wizard ships with Flowpad. It is trusted to run commands without asking, "
             "and an upgrade would overwrite the edit."
-            if read_only else ""
+            if read_only
+            else ""
         )
 
         # A candidate arrives as a PARSED dict, so it is validated as one —
@@ -301,11 +313,14 @@ class Wizard(Entity):
                 try:
                     text = (Path(self.asset_ref) / WIZARD_JSON).read_text(encoding="utf-8")
                 except OSError as exc:
-                    return ApiSuccessResponse(data=WizardValidationSpec(
-                        ok=False,
-                        issues=[WizardIssueSpec(msg=f"{WIZARD_JSON} could not be read: {exc}")],
-                        read_only=read_only, read_only_reason=reason,
-                    ).model_dump())
+                    return ApiSuccessResponse(
+                        data=WizardValidationSpec(
+                            ok=False,
+                            issues=[WizardIssueSpec(msg=f"{WIZARD_JSON} could not be read: {exc}")],
+                            read_only=read_only,
+                            read_only_reason=reason,
+                        ).model_dump()
+                    )
                 spec = parse_wizard(text)
         except ValidationError as exc:
             issues = [
@@ -321,12 +336,14 @@ class Wizard(Entity):
         else:
             issues = document_warnings(spec)
 
-        return ApiSuccessResponse(data=WizardValidationSpec(
-            ok=not any(issue.severity == "error" for issue in issues),
-            issues=issues,
-            read_only=read_only,
-            read_only_reason=reason,
-        ).model_dump())
+        return ApiSuccessResponse(
+            data=WizardValidationSpec(
+                ok=not any(issue.severity == "error" for issue in issues),
+                issues=issues,
+                read_only=read_only,
+                read_only_reason=reason,
+            ).model_dump()
+        )
 
     @action.post(action_name="reset")
     async def reset_action(self) -> ApiResponse:

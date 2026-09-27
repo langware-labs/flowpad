@@ -176,6 +176,11 @@ async def run_op(
     launch: Launch = launch_step_process,
     on_status: Optional[Callable[[str], None]] = None,
     wizard_id: str = "",
+    #: Report the goal's current state and stop — never ask, never run a
+    #: command, never spawn an agent. For a status refresh that must not have
+    #: side effects (a person clicking a "what's actually installed right
+    #: now" action must not be met with an install prompt).
+    check_only: bool = False,
 ) -> ReturnedValue:
     """Reach the goal or produce the value, or say precisely why not. Never raises."""
     exe = spec.exe_data
@@ -191,6 +196,8 @@ async def run_op(
         return _already(spec, before)
     if before is not None and before.exit_code is ExitCode.NOT_APPLICABLE:
         return exe.ANSWER.not_applicable(f"{spec.display_label}: not applicable here.", check=before)
+    if check_only:
+        return exe.ANSWER.not_yet(f"{spec.display_label}: not installed yet.", check=before, ran=False)
 
     seams = _Seams(
         workdir=workdir,
