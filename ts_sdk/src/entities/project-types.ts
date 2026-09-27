@@ -23,10 +23,6 @@ export interface ProjectContextDirInfo {
   typeid?: string;
 }
 
-/** Optional per-project branding read from `.flow/customization/`.
- *  Mirrors the backend `Project.customization` computed field. Image bytes are
- *  fetched on demand via the `fs` download action; here only a flag (home
- *  background) or a relative path (brand logos). */
 /** A project's visual identity, from the `brand` block of
  *  `.flow/customization/string.json`. Every field is optional; the block itself
  *  is null unless at least one survived validation.
@@ -44,6 +40,10 @@ export interface ProjectBrand {
   logo_dark?: string | null;
 }
 
+/** Optional per-project branding read from `.flow/customization/`.
+ *  Mirrors the backend `Project.customization` computed field. Image bytes are
+ *  fetched on demand via the `fs` download action; here only a flag (home
+ *  background) or a relative path (brand logos). */
 export interface ProjectCustomization {
   /** From `.flow/customization/string.json` — overrides the home greeting. */
   home_title?: string | null;
