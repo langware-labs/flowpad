@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import random
 import shutil
 import tempfile
@@ -292,6 +293,20 @@ def _run(path: Path, term_path: str, timeout: float = 5.0):
 def test_python_ok(tmp_path, py_path):
     r = _run(_snip(tmp_path, "py", "print(json.dumps({'a': 1}))", hidden="import json"), py_path)
     assert (r.returncode, r.stdout, r.timed_out) == (0, '{"a": 1}\n', False)
+
+
+def test_a_python_snippet_runs_on_flowpads_own_interpreter(tmp_path):
+    """A Flowpad snippet imports flow_sdk. It ran on whatever ``python3`` the terminal
+    PATH found first: on a machine with a global pyenv Python that was a stale 0.2.177
+    flow_sdk, which crashed on an unrelated env value before the user's code ran. The
+    interpreter is the one Flowpad itself runs on, whatever the PATH says."""
+    decoy = tmp_path / "bin"
+    decoy.mkdir()
+    (decoy / "python3").write_text("#!/bin/sh\necho WRONG-PYTHON\n")
+    (decoy / "python3").chmod(0o755)
+    r = _run(_snip(tmp_path, "py", "print(sys.executable)", hidden="import sys"), f"{decoy}:{os.environ['PATH']}")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == sys.executable
 
 
 def test_python_exception_points_at_the_real_line(tmp_path, py_path):
