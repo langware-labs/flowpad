@@ -51,6 +51,7 @@ import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
 import { AgentChildView } from './agent-profile/AgentChildView';
 import { useNestedHost } from './nested-host';
+import { useAssetReadOnly } from './read-only';
 import { SubAgentAssetEditor } from './subagent/SubAgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
@@ -120,7 +121,7 @@ function ConnectingFallback() {
  */
 export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
   const { currentDock } = useDockNavigation();
-  const readOnly = currentDock?.options?.readOnly === '1';
+  const readOnly = useAssetReadOnly();
   const occurrenceType = currentDock?.options?.assetType;
   // The view nested in THIS editor — only the page's own editor has one; a router rendering the
   // child itself (AgentChildView) must not see it again.
@@ -225,9 +226,9 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
 
   // Custom domain forms may save a row or launch work. Read-only occurrence
   // routes instead project the registry-declared file, without an Entity gate.
-  // The four specialized asset viewers below already honor this contract.
+  // The specialized asset viewers listed below already honor this contract.
   if (readOnly && vfsResolveRef && ptr.method === AssetRoutingMethod.VFS &&
-      ![AssetEditor.SKILL, AssetEditor.SUBAGENT, AssetEditor.MARKDOWN, AssetEditor.MCP].includes(ptr.editor) &&
+      ![AssetEditor.SKILL, AssetEditor.SUBAGENT, AssetEditor.MARKDOWN, AssetEditor.MCP, AssetEditor.DECK].includes(ptr.editor) &&
       (!isFileOnlyEditor(ptr.editor) || ptr.editor === AssetEditor.CODE)) {
     const type = occurrenceType ?? vfsResolvedType ?? primaryTypeForEditor(ptr.editor);
     const shape = type ? dataManager.getTypeInfo(type)?.shape : undefined;
@@ -406,6 +407,9 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         />
       );
     case AssetEditor.DECK:
+      // The presenter only reads the folder, so a read-only occurrence (a received
+      // deck under review) renders with no record, like McpViewer by path.
+      if (readOnly && ptr.method === AssetRoutingMethod.VFS) return <DeckViewer fsRef={fsRef} />;
       return (
         <EntityResolutionGate<Deck>
           type={Deck.type}
