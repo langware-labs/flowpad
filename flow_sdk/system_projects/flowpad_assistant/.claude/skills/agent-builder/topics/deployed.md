@@ -40,7 +40,12 @@ real people can reach it, so this topic is the one where the user's go matters m
 2. List what it needs in `requirements` (names of credentials and variables).
 3. Put hard rules for strangers in the prompt: who it may answer, what it may reveal,
    when to hand off to a person.
-4. `machine_size` (`sm` / `md` / `lg`) matters only for a cloud machine.
+4. **A channel has no display.** Someone writing by email, WhatsApp or the chat
+   endpoint sees only text: `flow show` there records a page nobody sees, and an agent
+   that says "I've opened the form" is telling them something false. If the agent also
+   runs in the app, its prompt says: on a channel, put the questions and links in the
+   reply instead of showing a form or page.
+5. `machine_size` (`sm` / `md` / `lg`) matters only for a cloud machine.
 
 ## Channels — how people reach it
 
