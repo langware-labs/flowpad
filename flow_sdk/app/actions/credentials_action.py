@@ -117,6 +117,11 @@ async def credentials_action() -> ApiResponse:
                     payload.get("deployment_id") or "", payload.get("project_id") or "", list(payload.get("names") or []),
                     payload.get("environment") or "",
                 ))
+            if sub_path == "teardown":
+                # The deployment's machine is about to go: its sources undo what they set up at providers.
+                from flow_sdk.builtin.credential_service import teardown_sources  # noqa: PLC0415
+
+                return ApiSuccessResponse(data={"sources": await teardown_sources()})
             if sub_path == "use-mine":
                 from flow_sdk.builtin.credential_service import use_mine  # noqa: PLC0415
 

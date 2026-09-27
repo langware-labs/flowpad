@@ -231,6 +231,24 @@ class WahaSource(MessageSource):
             session = await self._api("POST", f"/api/sessions/{self.session}/start")
         return session
 
+    async def teardown(self) -> str:
+        """Remove THIS instance's webhook from the WAHA session -- only the entry whose URL is this machine's
+        (``WAHA_WEBHOOK_URL``); the session, its pairing and every other webhook stay."""
+        url = (self._secret("webhook_url") or "").strip()
+        if not url or not self.base_url:
+            return ""
+        try:
+            session = await self._api("GET", f"/api/sessions/{self.session}")
+        except NotFound:
+            return ""
+        config = session.get("config") if isinstance(session.get("config"), dict) else {}
+        hooks = [h for h in (config.get("webhooks") or []) if isinstance(h, dict)]
+        kept = [h for h in hooks if h.get("url") != url]
+        if len(kept) == len(hooks):
+            return ""
+        await self._api("PUT", f"/api/sessions/{self.session}", json={"config": {**config, "webhooks": kept}})
+        return f"removed its webhook from WAHA session {self.session}"
+
     def _webhook(self) -> dict:
         url = (self._secret("webhook_url") or "").strip()
         if not url:

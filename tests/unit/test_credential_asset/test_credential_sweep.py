@@ -123,17 +123,28 @@ async def test_the_e2b_leg_finds_the_agents_live_boxes_and_needs_its_key(home, m
     monkeypatch.delenv("E2B_API_KEY", raising=False)
     assert (await sweep(agent_id="a1", e2b=True)).unchecked[0].error == "E2B_API_KEY is not set"
 
-    boxes = [{"sandboxID": "sbx-mine", "metadata": {"source": "agent-a1"}}, {"sandboxID": "sbx-other", "metadata": {}}]
+    pages = {
+        None: ([{"sandboxID": "sbx-mine", "state": "running", "metadata": {"source": "agent-a1"}},
+                {"sandboxID": "sbx-other", "state": "running", "metadata": {}}], "p2"),
+        "p2": ([{"sandboxID": "sbx-kept", "state": "paused", "metadata": {"source": "agent-a1"}}], None),
+    }
+    asked: list = []
     real = httpx.AsyncClient
+
+    def answer(request):
+        asked.append(sorted(request.url.params.multi_items()))
+        rows, token = pages[request.url.params.get("nextToken")]
+        return httpx.Response(200, json=rows, headers={"x-next-token": token} if token else {})
 
     def client(*args, **kwargs):
         assert kwargs["headers"]["X-API-KEY"] == "e2b-test-key"
-        return real(*args, transport=httpx.MockTransport(lambda request: httpx.Response(200, json=boxes)), **kwargs)
+        return real(*args, transport=httpx.MockTransport(answer), **kwargs)
 
     monkeypatch.setenv("E2B_API_KEY", "e2b-test-key")
     monkeypatch.setattr(httpx, "AsyncClient", client)
     result = await sweep(agent_id="a1", e2b=True)
-    assert [(f.store, f.name) for f in result.found] == [("e2b", "sbx-mine")]
+    assert [(f.store, f.name) for f in result.found] == [("e2b", "sbx-mine (running)"), ("e2b", "sbx-kept (paused)")]
+    assert ("state", "running,paused") in asked[0], "a paused sandbox is a machine kept: it is looked for"
     assert "e2b-test-key" not in result.model_dump_json()
 
 

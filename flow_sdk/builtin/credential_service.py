@@ -492,6 +492,20 @@ async def _verify_readers(names: list[str]) -> dict[str, str]:
     return {str(s.name or s.id): v for s, v in zip(readers, verdicts)}
 
 
+async def teardown_sources() -> dict[str, str]:
+    """Every source on this machine undoes what it set up at its provider (``DataSource.teardown``) --
+    what a deployment's machine does just before the hub destroys it. ``{source name: report}``."""
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+
+    rows = await asyncio.gather(*(DataSource.get_all({"provider": p}) for p in DRIVERS.keys()))
+    sources = [s for batch in rows for s in batch or []]
+    reports = await asyncio.gather(*(s.teardown() for s in sources))
+    return {str(s.name or s.id): r for s, r in zip(sources, reports)}
+
+
 async def unplace_values(deployment_id: str, project_id: str, names: list[str], environment: str = "") -> dict[str, Any]:
     """Remove ``names`` from wherever this machine reads them for ``deployment_id``: ``{removed}``."""
     from flow_sdk.builtin.credential_resolver import declared_vars  # noqa: PLC0415

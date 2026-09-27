@@ -10,7 +10,8 @@ value can live is read for a trace of it:
 * each store a data source binds that is not local (e.g. GCP Secret Manager): a named variable;
 * the hub's own secret store, through its ``leftovers`` script in a local hub checkout: any key of
   the agent, project or deployments;
-* live e2b sandboxes labelled with the agent (``source``), read with ``E2B_API_KEY``.
+* e2b sandboxes labelled with the agent (``source``) -- running AND paused (a paused one is a whole machine
+  kept, its disk included) -- read with ``E2B_API_KEY``.
 
 A store that cannot be read is reported ``unchecked`` — never counted as clean. No value is ever
 read into the result, printed or logged.
@@ -211,14 +212,23 @@ async def _e2b(out: _Sweep, agent_id: str) -> None:
         out.unreadable("e2b", E2B_API, "E2B_API_KEY is not set")
         return
     source = f"agent-{agent_id}"
+    boxes: list[dict] = []
     try:
         async with httpx.AsyncClient(base_url=E2B_API, headers={"X-API-KEY": key}) as client:
-            response = await client.get("/sandboxes")
-            response.raise_for_status()
-            boxes = response.json()
+            params: list[tuple[str, str]] = [("state", "running,paused"), ("limit", "100")]
+            while True:
+                response = await client.get("/v2/sandboxes", params=params)
+                response.raise_for_status()
+                boxes += response.json()
+                token = response.headers.get("x-next-token")
+                if not token:
+                    break
+                params = [*params[:2], ("nextToken", token)]
     except Exception as e:  # noqa: BLE001 — the key is in a header, never in the message
         out.unreadable("e2b", E2B_API, type(e).__name__)
         return
     for box in boxes:
         if (box.get("metadata") or {}).get("source") == source:
-            out.found.append(LeftoverSpec(store="e2b", where=E2B_API, name=str(box.get("sandboxID") or "")))
+            state = str(box.get("state") or "")
+            name = str(box.get("sandboxID") or "")
+            out.found.append(LeftoverSpec(store="e2b", where=E2B_API, name=f"{name} ({state})" if state else name))

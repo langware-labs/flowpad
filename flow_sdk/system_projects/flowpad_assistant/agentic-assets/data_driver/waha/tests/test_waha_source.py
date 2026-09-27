@@ -346,3 +346,17 @@ async def test_a_delivery_for_an_unknown_session_answers_200():
 
     response = await webhook_delivery("waha", _Request(_delivery(_message("m", "hi"), session="nobody-here")))
     assert response.data["ingested"] == 0 and "no source" in response.data["reason"]
+
+
+async def test_teardown_removes_only_this_instances_webhook_and_leaves_the_session(serve):
+    """A deployment's machine is going: WAHA stops calling it. The session, its pairing and a webhook some
+    other instance registered stay."""
+    other = {"url": "http://another-instance/hook", "events": ["message"]}
+    double, base = serve(hooks=[{"url": HOOK, "events": ["message"]}, other])
+    async with WahaSource(_binding(base)) as live:
+        report = await live.teardown()
+        again = await live.teardown()
+
+    assert double.hooks == [other] and "removed" in report
+    assert again == "", "nothing of its own left: nothing written"
+    assert not any(method in ("DELETE", "POST") for method, _, _ in double.calls), "the session is never stopped or recreated"
