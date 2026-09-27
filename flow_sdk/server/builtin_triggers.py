@@ -361,6 +361,36 @@ async def _resolve_llm_source() -> "CliResult":
     return await run_shell(command, timeout_seconds=CLI_TIMEOUT, workdir=Path.home(), platform=sys.platform)
 
 
+async def _navigate_to_wizard(wizard: "Wizard") -> None:
+    """Send whatever tab is open to this wizard's own page — the list of tools
+    and their live status, not whatever screen the person happened to be on.
+
+    Best-effort and silent either way: no live tab (headless, or nobody has
+    opened the app yet) means nothing to send anywhere, same as `ask_window`'s
+    own tolerance for the identical situation. This is the one case an
+    unattended run is deliberately allowed to steer a tab — first-run setup
+    IS the reason the person is looking at Flowpad at all, so landing them on
+    a blank home screen while it works in the background is the confusing
+    outcome, not this.
+    """
+    try:
+        from flow_sdk.notifications.ui_command import send_ui_command  # noqa: PLC0415
+        from flow_sdk.server.routes.websocket import get_active_connection  # noqa: PLC0415
+
+        target = get_active_connection()
+        if target is None:
+            return
+        _connection_id, socket = target
+        await send_ui_command(
+            socket,
+            "navigate_dock",
+            view_type="assets",
+            pointer=f"editor/wizard/typeid/{wizard.typeid}",
+        )
+    except Exception:  # noqa: BLE001 — no socket, no server: nothing to steer
+        _log.debug("llm setup: no live tab to show the wizard page on", exc_info=True)
+
+
 async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[ReturnedValue, WizardResult]":
     """First-run setup: an LLM source, then the wizard that installs the tools.
 
@@ -370,8 +400,12 @@ async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[Returne
     come back side by side, so a caller can say which of them fell short.
 
     One function for both ways in — the trigger on the first tab after install,
-    and Settings → General — so the order cannot drift between them.
+    and Settings → General — so the order cannot drift between them. Both also
+    steer the active tab to the wizard's own page before running it: neither
+    caller is "the person is already looking at the wizard", so without this
+    the whole run is invisible behind whatever screen was already open.
     """
+    await _navigate_to_wizard(wizard)
     source = await _resolve_llm_source()
     _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
     return source, await wizard.run(unattended=unattended)

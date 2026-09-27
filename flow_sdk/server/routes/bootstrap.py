@@ -1667,6 +1667,14 @@ async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
         except OSError as exc:
             not_found.append(f"{name} ({exc})")
 
+    # Re-sweep, or the in-memory capability values still point at the binaries just
+    # removed: `resolve_builtin_worker_type` would keep picking Claude Code, and the
+    # wizard's agent rung would spawn a `claude` that is gone instead of falling back
+    # to the bootstrap worker (deepagents). A swept "absent" is authoritative.
+    from flow_sdk.core.capabilities.discovery import run_discovery  # noqa: PLC0415
+
+    await run_discovery()
+
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
     from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD  # noqa: PLC0415
 
