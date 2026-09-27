@@ -109,6 +109,10 @@ class _Run:
     #: never is: an `ask` step raised three levels deep must still point back
     #: at the one entity a person can open to see the whole run.
     wizard_id: str = ""
+    #: Report the goal's current state and stop — never ask, never install,
+    #: never spawn an agent. Threaded to every nested wizard the same way
+    #: `wizard_id` is; see `run_op`'s own `check_only`.
+    check_only: bool = False
     #: A person explicitly approved THIS run, so its callees inherit that.
     #: Being SHIPPED does not: a wizard Flowpad ships runs unprompted, and
     #: letting it pull in an op from a cloned repo is the hole the gate exists
@@ -140,6 +144,7 @@ async def run_wizard(
     chain: tuple[str, ...] = (),
     parent: Any = None,
     wizard_id: str = "",
+    check_only: bool = False,
 ) -> WizardResult:
     """Run every step in order. Never raises for an outcome.
 
@@ -170,6 +175,7 @@ async def run_wizard(
         approved=approved,
         chain=chain,
         wizard_id=wizard_id,
+        check_only=check_only,
     )
 
     # A nested run reports INTO the caller's node, so the tree is one tree. Only
@@ -346,6 +352,7 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue
         env=input_env(_scope(run, step)),
         on_status=lambda text: child.current(text),
         wizard_id=run.wizard_id,
+        check_only=run.check_only,
     )
 
 
@@ -382,6 +389,7 @@ async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedV
         chain=above,
         parent=child,
         wizard_id=run.wizard_id,
+        check_only=run.check_only,
     )
 
 

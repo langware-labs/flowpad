@@ -1,6 +1,5 @@
+import { useEffect } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { Loader2 } from 'lucide-react';
-import { Button } from '@src/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -10,6 +9,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { Button } from '@src/components/ui/button';
 import { useAskModalStore } from './ask-modal-store';
 import { fieldsOf, useAskQuestion } from './use-ask-question';
 
@@ -17,10 +17,11 @@ import { fieldsOf, useAskQuestion } from './use-ask-question';
  * A question a ComputeOp put to a person — the MODAL rendering, opened by the
  * `open_ask_modal` ui_command over whatever a live tab is already showing. If
  * that happens to be a wizard's own progress page, it stays visible right
- * behind this dialog; answering or cancelling just closes it, since nothing
- * was ever navigated away from. The no-live-tab fallback (a fresh `win/`
- * window) still gets the full-page `AskView` instead — there is no screen
- * behind it there to leave visible.
+ * behind this dialog — which is exactly why, unlike the full-page `AskView`,
+ * this one carries NO wizard-specific link or status of its own: closing (or
+ * auto-closing, once settled) is enough to see it, since nothing was ever
+ * navigated away from. The no-live-tab fallback (a fresh `win/` window) still
+ * gets `AskView` instead — there is no screen behind it there to reveal.
  */
 export function AskModalRoot() {
   const open = useAskModalStore((s) => s.open);
@@ -31,50 +32,26 @@ export function AskModalRoot() {
 }
 
 function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChange: (open: boolean) => void }) {
-  const {
-    question,
-    values,
-    setValues,
-    error,
-    busy,
-    settledKind,
-    settledMessage,
-    submit,
-    cancel,
-    wizardId,
-    openWizard,
-    runningNow,
-  } = useAskQuestion(questionId);
+  const { question, values, setValues, error, busy, settledKind, settledMessage, submit, cancel } =
+    useAskQuestion(questionId);
+
+  // Settled, however it got there: nothing left for THIS dialog to say — the
+  // page it was sitting over (a wizard's own progress view, or anything else)
+  // is already the answer to "what happens now", and it is right there the
+  // instant this closes.
+  useEffect(() => {
+    if (settledKind) onOpenChange(false);
+  }, [settledKind, onOpenChange]);
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md" data-testid="ask-modal">
         {settledKind ? (
-          <div className="flex flex-col items-center gap-3 py-2 text-center" data-testid="ask-modal-settled">
-            {settledMessage && <p className="text-sm text-muted-foreground">{settledMessage}</p>}
-            {wizardId && runningNow && (
-              <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-modal-live">
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
-                <span>{runningNow.current || runningNow.label || runningNow.name}</span>
-              </p>
-            )}
-            <div className="mt-1 flex gap-2">
-              {wizardId && (
-                <Button
-                  data-testid="ask-modal-see-wizard"
-                  onClick={() => {
-                    onOpenChange(false);
-                    openWizard();
-                  }}
-                >
-                  <Trans>See setup progress</Trans>
-                </Button>
-              )}
-              <Button variant="ghost" onClick={() => onOpenChange(false)} data-testid="ask-modal-close">
-                <Trans>Close</Trans>
-              </Button>
-            </div>
-          </div>
+          settledMessage && (
+            <p className="py-2 text-center text-sm text-muted-foreground" data-testid="ask-modal-settled">
+              {settledMessage}
+            </p>
+          )
         ) : !question ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
             <Trans>Loading…</Trans>

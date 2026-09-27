@@ -4065,7 +4065,6 @@ msgstr "جاري استنساخ المستودع وفهرسته."
 msgid "Cloning…"
 msgstr "جارِ الاستنساخ…"
 
-#: src/components/ask/AskModal.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -5189,8 +5188,8 @@ msgid "Could not give this project access to {0}."
 msgstr "تعذر منح هذا المشروع صلاحية الوصول إلى {0}."
 
 #: src/components/account/settings-section.tsx
-msgid "Could not hide tools"
-msgstr ""
+#~ msgid "Could not hide tools"
+#~ msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
@@ -5357,6 +5356,10 @@ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Could not remove the row"
+msgstr ""
+
+#: src/components/account/settings-section.tsx
+msgid "Could not remove tools"
 msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -6156,7 +6159,11 @@ msgid "Debug logging"
 msgstr "تسجيل التصحيح"
 
 #: src/components/account/settings-section.tsx
-msgid "DEBUG: hide 6 tools"
+#~ msgid "DEBUG: hide 6 tools"
+#~ msgstr ""
+
+#: src/components/account/settings-section.tsx
+msgid "DEBUG: remove 6 tools"
 msgstr ""
 
 #: src/i18n/type-labels.ts
@@ -9635,12 +9642,9 @@ msgstr "الملفات المخفية"
 msgid "Hidden from your stream inbox"
 msgstr "مخفي من صندوق التدفق الوارد الخاص بك"
 
-#. placeholder {0}: answer.hidden.join(', ') || '–'
-#. placeholder {1}: answer.already_hidden.join(', ') || '–'
-#. placeholder {2}: answer.not_found.join(', ') || '–'
 #: src/components/account/settings-section.tsx
-msgid "hidden: {0} · already hidden: {1} · not found: {2}"
-msgstr ""
+#~ msgid "hidden: {0} · already hidden: {1} · not found: {2}"
+#~ msgstr ""
 
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
@@ -9706,8 +9710,8 @@ msgid "Hide value"
 msgstr ""
 
 #: src/components/account/settings-section.tsx
-msgid "Hiding…"
-msgstr ""
+#~ msgid "Hiding…"
+#~ msgstr ""
 
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "High CPU & Memory usage detected"
@@ -16660,9 +16664,23 @@ msgstr ""
 msgid "Removed vibe agent"
 msgstr "تمت إزالة وكيل vibe"
 
+#. placeholder {0}: answer.removed.join(', ') || '–'
+#. placeholder {1}: answer.not_found.join(', ') || '–'
+#: src/components/account/settings-section.tsx
+msgid "removed: {0} · not found: {1}"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "حذفها من كل مكان"
+
+#: src/components/account/settings-section.tsx
+msgid "Removing & re-checking…"
+msgstr ""
+
+#: src/components/account/settings-section.tsx
+#~ msgid "Removing…"
+#~ msgstr ""
 
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -18039,7 +18057,6 @@ msgstr "عرض كل النتائج ({0}) →"
 msgid "See all sources"
 msgstr ""
 
-#: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 msgid "See setup progress"
 msgstr ""
@@ -21644,7 +21661,15 @@ msgid "Tools"
 msgstr "الأدوات"
 
 #: src/components/account/settings-section.tsx
-msgid "Tools hidden"
+#~ msgid "Tools hidden"
+#~ msgstr ""
+
+#: src/components/account/settings-section.tsx
+#~ msgid "Tools removed"
+#~ msgstr ""
+
+#: src/components/account/settings-section.tsx
+msgid "Tools removed, wizard re-checked"
 msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx

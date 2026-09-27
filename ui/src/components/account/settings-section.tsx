@@ -74,21 +74,25 @@ export function SettingsSection() {
 
   // TEMPORARY — DEBUG ONLY, for testing the `llm-setup` wizard end to end.
   // Remove this button and handler once that work ships — see FLOWPAD-2171.
-  const [hidingTools, setHidingTools] = useState(false);
-  const handleHideTools = useCallback(async () => {
-    setHidingTools(true);
+  const [removingTools, setRemovingTools] = useState(false);
+  const handleRemoveTools = useCallback(async () => {
+    setRemovingTools(true);
     try {
-      const answer = await apiClient.post<{ hidden: string[]; already_hidden: string[]; not_found: string[] }>(
-        '/api/v1/onboarding/debug/hide-tools',
+      // The route also runs the wizard right after removing — the wizard
+      // page's icons are its LAST COMPLETED run's record, not a live check, so
+      // without that this button would remove tools and leave everything
+      // showing exactly as green as before.
+      const answer = await apiClient.post<{ removed: string[]; not_found: string[]; wizard: WizardResult | null }>(
+        '/api/v1/onboarding/debug/remove-tools',
       );
       notify.success({
-        title: t`Tools hidden`,
-        message: t`hidden: ${answer.hidden.join(', ') || '–'} · already hidden: ${answer.already_hidden.join(', ') || '–'} · not found: ${answer.not_found.join(', ') || '–'}`,
+        title: t`Tools removed, wizard re-checked`,
+        message: t`removed: ${answer.removed.join(', ') || '–'} · not found: ${answer.not_found.join(', ') || '–'}`,
       });
     } catch (err) {
-      notify.error({ title: t`Could not hide tools`, message: err instanceof Error ? err.message : String(err) });
+      notify.error({ title: t`Could not remove tools`, message: err instanceof Error ? err.message : String(err) });
     } finally {
-      setHidingTools(false);
+      setRemovingTools(false);
     }
   }, [t]);
 
@@ -156,12 +160,12 @@ export function SettingsSection() {
             {/* TEMPORARY DEBUG BUTTON — remove before shipping, see FLOWPAD-2171. */}
             <Button
               size="sm"
-              onClick={() => void handleHideTools()}
-              disabled={hidingTools}
+              onClick={() => void handleRemoveTools()}
+              disabled={removingTools}
               className="border-orange-500 bg-orange-500 text-white hover:bg-orange-600 hover:text-white"
-              title="DEBUG ONLY — renames jq/rg/claude/python(3)/git/node off PATH (never uninstalls) so the wizard treats them as freshly missing. Remove this button before shipping."
+              title="DEBUG ONLY — actually uninstalls jq/rg/claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
             >
-              {hidingTools ? <Trans>Hiding…</Trans> : <Trans>DEBUG: hide 6 tools</Trans>}
+              {removingTools ? <Trans>Removing & re-checking…</Trans> : <Trans>DEBUG: remove 6 tools</Trans>}
             </Button>
           </div>
         }

@@ -4065,7 +4065,6 @@ msgstr "Cloning the repo and indexing it."
 msgid "Cloning…"
 msgstr "Cloning…"
 
-#: src/components/ask/AskModal.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -5189,8 +5188,8 @@ msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
 
 #: src/components/account/settings-section.tsx
-msgid "Could not hide tools"
-msgstr "Could not hide tools"
+#~ msgid "Could not hide tools"
+#~ msgstr "Could not hide tools"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
@@ -5358,6 +5357,10 @@ msgstr "Could not remove the key"
 #: src/pages/discover-page/discover-page.tsx
 msgid "Could not remove the row"
 msgstr "Could not remove the row"
+
+#: src/components/account/settings-section.tsx
+msgid "Could not remove tools"
+msgstr "Could not remove tools"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
@@ -6156,8 +6159,12 @@ msgid "Debug logging"
 msgstr "Debug logging"
 
 #: src/components/account/settings-section.tsx
-msgid "DEBUG: hide 6 tools"
-msgstr "DEBUG: hide 6 tools"
+#~ msgid "DEBUG: hide 6 tools"
+#~ msgstr "DEBUG: hide 6 tools"
+
+#: src/components/account/settings-section.tsx
+msgid "DEBUG: remove 6 tools"
+msgstr "DEBUG: remove 6 tools"
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -9635,12 +9642,9 @@ msgstr "Hidden files"
 msgid "Hidden from your stream inbox"
 msgstr "Hidden from your stream inbox"
 
-#. placeholder {0}: answer.hidden.join(', ') || '–'
-#. placeholder {1}: answer.already_hidden.join(', ') || '–'
-#. placeholder {2}: answer.not_found.join(', ') || '–'
 #: src/components/account/settings-section.tsx
-msgid "hidden: {0} · already hidden: {1} · not found: {2}"
-msgstr "hidden: {0} · already hidden: {1} · not found: {2}"
+#~ msgid "hidden: {0} · already hidden: {1} · not found: {2}"
+#~ msgstr "hidden: {0} · already hidden: {1} · not found: {2}"
 
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
@@ -9706,8 +9710,8 @@ msgid "Hide value"
 msgstr "Hide value"
 
 #: src/components/account/settings-section.tsx
-msgid "Hiding…"
-msgstr "Hiding…"
+#~ msgid "Hiding…"
+#~ msgstr "Hiding…"
 
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "High CPU & Memory usage detected"
@@ -16660,9 +16664,23 @@ msgstr "Removed from the project's published assets."
 msgid "Removed vibe agent"
 msgstr "Removed vibe agent"
 
+#. placeholder {0}: answer.removed.join(', ') || '–'
+#. placeholder {1}: answer.not_found.join(', ') || '–'
+#: src/components/account/settings-section.tsx
+msgid "removed: {0} · not found: {1}"
+msgstr "removed: {0} · not found: {1}"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
+
+#: src/components/account/settings-section.tsx
+msgid "Removing & re-checking…"
+msgstr "Removing & re-checking…"
+
+#: src/components/account/settings-section.tsx
+#~ msgid "Removing…"
+#~ msgstr "Removing…"
 
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -18039,7 +18057,6 @@ msgstr "See all {0} results →"
 msgid "See all sources"
 msgstr "See all sources"
 
-#: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 msgid "See setup progress"
 msgstr "See setup progress"
@@ -21644,8 +21661,16 @@ msgid "Tools"
 msgstr "Tools"
 
 #: src/components/account/settings-section.tsx
-msgid "Tools hidden"
-msgstr "Tools hidden"
+#~ msgid "Tools hidden"
+#~ msgstr "Tools hidden"
+
+#: src/components/account/settings-section.tsx
+#~ msgid "Tools removed"
+#~ msgstr "Tools removed"
+
+#: src/components/account/settings-section.tsx
+msgid "Tools removed, wizard re-checked"
+msgstr "Tools removed, wizard re-checked"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tools Used"

@@ -49,6 +49,7 @@ async def execute_wizard(
     trusted: bool,
     approved: bool = False,
     subject_entity: Optional[str],
+    check_only: bool = False,
 ) -> WizardResult:
     """Run `spec` as the wizard `wizard_id`, and stamp what it answered.
 
@@ -58,6 +59,11 @@ async def execute_wizard(
     `subject_entity` is the ONLY thing the two callers differ on, and it is
     routing alone: the wizard's id decides who may run, `subject_entity` decides
     who is told about it.
+
+    `check_only` reports the goal's current state and stamps it into
+    `run_state` the same way a real run does — never asking, never installing,
+    never spawning an agent. It still takes the same run slot: a status refresh
+    racing a real run for the same steps would read a torn picture otherwise.
     """
     workdir: "Path" = run_dir(wizard_id)
     workdir.mkdir(parents=True, exist_ok=True)
@@ -93,6 +99,7 @@ async def execute_wizard(
             resolve_op=_resolve_op,
             resolve_wizard=_resolve_wizard,
             wizard_id=wizard_id,
+            check_only=check_only,
         )
     finally:
         lock.release()
