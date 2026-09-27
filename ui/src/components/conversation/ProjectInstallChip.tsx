@@ -14,15 +14,6 @@ import { cn } from '@src/lib/utils';
 /** The chip's visible state — the "Project chip states" diagram (KTD10). */
 export type ProjectChipState = 'waiting' | 'install' | 'installing' | 'open' | 'error' | 'unavailable';
 
-/**
- * The clone's typed failure code (U5 / KTD11). Read duck-typed: the SDK
- * attaches a string `code` to the error `setupFromGitOrigin()` throws.
- */
-function failureCode(err: unknown): string | null {
-  const code = (err as { code?: unknown } | null)?.code;
-  return typeof code === 'string' ? code : null;
-}
-
 const CHIP_CLASS =
   'inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-background px-2 py-0.5 text-xs';
 const ACTION_CLASS =
@@ -40,7 +31,7 @@ const ACTION_CLASS =
  *
  * Install reuses `useInstallSharedProjectAndOpen` (clone the row's own Git
  * origin in place) and lands URL-first on the project's dock. A refused clone
- * shows its typed reason (R14) and retry returns to Install. A hub-only
+ * shows an error and retry returns to Install. A hub-only
  * runtime has no local folder to install into, so the install action is hidden
  * there.
  */
@@ -62,7 +53,6 @@ export function ProjectInstallChip({
   const { navigation } = useDockNavigation();
   const { projects } = useProjects();
   const [phase, setPhase] = useState<'idle' | 'installing' | 'error'>('idle');
-  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [installed, setInstalled] = useState<Project | null>(null);
 
   const projectId = String(typeId.id);
@@ -95,23 +85,14 @@ export function ProjectInstallChip({
   const handleInstall = async () => {
     if (!row) return;
     setPhase('installing');
-    setErrorCode(null);
     try {
       const target = row instanceof Project ? row : new Project(row as Partial<Project>);
       setInstalled(await install(target));
       setPhase('idle');
-    } catch (err) {
-      setErrorCode(failureCode(err) ?? 'UNKNOWN');
+    } catch {
       setPhase('error');
     }
   };
-
-  const errorText =
-    errorCode === 'REPO_NOT_ACCESSIBLE'
-      ? t`You don't have access to this project's repository. Ask the project owner to add you as a collaborator.`
-      : errorCode === 'AUTH_REQUIRED'
-        ? t`Connect GitHub to install this project — its repository needs access.`
-        : t`The project could not be installed.`;
 
   const Icon = iconForType(Project.type);
   const label = row?.name || name || t`Project`;
@@ -167,10 +148,7 @@ export function ProjectInstallChip({
             type="button"
             data-testid="project-install-retry"
             className={ACTION_CLASS}
-            onClick={() => {
-              setErrorCode(null);
-              setPhase('idle');
-            }}
+            onClick={() => setPhase('idle')}
           >
             <Trans>Try again</Trans>
           </button>
@@ -178,7 +156,7 @@ export function ProjectInstallChip({
       </span>
       {state === 'error' && (
         <span data-testid="project-install-error" role="alert" className="text-start text-[11px] text-destructive">
-          {errorText}
+          <Trans>The project could not be installed.</Trans>
         </span>
       )}
     </span>

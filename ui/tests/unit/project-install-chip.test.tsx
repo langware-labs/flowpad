@@ -1,6 +1,6 @@
 /**
  * U6 — a project reference in a message renders the Install project / Open
- * project chip (R11, R13, R14, R15; KTD10).
+ * project chip (R11, R13, R15; KTD10).
  *
  * Drives the REAL `MessageEntityChip` → `ProjectInstallChip` →
  * `useInstallSharedProjectAndOpen` chain over REAL `Project` entities. The
@@ -167,56 +167,24 @@ describe('MessageEntityChip — project install chip', () => {
     expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${PID}`);
   });
 
-  it('AE6: REPO_NOT_ACCESSIBLE shows the repository-access message, nothing installed, retry returns to Install', async () => {
+  it('a failed install shows the error, installs nothing, and retry returns to Install', async () => {
     h.projects = [sharedRow(null)];
     entityState(PROJECT_TID, { data: sharedRow(null) });
     vi.spyOn(Project.prototype, 'setupFromGitOrigin').mockRejectedValue(
-      Object.assign(new Error('Git clone failed: Repository not found'), { code: 'REPO_NOT_ACCESSIBLE' }),
+      new Error('Git clone failed: Repository not found'),
     );
     renderChip();
 
     fireEvent.click(screen.getByTestId('project-install-button'));
 
     await waitFor(() => expect(chipState()).toBe('error'));
-    expect(screen.getByTestId('project-install-error').textContent).toMatch(
-      /access to (this project's|the) repository/i,
-    );
+    expect(screen.getByTestId('project-install-error').textContent).toMatch(/could not be installed/i);
     expect(screen.queryByTestId('project-open-button')).toBeNull();
     expect(h.openDock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('project-install-retry'));
     expect(chipState()).toBe('install');
     expect(screen.getByTestId('project-install-button')).toBeTruthy();
-  });
-
-  it('AUTH_REQUIRED gets its own connect-GitHub message, distinct from repository access', async () => {
-    h.projects = [sharedRow(null)];
-    entityState(PROJECT_TID, { data: sharedRow(null) });
-    vi.spyOn(Project.prototype, 'setupFromGitOrigin').mockRejectedValue(
-      Object.assign(new Error('auth required'), { code: 'AUTH_REQUIRED' }),
-    );
-    renderChip();
-
-    fireEvent.click(screen.getByTestId('project-install-button'));
-
-    await waitFor(() => expect(chipState()).toBe('error'));
-    const text = screen.getByTestId('project-install-error').textContent ?? '';
-    expect(text).toMatch(/connect github/i);
-    expect(text).not.toMatch(/collaborator/i);
-  });
-
-  it('an untyped failure shows generic text', async () => {
-    h.projects = [sharedRow(null)];
-    entityState(PROJECT_TID, { data: sharedRow(null) });
-    vi.spyOn(Project.prototype, 'setupFromGitOrigin').mockRejectedValue(new Error('boom'));
-    renderChip();
-
-    fireEvent.click(screen.getByTestId('project-install-button'));
-
-    await waitFor(() => expect(chipState()).toBe('error'));
-    const text = screen.getByTestId('project-install-error').textContent ?? '';
-    expect(text).toMatch(/could not be installed/i);
-    expect(text).not.toMatch(/connect github|collaborator/i);
   });
 
   it('project not found for the invitee → unavailable', () => {

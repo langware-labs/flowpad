@@ -55,9 +55,6 @@ KEEP_FILE = ".flowpad-vfs-keep"
 
 _REPO_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" = WeakValueDictionary()
 
-# git's own phrasing of a remote that answered "no such repository".
-_REPO_NOT_FOUND = re.compile(r"repository '[^']*' not found")
-
 # Mirrors PortableGitOrigin._validate_branch. Kept as a plain predicate so a
 # branch can be checked before a subprocess exists to ask.
 _BRANCH_FORBIDDEN = re.compile(r"[\x00-\x20~^:?*\[\\]")
@@ -78,10 +75,6 @@ class GitErrorCode(StrEnum):
     BRANCH_NOT_FOUND = "branch_not_found"
     AUTH_REQUIRED = "auth_required"
     AUTH_FAILED = "auth_failed"
-    #: The host answered "repository not found". GitHub says exactly that for a
-    #: private repo the credential cannot see, so to a caller it means "you have
-    #: no access" (or the repo is gone) — never "the host is down".
-    REPO_NOT_ACCESSIBLE = "repo_not_accessible"
     UPSTREAM_UNAVAILABLE = "upstream_unavailable"
     ORIGIN_OUT_OF_DATE = "origin_out_of_date"
     DETACHED_HEAD = "detached_head"
@@ -321,7 +314,7 @@ class GitFolder:
         return [line for line in out.splitlines() if line.strip()]
 
     @staticmethod
-    def failure_code(result: CliResult) -> GitErrorCode:
+    def _failure_code(result: CliResult) -> GitErrorCode:
         """Classify a git failure without echoing what git said (it can hold the token).
 
         One classifier for every remote operation. Split in two it drifted
@@ -340,11 +333,6 @@ class GitFolder:
             or ("remote branch" in detail and "not found" in detail)
         ):
             return GitErrorCode.BRANCH_NOT_FOUND
-        # GitHub: "remote: Repository not found." + "fatal: repository '<url>' not
-        # found" — as much for a private repo the credential cannot see as for a
-        # missing one; GitHub deliberately does not tell the two apart.
-        if "repository not found" in detail or _REPO_NOT_FOUND.search(detail):
-            return GitErrorCode.REPO_NOT_ACCESSIBLE
         if any(m in detail for m in ("authentication failed", "permission denied", "forbidden", "http 403")):
             return GitErrorCode.AUTH_FAILED
         if "terminal prompts disabled" in detail or "could not read username" in detail:
@@ -398,7 +386,7 @@ class GitFolder:
         await self.executor.make_dirs(str(self.root.parent))
         result = await self.git(*args, auth=True, cwd=self.root.parent)
         if not result.ok:
-            raise GitError(self.failure_code(result), "Could not clone the repository")
+            raise GitError(self._failure_code(result), "Could not clone the repository")
         if sparse_paths is not None:
             await self._set_sparse_paths(sparse_paths)
 
@@ -411,7 +399,7 @@ class GitFolder:
             args.append(validate_branch_name(branch))
         result = await self.git(*args, auth=True)
         if not result.ok:
-            raise GitError(self.failure_code(result), "Could not fetch from the remote")
+            raise GitError(self._failure_code(result), "Could not fetch from the remote")
 
     async def _sync(self, *, expected_head: str | None = None, branch: str | None = None) -> str:
         """Fetch and hard-align the working tree to the remote branch; returns the head.
@@ -632,7 +620,7 @@ class GitFolder:
         source = f"{treeish}:{scoped}" if scoped else treeish
         result = await self.git("archive", "--format=zip", "-o", dest, source)
         if not result.ok:
-            raise GitError(self.failure_code(result), "Could not archive the path")
+            raise GitError(self._failure_code(result), "Could not archive the path")
         return dest
 
     async def _is_own_pending_commit(self, remote_head: str, marker: str | None) -> bool:
@@ -713,7 +701,7 @@ class GitFolder:
         result = await self.git("push", "origin", *refspecs, auth=True)
         if result.ok:
             return
-        code = self.failure_code(result)
+        code = self._failure_code(result)
         if code in (GitErrorCode.PUSH_REJECTED, GitErrorCode.UPSTREAM_UNAVAILABLE):
             raise GitError(
                 GitErrorCode.PUSH_REJECTED,
