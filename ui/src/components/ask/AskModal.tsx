@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Trans } from '@lingui/react/macro';
 import {
   Dialog,
@@ -43,8 +43,22 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
     if (settledKind) onOpenChange(false);
   }, [settledKind, onOpenChange]);
 
+  // Esc / a click outside is the person's "no", never just a hidden dialog: an
+  // `until_answered` ask has no deadline, so a question dismissed without
+  // answering would hold its wizard (and its run slot) until the backend
+  // restarts, with nothing left on screen to answer it. Cancelling settles it,
+  // and the effect above closes the dialog.
+  const dismiss = useCallback(
+    (next: boolean) => {
+      if (next) return;
+      if (settledKind) onOpenChange(false);
+      else if (!busy) void cancel();
+    },
+    [settledKind, busy, cancel, onOpenChange],
+  );
+
   return (
-    <Dialog open onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={dismiss}>
       <DialogContent className="sm:max-w-md" data-testid="ask-modal">
         {settledKind ? (
           settledMessage && (
