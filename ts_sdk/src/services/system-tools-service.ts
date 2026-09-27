@@ -22,11 +22,6 @@ function httpStatusOf(err: unknown): number | undefined {
 }
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
 
-/** The canonical ScopeFilter encoding for a single project. One spelling, so
- *  the three scoped fs-records calls in this file cannot drift. */
-const projectScopeQs = (projectId: string): string =>
-  new URLSearchParams({ user: 'false', projects: projectId }).toString();
-
 export interface IndexTypeResult {
   indexed: number;
 }
@@ -266,11 +261,15 @@ export class SystemToolsService extends EventEmitter {
         return;
       }
       // No events for a while; ask the backend whether the job is really done.
-      void this.refreshActivityStatus().catch(() => {/* keep going */}).then(() => {
-        // If the backend said "still running", refreshActivityStatus() will
-        // have re-seeded state (which counts as a synthetic progress arrival).
-        if (this.currentActivity != null) this._armIdleWatchdog();
-      });
+      void this.refreshActivityStatus()
+        .catch(() => {
+          /* keep going */
+        })
+        .then(() => {
+          // If the backend said "still running", refreshActivityStatus() will
+          // have re-seeded state (which counts as a synthetic progress arrival).
+          if (this.currentActivity != null) this._armIdleWatchdog();
+        });
     };
     this._idleWatchdog = setTimeout(tick, SystemToolsService._IDLE_TIMEOUT_MS);
   }
@@ -397,7 +396,9 @@ export class SystemToolsService extends EventEmitter {
     try {
       await (refresh ? lazyAssets.refresh(LazyAsset.IndexActivity) : lazyAssets.load(LazyAsset.IndexActivity));
       return this.currentActivity;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   }
 
   /** Registry snapshot loader; a WS update received during HTTP hydration wins. */
@@ -405,11 +406,15 @@ export class SystemToolsService extends EventEmitter {
     await hubModeReady();
     if (isHubOnly()) return null;
     const previous = this.progressTable;
-    const data = await apiClient.get<(IndexProgressTable & { started_at: string }) | null>(`${FS_RECORDS_BASE}/activity-status`);
+    const data = await apiClient.get<(IndexProgressTable & { started_at: string }) | null>(
+      `${FS_RECORDS_BASE}/activity-status`,
+    );
     if (!isCurrent()) throw new Error('SDK scope changed');
     if (this.progressTable === previous) {
-      if (data) { this.progressTable = data; this._setActivity(data.job_name); }
-      else if (this.currentActivity !== null) this._setActivity(null);
+      if (data) {
+        this.progressTable = data;
+        this._setActivity(data.job_name);
+      } else if (this.currentActivity !== null) this._setActivity(null);
     }
     return data;
   }
@@ -422,11 +427,7 @@ export class SystemToolsService extends EventEmitter {
    *  when present it's forwarded as `?user=…&projects=…` so the indexer
    *  narrows its walk to the matching roots. Omit to run a full scan.
    */
-  async indexType(
-    typeName: string,
-    scope?: ScopeFilter,
-    options?: IndexTypeOptions,
-  ): Promise<IndexTypeResult> {
+  async indexType(typeName: string, scope?: ScopeFilter, options?: IndexTypeOptions): Promise<IndexTypeResult> {
     const qs = new URLSearchParams({ type: typeName });
     if (scope) {
       qs.set('user', scopeIncludesUser(scope) ? 'true' : 'false');
@@ -434,9 +435,7 @@ export class SystemToolsService extends EventEmitter {
     }
     if (options?.force) qs.set('force', 'true');
     if (options?.orphanAction) qs.set('orphan_action', options.orphanAction);
-    const res = await apiClient.post<IndexTypeResult>(
-      `${FS_RECORDS_BASE}/index?${qs.toString()}`,
-    );
+    const res = await apiClient.post<IndexTypeResult>(`${FS_RECORDS_BASE}/index?${qs.toString()}`);
     void dataManager.refreshScanInfo();
     return res as unknown as IndexTypeResult;
   }
@@ -540,9 +539,7 @@ export class SystemToolsService extends EventEmitter {
       void dataManager.refreshScanInfo();
 
       this._setActivity('scan');
-      const scanData = await apiClient.get(
-        `${FS_RECORDS_BASE}/scan?trigger=manual`,
-      );
+      const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
@@ -733,10 +730,7 @@ export class SystemToolsService extends EventEmitter {
     const rows = await FlowpadDiagnosis.query<FlowpadDiagnosis>(
       new QueryRequest({ type: FlowpadDiagnosis.type, scope: [] }),
     );
-    return rows.sort(
-      (a, b) =>
-        new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime(),
-    );
+    return rows.sort((a, b) => new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime());
   }
 
   /** Delete a diagnosis by id. */

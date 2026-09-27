@@ -1,9 +1,11 @@
 import { EventEmitter } from 'events';
-import { ActionInfo, dataContext, dataManager, OAuthMessage, TypeId } from '../../index';
+import { ActionInfo } from '../../models/ActionInfo';
+import { dataContext } from '../../FlowSync/context';
+import { dataManager } from '../../APIEntity';
+import { OAuthMessage } from '../../websocket';
+import { TypeId } from '../../models/TypeId';
 import { EntityEnv, EnvVarType, oauthProviderDisplayName } from '../../models/env_var';
 import { connectionManager } from '../../websocket';
-import { secretApprovalGate } from '../secretApprovalGate';
-import { secretsService } from '../secrets-service';
 import { BrowserAuthWindow, MockAuthWindow, OAuthWindow } from './oauth-window';
 
 // OAuth Provider Constants
@@ -657,30 +659,6 @@ export class OAuthService {
     window.addEventListener('focus', onFocus);
     const offClosed = flow.onWindowClosed(() => void check());
     flow.on(OAuthEventType.WINDOW_CLOSE, stop);
-  }
-
-  /**
-   * Ensure secret-keychain access is enabled. Returns false if the user cancels
-   * or the OS denies — caller must NOT proceed to OAuth popup in that case.
-   * Mirrors the gate inside navigationService.navigateToLogin so that any
-   * cloud-login entry point (oauthService.connect) also provisions keychain
-   * access before the OAuth popup opens.
-   */
-  private async ensureSecretsEnabled(): Promise<boolean> {
-    try {
-      const initial = await secretsService.isEnabled();
-      if (initial?.enabled) return true;
-    } catch {
-      // probe failed (offline/server down) — fall through to provisioning
-    }
-    const approved = await secretApprovalGate.request();
-    if (!approved) return false;
-    try {
-      const verified = await secretsService.isEnabled();
-      return Boolean(verified?.enabled);
-    } catch {
-      return false;
-    }
   }
 
   /**

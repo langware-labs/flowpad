@@ -16,7 +16,10 @@ const h = vi.hoisted(() => ({
   remove: vi.fn(),
 }));
 
-vi.mock('@sdk', async (importOriginal) => ({
+// Mock the module the hook imports. It used to import the SDK barrel; the barrel is
+// no longer imported from inside the SDK (ui/tests/unit/sdk-module-layering.test.ts),
+// so a mock of '@sdk' no longer intercepts anything.
+vi.mock('@sdk/models/env_var', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   EntityEnv: class {
     create = h.create;

@@ -8,7 +8,6 @@
  */
 import { ActionInfo } from '../../models/ActionInfo';
 import { dataManager } from '../../APIEntity';
-import type { FsRecordData } from './fs-record';
 import { FsRecord } from './fs-record';
 import { fsRecordTypeRegistry } from './record-type-registry';
 

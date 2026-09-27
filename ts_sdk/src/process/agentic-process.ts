@@ -90,7 +90,6 @@ export interface SessionNameState {
 export type { DisplayEntry, ShowTarget } from '../models/ShowTarget';
 import type { DisplayEntry, ShowTarget } from '../models/ShowTarget';
 
-
 export interface SpawnResult {
   process: AgenticProcess;
   /** Set in PTY mode. Null when the spawn ran but the process has no shell yet
@@ -457,11 +456,10 @@ export interface IAgenticProcess extends IEntity {
  * parses out of it (see `parseFsRef`). The class declaration is the accurate one.
  */
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface AgenticProcess
-  extends Omit<
-    IAgenticProcess,
-    'expand' | 'id' | 'is_private' | 'members' | 'exe_folder' | 'input_folder' | 'output_folder' | 'assets_folder'
-  > {}
+export interface AgenticProcess extends Omit<
+  IAgenticProcess,
+  'expand' | 'id' | 'is_private' | 'members' | 'exe_folder' | 'input_folder' | 'output_folder' | 'assets_folder'
+> {}
 
 /**
  * AgenticProcess Entity - A running instruction execution process
@@ -531,7 +529,6 @@ function isTeardownError(err: unknown): boolean {
 // parsed from the wire's `FSRefJson`). Every other member is still checked
 // against it through the declaration merge above.
 @registerEntity
-
 export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
@@ -915,10 +912,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
 
   get transcriptDockPointer(): DockPointerData {
     if (!this.session_id) return this.terminalDockPointer;
-    return new DockPointerData(
-      ViewType.LENS,
-      `${this.transcriptLensCategory}/transcript/${this.session_id}`,
-    );
+    return new DockPointerData(ViewType.LENS, `${this.transcriptLensCategory}/transcript/${this.session_id}`);
   }
 
   /**
@@ -1394,7 +1388,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
 
   /** Track the bridges we've registered against the shell so we don't double-bridge. */
   private _shellLineBridgeUnsub?: () => void;
-  private _activePlanTriggerUnsub?: () => void;
 
   /**
    * Bridge line events from the attached Shell into this process so callers
@@ -1602,14 +1595,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** Ids deleted while an artifact snapshot is in flight, so that stale
    *  snapshot cannot resurrect the row. Cleared when that request settles. */
   private _deletedArtifactIds = new Set<string>();
-
-  /**
-   * True after the user explicitly stopped this process (``stop`` /
-   * ``exit`` / ``close``) and before the next successful ``start``. Gates
-   * the auto-recovery dispatcher so a deliberately stopped process is not
-   * silently relaunched.
-   */
-  private _userInitiatedStop: boolean = false;
 
   /**
    * Desired-value latch for the transport/visibility fields the client sets
@@ -2347,7 +2332,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   async getAssetInventory(): Promise<ProcessAssetInventory> {
-    return await this.get<ProcessAssetInventory>('get-assets') ?? { assets: [] };
+    return (await this.get<ProcessAssetInventory>('get-assets')) ?? { assets: [] };
   }
 
   /**
@@ -2550,7 +2535,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       processor.on(FlowEvents.DATA, (fd: FlowData) => {
         try {
           if (fd.elementType === FlowElementTypes.CHAT) {
-            toplog.log('chat_delivery', `from_prompt_stream group=${fd.groupId ?? 'none'} t=${fd.attributes['t'] ?? 'none'}`);
+            toplog.log(
+              'chat_delivery',
+              `from_prompt_stream group=${fd.groupId ?? 'none'} t=${fd.attributes['t'] ?? 'none'}`,
+            );
           }
           this.flowDataStream.ingest(fd);
         } catch (err) {
@@ -2644,10 +2632,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     return undefined;
   }
 
-  async observeTurn(
-    abortController?: AbortController,
-    opts?: { afterEntryId?: string },
-  ): Promise<void> {
+  async observeTurn(abortController?: AbortController, opts?: { afterEntryId?: string }): Promise<void> {
     const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
     const { FlowEvents } = await import('../flow_processing/flow-events');
 
@@ -2683,7 +2668,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     processor.on(FlowEvents.DATA, (fd: FlowData) => {
       try {
         if (fd.elementType === FlowElementTypes.CHAT) {
-          toplog.log('chat_delivery', `from_observe_turn group=${fd.groupId ?? 'none'} t=${fd.attributes['t'] ?? 'none'}`);
+          toplog.log(
+            'chat_delivery',
+            `from_observe_turn group=${fd.groupId ?? 'none'} t=${fd.attributes['t'] ?? 'none'}`,
+          );
         }
         this.flowDataStream.ingest(fd);
       } catch (err) {
@@ -2937,11 +2925,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   async exit(): Promise<void> {
     if (!this.shell_id) return; // Nothing to exit
 
-    // Mark this stop as user-initiated so the auto-recovery dispatcher does
-    // not relaunch the worker between the optimistic CLOSING update and the
-    // backend's eventual STOPPED/STOPPING write.
-    this._userInitiatedStop = true;
-
     // Optimistically mark the shell CLOSING synchronously (no await) so the
     // loader's resolveDefaultShell sees it as non-alive and won't redirect back
     // to this tab while the exit API call is in-flight.
@@ -2968,7 +2951,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * Used by the route loader on a 404 from the project context fetch.
    */
   async recoverProject(): Promise<import('../entities/project').Project> {
-    const { Project } = await import('../entities/project');
     const response = await this.post<{ project: unknown }>('recover-project');
     if (!response?.project) {
       throw new Error('recover-project returned no project entity');
@@ -2987,9 +2969,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   async close(): Promise<void> {
     if (this.status === ProcessStatus.STOPPING || this.status === ProcessStatus.STOPPED) return;
 
-    // Permanent teardown — mark user intent so the backend recovery watchdog
     // (which respawns dead workers) does not relaunch this process.
-    this._userInitiatedStop = true;
 
     if (this.shell_id) {
       const shell = Shell.getByIdFromCache(this.shell_id);
@@ -3116,8 +3096,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       ['process_load', 'pty', 'agentic_process.load'],
       `AgenticProcess.start attachPty took ${msSince(tAttach)}ms pty=${result.pty_id?.slice(0, 8)}`,
     );
-    // Successful open clears any prior user-stop intent.
-    this._userInitiatedStop = false;
     // A successful open implies the process is not latched (the backend gate
     // refuses latched opens; retry clears before launching). Clear locally
     // too: the entity dump drops None fields, so the server-side clear never
@@ -3212,7 +3190,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   ): Promise<void> {
     const wantPty = mode === WorkerMode.Interactive;
     if (!wantPty) {
-      this._userInitiatedStop = true;
       const shell = this.shell_id ? Shell.getByIdFromCache(this.shell_id) : null;
       if (shell) {
         shell.status = ShellStatus.CLOSING;
