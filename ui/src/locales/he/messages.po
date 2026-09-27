@@ -393,8 +393,17 @@ msgstr "\"{0}\" מאונדקסת ללא נתיב מקור תקף, ולא נית�
 
 #. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
-msgid "{0} is issuing your LLM calls. You can close this tab."
+msgid "{0} is issuing your LLM calls."
 msgstr ""
+
+#. placeholder {0}: funded.name
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "{0} is issuing your LLM calls. Close this window (⌘W) — you're done here."
+msgstr ""
+
+#: src/components/llm-setup/LlmSetupView.tsx
+#~ msgid "{0} is issuing your LLM calls. You can close this tab."
+#~ msgstr ""
 
 #. placeholder {0}: source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -2060,6 +2069,10 @@ msgstr "כבר קיים"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "already running"
 msgstr "כבר פעיל"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Already signed in"
+#~ msgstr ""
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 #~ msgid "Already signed in elsewhere? Check again"
@@ -7125,6 +7138,7 @@ msgstr "הושלם"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-setup/LlmSetupView.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -8871,6 +8885,10 @@ msgstr "אבחון Flowpad"
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad מאתחל את המאגר, ולאחר מכן מציע את ההתקנה בענף ביקורת נפרד."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "FlowPad is already funding your LLM calls — nothing more to do here."
+#~ msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
@@ -19091,6 +19109,10 @@ msgstr ""
 msgid "Signed in to the remote"
 msgstr "מחובר ל-Remote"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Signed in, but not funding anything"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed out"
 msgstr "לא מחובר"
@@ -20859,6 +20881,10 @@ msgstr "הקובץ הזה אינו נמצא בפרויקט עם ניהול גר�
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "This file isn't text"
 msgstr "קובץ זה אינו טקסט"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "This FlowPad account has no LLM source bound to it yet — ask your organization for one, or connect a different assistant below."
+msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "This folder can't be shared yet"

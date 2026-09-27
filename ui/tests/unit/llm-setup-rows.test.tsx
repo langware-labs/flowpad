@@ -18,6 +18,9 @@ const h = vi.hoisted(() => ({
   available: true,
   loginState: null as string | null,
   cloudStatus: 'logged_out' as string,
+  /** The hub's own answer to "who does FlowPad fund right now" — empty means signed in with
+   *  nothing bound, non-empty means it is actually issuing calls. */
+  activeFor: [] as string[],
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -25,6 +28,9 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal: vi.fn() }));
 vi.mock('@src/components/llm-endpoints/llm-endpoints-pointer', () => ({ openLlmEndpoint: vi.fn() }));
+vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
+  useLlmSources: () => ({ status: { active_for: h.activeFor }, isLoading: false }),
+}));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock('@sdk/react/hooks', () => ({
   useEntity: () => ({ data: null }),
@@ -69,6 +75,7 @@ vi.mock('@sdk', async (importOriginal) => {
 
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
+import { notify } from '@src/notifications';
 
 function mount() {
   openHarnessLoginModal();
@@ -83,6 +90,7 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     h.available = true;
     h.loginState = null;
     h.cloudStatus = 'logged_out';
+    h.activeFor = [];
   });
 
   it('marks the default assistant, and moves the mark when another is chosen', async () => {
@@ -183,6 +191,35 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     const action = await screen.findByTestId('harness-row-flowpad-action');
     expect(action.textContent).toContain('Signed in');
     expect(screen.getByTestId('harness-row-flowpad-status').textContent).toContain('Signed in');
+  });
+
+  it('clicking a signed-in, funding FlowPad row confirms the choice and offers a way out', async () => {
+    h.cloudStatus = 'logged_in';
+    h.activeFor = ['harness.claude.cli'];
+    mount();
+
+    fireEvent.click(await screen.findByTestId('harness-row-flowpad-action'));
+
+    // The row's own button reads "Signed in" whether or not anything is actually funded by it —
+    // clicking it used to be silently inert either way, which reads as broken. Confirming lands
+    // in the SAME place a fresh sign-in does: the banner with Close / Keep browsing, not a toast
+    // with no way out — clicking FlowPad is as much "I choose this" as connecting a harness is.
+    await screen.findByTestId('harness-just-connected');
+    expect(h.login).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('just-connected-close'));
+    await waitFor(() => expect(screen.queryByTestId('harness-just-connected')).toBeNull());
+  });
+
+  it('clicking a signed-in FlowPad row that funds nothing says THAT, not that it is funding', async () => {
+    h.cloudStatus = 'logged_in';
+    h.activeFor = []; // signed in, but no endpoint bound — a real, honest state
+    mount();
+
+    fireEvent.click(await screen.findByTestId('harness-row-flowpad-action'));
+
+    await waitFor(() => expect(notify.warning).toHaveBeenCalled());
+    expect(notify.success).not.toHaveBeenCalled();
   });
 
   it('keeps the panel you opened when the dialog is re-opened underneath you', async () => {

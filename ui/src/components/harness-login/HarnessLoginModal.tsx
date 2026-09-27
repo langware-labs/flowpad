@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/comp
 import { Input } from '@src/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
+import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import {
@@ -595,9 +596,14 @@ function HarnessListRow({
 function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
   const { t } = useLingui();
   const { login, cloudUrl } = useCloudStatus();
+  const { status: funding } = useLlmSources();
   const [busy, setBusy] = useState(false);
   const loggedIn = login.status === 'logged_in';
   const signingIn = busy || login.status === 'logging_in';
+  // Signed in ≠ funding something: a hub account with no bound endpoint is signed in but has
+  // nothing to give out (see `active_for`, the hub's own answer to "who does this fund right
+  // now"). Both are real, honest states this row's click has to tell apart.
+  const isFunding = (funding?.active_for.length ?? 0) > 0;
 
   // The OAuth-style flow this awaits can settle `login.status` a moment after its own promise
   // resolves, not necessarily within it — watching the FLIP here (never on mount, when a
@@ -610,7 +616,23 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
   }, [loggedIn, onConnected]);
 
   const connect = async () => {
-    if (loggedIn) return;
+    if (loggedIn) {
+      // Signing in already IS choosing FlowPad — there is no separate "pick" step, and this
+      // row's own button reads "Signed in" either way. Clicking it while it is actually funding
+      // something is a person CONFIRMING that choice, same as a fresh sign-in — so it goes
+      // through the same `onConnected` banner (Close / Keep browsing), not a toast with no
+      // way out. Only the "signed in but funds nothing" case below has nothing to confirm.
+      if (isFunding) {
+        onConnected();
+      } else {
+        notify.warning({
+          title: t`Signed in, but not funding anything`,
+          message: t`This FlowPad account has no LLM source bound to it yet — ask your organization for one, or connect a different assistant below.`,
+          durationMs: 6000,
+        });
+      }
+      return;
+    }
     setBusy(true);
     try {
       await cloudManager.login();

@@ -72,19 +72,25 @@ export function LlmSetupView() {
     if (funded) setOpen(false);
   }, [funded, setOpen]);
 
-  const { navigation } = useDockNavigation();
+  const { navigation, windowMode } = useDockNavigation();
   const [skipping, setSkipping] = useState(false);
+  // Return to wherever the person was — same rule as an answered `ask` question:
+  // there is somewhere to go back to only in the dock (`windowMode` never renders this).
+  const leave = useCallback(() => {
+    setOpen(false);
+    if (getHistoryPosition().canGoBack) navigation.goBack();
+    else navigation.goHome();
+  }, [navigation, setOpen]);
+
   const skip = useCallback(async () => {
     setSkipping(true);
     try {
       await llmSourcesService.skip();
     } finally {
       setSkipping(false);
-      setOpen(false);
-      if (getHistoryPosition().canGoBack) navigation.goBack();
-      else navigation.goHome();
+      leave();
     }
-  }, [navigation, setOpen]);
+  }, [leave]);
 
   return (
     <div className="flex h-full w-full items-center justify-center p-6">
@@ -95,9 +101,24 @@ export function LlmSetupView() {
             <h1 className="text-lg font-semibold" data-testid="llm-setup-done">
               <Trans>You're set up</Trans>
             </h1>
-            <p className="text-sm text-muted-foreground">
-              <Trans>{funded.name} is issuing your LLM calls. You can close this tab.</Trans>
-            </p>
+            {windowMode ? (
+              // A real browser window opened for this one question — script-closing a window
+              // this app did not itself `window.open()` is unreliable, so this says what
+              // actually works (⌘W / the window's own control) rather than a button that may
+              // not do anything.
+              <p className="text-sm text-muted-foreground">
+                <Trans>{funded.name} is issuing your LLM calls. Close this window (⌘W) — you're done here.</Trans>
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  <Trans>{funded.name} is issuing your LLM calls.</Trans>
+                </p>
+                <Button className="mt-1" onClick={leave} data-testid="llm-setup-done-leave">
+                  <Trans>Done</Trans>
+                </Button>
+              </>
+            )}
           </>
         ) : (
           <>
