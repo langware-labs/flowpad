@@ -5,10 +5,14 @@ import {
   Conversation,
   mintInviteLink,
   normalizeEmail,
+  Project,
+  Team,
   type ContactsGroup,
   type ConversationParticipant,
+  type SkippedTeam,
   type TypeId,
 } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Input } from '@src/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -17,17 +21,21 @@ import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import {
+  filterTeams,
+  TEAM_INVITE_ROLE,
+  teamParticipant,
+  teamTypeIdOf,
+  useTeamSuggestions,
+  type TeamSuggestion,
+} from '@src/components/contact-picker/use-team-suggestions';
+import {
   EMAIL_RE,
   filterContacts,
   participantFromContact,
   participantKey,
   useContacts,
 } from '@src/components/contact-picker/use-contacts';
-import {
-  filterGroups,
-  mergeGroupMembers,
-  useContactsGroups,
-} from '@src/components/contact-picker/use-contacts-groups';
+import { filterGroups, mergeGroupMembers, useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
@@ -47,13 +55,12 @@ import {
 const MAX_INLINE_AVATARS = 4;
 const MAX_CONTACT_SUGGESTIONS = 6;
 const MAX_GROUP_SUGGESTIONS = 3;
+const MAX_TEAM_SUGGESTIONS = 3;
 /** Roles below admin that may still invite (``canInviteMembers`` covers admin+). */
 const INVITER_ROLES: readonly string[] = ['editor'];
 
 /** What the add row's text resolved to when a suggestion was picked. */
-type DraftPick =
-  | { kind: 'contact'; participant: ConversationParticipant }
-  | { kind: 'group'; group: ContactsGroup };
+type DraftPick = { kind: 'contact'; participant: ConversationParticipant } | { kind: 'group'; group: ContactsGroup };
 
 /** A recipient added to the list but not sent yet — Apply sends the batch. */
 interface PendingInvite {
@@ -110,6 +117,11 @@ export function MembersAvatarStack({
   // Added recipients, each with the role it will be granted. Nothing reaches
   // the backend until Apply sends the whole list as one batch.
   const [pending, setPending] = useState<PendingInvite[]>([]);
+  // Whole teams picked on a Project — one chip each (a ``teamParticipant``),
+  // never expanded here: Apply sends them and the backend expands each one.
+  const [pendingTeams, setPendingTeams] = useState<ConversationParticipant[]>([]);
+  // Teams the last Apply could not expand (their member list isn't readable).
+  const [skippedTeams, setSkippedTeams] = useState<SkippedTeam[]>([]);
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
@@ -189,8 +201,21 @@ export function MembersAvatarStack({
     () => (draftText ? filterContacts(contacts, draftText).slice(0, MAX_CONTACT_SUGGESTIONS) : []),
     [contacts, draftText],
   );
+  // Whole teams — a Project only (the one entity whose ``share`` action takes
+  // ``teams``), offered to anyone who can open this form.
+  const offersTeams = typeId.type === Project.type;
+  const { teams } = useTeamSuggestions(formOpen && offersTeams);
+  const TeamIcon = iconForType(Team.type);
+  const suggestedTeams = useMemo(
+    () => (draftText ? filterTeams(teams, draftText).slice(0, MAX_TEAM_SUGGESTIONS) : []),
+    [teams, draftText],
+  );
+  const teamPicked = (team: TeamSuggestion) =>
+    pendingTeams.some((p) => participantKey(p) === participantKey(teamParticipant(team)));
   const showSuggestions =
-    suggestOpen && !draftPick && (suggestedGroups.length > 0 || suggestedContacts.length > 0);
+    suggestOpen &&
+    !draftPick &&
+    (suggestedGroups.length > 0 || suggestedTeams.length > 0 || suggestedContacts.length > 0);
 
   const handleRemove = async (userId: string) => {
     setRemovingId(userId);
@@ -294,6 +319,13 @@ export function MembersAvatarStack({
     setInviteError(null);
   };
 
+  /** A picked team goes straight onto the list as one chip; picking it again adds nothing. */
+  const addTeam = (team: TeamSuggestion) => {
+    if (!teamPicked(team)) setPendingTeams((prev) => [...prev, teamParticipant(team)]);
+    clearDraft();
+    setInviteError(null);
+  };
+
   const pickSuggestion = (pick: DraftPick, label: string) => {
     setDraftPick(pick);
     setDraft(label);
@@ -366,7 +398,9 @@ export function MembersAvatarStack({
       if (userId) return existingUserIds.has(userId) ? [] : [{ idOrEmail: userId, role }];
       return [];
     });
-    if (!invitable.length) {
+    // Picked teams travel as teams (``team-<id>``) in the same one share action.
+    const teamIds = pendingTeams.map(teamTypeIdOf).filter((id): id is TypeId => id !== null);
+    if (!invitable.length && !teamIds.length) {
       setInviteError(
         pending.length > 0 ? t`Already a member — change their role in the list above` : t`Add someone first`,
       );
@@ -374,9 +408,12 @@ export function MembersAvatarStack({
     }
     setInviting(true);
     setInviteError(null);
+    setSkippedTeams([]);
     try {
-      await addMembers(invitable);
+      const result = teamIds.length ? await addMembers(invitable, { teams: teamIds }) : await addMembers(invitable);
       setPending([]);
+      setPendingTeams([]);
+      setSkippedTeams(result?.skipped_teams ?? []);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Invite failed';
       // Re-inviting an accepted member is hub-rejected (400 "use change_role")
@@ -388,6 +425,10 @@ export function MembersAvatarStack({
       setInviting(false);
     }
   };
+
+  /** People and teams on the list — what Apply would send. */
+  const listed = pending.length + pendingTeams.length;
+  const skippedTeamNames = skippedTeams.map((s) => s.name || s.team).join(', ');
 
   const inline = members.slice(0, MAX_INLINE_AVATARS);
   const overflow = members.length - inline.length;
@@ -411,6 +452,8 @@ export function MembersAvatarStack({
       // selection or error from a previous attempt.
       clearDraft();
       setPending([]);
+      setPendingTeams([]);
+      setSkippedTeams([]);
       setInviteRole('member');
       setInviteError(null);
       setInviting(false);
@@ -652,6 +695,21 @@ export function MembersAvatarStack({
                                 </span>
                               </button>
                             ))}
+                            {/* Teams — one chip each, expanded to their people only when sent. */}
+                            {suggestedTeams.map((team) => (
+                              <button
+                                key={team.id}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => addTeam(team)}
+                                disabled={teamPicked(team)}
+                                className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-start text-xs hover:bg-muted disabled:opacity-50"
+                                data-testid={`contact-team-option-${team.id}`}
+                              >
+                                <TeamIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                <span className="truncate">{team.name}</span>
+                              </button>
+                            ))}
                             {suggestedContacts.map((u) => {
                               const participant = participantFromContact(u);
                               return (
@@ -727,15 +785,61 @@ export function MembersAvatarStack({
                         {inviteError}
                       </div>
                     )}
+                    {skippedTeams.length > 0 && (
+                      <div
+                        className="mt-1.5 text-[11px] text-muted-foreground"
+                        data-testid="members-invite-skipped-teams"
+                      >
+                        {t`Not sent to ${skippedTeamNames} — you can't see its member list.`}
+                      </div>
+                    )}
                     {/* The list Apply sends — one row per recipient with the
                     role they'll be granted, changeable until Apply. A mixed
                     batch (some admin, some member, some addressed by email,
-                    some only by hub id) is still one submission. */}
-                    {pending.length > 0 && (
+                    some only by hub id, whole teams) is still one submission.
+                    A team row's role is fixed: its people join as ``member``. */}
+                    {listed > 0 && (
                       <ul
                         className="mt-2 flex max-h-44 flex-col gap-0.5 overflow-y-auto rounded-md border border-border p-1"
                         data-testid="members-invite-list"
                       >
+                        {pendingTeams.map((p) => {
+                          const key = participantKey(p);
+                          const label = p.name || key;
+                          // The team entry's own role (set when it was picked), shown locked.
+                          const teamRole = p.role ?? TEAM_INVITE_ROLE;
+                          return (
+                            <li
+                              key={key}
+                              className="flex items-center gap-2 rounded px-1.5 py-1 text-xs"
+                              data-testid={`members-invite-row-${key}`}
+                            >
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted">
+                                <TeamIcon className="h-3 w-3 text-muted-foreground" />
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">{label}</span>
+                              <select
+                                aria-label={t`Invite ${label} as`}
+                                data-testid={`members-invite-role-${key}`}
+                                value={teamRole}
+                                disabled
+                                className="h-6 shrink-0 rounded border border-transparent bg-background px-1 text-[11px] capitalize text-muted-foreground outline-none disabled:opacity-60"
+                              >
+                                <option value={teamRole}>{teamRole}</option>
+                              </select>
+                              <button
+                                type="button"
+                                aria-label={t`Remove ${label} from the list`}
+                                disabled={inviting}
+                                onClick={() => setPendingTeams((prev) => prev.filter((x) => participantKey(x) !== key))}
+                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                                data-testid={`members-invite-remove-${key}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </li>
+                          );
+                        })}
                         {pending.map((invite) => {
                           const p = invite.participant;
                           const key = participantKey(p);
@@ -824,12 +928,12 @@ export function MembersAvatarStack({
                     {/* Apply — the only control that reaches the backend. */}
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
                       <span className="text-[11px] text-muted-foreground" data-testid="members-invite-count">
-                        {pending.length === 0 ? t`No one added yet` : t`${pending.length} to invite`}
+                        {listed === 0 ? t`No one added yet` : t`${listed} to invite`}
                       </span>
                       <button
                         type="button"
                         onClick={() => void handleApply()}
-                        disabled={inviting || pending.length === 0}
+                        disabled={inviting || listed === 0}
                         className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-4 text-xs font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
                         data-testid="members-invite-submit"
                       >

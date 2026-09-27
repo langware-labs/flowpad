@@ -562,10 +562,9 @@ msgstr "בדיקת {0} נכשלה"
 msgid "{0} this session"
 msgstr ""
 
-#. placeholder {0}: pending.length
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "{0} to invite"
-msgstr ""
+#~ msgid "{0} to invite"
+#~ msgstr ""
 
 #. placeholder {0}: frame.tool_call_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -740,6 +739,10 @@ msgstr "{latchedReason} ההפעלה מחדש האוטומטית מושהית �
 msgid "{left} of {limit} requests left {windowText}"
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{listed} to invite"
+msgstr ""
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr ""
@@ -797,8 +800,8 @@ msgid "{people, plural, one {# person will be invited.} other {# people will be 
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "{projectName} shared"
-msgstr ""
+#~ msgid "{projectName} shared"
+#~ msgstr ""
 
 #: src/components/conversation/SessionCard.tsx
 msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
@@ -1567,6 +1570,10 @@ msgstr "הוסף סוד"
 msgid "Add someone first"
 msgstr ""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Add someone to invite."
+#~ msgstr ""
+
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Add someone to share with."
@@ -2042,6 +2049,10 @@ msgstr "כבר בוצע — ניתן לפתוח את ההרצה"
 msgid "Already focused"
 msgstr "כבר במיקוד"
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Already has access"
+msgstr ""
+
 #: src/components/connections-manager/credential-value-form.tsx
 #~ msgid "already in .env.local"
 #~ msgstr ""
@@ -2059,6 +2070,10 @@ msgstr "כבר מותקן גלובלית — יש להסיר קודם"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Already installed in a project — uninstall first"
 msgstr "כבר מותקן בפרויקט — יש להסיר קודם"
+
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Already invited"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Already launched in this project"
@@ -4077,6 +4092,7 @@ msgstr "משבוט…"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -4559,6 +4575,10 @@ msgstr "תהליך הגדרה מודרך יחבר את GitHub ויגדיר את 
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
+msgstr ""
+
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "Connect GitHub to install this project — its repository needs access."
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
@@ -5187,6 +5207,10 @@ msgstr "לא ניתן להעניק גישה"
 #: src/components/connections-manager.tsx
 msgid "Could not give this project access to {0}."
 msgstr "לא ניתן להעניק לפרויקט זה גישה ל-{0}."
+
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Could not invite"
+msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
@@ -7923,8 +7947,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} has been invited."
-msgstr ""
+#~ msgid "Everyone in {teamName} has been invited."
+#~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its skills travel with its files, over Git."
@@ -10328,6 +10352,10 @@ msgstr "התקנה גלובלית"
 msgid "Install in project"
 msgstr "התקנה בפרויקט"
 
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "Install project"
+msgstr ""
+
 #: src/components/install/InstallButton.tsx
 msgid "Install this asset on your desktop"
 msgstr ""
@@ -10367,6 +10395,7 @@ msgstr "תוספים מותקנים"
 msgid "Installing and restarting Flowpad… this can take up to a minute."
 msgstr "מתקין והפעלת Flowpad מחדש... זה עשוי להימשך עד דקה אחת."
 
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Installing…"
 msgstr "מתקין…"
@@ -10497,6 +10526,7 @@ msgstr "הזמן"
 #~ msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Invite {label} as"
 msgstr ""
 
@@ -10526,12 +10556,16 @@ msgstr "הזמינו חברים"
 msgid "Invite people"
 msgstr ""
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Invited"
+msgstr ""
+
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
 msgid "Invited {trimmed}."
 msgstr "{trimmed} הוזמן."
 
-#: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Inviting…"
 #~ msgstr "משלוח הזמנה…"
 
@@ -11379,6 +11413,10 @@ msgstr ""
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
 msgstr "טעינת משאבי הפרויקט..."
+
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "Loading project…"
+msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Loading projects..."
@@ -13133,6 +13171,10 @@ msgstr ""
 msgid "No members"
 msgstr "אין חברים"
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "No members to invite"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No members yet — invite someone below."
 msgstr "עדיין אין חברים — הזמן מישהו למטה."
@@ -13713,6 +13755,10 @@ msgstr ""
 #~ msgid "Not installed"
 #~ msgstr "לא מותקן"
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Not invited"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
 msgstr ""
@@ -13757,6 +13803,10 @@ msgstr ""
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
 msgstr "לא ניתן להפעיל כאן"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Not sent to {skippedTeamNames} — you can't see its member list."
+msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "Not set"
@@ -14234,6 +14284,10 @@ msgstr "פתח הערה"
 msgid "Open Context"
 msgstr "פתח הקשר"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Open conversations"
+#~ msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Open DB Folder"
 msgstr "פתח תיקיית בסיס נתונים"
@@ -14445,6 +14499,7 @@ msgstr "פתח תוכנית"
 msgid "Open process"
 msgstr "פתח תהליך"
 
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project"
@@ -15564,6 +15619,7 @@ msgstr "פרויקט"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -15698,6 +15754,7 @@ msgstr "כרטיסיות הפרויקט אינן יכולות לטעון את {0
 msgid "Project to load"
 msgstr "פרויקט לטעינה"
 
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/routes/loaders/load-project.ts
 msgid "Project unavailable"
 msgstr "הפרויקט אינו זמין"
@@ -16490,6 +16547,7 @@ msgstr ""
 msgid "Remove {label}"
 msgstr "הסירו את {label}"
 
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Remove {label} from the list"
 msgstr ""
@@ -18240,6 +18298,10 @@ msgstr ""
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "שולח ב{0}: \"{sendingText}\""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Sending invitations…"
+#~ msgstr ""
+
 #: src/components/conversation/SendProgressNotice.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
@@ -19705,6 +19767,10 @@ msgid "Still can't link this project"
 msgstr "עדיין לא ניתן לקשר את הפרויקט הזה"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Still loading — try again in a moment."
+#~ msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Still loading this project — try again in a moment."
 msgstr ""
 
@@ -20188,6 +20254,10 @@ msgstr ""
 msgid "Teams inside this team"
 msgstr ""
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Teams not expanded"
+msgstr ""
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Temperature ≤"
 msgstr ""
@@ -20289,7 +20359,11 @@ msgid "That project has no local workdir"
 msgstr "לפרויקט זה אין ספריית עבודה מקומית"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
-msgid "That project is no longer available."
+#~ msgid "That project is no longer available."
+#~ msgstr ""
+
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "That's you"
 msgstr ""
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
@@ -20492,6 +20566,10 @@ msgstr "הטרמינל שבתוך האפליקציה הוא תמיד המעטפ�
 msgid "The index was not changed."
 msgstr ""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "The invitations could not be sent."
+#~ msgstr ""
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "The key box is empty."
 msgstr ""
@@ -20536,6 +20614,10 @@ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "the other participant"
+msgstr ""
+
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "The project could not be installed."
 msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
@@ -21715,6 +21797,7 @@ msgstr "הפעלה"
 msgid "Triggers"
 msgstr "טריגרים"
 
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
@@ -21889,6 +21972,10 @@ msgstr "סוג עדשה לא ידוע"
 
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Unknown list"
+msgstr ""
+
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Unknown person"
 msgstr ""
 
 #. placeholder {0}: draft.provider
@@ -23031,9 +23118,17 @@ msgstr ""
 msgid "You can close this window."
 msgstr "אפשר לסגור את החלון הזה."
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "You can't list this team's members"
+msgstr ""
+
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "עדיין אינכם משויכים לארגון. ארגונים מוגדרים ב‑Flowpad Cloud, ולאחר שתתווספו — הארגון שלכם וחבריו יופיעו כאן."
+
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "You don't have access to this project's repository. Ask the project owner to add you as a collaborator."
+msgstr ""
 
 #: src/notifications/ingest.ts
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."

@@ -12,6 +12,7 @@ import {
   isImagePath,
   launchWizard,
   MessageAttachment,
+  Project,
   Prompt,
   Task,
   TypeId,
@@ -44,6 +45,7 @@ import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
+import { ProjectInstallChip } from './ProjectInstallChip';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
@@ -857,7 +859,21 @@ export function MessageEntityChip({
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = useEntity<AnyEntity>(typeId);
+  const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
+  // A project reference (a hub-authored invite) is the Install / Open project
+  // chip, stated from the local Project row's mount path — NOT `chipStateFor`,
+  // which would call a hub-pushed, not-yet-cloned row "installed" (KTD10).
+  // Every other entity type keeps the generic chip below (R15).
+  if (typeId.type === Project.type) {
+    return (
+      <ProjectInstallChip
+        typeId={typeId}
+        name={attachment?.name}
+        entityRow={data as unknown as Project | null | undefined}
+        entityUnavailable={notFound || isError}
+      />
+    );
+  }
   const state = chipStateFor(!!data, attachment, forceShow);
   if (state === 'hidden') return null;
   // Git-link chip: a git context folder shared through push-notify. The chip

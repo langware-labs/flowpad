@@ -3,12 +3,15 @@
  *
  *   admin  — brand-new project; the first Invite shows the publish popup INSTEAD
  *            of the invite pane, and only publishing unlocks inviting.
- *   admin  → invites editor: a plain `members` POST.
- *   editor — installs the shared project, then dirties its checkout.
- *   editor → invites member: no publish step, no `share` call, even though the
- *            publish gate would refuse that dirty tree.
- *   member — installs a brand-new clone of what was PUBLISHED: none of the
- *            editor's uncommitted changes.
+ *   admin  → invites editor: one `share` call on the published project, which the
+ *            backend runs as a plain membership grant (no publish step) that
+ *            also opens a new conversation between them holding the invite message.
+ *   editor — opens that conversation and installs from the message's
+ *            Install project chip (no popup offers it), then dirties its checkout.
+ *   editor → invites member: no publish popup and no publish gate, even though
+ *            that gate would refuse this dirty tree.
+ *   member — installs from their own invite conversation: a brand-new clone of
+ *            what was PUBLISHED, none of the editor's uncommitted changes.
  *
  * Needs three instances with SEPARATE homes — see playwright.config.ts. The
  * clone target is `<home>/Flowpad workspace`; with a shared home the editor's
@@ -105,8 +108,11 @@ async function gotoProjectHome(page: Page, projectId: string) {
   await expect(page.getByTestId('members-invite-button')).toBeVisible();
 }
 
-/** Invite through the members popover; the pane must open (no publish popup). */
-async function invite(page: Page, projectId: string, email: string, role: string) {
+/**
+ * Invite through the members popover; the pane must open (no publish popup).
+ * Returns the invite conversation the hub opened between the inviter and the invitee.
+ */
+async function invite(page: Page, projectId: string, email: string, role: string): Promise<string> {
   await page.getByTestId('members-invite-button').click();
   await expect(page.getByTestId('members-invite-form')).toBeVisible();
   await expect(page.getByTestId('publish-project-dialog')).toBeHidden();
@@ -114,37 +120,70 @@ async function invite(page: Page, projectId: string, email: string, role: string
   await page.getByTestId('members-invite-role').selectOption(role);
   await page.getByTestId('members-invite-add').click();
   const posted = page.waitForResponse(
-    (r) => r.url().includes(`/graph/project/${projectId}/members`) && r.request().method() === 'POST',
+    (r) => r.url().includes(`/graph/project/${projectId}/share`) && r.request().method() === 'POST',
   );
   await page.getByTestId('members-invite-submit').click();
-  expect((await posted).ok(), `invite ${email} as ${role}`).toBe(true);
+  const response = await posted;
+  expect(response.ok(), `invite ${email} as ${role}`).toBe(true);
+  // A project invite carries `notify_by_message`: the share answers with each
+  // person's outcome, the new conversation included.
+  const body = (await response.json()) as {
+    data?: { share_result?: { invited?: { conversation_id?: string | null }[]; skipped?: unknown[] } };
+  };
+  const shareResult = body.data?.share_result;
+  expect(shareResult?.skipped ?? [], `invite ${email} was skipped`).toEqual([]);
+  const conversationId = shareResult?.invited?.[0]?.conversation_id ?? '';
+  expect(conversationId, `invite ${email} opened no conversation: ${JSON.stringify(body)}`).not.toBe('');
+  return conversationId;
 }
 
-/** Wait for the hub's push of the project row, then accept the install popup. Returns the clone path. */
-async function installShared(page: Page, u: User, projectId: string): Promise<string> {
+/** Open the invite conversation on `u`'s own instance, URL-first. */
+async function openInviteConversation(page: Page, u: User, conversationId: string) {
+  // The grant pushes the conversation row; the sync pulls its messages (the
+  // same step `syncAssignedConversationAt` takes in the hub tests).
+  await expect
+    .poll(
+      async () =>
+        (
+          await fetch(`${u.be}/api/v1/graph/conversation-message-sync`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ conversation_id: conversationId }),
+          }).catch(() => null)
+        )?.ok ?? false,
+      { timeout: 60_000, message: `${u.name} never received the invite conversation` },
+    )
+    .toBe(true);
+  await page.goto(`/dock/conversation/${conversationId}?viewMode=advanced`);
+}
+
+/**
+ * Install from the invite message's chip. Returns the clone path.
+ *
+ * The chip is the only offer: no dialog pops up for a shared project. Once
+ * installed, the same chip reads Open project.
+ */
+async function installShared(page: Page, u: User, projectId: string, conversationId: string): Promise<string> {
   await expect
     .poll(async () => (await graph<ProjectRow>(u, `project/${projectId}`).catch(() => null))?.remote ?? false, {
       timeout: 60_000,
       message: `${u.name} never received the project row`,
     })
     .toBe(true);
-  await page.goto('/');
-  const dialog = page.getByTestId('incoming-project-dialog');
-  // Shares left uninstalled by earlier runs queue ahead of ours — skip them.
-  for (let i = 0; i < 20; i++) {
-    await expect(dialog).toBeVisible({ timeout: 60_000 });
-    if ((await dialog.textContent())?.includes(RUN)) break;
-    await dialog.getByRole('button', { name: 'Cancel' }).click();
-    await expect(dialog).toBeHidden();
-  }
-  await expect(dialog).toContainText(RUN);
-  await page.getByTestId('incoming-project-install').click();
+  await openInviteConversation(page, u, conversationId);
+  const chip = page.getByTestId('project-install-chip');
+  await expect(chip).toContainText(RUN, { timeout: 60_000 });
+  await expect(page.getByTestId('incoming-project-dialog')).toHaveCount(0);
+  await chip.getByTestId('project-install-button').click();
   await expect
     .poll(async () => (await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path ?? '', {
       timeout: 120_000,
       message: `${u.name} never finished installing`,
     })
     .not.toBe('');
+  // Installing lands in the project; back in the conversation the chip now opens it.
+  await openInviteConversation(page, u, conversationId);
+  await expect(page.getByTestId('project-open-button')).toBeVisible({ timeout: 30_000 });
   return String((await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path);
 }
 
@@ -210,7 +249,7 @@ test.describe('project invite = membership, not publish', () => {
     for (const dir of [...clones, adminDir, originRoot]) rmSync(dir, { recursive: true, force: true });
   });
 
-  test('first invite publishes; a dirty editor invites without publishing; the member clones what was published', async ({
+  test('first invite publishes; invitees install from the invite message; the member clones what was published', async ({
     browser,
   }) => {
     // ── admin: the first Invite asks to publish INSTEAD of opening the pane ──
@@ -239,12 +278,12 @@ test.describe('project invite = membership, not publish', () => {
     expect(adminCalls).toEqual(['POST share']);
 
     // ── admin → editor: now a plain membership grant ──
-    await invite(a.page, projectId, editor.email, 'editor');
-    expect(adminCalls).toEqual(['POST share', 'POST members']);
+    const editorConversation = await invite(a.page, projectId, editor.email, 'editor');
+    expect(adminCalls).toEqual(['POST share', 'POST share']);
 
-    // ── editor: install, then make the checkout dirty ──
+    // ── editor: install from the invite message, then make the checkout dirty ──
     const e = await openAs(browser, editor);
-    const editorClone = await installShared(e.page, editor, projectId);
+    const editorClone = await installShared(e.page, editor, projectId, editorConversation);
     clones.push(editorClone);
     expect(isUnder(editorClone, editor.workspace), `editor clone ${editorClone}`).toBe(true);
     // Edit the body, keep the frontmatter — a header-less README is re-stamped by the indexer.
@@ -256,15 +295,17 @@ test.describe('project invite = membership, not publish', () => {
     const preflight = await graph<{ available: boolean }>(editor, `project/${projectId}/git_share_preflight`);
     expect(preflight.available).toBe(false);
 
-    // ── editor → member: no publish popup, no `share` call ──
+    // ── editor → member: no publish popup, no publish gate — the one share call invites ──
     const editorCalls = trackProjectCalls(e.page, projectId);
     await gotoProjectHome(e.page, projectId);
-    await invite(e.page, projectId, member.email, 'member');
-    expect(editorCalls).toEqual(['POST members']);
+    const memberConversation = await invite(e.page, projectId, member.email, 'member');
+    expect(editorCalls).toEqual(['POST share']);
+    // Every invite opens a conversation of its own (R8).
+    expect(memberConversation).not.toBe(editorConversation);
 
-    // ── member: a brand-new clone of what was published ──
+    // ── member: a brand-new clone of what was published, installed from their own message ──
     const m = await openAs(browser, member);
-    const memberClone = await installShared(m.page, member, projectId);
+    const memberClone = await installShared(m.page, member, projectId, memberConversation);
     clones.push(memberClone);
     expect(isUnder(memberClone, member.workspace), `member clone ${memberClone}`).toBe(true);
     expect(samePath(memberClone, editorClone)).toBe(false);

@@ -98,6 +98,13 @@ The sender is skipped because the hub's entity-save auto-notify already echoed
 the row to the sender; re-delivering the content would be redundant (and arrives
 without `from_entity`, so it would hit the denied fallback — see §2).
 
+A message the hub authors in the sender's name — the project-share invite
+message (`notify_by_message`, see `flowpad-hub/docs/invite-message.md`) — follows
+the same rule: the sharer gets no live frame for it, and the bridge drops the
+parentless echo as usual. The sharer's client reads it through the
+per-conversation catch-up (`conversation-message-sync`, run when the conversation
+is opened), which lists every message in the conversation, including self-sent ones.
+
 ### Status fanout targets
 
 Two distinct status pushes:

@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { ConversationParticipant, normalizeEmail, QueryRequest, User } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { isTeamParticipant } from './use-team-suggestions';
 
 /** Shared email shape check, used by every recipient-entry surface. */
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -11,8 +12,12 @@ export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * ContactPicker / AddressBookButton (dedup + selected-state) AND
  * useConversationsForContacts (subset match), so the picker and the matcher
  * always agree on "the same person".
+ *
+ * A picked TEAM (`kind: 'team'`, see `use-team-suggestions`) is keyed by its
+ * typeid (`team-<id>`) — never by its name, which a person may share.
  */
 export function participantKey(p: ConversationParticipant): string {
+  if (isTeamParticipant(p)) return String(p.typeid).trim().toLowerCase();
   return (p.user_id || p.email || p.name || '').trim().toLowerCase();
 }
 
@@ -56,9 +61,5 @@ export function useContacts(
 export function filterContacts(contacts: User[], query: string): User[] {
   const q = query.trim().toLowerCase();
   if (!q) return contacts;
-  return contacts.filter(
-    (u) =>
-      (u.name ?? '').toLowerCase().includes(q) ||
-      (u.email ?? '').toLowerCase().includes(q),
-  );
+  return contacts.filter((u) => (u.name ?? '').toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q));
 }

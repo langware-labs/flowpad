@@ -64,6 +64,62 @@ truth** for the conversation invitation path shape — it returns
 and matchers (receiver-side pickers) must call this rather than hand-building
 the string, so a path-shape change is a one-line edit.
 
+### 1a. Invite message (`notify_by_message`)
+
+The hub's member-invite body (`POST <type>/<id>/members`) takes an opt-in
+`notify_by_message` beside `notify_by_email`. On a **person** invite it makes the
+hub open a new root-level conversation between the inviter and the invitee, titled
+after the entity, add it to the same invitation at `member`, and post the invite
+message there in the inviter's name — the note (`message`) plus one `TYPE_ID`
+reference to the entity, at `body_status: na`. Accept, auto-accept-on-invite and
+auto-accept-on-signup then grant the entity and the conversation together, so an
+email-only invitee finds the conversation once signed in. With a **team or
+organization** grantee (`principal`) the flag is refused with 400 before anything
+is written; without the flag, a direct group grant is unchanged. It works for any
+entity type the members action accepts. Full hub contract, including the skip
+check and the response shape: `flowpad-hub/docs/invite-message.md`.
+
+**Per-person answers.** A flagged person invite always answers 200 with
+`{conversation_id, invitation_id, skip_reason}`: invited (ids set) or skipped
+(`skip_reason` `self`, `has_role` or `pending_invitation` — the hub sends nothing
+when the person already holds any role on the entity or has a live pending
+invitation to it). Failures keep their status codes.
+
+**Project shares turn it on.** The orchestration lives in ONE place, the Python
+`Project` (`flow_sdk/builtin/project.py`): `Project.share(invitees, teams=, note=)`
+publishes and then invites; `Project.invite(…)` is the invite step alone, for a
+project that already has its hub row. The TS SDK does no orchestration:
+`Project.invite(users, {teams, note})` (`ts_sdk/src/entities/project.ts`) posts the
+`share` action once with only `{recipients, teams, note}` (`ShareRequestSpec`) and
+returns its `share_result`. On a `remote` project the action runs `Project.invite`
+— a membership grant with no publish gate, so a dirty tree still invites; on an
+unpublished one it runs `Project.share`. Every project share surface goes through
+it (see [Sharing & Sync §3a](./sharing-and-sync.md#3a-project-share--an-invite-not-a-message)):
+
+1. **Expand teams through their member lists.** Each picked team is read through
+   its own member list (`_expand_share_teams`) — the hub's `list_members` route. Approved user rows become
+   invitees keyed by `user_id`; pending rows are invitations, not members, and are
+   left out; group rows (a nested team) are walked with a visited set. The member
+   list is the **authorization**: the hub lets only team admins and above list a
+   team, so a team the sharer may not list contributes nobody and is reported in
+   `skipped_teams` (`not_listable`, or `no_members` when the local server degraded
+   a refused read to an empty cached roster). The hub has no team branch for this.
+2. **Merge and de-duplicate** picked people and team members into one set keyed by
+   `user_id`, then normalized email; a picked person's role wins. The sharer is
+   skipped (`self`), and so is anyone already on the project's roster
+   (`already_member`, or `already_invited` for a pending row).
+3. **One person invite per new invitee**, by `recipient_user_id` when known,
+   otherwise `recipient_email`, each with `notify_by_message` and the note, four
+   at a time. One failure does not stop the others.
+4. **Collect a `ShareResult`** — `invited` (with each `conversation_id`),
+   `skipped` (with the client's or the hub's reason), `failed` (status and
+   message), `skipped_teams`. The Python side keeps it on
+   `Project.last_share_result` and the `share` action returns it as
+   `share_result` (TS type `ShareResult` in `ts_sdk/src/entities/members.ts`); the
+   UI renders it as `ShareInviteSummary`. `Project.share(users)` (TS) throws with
+   the backend's sentence when anyone failed; `Project.invite` never throws for a
+   per-person failure.
+
 ---
 
 ## 2. The invite → accept → join algorithm

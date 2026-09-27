@@ -34,6 +34,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.assets.git_publish import GitAuthor
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.utils.command_executor import _LocalCommandExecutor
 from flow_sdk.utils.git_folder import (
     GitError,
@@ -534,6 +535,33 @@ async def test_failures_never_carry_git_output(git_remote, tmp_path: Path):
 
     assert "s3cret-token" not in str(excinfo.value)
     assert "fatal:" not in str(excinfo.value), "raw git output leaked into the error"
+
+
+@pytest.mark.parametrize(
+    ("stderr", "expected"),
+    [
+        # GitHub answers a private repo the caller cannot see exactly like a
+        # missing one — with a token that lacks access, or none at all once a
+        # credential helper supplied something. That is "you have no access",
+        # not "GitHub is down".
+        (
+            "remote: Repository not found.\nfatal: repository 'https://github.com/acme/secret.git/' not found",
+            GitErrorCode.REPO_NOT_ACCESSIBLE,
+        ),
+        ("fatal: repository 'https://example.com/acme/secret.git/' not found", GitErrorCode.REPO_NOT_ACCESSIBLE),
+        # The existing mappings stand.
+        (
+            "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+            GitErrorCode.AUTH_REQUIRED,
+        ),
+        ("fatal: Authentication failed for 'https://github.com/acme/secret.git/'", GitErrorCode.AUTH_FAILED),
+        ("fatal: Remote branch nope not found in upstream origin", GitErrorCode.BRANCH_NOT_FOUND),
+        ("fatal: unable to access 'https://github.com/': Could not resolve host", GitErrorCode.UPSTREAM_UNAVAILABLE),
+    ],
+)
+async def test_failure_code_classifies_clone_stderr(stderr, expected):
+    result = CliResult.of_process("git clone", 128, "", stderr)
+    assert GitFolder.failure_code(result) is expected
 
 
 async def test_token_never_appears_in_the_command_line(git_remote):

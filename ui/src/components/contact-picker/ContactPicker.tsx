@@ -1,9 +1,12 @@
 import { ContactsGroup, ConversationParticipant, normalizeEmail, User } from '@sdk';
 import { Input } from '@src/components/ui/input';
-import { UsersRound, X } from 'lucide-react';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { UsersRound } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { ParticipantChip } from './ParticipantChip';
 import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
+import { filterTeams, teamParticipant, useTeamSuggestions, type TeamSuggestion } from './use-team-suggestions';
 
 interface ContactPickerProps {
   /** Currently selected contacts as ConversationParticipant entries. */
@@ -21,6 +24,11 @@ interface ContactPickerProps {
    *  bulk-adds its members as individual chips (deduped) — groups never
    *  become chips themselves. The group-create dialog turns this off. */
   includeGroups?: boolean;
+  /** Offer whole TEAMS — the hub teams this desk knows the user is in
+   *  (`knownTeams`). A picked team is ONE chip keyed `team-<id>` (`kind: 'team'`,
+   *  `typeid`); it is never expanded here. Off by default: only a surface that
+   *  can send to a team (the project invite) turns it on. */
+  includeTeams?: boolean;
 }
 
 /**
@@ -42,18 +50,26 @@ export function ContactPicker({
   placeholder = 'Search by name or email — Enter to add',
   testId = 'contact-input',
   includeGroups = true,
+  includeTeams = false,
 }: ContactPickerProps) {
   const [filterText, setFilterText] = useState('');
   const [listOpen, setListOpen] = useState(false);
 
   const { contacts } = useContacts(excludeUserId, enabled);
   const { groups } = useContactsGroups(enabled && includeGroups);
+  const { teams } = useTeamSuggestions(enabled && includeTeams);
 
   const filteredContacts = useMemo(() => filterContacts(contacts, filterText), [contacts, filterText]);
   const filteredGroups = useMemo(
     () => (includeGroups ? filterGroups(groups, filterText) : []),
     [includeGroups, groups, filterText],
   );
+
+  const filteredTeams = useMemo(
+    () => (includeTeams ? filterTeams(teams, filterText) : []),
+    [includeTeams, teams, filterText],
+  );
+  const TeamIcon = iconForType('team');
 
   const isFull = typeof max === 'number' && value.length >= max;
 
@@ -90,12 +106,23 @@ export function ContactPicker({
     setListOpen(false);
   };
 
+  // A team is one chip; picking one already selected adds nothing.
+  const addTeam = (team: TeamSuggestion) => {
+    const participant = teamParticipant(team);
+    if (alreadyAdded(participant) || isFull) return;
+    onChange([...value, participant]);
+    setFilterText('');
+    setListOpen(false);
+  };
+
   const trimmed = filterText.trim();
   const showList = !isFull && (trimmed.length > 0 || listOpen);
   const listSource = trimmed.length > 0 ? filteredContacts : contacts;
   const visibleContacts = listOpen && !trimmed ? listSource : listSource.slice(0, 8);
   const groupSource = trimmed.length > 0 ? filteredGroups : groups;
   const visibleGroups = listOpen && !trimmed ? groupSource : groupSource.slice(0, 4);
+  const teamSource = includeTeams ? (trimmed.length > 0 ? filteredTeams : teams) : [];
+  const visibleTeams = listOpen && !trimmed ? teamSource : teamSource.slice(0, 4);
 
   const removeParticipant = (participant: ConversationParticipant) => {
     const key = participantKey(participant);
@@ -107,21 +134,12 @@ export function ContactPicker({
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {value.map((p) => (
-            <span
+            <ParticipantChip
               key={participantKey(p)}
-              className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
-            >
-              {p.name || p.email || 'unknown'}
-              <button
-                type="button"
-                className="rounded-full p-0.5 hover:bg-muted-foreground/20"
-                onClick={() => removeParticipant(p)}
-                aria-label={`Remove ${p.name || p.email || 'unknown'}`}
-                disabled={disabled}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
+              participant={p}
+              onRemove={() => removeParticipant(p)}
+              disabled={disabled}
+            />
           ))}
         </div>
       )}
@@ -151,7 +169,7 @@ export function ContactPicker({
         />
       )}
 
-      {showList && (visibleContacts.length > 0 || visibleGroups.length > 0) && (
+      {showList && (visibleContacts.length > 0 || visibleGroups.length > 0 || visibleTeams.length > 0) && (
         <div className="max-h-40 overflow-y-auto rounded-md border border-border">
           {/* Groups first — one click adds every member. */}
           {visibleGroups.map((g) => (
@@ -169,6 +187,20 @@ export function ContactPicker({
                 {g.computed && <span className="shrink-0 text-[10px] uppercase text-muted-foreground/70">auto</span>}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">{(g.contacts ?? []).length} members</span>
+            </button>
+          ))}
+          {/* Teams — one chip each, expanded to their people only when sent. */}
+          {visibleTeams.map((team) => (
+            <button
+              key={team.id}
+              type="button"
+              className="flex w-full items-center gap-1.5 px-2 py-1.5 text-start text-sm hover:bg-muted disabled:opacity-50"
+              onClick={() => addTeam(team)}
+              disabled={alreadyAdded(teamParticipant(team)) || disabled}
+              data-testid={`contact-team-option-${team.id}`}
+            >
+              <TeamIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+              <span className="truncate">{team.name}</span>
             </button>
           ))}
           {visibleContacts.map((u) => (

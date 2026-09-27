@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ContactsGroup, type ConversationParticipant } from '@sdk';
 import { filterGroups, mergeGroupMembers } from '@src/components/contact-picker/use-contacts-groups';
+import { teamParticipant } from '@src/components/contact-picker/use-team-suggestions';
 
 const group = new ContactsGroup({
   name: 'My class',
@@ -48,5 +49,20 @@ describe('filterGroups', () => {
     expect(filterGroups(groups, '')).toHaveLength(2);
     expect(filterGroups(groups, 'class').map((g) => g.displayName)).toEqual(['My class']);
     expect(filterGroups(groups, 'nope')).toHaveLength(0);
+  });
+});
+
+describe('mergeGroupMembers — beside a picked team', () => {
+  const team = teamParticipant({ id: '550e8400-e29b-41d4-a716-446655440030', name: 'zschool' });
+
+  it('keeps the team chip and adds the group members around it', () => {
+    const next = mergeGroupMembers([team], group.contacts);
+    expect(next[0]).toBe(team);
+    expect(next).toHaveLength(4);
+  });
+
+  it('a team is keyed by its typeid, so a person with the team name is still added', () => {
+    const next = mergeGroupMembers([team], [{ name: 'zschool', email: null }]);
+    expect(next).toHaveLength(2);
   });
 });

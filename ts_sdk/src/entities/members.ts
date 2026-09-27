@@ -36,6 +36,46 @@ export async function getMembers(typeId: TypeId): Promise<Participant[]> {
   return Array.isArray(res) ? res : [];
 }
 
+/**
+ * One person a share addressed: a hub ``user_id``, an email, or both.
+ *
+ * The share-result shapes below are the wire contract of the ``share`` action's
+ * ``share_result`` — the same snake_case field names as the Python
+ * ``ShareResultSpec`` (``flow_sdk/schema/data_spec/share_result_spec.py``), which
+ * owns the orchestration that produces them.
+ */
+export interface ShareRecipient {
+  user_id: string | null;
+  email: string | null;
+  name?: string | null;
+}
+
+/** A team the share did not expand. Nothing was sent for it. */
+export interface SkippedTeam {
+  /** The team's typeid string (``team-<uuid>``). */
+  team: string;
+  name: string | null;
+  /**
+   * ``not_listable`` — the team's member list refused the sharer (the hub's
+   * member-list policy: team admin and above). ``no_members`` — the list came
+   * back empty; the local server degrades a refused hub read to its (empty)
+   * cached roster, so a refusal can arrive looking exactly like this.
+   */
+  reason: 'not_listable' | 'no_members' | (string & {});
+  message?: string | null;
+}
+
+/** The per-person outcome of a share with people and teams. */
+export interface ShareResult {
+  /** Invited; ``conversation_id`` is the conversation the hub opened with the sharer. */
+  invited: (ShareRecipient & { conversation_id: string | null })[];
+  /** ``self`` | ``already_member`` | ``already_invited`` | the hub's own reason. */
+  skipped: (ShareRecipient & { reason: string })[];
+  /** The hub refused or failed this one; ``status`` is null when no response came back. */
+  failed: (ShareRecipient & { status: number | null; message: string })[];
+  skipped_teams: SkippedTeam[];
+}
+
 /** A freshly minted invite link. ``url`` is returned EXACTLY ONCE — the hub
  *  stores only a hash of the token, so nothing can hand it back later. */
 export interface InviteLink {
