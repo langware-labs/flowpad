@@ -11,7 +11,11 @@ import { useProcessSurface } from './interactive-terminal/use-process-surface';
 import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
 import { estimateCols, estimateRows } from './interactive-terminal/terminalConfig';
 import { allowRename, cleanTitle, isProgramIdentityTitle } from './rename-rules';
-import { classifyRuntimeFailure, type ProcessLoadErrorKind } from '@src/routes/loaders/load-process';
+import {
+  classifyRuntimeFailure,
+  describeProcessStartError,
+  type ProcessLoadErrorKind,
+} from '@src/routes/loaders/load-process';
 
 /**
  * Always-VISIBLE dead-end state for a panel that has nothing to render: the
@@ -99,50 +103,75 @@ const TerminalPanelStartingState: React.FC = () => (
 
 type ProcessRuntimeStatus = 'idle' | 'starting' | 'ready' | 'failed';
 
-// React StrictMode remounts effects, and the same process can be projected in
+// React StrictMode remounts effects, and the same entity can be projected in
 // more than one terminal surface. Backend `open` is a mutation, so share one
 // in-flight start per entity instead of launching concurrent workers/attaches.
-const processStarts = new Map<string, Promise<void>>();
+const runtimeStarts = new Map<string, Promise<void>>();
 
-function startProcessRuntime(process: AgenticProcess, cols: number, rows: number): Promise<void> {
-  const existing = processStarts.get(process.id);
+/**
+ * Start a terminal's runtime from its mounted panel — never from a route loader
+ * (docs/navigation/dock-loading.md, I3), so a slow `open` cannot hold the URL.
+ * initSdk connects FlowSync asynchronously: wait for it here, after the route
+ * committed, so a cold socket cannot make the attach race the connection.
+ */
+function startRuntime(key: string, open: () => Promise<unknown>): Promise<void> {
+  const existing = runtimeStarts.get(key);
   if (existing) return existing;
 
   const pending = (async () => {
-    // initSdk connects FlowSync asynchronously. Preserve the former readiness
-    // budget, but wait here after route commit so a cold socket cannot either
-    // block the URL or make attach race the connection startup.
     const tConnected = performance.now();
     try {
       await connectionManager.waitForConnected(5000);
       toplog.log(
         'agentic_process.load',
-        `startProcessRuntime waitForConnected took ${(performance.now() - tConnected).toFixed(0)}ms proc=${process.id.slice(0, 8)}`,
+        `startRuntime waitForConnected took ${(performance.now() - tConnected).toFixed(0)}ms key=${key}`,
       );
     } catch {
-      toplog.log(
-        'agentic_process.load',
-        `startProcessRuntime waitForConnected timed out proc=${process.id.slice(0, 8)}`,
-      );
+      toplog.log('agentic_process.load', `startRuntime waitForConnected timed out key=${key}`);
       notify.error({
         title: t`No realtime connection`,
         message: t`Terminal may be unresponsive until the connection recovers.`,
       });
     }
-    // A user opening a session IS an explicit retry: mounting this terminal is
-    // a deliberate human action, not an automatic loader/watchdog poll. Pass
-    // retry:true so a process left in a start_failure latch (e.g. a prior
-    // worker instant-exit) relaunches instead of surfacing "use Retry to
-    // relaunch" — opening a session should open it. The gate still protects the
-    // genuinely-automatic callers, which pass retry=false (the recovery
-    // watchdog) or never call start at all (the route loader).
-    await process.start({ visible: true, cols, rows, retry: true });
+    await open();
   })().finally(() => {
-    if (processStarts.get(process.id) === pending) processStarts.delete(process.id);
+    if (runtimeStarts.get(key) === pending) runtimeStarts.delete(key);
   });
-  processStarts.set(process.id, pending);
+  runtimeStarts.set(key, pending);
   return pending;
 }
+
+function startProcessRuntime(process: AgenticProcess, cols: number, rows: number): Promise<void> {
+  // A user opening a session IS an explicit retry: mounting this terminal is
+  // a deliberate human action, not an automatic loader/watchdog poll. Pass
+  // retry:true so a process left in a start_failure latch (e.g. a prior
+  // worker instant-exit) relaunches instead of surfacing "use Retry to
+  // relaunch" — opening a session should open it. The gate still protects the
+  // genuinely-automatic callers, which pass retry=false (the recovery
+  // watchdog) or never call start at all (the route loader).
+  return startRuntime(process.typeId.toString(), () => process.start({ visible: true, cols, rows, retry: true }));
+}
+
+/** A plain shell: `open` (re)creates or re-finds its PTY, then attaches it. */
+function startShellRuntime(shell: Shell, cols: number, rows: number): Promise<void> {
+  return startRuntime(shell.typeId.toString(), () => shell.start({ cols, rows, workdir: shell.workdir ?? undefined }));
+}
+
+/** A plain shell whose `open` failed: say so on the panel, with a way to try again. */
+const ShellStartFailedState: React.FC<{ message: string; onRetry: () => void }> = ({ message, onRetry }) => (
+  <div
+    className="flex h-full w-full flex-col items-center justify-center gap-2 p-6 text-center"
+    data-testid="terminal-shell-start-failed"
+  >
+    <AlertTriangle className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+    <div className="text-sm font-medium">{t`This terminal could not be opened`}</div>
+    <div className="max-w-md text-xs text-muted-foreground">{message}</div>
+    <Button size="sm" className="mt-2" onClick={onRetry} data-testid="terminal-shell-start-retry">
+      <RefreshCw className="h-3.5 w-3.5" />
+      {t`Try again`}
+    </Button>
+  </div>
+);
 
 /**
  * One warm-mounted terminal panel. Renders from a `Tab` plus its OWN live
@@ -257,6 +286,29 @@ export const TerminalPanel: React.FC<{
     };
   }, [isMounted, isProcess, processReady, targetId]);
 
+  // A plain shell's runtime, the same way: opened once per panel, by the panel.
+  // Its route loader resolves identity only (dock-loading I3). InteractiveTerminal
+  // renders at once and replays when the shell reports connected.
+  const [shellStartError, setShellStartError] = useState<string | null>(null);
+  const [shellStartAttempt, setShellStartAttempt] = useState(0);
+  const shellLoaded = shell != null;
+  useEffect(() => {
+    if (isProcess || !isMounted || !shell) return;
+    let stale = false;
+    setShellStartError(null);
+    void startShellRuntime(shell, estimateCols(window.innerWidth), estimateRows(window.innerHeight)).catch(
+      (cause: unknown) => {
+        if (stale) return;
+        toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=shell_runtime shell=${shell.id.slice(0, 8)} err:`, cause);
+        setShellStartError(describeProcessStartError(cause).description);
+      },
+    );
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per panel (and per explicit retry), not per shell broadcast
+  }, [isMounted, isProcess, shellLoaded, targetId, shellStartAttempt]);
+
   const handleTitleChange = (title: string): void => {
     if (tab.is_disabled) return;
     // A process tab has no shell: the backend names a process from its
@@ -296,6 +348,8 @@ export const TerminalPanel: React.FC<{
         !activeProcess.isHeadless &&
         (runtimeStatus === 'idle' || runtimeStatus === 'starting') ? (
           <TerminalPanelStartingState />
+        ) : !isProcess && shellStartError ? (
+          <ShellStartFailedState message={shellStartError} onRetry={() => setShellStartAttempt((n) => n + 1)} />
         ) : transportShellId || (isProcess && activeProcess?.isHeadless) ? (
           <InteractiveTerminal
             sessionId={transportShellId}
