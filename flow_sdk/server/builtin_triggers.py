@@ -13,6 +13,9 @@ Adding a new system trigger:
 from __future__ import annotations
 
 import logging
+import shlex
+import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.builtin import trigger_callbacks
@@ -25,7 +28,7 @@ from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.wizard import Wizard
-    from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue, WizardResult
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ReturnedValue, WizardResult
 
 _log = logging.getLogger(__name__)
 
@@ -329,33 +332,47 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
         await _tell_the_person_it_did_not_finish(wizard, result)
 
 
-#: The op that makes sure this box has an LLM source (`flow llm set auto`), and the
-#: wizard first-run setup runs after it.
-LLM_SOURCE_OP = "llm-source-auto"
 LLM_SETUP_WIZARD = "llm-setup"
+
+
+def _flow_cli(*args: str, platform: str) -> str:
+    """This interpreter's ``flow`` — ``sys.executable -m flow_sdk.cli.flow_cli``,
+    never a bare ``flow`` that depends on PATH. Electron launched from
+    Finder/Dock/Start Menu inherits a minimal PATH (see `electron/uv-manager.js`'s
+    own ``_enrichedPath()``, which exists to patch exactly that), and this runs
+    before anything has a chance to fix it. ``sys.executable`` also guarantees
+    the SAME install and instance this backend is itself running — the identical
+    reasoning behind ``builtin/project_setup.py``'s own ``_flow`` helper.
+    """
+    if platform == "win32":
+        quoted = " ".join("'" + a.replace("'", "''") + "'" for a in args)
+        return f"& '{sys.executable}' -m flow_sdk.cli.flow_cli {quoted}; exit $LASTEXITCODE"
+    return " ".join([shlex.quote(sys.executable), "-m", "flow_sdk.cli.flow_cli", *map(shlex.quote, args)])
+
+
+async def _resolve_llm_source() -> "CliResult":
+    """Run `flow llm set auto` directly. No completion check needed first: the
+    command is already idempotent — it returns at once when the box is already
+    funded, without opening anything."""
+    from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import CLI_TIMEOUT  # noqa: PLC0415
+
+    command = _flow_cli("llm", "set", "auto", platform=sys.platform)
+    return await run_shell(command, timeout_seconds=CLI_TIMEOUT, workdir=Path.home(), platform=sys.platform)
 
 
 async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[ReturnedValue, WizardResult]":
     """First-run setup: an LLM source, then the wizard that installs the tools.
 
-    The source is settled BEFORE the wizard and outside it — the `llm-source-auto`
-    op runs `flow llm set auto`, which returns at once on a funded box and opens
-    the chooser (with its Skip) on one that is not. Whatever it answers, the
-    wizard runs next: only its agent fallbacks need a source, and every plain
-    install command works without one. The two answers come back side by side,
-    so a caller can say which of them fell short.
+    The source is settled BEFORE the wizard and outside it (`_resolve_llm_source`).
+    Whatever it answers, the wizard runs next: only its agent fallbacks need a
+    source, and every plain install command works without one. The two answers
+    come back side by side, so a caller can say which of them fell short.
 
     One function for both ways in — the trigger on the first tab after install,
     and Settings → General — so the order cannot drift between them.
     """
-    from flow_sdk.builtin.compute_op import ComputeOp  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
-
-    op = await ComputeOp.by_name(LLM_SOURCE_OP)
-    if op is None:
-        source = ReturnedValue.not_found(f"{LLM_SOURCE_OP} is not installed, so no LLM source was looked for.")
-    else:
-        source = await op.run()
+    source = await _resolve_llm_source()
     _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
     return source, await wizard.run(unattended=unattended)
 

@@ -94,8 +94,11 @@ export default function AskView() {
       setError('');
       try {
         await apiClient.post(`/api/v1/ask/${questionId}${path}`, body);
-        if (windowMode) setSettled(path === '/cancel' ? _(msg`Cancelled.`) : _(msg`Thank you — sent.`));
-        else leave();
+        // Settle in place rather than leaving automatically — in the dock this
+        // used to hand the person straight back to wherever they were, with no
+        // way to see that the answer actually landed. `leave()` is now only
+        // ever reached by the person's own click, on the Back button below.
+        setSettled(path === '/cancel' ? _(msg`Cancelled.`) : _(msg`Thank you — sent.`));
       } catch (reason) {
         // A 422 means the value did not match the shape the op declared. The
         // question is still open, so this is correctable in place.
@@ -104,7 +107,7 @@ export default function AskView() {
         setBusy(false);
       }
     },
-    [questionId, _, windowMode, leave],
+    [questionId, _],
   );
 
   const submit = useCallback(() => {

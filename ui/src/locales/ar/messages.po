@@ -4052,6 +4052,7 @@ msgid "Cloning…"
 msgstr "جارِ الاستنساخ…"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -10598,6 +10599,10 @@ msgstr "إبقاء"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Keep"
 msgstr "إبقاء"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Keep browsing"
+msgstr ""
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Keep editing"
@@ -19077,6 +19082,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Signed in to Flowpad cloud"
 msgstr "تم تسجيل الدخول إلى سحابة Flowpad"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Signed in to FlowPad."
+msgstr ""
 
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Signed in to the remote"
