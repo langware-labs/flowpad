@@ -25,7 +25,30 @@ URL ─▶ 1 PARSE      DockPointer.fromUrl                            pure
 | 4 Commit | `setupTabAndAdopt` (`ui/src/tabs/tab-content-lifecycle.ts`) + the per-view loader | Materialize the tab from the tab snapshot and write context (project, process, shell, workdir). |
 | 5 Layout | `ui/src/navigation/dock-layout.ts` | Pick the frame: asset workspace, Vibe workspace, Vibe new-chat / no-process home, or the content panel. `flow-page` renders the answer. |
 | 6 Render | `flow-page` → layout → `ContentPanel` body | Render. A terminal body (`TabbedTerminal`) is a *slot*: it shows a panel the pool owns. |
-| 7 Attach | `TerminalPanel` (`ui/src/components/terminal/TerminalPanel.tsx`), chat panes | The runtime side effects: `process.start()` / `shell.start()` (`/open` + attach), the pty-stream replay, `loadHistory()` for chat views. Once per tab, not per activation. |
+| 7 Attach | `TerminalPanel` (`ui/src/components/terminal/TerminalPanel.tsx`), chat panes | The runtime side effects: `process.start()` / `shell.start()` (`/open` + attach), the pty-stream replay, `loadHistory()` for chat views. Once per tab, not per activation. A terminal's first mount fetches `pty-stream?since=checkpoint`: a stored replay checkpoint plus only the frames after it (below). |
+
+## Cold open: checkpoint + tail
+
+A terminal's first mount rebuilds its screen from the recorded PTY stream
+(`flow_sdk/compute/providers/desktop/pty_stream_file.py`). Replaying a long
+session's every frame in a headless xterm took most of a 2 s open, so a client
+that has replayed posts the result back — `POST /api/v1/shell/{id}/pty-stream/checkpoint`
+`{frame, cols, rows, last_seq, serialized}` — and the next cold open fetches
+`GET …/pty-stream?since=checkpoint`: the checkpoint and only the frames after it.
+Nothing after it → the checkpoint IS the screen, no replay at all.
+
+- Frames are numbered **absolutely**: the stream header's `base` counts what the
+  rolling cap dropped from the front, so a checkpoint survives truncation. One
+  older than the retained window, or newer than the file, is not used — the full
+  stream is served. The checkpoint is deleted with the recording.
+- A checkpoint is only stored for a replay of ≥ `CHECKPOINT_MIN_FRAMES` frames
+  (`pty-replay.ts`); below that the tail replays in milliseconds.
+- The first open ever of a recording still replays it whole — only a client
+  (a terminal emulator) can make the checkpoint. Every later cold open (reload,
+  another window, another day) starts from it.
+- Equivalence: `ui/tests/unit/pty-replay-checkpoint.test.ts` (checkpoint + tail ==
+  full replay at every split point, across resizes and a split multi-byte glyph);
+  `tests/unit/test_pty_stream_checkpoint.py` (numbering, truncation, staleness).
 
 ## Invariants
 
@@ -59,8 +82,8 @@ URL ─▶ 1 PARSE      DockPointer.fromUrl                            pure
 | I2 (step 2) | `ui/tests/unit/dock-loader/canonicalize.test.ts` |
 | I5 | `ui/tests/unit/dock-loader/dock-layout.test.ts` |
 | I6 | `ui/tests/unit/terminal-survives-layout-swap.test.tsx`, `ui/tests/unit/terminal_tab_switch_keeps_xterm_mounted.test.tsx` |
-| All, in a browser | `ui/tests/manual_regression/navigation/` — the dock sweep with real entities and the terminal round trips |
-| Speed | `ui/tests/manual_regression/perf/tab_switch_perf.md.ts` — budgets on a production build |
+| All, in a browser | `ui/tests/manual_regression/navigation/` — `every_place_renders` (real entities, every mode) and `terminal_round_trips` (a live terminal → every kind of place → back) |
+| Speed | `ui/tests/manual_regression/navigation/tab_switch_perf.md.ts` — budgets on a production build (below) |
 
 ## Traps that broke this before
 
@@ -74,3 +97,37 @@ URL ─▶ 1 PARSE      DockPointer.fromUrl                            pure
   by a render when the project moves; read the subscribed `useContext()` project.
 - **"Warm" measured per component.** A panel counted warm only while its own
   component instance lived. The pool's `has(key)` is the only warm/cold truth.
+
+## Speed budgets
+
+Measured from the app's own `tab_switch` trail (`start` → `ready` for a terminal,
+`painted` for a page) on a production build (`vite build` + `vite preview`), p90,
+asserted by `tab_switch_perf.md.ts` — never raised; a miss is a slow path to fix.
+
+| Switch | Budget | Measured 2026-09-27 |
+|---|---|---|
+| Warm tab switch (terminal / document / plain shell) | ≤ 150 ms, no loader request inside it | 85 / 53 / 67 ms |
+| Project switch between visited projects | ≤ 300 ms | 95 ms |
+| Cold open of a large recording (3.9 MB screen), from its checkpoint | ≤ 1 s | 655–767 ms |
+| First open ever of that recording (makes the checkpoint) | reported | 957–1149 ms |
+
+## Running the browser tier
+
+The terminal specs need a worker without an LLM: `tests/fixtures/mock_worker_bin/claude`
+is a scripted `claude` (banner marker, echo, `flood N`). Put it first on a
+disposable instance's PATH, with `tests/fixtures/mock_worker_shell` as `$SHELL`
+(it answers capability discovery's login-shell PATH probe with that PATH):
+
+```bash
+PATH=$PWD/tests/fixtures/mock_worker_bin:$PATH SHELL=$PWD/tests/fixtures/mock_worker_shell \
+  scripts/instance_ctl.sh launch dlm-7
+cd ui && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build --mode dlm-7 \
+  --outDir /tmp/dist-dlm7 --assetsDir _bundle      # _bundle: clear of the /assets API proxy
+node ./node_modules/vite/bin/vite.js preview --mode dlm-7 --outDir /tmp/dist-dlm7 --port 5007 --strictPort &
+VITE_PORT=5007 FLOW_INSTANCE=dlm-7 FLOWPAD_PERF_GATE=1 npx playwright test \
+  --config tests/manual_regression/navigation/playwright.config.ts
+```
+
+Run it against a production preview, not the Vite dev server: dev servers of
+several instances share `ui/node_modules/.vite` and clobber each other's
+optimized chunks. CI does the same in `.github/actions/e2e-tests`.

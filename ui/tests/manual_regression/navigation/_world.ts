@@ -142,11 +142,36 @@ export async function awaitSteerable(page: Page): Promise<void> {
     .toBe(true);
 }
 
-/** Steer the page in-app to a dock address (`<view>/<pointer>?<options>`) and wait for the URL. */
+/**
+ * Steer the page in-app to a dock address (`<view>/<pointer>?<options>`) and wait
+ * until the ROUTER has committed it. The browser URL is not enough: a backend-steered
+ * navigate `pushState`s before its loader runs, so a test that moved on at the URL
+ * raced a loader still in flight (the next click then superseded it).
+ */
 export async function navigateTo(page: Page, address: string, expectPath: string): Promise<void> {
+  const committedBefore = await committedPaths(page);
   const res = flow(['navigate', 'view', address]);
   expect(res.code, `flow navigate view ${address} → ${res.out}`).toBe(0);
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: 15_000 }).toContain(expectPath);
+  if (committedBefore === null) return; // tab_switch tracing is off on this page: the URL is all there is
+  await expect
+    .poll(async () => ((await committedPaths(page)) ?? []).slice(committedBefore.length).some((p) => p.includes(expectPath)), {
+      timeout: 15_000,
+      message: `the router never committed ${expectPath}`,
+    })
+    .toBe(true);
+}
+
+/** Paths of every `committed` tab_switch line so far, or null when the trail is not being recorded. */
+async function committedPaths(page: Page): Promise<string[] | null> {
+  return page.evaluate(() => {
+    const lines = (window as unknown as { __tabSwitchAt?: { line: string }[] }).__tabSwitchAt;
+    if (!lines) return null;
+    return lines.flatMap((l) => {
+      const m = / committed sw=\d+ .* path=(\S+)/.exec(l.line);
+      return m ? [decodeURIComponent(m[1])] : [];
+    });
+  });
 }
 
 /**

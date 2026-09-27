@@ -33,7 +33,7 @@ import { useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
-import { fetchPtyStream, replayPtyStream } from './pty-replay';
+import { fetchPtyStream, replayPtyStream, saveReplayCheckpoint } from './pty-replay';
 import { SearchAddon } from '@xterm/addon-search';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
@@ -1163,11 +1163,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             const replay = await replayPtyStream(stream);
             toplog.log(
               ['process_load', 'pty', 'agentic_process.load'],
-              `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0}`,
+              `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0} checkpoint=${stream.checkpoint ? 'yes' : 'no'} tail=${stream.events.length}`,
             );
             if (replay) {
               historySerialized = replay.serialized;
               historyLastSeq = replay.lastSeq;
+              // The next cold open of this recording replays only what comes after this.
+              saveReplayCheckpoint(ptyId, stream, replay);
             }
           }
         } catch (e) {

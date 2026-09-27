@@ -8,10 +8,13 @@ result into the visible terminal before attaching for live output. See
 
 from __future__ import annotations
 
+import asyncio
+
 import time
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from flow_sdk import toplog
 from flow_sdk.responses.response import ApiResponseStatus
@@ -19,8 +22,8 @@ from flow_sdk.responses.response import ApiResponseStatus
 router = APIRouter()
 
 
-@router.get("/shell/{shell_id}/pty-stream")
-async def get_pty_stream(shell_id: str) -> JSONResponse:
+def _stream_file(shell_id: str):
+    """The shell's current recording, or a 404 response."""
     from flow_sdk.builtin.shell import get_shell_record, shell_pty_stream_path
     from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
 
@@ -30,14 +33,27 @@ async def get_pty_stream(shell_id: str) -> JSONResponse:
     pty_pid = record.__dict__.get("pty_pid")
     if not pty_pid:
         return JSONResponse({"error": "shell has no pty"}, status_code=404)
-
     try:
         path = shell_pty_stream_path(record.id, pty_pid)
     except ValueError:
         return JSONResponse({"error": "shell has no pty"}, status_code=404)
+    return PtyStreamFile(path=path)
+
+
+@router.get("/shell/{shell_id}/pty-stream")
+async def get_pty_stream(shell_id: str, since: str | None = None) -> JSONResponse:
+    """The recording. ``since=checkpoint``: a stored replay checkpoint plus only
+    the frames after it, when one is usable (the full stream otherwise) — a cold
+    terminal open then replays the tail, not the session (dock-loading, step 7)."""
+    stream = _stream_file(shell_id)
+    if isinstance(stream, JSONResponse):
+        return stream
+    path = stream._path
 
     t0 = time.monotonic()
-    frames = PtyStreamFile(path=path).read_frames()
+    # Off the event loop: a long recording is tens of MB of JSON lines.
+    read = stream.read_frames_since_checkpoint if since == "checkpoint" else stream.read_frames
+    frames = await asyncio.to_thread(read)
     if frames is None:
         return JSONResponse({"error": "no stream recorded"}, status_code=404)
     t_read = time.monotonic()
@@ -52,8 +68,35 @@ async def get_pty_stream(shell_id: str) -> JSONResponse:
     # terminal on this backend, not just the one being mounted.
     if toplog.is_on("pty"):
         toplog.log(
-            "pty", "stream_read shell=%s bytes=%s events=%s ms=%.0f render_ms=%.0f",
-            shell_id, path.stat().st_size, len(frames["events"]),
+            "pty", "stream_read shell=%s bytes=%s events=%s checkpoint=%s ms=%.0f render_ms=%.0f",
+            shell_id, path.stat().st_size, len(frames["events"]), "checkpoint" in frames,
             (t_read - t0) * 1000, (time.monotonic() - t_read) * 1000,
         )
     return response
+
+
+class PtyCheckpoint(BaseModel):
+    """The replayed terminal after absolute frame ``frame``, at ``cols`` x ``rows``."""
+
+    frame: int
+    cols: int
+    rows: int
+    last_seq: int = 0
+    serialized: str
+
+
+@router.post("/shell/{shell_id}/pty-stream/checkpoint")
+async def put_pty_checkpoint(shell_id: str, body: PtyCheckpoint) -> JSONResponse:
+    """Store a client's replay result so the next cold open replays only the tail."""
+    stream = _stream_file(shell_id)
+    if isinstance(stream, JSONResponse):
+        return stream
+    try:
+        await asyncio.to_thread(
+            stream.write_checkpoint, body.frame, body.cols, body.rows, body.serialized, body.last_seq
+        )
+    except ValueError as exc:
+        return JSONResponse({"status": ApiResponseStatus.FAIL.value, "message": str(exc)}, status_code=400)
+    if toplog.is_on("pty"):
+        toplog.log("pty", "stream_checkpoint shell=%s frame=%s kb=%.0f", shell_id, body.frame, len(body.serialized) / 1024)
+    return JSONResponse({"status": ApiResponseStatus.SUCCESS.value, "message": "success", "data": {"frame": body.frame}})
