@@ -4954,9 +4954,14 @@ msgstr "העתקת קישורים"
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 #: src/components/top-nav-bar/CopyPathButton.tsx
 msgid "Copy path"
 msgstr "העתק נתיב"
+
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
+msgid "Copy path of {name}"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/terminal/project-list-menu.tsx
@@ -13467,7 +13472,6 @@ msgid "No published assets yet."
 msgstr "אין נכסים שפורסמו עדיין."
 
 #: src/components/terminal/TerminalPanel.tsx
-#: src/routes/loaders/load-shell.ts
 msgid "No realtime connection"
 msgstr "אין חיבור בזמן אמת"
 
@@ -15197,6 +15201,15 @@ msgstr "יש להדביק תחביר Mermaid כדי להחליף את הלוח �
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Paste or drag files here"
 msgstr "הדבק או גרור קובצים לכאן"
+
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
+msgid "Paste path at cursor"
+msgstr ""
+
+#. placeholder {0}: item.name
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
+msgid "Paste path of {0}"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "path"
@@ -17327,6 +17340,11 @@ msgstr ""
 msgid "Reveal"
 msgstr "חשוף"
 
+#. placeholder {0}: item.name
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
+msgid "Reveal {0} in Finder/Explorer"
+msgstr ""
+
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/top-nav-bar/CrumbDetailsPopover.tsx
@@ -17335,6 +17353,7 @@ msgstr "הצג ב-Finder"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/data-sources/SourceMenu.tsx
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Reveal in Finder/Explorer"
 msgstr ""
 
@@ -20465,7 +20484,6 @@ msgid "Terminal \"{requestedName}\" not found"
 msgstr "הטרמינל \"{requestedName}\" לא נמצא"
 
 #: src/components/terminal/TerminalPanel.tsx
-#: src/routes/loaders/load-shell.ts
 msgid "Terminal may be unresponsive until the connection recovers."
 msgstr "ייתכן שהטרמינל לא יגיב עד לחידוש החיבור."
 
@@ -21507,6 +21525,10 @@ msgstr ""
 msgid "This task no longer exists or is unavailable."
 msgstr "משימה זו כבר לא קיימת או אינה זמינה."
 
+#: src/components/terminal/TerminalPanel.tsx
+msgid "This terminal could not be opened"
+msgstr ""
+
 #: src/routes/loaders/load-next-process.ts
 #: src/routes/loaders/load-project.ts
 msgid "This terminal no longer exists."
@@ -22015,6 +22037,7 @@ msgstr "טריגרים"
 
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
+#: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
 #: src/pages/keychain-approval.tsx
