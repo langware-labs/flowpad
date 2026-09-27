@@ -1,7 +1,7 @@
 import { type TypeId, isImagePath } from '@sdk';
-import { fsStore } from '@sdk';
+import { copyToClipboard, fsStore } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { ExternalLink, File, RefreshCw, Trash2 } from 'lucide-react';
+import { Check, ClipboardPaste, Copy, ExternalLink, File, FolderSearch, RefreshCw, Trash2 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
@@ -11,7 +11,11 @@ import { useFS } from '@src/hooks/useFS';
 interface InputFilesPanelProps {
   computeNodeTypeId: TypeId;
   inputDirAbsPath: string;
+  /** Insert a file's path into the input the user is typing in (composer or PTY), at the cursor. */
+  onInsertPath?: (path: string) => void;
 }
+
+const ROW_ACTION_CLASS = 'h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -19,7 +23,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTypeId, inputDirAbsPath }) => {
+export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTypeId, inputDirAbsPath, onInsertPath }) => {
   const { t } = useLingui();
   const fs = useFS(computeNodeTypeId);
   const fsRef = React.useRef(fs);
@@ -27,6 +31,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTyp
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
+  const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
   const browseResult = fs?.browse(inputDirAbsPath);
   const items = browseResult?.items ?? [];
@@ -76,6 +81,12 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTyp
     } finally {
       setDeletingPath(null);
     }
+  };
+
+  const handleCopyPath = async (path: string) => {
+    await copyToClipboard(path);
+    setCopiedPath(path);
+    setTimeout(() => setCopiedPath((current) => (current === path ? null : current)), 1500);
   };
 
   return (
@@ -139,10 +150,51 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTyp
                       <p className="text-[10px] text-muted-foreground">{formatSize(item.size)}</p>
                     )}
                   </div>
+                  {onInsertPath && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={ROW_ACTION_CLASS}
+                      aria-label={t`Paste path of ${item.name}`}
+                      title={t`Paste path at cursor`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onInsertPath(itemPath);
+                      }}
+                    >
+                      <ClipboardPaste className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    className={ROW_ACTION_CLASS}
+                    aria-label={t`Copy path of ${item.name}`}
+                    title={t`Copy path`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleCopyPath(itemPath);
+                    }}
+                  >
+                    {copiedPath === itemPath ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={ROW_ACTION_CLASS}
+                    aria-label={t`Reveal ${item.name} in Finder/Explorer`}
+                    title={t`Reveal in Finder/Explorer`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void openExternalFromComputeNode(computeNodeTypeId.id, itemPath, { select: true });
+                    }}
+                  >
+                    <FolderSearch className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className={`${ROW_ACTION_CLASS} hover:text-destructive`}
                     aria-label={`Delete ${item.name}`}
                     title={`Delete ${item.name}`}
                     disabled={isDeleting}

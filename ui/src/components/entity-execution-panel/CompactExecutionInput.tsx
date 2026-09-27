@@ -322,6 +322,7 @@ export function CompactExecutionInput({
         aria-label={t`Message the agent`}
         className="min-h-[48px] w-full resize-none overflow-y-hidden rounded-xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-primary disabled:opacity-50"
         data-testid="entity-execution-input"
+        data-path-insert-target
       />
       {showHistoryList && (
         <PromptHistoryList
