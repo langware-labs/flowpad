@@ -125,7 +125,7 @@ def folders_for_sources(sources, project_id=None):
 
 def catalog_from_folders(folders, sources, types):
     from flow_sdk.assets.folder import collect_asset_scan
-    wanted = frozenset(map(str, types))
+    wanted = sorted({str(t) for t in types})
     result = collect_asset_scan([folder.model_copy(update={"types": wanted}) for folder in folders])
     issues = list(result.issues)
     assets = [descriptor_from_asset(asset, sources, issues=issues) for asset in result.assets
