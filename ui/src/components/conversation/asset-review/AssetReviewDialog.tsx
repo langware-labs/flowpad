@@ -9,11 +9,8 @@ import { Cloud, ExternalLink, File, FolderDown, GitBranch, Globe, Loader2, Packa
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { notify } from '@src/notifications';
 import { buildDockPointer, iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
@@ -82,37 +79,13 @@ function AssetParentSubscriber({
 }
 
 /**
- * The selected attachment's content pane. As soon as the asset's entity resolves
- * with a readable `asset_ref` — which for a task happens at unpack, BEFORE any
- * install — we render that entity's own viewer via {@link AssetEditorRouter}
- * (task → task view, skill → skill view, …). We deliberately do NOT gate on
- * install scope: a staged task shows the task viewer straightaway. Only when no
- * entity/asset_ref is resolvable yet (e.g. a staged skill not materialized until
- * install, or a raw file) do we fall back to the raw staged-file preview.
- */
-function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment }) {
-  const typeId = attachment.asset_type === 'file' ? null : attachment.targetTypeId;
-  const editor = typeId ? editorForType(typeId.type) : undefined;
-  const { data } = useEntity<AnyEntity & { asset_ref?: string | null }>(typeId);
-  if (typeId && editor && data?.asset_ref) {
-    const pointer = AssetDocPointer.forTypeId(editor, typeId).toPointer();
-    return (
-      <div className="h-[55vh] overflow-hidden rounded border border-border">
-        <AssetEditorRouter key={pointer} pointer={pointer} />
-      </div>
-    );
-  }
-  return <StagedAssetViewer attachment={attachment} />;
-}
-
-/**
  * Review modal for a received message's staged attachments (opened from a
  * dashed conversation chip). Two panes: a left rail listing every entity
  * attached to the message — nested as a shallow tree, a child (task with a
  * `parent_id` pointing at a sibling) indented under its parent — with the
- * clicked one selected by default; and a right pane showing the selected
- * entity's OWN viewer (task view, skill view, …) for installed assets, or a
- * bare staged-file preview for not-yet-installed ones ({@link SelectedEntityViewer}).
+ * clicked one selected by default; and a right pane reviewing the selected
+ * one's staged copy BY PATH in its own viewer, read-only ({@link StagedAssetViewer}).
+ * Review never resolves by record; "Open" is the by-record path, once installed.
  *
  * The install header stays on top. Install / Uninstall act on the WHOLE list
  * (batch): "Install in project" installs every attachment into the target
@@ -486,7 +459,7 @@ export function AssetReviewDialog({
               {selected.description && <p className="text-[12px] text-muted-foreground">{selected.description}</p>}
               <SourceRow ma={selected} />
             </div>
-            <SelectedEntityViewer attachment={selected} />
+            <StagedAssetViewer attachment={selected} />
           </div>
         </div>
 

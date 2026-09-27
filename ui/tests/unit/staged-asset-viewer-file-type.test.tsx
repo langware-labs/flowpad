@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
-import { MessageAttachment } from '@sdk';
+import { FSRef, MessageAttachment } from '@sdk';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { StagedAssetViewer } from '@src/components/conversation/asset-review/StagedAssetViewer';
@@ -36,7 +36,7 @@ function renderReview(ma: MessageAttachment) {
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-describe('staged review renders a received file with its file-type viewer', () => {
+describe('review opens the staged copy by path in its own viewer, read-only', () => {
   it.each([
     ['report.pdf', 'pdf-viewer'],
     ['photo.png', 'media-viewer-image'],
@@ -51,10 +51,13 @@ describe('staged review renders a received file with its file-type viewer', () =
     expect(screen.queryByText('Select a file to preview.')).toBeNull();
   });
 
-  it('keeps the markdown preview for a .md', async () => {
+  it('a .md opens in the markdown viewer in View mode, never through the text read', async () => {
+    const write = vi.spyOn(FSRef.prototype, 'write');
     const { ma, read } = staged('notes.md');
     renderReview(ma);
-    await screen.findByRole('heading', { name: 'Notes' });
-    expect(read).toHaveBeenCalledWith('notes.md');
+    expect((await screen.findByTestId('editor-mode-chip-view')).getAttribute('data-mode-active')).toBe('true');
+    expect(read).not.toHaveBeenCalled();
+    expect(document.querySelector('[contenteditable="true"]')).toBeNull();
+    expect(write).not.toHaveBeenCalled();
   });
 });
