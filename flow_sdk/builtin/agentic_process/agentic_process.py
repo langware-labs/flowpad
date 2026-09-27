@@ -4920,8 +4920,8 @@ class AgenticProcess(Entity):
     async def transcript_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Generic transcript surface dispatched by sub-path.
 
-        Loads the JSONL once via the worker-agnostic ``_load_transcript()``
-        and routes on the URL sub-path:
+        Reads the transcript once via ``_current_transcript()`` (the streamer's
+        copy when one is live) and routes on the URL sub-path:
 
           * ``transcript/plan``   → resolve + persist + return latest plan.
           * ``transcript/prompts`` → return the user-prompt list.
@@ -4937,7 +4937,7 @@ class AgenticProcess(Entity):
 
         descriptor = self.transcript
         await self._persist_transcript_session_id(descriptor)
-        transcript = self._load_transcript(descriptor)
+        transcript = self._current_transcript()
 
         if sub_path is TranscriptSubpath.PLAN:
             return await self._transcript_plan(transcript)
@@ -5125,7 +5125,7 @@ class AgenticProcess(Entity):
         """
         descriptor = self.transcript
         await self._persist_transcript_session_id(descriptor)
-        return await self._transcript_plan(self._load_transcript(descriptor))
+        return await self._transcript_plan(self._current_transcript())
 
     # ── State ─────────────────────────────────────────────────────────────────
 
