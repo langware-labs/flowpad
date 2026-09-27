@@ -11,7 +11,9 @@
  *   warm tab switch       content visible ≤ 150 ms, and no request inside the
  *                         switch's wait (between its `start` and the loader settling)
  *   project switch        content visible ≤ 300 ms (both projects visited before)
- *   first terminal open   content visible ≤ 1 s, on a large recording
+ *   cold terminal open    content visible ≤ 1 s on a large recording, from its
+ *                         replay checkpoint (the first open ever, which makes the
+ *                         checkpoint, is measured and reported)
  *
  * Opt-in (FLOWPAD_PERF_GATE=1): the numbers mean something only on a production
  * build (`vite build` + `vite preview`, see ../../../../.github/actions/e2e-tests).
@@ -121,6 +123,15 @@ async function clickChip(page: Page, chip: string, trail: string[], metric: 'rea
   const before = switches(trail).size;
   await page.locator(chip).first().click();
   let found: Switch | undefined;
+  const state = () =>
+    page.evaluate(() => ({
+      overlay: !!document.querySelector('[data-testid="terminal-active-tab-missing"]'),
+      nothing: (window as unknown as { __nothingToDisplay?: string[] }).__nothingToDisplay ?? [],
+      panels: [...document.querySelectorAll('[data-testid="terminal-panel"]')].map(
+        (p) => `${p.getAttribute('data-session-id')}:${p.getAttribute('data-active')}`,
+      ),
+      chip: document.title,
+    }));
   await expect
     .poll(
       () => {
@@ -128,9 +139,12 @@ async function clickChip(page: Page, chip: string, trail: string[], metric: 'rea
         found = all.length > before ? all[all.length - 1] : undefined;
         return found?.[metric] !== undefined;
       },
-      { timeout: 10_000, message: `no ${metric} line for ${chip}` },
+      { timeout: 10_000, message: `no ${metric} line for ${chip}; at ${page.url()}; trail:\n${trail.slice(-10).join('\n')}` },
     )
-    .toBe(true);
+    .toBe(true)
+    .catch(async (e: unknown) => {
+      throw new Error(`${String(e)}\nstate: ${JSON.stringify(await state())}`);
+    });
   await networkQuiet(page);
   return found!;
 }
@@ -237,21 +251,13 @@ test('project switch between visited projects: content visible within budget', a
   expect(p90, 'project switch').toBeLessThanOrEqual(BUDGET.projectMs);
 });
 
-test('first open of a terminal with a large recording: content visible within budget', async ({ page }) => {
-  // A session whose recording is large: the worker floods its screen first.
-  const flood = await fetch(`${BACKEND}/api/v1/graph/compute_node/%40local/terminal-command/input`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ shell_id: a.processShellId, data: 'flood 200000\r' }),
-  });
-  expect(flood.ok, 'could not send input to the mock worker').toBe(true);
-  await expect.poll(() => ptyText(a.processShellId).then((t) => t.length), { timeout: 60_000 }).toBeGreaterThan(10_000_000);
-
+/** Open the session in a FRESH page (nothing warm) and return its cold `ready` line. */
+async function coldOpen(page: Page, w: World): Promise<{ ms: number; line: string }> {
   const { toplog } = await installObservers(page);
   await page.goto('/dock/desktop?viewMode=advanced');
   await awaitSteerable(page);
   const before = switches(toplog).size;
-  await navigateTo(page, `shell/agentic_process-${a.processId}`, `/shell/agentic_process-${a.processId}`);
+  await navigateTo(page, `shell/agentic_process-${w.processId}`, `/shell/agentic_process-${w.processId}`);
   let sw: Switch | undefined;
   await expect
     .poll(
@@ -263,11 +269,38 @@ test('first open of a terminal with a large recording: content visible within bu
       { timeout: 30_000 },
     )
     .toBe(true);
-  // Non-vacuous: it WAS a cold open, and it replayed a large recording.
-  const readyLine = toplog.find((l) => new RegExp(`\\bready sw=${sw!.id} `).test(l)) ?? '';
-  const historyKb = Number(/history_kb=(\d+)/.exec(readyLine)?.[1] ?? 0);
-  console.log(`[perf] cold terminal open on a large recording: ${sw!.ready}ms — ${readyLine.slice(readyLine.indexOf('ready'))}`);
-  expect(readyLine, 'the open was not a cold terminal mount').toContain('mode=cold');
-  expect(historyKb, 'the replayed recording was not large').toBeGreaterThan(1000);
-  expect(sw!.ready!, 'first terminal open').toBeLessThanOrEqual(BUDGET.coldTerminalMs);
+  const line = toplog.find((l) => new RegExp(`\\bready sw=${sw!.id} `).test(l)) ?? '';
+  return { ms: sw!.ready!, line: line.slice(line.indexOf('ready')) };
+}
+
+test('cold open of a terminal with a large recording: from its checkpoint, within budget', async ({ browser }) => {
+  // A session whose recording is large: the worker floods its screen first.
+  const flood = await fetch(`${BACKEND}/api/v1/graph/compute_node/%40local/terminal-command/input`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ shell_id: a.processShellId, data: 'flood 200000\r' }),
+  });
+  expect(flood.ok, 'could not send input to the mock worker').toBe(true);
+  await expect.poll(() => ptyText(a.processShellId).then((t) => t.length), { timeout: 60_000 }).toBeGreaterThan(10_000_000);
+
+  // The first open ever replays the whole recording (no client has yet), and
+  // leaves a checkpoint behind for every open after it. Reported, not budgeted:
+  // a checkpoint needs a terminal emulator, so only a client can make one.
+  const first = await coldOpen(await browser.newPage(), a);
+  console.log(`[perf] first-ever open of a large recording: ${first.ms}ms — ${first.line}`);
+  expect(first.line, 'the first open was not a cold terminal mount').toContain('mode=cold');
+  expect(Number(/history_kb=(\d+)/.exec(first.line)?.[1] ?? 0), 'the replayed recording was not large').toBeGreaterThan(1000);
+
+  // Every later cold open — a reload, another window, coming back tomorrow —
+  // starts from that checkpoint and replays only what came after it.
+  await expect
+    .poll(async () => {
+      const r = await fetch(`${BACKEND}/api/v1/shell/${a.processShellId}/pty-stream?since=checkpoint`);
+      return r.ok && 'checkpoint' in ((await r.json()) as { data: object }).data;
+    }, { timeout: 15_000, message: 'the first open stored no checkpoint' })
+    .toBe(true);
+  const again = await coldOpen(await browser.newPage(), a);
+  console.log(`[perf] cold open from the checkpoint: ${again.ms}ms — ${again.line}`);
+  expect(again.line, 'the reopen was not a cold terminal mount').toContain('mode=cold');
+  expect(again.ms, 'cold open of a large recording').toBeLessThanOrEqual(BUDGET.coldTerminalMs);
 });

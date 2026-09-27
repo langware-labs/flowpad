@@ -268,11 +268,15 @@ class PtyStreamFile:
             size -= len(line) + 1
             drop += 1
 
-        new_header = json.dumps({"v": 1, "cols": cols, "rows": rows}).encode()
         retained = lines[drop:]
         modes = _modes_in_force(b"".join(dropped_output))
+        # `base` = the absolute number of the first retained frame, so a replay
+        # checkpoint ("the state after frame N") stays addressable across cuts.
+        # The synthetic modes frame takes the number of the last dropped frame.
+        base = header["base"] + (drop - 1) - (1 if modes else 0)
         if modes:
             retained = [json.dumps(["o", base64.b64encode(modes).decode("ascii")]).encode(), *retained]
+        new_header = json.dumps({"v": 1, "cols": cols, "rows": rows, "base": base}).encode()
         new_raw = new_header + b"\n" + b"\n".join(retained)
         self._path.write_bytes(new_raw)
         self._size = len(new_raw)
@@ -306,11 +310,12 @@ class PtyStreamFile:
             salvaged = self._salvage_framed_tail(raw)
             if salvaged is not None:
                 events, (cols, rows) = salvaged
-                return {"v": 1, "cols": cols, "rows": rows, "events": events}
+                return {"v": 1, "cols": cols, "rows": rows, "base": 0, "events": events}
             return {
                 "v": 0,
                 "cols": None,
                 "rows": None,
+                "base": 0,
                 "events": [["o", base64.b64encode(raw).decode("ascii")]],
             }
         lines = raw.split(b"\n")
@@ -325,7 +330,13 @@ class PtyStreamFile:
                 continue  # torn tail line
             if isinstance(frame, list) and len(frame) in (2, 3) and frame[0] in ("o", "r"):
                 events.append(frame)
-        return {"v": header["v"], "cols": header["cols"], "rows": header["rows"], "events": events}
+        return {
+            "v": header["v"],
+            "cols": header["cols"],
+            "rows": header["rows"],
+            "base": header["base"],
+            "events": events,
+        }
 
     def max_seq(self) -> int:
         """Highest output-frame seq persisted in the file (0 if none).
@@ -409,15 +420,78 @@ class PtyStreamFile:
     def _parse_header(line: bytes) -> dict:
         try:
             h = json.loads(line)
-            return {"v": int(h.get("v", 1)), "cols": h.get("cols"), "rows": h.get("rows")}
+            return {"v": int(h.get("v", 1)), "cols": h.get("cols"), "rows": h.get("rows"), "base": int(h.get("base", 0))}
         except ValueError:
-            return {"v": 1, "cols": None, "rows": None}
+            return {"v": 1, "cols": None, "rows": None, "base": 0}
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
+    # ── replay checkpoint ────────────────────────────────────────────────────
+    #
+    # A cold terminal open replays the whole recording in a headless xterm to get
+    # the screen — seconds, for a long session. A client that has done that posts
+    # the result back as a CHECKPOINT: "the serialized terminal after frame N, at
+    # cols x rows". The next cold open is then the checkpoint plus only the frames
+    # after it (docs/navigation/dock-loading.md, step 7). Frame numbers are
+    # absolute (header ``base``), so a checkpoint survives front truncation; one
+    # older than the retained window, or newer than the file, is simply not used.
+
+    @property
+    def _checkpoint_path(self) -> Path:
+        return self._path.with_name(self._path.name + ".ckpt")
+
+    def write_checkpoint(self, frame: int, cols: int, rows: int, serialized: str, last_seq: int) -> None:
+        """Store the replay state after absolute frame ``frame``. Last write wins."""
+        if frame < 0 or cols <= 0 or rows <= 0:
+            raise ValueError("checkpoint frame/cols/rows must be positive")
+        payload = {"frame": frame, "cols": cols, "rows": rows, "last_seq": last_seq, "serialized": serialized}
+        tmp = self._checkpoint_path.with_name(self._checkpoint_path.name + ".tmp")
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(payload))
+        tmp.replace(self._checkpoint_path)  # atomic: a reader never sees half a checkpoint
+
+    def read_checkpoint(self) -> dict | None:
+        try:
+            ck = json.loads(self._checkpoint_path.read_text())
+        except (OSError, ValueError):
+            return None
+        if not isinstance(ck, dict) or not isinstance(ck.get("serialized"), str):
+            return None
+        return ck
+
+    def read_frames_since_checkpoint(self) -> dict | None:
+        """``read_frames``, reduced to the frames after a usable checkpoint.
+
+        Returns the full stream (no ``checkpoint`` key) when there is none, or it
+        lies outside the retained window. Otherwise ``events`` holds only the tail,
+        ``base`` is the checkpoint's frame, and ``checkpoint`` carries its state.
+        """
+        frames = self.read_frames()
+        if frames is None or frames["v"] < 1:
+            return frames
+        ck = self.read_checkpoint()
+        if ck is None:
+            return frames
+        base, events = frames["base"], frames["events"]
+        start = int(ck.get("frame", -1)) - base
+        if start < 0 or start > len(events):
+            return frames  # truncated past it, or from another recording — full replay
+        return {
+            **frames,
+            "base": base + start,
+            "events": events[start:],
+            "checkpoint": {
+                "cols": ck["cols"],
+                "rows": ck["rows"],
+                "last_seq": ck.get("last_seq", 0),
+                "serialized": ck["serialized"],
+            },
+        }
+
     def delete(self) -> None:
-        """Remove the stream file if it exists."""
+        """Remove the stream file (and its replay checkpoint) if it exists."""
         self._path.unlink(missing_ok=True)
+        self._checkpoint_path.unlink(missing_ok=True)
         self._size = None
 
     @property

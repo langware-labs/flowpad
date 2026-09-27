@@ -108,7 +108,18 @@ test('a terminal survives every trip away and back', async ({ page }) => {
       if (place.modeSwitch) {
         await expect(panel(page, world.processId).locator('.xterm').first()).toBeVisible();
         await expect(panel(page, world.processId)).toContainText(MOCK_MARKER, { timeout: 15_000 });
-        // Later trips compare against the terminal the mode switch left behind.
+        // The relaunched PTY re-attaches (and re-streams) on its own schedule: let
+        // it settle, then later trips compare against the terminal it left behind.
+        await expect
+          .poll(
+            async () => {
+              const n = reruns.length;
+              await page.waitForTimeout(750);
+              return reruns.length === n;
+            },
+            { timeout: 15_000 },
+          )
+          .toBe(true);
         await pinTerminalNode(page, world.processId);
         firstVisitRequests = reruns.length;
         return;
