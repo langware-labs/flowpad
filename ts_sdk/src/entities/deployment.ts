@@ -81,6 +81,7 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   project_id?: string | null;
   /** Credential environment: `development` (this computer) or a named one (`production`, `staging`, …). */
   environment?: string;
+  llm_endpoint_typeid?: string;
 }
 
 // `implements IDeployment` only checks the class; it contributes no members, so every
@@ -194,6 +195,8 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   source_revision: string | null;
   project_id: string | null;
   environment: string;
+  /** Its own token allocation on the hub (an `llm_endpoint` typeid); '' = its agent spends its owner's default. */
+  llm_endpoint_typeid: string;
 
   constructor(entity: Partial<IDeployment> | IEntity = {}) {
     super(entity);
@@ -227,6 +230,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     this.source_revision = deployment.source_revision ?? null;
     this.project_id = deployment.project_id ?? null;
     this.environment = deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT;
+    this.llm_endpoint_typeid = deployment.llm_endpoint_typeid ?? '';
     this.validateStructure();
   }
 

@@ -205,6 +205,9 @@ class Deployment(Entity):
         default=DEFAULT_ENVIRONMENT,
         description="Credential environment: development (this computer) or a named one (production, staging, ...)",
     )
+    #: The placement's own token allocation on the hub (an ``llm_endpoint`` typeid), set by planning it with a
+    #: ``token_allocation``; blank = its agent spends its owner's capped default.
+    llm_endpoint_typeid: str = APIField(default="", description="This placement's token allocation (hub LLM endpoint)")
 
     #: Where this placement's credential values live (the WHERE a credential never says). ``None``:
     #: this computer's — an agent's local deployment reads what the rest of this machine reads.
