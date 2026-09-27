@@ -1,11 +1,12 @@
-import { AgenticProcess, dataContext, tabInProject, tabKey, toplog, TypeId } from '@sdk';
+import { AgenticProcess, tabInProject, tabKey, toplog, TypeId } from '@sdk';
+import { useContext } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { DockPointer } from '@src/navigation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTerminalTabs } from '@src/tabs/use-tab-manager';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { terminalPool } from './terminal-pool';
 import { TerminalPanelErrorState } from './TerminalPanel';
 
@@ -43,7 +44,12 @@ interface TabbedTerminalProps {
 const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope = 'project', spawnProjectId, processId }) => {
   const { currentDock } = useDockNavigation();
   const allTerminalTabs = useTerminalTabs('all');
-  const scopeProjectId = spawnProjectId === undefined ? (dataContext.project?.id ?? null) : spawnProjectId;
+  // The SUBSCRIBED project, not a read of the `dataContext` global: a global
+  // read at render time lags the URL by a render whenever the project moves, and
+  // for that render the tab the URL names is "missing" from the scoped list — the
+  // "This session has nothing to display" flash on a switch.
+  const { project } = useContext();
+  const scopeProjectId = spawnProjectId === undefined ? (project?.id ?? null) : spawnProjectId;
   const tabs = useMemo(
     () => (scope === 'all' ? allTerminalTabs : allTerminalTabs.filter((tab) => tabInProject(tab, scopeProjectId))),
     [allTerminalTabs, scope, scopeProjectId],
@@ -78,6 +84,18 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
       ? DockPointer.extractAgenticProcessId(activePointer)
       : undefined;
   const activeTabMissing = !!activeKey && tabs.length > 0 && !hasTab;
+
+  // One line per time the dead-end overlay goes up, with what disagreed.
+  useEffect(() => {
+    if (!activeTabMissing) return;
+    const owner = allTerminalTabs.find((t) => tabKey(t) === activeKey);
+    toplog.log(
+      'tab_switch',
+      `error ${sinceTabSwitch()} sink=terminal_active_tab_missing key=${activeKey} scope_project=${scopeProjectId ?? 'global'} ` +
+        `tab_project=${owner ? (owner.project_id ?? 'global') : 'no-tab'} scoped_tabs=${tabs.length}`,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per appearance
+  }, [activeTabMissing, activeKey]);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const [slot] = useState(() => Symbol('terminal-slot'));

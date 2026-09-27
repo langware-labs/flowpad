@@ -309,6 +309,26 @@ export const TerminalPanel: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per panel (and per explicit retry), not per shell broadcast
   }, [isMounted, isProcess, shellLoaded, targetId, shellStartAttempt]);
 
+  // One line each time this panel falls through to "nothing to display": a process
+  // that loaded, is past startup, and has neither a shell nor a headless chat.
+  const showsNothing =
+    isMounted &&
+    isProcess &&
+    !!activeProcess &&
+    !activeProcess.isHeadless &&
+    runtimeStatus !== 'idle' &&
+    runtimeStatus !== 'starting' &&
+    !transportShellId;
+  useEffect(() => {
+    if (!showsNothing || !activeProcess) return;
+    toplog.log(
+      'tab_switch',
+      `error ${sinceTabSwitch()} sink=terminal_panel_nothing_to_display proc=${activeProcess.id.slice(0, 8)} ` +
+        `runtime=${runtimeStatus} status=${activeProcess.status ?? '-'} pty_mode=${String(activeProcess.pty_mode)}`,
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per appearance
+  }, [showsNothing]);
+
   const handleTitleChange = (title: string): void => {
     if (tab.is_disabled) return;
     // A process tab has no shell: the backend names a process from its
