@@ -137,9 +137,17 @@ async function loadSessionRoute(pointer: string | undefined): Promise<void> {
     AgenticProcess.getByIdFromCache<AgenticProcess>(pointer) ??
     (await AgenticProcess.getById<AgenticProcess>(pointer).catch(() => null));
   if (process?.project_id) {
-    await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
-      systemTools.resolveProjectContext(process.workdir ?? undefined, process),
-    );
+    await loadProject(new TypeId(Project.type, process.project_id)).catch(async () => {
+      // A stored project_id dangles when the project was deleted under us. Recover it
+      // through the backend's recover_by_path first — `loadProcess` does the same, and
+      // without it a session URL quietly lands in the workdir's project or Global.
+      const recovered = await process.recoverProject().catch(() => null);
+      if (recovered) {
+        await loadProject(new TypeId(Project.type, recovered.id));
+        return;
+      }
+      await systemTools.resolveProjectContext(process.workdir ?? undefined, process);
+    });
   } else {
     // Global (projectless) session — a workdir match adopts it into a project;
     // otherwise resolveProjectContext clears the active project (the Global scope).

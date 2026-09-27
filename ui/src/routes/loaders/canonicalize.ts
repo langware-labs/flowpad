@@ -25,15 +25,20 @@ const CANONICALIZERS: readonly Canonicalizer[] = [
 ];
 
 export function canonicalizeDockUrl(pathname: string, search: string): string | null {
-  let current = `${pathname}${search}`;
+  // The two halves are carried as strings and re-split only after a rewrite fires:
+  // parsing a URL per canonicalizer allocated four of them per navigation to learn
+  // nothing, on a path with a millisecond budget.
+  let [path, query] = [pathname, search];
   let changed = false;
   for (const canonicalize of CANONICALIZERS) {
-    const url = new URL(current, 'http://canonical.invalid');
-    const next = canonicalize(url.pathname, url.search);
+    const next = canonicalize(path, query);
+    const current = `${path}${query}`;
     if (next && next !== current) {
-      current = next;
+      const cut = next.indexOf('?');
+      [path, query] = cut < 0 ? [next, ''] : [next.slice(0, cut), next.slice(cut)];
       changed = true;
     }
   }
+  const current = `${path}${query}`;
   return changed ? current : null;
 }
