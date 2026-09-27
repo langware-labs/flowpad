@@ -160,8 +160,16 @@ async def run_op(
     say(f"{spec.display_label}: {spec.subkind}")
     started = time.monotonic()
     call = await _CALLS[type(exe)](
-        spec, workdir=workdir, platform=platform, env=env, executor=executor,
-        subject=subject, ask_timeout=ask_timeout, shell=shell, launch=launch, say=say,
+        spec,
+        workdir=workdir,
+        platform=platform,
+        env=env,
+        executor=executor,
+        subject=subject,
+        ask_timeout=ask_timeout,
+        shell=shell,
+        launch=launch,
+        say=say,
     )
     if not call.duration_s:
         call = call.model_copy(update={"duration_s": time.monotonic() - started})
@@ -185,14 +193,37 @@ async def run_op(
 
     after = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
     if after.exit_code is ExitCode.OK:
-        done = call.model_copy(update={
-            "exit_code": ExitCode.OK, "check": after, "detail": f"{spec.display_label}: done.",
-        })
+        done = call.model_copy(
+            update={
+                "exit_code": ExitCode.OK,
+                "check": after,
+                "detail": f"{spec.display_label}: done.",
+            }
+        )
         return _with_value(spec, done, said=after)
-    return call.model_copy(update={
-        "exit_code": ExitCode.NOT_YET, "value": None, "check": after,
-        "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
-    })
+    return call.model_copy(
+        update={
+            "exit_code": ExitCode.NOT_YET,
+            "value": None,
+            "check": after,
+            "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.{_why(call)}",
+        }
+    )
+
+
+def _why(call: Any) -> str:
+    """The call's own last word, for a log line that otherwise says only "failed".
+
+    An installer that exits at once (a refused agreement, an ambiguous package
+    id) is indistinguishable from one whose binary landed off the PATH unless
+    its exit code and last line of output travel with the verdict.
+    """
+    code = getattr(call, "returncode", None)
+    output = (getattr(call, "stderr", "") or "").strip() or (getattr(call, "stdout", "") or "").strip()
+    last = output.splitlines()[-1].strip() if output else ""
+    if code is None and not last:
+        return ""
+    return f" (exit {code}{': ' + last[:200] if last else ''})"
 
 
 def refused_for(spec: ComputeOpSpec) -> ReturnedValue:
@@ -202,13 +233,12 @@ def refused_for(spec: ComputeOpSpec) -> ReturnedValue:
     ``trusted`` — say this, and a person should not meet two spellings of one
     sentence depending on which way the op was reached.
     """
-    return spec.exe_data.ANSWER.refused(
-        f"{spec.display_label} runs on this machine and has not been approved."
-    )
+    return spec.exe_data.ANSWER.refused(f"{spec.display_label} runs on this machine and has not been approved.")
 
 
 def _say(on_status: Optional[Callable[[str], None]]) -> Callable[[str], None]:
     """Progress reporting is never fatal."""
+
     def say(text: str) -> None:
         if on_status is None or not text:
             return
@@ -216,6 +246,7 @@ def _say(on_status: Optional[Callable[[str], None]]) -> Callable[[str], None]:
             on_status(text)
         except Exception:  # noqa: BLE001 — reporting must never fail a producer
             pass
+
     return say
 
 
@@ -232,7 +263,8 @@ def _already(spec: ComputeOpSpec, said: CliResult) -> ReturnedValue:
         # return — the document disagreeing with itself. Say so.
         return answer.not_yet(
             f"{spec.display_label}: the check holds, but what it printed is not a {spec.output_spec_kind} — {error}",
-            ran=False, check=said,
+            ran=False,
+            check=said,
         )
     return done.model_copy(update={"value": value})
 
@@ -254,10 +286,13 @@ def _with_value(spec: ComputeOpSpec, answer: ReturnedValue, *, said: Optional[Cl
     try:
         value = to_declared(raw, spec.output_spec_kind)
     except DeclaredShapeError as error:
-        return answer.model_copy(update={
-            "exit_code": ExitCode.NOT_YET, "value": None,
-            "detail": f"{spec.display_label}: returned a value that is not a {spec.output_spec_kind} — {error}",
-        })
+        return answer.model_copy(
+            update={
+                "exit_code": ExitCode.NOT_YET,
+                "value": None,
+                "detail": f"{spec.display_label}: returned a value that is not a {spec.output_spec_kind} — {error}",
+            }
+        )
     return answer.model_copy(update={"value": value})
 
 
@@ -265,34 +300,49 @@ def _with_value(spec: ComputeOpSpec, answer: ReturnedValue, *, said: Optional[Cl
 # does not need, so the dispatch is a table and not a branch. ─────────────────
 
 
-async def _cli(spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Optional[dict],
-               shell: Shell, **_: Any) -> CliResult:
+async def _cli(
+    spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Optional[dict], shell: Shell, **_: Any
+) -> CliResult:
     command = spec.exe_data.command_for(platform)
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
     said = await shell(
-        command, timeout_seconds=spec.exe_data.timeout(),
-        workdir=workdir, extra_env=env or {}, platform=platform,
+        command,
+        timeout_seconds=spec.exe_data.timeout(),
+        workdir=workdir,
+        extra_env=env or {},
+        platform=platform,
     )
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
 async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
-    """Put the op's declared output to a person and wait a bounded time.
+    """Put the op's declared output to a person and wait for the answer.
 
-    Asked here when this process is the backend the answer reaches; handed to
-    the backend otherwise (``ask.ask_through_backend``).
+    A bounded time, unless the op is ``until_answered``. Asked here when this
+    process is the backend the answer reaches; handed to the backend otherwise
+    (``ask.ask_through_backend``).
     """
     from flow_sdk.core.compute_op.ask import ask_person, ask_through_backend, served_here  # noqa: PLC0415
 
     # The person gets the SHORTEST of: what the op asks for, what the caller
-    # allows, and the product default. Nothing here lengthens it.
-    timeout = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
+    # allows, and the product default. Nothing here lengthens it — except an
+    # `until_answered` op, which has no deadline unless a caller imposes one.
+    timeout: Optional[float] = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
+    if spec.exe_data.until_answered and ask_timeout >= ASK_TIMEOUT_SECONDS:
+        timeout = None
     say(f"{spec.display_label}: waiting for you…")
     ask = ask_person if served_here() else ask_through_backend
     return await ask(
-        spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind,
-        timeout=timeout, label=spec.display_label, secret=spec.exe_data.secret,
+        spec.name or "op",
+        spec.exe_data.prompt or spec.display_label,
+        spec.output_spec_kind,
+        timeout=timeout,
+        label=spec.display_label,
+        detail=spec.exe_data.detail,
+        submit_label=spec.exe_data.submit_label,
+        cancel_label=spec.exe_data.cancel_label,
+        secret=spec.exe_data.secret,
     )
 
 
@@ -301,7 +351,8 @@ async def _prompt(spec: ComputeOpSpec, **_: Any) -> PromptResult:
     endpoint = await _box_llm()
     if endpoint is None:
         return PromptResult.not_yet(
-            f"{spec.display_label}: this box has no LLM source that can answer a prompt.", ran=False,
+            f"{spec.display_label}: this box has no LLM source that can answer a prompt.",
+            ran=False,
         )
     system = "\n\n".join(p.strip() for p in (spec.description, spec.setup) if p and p.strip())
     user = spec.exe_data.prompt
@@ -339,8 +390,17 @@ async def _box_llm() -> Any:
     return chosen.endpoint if chosen is not None else None
 
 
-async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor: Optional[str],
-                 subject: str, launch: Launch, say: Callable[[str], None], **_: Any) -> PromptResult:
+async def _agent(
+    spec: ComputeOpSpec,
+    *,
+    workdir: Path,
+    platform: str,
+    executor: Optional[str],
+    subject: str,
+    launch: Launch,
+    say: Callable[[str], None],
+    **_: Any,
+) -> PromptResult:
     """A spawned harness with tools. Its value comes through a receipt it writes.
 
     With ``executor``, the SAME process gets a further turn in its session —
@@ -368,10 +428,12 @@ async def _agent(spec: ComputeOpSpec, *, workdir: Path, platform: str, executor:
         return said
     receipt = read_step_result(path, output=VALUE_KEY)
     if not receipt.ok:
-        return said.model_copy(update={
-            "exit_code": ExitCode.NOT_YET,
-            "detail": f"{spec.display_label}: {receipt.error or 'the agent reported a failure'}",
-        })
+        return said.model_copy(
+            update={
+                "exit_code": ExitCode.NOT_YET,
+                "detail": f"{spec.display_label}: {receipt.error or 'the agent reported a failure'}",
+            }
+        )
     return said.model_copy(update={"value": receipt.value, "text": said.text or receipt.summary})
 
 

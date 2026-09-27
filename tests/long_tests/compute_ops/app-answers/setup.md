@@ -1,3 +1,6 @@
+---
+id: 1622bf08-043d-4bfd-88dc-b06a3ad67405
+---
 Serve HTTP 200 at `/health` on port 8099.
 
 `python3 -m http.server` starts happily and answers 404 for `/health`, so starting

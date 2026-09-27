@@ -128,8 +128,11 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("agent.run.requested", "Agent run requested", "A run was asked for on a compute node"),
     ("agent.run.started", "Agent run started", "The run's process was spawned"),
     ("agent.run.failed", "Agent run failed", "The run could not be dispatched or spawned"),
-    ("agent.launch_failed", "Agent launch failed",
-     "A worker could not be spawned (code names why; health says whether to retry)"),
+    (
+        "agent.launch_failed",
+        "Agent launch failed",
+        "A worker could not be spawned (code names why; health says whether to retry)",
+    ),
     ("graph_workflow", "Graph workflow lifecycle", "Graph-workflow run boundary events"),
     ("graph_workflow.started", "Graph workflow started", "A graph-workflow run started"),
     ("graph_workflow.step.done", "Graph workflow step done", "A graph-workflow node finished"),
@@ -137,16 +140,36 @@ SYSTEM_TAG_SEED: tuple[tuple[str, str, str], ...] = (
     ("graph_workflow.waiting", "Graph workflow waiting", "A graph-workflow run is waiting (guided step)"),
     ("graph_workflow.done", "Graph workflow done", "A graph-workflow run completed"),
     ("graph_workflow.failed", "Graph workflow failed", "A graph-workflow run failed"),
-    ("graph_workflow.run.event", "Graph workflow run event",
-     "One beat of a run's internal stream (kind: run_start | event | run_end)"),
-    ("graph_workflow.node.status", "Graph workflow node status",
-     "A scheduler transition for one node (queued | merged | started | finished | failed | waiting)"),
-    ("app", "App events",
-     "App-tier events — frontend-emitted, plus the backend lifecycle signals addressed to the app"),
-    ("app.ready", "App ready",
-     "The backend finished starting, the first bootstrap was served, and the system content "
-     "index has landed. Emitted once per boot; a subscriber that wants it only the first time "
-     "ever says so with a fire_once trigger."),
+    (
+        "graph_workflow.run.event",
+        "Graph workflow run event",
+        "One beat of a run's internal stream (kind: run_start | event | run_end)",
+    ),
+    (
+        "graph_workflow.node.status",
+        "Graph workflow node status",
+        "A scheduler transition for one node (queued | merged | started | finished | failed | waiting)",
+    ),
+    (
+        "app",
+        "App events",
+        "App-tier events — frontend-emitted, plus the backend lifecycle signals addressed to the app",
+    ),
+    (
+        "app.ready",
+        "App ready",
+        "The backend finished starting, the first bootstrap was served, and the system content "
+        "index has landed. Emitted once per boot; a subscriber that wants it only the first time "
+        "ever says so with a fire_once trigger.",
+    ),
+    (
+        "app.tab.ready",
+        "UI tab ready",
+        "A UI tab mounted and finished a route load — its first browser_context frame — and the "
+        "system content index has landed. Emitted once per tab connection, so a reload, a new window "
+        "or an app restart each emit it again: a subscriber that must run on every load subscribes "
+        "here; one that wants it only the first time ever says so with a fire_once trigger.",
+    ),
     ("app.ui", "UI interactions", "Clicks on tag-tagged UI elements"),
     ("app.route.loaded", "Route loaded", "A dock navigation completed"),
     ("app.page.signal", "Page signal", "A sandboxed page posted a journey signal"),

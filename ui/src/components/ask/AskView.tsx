@@ -4,14 +4,18 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import apiClient from '@sdk/client';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 
 /**
  * A question a ComputeOp put to a person.
  *
- * Drawn in `win/`, where the routed view IS the window — so this renders the
- * whole surface and nothing around it. The fields come from the op's declared
+ * Two homes. In the dock it fills the content area — the rail (user avatar,
+ * login) and the tab strip stay, because the person is still inside the app —
+ * and answering hands them back to where they were. In `win/` (the browser
+ * window opened when no tab was listening) it is the whole window and settles
+ * on a message, since there is nothing to go back to. The fields come from the op's declared
  * `output_spec_kind`, opened one level by the backend into `fields` — never from
  * a hand-written list — so a kind that grows a field grows one here with no
  * change to this component.
@@ -28,6 +32,11 @@ interface Question {
   id: string;
   op: string;
   prompt: string;
+  /** Why it is asked and what each answer does. Empty: the op's name instead. */
+  detail?: string;
+  /** The op's words for the two buttons. Empty: the defaults, Send / Cancel. */
+  submit_label?: string;
+  cancel_label?: string;
   /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */
   fields: Shape;
   /** The answer is a secret (an API key): drawn masked. */
@@ -45,7 +54,7 @@ export default function AskView() {
   const { _ } = useLingui();
   // The pointer comes from the parsed dock address, not from a route param:
   // the route is `:viewType/*`, so react-router never names this segment.
-  const { currentDock } = useDockNavigation();
+  const { navigation, currentDock, windowMode } = useDockNavigation();
   const questionId = currentDock?.pointer;
   const [question, setQuestion] = useState<Question | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -62,12 +71,21 @@ export default function AskView() {
       // A question that is gone is the NORMAL end: the op timed out, or someone
       // else answered. Say so rather than showing a form that resolves nothing.
       if (!res) setSettled(_(msg`This question is no longer waiting.`));
-      else setQuestion(res as Question);
+      else setQuestion(res);
     })();
     return () => {
       alive = false;
     };
   }, [questionId, _]);
+
+  // Leave the question. It was pushed over whatever the person was doing, so in
+  // the dock the way out is back to it — or home when this tab has no history
+  // (a fresh load straight onto the question). Never a dead-end message: that
+  // used to strand people until they restarted the app.
+  const leave = useCallback(() => {
+    if (getHistoryPosition().canGoBack) navigation.goBack();
+    else navigation.goHome();
+  }, [navigation]);
 
   const send = useCallback(
     async (path: string, body?: unknown) => {
@@ -76,7 +94,8 @@ export default function AskView() {
       setError('');
       try {
         await apiClient.post(`/api/v1/ask/${questionId}${path}`, body);
-        setSettled(path === '/cancel' ? _(msg`Cancelled.`) : _(msg`Thank you — sent.`));
+        if (windowMode) setSettled(path === '/cancel' ? _(msg`Cancelled.`) : _(msg`Thank you — sent.`));
+        else leave();
       } catch (reason) {
         // A 422 means the value did not match the shape the op declared. The
         // question is still open, so this is correctable in place.
@@ -85,22 +104,25 @@ export default function AskView() {
         setBusy(false);
       }
     },
-    [questionId, _],
+    [questionId, _, windowMode, leave],
   );
 
   const submit = useCallback(() => {
     const names = fieldsOf(question?.fields ?? null);
     const value =
-      names.length === 1 && names[0] === ''
-        ? values['']
-        : Object.fromEntries(names.map((n) => [n, values[n] ?? '']));
+      names.length === 1 && names[0] === '' ? values[''] : Object.fromEntries(names.map((n) => [n, values[n] ?? '']));
     return send('/answer', { value });
   }, [question, values, send]);
 
   if (settled) {
     return (
-      <div className="flex h-full items-center justify-center p-6" data-testid="ask-settled">
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6" data-testid="ask-settled">
         <p className="text-sm text-muted-foreground">{settled}</p>
+        {windowMode ? null : (
+          <Button variant="ghost" data-testid="ask-back" onClick={leave}>
+            <Trans>Back</Trans>
+          </Button>
+        )}
       </div>
     );
   }
@@ -115,54 +137,57 @@ export default function AskView() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-4 p-6" data-testid="ask-view">
-      <div>
-        <h1 className="text-base font-medium" data-testid="ask-prompt">
-          {question.prompt}
-        </h1>
-        <p className="text-xs text-muted-foreground">{question.op}</p>
-      </div>
-
-      {fieldsOf(question.fields).map((name) => (
-        <div key={name} className="flex flex-col gap-1">
-          {name ? (
-            <label className="text-sm" htmlFor={`ask-${name}`}>
-              {name}
-            </label>
-          ) : null}
-          <Input
-            id={`ask-${name}`}
-            data-testid={`ask-input-${name || 'value'}`}
-            autoFocus
-            type={question.secret ? 'password' : 'text'}
-            autoComplete={question.secret ? 'off' : undefined}
-            value={values[name] ?? ''}
-            onChange={(e) => setValues((prev) => ({ ...prev, [name]: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void submit();
-            }}
-          />
+    <div className="flex h-full items-center justify-center p-6" data-testid="ask-view">
+      <div className="flex w-full max-w-md flex-col gap-4">
+        <div>
+          <h1 className="text-base font-medium" data-testid="ask-prompt">
+            {question.prompt}
+          </h1>
+          {question.detail ? (
+            <p className="mt-1 text-sm text-muted-foreground" data-testid="ask-detail">
+              {question.detail}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">{question.op}</p>
+          )}
         </div>
-      ))}
 
-      {error ? (
-        <p className="text-sm text-destructive" data-testid="ask-error">
-          {error}
-        </p>
-      ) : null}
+        {fieldsOf(question.fields).map((name) => (
+          <div key={name} className="flex flex-col gap-1">
+            {name ? (
+              <label className="text-sm" htmlFor={`ask-${name}`}>
+                {name}
+              </label>
+            ) : null}
+            <Input
+              id={`ask-${name}`}
+              data-testid={`ask-input-${name || 'value'}`}
+              autoFocus
+              type={question.secret ? 'password' : 'text'}
+              autoComplete={question.secret ? 'off' : undefined}
+              value={values[name] ?? ''}
+              onChange={(e) => setValues((prev) => ({ ...prev, [name]: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void submit();
+              }}
+            />
+          </div>
+        ))}
 
-      <div className="flex gap-2">
-        <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
-          <Trans>Send</Trans>
-        </Button>
-        <Button
-          variant="ghost"
-          data-testid="ask-cancel"
-          disabled={busy}
-          onClick={() => void send('/cancel')}
-        >
-          <Trans>Cancel</Trans>
-        </Button>
+        {error ? (
+          <p className="text-sm text-destructive" data-testid="ask-error">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="flex gap-2">
+          <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
+            {question.submit_label || <Trans>Send</Trans>}
+          </Button>
+          <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void send('/cancel')}>
+            {question.cancel_label || <Trans>Cancel</Trans>}
+          </Button>
+        </div>
       </div>
     </div>
   );

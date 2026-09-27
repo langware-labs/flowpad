@@ -63,7 +63,8 @@ PROMPT_TIMEOUT = 120.0
 AGENT_TIMEOUT = 1800.0
 #: How long a person gets to answer. A PRODUCT decision — the span someone is
 #: given before an op stops waiting — not a budget widened to ride out a flake.
-#: A caller may pass a shorter one; nothing raises it.
+#: A caller may pass a shorter one; nothing raises it. An op that is setup the
+#: machine cannot proceed without opts OUT with ``AskOp.until_answered``.
 ASK_TIMEOUT_SECONDS = 60.0
 
 
@@ -168,10 +169,39 @@ class AskOp(ExeData):
     ANSWER: ClassVar[type[ReturnedValue]] = AskResult
     RECHECKED: ClassVar[bool] = False
 
-    #: The question put to the person. Falls back to the op's label.
+    #: The question put to the person. Falls back to the op's label. Short: it is
+    #: the heading of the window.
     prompt: str = ""
     #: The answer is a secret (an API key): it is masked where it is typed and never echoed.
     secret: bool = False
+    #: A plain-language paragraph under the heading: why it is being asked, and
+    #: what each answer does. Not the op's `description` — that one is written for
+    #: whoever reads the document, this one for whoever is looking at the window.
+    detail: str = ""
+    #: The words on the two buttons, for a question whose answer is a choice
+    #: rather than a value ("Install" / "Skip"). Empty means the window's own
+    #: defaults, Send / Cancel. Cancel keeps its meaning whatever it is called:
+    #: the op's ``cancelled`` answer.
+    submit_label: str = ""
+    cancel_label: str = ""
+    #: Wait for the person with NO deadline. For install-time infrastructure —
+    #: a missing toolchain the app cannot run without — where giving up after a
+    #: minute only means asking again on the next boot. Safe only because a
+    #: question nobody could be shown is abandoned at once instead: without
+    #: that, a headless instance would wait forever holding the wizard's slot.
+    until_answered: bool = False
+
+    @model_validator(mode="after")
+    def _no_deadline_means_no_deadline(self) -> "AskOp":
+        if self.until_answered and self.timeout_seconds is not None:
+            # `until_answered` would silently win at runtime either way (see
+            # the runner) — refusing the document is better than an author's
+            # explicit budget being dropped on the floor with nothing to say
+            # why the wait outlived it.
+            raise ValueError(
+                "an ask op cannot set both `until_answered` and `timeout_seconds` — the deadline would never be reached"
+            )
+        return self
 
 
 #: Which ``exe_data`` class each subkind carries — the whole dispatch table.

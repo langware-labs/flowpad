@@ -1,0 +1,30 @@
+{
+  "name": "llm-setup",
+  "description": "Checks that Python 3, Git and Node.js (with npm) are installed, and for each one that is missing asks before installing it. npm is checked as part of the Node.js step — after it, and only if it went ahead — so declining Node.js does not leave a second, orphaned question about npm.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "python",
+      "label": "Python 3",
+      "kind": "wizard",
+      "ref": "llm-setup-python",
+      "on_fail": "continue"
+    },
+    {
+      "id": "git",
+      "label": "Git",
+      "kind": "wizard",
+      "ref": "llm-setup-git",
+      "on_fail": "continue"
+    },
+    {
+      "id": "node",
+      "label": "Node.js",
+      "kind": "wizard",
+      "ref": "llm-setup-node",
+      "on_fail": "continue"
+    }
+  ]
+}

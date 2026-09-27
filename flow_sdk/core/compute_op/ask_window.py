@@ -2,13 +2,15 @@
 
 Two ways in, tried in order, and neither is a new surface:
 
-1. **A live browser tab** — a targeted ``ui_command`` sends it to ``win/``, the
-   chrome-less focus layout that already exists (``FocusLayout``: "no sidebars,
-   no footer, no tab strip, no app chrome"). The routed view IS the window.
-2. **No tab** — open a browser at the same ``win/`` URL on THIS backend. A
-   question is only ever raised in the process that serves the answer routes
-   (``ask.ask_person``), so the window points back at the one place its answer
-   can land.
+1. **A live browser tab** — a targeted ``ui_command`` sends it to the ask view
+   IN THE DOCK: the question replaces the content area, and the rail (user
+   avatar, login) and the tab strip stay where they are. The person is still
+   inside the app, and answering returns them to where they were.
+2. **No tab** — open a browser at the chrome-less ``win/`` URL on THIS backend:
+   that window exists only for this question, so there is no app around it to
+   keep. A question is only ever raised in the process that serves the answer
+   routes (``ask.ask_person``), so the window points back at the one place its
+   answer can land.
 
 Degrading to nothing is a legitimate outcome, not a failure: a headless box, a
 test, or ``FLOWPAD_NO_BROWSER`` all mean the question is registered and nobody
@@ -35,15 +37,21 @@ def ask_url(base: str, question_id: str) -> str:
     return f"{base.rstrip('/')}/{WIN_LAYOUT}/{ASK_VIEW}/{question_id}"
 
 
-async def raise_question(question) -> bool:
+async def raise_question(question, *, try_window: bool = True) -> bool:
     """Show *question* to a person. True when something was actually raised.
 
     Never raises: the caller is mid-attempt and a window that failed to open is
     a reason to time out, not an exception to unwind a run with.
+
+    ``try_window=False`` skips the browser fallback — for a caller RETRYING the
+    live-tab push after an earlier ``raise_question`` already tried both: a
+    window that failed to open once (no display, or ``FLOWPAD_NO_BROWSER``,
+    which the desktop app always sets) would open a fresh tab on every retry
+    otherwise, instead of failing the same way every time.
     """
     if await _push_to_live_tab(question):
         return True
-    return await _open_a_window(question)
+    return await _open_a_window(question) if try_window else False
 
 
 async def _push_to_live_tab(question) -> bool:
@@ -52,6 +60,9 @@ async def _push_to_live_tab(question) -> bool:
     Targeted, not broadcast, and the absence of a tab is the ANSWER here rather
     than an error: it is what makes the second route run. A broadcast would
     have reported success into an empty room, and no window would ever open.
+
+    No ``layout``: the frame lands in the dock. Sending the tab to ``win/`` used
+    to strand the person on a chrome-less screen with no way back but a restart.
     """
     try:
         from flow_sdk.notifications.ui_command import send_ui_command  # noqa: PLC0415
@@ -64,7 +75,6 @@ async def _push_to_live_tab(question) -> bool:
         await send_ui_command(
             socket,
             "navigate_dock",
-            layout=WIN_LAYOUT,
             view_type=ASK_VIEW,
             pointer=question.id,
         )
