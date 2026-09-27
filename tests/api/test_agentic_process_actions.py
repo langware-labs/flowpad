@@ -1259,3 +1259,15 @@ async def test_add_dir_then_remove_dir(bootstrapped_client, user, tmp_path):
     rr = await bootstrapped_client.post(f"{base}/remove-dir", json={"path": extra})
     assert rr.status_code == 200, rr.text
     assert extra not in ((await get_agentic_process(bootstrapped_client, pid))["additional_dirs"] or [])
+
+
+@pytest.mark.asyncio
+async def test_show_view_refuses_an_agent_address_the_ui_cannot_open(bootstrapped_client, user):
+    """`agent/<id>` validated, then the UI's only agent route read it as a malformed
+    stream-inbox URL. The shape is enforced here, and the error names the right verb."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/show", json={"view": "agent/6ba7b810-9dad-41d1-80b4-00c04fd430c8"}
+    )
+    assert resp.status_code == 400, resp.text
+    assert "flow show entity agent-" in resp.text

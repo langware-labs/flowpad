@@ -201,7 +201,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 
 | Screen | address | also called |
 | --- | --- | --- |
-| Agent | `agent/<id>` | — |
+| Agent stream inbox | `agent/<id>/stream_inbox` | — |
 | App | `app/<id>` | — |
 | Context | `graph_context/<id>` | frozen context |
 | Conversation | `conversation/<id>` | — |
