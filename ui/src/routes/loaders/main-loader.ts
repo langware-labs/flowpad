@@ -7,14 +7,12 @@
  */
 
 import {
-  AgenticProcess,
   cloudManager,
   ContextEntitiesEnum,
   dataContext,
   initSdk,
   isBackendUnreachable,
   Project,
-  systemTools,
   toplog,
   TypeId,
 } from '@sdk';
@@ -202,7 +200,6 @@ async function loadAgentAppBody(args: LoaderArgs) {
   }
 
   const { processId, viewType } = params;
-  const pointer = params['*'] || '';
 
   // CANONICALIZE (dock-loading step 2): every URL-only rewrite, composed, so a
   // URL needing several still redirects once — before the pointer is parsed, so
@@ -252,38 +249,6 @@ async function loadAgentAppBody(args: LoaderArgs) {
     // Bare /dock has no child route to render; send it to the app root instead.
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect('/');
-  }
-
-  // Handle session context — set process in dataContext (no agent required).
-  if (viewType === ViewType.SESSION) {
-    const sessionProcessId = pointer;
-
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProcessTypeId,
-      sessionProcessId ? new TypeId(AgenticProcess.type, sessionProcessId) : null,
-    );
-
-    if (sessionProcessId) {
-      await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
-      const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
-      if (process?.project_id) {
-        await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
-          systemTools.resolveProjectContext(process.workdir ?? undefined, process),
-        );
-      } else {
-        // Global (projectless) session — a workdir match adopts it into a project;
-        // otherwise resolveProjectContext clears the active project to null (the
-        // Global scope).
-        await systemTools.resolveProjectContext(process?.workdir ?? undefined, process ?? undefined);
-      }
-    }
-
-    // Session view doesn't require agent — just ensure compute node and return.
-    await ensureComputeNodeLoaded();
-    if (dockForSetup) await setupTabAndAdopt(dockForSetup);
-    t.time('ensureComputeNode');
-    t.done(slowThresholdSeconds);
-    return;
   }
 
   if (!processId) {

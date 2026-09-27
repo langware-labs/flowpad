@@ -1,6 +1,7 @@
 import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
+  ContextEntitiesEnum,
   dataContext,
   isValidTag,
   isHubOnly,
@@ -8,6 +9,7 @@ import {
   Plan,
   Project,
   RemoteWorkerSession,
+  systemTools,
   TypeId,
   VFSPath,
 } from '@sdk';
@@ -119,6 +121,29 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
       throw processLoadErrorToDockError(error, 'agentic_process');
     }
     throw error;
+  }
+}
+
+/**
+ * `/dock/session/<processId>` — the session view: the process into context and
+ * its project, like any process-owned dock. Cache-first identity; no runtime work.
+ */
+async function loadSessionRoute(pointer: string | undefined): Promise<void> {
+  const processTypeId = pointer ? new TypeId(AgenticProcess.type, pointer) : null;
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, processTypeId);
+  if (!processTypeId || !pointer) return;
+  await dataContext.setActiveEntityTypeId(processTypeId);
+  const process =
+    AgenticProcess.getByIdFromCache<AgenticProcess>(pointer) ??
+    (await AgenticProcess.getById<AgenticProcess>(pointer).catch(() => null));
+  if (process?.project_id) {
+    await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
+      systemTools.resolveProjectContext(process.workdir ?? undefined, process),
+    );
+  } else {
+    // Global (projectless) session — a workdir match adopts it into a project;
+    // otherwise resolveProjectContext clears the active project (the Global scope).
+    await systemTools.resolveProjectContext(process?.workdir ?? undefined, process ?? undefined);
   }
 }
 
@@ -287,6 +312,9 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.AGENTIC_PROCESS:
         await loadAgenticProcessRoute(dock.pointer);
+        break;
+      case ViewType.SESSION:
+        await loadSessionRoute(dock.pointer);
         break;
       case ViewType.HELPDESK:
         await loadHelpdeskRoute(dock.pointer);
