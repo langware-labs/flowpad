@@ -60,3 +60,21 @@ def test_it_is_the_identity_projection_plus_the_project_fields():
     payload = project_to_dict(project)
 
     assert set(entity_to_dict(project)).issubset(payload)
+
+
+def test_the_opening_project_is_the_full_api_entity_not_a_hand_picked_subset():
+    """`initSdk` caches this dict AS THE EXPANDED project (`markAsExpanded`), so
+    `useProject` never refetches it. Every field the API entity carries that this
+    payload lacks is therefore missing until something unrelated happens to
+    overwrite the row — `locale` and `fs_storage_mount_path` were each found that
+    way, one at a time. `context_roots` was the next: the home's agent tiles are
+    gated on it, so they stayed hidden (count 0) for up to a minute after load.
+
+    The payload must be a superset of the API serialization, not a list someone
+    remembers to extend."""
+    project = _project(fs_storage_mount_path="/work/opening-project")
+
+    payload = project_to_dict(project)
+
+    assert payload["context_roots"] == ["/work/opening-project"]
+    assert set(project.model_dump(mode="json")).issubset(payload)
