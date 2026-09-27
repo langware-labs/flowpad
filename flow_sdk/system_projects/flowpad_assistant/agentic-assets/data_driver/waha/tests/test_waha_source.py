@@ -43,13 +43,14 @@ def sign(body: bytes, key: str = HMAC_KEY) -> str:
     return hmac.new(key.encode(), body, hashlib.sha512).hexdigest()
 
 
-def _config(base: str = "http://127.0.0.1:9", **extra) -> dict:
-    return {"base_url": base, "session": SESSION, "webhook_url": HOOK, **extra}
+def _config(**extra) -> dict:
+    return {"session": SESSION, **extra}
 
 
-#: The ``waha`` credential's values (WAHA_API_KEY, WAHA_WEBHOOK_HMAC) — never config. A test that
-#: wants a wrong or missing one changes this dict.
-SECRETS = {"api_key": API_KEY, "webhook_hmac": HMAC_KEY}
+#: The ``waha`` credential's values — never config: the keys (WAHA_API_KEY, WAHA_WEBHOOK_HMAC) and, per
+#: machine, where the container answers and how it reaches this instance (WAHA_BASE_URL,
+#: WAHA_WEBHOOK_URL). A test that wants a wrong or missing one changes this dict.
+SECRETS = {"api_key": API_KEY, "webhook_hmac": HMAC_KEY, "base_url": "http://127.0.0.1:9", "webhook_url": HOOK}
 
 
 @pytest.fixture(autouse=True)
@@ -66,12 +67,13 @@ def _credential(monkeypatch):
 
 
 def _source(base: str = "http://127.0.0.1:9", **extra) -> DataSource:
-    return DataSource(provider="waha", name=f"WAHA test {uuid.uuid4().hex[:8]}", config=_config(base, **extra))
+    SECRETS["base_url"] = base  # this machine's WAHA — a credential value, resolved per placement
+    return DataSource(provider="waha", name=f"WAHA test {uuid.uuid4().hex[:8]}", config=_config(**extra))
 
 
 def _binding(base: str = "http://127.0.0.1:9") -> SourceBinding:
-    values = {"api_key": SecretStr(API_KEY), "webhook_hmac": SecretStr(HMAC_KEY)}
-    return SourceBinding(config=_config(base), account_key=ME, credentials=ResolvedSecrets(shape=AuthShape.SECRETS, values=values))
+    values = {k: SecretStr(v) for k, v in {**SECRETS, "base_url": base}.items()}
+    return SourceBinding(config=_config(), account_key=ME, credentials=ResolvedSecrets(shape=AuthShape.SECRETS, values=values))
 
 
 def _message(message_id: str, body: str, *, chat: str = CHAT, **extra) -> dict:
@@ -281,6 +283,31 @@ async def test_a_source_with_no_api_key_asks_for_the_credential():
     SECRETS.pop("api_key")
     verdict = await DataDriver.loaded("waha").verify(source)
     assert verdict.ready is False and "`waha` credential" in verdict.detail
+
+
+async def test_where_waha_answers_is_this_machines_credential_value_not_config(serve):
+    """``data_source.json`` travels with the repo; a URL that differs per machine is ``WAHA_BASE_URL`` /
+    ``WAHA_WEBHOOK_URL``, resolved where the source runs — the config names neither."""
+    double, base = serve(exists=False)
+    source = _source(base)
+    SECRETS["webhook_url"] = "https://hub.example/webhook/deployment/abc"
+
+    await DataDriver.loaded("waha").verify(source)
+
+    assert "base_url" not in source.config and "webhook_url" not in source.config
+    (created,) = [body for method, path, body in double.calls if (method, path) == ("POST", "/api/sessions")]
+    assert created["config"]["webhooks"][0]["url"] == "https://hub.example/webhook/deployment/abc"
+
+
+@pytest.mark.parametrize(("missing", "named"), [("base_url", "WAHA_BASE_URL"), ("webhook_url", "WAHA_WEBHOOK_URL")])
+async def test_a_machine_without_its_waha_urls_is_told_which_variable_to_set(serve, missing, named):
+    _, base = serve(exists=False)
+    source = _source(base)
+    SECRETS.pop(missing)
+
+    verdict = await DataDriver.loaded("waha").verify(source)
+
+    assert verdict.ready is False and named in verdict.detail
 
 
 # ── the webhook route ────────────────────────────────────────────────────────

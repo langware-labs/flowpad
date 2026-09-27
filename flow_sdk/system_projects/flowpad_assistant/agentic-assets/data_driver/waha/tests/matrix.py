@@ -21,14 +21,16 @@ from . import test_waha_source as t
 def case(monkeypatch, tmp_path):
     session = f"matrix{uuid.uuid4().hex[:12]}"
 
-    async def credential(_row):  # the waha credential, never config
-        return ResolvedSecrets(shape=AuthShape.SECRETS, values={k: SecretStr(v) for k, v in t.SECRETS.items()})
-
-    monkeypatch.setattr(DataDriver.loaded("waha"), "credentials_for", credential)
     monkeypatch.setattr(t, "SESSION", session)
     with local_http_server(t._Waha()) as base:
+        values = {k: SecretStr(v) for k, v in {**t.SECRETS, "base_url": base}.items()}
+
+        async def credential(_row):  # the waha credential, never config — this run's WAHA included
+            return ResolvedSecrets(shape=AuthShape.SECRETS, values=values)
+
+        monkeypatch.setattr(DataDriver.loaded("waha"), "credentials_for", credential)
         yield {
-            "config": {**t._config(base), "session": session},
+            "config": {"session": session},
             "push": t._delivery(t._message("true_x_MATRIX1", "hello from waha", timestamp=int(time.time())), session=session),
             "sign": lambda raw: {"X-Webhook-Hmac": t.sign(raw)},
             "min_items": 1,
@@ -62,7 +64,9 @@ class Double:
 
     def __enter__(self) -> "Double":
         self._server = local_http_server(self.waha)
-        self.config = {**t._config(self._server.__enter__()), "session": self.session}
+        # Where this double answers is a credential value (WAHA_BASE_URL), planted with the keys.
+        self.secrets["base_url"] = self._server.__enter__()
+        self.config = {"session": self.session}
         return self
 
     def __exit__(self, *exc):

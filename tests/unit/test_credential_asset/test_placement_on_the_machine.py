@@ -20,7 +20,6 @@ from flow_sdk.builtin.credential_service import (
 )
 from flow_sdk.builtin.credential_store import Placement
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
-from tests.unit.test_credential_asset.test_project_setup import templates  # noqa: F401
 from tests.utils.deployments import make_deployment
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -78,17 +77,6 @@ async def test_only_a_file_inside_the_drop_folder_is_ever_read(home, project, tm
     assert stat.S_IMODE(drop_folder().stat().st_mode) == 0o700
 
 
-@pytest.fixture
-def instance_config(monkeypatch):
-    """This instance's config.json in memory: the default environment set here must not outlive the test."""
-    from flow_sdk.cli import app_config
-
-    held: dict = {}
-    monkeypatch.setattr(app_config, "get_config", lambda key, default=None: held.get(key, default))
-    monkeypatch.setattr(app_config, "set_config", lambda key, value: held.__setitem__(key, value))
-    return held
-
-
 async def test_a_machine_that_never_adopted_the_hubs_id_places_at_its_own_placement(home, project, instance_config):
     """The hub places before, or without, a successful ``adopt_placement`` (it races the box's index):
     the machine IS the deployment, so the values land where this machine reads, in its environment."""
@@ -122,7 +110,7 @@ async def test_the_environment_the_hub_sends_wins_over_a_serving_row_under_the_s
     assert not (mount / ".env.local").exists() or "sk-rotated" not in (mount / ".env.local").read_text()
 
 
-async def test_a_placed_name_is_declared_from_its_shipped_template(home, project, instance_config, templates):  # noqa: F811
+async def test_a_placed_name_is_declared_from_its_shipped_template(home, project, instance_config, templates):
     """The laptop's credential does not travel with the repo; the box declares it from the catalogue
     entry the agent's requirements name, keeping its labels — not a bare invented one."""
     from flow_sdk.builtin.credential_resolver import declared_vars
