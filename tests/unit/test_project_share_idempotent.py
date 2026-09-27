@@ -26,8 +26,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.app.actions.share_action import ShareInvitee
 from flow_sdk.builtin.project import Project
-from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 
 class _FakeResponse:
