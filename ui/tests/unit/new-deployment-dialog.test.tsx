@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 /**
  * New deployment: pick a type (this computer, or a cloud machine size), see what launching that
  * type needs, Launch. Only a cloud machine asks for the publish checklist and an environment.
@@ -16,6 +17,11 @@ vi.mock('@src/notifications', () => ({
 
 import { NewDeploymentDialog } from '@src/components/assets/editor/agent-profile/NewDeploymentDialog';
 
+function renderInQuery(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -27,7 +33,7 @@ function renderDialog() {
   const onMachineSize = vi.fn().mockResolvedValue(true);
   const onLaunched = vi.fn();
   const onOpenChange = vi.fn();
-  render(
+  renderInQuery(
     <NewDeploymentDialog
       agent={agent}
       open
@@ -43,7 +49,12 @@ describe('New deployment', () => {
   it('offers this computer and every cloud machine size, this computer first', () => {
     renderDialog();
     const types = screen.getAllByRole('radio').map((r) => r.getAttribute('data-testid'));
-    expect(types).toEqual(['new-deployment-type-local', 'new-deployment-type-sm', 'new-deployment-type-md', 'new-deployment-type-lg']);
+    expect(types).toEqual([
+      'new-deployment-type-local',
+      'new-deployment-type-sm',
+      'new-deployment-type-md',
+      'new-deployment-type-lg',
+    ]);
     expect(screen.getByTestId('new-deployment-type-local')).toHaveAttribute('aria-checked', 'true');
   });
 

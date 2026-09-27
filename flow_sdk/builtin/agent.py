@@ -54,12 +54,13 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
-    from types import EllipsisType
-
     from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec
     from flow_sdk.schema.data_spec.webhook_spec import DeploymentWebhookSpec
 
 logger = logging.getLogger(__name__)
+
+#: ``token_allocation`` not given: leave the deployment's as it is.
+_UNSET = object()
 
 #: The two vocabularies for "which CLI": an agent.json declares the DRIVER
 #: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
@@ -918,7 +919,7 @@ class Agent(Entity):
     # ── deploy to the cloud ───────────────────────────────────────────────
 
     async def deploy_to_cloud(
-        self, actor: TypeId, environment: str | None = None, *, token_allocation: "TokenAllocationSpec | None | EllipsisType" = ...
+        self, actor: TypeId, environment: str | None = None, *, token_allocation: "TokenAllocationSpec | None | object" = _UNSET
     ) -> dict:
         """Give this agent a machine of its own on the hub.
 
@@ -969,7 +970,7 @@ class Agent(Entity):
         return list(specs.values())
 
     async def plan_deployment(
-        self, environment: str | None = None, *, token_allocation: "TokenAllocationSpec | None | EllipsisType" = ...
+        self, environment: str | None = None, *, token_allocation: "TokenAllocationSpec | None | object" = _UNSET
     ) -> "Deployment":
         """The cloud placement this agent will have in ``environment`` — the hub's row, adopted here —
         before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent. Its
@@ -984,7 +985,7 @@ class Agent(Entity):
 
         environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
         body = {"environment": environment, "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()]}
-        if token_allocation is not ...:
+        if token_allocation is not _UNSET:
             body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
         data = await hub_post(self.type, body, self.id, "plan_deployment") or {}
         deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
@@ -1379,14 +1380,14 @@ class Agent(Entity):
 
 
 def _token_allocation_of(body: dict):
-    """A request's ``token_allocation``: a ``TokenAllocationSpec``, ``None`` (release it), or ``...`` when the
+    """A request's ``token_allocation``: a ``TokenAllocationSpec``, ``None`` (release it), or ``_UNSET`` when the
     request does not mention it (leave it as it is). ``ValueError`` names a malformed one."""
     from pydantic import ValidationError  # noqa: PLC0415
 
     from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec  # noqa: PLC0415
 
     if "token_allocation" not in body:
-        return ...
+        return _UNSET
     if body["token_allocation"] is None:
         return None
     try:

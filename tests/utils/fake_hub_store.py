@@ -15,6 +15,8 @@ class FakeHubStore:
         self.deploys: list[dict] = []
         self.authorized: dict[str, list[str]] = {}
         self.webhooks: dict[str, list[str]] = {}
+        #: ``deployment/<id>/funding`` answers by deployment id; none = the hub cannot say.
+        self.funding: dict[str, dict] = {}
 
     def deployment(self, agent_typeid: str, environment: str) -> dict:
         return {"id": self._ids.setdefault((agent_typeid, environment), str(uuid.uuid4())), "name": f"agent ({environment})",
@@ -33,6 +35,8 @@ class FakeHubStore:
             return [{"name": n, "var_type": "api_key", "visible_value": "****"} for n in self.values.get(eid, {})]
         if action == "authorize":
             return [{"provider": p, "permissions": []} for p in self.authorized.get(eid, [])]
+        if action == "funding":
+            return self.funding.get(eid)
         if action == "secrets":
             return {"secrets": [{"name": n} for n in self.values.get(eid, {})],
                     "authorizations": [{"provider": p} for p in self.authorized.get(eid, [])]}

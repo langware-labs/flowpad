@@ -1,4 +1,4 @@
-import { llmSourcesService, type Agent, type AgentTokenAllocation, type LLMEndpointOffer } from '@sdk';
+import type { Agent, AgentTokenAllocation } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { Info, Loader2, Settings2 } from 'lucide-react';
@@ -12,6 +12,7 @@ import { Label } from '@src/components/ui/label';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { endpointTypeId, openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { useLlmEndpointModels } from '@src/components/llm-endpoints/use-llm-endpoints';
+import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /** What a new cloud deployment gets per day when nobody changes it. */
@@ -37,19 +38,11 @@ export function TokenAllocationField({ agent, environment, value, onChange, disa
   const { t } = useLingui();
   // The hub endpoints offered to this person, as the desk's funding view knows them; allocating from one
   // takes administering it (the hub checks the same right).
-  const [offers, setOffers] = useState<LLMEndpointOffer[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    llmSourcesService
-      .status()
-      .then((status) => live && setOffers(status?.available ?? []))
-      .catch(() => live && setOffers([]));
-    return () => {
-      live = false;
-    };
-  }, []);
-  const isLoading = offers === null;
-  const sources = useMemo(() => (offers ?? []).filter((e) => e.kind === 'hub' && e.can_administer === true), [offers]);
+  const { status, isLoading } = useLlmSources();
+  const sources = useMemo(
+    () => (status?.available ?? []).filter((e) => e.kind === 'hub' && e.can_administer === true),
+    [status],
+  );
   const checked = value !== null;
 
   // A source picked, or the only one there is: fill what the user has not chosen yet.
@@ -63,7 +56,7 @@ export function TokenAllocationField({ agent, environment, value, onChange, disa
     onChange(
       on
         ? {
-            source: sources.length === 1 ? endpointTypeId(sources[0].id) : '',
+            source: '',
             cost_usd_per_day: DEFAULT_COST_USD_PER_DAY,
             model: agent.model || '',
           }
@@ -218,7 +211,7 @@ function ConfigureButton({
       variant="outline"
       size="sm"
       className="h-8"
-      disabled={disabled || configuring || !value.source || !value.model}
+      disabled={disabled || configuring || !tokenAllocationComplete(value)}
       onClick={() => void configure()}
       data-testid="token-allocation-configure"
     >

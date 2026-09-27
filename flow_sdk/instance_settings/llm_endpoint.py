@@ -58,8 +58,6 @@ class HubLLMEndpoint:
     #: from ``FLOWPAD_HUB_URL`` at call time. A loginless box has no such relationship to read,
     #: so the origin it was given travels with the binding it belongs to.
     hub_origin: str = ""
-    #: The one model this endpoint allows (a deployment's token allocation): what a harness spending it runs.
-    model: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -69,7 +67,7 @@ class HubLLMEndpoint:
 _cache: dict[str, HubLLMEndpoint | None] = {}
 
 
-def _validated(endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="", model="") -> HubLLMEndpoint:
+def _validated(endpoint_typeid, invoke_path, provider="", name="", public=False, hub_origin="") -> HubLLMEndpoint:
     """The ONE rule for a usable binding: a non-empty id and a hub-relative path.
     Raises ``ValueError`` -- callers decide whether that is a 400 or "unbound"."""
     endpoint_typeid = str(endpoint_typeid or "").strip()
@@ -88,7 +86,6 @@ def _validated(endpoint_typeid, invoke_path, provider="", name="", public=False,
         name=str(name or ""),
         public=bool(public),
         hub_origin=hub_origin if public else "",
-        model=str(model or "").strip(),
     )
 
 
@@ -103,7 +100,6 @@ def _parse(raw) -> HubLLMEndpoint | None:
             raw.get("name"),
             raw.get("public") is True,
             raw.get("hub_origin"),
-            raw.get("model"),
         )
     except ValueError:
         # A record written by a newer/older build must not brick spawn: unbound.
@@ -128,14 +124,13 @@ def set_hub_llm_endpoint(
     name: str = "",
     public: bool = False,
     hub_origin: str = "",
-    model: str = "",
 ) -> HubLLMEndpoint:
     """Persist the hub's binding for this instance and return it.
 
     Raises ``ValueError`` on an empty id or a path that is not hub-relative. The
     sole writer is the ``llm-endpoint`` box action, which only the hub calls.
     """
-    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin, model)
+    bound = _validated(endpoint_typeid, invoke_path, provider, name, public, hub_origin)
     app_config.set_config(_CONFIG_KEY, bound.to_dict())
     instance = get_instance_settings().instance_name
     _cache[instance] = bound

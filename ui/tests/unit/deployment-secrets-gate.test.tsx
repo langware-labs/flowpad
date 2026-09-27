@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 /**
  * A cloud deploy refused with `not_ready` lists what the placement's machine lacks; "Use mine" and
  * "Authorize" fix an item and re-plan (the hub's answer, never a local guess). The Secrets tab lists
@@ -19,6 +20,11 @@ vi.mock('@src/components/assets/editor/agent-profile/AgentDeployChecklist', () =
 import { NewDeploymentDialog } from '@src/components/assets/editor/agent-profile/NewDeploymentDialog';
 import { AgentPlaceSecrets } from '@src/components/assets/editor/agent-profile/AgentPlaceSecrets';
 import { DeploymentSecretsGate } from '@src/components/assets/editor/agent-profile/DeploymentSecretsGate';
+
+function renderInQuery(ui: React.ReactElement) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 const DEPLOYMENT = {
   id: '22222222-2222-4222-8222-222222222222',
@@ -182,7 +188,7 @@ describe('the new deployment dialog', () => {
     const deploy = vi.spyOn(a, 'deploy').mockRejectedValue(refusal);
     const onLaunched = vi.fn();
 
-    render(<NewDeploymentDialog agent={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
+    renderInQuery(<NewDeploymentDialog agent={a} open onOpenChange={vi.fn()} onLaunched={onLaunched} />);
     fireEvent.click(screen.getByTestId('new-deployment-type-sm'));
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
 
