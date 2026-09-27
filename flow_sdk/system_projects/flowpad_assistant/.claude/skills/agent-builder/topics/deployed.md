@@ -42,6 +42,14 @@ real people can reach it, so this topic is the one where the user's go matters m
    when to hand off to a person.
 4. `machine_size` (`sm` / `md` / `lg`) matters only for a cloud machine.
 
+## Channels — how people reach it
+
+A deployment answers only the agent's **channels**, and a new agent has none. A channel
+is a data source whose driver can send (a mailbox, a WhatsApp number, a chat
+endpoint). Add it with *Give it a channel* in `references/screens.md`; its setup,
+credentials and verification are the `connect-data-source` skill's job. Without a
+channel a running deployment has nothing to answer.
+
 ## Deploy — the user's clicks
 
 Say who will be able to reach the agent, get an explicit go, then:
