@@ -38,6 +38,18 @@ import { EntityFactory } from './factory';
 import { EntityTypes } from '../schema/types';
 import type { DeferredInfo } from '../models/BootstrapInfo';
 
+/**
+ * The class registered for an entity type.
+ *
+ * This module sits below the entity classes (it is reachable from the `services`
+ * barrel), so it cannot value-import them — see the layering rule in
+ * `entities/compute-node/compute-node-types.ts`. Statics are reached through the
+ * registry instead, which is what `_onAddedToContext` already did for expansions.
+ */
+function entityClass<T>(type: string): T {
+  return EntityFactory.getEntityConstructor(type) as unknown as T;
+}
+
 export enum ContextEventType {
   CONTEXT_CHANGED = 'context_changed',
 }
@@ -931,8 +943,9 @@ class DataContext extends EventEmitter {
         // startup restore), and the equality guard above means it fires only on
         // an actual project switch — never on same-project re-navigation.
         // Fire-and-forget: context writes must stay fast.
-        const projectCtor = EntityFactory.getEntityConstructor(EntityTypes.Project) as typeof Project;
-        void projectCtor.activateById(newTypeId.id).catch(() => {});
+        void entityClass<typeof Project>(EntityTypes.Project)
+          .activateById(newTypeId.id)
+          .catch(() => {});
       }
     }
 
@@ -1064,8 +1077,7 @@ class DataContext extends EventEmitter {
       query: filter,
       name: 'context getUserWorkspaces query',
     });
-    const workspaceCtor = EntityFactory.getEntityConstructor(EntityTypes.Workspace) as typeof Workspace;
-    return await workspaceCtor.query(request);
+    return await entityClass<typeof Workspace>(EntityTypes.Workspace).query(request);
   }
 
   async createNewUserWorkspace(): Promise<Workspace> {
@@ -1162,8 +1174,8 @@ class DataContext extends EventEmitter {
     // back to the server's choice. A transient failure must remain visible.
     const resolveProject = async (typeId: TypeId): Promise<Project | null> => {
       try {
-        const projectCtor = EntityFactory.getEntityConstructor(EntityTypes.Project);
-        return await dataManager.getByTypeId<Project>(typeId, (projectCtor as typeof APIEntity).getLoadingExpansions());
+        const expansions = entityClass<typeof APIEntity>(EntityTypes.Project).getLoadingExpansions();
+        return await dataManager.getByTypeId<Project>(typeId, expansions);
       } catch (error) {
         const status =
           (error as { response?: { status?: number }; status?: number })?.response?.status ??
