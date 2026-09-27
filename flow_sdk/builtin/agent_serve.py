@@ -803,8 +803,8 @@ def reply_outbox(source, key: str):
 
 def turn_body(message, *, outbox=None) -> str:
     """What the agent reads for one channel message: the message it quotes, its words, the files it
-    carried (local paths it can open) and — on a channel that takes files — where to put files to
-    send back."""
+    carried (local paths it can open) and — when it carried files, on a channel that takes them —
+    where to put files to send back. A plain message is exactly its words."""
     lines = []
     quoted = getattr(message, "reply_to", None)
     if quoted is not None:
@@ -820,7 +820,9 @@ def turn_body(message, *, outbox=None) -> str:
             where = f.path or f"not downloaded ({f.fetch_error or 'unavailable'})"
             caption = f" — {f.caption}" if getattr(f, "caption", None) else ""
             lines.append(f"- {f.name or 'file'} ({f.as_.value}, {f.media_type or 'unknown type'}): {where}{caption}")
-    if outbox is not None:
+    if outbox is not None and files:
+        # Said where files are already the subject; a plain message stays exactly the person's words
+        # (an agent can always answer with files through `flow conversation reply --file`).
         lines.append(f"To send files with your answer, save them in {outbox}")
     return "\n".join(lines)
 
