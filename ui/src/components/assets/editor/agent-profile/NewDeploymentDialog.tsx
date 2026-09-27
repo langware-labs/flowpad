@@ -1,4 +1,4 @@
-import { Agent, Deployment, type AgentReadiness, type IDeployment } from '@sdk';
+import { Agent, Deployment, type AgentReadiness, type AgentTokenAllocation, type IDeployment } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
@@ -13,6 +13,7 @@ import { Label } from '@src/components/ui/label';
 
 import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
 import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES } from './agent-vocabularies';
 
 /** A cloud machine's credential environment when nobody names one. */
@@ -57,6 +58,8 @@ export function NewDeploymentDialog({
   // Tri-state from the checklist: `null` (still checking) never disables Launch.
   const [ready, setReady] = useState<boolean | null>(null);
   const [environment, setEnvironment] = useState(DEFAULT_CLOUD_ENVIRONMENT);
+  // `null`: unchecked — the deployed agent spends its owner's capped default.
+  const [tokenAllocation, setTokenAllocation] = useState<AgentTokenAllocation | null>(null);
   const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
   // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
   // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
@@ -84,7 +87,7 @@ export function NewDeploymentDialog({
       } else {
         // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
         await onMachineSize?.(type);
-        data = await agent.deploy(environment);
+        data = await agent.deploy(environment, undefined, tokenAllocation);
         if (data.agent_definition_error) {
           notify.warning({ title: t`Deployed without its definition`, message: data.agent_definition_error });
         } else if (data.reused) {
@@ -117,7 +120,11 @@ export function NewDeploymentDialog({
   const blocked =
     !agent.enabled ||
     launching ||
-    (cloud && (ready === false || !environmentValid || refused?.readiness.ready === false));
+    (cloud &&
+      (ready === false ||
+        !environmentValid ||
+        !tokenAllocationComplete(tokenAllocation) ||
+        refused?.readiness.ready === false));
 
   return (
     <Dialog open={open} onOpenChange={(next) => !launching && onOpenChange(next)}>
@@ -181,6 +188,13 @@ export function NewDeploymentDialog({
                   )}
                 </span>
               </div>
+              <TokenAllocationField
+                agent={agent}
+                environment={environment}
+                value={tokenAllocation}
+                onChange={setTokenAllocation}
+                disabled={launching}
+              />
               {refused && (
                 <DeploymentSecretsGate
                   agent={agent}

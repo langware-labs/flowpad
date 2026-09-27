@@ -51,6 +51,16 @@ export interface AgentRequirement {
 }
 
 /** One requirement at one deployment: `verified` (checked), `declared` (present, unverifiable) or `missing`. */
+/**
+ * A cloud deployment's own token budget: a hub LLM endpoint drawn from `source` (one the caller administers),
+ * capped at `cost_usd_per_day`, allowing only `model` — which the deployed agent then runs.
+ */
+export interface AgentTokenAllocation {
+  source: string;
+  cost_usd_per_day?: number | null;
+  model: string;
+}
+
 export interface AgentReadinessItem {
   requirement: AgentRequirement;
   status: 'verified' | 'declared' | 'missing';
@@ -338,8 +348,20 @@ export class Agent extends APIEntity<Agent> {
    * when omitted. One cloud machine per environment.
    */
   /** Deploy to a cloud machine (the default), or `provider: 'local'` — this computer. */
-  async deploy(environment?: string, provider?: 'local'): Promise<AgentDeployResult> {
-    const body = { ...(environment ? { environment } : {}), ...(provider ? { provider } : {}) };
+  /**
+   * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
+   * back to the owner's capped default; omitted leaves it as it is.
+   */
+  async deploy(
+    environment?: string,
+    provider?: 'local',
+    tokenAllocation?: AgentTokenAllocation | null,
+  ): Promise<AgentDeployResult> {
+    const body = {
+      ...(environment ? { environment } : {}),
+      ...(provider ? { provider } : {}),
+      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+    };
     return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
   }
 
@@ -349,8 +371,15 @@ export class Agent extends APIEntity<Agent> {
    * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
    * `deploy`, which is refused (409 `not_ready`) until it is.
    */
-  async planDeployment(environment?: string): Promise<AgentPlannedDeployment> {
-    return (await this.post('plan_deployment', environment ? { environment } : undefined)) as AgentPlannedDeployment;
+  async planDeployment(
+    environment?: string,
+    tokenAllocation?: AgentTokenAllocation | null,
+  ): Promise<AgentPlannedDeployment> {
+    const body = {
+      ...(environment ? { environment } : {}),
+      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+    };
+    return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */

@@ -54,6 +54,9 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+    from types import EllipsisType
+
+    from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec
     from flow_sdk.schema.data_spec.webhook_spec import DeploymentWebhookSpec
 
 logger = logging.getLogger(__name__)
@@ -748,7 +751,13 @@ class Agent(Entity):
 
         body = await self._body()
         try:
-            deployment = await self.plan_deployment(str(body.get("environment") or "").strip() or None)
+            allocation = _token_allocation_of(body)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        try:
+            deployment = await self.plan_deployment(
+                str(body.get("environment") or "").strip() or None, token_allocation=allocation
+            )
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=f"plan failed: {exc}", status_code=502)
         return ApiSuccessResponse(data={
@@ -908,7 +917,9 @@ class Agent(Entity):
 
     # ── deploy to the cloud ───────────────────────────────────────────────
 
-    async def deploy_to_cloud(self, actor: TypeId, environment: str | None = None) -> dict:
+    async def deploy_to_cloud(
+        self, actor: TypeId, environment: str | None = None, *, token_allocation: "TokenAllocationSpec | None | EllipsisType" = ...
+    ) -> dict:
         """Give this agent a machine of its own on the hub.
 
         Publish is implicit: a deploy names an agent the hub has to already
@@ -920,7 +931,8 @@ class Agent(Entity):
         principal parameter: were either passable from here they would be
         passable from anywhere, which is the exact hole the hub's pentest guards
         exist to keep shut. This call says only *which agent*, and which
-        credential ``environment`` the placement reads (``production`` by default).
+        credential ``environment`` the placement reads (``production`` by default), and its
+        ``token_allocation`` (see :meth:`plan_deployment`).
 
         The credentials live in this process, so the browser never talks to the
         hub directly.
@@ -931,7 +943,7 @@ class Agent(Entity):
         await self.ensure_on_hub(actor)
         # The readiness gate: the placement's store must hold every value the agent needs before a
         # machine is paid for. The hub checks the same names again (``require``).
-        deployment = await self.plan_deployment(environment)
+        deployment = await self.plan_deployment(environment, token_allocation=token_allocation)
         ready = await readiness(self, deployment)
         if not ready.ready:
             raise NotReady(ready, deployment)
@@ -956,11 +968,15 @@ class Agent(Entity):
             )
         return list(specs.values())
 
-    async def plan_deployment(self, environment: str | None = None) -> "Deployment":
+    async def plan_deployment(
+        self, environment: str | None = None, *, token_allocation: "TokenAllocationSpec | None | EllipsisType" = ...
+    ) -> "Deployment":
         """The cloud placement this agent will have in ``environment`` — the hub's row, adopted here —
         before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent. Its
         :meth:`webhook_specs` are kept on the hub, following its machine, each URL stored as its variable —
-        so readiness finds them and "use mine" never copies this computer's."""
+        so readiness finds them and "use mine" never copies this computer's. ``token_allocation`` gives the
+        placement its own hub LLM endpoint drawn from ``source`` (``None`` releases it back to the owner's
+        default; omitted leaves it as it is)."""
         from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT  # noqa: PLC0415
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
@@ -968,6 +984,8 @@ class Agent(Entity):
 
         environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
         body = {"environment": environment, "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()]}
+        if token_allocation is not ...:
+            body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
         data = await hub_post(self.type, body, self.id, "plan_deployment") or {}
         deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
         if deployment is None:
@@ -1010,7 +1028,11 @@ class Agent(Entity):
         if environment is not None and not is_valid_environment(environment):
             return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
         try:
-            data = await self.deploy_to_cloud(actor, environment)
+            allocation = _token_allocation_of(body)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        try:
+            data = await self.deploy_to_cloud(actor, environment, token_allocation=allocation)
         except NotReady as exc:
             # The gate: nothing is deployed, and each missing value is named with its fix.
             return ApiFailResponse(
@@ -1354,3 +1376,20 @@ class Agent(Entity):
         cli_json.update({k: v for k, v in cli_extra.items() if v is not None})
 
         return factory(cli_json, driver_key(worker_type or self.worker_type))
+
+
+def _token_allocation_of(body: dict):
+    """A request's ``token_allocation``: a ``TokenAllocationSpec``, ``None`` (release it), or ``...`` when the
+    request does not mention it (leave it as it is). ``ValueError`` names a malformed one."""
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec  # noqa: PLC0415
+
+    if "token_allocation" not in body:
+        return ...
+    if body["token_allocation"] is None:
+        return None
+    try:
+        return TokenAllocationSpec.model_validate(body["token_allocation"])
+    except ValidationError as exc:
+        raise ValueError(f"invalid token allocation: {exc.errors(include_input=False)}") from exc

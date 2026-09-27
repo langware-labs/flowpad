@@ -70,7 +70,8 @@ describe('New deployment', () => {
     expect(screen.getByTestId('mock-checklist')).toBeInTheDocument();
     expect(screen.getByTestId('new-deployment-environment')).toHaveValue('production');
     fireEvent.click(screen.getByTestId('new-deployment-launch'));
-    await waitFor(() => expect(deploy).toHaveBeenCalledWith('production'));
+    // Unchecked "Token allocation" = the owner's default: `null` releases any earlier allocation.
+    await waitFor(() => expect(deploy).toHaveBeenCalledWith('production', undefined, null));
     expect(onMachineSize).toHaveBeenCalledWith('md');
     expect(order).toEqual(['size', 'deploy']);
   });
