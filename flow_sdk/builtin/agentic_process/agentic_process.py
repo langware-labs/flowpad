@@ -2929,14 +2929,14 @@ class AgenticProcess(Entity):
         """Resolve a show target and emit it.
 
         Body takes exactly one of ``{typeid}`` | ``{path}`` | ``{port}`` |
-        ``{artifact_id}`` | ``{view}``.
+        ``{artifact_id}`` | ``{view}`` | ``{url}``.
 
         Resolution is the shared ``resolve_display_target`` policy (same as
         ``flow navigate file``): indexed asset → its entity; unknown path →
         raw vfs pointer; port → the dev server's endpoint (registered on first
         show); artifact_id → an app shown through its live endpoint; view → a
         dock address (a SCREEN, the one form that reaches a view with no entity
-        behind it).
+        behind it); url → an http(s) page, opened in a web tab beside the chat.
 
         ``artifact_id`` closes a real gap rather than adding a synonym for
         ``port``. The resolver has always accepted it, but the only caller was
@@ -2956,6 +2956,15 @@ class AgenticProcess(Entity):
             return body
 
         try:
+            url = str(body.get("url") or "").strip()
+            if url:
+                # A web page, not a link to anything local: the link resolver
+                # also reads paths and dock addresses, which have their own keys.
+                if not url.startswith(("http://", "https://")):
+                    raise InvalidDisplayTarget(f"Not a web address: {url!r}")
+                payload = await resolve_display_target(link=url)
+                await self.on_show(payload)
+                return ApiSuccessResponse(data=payload)
             typeid = str(body.get("typeid") or "").strip() or None
             if body.get("port") is not None:
                 typeid = await self._dev_server_typeid(body.get("port"), body.get("name"))

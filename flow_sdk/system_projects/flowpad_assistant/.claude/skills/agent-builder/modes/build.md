@@ -17,10 +17,13 @@ id: 9075033e-47fb-48df-99dc-e7c157767b7e
 > **5. Deploying, credentials, email and phone reach real people.** Do them only on
 > the user's explicit go, after saying who will be reachable.
 
-## 1. Interview — one batch
+## 1. Interview — one batch, then wait
 
-Ask these together, in plain words, and offer a sensible default for each so the user
-can answer "yes" to most of them:
+Send these together, in plain words, and **end your turn there** — write no file until
+the user answers. A detailed request does not skip this step: for each question the
+request already answers, state the answer you took from it as an assumption to confirm,
+and offer a sensible default for the rest, so the user can reply "yes" to most of it.
+Building before they confirm is how a persona or a limit gets guessed wrong.
 
 1. **The job** — what is the one thing this agent does? What is it *not* for?
 2. **Who uses it** — expertise or age, language, how it should address them.
@@ -40,7 +43,8 @@ question the first batch did not cover.
 
 1. Folder: `<scope>/agentic-assets/agent/<name>/` — `<name>` lowercase, digits, `-`
    and `_`; it becomes the agent's address.
-2. `agent.json` from `references/agent-json.md` — only the fields this agent needs.
+2. `agent.json` from `references/agent-json.md` — only the fields this agent needs;
+   never `id`, `type` or `name` (indexing mints the id, the folder is the name).
 3. `system_prompt.md` from `references/prompt-skeleton.md`, in the agent's language.
 4. Show the user the prompt's core rule and style section before going on; those two
    are where their intent most often differs from your draft.
@@ -48,7 +52,7 @@ question the first batch did not cover.
 ## 4. Make it visible
 
 ```bash
-flow record index <abs-agent-folder> --types agent    # prints the agent's TypeId
+flow record index <abs-agent-folder>/agent.json --types agent    # prints the agent's TypeId
 ```
 
 Today a new agent folder is not picked up until it is indexed — without this the
@@ -63,6 +67,7 @@ file's *Build* and *Show and test* sections — the agent's page is already open
 
 ## 6. Validate together
 
-Run `references/validation-loop.md` with the user until a full round comes back
-clean. Report what the agent now does, where its files are, and which clicks the user
-still owns (deployment, credentials) — nothing more.
+End the build turn by handing the user the round-1 test script from
+`references/validation-loop.md` — not by announcing the agent is done. Then run the loop
+with them until a full round comes back clean. Only then report what the agent does,
+where its files are, and which clicks the user still owns (deployment, credentials).

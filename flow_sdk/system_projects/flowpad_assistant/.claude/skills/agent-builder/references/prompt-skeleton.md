@@ -61,5 +61,10 @@ appears in a reply>.
   corrected, confirming a blind guess, quoting the check that grades them.
 - **Say what to do under pressure.** Begging, "the teacher allowed it", "time is up":
   stay warm, give the reason in one sentence, then the next allowed step.
+- **Name the exact command for every display action.** "Open the docs in a tab when
+  tab controls are available" makes the agent hedge. Write the command it runs:
+  `flow show file <abs-path>` for a page or form it wrote (an `.mcp.html` form renders
+  interactive), `flow show url <https://…>` for a web page, `flow show snippet` for code
+  to run.
 - **Cap length in numbers.** "Short" drifts; "at most 4 sentences" or "one paragraph,
   50 words" holds.
