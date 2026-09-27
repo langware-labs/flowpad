@@ -17,6 +17,7 @@
 
 import { AgenticProcess, FlowData } from '@sdk';
 import { useHistoryLoadAlert } from '@src/hooks/use-history-load-alert';
+import { retireObservedEchoes } from '@src/hooks/retire-observed-echoes';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 
 export function useAgenticProcessStream(process: AgenticProcess | null): FlowData[] {
@@ -28,6 +29,11 @@ export function useAgenticProcessStream(process: AgenticProcess | null): FlowDat
   // so several surfaces observing the same process still yield one toast.
   useHistoryLoadAlert(process);
 
+  // `rawRef` mirrors the stream for the change check; `snapshotRef` is what
+  // surfaces render — the same rows minus the optimistic user echoes a live
+  // observation has superseded (see `retireObservedEchoes`: Copilot's stdout
+  // echoes the user turn, so without this its message rendered twice mid-turn).
+  const rawRef = useRef<FlowData[]>([]);
   const snapshotRef = useRef<FlowData[]>([]);
 
   const subscribe = useCallback((cb: () => void) => {
@@ -44,15 +50,18 @@ export function useAgenticProcessStream(process: AgenticProcess | null): FlowDat
 
   const getSnapshot = useCallback(() => {
     if (!process) {
+      if (rawRef.current.length !== 0) rawRef.current = [];
       if (snapshotRef.current.length !== 0) snapshotRef.current = [];
       return snapshotRef.current;
     }
     const items = process.flowDataStream.items as FlowData[];
     if (
-      items.length !== snapshotRef.current.length ||
-      items.some((v, i) => v !== snapshotRef.current[i])
+      items.length !== rawRef.current.length ||
+      items.some((v, i) => v !== rawRef.current[i])
     ) {
-      snapshotRef.current = [...items];
+      rawRef.current = [...items];
+      // Arrival order, not the timestamp-sorted `items`: see retireObservedEchoes.
+      snapshotRef.current = retireObservedEchoes(rawRef.current, process.flowDataStream.ownItems);
     }
     return snapshotRef.current;
   }, [process]);
