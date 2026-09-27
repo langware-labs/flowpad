@@ -9,10 +9,11 @@ Adding a new system trigger:
   1. Add an entry to `_service_trigger_specs()`.
   2. Register its `@trigger_callbacks.register(...)` handler below.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.change_event import ChangeEvent
@@ -21,6 +22,10 @@ from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.wizard import Wizard
+    from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue, WizardResult
 
 _log = logging.getLogger(__name__)
 
@@ -31,10 +36,10 @@ _log = logging.getLogger(__name__)
 @trigger_callbacks.register(
     "builtin_toplog_filter_apply",
     meaning="Fired when the per-instance toplog.json changes. Re-derives the "
-            "in-memory tag state from the file and broadcasts the new state to "
-            "all UI clients. This is the single broadcaster for toplog — every "
-            "writer (backend, frontend-via-route, worker, human edit) converges "
-            "through the file and this callback.",
+    "in-memory tag state from the file and broadcasts the new state to "
+    "all UI clients. This is the single broadcaster for toplog — every "
+    "writer (backend, frontend-via-route, worker, human edit) converges "
+    "through the file and this callback.",
 )
 async def _toplog_filter_apply(trigger: Trigger, changes: list[ChangeEvent]) -> None:
     # The file is authority: re-derive this process's in-memory state, then push
@@ -50,9 +55,7 @@ async def _toplog_filter_apply(trigger: Trigger, changes: list[ChangeEvent]) -> 
 
         st = toplog.state()
         await broadcast(
-            ToplogStateMessage(
-                enabled=st["enabled"], filter=st["filter"], persist=st["persist"]
-            ).model_dump_json()
+            ToplogStateMessage(enabled=st["enabled"], filter=st["filter"], persist=st["persist"]).model_dump_json()
         )
     except Exception:
         _log.exception("toplog: failed to broadcast state after file change")
@@ -83,21 +86,23 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             uname="builtin_toplog_watcher",
             name="Toplog filter watcher",
             description="Watches the per-instance toplog.json; re-applies the "
-                        "filter to tag loggers and broadcasts to UI.",
+            "filter to tag loggers and broadcasts to UI.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.toplog_config_path),
             recursive=False,
-            actions=[TriggerAction(
-                action_type=ActionType.CALLBACK,
-                callback_name="builtin_toplog_filter_apply",
-            )],
+            actions=[
+                TriggerAction(
+                    action_type=ActionType.CALLBACK,
+                    callback_name="builtin_toplog_filter_apply",
+                )
+            ],
         ),
         dict(
             uname="builtin_daily_usage_analysis",
             name="Last day usage analysis",
             description="Disabled by default. When enabled, every day at 7am "
-                        "(local) fires the daily-analysis flow — analyze (function) "
-                        "→ publish — which posts a usage report to the Home Feed.",
+            "(local) fires the daily-analysis flow — analyze (function) "
+            "→ publish — which posts a usage report to the Home Feed.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="0 7 * * *",
@@ -114,15 +119,17 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             uname="builtin_system_heartbeat",
             name="System heartbeat",
             description="Fires every minute. Housekeeping tasks register via "
-                        "@register_heartbeat_task; the dispatch callback fans "
-                        "out and isolates per-task failures.",
+            "@register_heartbeat_task; the dispatch callback fans "
+            "out and isolates per-task failures.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="* * * * *",
-            actions=[TriggerAction(
-                action_type=ActionType.CALLBACK,
-                callback_name="builtin_heartbeat_dispatch",
-            )],
+            actions=[
+                TriggerAction(
+                    action_type=ActionType.CALLBACK,
+                    callback_name="builtin_heartbeat_dispatch",
+                )
+            ],
         ),
     ]
     specs.extend(transcript_watcher_trigger_specs(settings))
@@ -233,6 +240,7 @@ async def set_service_triggers() -> None:
     settings = get_instance_settings()
     try:
         from flow_sdk import toplog
+
         toplog.seed_file(settings.toplog_enabled)
     except Exception:
         _log.exception("Failed to seed/apply initial toplog state")
@@ -288,11 +296,11 @@ async def _wizard_for(trigger: Trigger) -> "Optional[Wizard]":
 @trigger_callbacks.register(
     "builtin_run_wizard",
     meaning="Fired by a bus tag a Wizard asset declared for itself. Resolves the "
-            "Wizard from the trigger's path and runs it, reporting through the "
-            "shared Activity tree. A shipped wizard runs unprompted; anything "
-            "else is refused here, because running a cloned repo's shell "
-            "one-liners unattended would make opening a project a code-execution "
-            "primitive.",
+    "Wizard from the trigger's path and runs it, reporting through the "
+    "shared Activity tree. A shipped wizard runs unprompted; anything "
+    "else is refused here, because running a cloned repo's shell "
+    "one-liners unattended would make opening a project a code-execution "
+    "primitive.",
 )
 async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> None:
     from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
@@ -316,8 +324,93 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
     if result.exit_code is ExitCode.REFUSED:
         _log.warning("wizard trigger %r: %s Run it from the app to approve it.", trigger.uname, result.detail)
         return
-    _log.info("wizard trigger %r: %s — %s", trigger.uname,
-              "ok" if result.ok else "not done", result.detail)
+    _log.info("wizard trigger %r: %s — %s", trigger.uname, "ok" if result.ok else "not done", result.detail)
+    if not result.ok:
+        await _tell_the_person_it_did_not_finish(wizard, result)
+
+
+#: The op that makes sure this box has an LLM source (`flow llm set auto`), and the
+#: wizard first-run setup runs after it.
+LLM_SOURCE_OP = "llm-source-auto"
+LLM_SETUP_WIZARD = "llm-setup"
+
+
+async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[ReturnedValue, WizardResult]":
+    """First-run setup: an LLM source, then the wizard that installs the tools.
+
+    The source is settled BEFORE the wizard and outside it — the `llm-source-auto`
+    op runs `flow llm set auto`, which returns at once on a funded box and opens
+    the chooser (with its Skip) on one that is not. Whatever it answers, the
+    wizard runs next: only its agent fallbacks need a source, and every plain
+    install command works without one. The two answers come back side by side,
+    so a caller can say which of them fell short.
+
+    One function for both ways in — the trigger on the first tab after install,
+    and Settings → General — so the order cannot drift between them.
+    """
+    from flow_sdk.builtin.compute_op import ComputeOp  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+
+    op = await ComputeOp.by_name(LLM_SOURCE_OP)
+    if op is None:
+        source = ReturnedValue.not_found(f"{LLM_SOURCE_OP} is not installed, so no LLM source was looked for.")
+    else:
+        source = await op.run()
+    _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
+    return source, await wizard.run(unattended=unattended)
+
+
+@trigger_callbacks.register(
+    "builtin_run_llm_setup",
+    meaning="First-run setup, fired by the llm-setup wizard's own trigger: settles an "
+    "LLM source (`flow llm set auto`), then runs the wizard. Says so when "
+    "either fell short.",
+)
+async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> None:
+    from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+
+    wizard = await _wizard_for(trigger)
+    if wizard is None:
+        _log.warning("llm setup trigger %r names no wizard it can resolve; nothing to run", trigger.uname)
+        return
+    source, result = await run_llm_setup(wizard, unattended=True)
+    if result.exit_code is ExitCode.REFUSED:
+        _log.warning("llm setup trigger %r: %s", trigger.uname, result.detail)
+        return
+    _log.info("llm setup trigger %r: %s — %s", trigger.uname, "ok" if result.ok else "not done", result.detail)
+    if not (source.ok and result.ok):
+        await _tell_the_person_it_did_not_finish(wizard, result, also_missing=[] if source.ok else ["LLM source"])
+
+
+async def _tell_the_person_it_did_not_finish(
+    wizard: "Wizard", result: "WizardResult", *, also_missing: "list[str] | None" = None
+) -> None:
+    """A run nobody started ended short of its goal: say so, and where to look.
+
+    Unattended means nobody is watching the wizard's page, and its activity node is dropped
+    when the run ends — without this, a failed first-run setup leaves nothing but a log line.
+    The note names what is still missing by its step label, so "Git" is said rather than a
+    step id, and a click opens the wizard, whose page shows each step's answer.
+    """
+    from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
+
+    spec = wizard.spec()
+    labels = {step.id: step.display_label for step in (spec.steps if spec else [])}
+    missing = [
+        *(also_missing or []),
+        *(labels.get(step_id, step_id) for step_id, answer in result.steps.items() if not answer.ok),
+    ]
+    body = f"Not done: {', '.join(missing)}." if missing else (result.detail or "")
+    try:
+        await notify_desktop(
+            "wizard_not_done",
+            title=f"{wizard.name or 'Setup'} did not finish",
+            body=body,
+            click_target={"view_type": "assets", "pointer": f"editor/wizard/typeid/{wizard.typeid}"},
+            level="warning",
+        )
+    except Exception:  # noqa: BLE001 — a notice that could not be sent never fails the run
+        _log.warning("wizard trigger: could not tell the person %r did not finish", wizard.name, exc_info=True)
 
 
 async def reconcile_wizard_triggers() -> None:
@@ -338,9 +431,14 @@ async def reconcile_wizard_triggers() -> None:
     from flow_sdk.builtin.trigger_arming import disarm_trigger  # noqa: PLC0415
 
     try:
-        rows = await Trigger.get_all(QueryFilter(match=ExpressionNode(
-            op=QueryOp.LIKE, operands=["uname", f"{WIZARD_TRIGGER_UNAME_PREFIX}%"],
-        )))
+        rows = await Trigger.get_all(
+            QueryFilter(
+                match=ExpressionNode(
+                    op=QueryOp.LIKE,
+                    operands=["uname", f"{WIZARD_TRIGGER_UNAME_PREFIX}%"],
+                )
+            )
+        )
     except Exception:
         _log.exception("Could not read legacy wizard triggers")
         return

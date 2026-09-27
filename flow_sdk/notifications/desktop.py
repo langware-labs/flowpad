@@ -25,6 +25,7 @@ def build_desktop_payload(
     icon: Optional[str] = None,
     click_target: Optional[dict] = None,
     attention: bool = True,
+    level: Optional[str] = None,
 ) -> dict:
     """Normalize the generic desktop-notification payload — the single shape the
     renderer reads:
@@ -37,6 +38,9 @@ def build_desktop_payload(
     * ``attention`` — dock bounce (macOS) / taskbar flash (Linux/Win); the shell
       suppresses it while the window is focused. Omitted from the payload when
       true (the renderer's default), emitted only to turn it off.
+    * ``level`` — ``warning`` / ``error`` for a notification that says something
+      did NOT happen: it is kept in the footer warnings list, not only toasted.
+      Omitted means ``info``.
 
     The OS *badge count* is intentionally NOT part of this payload — it is state,
     reflected from ``StreamInboxManager.unread`` via the entity channel.
@@ -48,6 +52,8 @@ def build_desktop_payload(
         payload["click_target"] = click_target
     if not attention:
         payload["attention"] = False
+    if level and level != "info":
+        payload["level"] = level
     return payload
 
 
@@ -59,6 +65,7 @@ async def notify_desktop(
     icon: Optional[str] = None,
     click_target: Optional[dict] = None,
     attention: bool = True,
+    level: Optional[str] = None,
 ) -> None:
     """Fire a desktop notification on every connected window.
 
@@ -69,7 +76,7 @@ async def notify_desktop(
         "desktop_notify",
         notify_type=notify_type,
         info=build_desktop_payload(
-            title=title, body=body, icon=icon, click_target=click_target, attention=attention
+            title=title, body=body, icon=icon, click_target=click_target, attention=attention, level=level
         ),
     )
 
@@ -89,4 +96,5 @@ async def notify_desktop_raw(notify_type: str, info: dict) -> None:
         icon=info.get("icon"),
         click_target=info.get("click_target"),
         attention=info.get("attention", True),
+        level=info.get("level"),
     )

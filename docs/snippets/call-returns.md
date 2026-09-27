@@ -41,6 +41,7 @@ class PromptOp(ExeData):                      # compute_op.prompt — a model, n
 class AgentOp(ExeData):                       # compute_op.agent — a harness with tools
     agent: str
     prompt: str
+    retries: int                              # further turns in the SAME session while the check fails
 
 class AskOp(ExeData):                         # compute_op.ask — a person
     prompt: str
@@ -50,6 +51,10 @@ class AskOp(ExeData):                         # compute_op.ask — a person
     cancel_label: str
     until_answered: bool                      # no deadline — refuses alongside timeout_seconds
 
+class Rung(DataSpec):                         # compute_op.rung — one further attempt, same shape as the op's own
+    subkind: Literal[OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT]  # never ask
+    exe_data: CliOp | PromptOp | AgentOp
+
 class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     name: str
     label: str
@@ -58,6 +63,7 @@ class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     exe_data: CliOp | PromptOp | AgentOp | AskOp
     output_spec_kind: str | None              # a registered DataSpec kind, or a primitive
     completion_check: CliOp | None            # the SAME class as a cli op's exe_data
+    attempts: list[Rung]                      # further rungs, any kind but ask, tried in order
     not_applicable_codes: list[int]
     setup: Text                               # setup.md — what an agent or a model is given
 ```

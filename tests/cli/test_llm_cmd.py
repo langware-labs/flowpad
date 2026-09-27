@@ -1037,6 +1037,36 @@ def test_a_lost_socket_is_a_connection_error_not_a_missing_source(monkeypatch):
     assert "CONNECTION_ERROR" in result.output
 
 
+def test_skip_in_the_chooser_ends_the_wait_with_no_source(monkeypatch):
+    """The chooser's Skip changes nothing the resolver could see, so the frame it sends is the
+    one read as an answer: the wait ends instead of holding first-run setup on a person who
+    has already declined."""
+    import asyncio
+
+    skip = {"message_type": "llm_config_msg", "is_configured": False, "auth_data": {"skipped": True}}
+    monkeypatch.setattr(llm_cmd, "_backend_frames", _Frames([{"message_type": "llm_config_msg"}, skip]))
+    monkeypatch.setattr(llm_cmd, "_steer_open_app", lambda port: True)
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {"resolved": {}})
+
+    assert asyncio.run(llm_cmd._await_funding(6060, "u")) == llm_cmd._SKIPPED
+
+
+def test_a_skipped_choice_is_no_source_not_a_connection_error(monkeypatch):
+    """Exit 4, the same "nothing to act on" `--no-browser` answers — what the setup wizard's
+    re-check reads as "not funded", after which it carries on with the installs."""
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {"resolved": {}})
+    monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
+    monkeypatch.setattr(llm_cmd, "_probe_unproven_device_logins", lambda status: status)
+    monkeypatch.setattr(llm_cmd, "_backend_port", lambda: 6060)
+    monkeypatch.setattr(llm_cmd, "_await_funding", lambda port, url: None)
+    monkeypatch.setattr("asyncio.run", lambda coro: llm_cmd._SKIPPED)
+
+    result = runner.invoke(app, ["llm", "auto"])
+
+    assert result.exit_code == llm_cmd.EXIT_NOT_FOUND, result.output
+    assert "skipped" in result.output
+
+
 # ------------------------------------------------ a public endpoint, by id, with no login
 
 OPEN = "llm_endpoint-99999999-2222-4333-8444-555555555555"

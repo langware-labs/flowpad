@@ -1,10 +1,12 @@
 """``ComputeOpSpec`` — the shape of ``compute_op.json``.
 
 A ComputeOp is ONE CALL of one subkind: a shell one-liner, a model prompt, an
-agent, or a person. It is not a ladder. A fallback — "try the command, then the
-agent" — belongs to whoever calls, in plain Python or a wizard; an op that
-sequenced its own attempts was a second sequencer, and grew a second result
-shape to report them with.
+agent, or a person. Reaching the SAME goal by other, more expensive means when
+the first call did not — cli, then an agent; a model, then an agent with more
+tools — is ``attempts``: further rungs of any subkind but ``ask``, tried in
+order against the one completion check, until it holds. ``ask`` is never a
+rung: a person belongs at the wizard level, where declining (Skip) stops only
+the one step asking — nothing inside an op can express "abort just this step".
 
 The words follow ``docs/ontology.md``: the type is ``compute_op``, ``subkind`` is
 a closed enum, and each subkind's structure is its OWN DataSpec, registered
@@ -37,7 +39,7 @@ Stdlib + pydantic only, like the rest of ``data_spec``.
 from __future__ import annotations
 
 import sys
-from typing import Any, ClassVar, Optional, Union
+from typing import Any, ClassVar, Literal, Optional, Union
 
 from pydantic import model_validator
 
@@ -80,6 +82,10 @@ class OpSubkind(StrEnum):
     PROMPT = "prompt"
     AGENT = "agent"
     ASK = "ask"
+
+
+#: Every ``OpSubkind`` a ``Rung`` may run as. Not ``ask`` — see ``Rung``.
+RUNG_SUBKINDS = (OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT)
 
 
 class ExeData(DataSpec):
@@ -153,11 +159,17 @@ class AgentOp(ExeData):
     agent: str
     #: What it is asked to do. Appended to the op's description and setup.
     prompt: str = ""
+    #: Further turns when a turn ends and the completion check still fails. Not a new
+    #: process: the SAME session, told only what the check printed. A turn that ran out
+    #: of time is not retried — that process is busy, not finished.
+    retries: int = 0
 
     @model_validator(mode="after")
     def _has_an_agent(self) -> "AgentOp":
         if not self.agent:
             raise ValueError("an agent op needs an agent to run")
+        if self.retries < 0:
+            raise ValueError("retries cannot be negative")
         return self
 
 
@@ -259,6 +271,28 @@ def exe_data_by_subkind(data: Any) -> Any:
     return data
 
 
+class Rung(DataSpec):
+    """One further attempt at the op's OWN goal, tried after its own call did not
+    reach it — cli, prompt or agent, in the order they are listed, each judged by
+    the SAME completion check. Not ``ask``: see the module docstring.
+
+    Shaped like the op's own ``subkind``/``exe_data`` pair on purpose — a rung
+    IS an op's call, just not the first one — so the runner promotes one into a
+    full spec (``model_copy(update={"subkind": ..., "exe_data": ...})``) rather
+    than carrying a second, parallel notion of "a call".
+    """
+
+    spec_kind: ClassVar[str] = "compute_op.rung"
+
+    subkind: Literal[OpSubkind.CLI, OpSubkind.PROMPT, OpSubkind.AGENT]
+    exe_data: Union[CliOp, PromptOp, AgentOp]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _exe_data_is_its_subkind(cls, data: Any) -> Any:
+        return exe_data_by_subkind(data)
+
+
 class ComputeOpSpec(AssetDocumentSpec):
     """``compute_op.json`` — the whole document."""
 
@@ -279,6 +313,11 @@ class ComputeOpSpec(AssetDocumentSpec):
     output_spec_kind: Optional[str] = None
     #: When this op is already done. Absent ⇒ it always runs: a call, not a goal.
     completion_check: Optional[CliOp] = None
+    #: Further rungs at the SAME goal, tried in order while the completion check
+    #: still fails after the one before — the op's own call, then this list, for
+    #: as many rungs as are named. Needs a completion_check: nothing else can
+    #: say a rung missed.
+    attempts: list[Rung] = []
     #: Exit codes from the completion check that mean "not this machine's
     #: problem". EMPTY by default: nothing is ever silently skipped unless an
     #: author asked for it.
@@ -291,6 +330,14 @@ class ComputeOpSpec(AssetDocumentSpec):
     @classmethod
     def _exe_data_is_its_subkinds(cls, data: Any) -> Any:
         return exe_data_by_subkind(data)
+
+    @model_validator(mode="after")
+    def _attempts_need_a_check(self) -> "ComputeOpSpec":
+        if self.attempts and self.completion_check is None:
+            raise ValueError(
+                f"{self.name or 'this op'}: attempts need a completion_check — nothing else can say one missed"
+            )
+        return self
 
     @model_validator(mode="after")
     def _output_is_a_known_kind(self) -> "ComputeOpSpec":

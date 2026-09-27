@@ -1555,6 +1555,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             hub_llm_endpoint_status,
             llm_binding,
             select_llm_source,
+            skip_llm_setup,
             test_hub_llm_endpoint,
             unbind_hub_llm_endpoint,
         )
@@ -1584,6 +1585,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 sub_path = (request_info.sub_path or "").strip("/")
                 if sub_path == "select":
                     return ApiSuccessResponse(data=await select_llm_source(body))
+                # ``skip`` is the chooser's "not now": it releases a `flow llm set auto` that is
+                # waiting for a choice the person has declined to make.
+                if sub_path == "skip":
+                    return ApiSuccessResponse(data=await skip_llm_setup())
                 # ``test`` is a pass-through to the hub's own verdict. It lives here for the
                 # same reason the listing does: the box holds no ``llm_endpoint`` rows, so a
                 # desktop screen has no other way to reach that action.

@@ -966,17 +966,23 @@ def _steer_open_app(port: int) -> bool:
     return False
 
 
-async def _await_funding(port: int, url: str) -> Row | None:
-    """Open the chooser and block until the resolver can name a source.
+#: What `_await_funding` answers when the person pressed the chooser's Skip.
+_SKIPPED = "skipped"
+
+
+async def _await_funding(port: int, url: str) -> "Row | str | None":
+    """Open the chooser and block until the resolver can name a source, or the person skips.
 
     The socket work is ``_common.backend_frames`` — a general "wait for the backend to say
     something" primitive, not this command's own plumbing. What is specific to `auto` is only
     WHICH frames to wake on and what question to re-ask on each wake.
 
     Returns ``None`` only when the socket closes without the box ever becoming funded, i.e. the
-    server went away. A user who closes the window without choosing anything leaves this
-    blocked, which is correct: nothing has happened yet, and Ctrl-C is how a person says they
-    changed their mind. There is no budget to expire here, on purpose.
+    server went away, and ``_SKIPPED`` when the chooser's Skip said "not now" — the one frame read
+    as an answer, because declining changes nothing the resolver could see. A user who closes the
+    window without choosing anything leaves this blocked, which is correct: nothing has happened
+    yet, and Ctrl-C is how a person says they changed their mind. There is no budget to expire
+    here, on purpose.
     """
     import asyncio
     import webbrowser
@@ -999,12 +1005,14 @@ async def _await_funding(port: int, url: str) -> Row | None:
             )
         typer.echo("Waiting for you to choose a source… (Ctrl-C to cancel)", err=True)
 
-    async for _frame in _backend_frames(port, _FUNDING_FRAMES, on_connected=_open_browser):
+    async for frame in _backend_frames(port, _FUNDING_FRAMES, on_connected=_open_browser):
         # A credential changed. Whether the BOX can now fund a call is the resolver's question,
         # not this frame's -- a failed login broadcasts too.
         row = _auto_source(await asyncio.to_thread(_status))
         if row is not None:
             return row
+        if (frame.get("auth_data") or {}).get("skipped"):
+            return _SKIPPED
     return None
 
 
@@ -1070,6 +1078,13 @@ def _resolve_or_choose(*, no_browser: bool = False) -> Row:
     import asyncio
 
     row = asyncio.run(_await_funding(port, _chooser_url(port)))
+    if row == _SKIPPED:
+        _fail(
+            EXIT_NOT_FOUND,
+            "NO_LLM_SOURCE",
+            "No LLM source was chosen (skipped).",
+            {"remediation": [f"Open {_chooser_url(port)} and choose one", "Or run `flow llm set auto` again"]},
+        )
     if row is None:
         _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", "Lost the connection to Flowpad before a source was chosen.")
     return row

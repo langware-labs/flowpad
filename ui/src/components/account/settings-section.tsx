@@ -1,4 +1,4 @@
-import { ActionInfo, dataContext, dataManager } from '@sdk';
+import { ActionInfo, dataContext, dataManager, isOk, type ReturnedValue, type WizardResult } from '@sdk';
 import apiClient from '@sdk/client';
 import { SettingsCard, SettingRow } from '@src/components/settings/settings-card';
 import { Button } from '@src/components/ui/button';
@@ -39,6 +39,35 @@ export function SettingsSection() {
     }
   }, [refetchOnboarding, t]);
 
+  // First-run setup, run on demand from the top: an LLM source, then the `llm-setup` wizard.
+  // Its trigger fires once per machine; this is the way to run it again. The backend runs both,
+  // in the same order the trigger does.
+  const [runningSetup, setRunningSetup] = useState(false);
+  const handleRunSetup = useCallback(async () => {
+    setRunningSetup(true);
+    try {
+      const answer = await apiClient.post<{ llm_source: ReturnedValue; wizard: WizardResult }>(
+        '/api/v1/onboarding/setup',
+      );
+      const missing = [
+        ...(isOk(answer.llm_source) ? [] : [t`LLM source`]),
+        ...(isOk(answer.wizard) ? [] : [answer.wizard.detail || t`some tools`]),
+      ];
+      if (missing.length === 0) notify.success({ title: t`Setup finished`, message: t`Everything is in place.` });
+      // The person just clicked and is waiting: this is the only word they get (`forceToast`).
+      else
+        notify.error({ title: t`Setup did not finish`, message: t`Not done: ${missing.join('; ')}`, forceToast: true });
+    } catch (err) {
+      notify.error({
+        title: t`Setup did not finish`,
+        message: err instanceof Error ? err.message : String(err),
+        forceToast: true,
+      });
+    } finally {
+      setRunningSetup(false);
+    }
+  }, [t]);
+
   const computeNode = dataContext.computeNode;
 
   useEffect(() => {
@@ -77,9 +106,7 @@ export function SettingsSection() {
 
       <SettingRow
         label={<Trans>Onboarding</Trans>}
-        description={
-          <Trans>Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}</Trans>
-        }
+        description={<Trans>Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}</Trans>}
         control={
           <Button
             size="sm"
@@ -88,6 +115,18 @@ export function SettingsSection() {
             disabled={resettingOnboarding}
           >
             {resettingOnboarding ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
+          </Button>
+        }
+      />
+
+      <SettingRow
+        label={<Trans>Setup</Trans>}
+        description={
+          <Trans>Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch.</Trans>
+        }
+        control={
+          <Button size="sm" variant="outline" onClick={() => void handleRunSetup()} disabled={runningSetup}>
+            {runningSetup ? <Trans>Running…</Trans> : <Trans>Run setup again</Trans>}
           </Button>
         }
       />
@@ -102,8 +141,12 @@ export function SettingsSection() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="info"><Trans>Info</Trans></SelectItem>
-              <SelectItem value="debug"><Trans>Debug</Trans></SelectItem>
+              <SelectItem value="info">
+                <Trans>Info</Trans>
+              </SelectItem>
+              <SelectItem value="debug">
+                <Trans>Debug</Trans>
+              </SelectItem>
             </SelectContent>
           </Select>
         }

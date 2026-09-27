@@ -315,6 +315,21 @@ async def _pin_project_endpoint(payload: dict) -> dict:
     return await _status(bool(_hub_key()), scope=LLMScope.of_project(project_id))
 
 
+async def skip_llm_setup() -> dict:
+    """The person chose NOT to pick a source now — the chooser's Skip.
+
+    ``flow llm set auto`` is blocked on ``llm_config_msg`` waiting for the box to be funded, and
+    nothing about the box changes when someone declines, so without this frame the command would
+    wait on a person who has already left. Same one producer, same neutral ``auth_method`` as the
+    picker (see ``select_llm_source``); ``auth_data.skipped`` is the one thing the waiter reads.
+    Nothing is written: skipping is an answer to the question, not a setting.
+    """
+    from flow_sdk.app.actions.desktop_oauth import broadcast_llm_config_msg  # noqa: PLC0415
+
+    await broadcast_llm_config_msg(False, "llm_source", auth_data={"skipped": True})
+    return {"skipped": True}
+
+
 async def select_llm_source(payload: dict) -> dict:
     """Choose which ``LLMSource`` funds one harness, and return the refreshed status.
 

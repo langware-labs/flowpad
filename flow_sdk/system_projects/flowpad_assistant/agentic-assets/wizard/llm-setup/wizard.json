@@ -1,10 +1,31 @@
 {
   "name": "llm-setup",
-  "description": "Checks that Python 3, Git and Node.js (with npm) are installed, and for each one that is missing asks before installing it. npm is checked as part of the Node.js step — after it, and only if it went ahead — so declining Node.js does not leave a second, orphaned question about npm.",
+  "description": "For jq, ripgrep, Claude Code, Python 3, Git and Node.js (with npm): when one is missing it asks before installing, then runs the install op — the plain command first, and an agent (with one retry) when that did not get there. First-run setup settles an LLM source BEFORE this wizard runs (`flow llm set auto`); without one the plain commands still install, and only the agent fallback cannot run.",
   "version": 1,
   "enabled": true,
   "icon": "Wand2",
   "steps": [
+    {
+      "id": "jq",
+      "label": "jq",
+      "kind": "wizard",
+      "ref": "llm-setup-jq",
+      "on_fail": "continue"
+    },
+    {
+      "id": "ripgrep",
+      "label": "ripgrep",
+      "kind": "wizard",
+      "ref": "llm-setup-ripgrep",
+      "on_fail": "continue"
+    },
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "kind": "wizard",
+      "ref": "llm-setup-claude-code",
+      "on_fail": "continue"
+    },
     {
       "id": "python",
       "label": "Python 3",

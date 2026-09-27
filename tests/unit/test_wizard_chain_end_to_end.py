@@ -10,8 +10,8 @@ names it — three wiring bugs that every per-link test would still pass.
 
 The wizard used is the REAL shipped one (`llm-setup`). Its shell is a double on
 which every check holds — the "already provisioned" shape — so nothing is asked,
-nothing runs, and the result does not depend on which of python, git, node and
-npm this machine happens to have (a Mac without node is a normal developer
+nothing runs, and the result does not depend on which of the tools (or which
+LLM source) this machine happens to have (a Mac without node is a normal developer
 machine). What a check prints and how a missing tool is asked about is
 `test_llm_setup_wizard.py`'s job.
 """
@@ -36,18 +36,13 @@ SHIPPED = ASSETS / "wizard" / "llm-setup"
 #: The wizards its steps call, and the ops THOSE call. A step names one; the row
 #: has to be indexed for the resolver to find it, exactly as it is on a real
 #: machine.
-SUB_WIZARDS = [ASSETS / "wizard" / name for name in ("llm-setup-python", "llm-setup-git", "llm-setup-node")]
+_WITH_AGENT = ("jq", "ripgrep", "claude-code", "python", "git", "node")
+SUB_WIZARDS = [ASSETS / "wizard" / f"llm-setup-{tool}" for tool in _WITH_AGENT]
 OPS = [
     ASSETS / "compute_op" / name
     for name in (
-        "python-on-path",
-        "git-on-path",
-        "node-on-path",
-        "npm-on-path",
-        "ask-install-python",
-        "ask-install-git",
-        "ask-install-node",
-        "ask-install-npm",
+        *(f"{tool}-on-path" for tool in (*_WITH_AGENT, "npm")),
+        *(f"ask-install-{tool}" for tool in (*_WITH_AGENT, "npm")),
     )
 ]
 #: The shipped wizard's trigger, as a child asset — the standard shape.
@@ -125,7 +120,7 @@ async def _cleanup(wizard):
 
 
 @async_context
-async def test_a_ready_tab_runs_the_shipped_wizard_through_its_declared_trigger():
+async def test_a_ready_tab_runs_the_shipped_wizard_through_its_declared_trigger(monkeypatch):
     # 1. INDEXED — stand in for the detached system-content walk, which is the
     #    only thing that discovers a wizard shipped inside the wheel.
     record = await index_path("wizard", SHIPPED, write=False)
@@ -137,32 +132,47 @@ async def test_a_ready_tab_runs_the_shipped_wizard_through_its_declared_trigger(
         trigger = await _index_trigger(wizard)
         assert trigger is not None, "the wizard's trigger asset produced no row"
         assert trigger.tag_pattern == "app.tab.ready"
-        assert trigger.fire_once is False
+        assert trigger.fire_once is True
         assert trigger.id in tag_triggers._subscriptions, (
             "the trigger exists but is not armed — the event would be lost, and "
             "nothing anywhere would say why the wizard never ran"
         )
 
-        # 3. THE EVENT.
+        # 3. THE EVENT. What the callback then does — the LLM source, then the
+        #    wizard — is `run_llm_setup`'s own test; here only that it is reached,
+        #    with the wizard the trigger belongs to.
+        from flow_sdk.server import builtin_triggers
+
+        reached: list = []
+
+        async def _setup(target, *, unattended):
+            reached.append((target.id, unattended))
+            from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+
+            return CliResult.satisfied("funded"), WizardResult.satisfied("stubbed")
+
+        monkeypatch.setattr(builtin_triggers, "run_llm_setup", _setup)
         emit_tag("app.tab.ready", target_of("compute_node", "n-1"), {"connection_id": "c-1"})
         await _settle()
 
         # 4. IT FIRED.
         fired = await Trigger.get_by_id(trigger.id)
         assert fired.counter == 1, "app.tab.ready did not reach the wizard's trigger"
+        assert reached == [(wizard.id, True)], "the trigger must run first-run setup for ITS wizard, unattended"
         assert fired.last_run is not None
 
-        # 5. AND IT IS NOT SPENT — a reload, a new window or a restart is another
-        #    tab, and a tool removed since must be asked about again.
+        # 5. AND IT IS SPENT — setup runs on the first tab after install only; a
+        #    reload, a new window or a restart does not run it again. Settings →
+        #    General is how a person runs it on purpose.
         emit_tag("app.tab.ready", target_of("compute_node", "n-1"), {"connection_id": "c-2"})
         await _settle()
-        assert (await Trigger.get_by_id(trigger.id)).counter == 2
+        assert (await Trigger.get_by_id(trigger.id)).counter == 1
 
         # 6. AND IT DOES NOT LISTEN TO THE OLD TAG. `app.ready` fires before any
         #    tab exists, which is the whole reason this moved.
         emit_tag("app.ready", target_of("compute_node", "n-1"), {"version": "test"})
         await _settle()
-        assert (await Trigger.get_by_id(trigger.id)).counter == 2
+        assert (await Trigger.get_by_id(trigger.id)).counter == 1
     finally:
         await _cleanup(wizard)
 
@@ -197,19 +207,19 @@ async def test_the_run_reports_through_the_activity_tree():
             resolve_op=_resolve_op,
             resolve_wizard=_resolve_wizard,
         )
-        assert list(result.steps) == ["python", "git", "node"]
+        assert list(result.steps) == ["jq", "ripgrep", "claude-code", "python", "git", "node"]
         assert result.ok, f"the shipped wizard failed here: {result.detail}"
         assert not any(step.ran for step in result.steps.values()), (
             "every check holds on this shell, so nothing may run; got {[(k, v.exit_code, v.ran) for k, v in result.steps.items()]}"
         )
         root = Activity.get("wizard/chain-check", subject_entity=str(wizard.typeid)).spec()
-        assert root.total == 3 and root.skipped == 3 and root.errors_count == 0
+        assert root.total == 6 and root.skipped == 6 and root.errors_count == 0
     finally:
         await _cleanup(wizard)
 
 
 @async_context
-async def test_an_unattended_run_leaves_a_durable_record():
+async def test_an_unattended_run_leaves_a_durable_record(monkeypatch):
     """A trigger-fired run must stamp `run_state`, exactly as the UI path does.
 
     An unattended run has no viewer. The activity tree is LIVE-ONLY — a finished
@@ -217,8 +227,19 @@ async def test_an_unattended_run_leaves_a_durable_record():
     first-launch setup survives as one log line: the wizard then reports "has not
     run on this machine yet", which is false, and nothing says which step failed.
     """
+    from flow_sdk.core.wizard import execute as wizard_execute
     from flow_sdk.core.wizard.state import read_result, reset_run
     from flow_sdk.server.builtin_triggers import _run_wizard_trigger
+
+    # The "already provisioned" shell, as above: the trigger path has no shell
+    # seam of its own, and the real one would make this depend on the machine —
+    # the LLM step alone opens the chooser on a box with no source.
+    real_run = wizard_execute.run_wizard
+
+    async def provisioned(spec, **kwargs):
+        return await real_run(spec, **{**kwargs, "shell": _everything_is_installed})
+
+    monkeypatch.setattr(wizard_execute, "run_wizard", provisioned)
 
     record = await index_path("wizard", SHIPPED, write=False)
     wizard = await Wizard.get_by_id(record.id)

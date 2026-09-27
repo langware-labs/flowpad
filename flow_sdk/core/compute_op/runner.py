@@ -13,6 +13,11 @@ The whole of it:
             absent          ⇒ this op is a call, not a goal: make the call
     → the ONE call its subkind names (cli | prompt | agent | ask)
     → check again — the verdict (an ask is the exception: a person verified it)
+    → still NOT_YET and there is a next entry in ``attempts`` ⇒ that rung takes
+      the SAME goal, and the same check is the verdict again — for as many
+      rungs as are named, in order, until one holds
+    → an agent whose check still fails gets ``retries`` further turns in its
+      own session, told what the check printed, before the next rung is tried
 
 Every answer is the subkind's own ``ReturnedValue`` subclass (``ExeData.ANSWER``),
 and nothing here raises for an outcome: refused, busy, never started, timed out
@@ -26,13 +31,23 @@ Three properties the tests pin:
   is a failure here, which is the most common way "it installed fine" is false.
 * **Re-running a convergent op is free.** A satisfied op costs one check and
   does nothing. An op with NO check has no such claim — it always runs.
-* **There is no fallback in here.** "Try the command, then the agent" is two ops
-  and a caller; an op that sequenced its own attempts was a second sequencer.
+* **The ladder is in the op, and it does not care what kind it is climbing.**
+  "Try the command, then the agent" is one op: the cheap call first, then
+  ``attempts`` in order, any mix of cli/prompt/agent, while the check still
+  fails. The one thing no rung may be is ``ask`` — a person belongs at the
+  wizard level, where declining stops only the one step asking, which nothing
+  inside an op can express.
+* **A rung is not blind to the ones before it.** A fresh agent or prompt rung's
+  own prompt is prefixed with what every earlier rung tried and reported — it
+  does not have to rediscover by hand what a cheaper rung already found out. A
+  within-session retry needs none of this: the process it continues already
+  remembers its own turns.
 """
 
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
@@ -68,6 +83,22 @@ VALUE_KEY = "value"
 
 Shell = Callable[..., Awaitable[CliResult]]
 Launch = Callable[..., Awaitable[PromptResult]]
+
+
+@dataclass
+class _Seams:
+    """The context every call in a run shares, threaded through unchanged —
+    everything ``run_op`` was given except the spec and the executor, which
+    change per attempt."""
+
+    workdir: Path
+    platform: str
+    env: Optional[dict]
+    subject: str
+    ask_timeout: float
+    shell: Shell
+    launch: Launch
+    say: Callable[[str], None]
 
 
 async def check_op(
@@ -157,19 +188,115 @@ async def run_op(
     if before is not None and before.exit_code is ExitCode.NOT_APPLICABLE:
         return exe.ANSWER.not_applicable(f"{spec.display_label}: not applicable here.", check=before)
 
-    say(f"{spec.display_label}: {spec.subkind}")
-    started = time.monotonic()
-    call = await _CALLS[type(exe)](
-        spec,
+    seams = _Seams(
         workdir=workdir,
         platform=platform,
         env=env,
-        executor=executor,
         subject=subject,
         ask_timeout=ask_timeout,
         shell=shell,
         launch=launch,
         say=say,
+    )
+    say(f"{spec.display_label}: {spec.subkind}")
+    answer = await _attempt(spec, before, executor=executor, seams=seams)
+    tried_as = spec.subkind
+    # What every rung so far tried and reported — a FRESH rung (never a retry
+    # within one's own session, which already remembers its own turns) is handed
+    # this, so it does not re-discover by hand what an earlier, cheaper rung
+    # already found out.
+    history = [f"{tried_as}: {answer.detail}"]
+    for rung in spec.attempts:
+        if answer.exit_code is not ExitCode.NOT_YET:
+            break
+        # The rung before this one did not reach the goal: this one takes the SAME
+        # goal, with the same check as its verdict — never the caller's executor,
+        # which belonged to whichever process just failed.
+        say(f"{spec.display_label}: {rung.subkind}")
+        exe_data = rung.exe_data
+        if isinstance(exe_data, (AgentOp, PromptOp)):
+            exe_data = exe_data.model_copy(update={"prompt": _earlier_attempts(history) + exe_data.prompt})
+        promoted = spec.model_copy(update={"subkind": rung.subkind, "exe_data": exe_data, "attempts": []})
+        rescued = await _attempt(promoted, answer.check or before, executor=None, seams=seams)
+        prior_detail = answer.detail
+        answer = rescued.model_copy(
+            update={"detail": f"{rescued.detail} (after the {tried_as} attempt: {prior_detail})"}
+        )
+        tried_as = rung.subkind
+        # The RAW detail, not the chain-wrapped one above — history entries stay
+        # one line each rather than nesting a "(after ...)" inside a "(after ...)".
+        history.append(f"{tried_as}: {rescued.detail}")
+    return answer
+
+
+def _earlier_attempts(history: "list[str]") -> str:
+    """What every rung before this one tried and reported, prepended to a fresh
+    rung's own prompt — a within-session retry needs none of this, since the
+    process it continues already remembers its own turns."""
+    lines = "\n".join(f"- {line}" for line in history)
+    return f"Earlier attempts at this same goal:\n\n{lines}\n\n"
+
+
+async def _attempt(
+    spec: ComputeOpSpec,
+    before: Optional[CliResult],
+    *,
+    executor: Optional[str],
+    seams: _Seams,
+) -> ReturnedValue:
+    """One call and its re-check — and, for an agent with ``retries``, further
+    turns in the same session while the check still fails."""
+    exe = spec.exe_data
+    answer = await _call_and_check(spec, before, executor=executor, seams=seams)
+    turns_left = exe.retries if isinstance(exe, AgentOp) else 0
+    while turns_left and answer.exit_code is ExitCode.NOT_YET and answer.ran and answer.executor:
+        if answer.timed_out:
+            # That process is busy, not finished — prompting it again would stack a turn on a
+            # turn it has not ended.
+            break
+        turns_left -= 1
+        seams.say(f"{spec.display_label}: agent, again")
+        # The same process, told only what it could not see: what the check said. The task
+        # is already in its session.
+        told = exe.model_copy(update={"prompt": _check_still_fails(answer.check)})
+        again = spec.model_copy(update={"exe_data": told})
+        answer = await _call_and_check(again, before, executor=answer.executor, seams=seams)
+    return answer
+
+
+def _check_still_fails(check: Optional[CliResult]) -> str:
+    """The retry prompt: the check's command, its exit code, and the tail of what it printed."""
+    if check is None:
+        return "The completion check still fails. Find out why and fix it, then run the check yourself."
+    output = ((check.stderr or "").strip() or (check.stdout or "").strip())[-800:]
+    return (
+        f"The completion check still fails. It ran:\n\n    {check.command}\n\n"
+        f"and exited {check.returncode}{' with:' + chr(10) + chr(10) + output if output else ''}.\n\n"
+        "Find out why and fix it, then run the check yourself before you stop."
+    )
+
+
+async def _call_and_check(
+    spec: ComputeOpSpec,
+    before: Optional[CliResult],
+    *,
+    executor: Optional[str],
+    seams: _Seams,
+) -> ReturnedValue:
+    """The ONE call the spec's subkind names, then the re-check that is its verdict."""
+    exe = spec.exe_data
+    started = time.monotonic()
+    call = await _CALLS[type(exe)](
+        spec,
+        workdir=seams.workdir,
+        platform=seams.platform,
+        env=seams.env,
+        executor=executor,
+        subject=seams.subject,
+        ask_timeout=seams.ask_timeout,
+        shell=seams.shell,
+        launch=seams.launch,
+        say=seams.say,
     )
     if not call.duration_s:
         call = call.model_copy(update={"duration_s": time.monotonic() - started})
@@ -191,7 +318,7 @@ async def run_op(
         # "nothing ran" must not read as "it ran and failed".
         return call.model_copy(update={"value": None, "check": before})
 
-    after = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+    after = await _check(spec, workdir=seams.workdir, platform=seams.platform, env=seams.env, shell=seams.shell)
     if after.exit_code is ExitCode.OK:
         done = call.model_copy(
             update={
