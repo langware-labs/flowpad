@@ -294,7 +294,9 @@ class PromptResult(ReturnedValue):
     #: The full reply, beside the declared ``value``.
     text: str = ""
     #: A declared-output run's files (``run(output_spec=…)``): what it left in its output folder
-    #: (``<record>/execution/output``), relative to it. Empty for a model call and a workdir-mode run.
+    #: (``<record>/execution/output``), relative to it. An agent's answer to a channel message
+    #: (``process_message``): the files it saved to send back, absolute. Empty for a model call and a
+    #: workdir-mode run.
     files: list[str] = []
 
 
