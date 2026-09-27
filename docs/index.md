@@ -60,6 +60,7 @@ subfolder_count: 14
 - [shellMode vs Direct / Agentic PTY](shell-claude-session-api.md) — How a plain shell terminal differs from an agent running over a PTY: creation paths, entity model, shell_mode, titles and recovery.
 - [Staging OAuth validation — 2026-09-12](staging-oauth-validation.md) — 2026-09-12 staging OAuth validation: provider-by-provider results on the local app and staging hub with verified identities.
 - [System Agents](system_agents.md) — System agents: shipped SubAgent prompt assets, their loading and embedding into an AgenticProcess, and steps for adding one — distinct from the launchable Agent entity.
+- [Dock Loading](navigation/dock-loading.md) — The one loading algorithm every dock URL goes through (parse, canonicalize, resolve, commit, layout, render, attach), its six invariants, and the tests that enforce each.
 - [Tab Management](tab-management.md) — The Tab entity as the one membership system for content and terminal tabs: ids derived from DockPointer, the SDK TabManager, and the design history.
 - [Tags — the unified event bus](tags.md) — Tags, the unified event bus: a tag is an opaque dot-separated string the bus never interprets, with one grammar owner and two match semantics.
 - [Fresh-Mac QA with Tart](tart.md) — Fresh-Mac QA using Tart VMs: why a vanilla image matters, one-time setup, the verified baseline, running a session, gotchas, and cost.
