@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property, lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, List, NamedTuple
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, List, NamedTuple
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -216,13 +216,23 @@ _PROMPT_TASKS: dict[str, asyncio.Task] = {}
 _TRANSCRIPT_SIZE_AT_PROMPT: dict[str, int] = {}
 
 
-def register_prompt_task(process_id: str, task: asyncio.Task) -> None:
-    """Retain the turn until its final writes finish, so exit can join it."""
+def register_prompt_task(process_id: str, task: asyncio.Task, on_done: "Callable[[], Awaitable[Any]] | None" = None) -> None:
+    """Retain the turn until its final writes finish, so exit can join it.
+
+    ``on_done`` runs once the task no longer counts as active. The turn's own terminal
+    broadcast (``end_headless_turn``) is sent from INSIDE the task, where ``is_turn_busy``
+    still counts it — so it said busy, and without a later broadcast the chat kept
+    showing "Working" after a turn that ended on a tool call.
+    """
     _PROMPT_TASKS[process_id] = task
 
     def finished(done: asyncio.Task) -> None:
         if _PROMPT_TASKS.get(process_id) is done:
             _PROMPT_TASKS.pop(process_id)
+        if on_done is not None:
+            follow_up = done.get_loop().create_task(on_done())
+            _DETACHED_TASKS.add(follow_up)
+            follow_up.add_done_callback(_DETACHED_TASKS.discard)
 
     task.add_done_callback(finished)
 
@@ -3805,7 +3815,7 @@ class AgenticProcess(Entity):
 
         try:
             turn_task = asyncio.create_task(_run_turn())
-            register_prompt_task(self.id, turn_task)
+            register_prompt_task(self.id, turn_task, on_done=self.notify_updated)
         except BaseException:
             unregister_prompt_worker(self.id, worker)
             raise
