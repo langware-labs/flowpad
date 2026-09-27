@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import Editor, { loader } from '@monaco-editor/react';
-import { ChevronDown, ChevronUp, RotateCw, SquareTerminal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Play, RotateCw, SquareTerminal } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { DEPLOYMENT_TIMELINE_TAG, type Deployment, type DeploymentProcess } from '@sdk';
 import { useOnTag } from '@sdk/react/hooks';
@@ -91,7 +91,24 @@ export function DeploymentProcessPanel({ deployment }: { deployment: Deployment 
     }
   };
 
+  // Not serving (the placement a chat creates, or one paused) has nothing to restart:
+  // the backend refuses, so the one control is Start, which serves it.
+  const start = async () => {
+    setRestarting(true);
+    setNotice(null);
+    try {
+      await deployment.resume();
+      setTab('console');
+      await reload();
+    } catch (err) {
+      setNotice(errorMessage(err, t`Could not start`));
+    } finally {
+      setRestarting(false);
+    }
+  };
+
   const running = process?.pid != null;
+  const serving = !!process?.serving;
   return (
     <section
       className={cn('flex min-h-0 flex-col border-t', minimized ? 'shrink-0' : 'h-[45%]')}
@@ -132,17 +149,31 @@ export function DeploymentProcessPanel({ deployment }: { deployment: Deployment 
         )}
         <div className="ms-auto flex items-center gap-1">
           {notice && <span className="text-[11.5px] text-destructive">{notice}</span>}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 gap-1.5 text-[12px]"
-            onClick={() => void restart()}
-            disabled={restarting || !process?.serving}
-            data-testid="deployment-process-restart"
-          >
-            <RotateCw className={cn('h-3.5 w-3.5', restarting && 'animate-spin')} />
-            <Trans>Restart</Trans>
-          </Button>
+          {serving || !process ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-[12px]"
+              onClick={() => void restart()}
+              disabled={restarting || !serving}
+              data-testid="deployment-process-restart"
+            >
+              <RotateCw className={cn('h-3.5 w-3.5', restarting && 'animate-spin')} />
+              <Trans>Restart</Trans>
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-[12px]"
+              onClick={() => void start()}
+              disabled={restarting}
+              data-testid="deployment-process-start"
+            >
+              <Play className="h-3.5 w-3.5" />
+              <Trans>Start</Trans>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"

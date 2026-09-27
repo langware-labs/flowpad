@@ -27,7 +27,8 @@ function deployment(process: Partial<DeploymentProcess> = {}) {
     code: vi.fn().mockResolvedValue({ file: value.file, text: 'print(1)' }),
     saveCode: vi.fn(),
     restart: vi.fn().mockResolvedValue(value),
-  } as unknown as Deployment & { restart: ReturnType<typeof vi.fn> };
+    resume: vi.fn().mockResolvedValue({}),
+  } as unknown as Deployment & { restart: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn> };
 }
 
 async function renderPanel(d: Deployment) {
@@ -59,6 +60,19 @@ describe('deployment process panel', () => {
 
     await renderPanel(deployment());
     expect(screen.queryByTestId('terminal')).toBeNull();
+  });
+
+  it('a local deployment that does not serve offers Start, which starts it', async () => {
+    // The local placement a chat creates is 'On' but never ran: the only control was a
+    // Restart the backend refuses ("only a running local deployment restarts").
+    const d = deployment({ pid: null, serving: false });
+    await renderPanel(d);
+    expect(screen.queryByTestId('deployment-process-restart')).toBeNull();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('deployment-process-start'));
+    });
+    expect(d.resume).toHaveBeenCalledTimes(1);
+    expect(d.restart).not.toHaveBeenCalled();
   });
 
   it('Restart asks the deployment to restart — nothing else', async () => {
