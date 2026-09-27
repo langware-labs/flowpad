@@ -37,6 +37,11 @@ export interface DockLayoutDecision {
   assetChatBeside: boolean;
 }
 
+/** The home surface: no dock at all, or the HOME landing. The one predicate for it. */
+export function isHomeSurface(dock: DockPointer | null): boolean {
+  return dock === null || dock.viewType === ViewType.HOME;
+}
+
 export function resolveDockLayout({ dock, isVibe, hasVibeSession }: DockLayoutInput): DockLayoutDecision {
   const content = { layout: DockLayout.CONTENT, assetChatBeside: false };
   // The hub page is its own SPA surface — the desk view mode does not skin it.
@@ -50,7 +55,7 @@ export function resolveDockLayout({ dock, isVibe, hasVibeSession }: DockLayoutIn
   }
   if (!isVibe || hubMode) return content;
   if (hasVibeSession) return { layout: DockLayout.VIBE_WORKSPACE, assetChatBeside: false };
-  const isHome = dock === null || dock.viewType === ViewType.HOME;
+  const isHome = isHomeSurface(dock);
   if (isHome && dock?.options?.vibeNoProcess === 'true') return { layout: DockLayout.VIBE_NO_PROCESS, assetChatBeside: false };
   if (isHome) return { layout: DockLayout.VIBE_NEW_CHAT, assetChatBeside: false };
   // Any other real dock URL in Vibe (project home, assets list, a conversation…)

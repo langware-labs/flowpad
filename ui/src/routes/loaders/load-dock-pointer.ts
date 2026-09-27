@@ -24,8 +24,8 @@ import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadLensRoute } from './load-lens';
 import { loadProject, loadProjectRoute } from './load-project';
-import { loadProcess, ProcessLoadError } from './load-process';
-import { loadShellRoute } from './load-shell';
+import { loadProcess, loadProcessProject, ProcessLoadError } from './load-process';
+import { loadShellRoute, processRouteCarry } from './load-shell';
 import { loadTasksRoute } from './load-tasks';
 import { processLoadErrorToDockError } from './process-load-error-resolution';
 import { loadAgentStreamInboxRoute } from './load-agent-stream-inbox';
@@ -136,23 +136,13 @@ async function loadSessionRoute(pointer: string | undefined): Promise<void> {
   const process =
     AgenticProcess.getByIdFromCache<AgenticProcess>(pointer) ??
     (await AgenticProcess.getById<AgenticProcess>(pointer).catch(() => null));
-  if (process?.project_id) {
-    await loadProject(new TypeId(Project.type, process.project_id)).catch(async () => {
-      // A stored project_id dangles when the project was deleted under us. Recover it
-      // through the backend's recover_by_path first — `loadProcess` does the same, and
-      // without it a session URL quietly lands in the workdir's project or Global.
-      const recovered = await process.recoverProject().catch(() => null);
-      if (recovered) {
-        await loadProject(new TypeId(Project.type, recovered.id));
-        return;
-      }
-      await systemTools.resolveProjectContext(process.workdir ?? undefined, process);
-    });
-  } else {
-    // Global (projectless) session — a workdir match adopts it into a project;
-    // otherwise resolveProjectContext clears the active project (the Global scope).
-    await systemTools.resolveProjectContext(process?.workdir ?? undefined, process ?? undefined);
+  if (!process) {
+    await systemTools.resolveProjectContext(undefined, undefined);
+    return;
   }
+  // The same project phase as any process route; a session URL stays loadable
+  // when the project cannot be recovered — its workdir decides, else Global.
+  await loadProcessProject(process).catch(() => systemTools.resolveProjectContext(process.workdir ?? undefined, process));
 }
 
 /** Resolve the portal project so context is written URL-first, exactly as a
@@ -286,12 +276,8 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
-        await loadShellRoute(dock.pointer, context.requestPath, {
-          scope: dock.scopeFilter,
-          viewMode: dock.viewMode,
-          options: dock.options,
-          resolved: true, // step 3 ran in the dispatcher, before the tab was minted
-        });
+        // Step 3 ran in the dispatcher, before the tab was minted.
+        await loadShellRoute(dock.pointer, context.requestPath, processRouteCarry(dock, { resolved: true }));
         break;
       case ViewType.PROJECT:
         await loadProjectRoute(dock.pointer, { viewMode: dock.viewMode });

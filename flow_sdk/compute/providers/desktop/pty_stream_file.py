@@ -46,6 +46,8 @@ import time
 from pathlib import Path
 
 from flow_sdk import toplog
+from flow_sdk.capsules.atomic import atomic_write
+from flow_sdk.instances.atomic import read_json
 
 # Truncate down to this fraction of max when the cap is exceeded, so the
 # (read + rewrite) compaction amortizes instead of running on every write.
@@ -291,11 +293,10 @@ class PtyStreamFile:
 
     def read_frames(self) -> dict | None:
         """Every frame. See ``_read_frames``, which this is the whole-file case of."""
-        frames, _ = self._read_frames()
-        return frames
+        return self._read_frames()
 
-    def _read_frames(self, since_frame: int | None = None) -> tuple[dict | None, int]:
-        """``(frames, skipped)``. Return ``{"v", "cols", "rows", "base", "events"}`` or None if no file.
+    def _read_frames(self, since_frame: int | None = None) -> dict | None:
+        """Return ``{"v", "cols", "rows", "base", "events"}`` or None if no file.
 
         ``events`` is a list of ``["o", b64]`` / ``["r", [cols, rows]]`` frames.
         Legacy raw files are surfaced as v0 with a single output frame and
@@ -309,31 +310,31 @@ class PtyStreamFile:
         anything, since the parse of a long session is the dominant cost here.
         """
         if not self._path.exists():
-            return None, 0
+            return None
         raw = self._path.read_bytes()
         if not raw:
-            return None, 0
+            return None
         if raw[:1] != b"{":
             # Legacy raw-bytes file from before the framed format. Chimera
             # files (raw prefix + headerless framed tail) yield their tail.
             salvaged = self._salvage_framed_tail(raw)
             if salvaged is not None:
                 events, (cols, rows) = salvaged
-                return {"v": 1, "cols": cols, "rows": rows, "base": 0, "events": events}, 0
+                return {"v": 1, "cols": cols, "rows": rows, "base": 0, "events": events}
             return {
                 "v": 0,
                 "cols": None,
                 "rows": None,
                 "base": 0,
                 "events": [["o", base64.b64encode(raw).decode("ascii")]],
-            }, 0
+            }
         lines = raw.split(b"\n")
         header = self._parse_header(lines[0])
         # How many frames to walk past without parsing. A frame line is counted by its
         # opening bytes — the same lines ``json.loads`` would accept, except a torn one,
         # which only the FINAL line can be; a checkpoint that far along is not usable
         # anyway and the caller re-reads whole.
-        to_skip = max(0, (since_frame or 0) - header["base"]) if since_frame is not None else 0
+        to_skip = max(0, since_frame - header["base"]) if since_frame is not None else 0
         events: list = []
         skipped = 0
         for line in lines[1:]:
@@ -355,7 +356,7 @@ class PtyStreamFile:
             "rows": header["rows"],
             "base": header["base"] + skipped,
             "events": events,
-        }, skipped
+        }
 
     def max_seq(self) -> int:
         """Highest output-frame seq persisted in the file (0 if none).
@@ -443,8 +444,6 @@ class PtyStreamFile:
         except ValueError:
             return {"v": 1, "cols": None, "rows": None, "base": 0}
 
-    # ── lifecycle ────────────────────────────────────────────────────────────
-
     # ── replay checkpoint ────────────────────────────────────────────────────
     #
     # A cold terminal open replays the whole recording in a headless xterm to get
@@ -464,19 +463,12 @@ class PtyStreamFile:
         if frame < 0 or cols <= 0 or rows <= 0:
             raise ValueError("checkpoint frame/cols/rows must be positive")
         payload = {"frame": frame, "cols": cols, "rows": rows, "last_seq": last_seq, "serialized": serialized}
-        tmp = self._checkpoint_path.with_name(self._checkpoint_path.name + ".tmp")
-        tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps(payload))
-        tmp.replace(self._checkpoint_path)  # atomic: a reader never sees half a checkpoint
+        # Unique temp + fsync + replace: two windows posting at once never tear it.
+        atomic_write(self._checkpoint_path, json.dumps(payload).encode())
 
     def read_checkpoint(self) -> dict | None:
-        try:
-            ck = json.loads(self._checkpoint_path.read_text())
-        except (OSError, ValueError):
-            return None
-        if not isinstance(ck, dict) or not isinstance(ck.get("serialized"), str):
-            return None
-        return ck
+        ck = read_json(self._checkpoint_path)
+        return ck if isinstance(ck.get("serialized"), str) else None
 
     def read_frames_since_checkpoint(self) -> dict | None:
         """``read_frames``, reduced to the frames after a usable checkpoint.
@@ -493,7 +485,7 @@ class PtyStreamFile:
         wanted = int(ck.get("frame", -1))
         if wanted < 0:
             return self.read_frames()
-        frames, _ = self._read_frames(since_frame=wanted)
+        frames = self._read_frames(since_frame=wanted)
         if frames is None or frames["v"] < 1:
             return frames
         if frames["base"] != wanted:
@@ -511,6 +503,8 @@ class PtyStreamFile:
                 "serialized": ck["serialized"],
             },
         }
+
+    # ── lifecycle ────────────────────────────────────────────────────────────
 
     def delete(self) -> None:
         """Remove the stream file (and its replay checkpoint) if it exists."""

@@ -44,7 +44,7 @@ class TerminalPoolStore {
 
   /** True once `key` has been shown — a return to it is a warm switch. */
   has(key: string): boolean {
-    return this.snapshot.mounted.has(key);
+    return this.containers.has(key);
   }
 
   /** The container the pool renders `key`'s panel into (created on first ask). */
@@ -86,14 +86,12 @@ class TerminalPoolStore {
 
   /** Keep only the keys whose tab still exists; a closed tab's runtime goes. */
   retain(liveKeys: ReadonlySet<string>): void {
-    let changed = false;
-    for (const key of this.snapshot.mounted) {
+    for (const [key, el] of this.containers) {
       if (liveKeys.has(key)) continue;
-      this.containers.get(key)?.remove();
+      el.remove();
       this.containers.delete(key);
-      changed = true;
     }
-    if (changed) this.publish(liveKeys);
+    this.publish();
   }
 
   setParking(el: HTMLElement | null): void {
@@ -119,10 +117,9 @@ class TerminalPoolStore {
     else el.remove();
   }
 
-  private publish(keep?: ReadonlySet<string>): void {
-    const mounted = new Set(this.snapshot.mounted);
-    for (const { key } of this.slots.values()) mounted.add(key);
-    if (keep) for (const key of [...mounted]) if (!keep.has(key)) mounted.delete(key);
+  /** `mounted` is exactly the keys the pool holds a container for. */
+  private publish(): void {
+    const mounted = new Set(this.containers.keys());
     const shown = new Set([...this.slots.values()].map((s) => s.key));
     if (sameSet(mounted, this.snapshot.mounted) && sameSet(shown, this.snapshot.shown)) return;
     this.snapshot = { mounted, shown };

@@ -29,16 +29,12 @@ export function canonicalizeDockUrl(pathname: string, search: string): string | 
   // parsing a URL per canonicalizer allocated four of them per navigation to learn
   // nothing, on a path with a millisecond budget.
   let [path, query] = [pathname, search];
-  let changed = false;
   for (const canonicalize of CANONICALIZERS) {
     const next = canonicalize(path, query);
-    const current = `${path}${query}`;
-    if (next && next !== current) {
-      const cut = next.indexOf('?');
-      [path, query] = cut < 0 ? [next, ''] : [next.slice(0, cut), next.slice(cut)];
-      changed = true;
-    }
+    if (!next) continue;
+    const cut = next.indexOf('?');
+    [path, query] = cut < 0 ? [next, ''] : [next.slice(0, cut), next.slice(cut)];
   }
-  const current = `${path}${query}`;
-  return changed ? current : null;
+  const out = `${path}${query}`;
+  return out === `${pathname}${search}` ? null : out;
 }

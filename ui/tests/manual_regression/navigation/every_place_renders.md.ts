@@ -83,7 +83,7 @@ for (const mode of MODES) {
     }
 
     // Non-vacuous: the redirect budget above read a real trail.
-    expect(toplog.filter((l) => /\] loader /.test(l) || l.includes(' loader ')).length, 'no tab_switch loader lines reached the page').toBeGreaterThan(0);
+    expect(toplog.filter((l) => l.includes(' loader ')).length, 'no tab_switch loader lines reached the page').toBeGreaterThan(0);
     expect(exceptions.filter((e) => !HEADLESS_WEBGL.test(e)), 'uncaught exceptions').toEqual([]);
   });
 }

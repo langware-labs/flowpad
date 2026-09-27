@@ -7,8 +7,8 @@
  * A request no responder answers fails like a 404, which is what an unknown row
  * is to a loader.
  *
- * Caller contract: the test file stubs `initSdk` (the SDK boot is not the unit
- * under test — see `stubSdkBoot`) and seeds the bootstrap with `seedBootstrap`.
+ * Caller contract: the test file stubs `initSdk` with a `vi.mock('@sdk', …)` (the
+ * SDK boot is not the unit under test) and seeds the bootstrap with `seedBootstrap`.
  */
 import { apiClient } from '@sdk/client';
 import { dataContext } from '@sdk';
@@ -86,7 +86,7 @@ export async function runDockLoader(url: string): Promise<LoaderOutcome> {
 }
 
 /** Requests a warm navigation may make: fire-and-forget recency stamps, never awaited by the loader. */
-export const FIRE_AND_FORGET = [/\/activate$/];
+const FIRE_AND_FORGET = [/\/activate$/];
 
 export function blockingRequests(log: readonly RecordedRequest[]): RecordedRequest[] {
   return log.filter((r) => !FIRE_AND_FORGET.some((re) => re.test(r.path)));
@@ -129,7 +129,7 @@ export function fakeTabStore(): Responder & { rows: FakeTabRow[] } {
       }
       return { tabs: rows.map((r) => ({ ...r })), created };
     }
-    if (req.method === 'POST' && /\/activate$/.test(req.path)) return {};
+    if (req.method === 'POST' && FIRE_AND_FORGET.some((re) => re.test(req.path))) return {};
     return undefined;
   };
   return Object.assign(respond, { rows });

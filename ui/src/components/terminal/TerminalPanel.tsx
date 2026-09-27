@@ -181,12 +181,10 @@ const ShellStartFailedState: React.FC<{ message: string; onRetry: () => void }> 
  * shell's transport is its target id. Process OSC titles are observations for
  * the backend naming policy; plain shells retain their terminal auto-title path.
  */
-export const TerminalPanel: React.FC<{
+const TerminalPanelBody: React.FC<{
   tab: Tab;
   isActive: boolean;
-  isMounted: boolean;
-  flow: AgenticProcess | null;
-}> = ({ tab, isActive, isMounted, flow }) => {
+}> = ({ tab, isActive }) => {
   const isProcess = tab.target_type === AgenticProcess.type;
   const targetId = tab.target_id ?? '';
   const { data: process } = useEntity<AgenticProcess>(
@@ -227,23 +225,10 @@ export const TerminalPanel: React.FC<{
   // spinner mid-switch.
   useEffect(() => {
     const activeProcess = processRef.current;
-    // NOT gated on `isActive`, which is also deliberately absent from the deps
-    // below. An off-screen panel is still RUNNING: "you are not looking at me"
-    // is a DISPLAY fact, not a lifecycle one. Conflating the two reset an
-    // already-ready panel to 'idle' on every tab switch, and the render gate
-    // below turns 'idle' into the startup spinner *instead of*
-    // InteractiveTerminal — so React unmounted a live xterm, and the return trip
-    // paid a fresh attach plus a full `replayPtyStream` + `term.reset()`. That
-    // is the whole "every tab I jump to redraws" report (FLOWPAD-2054); it
-    // arrived in 2435a1f71 / v0.2.114 when this side effect moved out of the
-    // route loader, where it had run once per LOAD rather than per activation.
-    // `isMounted` is the gate that was actually wanted — it flips true on first
-    // activation and never goes back, so the runtime starts once per panel.
-    // The headless->PTY refresh is unaffected: it is owned by
-    // useProcessSurface.switchMode() and reaches the terminal through a new
-    // `shell_id` -> `transportShellId` -> `sessionId`, never through this effect
-    // (see the `pty_mode` note above).
-    if (!isProcess || !isMounted || !activeProcess) {
+    // NOT gated on `isActive` (also absent from the deps): an off-screen panel is
+    // still running — "not looked at" is a display fact, not a lifecycle one. The
+    // pool renders a panel only once it was shown, so this starts it once.
+    if (!isProcess || !activeProcess) {
       setRuntimeStatus('idle');
       return;
     }
@@ -284,7 +269,7 @@ export const TerminalPanel: React.FC<{
     return () => {
       stale = true;
     };
-  }, [isMounted, isProcess, processReady, targetId]);
+  }, [isProcess, processReady, targetId]);
 
   // A plain shell's runtime, the same way: opened once per panel, by the panel.
   // Its route loader resolves identity only (dock-loading I3). InteractiveTerminal
@@ -293,13 +278,17 @@ export const TerminalPanel: React.FC<{
   const [shellStartAttempt, setShellStartAttempt] = useState(0);
   const shellLoaded = shell != null;
   useEffect(() => {
-    if (isProcess || !isMounted || !shell) return;
+    if (isProcess || !shell) return;
     let stale = false;
     setShellStartError(null);
     void startShellRuntime(shell, estimateCols(window.innerWidth), estimateRows(window.innerHeight)).catch(
       (cause: unknown) => {
         if (stale) return;
-        toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=shell_runtime shell=${shell.id.slice(0, 8)} err:`, cause);
+        toplog.log(
+          'tab_switch',
+          `error ${sinceTabSwitch()} sink=shell_runtime shell=${shell.id.slice(0, 8)} err:`,
+          cause,
+        );
         setShellStartError(describeProcessStartError(cause).description);
       },
     );
@@ -307,12 +296,11 @@ export const TerminalPanel: React.FC<{
       stale = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per panel (and per explicit retry), not per shell broadcast
-  }, [isMounted, isProcess, shellLoaded, targetId, shellStartAttempt]);
+  }, [isProcess, shellLoaded, targetId, shellStartAttempt]);
 
   // One line each time this panel falls through to "nothing to display": a process
   // that loaded, is past startup, and has neither a shell nor a headless chat.
   const showsNothing =
-    isMounted &&
     isProcess &&
     !!activeProcess &&
     !activeProcess.isHeadless &&
@@ -359,33 +347,33 @@ export const TerminalPanel: React.FC<{
       className="absolute inset-0 min-h-0 overflow-hidden"
       style={isActive ? { zIndex: 1 } : { visibility: 'hidden', zIndex: 0 }}
     >
-      {isMounted &&
-        // A headless chat legitimately has NO shell (see AgenticProcess.isHeadless)
-        // — InteractiveTerminal renders SimpleChatPane without an xterm. Mount it
-        // shell-less.
-        (isProcess &&
-        activeProcess &&
-        !activeProcess.isHeadless &&
-        (runtimeStatus === 'idle' || runtimeStatus === 'starting') ? (
-          <TerminalPanelStartingState />
-        ) : !isProcess && shellStartError ? (
-          <ShellStartFailedState message={shellStartError} onRetry={() => setShellStartAttempt((n) => n + 1)} />
-        ) : transportShellId || (isProcess && activeProcess?.isHeadless) ? (
-          <InteractiveTerminal
-            sessionId={transportShellId}
-            flow={flow}
-            className="h-full"
-            active={isActive}
-            process={isProcess ? (activeProcess ?? undefined) : undefined}
-            onTitleChange={handleTitleChange}
-          />
-        ) : isProcess && !activeProcess ? null /* process entity still hydrating */ : (
-          // Process loaded but has no shell and isn't headless (worker binary
-          // missing / start_failure latch / drift): an unconditional visible
-          // error + recovery instead of a silent blank panel.
-          <TerminalPanelErrorState processId={targetId} process={activeProcess} />
-        ))}
+      {/* A headless chat legitimately has NO shell (see AgenticProcess.isHeadless)
+          — InteractiveTerminal renders SimpleChatPane without an xterm. Mount it
+          shell-less. */}
+      {isProcess &&
+      activeProcess &&
+      !activeProcess.isHeadless &&
+      (runtimeStatus === 'idle' || runtimeStatus === 'starting') ? (
+        <TerminalPanelStartingState />
+      ) : !isProcess && shellStartError ? (
+        <ShellStartFailedState message={shellStartError} onRetry={() => setShellStartAttempt((n) => n + 1)} />
+      ) : transportShellId || (isProcess && activeProcess?.isHeadless) ? (
+        <InteractiveTerminal
+          sessionId={transportShellId}
+          className="h-full"
+          active={isActive}
+          process={isProcess ? (activeProcess ?? undefined) : undefined}
+          onTitleChange={handleTitleChange}
+        />
+      ) : isProcess && !activeProcess ? null /* process entity still hydrating */ : (
+        // Process loaded but has no shell and isn't headless (worker binary
+        // missing / start_failure latch / drift): an unconditional visible
+        // error + recovery instead of a silent blank panel.
+        <TerminalPanelErrorState processId={targetId} process={activeProcess} />
+      )}
     </div>
   );
 };
 
+/** Memoized: every show/hide republishes the pool, and only the panels whose `isActive` flipped need to render. */
+export const TerminalPanel = React.memo(TerminalPanelBody);

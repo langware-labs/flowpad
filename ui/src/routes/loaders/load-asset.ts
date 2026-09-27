@@ -62,15 +62,6 @@ const pathMisses = new Set<string>();
  *  need not match the entity's `asset_ref` (a symlinked dir: `/var/…` in the URL, `/private/var/…` stored). */
 const pathHits = new Map<string, TypeId>();
 
-/** The cached entity whose `asset_ref` is `machinePath` (the form asset_ref is stored in). */
-function cachedEntityAtPath(machinePath: string): ContextEntity | null {
-  for (const ref of dataManager.entities.values()) {
-    const entity = ref.entity as unknown as ContextEntity | undefined;
-    if (entity?.asset_ref === machinePath) return entity;
-  }
-  return null;
-}
-
 /** Warm the cache by typeid, then push the resolved entity into context. */
 async function ensureInContext(typeId: TypeId): Promise<void> {
   const entity = await dataManager.getByTypeId(typeId).catch(() => null);
@@ -148,7 +139,7 @@ export async function loadAssetRoute(
       const known = pathHits.get(machine);
       const cached =
         (known ? (dataManager.getByTypeIdFromCache(known) as unknown as ContextEntity | null) : null) ??
-        cachedEntityAtPath(machine);
+        (dataManager.findInCache((e) => (e as ContextEntity).asset_ref === machine) as ContextEntity | null);
       if (cached) {
         await setEntityContext(cached);
       } else if (!pathMisses.has(machine)) {

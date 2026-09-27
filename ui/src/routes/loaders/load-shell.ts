@@ -57,12 +57,17 @@ export interface ProcessRouteCarry {
    *  projectless one, re-resolves its project path — inside the warm visit's budget. */
   resolved?: boolean;
 }
+
+/** What a shell route carries through a redirect, read off its dock. */
+export function processRouteCarry(dock: DockPointer, extra: Partial<ProcessRouteCarry> = {}): ProcessRouteCarry {
+  return { scope: dock.scopeFilter, viewMode: dock.viewMode, options: dock.options, ...extra };
+}
 import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
 import { replace } from 'react-router';
 import { errorStatus } from '@src/lib/error-message';
 import { perfLog, perfTime } from './_perf';
-import { loadProcess, ProcessLoadError } from './load-process';
+import { loadProcess, ProcessLoadError, resolveProcessIdentity } from './load-process';
 import { loadProject } from './load-project';
 import {
   buildProcessCleanup,
@@ -87,17 +92,9 @@ export class ShellLoadError extends Error {
 
 // ── internal helpers ────────────────────────────────────────────────────────
 
-// Synchronously iterate the DataManager entity cache, returning all live
-// entities of a given type. Used to skip redundant backend queries on tab
-// switches — mounted tab bodies keep the cache warm through entity subscriptions.
-function cachedEntitiesByType<U>(type: string): U[] {
-  const out: U[] = [];
-  for (const [typeId, ref] of dataManager.entities.entries()) {
-    if (typeId.type !== type) continue;
-    const entity = ref.entity as unknown as U | undefined;
-    if (entity) out.push(entity);
-  }
-  return out;
+/** A plain-shell pointer is `shell-<id>` or the bare id. */
+function shellIdFromPointer(pointer: string): string {
+  return pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
 }
 
 // ── CORE: loadShell(shellId) — pure, no redirects ───────────────────────────
@@ -403,7 +400,7 @@ async function routeProcessPointer(
 }
 
 async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder): Promise<void> {
-  const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
+  const shellId = shellIdFromPointer(pointer);
 
   // A shell someone's process owns never reaches here: the RESOLVE phase
   // (`resolveShellRoute`) threw the redirect to the process URL, warm or cold.
@@ -449,22 +446,6 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
 
 // ── RESOLVE: identity-only redirects, before anything is written ────────────
 
-/**
- * Identity of a process a URL names: the entity, or the typed reason the URL is
- * dead. Cache-first; a cache hit costs nothing.
- */
-async function processIdentity(processId: string): Promise<AgenticProcess | ProcessLoadError> {
-  const cached = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
-  if (cached) return cached;
-  try {
-    const proc = await AgenticProcess.getById<AgenticProcess>(processId);
-    return proc ?? new ProcessLoadError('entity_not_found', processId);
-  } catch (cause) {
-    return new ProcessLoadError(
-      errorStatus(cause) === 404 ? 'entity_not_found' : 'network_error', processId, null, cause,
-    );
-  }
-}
 
 /**
  * Step 3 of docs/navigation/dock-loading.md for shell URLs: every redirect a shell
@@ -482,7 +463,10 @@ export async function resolveShellRoute(
   const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p, carry?.options);
   if (pointer && DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
-    const identity = await processIdentity(processId);
+    const identity = await resolveProcessIdentity(processId).catch((e: unknown) => {
+      if (e instanceof ProcessLoadError) return e;
+      throw e;
+    });
     // Only a URL that is certainly dead falls back; a network blip keeps the user
     // where they asked to be (the load phase surfaces it with a Retry).
     if (identity instanceof ProcessLoadError) {
@@ -493,8 +477,8 @@ export async function resolveShellRoute(
     return;
   }
   if (!pointer || pointer === 'new_terminal') return;
-  const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
-  const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find((p) => p.shell_id === shellId);
+  const shellId = shellIdFromPointer(pointer);
+  const linkedProcess = dataManager.findInCache<AgenticProcess>((p) => p.shell_id === shellId, AgenticProcess.type);
   const ownerId =
     linkedProcess?.id ??
     (Shell.getByIdFromCache<Shell>(shellId) ?? (await Shell.getById<Shell>(shellId).catch(() => null)))

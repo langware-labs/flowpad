@@ -124,3 +124,21 @@ async def test_route_round_trip(initialize_test_db) -> None:
     assert "checkpoint" not in full and len(full["events"]) == 8
     assert since["checkpoint"]["serialized"] == "SCREEN"
     assert [e[2] for e in since["events"]] == [6, 7, 8]
+
+
+def test_closing_a_shell_removes_its_checkpoint_with_its_recording(initialize_test_db) -> None:
+    from flow_sdk.builtin.shell import close_shell_record
+
+    shell_id = str(uuid.uuid4())
+    record = FSRecord(
+        type="shell", id=shell_id, pty_pid=shell_id, workdir="/tmp", name="ck", status=ShellStatus.RUNNING.value
+    )
+    record.save()
+    stream = PtyStreamFile(path=shell_pty_stream_path(shell_id, shell_id), cols=80, rows=24)
+    _write(stream, 3)
+    stream.write_checkpoint(frame=3, cols=80, rows=24, serialized="SCREEN", last_seq=3)
+
+    close_shell_record(record)
+
+    assert not stream.exists
+    assert stream.read_checkpoint() is None, "a closed shell left its checkpoint (the serialized screen) behind"

@@ -91,19 +91,19 @@ def shell_pty_stream_path(record_id: str, pty_pid: str | None):
 
 
 def close_shell_record(record: FSRecord) -> None:
-    """Set status to CLOSED, delete the .pty stream file. Idempotent.
+    """Set status to CLOSED, delete the .pty stream file (and its replay checkpoint). Idempotent.
 
     The status write goes through the unified ``save_metadata_field`` path; the
-    .pty unlink is resource-lifecycle (not metadata sync) and stays here.
+    recording's deletion is resource-lifecycle (not metadata sync) and stays here.
     """
     if record.__dict__.get("status") == ShellStatus.CLOSED.value:
         return
     pty_pid = record.__dict__.get("pty_pid")
     if pty_pid is not None:
+        from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
+
         try:
-            p = shell_pty_stream_path(record.id, pty_pid)
-            if p.exists():
-                p.unlink()
+            PtyStreamFile(path=shell_pty_stream_path(record.id, pty_pid)).delete()
         except (OSError, ValueError):
             pass
     record.save_metadata_field("status", ShellStatus.CLOSED.value)

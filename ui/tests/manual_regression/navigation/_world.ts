@@ -11,12 +11,12 @@
  *   SHELL=$PWD/tests/fixtures/mock_worker_shell \
  *     scripts/instance_ctl.sh launch dlm-7
  */
-import { execFileSync } from 'child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import { expect, type Page } from '@playwright/test';
-import { apiOrigin, REPO_ROOT } from '../_shared/api';
+import { apiOrigin } from '../_shared/api';
+import { awaitSteerable as awaitSteerableOn, flow } from '../_shared/control-plane';
 
 export const INSTANCE = process.env.FLOW_INSTANCE || 'dlm-7';
 export const BACKEND = apiOrigin();
@@ -98,49 +98,8 @@ export async function destroyWorld(world: World): Promise<void> {
   rmSync(world.root, { recursive: true, force: true });
 }
 
-/** Run a flow CLI verb against the instance under test. */
-export function flow(args: string[]): { code: number; out: string } {
-  try {
-    const out = execFileSync('uv', ['run', 'flow', ...args], {
-      cwd: REPO_ROOT,
-      env: { ...process.env, FLOW_INSTANCE: INSTANCE },
-      encoding: 'utf8',
-      timeout: 30_000,
-    });
-    return { code: 0, out };
-  } catch (e: unknown) {
-    const err = e as { status?: number; stdout?: string; stderr?: string };
-    return { code: err.status ?? 1, out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
-  }
-}
-
-/**
- * Wait until the backend can steer THIS page: the same connection answered
- * twice and the page did not move between the answers (a dying registration
- * from a previous page cannot survive both reads — see dock_sweep.md.ts).
- */
-export async function awaitSteerable(page: Page): Promise<void> {
-  let lastCid: string | null = null;
-  let lastUrl: string | null = null;
-  await expect
-    .poll(
-      async () => {
-        const urlBefore = page.url();
-        const r = await fetch(`${BACKEND}/api/v1/agent/context`);
-        if (r.status !== 200) {
-          lastCid = lastUrl = null;
-          return false;
-        }
-        const cid = ((await r.json()) as { connection_id?: string }).connection_id ?? null;
-        const settled = cid !== null && cid === lastCid && urlBefore === lastUrl && page.url() === urlBefore;
-        lastCid = cid;
-        lastUrl = urlBefore;
-        return settled;
-      },
-      { timeout: 15_000 },
-    )
-    .toBe(true);
-}
+/** Wait until the backend can steer this page (see _shared/control-plane). */
+export const awaitSteerable = (page: Page) => awaitSteerableOn(page, BACKEND);
 
 /**
  * Steer the page in-app to a dock address (`<view>/<pointer>?<options>`) and wait
@@ -150,7 +109,7 @@ export async function awaitSteerable(page: Page): Promise<void> {
  */
 export async function navigateTo(page: Page, address: string, expectPath: string): Promise<void> {
   const committedBefore = await committedPaths(page);
-  const res = flow(['navigate', 'view', address]);
+  const res = flow(['navigate', 'view', address], INSTANCE);
   expect(res.code, `flow navigate view ${address} → ${res.out}`).toBe(0);
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: 15_000 }).toContain(expectPath);
   if (committedBefore === null) return; // tab_switch tracing is off on this page: the URL is all there is
@@ -231,13 +190,7 @@ export async function toplogOn(tags: string[]): Promise<void> {
   await post('toplog/on', { tags });
 }
 
-/**
- * The API requests issued INSIDE each switch's wait — between its `start` line
- * and the dock loader's own `loader` / `loader_redirect` line, i.e. what the URL
- * commit waits on. (The `committed` line trails the new view's first render —
- * the router re-renders from its own subscription first — so it would count the
- * new view's mount effects.) `ignore` drops fire-and-forget calls.
- */
+/** The newest tab_switch id this page has logged. */
 export async function lastSwitchId(page: Page): Promise<number> {
   return page.evaluate(() => {
     const lines = (window as unknown as { __tabSwitchAt: { line: string }[] }).__tabSwitchAt;
@@ -245,7 +198,14 @@ export async function lastSwitchId(page: Page): Promise<number> {
   });
 }
 
-export async function requestsInsideSwitches(page: Page, ignore: RegExp[], afterSwitch = 0): Promise<string[]> {
+/**
+ * The API requests issued INSIDE each switch's wait — between its `start` line
+ * and the dock loader's own `loader` / `loader_redirect` line, i.e. what the URL
+ * commit waits on. (The `committed` line trails the new view's first render —
+ * the router re-renders from its own subscription first — so it would count the
+ * new view's mount effects.)
+ */
+export async function requestsInsideSwitches(page: Page, afterSwitch = 0): Promise<string[]> {
   const { lines, requests } = await page.evaluate(() => {
     const w = window as unknown as {
       __tabSwitchAt: { t: number; line: string }[];
@@ -253,24 +213,22 @@ export async function requestsInsideSwitches(page: Page, ignore: RegExp[], after
     };
     return { lines: w.__tabSwitchAt, requests: w.__apiRequests };
   });
-  // `committed` here = the loader settled (see above).
-  const windows = new Map<string, { start?: number; committed?: number }>();
+  const windows = new Map<string, { start?: number; loaded?: number }>();
   for (const { t, line } of lines) {
     const start = /start sw=(\d+)/.exec(line);
-    const committed = /loader(?:_redirect)? sw=(\d+)/.exec(line);
-    const id = start?.[1] ?? committed?.[1];
+    const loaded = /loader(?:_redirect)? sw=(\d+)/.exec(line);
+    const id = start?.[1] ?? loaded?.[1];
     if (!id) continue;
     const w = windows.get(id) ?? {};
     if (start) w.start = t;
-    if (committed && w.committed === undefined) w.committed = t;
+    if (loaded && w.loaded === undefined) w.loaded = t;
     windows.set(id, w);
   }
   const inside: string[] = [];
   for (const [id, w] of windows) {
-    if (Number(id) <= afterSwitch || w.start === undefined || w.committed === undefined) continue;
+    if (Number(id) <= afterSwitch || w.start === undefined || w.loaded === undefined) continue;
     for (const r of requests) {
-      if (r.t < w.start || r.t > w.committed) continue;
-      if (ignore.some((re) => re.test(r.path))) continue;
+      if (r.t < w.start || r.t > w.loaded) continue;
       inside.push(`sw=${id} ${r.method} ${r.path}`);
     }
   }

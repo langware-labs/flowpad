@@ -34,7 +34,7 @@ declare module '@xterm/addon-serialize' {
   }
 }
 
-/** A stored replay result: the terminal after absolute frame `base`, at cols x rows. */
+/** A stored replay result: the terminal as it stood before the stream's `base` frame, at cols x rows. */
 export interface PtyReplayCheckpoint {
   cols: number;
   rows: number;
@@ -65,20 +65,15 @@ export interface ReplayResult {
 }
 
 /**
- * Fetch the framed stream for a shell; null when none recorded (404). By default
- * asks for the stored checkpoint plus only the frames after it
- * (docs/navigation/dock-loading.md, step 7) — the server answers with the whole
- * recording when it has no usable checkpoint.
+ * Fetch the framed stream for a shell; null when none recorded (404). Asks for the
+ * stored checkpoint plus only the frames after it (docs/navigation/dock-loading.md,
+ * step 7) — the server answers with the whole recording when it has no usable one.
  */
-export async function fetchPtyStream(
-  shellId: string,
-  options: { sinceCheckpoint?: boolean } = {},
-): Promise<FramedPtyStream | null> {
-  const since = options.sinceCheckpoint ?? true;
+export async function fetchPtyStream(shellId: string): Promise<FramedPtyStream | null> {
   try {
-    const data = await apiClient.get<FramedPtyStream>(
-      `/shell/${shellId}/pty-stream${since ? '?since=checkpoint' : ''}`,
-    );
+    const data = await apiClient.get<FramedPtyStream>(`/shell/${shellId}/pty-stream`, {
+      params: { since: 'checkpoint' },
+    });
     if (!data || !Array.isArray(data.events)) return null;
     return data;
   } catch {
