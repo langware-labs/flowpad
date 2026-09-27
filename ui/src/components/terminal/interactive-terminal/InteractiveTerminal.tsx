@@ -1645,6 +1645,31 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
+  // "Paste path" from the Files tab lands where the user was last typing: the
+  // chat composer (at its caret) when that was the last focused input, else the PTY.
+  const lastComposerInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const handleFocusCapture = useCallback((e: React.FocusEvent) => {
+    const el = e.target;
+    if (el instanceof HTMLTextAreaElement && el.hasAttribute('data-path-insert-target')) {
+      lastComposerInputRef.current = el;
+    } else if (el instanceof HTMLElement && el.closest('.xterm')) {
+      lastComposerInputRef.current = null;
+    }
+  }, []);
+  const handleInsertInputPath = useCallback((path: string) => {
+    const composer = lastComposerInputRef.current;
+    if (composer?.isConnected && !composer.disabled) {
+      composer.focus();
+      // insertText goes through the textarea's own editing path: it replaces the
+      // selection at the caret, fires `input` (so React's controlled value updates)
+      // and stays on the undo stack.
+      document.execCommand('insertText', false, path);
+      return;
+    }
+    void shellRef.current?.sendInput(/\s/.test(path) ? `'${path.replace(/'/g, `'\\''`)}'` : path);
+    requestAnimationFrame(() => terminalRef.current?.focus());
+  }, []);
+
   // Simple-chat composer image paste — same upload + Files-tab-open behaviour as
   // the PTY paste/drop handlers, but returns the reference line(s) so the chat
   // composer can splice them into the next prompt (instead of sending to a PTY).
@@ -1699,7 +1724,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     }
     if (inputDirInfo) {
       panels[SideTabId.Files] = (
-        <InputFilesPanel computeNodeTypeId={inputDirInfo.computeNodeTypeId} inputDirAbsPath={inputDirInfo.absPath} />
+        <InputFilesPanel
+          computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+          inputDirAbsPath={inputDirInfo.absPath}
+          onInsertPath={handleInsertInputPath}
+        />
       );
       if (process?.workdir || shellRef.current?.workdir) {
         panels[SideTabId.Dir] = (
@@ -1711,7 +1740,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     }
     return panels;
-  }, [process, inputDirInfo, sidecarShellId, mergedPrompts, scrollAnnotationToLine, dataContext.computeNode?.id]);
+  }, [
+    process,
+    inputDirInfo,
+    sidecarShellId,
+    mergedPrompts,
+    scrollAnnotationToLine,
+    dataContext.computeNode?.id,
+    handleInsertInputPath,
+  ]);
 
   const sideTabs = useMemo<TabDescriptor<SideTabId>[]>(
     () =>
@@ -1738,7 +1775,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   return (
     <ChatPlanModeProvider process={process}>
-      <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
+      <div
+        className={`relative flex h-full flex-col ${className}`}
+        onDragOver={(e) => e.preventDefault()}
+        onFocusCapture={handleFocusCapture}
+      >
         {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
         {process && activePane === 'claude' && (
           <ProcessToolbar
