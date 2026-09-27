@@ -282,8 +282,12 @@ What a source reads, per manifest `auth` shape (`ingest/credentials.resolve_cred
   environment for any name still missing.
 
 * **`secrets`** — `{value key: machine secret name}`: the value key from the
-  bound (or default) store, else the named machine secret, else the row's own
-  `config[value key]`.
+  bound (or default) store, else the named machine secret. Never the row's
+  config — a config is value-free.
+
+* **`credential`** + **`vars`** — `{value key: env var}` of a named credential,
+  resolved where the deployment that answers the row keeps it. A setting that
+  differs per machine (WAHA's URLs) is one of these, not config.
 
 * **`connector`** — the bound connection's provider, else the manifest's
   ([§6](#6-connections--the-same-pattern-for-accounts)).

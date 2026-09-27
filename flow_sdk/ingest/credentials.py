@@ -62,7 +62,7 @@ async def _declared(auth: AuthSpec, row: Any) -> ResolvedSecrets:
         resolve_project_secrets,
     )
 
-    project = await _owner_project(row)
+    project = await owner_project(row)
     # Only the named credential's specs: another spec declaring the same variable must not win it.
     pairs = [(spec, scope) for spec, scope in await credentials_in_scope(project) if spec.name == auth.credential]
     if not pairs:
@@ -77,7 +77,7 @@ async def _declared(auth: AuthSpec, row: Any) -> ResolvedSecrets:
     return ResolvedSecrets(shape=AuthShape.SECRETS, values=values) if values else ResolvedSecrets()
 
 
-async def _owner_project(row: Any) -> Any:
+async def owner_project(row: Any) -> Any:
     """The owning agent's project; None (the user scope alone) for a user-owned row."""
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415

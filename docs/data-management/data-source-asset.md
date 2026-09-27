@@ -187,6 +187,16 @@ pasting a token into the source. The Credential itself is declared in the projec
 (`credentials/save`) or shipped as a template (`agentic-assets/credential/telegram/`), not beside
 the source.
 
+**A value that differs by where the source runs is a credential variable, never config.**
+`data_source.json` travels with the repo to every machine that runs the project; where a
+container answers or how a provider reaches this instance is different on each. Such a value is
+one more `vars` entry (a non-secret one declares `secret: false` in the credential), resolved at
+the deployment that answers the row — so a deploy is gated on it, "use mine" copies it, and the
+hub places the deployment's own value on its machine. WAHA's `base_url` / `webhook_url` are
+`WAHA_BASE_URL` / `WAHA_WEBHOOK_URL`; a row that still carries them in its config is moved at
+boot (`migration_2026_09_place_settings`: the value into the credential at this computer, the key
+out of the file).
+
 One resolver reads all four (`flow_sdk/ingest/credentials.py`) and hands the result to
 the source as `self.credentials` — a source never reads the environment, the secret
 store or the connection store itself. `connector` is this machine's connection to that

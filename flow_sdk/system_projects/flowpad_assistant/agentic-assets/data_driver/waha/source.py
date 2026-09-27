@@ -62,11 +62,11 @@ class WahaMessageData(MessageData):
 
 
 class WahaConfig(SourceConfig):
-    """What a waha source is configured with."""
+    """What a waha source is configured with — what is true wherever the repo goes. Where the container
+    answers and how it reaches this instance differ per machine: they are the ``waha`` credential's
+    ``WAHA_BASE_URL`` / ``WAHA_WEBHOOK_URL``, read per deployment."""
 
-    base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     session: str = "default"
-    webhook_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
     #: Who may drive the number; the row keeps it as ``allowed_senders``.
     allowed_senders: list[Annotated[str, StringConstraints(pattern=r"^([0-9]+|[^@\s]+@lid)$")]] = []
 
@@ -85,7 +85,7 @@ class WahaSource(MessageSource):
 
     @property
     def base_url(self) -> str:
-        return str(self.config.get("base_url") or "").strip().rstrip("/")
+        return (self._secret("base_url") or "").strip().rstrip("/")
 
     @property
     def session(self) -> str:
@@ -189,7 +189,7 @@ class WahaSource(MessageSource):
         """The session exists with this instance's webhook, and the phone is paired. Creating or
         re-pointing the session is part of verifying it: a person never configures WAHA by hand."""
         if not self.base_url:
-            return Verdict(ready=False, detail="No WAHA URL yet — where does the container answer?")
+            return Verdict(ready=False, detail="No WAHA URL here — set WAHA_BASE_URL (where the container answers): flow credentials set waha")
         if self._secret("api_key") is None:
             return Verdict(ready=False, detail="No WAHA API key — declare the `waha` credential (WAHA_API_KEY) in the agent's project.")
         try:
@@ -232,9 +232,9 @@ class WahaSource(MessageSource):
         return session
 
     def _webhook(self) -> dict:
-        url = str(self.config.get("webhook_url") or "").strip()
+        url = (self._secret("webhook_url") or "").strip()
         if not url:
-            raise Rejected("this source has no webhook_url — how WAHA reaches this instance")
+            raise Rejected("no WAHA webhook URL here — set WAHA_WEBHOOK_URL (how WAHA reaches this instance): flow credentials set waha")
         hook: dict[str, Any] = {"url": url, "events": list(WEBHOOK_EVENTS)}
         key = self._secret("webhook_hmac")
         if key:

@@ -380,27 +380,28 @@ def _take_dropped(file: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in values.items() if v}
 
 
-async def _declare_on_machine(credential: str, env_vars: list[str]) -> None:
-    """Make ``credential`` declare ``env_vars`` on this machine: its own declaration, else its shipped
-    template (with the template's labels, patterns and provider), else a bare one; an existing
-    declaration keeps every field and only gains the variables it lacks."""
-    existing = await credential_named(credential, None)
-    if existing is None:
-        try:
-            existing = await credential_named(credential, None, declare=True)
-        except CredentialError:  # no template by that name
-            existing = None
+async def declare_vars(
+    credential: str, env_vars: list[str], project: Optional["Project"] = None, *, setup: str = ""
+) -> "Credential":
+    """``credential`` as ``project`` sees it (default: the user scope), declaring ``env_vars``: its own
+    declaration, else its shipped template (with the template's labels, patterns and provider), else a
+    bare one (``setup`` says where it came from); an existing declaration keeps every field and only
+    gains the variables it lacks."""
+    try:
+        existing = await credential_named(credential, project, declare=True)
+    except CredentialError:  # neither declared nor a template by that name
+        existing = None
     new = [v for v in env_vars if existing is None or v not in existing.var_names()]
-    if not new:
-        return
     if existing is None:
-        manifest = {"name": credential, "vars": {v: {} for v in new},
-                    "setup": "Placed on this machine by the hub for its deployment."}
-        await save_credential(manifest=manifest, scope=SCOPE_USER)
-        return
+        manifest = {"name": credential, "vars": {v: {} for v in new}, "setup": setup or "Declared for its values."}
+        if project is not None:
+            return await save_credential(manifest=manifest, scope=SCOPE_PROJECT, project_id=str(project.id))
+        return await save_credential(manifest=manifest, scope=SCOPE_USER)
+    if not new:
+        return existing
     manifest = {"name": credential, **{field: getattr(existing, field) for field in _MANIFEST_FIELDS}}
     manifest["vars"] = {**(existing.vars or {}), **{v: {} for v in new}}
-    await save_credential(manifest=manifest, typeid=str(existing.typeid))
+    return await save_credential(manifest=manifest, typeid=str(existing.typeid))
 
 
 async def _declaring(names: list[str], project: Optional["Project"], deployment: "Deployment") -> dict:
@@ -419,7 +420,7 @@ async def _declaring(names: list[str], project: Optional["Project"], deployment:
     for name in missing:
         groups.setdefault(owner.get(name, "deployment-secrets"), []).append(name)
     for credential, env_vars in groups.items():
-        await _declare_on_machine(credential, env_vars)
+        await declare_vars(credential, env_vars, setup="Placed on this machine by the hub for its deployment.")
     return await declared_vars(project)
 
 

@@ -21,9 +21,7 @@ from typer.testing import CliRunner
 from flow_sdk.builtin import credential_service, project_setup
 from flow_sdk.builtin.credential_service import CredentialError, save_credential
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.credential import Credential
 from flow_sdk.cli.commands import credentials_cmd, project_cmd
-from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_OAUTH, REQUIREMENT_PACK
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, PromptResult
 
@@ -31,24 +29,6 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 
 SHIPPED = Path(project_setup.__file__).parents[1] / "system_projects/flowpad_assistant/agentic-assets/credential"
 TOKEN = "123456:telegram-token-never-printed"
-
-
-def _template(name: str) -> Credential:
-    """A shipped catalogue entry as the index holds it: a ``system``-scope row."""
-    spec = CredentialSpec.model_validate(json.loads((SHIPPED / name / "credential.json").read_text()))
-    fields = {f: getattr(spec, f) for f in credential_service._MANIFEST_FIELDS}
-    return Credential(name=spec.name, scope="system", manifest_schema=spec.manifest_schema, **fields)
-
-
-@pytest.fixture
-def templates(monkeypatch):
-    shipped = [_template(n) for n in ("gmail", "openai", "telegram", "twilio")]
-
-    async def catalogue():
-        return shipped
-
-    monkeypatch.setattr(credential_service, "shipped_templates", catalogue)
-    return shipped
 
 
 def _sources(monkeypatch, *providers: str) -> None:

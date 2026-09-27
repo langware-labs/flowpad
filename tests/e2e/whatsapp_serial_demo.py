@@ -84,17 +84,20 @@ class Demo(Mix):
 
     async def setup_channel(self, waha: str, sender: Optional[str]) -> Channel:
         if self.real:
-            credential = {"name": "waha", "values": env_values(WAHA_VARS)}
             port = urlparse(self.backend).port or 80
-            config = {"base_url": waha, "session": "default",
-                      "webhook_url": f"http://host.docker.internal:{port}/api/v1/data_source/webhook/waha"}
+            # Where WAHA answers and how it reaches this instance differ per machine: credential values.
+            credential = {"name": "waha", "values": {
+                **env_values(WAHA_VARS), "WAHA_BASE_URL": waha,
+                "WAHA_WEBHOOK_URL": f"http://host.docker.internal:{port}/api/v1/data_source/webhook/waha",
+            }}
+            config = {"session": "default"}
             senders = [sender]
         else:
             entry = (await self.control.get("/channels")).json()["waha"]
             credential, config, senders = entry["credential"], entry["config"], [entry["sender"]]
         await self.graph("post", "compute_node/@local/credentials/save", json={
             "scope": "project", "project_id": self.project_id, "values": credential["values"],
-            "manifest": {"name": credential["name"], "value_store": "vault", "setup": "Declared by the WhatsApp serial demo.",
+            "manifest": {"name": credential["name"], "setup": "Declared by the WhatsApp serial demo.",
                          "vars": {var: {"label": var, "secret": True, "required": True} for var in credential["values"]}},
         })
         channel = Channel("waha", self.serial, bound=datetime.now(timezone.utc))

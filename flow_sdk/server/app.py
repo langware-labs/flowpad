@@ -243,6 +243,7 @@ async def _on_server_startup():
         print(f"  Tag forwarding: failed to arm ({_e})")
 
     await _lift_credential_stores()
+    await _lift_place_settings()
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_keep_alive_loop()
@@ -402,18 +403,30 @@ async def _prune_orphan_scheduler_jobs() -> None:
 RETIRED_TYPES = ("data_source_spec", "credential_spec", "secret_pack", "inbox_manager", "data_source_cursor")
 
 
-async def _lift_credential_stores() -> None:
-    """Where credential values live moves off pre-0.2.178 ``credential.json`` files onto deployments —
-    before anything that reads a credential starts (``migration_2026_09_credential_stores``)."""
-    try:
-        from flow_sdk.migrations.migration_2026_09_credential_stores import lift
+async def _boot_lift(module: str, label: str) -> None:
+    """Run a boot migration's ``lift`` before anything that reads what it moves; log its report when it
+    did something. A failure is logged, never raised: boot goes on."""
+    import importlib
 
-        report = await lift(dry_run=False)
-        if report.stripped:
+    try:
+        report = await importlib.import_module(f"flow_sdk.migrations.{module}").lift(dry_run=False)
+        if any(getattr(report, name, None) for name in ("stripped", "moved", "failed")):
             for line in report.lines():
                 logging.getLogger(__name__).info("%s", line)
     except Exception:
-        logging.getLogger(__name__).exception("Credential stores: lift failed")
+        logging.getLogger(__name__).exception("%s: lift failed", label)
+
+
+async def _lift_credential_stores() -> None:
+    """Where credential values live moves off pre-0.2.178 ``credential.json`` files onto deployments —
+    before anything that reads a credential starts (``migration_2026_09_credential_stores``)."""
+    await _boot_lift("migration_2026_09_credential_stores", "Credential stores")
+
+
+async def _lift_place_settings() -> None:
+    """A data source's per-machine settings move out of ``data_source.json`` into its credential — before
+    any source reads them (``migration_2026_09_place_settings``)."""
+    await _boot_lift("migration_2026_09_place_settings", "Place settings")
 
 
 async def _prune_retired_type_rows() -> None:
