@@ -175,10 +175,7 @@ export function ProcessToolbar({
     traceFilters.refTime;
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
 
-  const processDisplayName = useMemo(
-    () => resolveProcessDisplayName(process),
-    [process.name],
-  );
+  const processDisplayName = useMemo(() => resolveProcessDisplayName(process), [process.name]);
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) => onTraceFiltersChange({ ...traceFilters, [key]: val });
 
@@ -431,6 +428,27 @@ export function ProcessToolbar({
   // asset editor too. Export stays — the bar has no equivalent for it.
   const downloadSlot = !embedded && <ExportEntityButton typeId={process.typeId} defaultTitle={processDisplayName} />;
 
+  // Fork — shared by both headers (a chat session forks too); hidden in embedded mode.
+  const forkSlot = !embedded && (
+    <IconToggleButton
+      icon={<GitFork className="h-3.5 w-3.5" />}
+      active={false}
+      tooltip={
+        isForking
+          ? t`Forking…`
+          : canFork
+            ? t`Fork session — new tab, same conversation history`
+            : !hasSession
+              ? t`Launch a session first`
+              : !started
+                ? t`Session is not running`
+                : t`Send a message first — fork requires conversation history`
+      }
+      disabled={!canFork || isForking}
+      onClick={() => void handleFork()}
+    />
+  );
+
   const rightSlot = (
     <>
       {/* Reusable asset manager — same component the chat side panel uses. */}
@@ -450,26 +468,7 @@ export function ProcessToolbar({
         />
       )}
 
-      {/* Fork — hidden in embedded mode */}
-      {!embedded && (
-        <IconToggleButton
-          icon={<GitFork className="h-3.5 w-3.5" />}
-          active={false}
-          tooltip={
-            isForking
-              ? t`Forking…`
-              : canFork
-                ? t`Fork session — new tab, same conversation history`
-                : !hasSession
-                  ? t`Launch a session first`
-                  : !started
-                    ? t`Session is not running`
-                    : t`Send a message first — fork requires conversation history`
-          }
-          disabled={!canFork || isForking}
-          onClick={() => void handleFork()}
-        />
-      )}
+      {forkSlot}
 
       {/* Open in Worktree — next to Fork, hidden in embedded mode */}
       {!embedded && <OpenInWorktreeButton process={process} />}
@@ -536,7 +535,10 @@ export function ProcessToolbar({
       {embedded ? (
         advancedHeader
       ) : (
-        <ViewSwap advanced={advancedHeader} standard={<StandardInteractiveTabHeader title={titleSlot} />} />
+        <ViewSwap
+          advanced={advancedHeader}
+          standard={<StandardInteractiveTabHeader title={titleSlot} right={forkSlot} />}
+        />
       )}
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
