@@ -442,7 +442,7 @@ async def _on_this_machine(deployment_id: str, environment: str) -> tuple["Deplo
 
 async def place_values(deployment_id: str, project_id: str, file: str, environment: str = "") -> dict[str, Any]:
     """Write the values the hub dropped where this machine reads them for ``deployment_id``:
-    ``{placed, failed}`` names."""
+    ``{placed, failed}`` names, and ``verified``: the sources here that read them, verified now."""
 
     values = _take_dropped(file)
     deployment, placement = await _on_this_machine(deployment_id, environment)
@@ -462,7 +462,34 @@ async def place_values(deployment_id: str, project_id: str, file: str, environme
             placed += batch
         except Exception as e:  # noqa: BLE001 — reported per name, names only
             failed.update({name: type(e).__name__ for name in batch})
-    return {"placed": sorted(placed), "failed": failed}
+    return {"placed": sorted(placed), "failed": failed, "verified": await _verify_readers(placed)}
+
+
+async def _verify_readers(names: list[str]) -> dict[str, str]:
+    """Verify every source on this machine that loads one of ``names`` (``DataSource.credentials``): a source
+    that arrived with the project waits in SETUP for this machine's own account, and on a deployment's machine
+    that account IS the placed values. ``{source name: "ready" | detail}`` — a verify that fails is reported,
+    never raised."""
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.ingest.driver_runtime import DRIVERS  # noqa: PLC0415
+
+    placed = set(names)
+    # Only drivers that can read a store at all; each of their sources is then asked what it loads.
+    providers = [p for p, d in DRIVERS.items() if d.manifest is not None and d.manifest.auth is not None]
+    rows = await asyncio.gather(*(DataSource.get_all({"provider": p}) for p in providers))
+    readers = [s for batch in rows for s in batch or [] if placed & set(s.credentials.names())]
+
+    async def verify(source) -> str:
+        try:
+            verdict = await source.verify() or {}
+        except Exception as e:  # noqa: BLE001 — a class only: a detail may quote a provider's answer
+            return type(e).__name__
+        return "ready" if verdict.get("ready") else str(verdict.get("detail") or "not ready")
+
+    verdicts = await asyncio.gather(*(verify(s) for s in readers))
+    return {str(s.name or s.id): v for s, v in zip(readers, verdicts)}
 
 
 async def unplace_values(deployment_id: str, project_id: str, names: list[str], environment: str = "") -> dict[str, Any]:

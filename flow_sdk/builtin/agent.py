@@ -54,6 +54,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+    from flow_sdk.schema.data_spec.webhook_spec import DeploymentWebhookSpec
 
 logger = logging.getLogger(__name__)
 
@@ -936,16 +937,38 @@ class Agent(Entity):
             raise NotReady(ready, deployment)
         return await deploy_entity_to_cloud(self, environment, require=ready.value_names())
 
+    async def webhook_specs(self) -> list["DeploymentWebhookSpec"]:
+        """One hub webhook per driver among this agent's sources that takes provider pushes (its manifest's
+        ``webhook``): named by the driver, its URL stored and placed as the driver's URL variable."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webhook_spec import WEBHOOK_ROUTE, DeploymentWebhookSpec  # noqa: PLC0415
+
+        specs: dict[str, DeploymentWebhookSpec] = {}
+        for provider in dict.fromkeys(str(s.provider or "") for s in await DataSource.find_owned(self.typeid)):
+            driver = await driver_of(provider)
+            if driver is None or driver.webhook is None:
+                continue
+            hook = driver.webhook
+            specs[provider] = DeploymentWebhookSpec(
+                name=provider, var=driver.auth.vars[hook.url_var], path=WEBHOOK_ROUTE.format(name=provider),
+                methods=list(hook.methods), required_headers=list(hook.required_headers),
+            )
+        return list(specs.values())
+
     async def plan_deployment(self, environment: str | None = None) -> "Deployment":
         """The cloud placement this agent will have in ``environment`` — the hub's row, adopted here —
-        before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent."""
+        before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent. Its
+        :meth:`webhook_specs` are kept on the hub, following its machine, each URL stored as its variable —
+        so readiness finds them and "use mine" never copies this computer's."""
         from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT  # noqa: PLC0415
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
         from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
 
         environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
-        data = await hub_post(self.type, {"environment": environment}, self.id, "plan_deployment") or {}
+        body = {"environment": environment, "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()]}
+        data = await hub_post(self.type, body, self.id, "plan_deployment") or {}
         deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
         if deployment is None:
             raise RuntimeError("the hub returned no deployment to plan")

@@ -99,7 +99,9 @@ adopted here). Every write, delete, placement and token handed out is audited on
 
 **Use mine** (`credential_service.use_mine`, `POST …/credentials/use-mine`,
 `flow credentials use-mine <deployment> [--name VAR]`) copies this computer's values into
-a deployment's store — by default what its agent needs and the store lacks. Values move
+a deployment's store — by default what its agent needs and the store lacks (per variable:
+a value the store holds, such as the webhook URL the hub stored for the deployment, is never
+replaced). Values move
 machine → hub and are never shown; the answer is names: `copied`, `not_here` (this
 computer has none either) and `hub_funded` (an `lm_provider` key is never copied — a
 deployment is hub-funded). A `protected` deployment refuses: its values are entered
@@ -110,8 +112,11 @@ directly.
 hands out a private drop folder (`POST credentials/drop`, 0700), the hub writes one JSON
 file there with the provider's file API, and `POST credentials/place` reads it, deletes it
 at once and writes the values where that machine's own lookup reads them
-(`credential_service.place_values`: one write per store, 0600, git-excluded). A value never
-rides a box call's body — that is a curl argument. The machine IS the deployment: it places
+(`credential_service.place_values`: one write per store, 0600, git-excluded), then verifies
+every source on the machine whose driver reads a placed name — a source that arrived with the
+project waits in setup for this machine's own account, and on a deployment's machine that
+account IS the placed values (`verified: {source: "ready" | detail}`, reported, never fatal).
+A value never rides a box call's body — that is a curl argument. The machine IS the deployment: it places
 at its row for the deployment's id, else its own placement, always in the environment the
 hub sends, which becomes the instance default; a name nothing on the machine declares is
 declared from its shipped template (else a bare credential) under the name the agent's

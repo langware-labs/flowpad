@@ -14,6 +14,7 @@ class FakeHubStore:
         self.calls: list[tuple] = []
         self.deploys: list[dict] = []
         self.authorized: dict[str, list[str]] = {}
+        self.webhooks: dict[str, list[str]] = {}
 
     def deployment(self, agent_typeid: str, environment: str) -> dict:
         return {"id": self._ids.setdefault((agent_typeid, environment), str(uuid.uuid4())), "name": f"agent ({environment})",
@@ -21,6 +22,10 @@ class FakeHubStore:
                 "target": {"provider": "e2b", "scope": agent_typeid}}
 
     _ids: dict = {}
+
+    @staticmethod
+    def webhook_url(name: str) -> str:
+        return f"https://hub.test/api/v1/webhook/{uuid.uuid5(uuid.NAMESPACE_URL, name)}"
 
     async def get(self, etype, eid=None, action=None, sub_path=None, **_):
         self.calls.append(("GET", str(etype), eid, action, sub_path))
@@ -42,7 +47,12 @@ class FakeHubStore:
             self.authorized.setdefault(eid, []).append(payload["provider"])
             return {"provider": payload["provider"]}
         if action == "plan_deployment":
-            return {"deployment": self.deployment(f"agent-{eid}", payload["environment"])}
+            deployment = self.deployment(f"agent-{eid}", payload["environment"])
+            # The hub keeps each asked-for webhook and stores its URL as the driver's variable.
+            self.webhooks[deployment["id"]] = [hook["name"] for hook in payload.get("webhooks") or []]
+            for hook in payload.get("webhooks") or []:
+                self.values.setdefault(deployment["id"], {})[hook["var"]] = self.webhook_url(hook["name"])
+            return {"deployment": deployment}
         return None
 
     async def put(self, etype, eid, payload, action=None, sub_path=None, **_):

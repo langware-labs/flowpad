@@ -49,7 +49,7 @@ async def test_placed_values_are_read_by_this_machines_lookup_and_the_drop_is_go
 
     outcome = await place_values(str(deployment.id), str(project.id), file)
 
-    assert outcome == {"placed": ["SENTRY_DSN", "STRIPE_KEY"], "failed": {}}
+    assert outcome == {"placed": ["SENTRY_DSN", "STRIPE_KEY"], "failed": {}, "verified": {}}
     assert not Path(file).exists(), "the dropped values file is deleted at once"
     assert "sk-placed" not in json.dumps(outcome)
     values = await resolve_project_secrets(project, placement=await Placement.of(deployment))
@@ -89,7 +89,7 @@ async def test_a_machine_that_never_adopted_the_hubs_id_places_at_its_own_placem
 
     outcome = await place_values(unknown, str(project.id), _drop({"STRIPE_KEY": "sk-placed"}), "production")
 
-    assert outcome == {"placed": ["STRIPE_KEY"], "failed": {}}
+    assert outcome == {"placed": ["STRIPE_KEY"], "failed": {}, "verified": {}}
     assert get_default_environment() == "production", "terminals and the agent read the deployment's environment"
     values = await resolve_project_secrets(project, placement=await Placement.of(await Deployment.this_computer()))
     assert {k: v.get_secret_value() for k, v in values.items()} == {"STRIPE_KEY": "sk-placed"}
@@ -125,6 +125,6 @@ async def test_a_placed_name_is_declared_from_its_shipped_template(home, project
 
     outcome = await place_values(str(deployment.id), str(project.id), _drop({"TELEGRAM_BOT_TOKEN": "123:abc"}))
 
-    assert outcome == {"placed": ["TELEGRAM_BOT_TOKEN"], "failed": {}}
+    assert outcome == {"placed": ["TELEGRAM_BOT_TOKEN"], "failed": {}, "verified": {}}
     declared, template = (await declared_vars(project))["TELEGRAM_BOT_TOKEN"].spec, await template_named("telegram")
     assert declared.setup == template.setup and declared.vars["TELEGRAM_BOT_TOKEN"] == template.vars["TELEGRAM_BOT_TOKEN"]

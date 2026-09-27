@@ -44,16 +44,20 @@ _VAR_REF = re.compile(r"^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$")
 # ── requirements ──────────────────────────────────────────────────────────────
 
 
-async def auth_of(source: "DataSource") -> Any:
-    """``source``'s driver ``auth`` — its driver loaded first (an authored driver's folder loads on
-    first use); ``None`` when the driver cannot load: it needs nothing we can name."""
+async def driver_of(provider: str) -> Any:
+    """The loaded driver ``provider`` names (an authored driver's folder loads on first use); ``None`` when
+    it cannot load: it needs nothing we can name."""
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     try:
-        await DataDriver.get(source.provider or "")
+        return await DataDriver.get(provider or "")
     except Exception:  # noqa: BLE001
         return None
-    return source._auth()
+
+
+async def auth_of(source: "DataSource") -> Any:
+    """``source``'s driver ``auth`` — its driver loaded first; ``None`` when the driver cannot load."""
+    return source._auth() if await driver_of(source.provider or "") is not None else None
 
 
 def connection_of(req: RequirementSpec) -> Optional[tuple[str, list[str]]]:
@@ -216,7 +220,7 @@ def _values_item(
     where = ", ".join(sorted({present[n][1] for n in names if n in present})) or "no store declares it"
     if missing or not names:
         return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where, fix=fix, vars=list(names),
-                                 remedy=remedy if names else "")
+                                 missing=missing, remedy=remedy if names else "")
     return ReadinessItemSpec(requirement=req, status=STATUS_DECLARED, where=where, vars=list(names))
 
 

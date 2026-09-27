@@ -57,6 +57,8 @@ export interface AgentReadinessItem {
   where: string;
   /** The variables a store must hold for it — empty for what a grant satisfies. */
   vars: string[];
+  /** Which of `vars` the store lacks — what "use mine" copies. */
+  missing: string[];
   /** The connection that grants it — what a cloud deployment's owner authorizes for its machine. */
   connection: string;
   fix: string;

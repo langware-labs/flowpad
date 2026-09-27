@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec, validate_permission
 from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 
 CURRENT_SCHEMA = 1
 
@@ -207,6 +208,15 @@ class DataDriverSpec(DataSpec):
     #: microphone and speakers), ``clip`` (a recorded sound file) or ``dial`` (a number the agent
     #: calls). Blank: the source takes no calls. The UI offers the matching control from this alone.
     calls: CallStart = CallStart.NONE
+    #: This driver takes provider pushes: which ``auth.vars`` key holds the machine's public webhook URL, and
+    #: what a genuine delivery looks like. A cloud deployment gets a hub webhook for it (``webhook_spec.py``).
+    webhook: Optional[DriverWebhookSpec] = None
+
+    @model_validator(mode="after")
+    def _webhook_url_is_a_var(self) -> "DataDriverSpec":
+        if self.webhook is not None and (self.auth is None or self.webhook.url_var not in self.auth.vars):
+            raise ValueError(f"webhook.url_var {self.webhook.url_var!r} must be a key of auth.vars: the URL is a credential variable")
+        return self
 
     @field_validator("name")
     @classmethod
