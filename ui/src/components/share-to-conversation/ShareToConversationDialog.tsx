@@ -26,7 +26,6 @@ import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import type { ShareSource } from '@src/hooks/share-sources';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
-import { useGitAnonymousAccess } from '@src/hooks/use-git-anonymous-access';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
@@ -233,9 +232,6 @@ export function ShareToConversationDialog({
   // initial value follows the selected conversation's remembered default.
   const gitCapable = source.gitPreflightRef != null;
   const preflight = useGitSharePreflight(source.gitPreflightRef, open && gitCapable);
-  // Can a stranger clone it? Preflight says the SENDER may publish; this says
-  // whether the people they publish to will be able to read it.
-  const anonAccess = useGitAnonymousAccess(source.gitPreflightRef, open && gitCapable);
   // A share that must also grant access (a Project). The entity is loaded in
   // full because `APIEntity.share` POSTs `this.toJSON()` — a husk instance
   // would send a husk body.
@@ -593,18 +589,6 @@ export function ShareToConversationDialog({
                     </span>
                   </button>
                 </WikiTip>
-                {anonAccess.public === false && !gitBlocked && (
-                  <div
-                    className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
-                    data-testid="share-private-repo"
-                  >
-                    <Trans>
-                      The repository {anonAccess.repo ?? 'this project uses'} is private. They will see the project, but
-                      only someone who connects GitHub and already has access to that repository can open its files —
-                      Flowpad grants Flowpad membership, never GitHub access.
-                    </Trans>
-                  </div>
-                )}
                 {needsGitHub && (
                   <div
                     className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2 text-xs"

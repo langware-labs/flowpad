@@ -1,6 +1,7 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
+import type { HubRepoOrigin } from '../models/FSOrigin';
 import type { PromptResult } from '../models/ReturnedValue';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
@@ -142,11 +143,12 @@ export class Agent extends APIEntity<Agent> {
   enabled: boolean;
   /** Absolute on-disk path to the agent's folder (`agent.json` sits inside). */
   asset_ref?: string;
-  /** Where the hub published this agent from: the repo, the branch it was pushed to
-   *  (`flow-cloud`) and the agent's folder as `rel_path`. Hub-written provenance —
-   *  absent on desktop rows and on agents never published from git. `/launch?agent=`
+  /** Where the hub keeps this agent's files. A published agent lives in its project's
+   *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
+   *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
+   *  provenance — absent on desktop rows and on agents never published. `/launch?agent=`
    *  reads it to know which repository to launch. */
-  git_origin?: GitOrigin | null;
+  git_origin?: GitOrigin | HubRepoOrigin | null;
 
   // ── presentation + project auto-launch ─────────────────────────────────
   /** Welcome text rendered as the agent's first message in Vibe/Standard chat.
