@@ -3,7 +3,8 @@ id: 2408c41c-b3a4-42fe-8868-243b2ff11aae
 name: agent-builder
 description: >-
   Builds a Flowpad agent together with the user — "make me an agent that…", "build a
-  tutor / guide / assistant agent", "an agent that watches this page and helps",
+  tutor / guide / assistant agent", "an assistant / helper / bot / copilot our users or
+  customers use to do X", "an agent that watches this page and helps",
   "an agent my code can call and get a result back", "deploy an agent to email /
   WhatsApp / a chat endpoint", "give my agent a persona, an intro, auto-launch".
   Interviews for the job, picks the kind (chat/guide, page-aware, typed service with
@@ -42,6 +43,14 @@ steps; you write the files, open the right screen and test it with them.
 > user ran (`references/validation-loop.md`), not when its files exist.
 > **5. Deploying, credentials, email and phone reach real people.** Do them only on
 > the user's explicit go, after saying who will be reachable.
+
+## Your first reply
+
+For a new agent, your first reply is the interview in `modes/build.md` §1 and nothing
+else — no file written, no existing agent edited or renamed. An agent that already
+does this job is a question for the user ("improve it, or build a new one?"), not a
+thing to change on your own. Every path below is relative to this `SKILL.md`'s folder;
+read the mode file before acting.
 
 ## Modes (from the skill arg)
 
