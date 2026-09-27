@@ -277,8 +277,10 @@ class TurnEngine:
                 ))
                 return
             if prior and prior.get("status") == STARTED:
-                # Died mid-turn. Did the agent finish? The transcript knows.
-                text = await _capture_assistant_reply(ap)
+                # Died mid-turn. Did the agent finish? The transcript knows -- when there is one. A worker that
+                # never came up (it could not spawn) left none, and waiting for it would wait out the budget on
+                # every redelivery, so the message would never be answered: nothing ran, so it runs now.
+                text = await _capture_assistant_reply(ap) if has_transcript(ap) else ""
                 if text:
                     await stamp_turn(ap, turn.key, done_record(prior, text))
                     yield done(PromptResult.satisfied(
@@ -322,16 +324,33 @@ class TurnEngine:
             yield done(answer)
 
 
-def transcript_entries(ap) -> list:
-    """The process's transcript as typed entries, or ``[]`` before it has one."""
-    from flow_sdk.transcript_analyzer import AgentTranscriptFile  # noqa: PLC0415
-
+def _transcript_file(ap):
+    """``(path, descriptor)`` of the process's transcript, or ``(None, None)`` before it has
+    one — including a process with no driver to ask, which is the same answer."""
     try:
         desc = ap.driver.transcript_descriptor(ap)
     except Exception:  # noqa: BLE001 — a driver that cannot say yet has no transcript yet
         desc = None
-    path = desc.path if desc is not None else ap.driver.transcript_path(ap)
-    if path is None or not path.exists():
+    try:
+        path = desc.path if desc is not None else ap.driver.transcript_path(ap)
+    except Exception:  # noqa: BLE001 — same answer: nothing to read
+        return None, desc
+    return (path if path is not None and path.exists() else None), desc
+
+
+def has_transcript(ap) -> bool:
+    """Whether the process has a transcript at all — the half of ``transcript_entries``
+    that asks the filesystem, for a caller that does not want the entries. Reading them
+    to answer a yes/no parses the whole session."""
+    return _transcript_file(ap)[0] is not None
+
+
+def transcript_entries(ap) -> list:
+    """The process's transcript as typed entries, or ``[]`` before it has one."""
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile  # noqa: PLC0415
+
+    path, desc = _transcript_file(ap)
+    if path is None:
         return []
     try:
         transcript = AgentTranscriptFile(

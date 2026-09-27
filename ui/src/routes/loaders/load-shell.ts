@@ -52,6 +52,10 @@ export interface ProcessRouteCarry {
   scope?: ScopeFilter | null;
   viewMode?: ViewMode | null;
   options?: Record<string, string>;
+  /** The RESOLVE phase already ran for this navigation (the dock loader runs it at
+   *  step 3, before a tab is minted). Resolving again re-reads the process and, for a
+   *  projectless one, re-resolves its project path — inside the warm visit's budget. */
+  resolved?: boolean;
 }
 import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
@@ -340,13 +344,9 @@ async function routeProcessPointer(
   requestPath: string,
   carry?: ProcessRouteCarry,
 ): Promise<void> {
-  // Align the URL scope to the opened process's project (SSOT) BEFORE the
-  // runtime phase. Throws a `replace()` redirect when diverged; on the re-run
-  // the scopes match (no-op) and the runtime attaches under the right scope.
-  // Independent of `loadProcess` outcome, so a degraded/soft/failed attach can
-  // no longer strand the side menu on the ambient project.
-  await reconcileProcessScope(processId, requestPath, carry);
-
+  // Scope alignment is the RESOLVE phase's (`resolveShellRoute`), which ran before
+  // this one and threw its `replace()` if the URL diverged from the process's
+  // project. By here the scopes match, so the runtime attaches under the right one.
   try {
     const { process } = await loadProcess(processId);
     // A URL with no mode (cold deep link, hard refresh) opens the session in its
@@ -404,28 +404,9 @@ async function routeProcessPointer(
 async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder): Promise<void> {
   const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
 
-  // If a process owns this shell, send the user to the process URL instead —
-  // that path handles open({ visible: true }) + PTY reconnect for us.
-  const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find((p) => p.shell_id === shellId);
-  if (linkedProcess) {
-    // Use replace so BACK from the process URL doesn't pop back to the bare
-    // shell URL (which would just re-bounce here → flicker).
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(shellUrl(linkedProcess.terminalDockPointer.pointer));
-  }
-
-  // Cache miss — cold navigation (hard refresh / deep link / page.goto): the
-  // loader runs before a mounted tab body warms the cache. The shell carries
-  // its owner directly (Shell.agentic_process_id, the reverse of
-  // AgenticProcess.shell_id), so a plain get-by-id resolves ownership — no
-  // reverse scan over processes.
-  const shell =
-    Shell.getByIdFromCache<Shell>(shellId) ?? (await Shell.getById<Shell>(shellId).catch(() => null));
-  if (shell?.agentic_process_id) {
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(shellUrl(new TypeId(AgenticProcess.type, shell.agentic_process_id).toString()));
-  }
-
+  // A shell someone's process owns never reaches here: the RESOLVE phase
+  // (`resolveShellRoute`) threw the redirect to the process URL, warm or cold.
+  // What is left is a shell of its own.
   try {
     await loadShell(shellId);
     return;
@@ -549,10 +530,9 @@ export async function loadShellRoute(
   // so a /win/shell focus window never falls back into full-app chrome (§7).
   const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p, carry?.options);
 
-  // Resolve first (the dock loader already ran it before materializing the tab;
-  // on a canonical URL this is a cache hit and returns). Direct callers get the
-  // same redirect policy.
-  await resolveShellRoute(pointer, requestPath, carry);
+  // Resolve first — unless the caller already did (the dock loader runs it at step 3,
+  // before materializing the tab). A direct caller gets the same redirect policy.
+  if (!carry?.resolved) await resolveShellRoute(pointer, requestPath, carry);
 
   // Every shell URL resolves identity/context only. The mounted TerminalPanel
   // owns the WS-bound start/attach (process and plain shell alike), so nothing

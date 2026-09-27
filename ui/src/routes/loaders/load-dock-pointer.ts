@@ -282,6 +282,7 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
           scope: dock.scopeFilter,
           viewMode: dock.viewMode,
           options: dock.options,
+          resolved: true, // step 3 ran in the dispatcher, before the tab was minted
         });
         break;
       case ViewType.PROJECT:
