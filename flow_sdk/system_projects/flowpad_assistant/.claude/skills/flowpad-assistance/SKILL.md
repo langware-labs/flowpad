@@ -10,7 +10,8 @@ description: >-
   "find or look up X", "restart this session", "what did X send me", or "send X to my
   conversation with Y".
   NOT for showing or opening something in the UI (flowpad-navigation), building a
-  web app (web-app-builder), or a slide deck (decker).
+  web app (web-app-builder), a slide deck (decker), or building an agent
+  (agent-builder).
 tags:
 - flowpad
 - context
