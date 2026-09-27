@@ -152,35 +152,6 @@ export interface AdoptHelpdeskResult {
   } | null;
 }
 
-/**
- * Why installing a shared project's Git origin failed — the backend
- * `GitErrorCode` NAME (`flow_sdk/utils/git_folder.py`) that `setup-from-git`
- * answers in `data.code`. The four an install realistically hits are named;
- * the open `string` keeps any other `GitErrorCode` (e.g. `BRANCH_NOT_FOUND`).
- */
-export type GitSetupErrorCode =
-  | 'REPO_NOT_ACCESSIBLE'
-  | 'AUTH_REQUIRED'
-  | 'AUTH_FAILED'
-  | 'UPSTREAM_UNAVAILABLE'
-  | (string & {});
-
-/**
- * Thrown by `Project.setupFromGitOrigin()` when the clone failed for a
- * classified reason. `code` is the machine reason to branch on (the install
- * chip's "no access to the repository" vs. "connect GitHub"); `message` is the
- * backend's human sentence.
- */
-export class GitSetupError extends Error {
-  readonly code: GitSetupErrorCode;
-
-  constructor(code: GitSetupErrorCode, message: string) {
-    super(message);
-    this.name = 'GitSetupError';
-    this.code = code;
-  }
-}
-
 export interface AddContextDirFromGitResult {
   folder_id: string;
   path: string;
@@ -676,13 +647,7 @@ export class Project extends APIEntity<Project> {
     return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
   }
 
-  /**
-   * Clone/materialize the shared project's portable GitOrigin locally.
-   *
-   * @throws {GitSetupError} when the clone failed for a classified reason
-   *   (`code` names it, e.g. `REPO_NOT_ACCESSIBLE`); a plain `Error` carrying
-   *   the server's sentence otherwise.
-   */
+  /** Clone/materialize the shared project's portable GitOrigin locally. */
   async setupFromGitOrigin(): Promise<Project> {
     let response: Project | undefined;
     try {
@@ -692,17 +657,8 @@ export class Project extends APIEntity<Project> {
       // reason ("Git clone failed: Repository not found"). Axios throws on the
       // status and its own message is "Request failed with status code 400",
       // which is what the recipient saw — the one sentence that says nothing.
-      const ax = err as {
-        response?: { data?: { message?: string; data?: { code?: unknown } | null } };
-        message?: string;
-      };
-      const message =
-        ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.';
-      // Graph actions put their machine code at `data.data.code` (the envelope's
-      // `data`), as the share dialog's `shareFailureCode` reads it.
-      const code = ax.response?.data?.data?.code;
-      if (typeof code === 'string' && code) throw new GitSetupError(code, message);
-      throw new Error(message);
+      const ax = err as { response?: { data?: { message?: string } }; message?: string };
+      throw new Error(ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.');
     }
     // A FAIL envelope on a 200 unwraps to `undefined` rather than throwing.
     if (!response) throw new Error('The project could not be set up from its Git origin.');

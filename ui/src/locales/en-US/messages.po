@@ -4577,8 +4577,8 @@ msgid "Connect GitHub on the publishing desk and re-publish to put the document 
 msgstr "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 
 #: src/components/conversation/ProjectInstallChip.tsx
-msgid "Connect GitHub to install this project — its repository needs access."
-msgstr "Connect GitHub to install this project — its repository needs access."
+#~ msgid "Connect GitHub to install this project — its repository needs access."
+#~ msgstr "Connect GitHub to install this project — its repository needs access."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Connect GitHub to link this project to the cloud."
@@ -23126,8 +23126,8 @@ msgid "You don’t belong to an organization yet. Organizations are set up in Fl
 msgstr "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 
 #: src/components/conversation/ProjectInstallChip.tsx
-msgid "You don't have access to this project's repository. Ask the project owner to add you as a collaborator."
-msgstr "You don't have access to this project's repository. Ask the project owner to add you as a collaborator."
+#~ msgid "You don't have access to this project's repository. Ask the project owner to add you as a collaborator."
+#~ msgstr "You don't have access to this project's repository. Ask the project owner to add you as a collaborator."
 
 #: src/notifications/ingest.ts
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."

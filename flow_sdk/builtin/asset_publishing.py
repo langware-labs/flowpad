@@ -31,7 +31,6 @@ _GIT_ERROR_TO_PUBLISH: dict[GitErrorCode, AssetPublishCode] = {
     GitErrorCode.BRANCH_NOT_FOUND: AssetPublishCode.ORIGIN_INVALID,
     GitErrorCode.AUTH_REQUIRED: AssetPublishCode.GITHUB_NOT_CONNECTED,
     GitErrorCode.AUTH_FAILED: AssetPublishCode.GITHUB_NOT_CONNECTED,
-    GitErrorCode.REPO_NOT_ACCESSIBLE: AssetPublishCode.ORIGIN_INVALID,
     GitErrorCode.UPSTREAM_UNAVAILABLE: AssetPublishCode.ORIGIN_INVALID,
     GitErrorCode.ORIGIN_OUT_OF_DATE: AssetPublishCode.BRANCH_DIVERGED,
     GitErrorCode.DETACHED_HEAD: AssetPublishCode.ORIGIN_INVALID,

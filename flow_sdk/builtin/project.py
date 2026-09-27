@@ -1553,20 +1553,9 @@ class Project(Entity):
 
     @action.post(action_name="setup-from-git")
     async def setup_from_git(self) -> ApiResponse:
-        """Materialize a remote project's transmitted GitOrigin locally.
-
-        A classified clone failure answers ``data.code`` — the ``GitErrorCode``
-        NAME (``REPO_NOT_ACCESSIBLE``, ``AUTH_REQUIRED``, ...) — so the install
-        chip can tell "you have no access to this repo" from "connect GitHub"
-        without parsing git's wording. Any other failure keeps the message-only
-        answer.
-        """
-        from flow_sdk.utils.git_folder import GitError  # noqa: PLC0415
-
+        """Materialize a remote project's transmitted GitOrigin locally."""
         try:
             return ApiSuccessResponse(data=await self.setup_from_git_origin())
-        except GitError as exc:
-            return ApiFailResponse(message=str(exc), data={"code": exc.code.name}, status_code=400)
         except Exception as exc:  # noqa: BLE001
             return ApiFailResponse(message=str(exc), status_code=400)
 
