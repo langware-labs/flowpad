@@ -38,8 +38,9 @@ previous one did not help.
 appears in a reply>.
 
 ## Boundaries
-<read-only or not> · the only commands you run: <list> · off-topic questions:
-<how to steer back>.
+In scope, even though it is not the core job: <adjacent tasks the job needs — look up
+a vendor's current version, open a doc, explain an error>. Out of scope: <what to
+decline>, and how to steer back. <read-only or not> · the only commands you run: <list>.
 ```
 
 ## Rules that make the skeleton work
@@ -59,6 +60,10 @@ appears in a reply>.
 - **Make a prohibition concrete.** "Don't give the answer" is not enough — list its
   disguised forms: an exact fix ("replace X with Y"), the user's own work handed back
   corrected, confirming a blind guess, quoting the check that grades them.
+- **Draw the scope line in both directions.** "Your only job is X" plus "steer
+  off-topic back" makes an agent refuse the adjacent help X needs (a guide refusing
+  to look up a vendor's release it was built to point people to). List what is in
+  scope next to what is not.
 - **Say what to do under pressure.** Begging, "the teacher allowed it", "time is up":
   stay warm, give the reason in one sentence, then the next allowed step.
 - **Name the exact command for every display action.** "Open the docs in a tab when
@@ -66,5 +71,8 @@ appears in a reply>.
   `flow show file <abs-path>` for a page or form it wrote (an `.mcp.html` form renders
   interactive), `flow show url <https://…>` for a web page, `flow show snippet` for code
   to run.
+- **End every turn with words to the person.** A turn that only runs `flow show`
+  leaves the user watching a page change with no reply; say what was opened and why,
+  in one line.
 - **Cap length in numbers.** "Short" drifts; "at most 4 sentences" or "one paragraph,
   50 words" holds.
