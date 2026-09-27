@@ -200,9 +200,10 @@ async def share_entity() -> ApiResponse:
             return ApiFailResponse(
                 status_code=blocked.status_code, message=blocked.message, data=blocked.data()
             )
-        # Carry the exact origin that passed the authoritative preflight into
-        # the share operation and, below, into the durable local row.
-        entity.origin = project_git_origin
+        # A folder that is a clean git checkout still advertises its origin; its
+        # published assets travel through the project's hub repo either way.
+        if project_git_origin is not None:
+            entity.origin = project_git_origin
 
     type_info = SchemaRegistry.get(target.type)
     if type_info is not None and type_info.git_publishable:

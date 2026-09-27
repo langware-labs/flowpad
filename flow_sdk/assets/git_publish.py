@@ -20,6 +20,7 @@ class AssetPublishCode(StrEnum):
     BRANCH_DIVERGED = "branch_diverged"
     PUSH_REJECTED = "push_rejected"
     HUB_PUBLISH_FAILED = "hub_publish_failed"
+    ASSET_CONFLICT = "asset_conflict"
 
 
 class PublishFailure(DataSpec):
@@ -54,6 +55,10 @@ _PUBLISH_FAILURE: dict[AssetPublishCode, PublishFailure] = {
     ),
     AssetPublishCode.HUB_PUBLISH_FAILED: PublishFailure(
         status=502, remedy="The hub could not accept it; try again shortly."
+    ),
+    AssetPublishCode.ASSET_CONFLICT: PublishFailure(
+        status=409,
+        remedy="It was also edited on the hub. Keep one version: discard your local change, or re-apply it on the hub.",
     ),
 }
 

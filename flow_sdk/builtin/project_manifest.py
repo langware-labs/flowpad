@@ -126,6 +126,20 @@ def ensure_project_namespace(project) -> None:
         namespace_roots.remember(spec.ns, mount)
 
 
+def _hub_origin_of(entity: Entity):
+    """The asset's hub-repo origin once it has been published into its project's repo, else None."""
+    from flow_sdk.assets.hub_repo_sync import hub_origin_for_path  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    origin = getattr(entity, "origin", None)
+    if isinstance(origin, HubRepoOrigin):
+        return origin
+    info = SchemaRegistry.get(entity.get_type())
+    ref = getattr(entity, "asset_ref", None)
+    return hub_origin_for_path(info.storage_root_for(Path(str(ref)))) if info is not None and ref else None
+
+
 async def origin_for_asset(asset_ref: str):
     """WHERE a reader can fetch this asset: its repo's ``GitOrigin`` (repo,
     branch, commit, rel_path) when the checkout has a usable remote, else the
@@ -198,7 +212,7 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
                 rel_path=rel_path,
                 name=str(getattr(entity, "name", "") or ""),
                 description=str(getattr(entity, "description", "") or ""),
-                origin=await origin_for_asset(asset_ref),
+                origin=_hub_origin_of(entity) or await origin_for_asset(asset_ref),
             ),
         )
         await ensure_manifest_indexed(project)
@@ -376,11 +390,10 @@ def reflect_manifest_to_hub_soon(project) -> None:
 # ── the document itself, on the hub ──────────────────────────────────────────
 #
 # The manifest row says WHAT was published and WHERE its bytes are; the hub can
-# only render the document when it holds the tree. That is the git share path
-# (``publish_git_asset``: commit the asset to the project's ``flow-cloud``
-# branch, register it under the hub project) plus the hub's own snapshot
-# (``gitops/materialize``). Both are best-effort here: a publish is a manifest
-# fact and never waits on GitHub.
+# only render the document when it holds the tree. That is ``publish_git_asset``:
+# push the asset into the project's hub-hosted repo and register it, after which
+# the hub serves its own snapshot. Best-effort here: a publish is a manifest fact
+# and never waits on the network.
 
 _BODY_TASKS: set[asyncio.Task] = set()
 #: What the last publish did about the hub body, per typeid — read by the desk's
@@ -401,14 +414,11 @@ async def publish_body_to_hub(entity: Entity, project, actor) -> dict:
     ``{status: published|skipped|failed, code}`` — the row's ``hub_body``.
 
     Gates in order — the first that fails is the answer (``skipped``): the
-    type must be git-publishable, the project linked to the cloud, and the
-    actor connected to GitHub. Then the share path pushes ``flow-cloud`` and
-    registers the asset; then the hub snapshots the tree (either refusal is
-    ``failed``)."""
+    type must be publishable and the project linked to the cloud. Then the
+    asset is pushed into the project's hub repo and registered (a refusal is
+    ``failed`` with its publish code)."""
     from flow_sdk.assets.git_publish import AssetPublishError
     from flow_sdk.builtin.asset_publishing import publish_git_asset  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
-    from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     info = SchemaRegistry.get(entity.get_type())
@@ -416,18 +426,42 @@ async def publish_body_to_hub(entity: Entity, project, actor) -> dict:
         return _skipped("type_not_git")
     if getattr(project, "remote", False) is not True:
         return _skipped("project_not_linked")
-    if actor is None or not await get_github_token(actor):
-        return _skipped("github_not_connected")
+    if actor is None:
+        return _skipped("no_actor")
     try:
         await publish_git_asset(entity, actor)
     except AssetPublishError as exc:
         return _failed(str(getattr(exc.code, "value", exc.code)))
-    try:
-        await hub_post(entity.get_type(), {}, str(entity.id), action="gitops", sub_path="materialize")
-    except Exception as exc:  # noqa: BLE001 — logged below; the row still says what happened
-        logger.info("[project_manifest] hub materialize skipped for %s: %s", entity.typeid, exc)
-        return _failed("materialize_failed")
+    await _point_row_at_hub_repo(entity, project)
     return {"status": "published", "code": None}
+
+
+async def _point_row_at_hub_repo(entity: Entity, project) -> None:
+    """Rewrite the asset's manifest row so its origin is the hub repo it now lives in.
+
+    The row was written before the upload finished, with whatever origin the
+    folder could offer; a reader installs from the row's origin, so it must name
+    the place every member can actually reach.
+    """
+    from flow_sdk.assets.project_manifest import make_entry, publish, rel_path_for  # noqa: PLC0415
+
+    origin = _hub_origin_of(entity)
+    mount = _mount_of(project)
+    rel_path = rel_path_for(mount, Path(str(entity.asset_ref))) if mount is not None and origin else None
+    if rel_path is None:
+        return
+    publish(
+        mount,
+        make_entry(
+            typeid=str(entity.typeid),
+            rel_path=rel_path,
+            name=str(getattr(entity, "name", "") or ""),
+            description=str(getattr(entity, "description", "") or ""),
+            origin=origin,
+        ),
+    )
+    await ensure_manifest_indexed(project)
+    await reflect_manifest_to_hub(project)
 
 
 def publish_body_to_hub_soon(entity: Entity, project, actor) -> None:

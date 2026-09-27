@@ -104,7 +104,6 @@ async def share_asset_to_hub(
     actor: Any = None,
 ) -> ShareOutcome:
     """Run the gate sequence. Raises :class:`ShareBlocked` for anything a user can fix."""
-    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.builtin.asset_publishing import owning_project
     from flow_sdk.core.display_target import (
         DisplayTargetKind,
@@ -115,6 +114,7 @@ async def share_asset_to_hub(
     )
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.fs_store.type_id import TypeId
 
     # ── G0: resolve the address. `discover=False` — a share must not index. ──
     try:
@@ -215,8 +215,11 @@ async def share_asset_to_hub(
     warnings: list[str] = []
 
     # ── G6: mutation 1 — commit and push exactly our paths. ──
+    # Optional: when the project folder is itself a git checkout, its own branch
+    # is committed too. Publishing never depends on it — the asset reaches the
+    # cloud through the project's hub repo (G7).
     commit_info: dict = {"paths": rel_paths, "state": "skipped", "pushed": False}
-    if not no_commit:
+    if not no_commit and (Path(repo_root) / ".git").exists():
         commit_info = await _commit_paths(repo_root, rel_paths, message, entity, warnings)
 
     # ── G7: mutation 2 — register the asset with the hub. ──
@@ -265,22 +268,22 @@ async def _link_project(project, actor) -> None:
             data=blocked.data(),
         ) from blocked
 
-    project.origin = origin
+    if origin is not None:
+        project.origin = origin
     await project.share()
     await project.save(actor)
 
 
 def _repo_relative_paths(entity, mount: str, with_paths: list[str]) -> tuple[str, list[str]]:
-    """(repo root, repo-relative posix paths) for the asset plus every ``--with``."""
+    """(root, root-relative posix paths) for the asset plus every ``--with``.
+
+    The root is the project's git checkout when the folder is one (so the user's
+    own repo can still be committed), else the project folder itself: publishing
+    goes through the project's hub repo and needs no repository here.
+    """
     from flow_sdk.utils.git import find_project_root
 
-    repo_root = find_project_root(mount)
-    if not repo_root:
-        raise ShareBlocked(
-            code="NOT_IN_REPO",
-            message=f"{mount} is not inside a Git repository, so there is nothing for the cloud to reference.",
-            remediation=[_PREFLIGHT_REMEDIATION["not-in-repo"]],
-        )
+    repo_root = find_project_root(mount) or mount
 
     root = Path(repo_root).resolve()
     rels: list[str] = []
@@ -291,7 +294,7 @@ def _repo_relative_paths(entity, mount: str, with_paths: list[str]) -> tuple[str
         except ValueError as exc:
             raise ShareBlocked(
                 code="INVALID_ARG",
-                message=f"{candidate} is outside the project's repository ({root}) — refusing to commit it.",
+                message=f"{candidate} is outside the project ({root}) — refusing to share it.",
             ) from exc
         posix = rel.as_posix()
         if posix not in rels:
