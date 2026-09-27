@@ -748,7 +748,8 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
         return await skip_message(message)
     _announce(engine.deployment, "message_in", data_source_id=str(source.id))
     console.info("← %s  %s: %s", channel, author, _line(body))
-    if not body:
+    files = tuple(getattr(message, "files", ()) or ())
+    if not body and not files:
         return await skip_message(message)
     # Three facts a source may declare about its messages (the driver class says; nothing here names one):
     # a ``quiet`` message is the log, not a call to act; ``turn_session`` names the session a message is
@@ -767,24 +768,61 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
             return False
         session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
     who = display_name_of(getattr(message, "author_display", "") or "", author)
+    outbox = reply_outbox(source, turn_key(message))
     outcome = await engine.run(
         Turn(
             session=session,
             key=turn_key(message),
-            body=body,
+            body=turn_body(message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None),
             name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
         ),
         process=process,
     )
-    if not outcome.ok or not outcome.text:
+    answer_files = sorted(str(p) for p in outbox.iterdir() if p.is_file()) if outbox.is_dir() else []
+    if not outcome.ok or not (outcome.text or answer_files):
         console.info("✗ %s  %s — no reply: %s", channel, who, _line(outcome.detail))
         return False
     if getattr(driver_cls, "replies_explicitly", False):
         await skip_message(message)
         return True
-    await message.reply(await message.reply_spec(body=outcome.text))
+    # quote=None: the answer quotes the message only when the person wrote again meanwhile.
+    await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
     console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
     return True
+
+
+def reply_outbox(source, key: str):
+    """The folder a turn saves files into to send them with its answer — one per message, so a
+    redelivered turn finds what it already wrote."""
+    import hashlib  # noqa: PLC0415
+
+    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+    return data_dir_for("data_source", source.id) / "outbox" / hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def turn_body(message, *, outbox=None) -> str:
+    """What the agent reads for one channel message: the message it quotes, its words, the files it
+    carried (local paths it can open) and — on a channel that takes files — where to put files to
+    send back."""
+    lines = []
+    quoted = getattr(message, "reply_to", None)
+    if quoted is not None:
+        said = " ".join(str(getattr(quoted, "body", "") or "").split())
+        lines.append(f"(replying to: «{said[:300]}»)")
+    body = str(getattr(message, "body", "") or "").strip()
+    if body:
+        lines.append(body)
+    files = tuple(getattr(message, "files", ()) or ())
+    if files:
+        lines.append("Files that came with this message:")
+        for f in files:
+            where = f.path or f"not downloaded ({f.fetch_error or 'unavailable'})"
+            caption = f" — {f.caption}" if getattr(f, "caption", None) else ""
+            lines.append(f"- {f.name or 'file'} ({f.as_.value}, {f.media_type or 'unknown type'}): {where}{caption}")
+    if outbox is not None:
+        lines.append(f"To send files with your answer, save them in {outbox}")
+    return "\n".join(lines)
 
 
 def _announce(deployment, kind: str, **data) -> None:

@@ -560,8 +560,13 @@ class StreamInbox:
                                 await position.commit()
                             continue
                         spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
+                        quoted = None
+                        if item.reply_to_external_id:
+                            quoted = await SourceItem.get_one(
+                                {"data_source_id": str(source.id), "external_id": item.reply_to_external_id}
+                            )
                         handed.append(Delivered(
-                            spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered
+                            spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered, quoted=quoted
                         ))
                     page = DeliveredPage(handed, position=position, source_id=str(source.id), last=rows[-1])
                     if not handed:
@@ -591,11 +596,11 @@ class StreamInbox:
 
         return DataDriver.loaded(self.provider)
 
-    async def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
+    async def reply_spec(self, item, *, body: str, files=(), quote: bool = True) -> MessageSpec:
         """The reply to ``item``, in this stream inbox's own channel shape — the rule
         and the reason are ``DataSource.reply_spec``'s."""
         source = await self.ensure_source()
-        return source.reply_spec(item, body=body, attachments=attachments)
+        return source.reply_spec(item, body=body, files=files, quote=quote)
 
     async def send(self, spec: MessageSpec) -> str:
         """Deliver an outbound spec through the source's messaging seam.

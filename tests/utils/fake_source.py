@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import replace
 from typing import AsyncGenerator, ClassVar, Iterable, Optional
 
@@ -21,9 +21,21 @@ from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
+from flow_sdk.sources.errors import NotFound, Rejected
 from flow_sdk.sources.families import MessageSource
+from flow_sdk.sources.files import FileSupport
 from flow_sdk.sources.protocols import Verdict
-from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem
+from flow_sdk.sources.values.items import (
+    EmailMessageData,
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    ReactionData,
+    ReactionItem,
+    ReactionMode,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import DataPage
 from flow_sdk.utils.serialization import iso_to_utc
@@ -50,6 +62,14 @@ class Script:
         self.send = None
         self._sent_at_last_fetch = 0
         self._outgoing: dict = {}
+        #: The bytes of every file an inbound message carried, by media key — what ``open`` serves.
+        self.blobs: dict[str, bytes] = {}
+        #: Every ``react``/``unreact``: ``(target key, emoji, removed)``.
+        self.reacted: list[tuple[str, str, bool]] = []
+        #: The emoji this channel shows (a stand-in for Telegram's list): anything else is ``Rejected``.
+        self.allowed_emoji: frozenset[str] = frozenset({"👍", "👀", "✅", "❤️", "🔥", "🎉", "🙏"})
+        #: False keeps the scripted records inside the stream inbox (projected into conversations).
+        self.flat_kind = True
 
     def push(self, *messages: dict) -> None:
         """Queue one page of inbound messages for the next traversal."""
@@ -58,6 +78,15 @@ class Script:
 
 class ScriptedSource(MessageSource):
     provider = "scripted"
+    files = FileSupport(
+        kinds=frozenset(FileKind),
+        per_message=1,
+        max_bytes={FileKind.IMAGE: 5_000_000},
+        caption_max=1024,
+        caption_kinds=frozenset({FileKind.IMAGE, FileKind.VIDEO, FileKind.DOCUMENT}),
+    )
+    quotes = True
+    reactions_per_actor = 1
     #: The script a registered subclass is built over — the engine builds a fresh source per session.
     script_of: ClassVar[Optional[Script]] = None
 
@@ -95,15 +124,58 @@ class ScriptedSource(MessageSource):
         return self._sent(data)
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
-        return self._sent(data)
+        return self._sent(data, quoted=origin.key)
 
-    def _sent(self, data: MessageData) -> MessageItem:
+    @asynccontextmanager
+    async def _stream(self, file: FileItem):
+        blob = self.script.blobs.get(file.origin.key)
+        if blob is None:
+            raise NotFound("the file expired", origin=file.origin)
+
+        async def chunks():
+            yield blob
+
+        yield chunks()
+
+    def open(self, file: FileItem, *, chunk_size: int = 65536):
+        return self._stream(file)
+
+    async def react(self, target: CloudOrigin, emoji: str) -> None:
+        if emoji not in self.script.allowed_emoji:
+            raise Rejected(f"{emoji} is not a reaction this channel shows")
+        self.script.reacted.append((target.key, emoji, False))
+
+    async def unreact(self, target: CloudOrigin, emoji: str = "") -> None:
+        self.script.reacted.append((target.key, emoji, True))
+
+    def _sent(self, data: MessageData, quoted: str = "") -> MessageItem:
         external_id = f"<sent-{mint_uuid()}@{self.provider}>"
-        self.script.sent.append({"external_id": external_id, "text": data.text or "", **self.script._outgoing})
+        files = [
+            {"name": f.data.name, "as_": str(f.data.as_), "caption": f.data.caption, "path": f.data.path}
+            for f in data.attachments
+        ]
+        self.script.sent.append(
+            {"external_id": external_id, "text": data.text or "", "files": files, "quoted": quoted, **self.script._outgoing}
+        )
         self.script.sent_event.set()
         return MessageItem(origin=self.origin(external_id), data=data)
 
-    def _item(self, m: dict) -> MessageItem:
+    def _item(self, m: dict):
+        if m.get("reaction"):
+            r = m["reaction"]
+            author = r.get("author", "someone@example.com")
+            return ReactionItem(
+                origin=self.origin(f"reaction-{mint_uuid()}"),
+                data=ReactionData(
+                    target=self.origin(r["target"]),
+                    sender=UserProfile(origin=self.origin(author), address=author),
+                    emojis=tuple(r.get("emojis", ())),
+                    mode=ReactionMode(r.get("mode", "set")),
+                ),
+            )
+        return self._message(m)
+
+    def _message(self, m: dict) -> MessageItem:
         # Globally unique, as a provider's ids are: a per-instance counter collided across tests
         # sharing one source, and the "new" message became an update of an old one.
         external_id = m.get("external_id") or f"<{mint_uuid()}@{self.provider}>"
@@ -115,10 +187,21 @@ class ScriptedSource(MessageSource):
             conversation=self.origin(m.get("thread_key", "thr-1")),
             in_reply_to=self.origin(reply) if reply else None,
             sent_at=iso_to_utc(m["occurred_at"]) if m.get("occurred_at") else None,
+            attachments=tuple(self._file(f) for f in m.get("files", ())),
         )
         # A plain message unless the script names a subject — the kind the scripted channel always had.
         data = EmailMessageData(subject=m["name"], **fields) if m.get("name") else MessageData(**fields)
         return MessageItem(origin=self.origin(external_id), data=data)
+
+
+    def _file(self, f: dict) -> FileItem:
+        key = f.get("key") or f"media-{mint_uuid()}"
+        if "bytes" in f:
+            self.script.blobs[key] = f["bytes"]
+        data = MessageFileData(
+            name=f.get("name"), media_type=f.get("media_type"), as_=FileKind(f.get("as_", "document")), caption=f.get("caption")
+        )
+        return FileItem(origin=self.origin(key), data=data)
 
 
 class _ScriptedType(DataDriver):
@@ -140,7 +223,7 @@ class _ScriptedType(DataDriver):
         (``message``), which sits outside the stream inbox's ``content.message`` root — a fence about paging
         or acks must not become a test of projecting one very long thread."""
         found = await super().traverse(row, position)
-        if not found.items:
+        if not found.items or not self.script.flat_kind:
             return found
         return replace(found, items=[item.model_copy(update={"kind": SCRIPTED_KIND}) for item in found.items])
 
@@ -151,10 +234,12 @@ class _ScriptedType(DataDriver):
 
 
 @contextmanager
-def scripted_provider(provider: str = "scripted", *, pages: Iterable[list[dict]] = ()):
-    """Register a scripted source under *provider* for the block, restoring what was there."""
+def scripted_provider(provider: str = "scripted", *, pages: Iterable[list[dict]] = (), projected: bool = False):
+    """Register a scripted source under *provider* for the block, restoring what was there.
+    ``projected`` keeps its records in the stream inbox's kind, so they thread into conversations."""
     previous: Optional[DataDriver] = DRIVERS.get_or_none(provider)
     script = Script(provider, pages)
+    script.flat_kind = not projected
     cls = type(f"Scripted_{provider}", (ScriptedSource,), {"provider": provider, "script_of": script})
     DRIVERS.register(_ScriptedType(cls, script, kind=f"datasource.api.{provider}"))
     try:

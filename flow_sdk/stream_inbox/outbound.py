@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -210,6 +210,36 @@ def _reply_target(source, item, channel: str) -> ReplyTarget:
     )
 
 
+async def quoting(target: ReplyTarget, reply_to) -> ReplyTarget:
+    """*target* answering one chosen message (a FlowMessage, or its id) instead of the newest. Only
+    the reference changes: WHO the reply goes to and on which thread stays the target's — quoting our
+    own message on email must still mail the other person."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    message = await FlowMessage.get_one({"id": str(reply_to)}) if isinstance(reply_to, str) else reply_to
+    item_id = getattr(message, "source_item_id", None) if message is not None else None
+    item = await SourceItem.get_one({"id": str(item_id)}) if item_id else None
+    if item is None or not item.external_id:
+        raise ChannelSendUnavailable("the message to reply to did not come through this channel")
+    if str(item.data_source_id) != str(target.source.id):
+        raise ChannelSendUnavailable("the message to reply to is on another channel")
+    return replace(target, in_reply_to=item.external_id)
+
+
+def outgoing_files(target: ReplyTarget, files) -> tuple:
+    """*files* (paths or ``MessageFile``s) as the contract's local files, checked against the channel
+    — a refusal names the file and the limit, before anything is sent."""
+    from flow_sdk.builtin.source_item import MessageFile  # noqa: PLC0415
+    from flow_sdk.sources.files import resolve_files  # noqa: PLC0415
+
+    items = tuple(MessageFile.model_validate(f).to_item() for f in files or ())
+    if not items:
+        return ()
+    driver = target.driver
+    return resolve_files(items, driver.cls.files, title=driver.display_title)
+
+
 async def dispatch_channel_reply(
     conversation_id: str,
     *,
@@ -217,10 +247,16 @@ async def dispatch_channel_reply(
     source_id: str | None = None,
     item=None,
     source=None,
+    reply_to=None,
+    files=(),
 ):
     """Accept a reply and start it. Returns once DISPATCHED. ``item`` is the message this answers;
     without it the reply answers the newest message someone else wrote. ``source`` is ``item``'s
-    already-loaded row, when the caller holds one."""
+    already-loaded row, when the caller holds one.
+
+    ``reply_to`` (a FlowMessage or its id) quotes that message; without it a person's reply does not
+    quote — a channel whose replies only thread keeps its reference either way. ``files`` are checked
+    here, so a refusal reaches the caller rather than the log."""
     from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
     try:
@@ -229,11 +265,15 @@ async def dispatch_channel_reply(
             if item is not None
             else resolve_reply_target(conversation_id, source_id=source_id)
         )
-    except ChannelSendUnavailable as exc:
+        if reply_to:
+            target = await quoting(target, reply_to)
+        outgoing = outgoing_files(target, files)
+    except (ChannelSendUnavailable, ValueError) as exc:
         return ApiFailResponse(message=str(exc))
+    quote = bool(reply_to) or item is not None
 
     task = asyncio.create_task(
-        _run_send(conversation_id, target, text),
+        _run_send(conversation_id, target, text, files=outgoing, quote=quote),
         name=f"channel_send_{conversation_id[:8]}",
     )
     _INFLIGHT.add(task)
@@ -242,8 +282,9 @@ async def dispatch_channel_reply(
     return ApiSuccessResponse(data={"accepted": True, "channel": target.channel, "to": target.to})
 
 
-async def send_to(conversation_id: str, target: ReplyTarget, text: str):
-    """*text* into the conversation, where *target* says — the one outbound send. Answers the ``SendOutcome``."""
+async def send_to(conversation_id: str, target: ReplyTarget, text: str, *, files: tuple = (), quote: bool = True):
+    """*text* (and *files*, the contract's local files) into the conversation, where *target* says —
+    the one outbound send. Answers the ``SendOutcome``."""
     return await target.driver.send(
         target.source,
         thread_key=target.thread_key,
@@ -252,16 +293,18 @@ async def send_to(conversation_id: str, target: ReplyTarget, text: str):
         subject=target.subject,
         conversation_id=conversation_id,
         in_reply_to=target.in_reply_to,
+        files=files,
+        quote=quote,
     )
 
 
-async def _run_send(conversation_id: str, target: ReplyTarget, text: str) -> None:
+async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, files: tuple = (), quote: bool = True) -> None:
     """The background half. Never raises — a failed reply must not take down
     the request that started it, and the worker's own record is the trail."""
     from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
 
     try:
-        outcome = await send_to(conversation_id, target, text)
+        outcome = await send_to(conversation_id, target, text, files=files, quote=quote)
         logger.info(
             "[channel-send] %s → %s %s (id=%s, artifact=%s)",
             target.channel,

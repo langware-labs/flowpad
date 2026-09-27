@@ -22,6 +22,7 @@ from flow_sdk.sources.errors import (
     SourceUnavailable,
     Unsupported,
 )
+from flow_sdk.sources.files import FileSupport, local_file, read_file
 from flow_sdk.sources.families import MessageSource, ObjectSource, RecordSource
 from flow_sdk.sources.folder import FolderSource
 from flow_sdk.sources.memory import MemoryMessages, MemorySource, MemoryStore
@@ -33,6 +34,8 @@ from flow_sdk.sources.protocols import (
     Listable,
     Messaging,
     Mutable,
+    Openable,
+    Reacting,
     Readable,
     StableHandle,
     Verdict,
@@ -53,12 +56,17 @@ from flow_sdk.sources.values import (
     FileData,
     FileDataPage,
     FileItem,
+    FileKind,
     MessageData,
+    MessageFileData,
     MessageItem,
     MessageQuery,
     Move,
     ObjectQuery,
     Payload,
+    ReactionData,
+    ReactionItem,
+    ReactionMode,
     RecordData,
     RecordItem,
     RecordQuery,
@@ -67,6 +75,16 @@ from flow_sdk.sources.values import (
 )
 
 __all__ = [
+    "FileKind",
+    "MessageFileData",
+    "ReactionData",
+    "ReactionItem",
+    "ReactionMode",
+    "FileSupport",
+    "Openable",
+    "Reacting",
+    "local_file",
+    "read_file",
     "DEFAULT_PAGE_SIZE",
     "AccessDenied",
     "Altitude",

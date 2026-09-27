@@ -116,6 +116,11 @@ async def _place(source: DataSource, found: Pass) -> Optional[IngestReport]:
         # `sync_source` refused the run before traversing if this source cannot place files, so a
         # reflector exists here.
         await reflect_refs(source, found.refs, found.tombstones, found.renames)
+    if found.reactions:
+        # After the records: a reaction in the same page as its message lands on that message.
+        from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
+
+        await apply_reactions(source, found.reactions)
     return report
 
 

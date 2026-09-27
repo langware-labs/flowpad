@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any, ClassVar, Optional
 
 from flow_sdk.sources.base import Family, Source
+from flow_sdk.sources.files import FileSupport
 
 
 class ObjectSource(Source):
@@ -52,6 +53,14 @@ class MessageSource(RecordSource):
     echoes_sends: ClassVar[bool] = True
     #: A send may land as a draft instead (nobody on the line, a worker that only drafts).
     sends_may_draft: ClassVar[bool] = False
+    #: The files ``send`` accepts — kinds, sizes, how many per provider message. Takes none by default.
+    files: ClassVar[FileSupport] = FileSupport()
+    #: ``reply(origin)`` quotes THAT message (WhatsApp, Telegram, email's In-Reply-To); ``False`` means a
+    #: reply only lands in the message's thread (Slack).
+    quotes: ClassVar[bool] = False
+    #: How many reactions one person keeps on a message: 1 = a new one replaces (WhatsApp, a Telegram
+    #: bot); 0 = any number (Slack).
+    reactions_per_actor: ClassVar[int] = 0
 
     @classmethod
     def outbound_spec(cls) -> Optional[type]:
