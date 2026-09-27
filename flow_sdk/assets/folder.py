@@ -1,7 +1,9 @@
 """Registry-driven enumeration and placement within explicitly supplied folders."""
 from __future__ import annotations
 
+import logging
 import os
+import shutil
 from pathlib import Path
 
 from pydantic import field_validator
@@ -15,6 +17,8 @@ from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_g
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.spec import DataSpec
 
+log = logging.getLogger(__name__)
+
 
 class AssetScanError(ValueError):
     def __init__(self, issues: list[AssetScanIssue]):
@@ -23,13 +27,47 @@ class AssetScanError(ValueError):
 
 
 def _broken_link(path: Path) -> Path | None:
-    return next((parent for parent in (path, *path.parents) if parent.is_symlink() and not parent.exists()), None)
+    # Walk up only until something resolves: an existing path has no dangling
+    # link above it. Asked for every candidate mount of every folder asset, and
+    # most candidates do not exist, so a full ancestor lstat chain per call was
+    # most of a home-folder scan.
+    while True:
+        if path.exists():
+            return None
+        if path.is_symlink():
+            return path
+        if path.parent == path:
+            return None
+        path = path.parent
+
+
+def _remove_husk(folder: Path) -> bool:
+    """Delete an asset folder whose main document is gone and whose only
+    content is our own ``.flow`` metadata. Nothing a person wrote is in it, so
+    reporting it on every scan only repeats an error nobody can act on; the
+    first scan that meets it removes it. A folder holding anything else is
+    left alone and reported, and a symlinked folder is never followed."""
+    if folder.is_symlink():
+        return False
+    try:
+        if [entry.name for entry in folder.iterdir()] != [".flow"]:
+            return False
+        shutil.rmtree(folder)
+    except OSError as error:
+        log.warning("asset scan: could not remove husk %s: %s", folder, error)
+        return False
+    log.info("asset scan: removed husk %s (identity without a main document)", folder)
+    return True
 
 
 class AssetFolder(DataSpec):
     path: Path
     project_id: str | None = None
     recursive: bool = False
+    # The types the caller will keep; empty means every type. A declared mount
+    # is only walked for these, so a picker that wants skills never parses the
+    # thousand tasks, prompts and docs a home folder holds.
+    types: frozenset[str] = frozenset()
 
     @field_validator("path")
     @classmethod
@@ -44,6 +82,8 @@ class AssetFolder(DataSpec):
         for name in SchemaRegistry.get_all_types():
             info = SchemaRegistry.get(name)
             if info is None or info.shape is None or info.keyed_by_ref:
+                continue
+            if self.types and str(info.type_name) not in self.types:
                 continue
             recursive = self.recursive or any(w.recursive for w in info.walk)
             for mount in info.scan_mounts:
@@ -122,6 +162,8 @@ class AssetFolder(DataSpec):
                                 issue(candidate, str(error))
                                 break
                             if has_identity:
+                                if _remove_husk(candidate):
+                                    break
                                 issue(candidate, f"Missing asset main document: {info.shape.main}")
                                 break
                 except (OSError, ValueError) as error:
