@@ -1618,12 +1618,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     terminalRef.current?.focus();
   };
 
-  // "Paste path" from the Files tab lands where the user was last typing: the
-  // chat composer (at its caret) when it had focus last, else the PTY. The
-  // terminal's focusin below clears the flag.
-  const composerRef = useRef<CompactExecutionInputHandle>(null);
-  const composerFocusedLastRef = useRef(false);
-
   // Re-sync width whenever the terminal gains focus (click, tab, or programmatic).
   // xterm routes focus into a hidden <textarea> inside the container, so focusin
   // (which bubbles) captures every focus path.
@@ -1631,12 +1625,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!terminalReady) return;
     const container = xtermContainerRef.current;
     if (!container) return;
-    const onFocusIn = () => {
-      composerFocusedLastRef.current = false;
-      reassertGeometry();
-    };
-    container.addEventListener('focusin', onFocusIn);
-    return () => container.removeEventListener('focusin', onFocusIn);
+    container.addEventListener('focusin', reassertGeometry);
+    return () => container.removeEventListener('focusin', reassertGeometry);
   }, [terminalReady, reassertGeometry]);
 
   const handleFileDrop = useCallback(
@@ -1657,13 +1647,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
-  const handleComposerFocus = useCallback(() => {
-    composerFocusedLastRef.current = true;
-  }, []);
+  // "Paste path" from the Files tab: into the chat composer at its caret when
+  // chat mode is on (the composer is mounted only then, and the chat layer
+  // covers the PTY), else into the PTY.
+  const composerRef = useRef<CompactExecutionInputHandle>(null);
   const handleInsertInputPath = useCallback((path: string) => {
-    const composer = composerRef.current;
-    if (composerFocusedLastRef.current && composer) {
-      composer.insertAtCaret(path);
+    if (composerRef.current) {
+      composerRef.current.insertAtCaret(path);
       return;
     }
     void shellRef.current?.sendInput(shellQuote(path));
@@ -1997,7 +1987,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   process={process}
                   onPasteImages={handleChatPasteImages}
                   composerRef={composerRef}
-                  onComposerFocus={handleComposerFocus}
                 />
               ) : undefined
             }

@@ -29,7 +29,8 @@ interface InputFilesPanelProps {
 
 interface RowActionProps {
   label: string;
-  title: string;
+  /** Tooltip; defaults to `label`. */
+  title?: string;
   icon: LucideIcon;
   onClick: () => void;
   className?: string;
@@ -37,7 +38,7 @@ interface RowActionProps {
 }
 
 /** Hover-revealed icon button on a file row; never triggers the row's own click. */
-const RowAction: React.FC<RowActionProps> = ({ label, title, icon: Icon, onClick, className, disabled }) => (
+const RowAction: React.FC<RowActionProps> = ({ label, title = label, icon: Icon, onClick, className, disabled }) => (
   <Button
     variant="ghost"
     size="sm"
@@ -213,8 +214,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
                     onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, itemPath, { select: true })}
                   />
                   <RowAction
-                    label={`Delete ${item.name}`}
-                    title={`Delete ${item.name}`}
+                    label={t`Delete ${item.name}`}
                     icon={Trash2}
                     className="hover:text-destructive"
                     disabled={isDeleting}
