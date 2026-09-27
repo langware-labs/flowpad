@@ -20,7 +20,9 @@ from flow_sdk.ingest.testing import position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
+from flow_sdk.sources.files import local_file
 from flow_sdk.sources.testing import Subject, checks_for
+from flow_sdk.sources.values.items import FileKind, MessageData
 
 GmailSource = asset_module("gmail").GmailSource
 smtp_message = asset_module("gmail").smtp_message
@@ -34,7 +36,7 @@ ALL_MAIL = "[Gmail]/All Mail"
 
 
 def _raw(*, message_id="<incoming@gmail.test>", in_reply_to="<question@gmail.test>", sender="Sailor <sailor@example.com>",
-         to="captain@gmail.com", subject="Treasure", text="The treasure is under the mast.") -> bytes:
+         to="captain@gmail.com", subject="Treasure", text="The treasure is under the mast.", files=()) -> bytes:
     message = EmailMessage()
     message["From"], message["To"], message["Subject"] = sender, to, subject
     message["Date"] = "Tue, 2 Sep 2025 12:00:00 +0000"
@@ -43,7 +45,14 @@ def _raw(*, message_id="<incoming@gmail.test>", in_reply_to="<question@gmail.tes
     if in_reply_to:
         message["In-Reply-To"] = in_reply_to
     message.set_content(text)
+    for name, media_type, blob in files:
+        maintype, _, subtype = media_type.partition("/")
+        message.add_attachment(blob, maintype=maintype, subtype=subtype, filename=name)
     return message.as_bytes()
+
+
+MAP = ("map.png", "image/png", b"\x89PNG\r\n\x1a\n" + bytes(range(256)))
+LOG = ("log.pdf", "application/pdf", b"%PDF-1.4 the captain's log")
 
 
 class _Gmail:
@@ -155,14 +164,32 @@ def _view(prior=None, *, cursor=None, window_start=None):
 async def test_conformance(check, gmail):
     for n in (1, 2, 3):
         gmail.deliver(_raw(message_id=f"<m{n}@x>", in_reply_to=""), "9988")
-    binding = SourceBinding(config={"address": ADDRESS}, credentials=ResolvedSecrets(shape=AuthShape.ENV, values={"GMAIL_APP_PASSWORD": SecretStr(PASSWORD)}))
-    probe = GmailSource(binding)
+    gmail.deliver(_raw(message_id="<files@x>", in_reply_to="", files=(LOG, MAP)), "9989", sent=True)
+    probe = GmailSource(_binding())
     await check.run(Subject(
-        source=lambda: GmailSource(binding),
+        source=lambda: GmailSource(_binding()),
         seeded=tuple(probe.origin(f"<m{n}@x>") for n in (1, 2, 3)),
         conversation=probe.thread_origin("9988"),
         recipient=UserProfile(origin=probe.origin("sailor@example.com"), address="sailor@example.com"),
+        # Handed out by an earlier session: `open` finds the message again in All Mail.
+        inbound_file=_attachment(probe, "<files@x>", 1),
+        inbound_bytes=MAP[2],
     ))
+
+
+def _binding():
+    return SourceBinding(config={"address": ADDRESS}, credentials=ResolvedSecrets(shape=AuthShape.ENV, values={"GMAIL_APP_PASSWORD": SecretStr(PASSWORD)}))
+
+
+def _attachment(source, message_key, index):
+    from flow_sdk.sources.values.items import FileItem, MessageFileData
+
+    return FileItem(origin=source.origin(f"{message_key}#{index}"), data=MessageFileData())
+
+
+async def _read(source, file) -> bytes:
+    async with source.open(file) as chunks:
+        return b"".join([chunk async for chunk in chunks])
 
 
 def test_gmail_is_a_registered_message_source_with_env_only_auth():
@@ -315,3 +342,76 @@ async def test_the_double_delivers_after_the_source_exists_and_records_the_reply
         out = await driver.send(row, thread_key="", to="sailor@example.com", text="Under the mast.", in_reply_to=delivered["external_id"])
         (sent,) = double.sent()
         assert sent == {"to": "sailor@example.com", "text": "Under the mast.", "thread": delivered["external_id"], "external_id": out.external_id}
+
+
+async def test_inbound_attachments_map_in_order_and_open_from_the_session(gmail):
+    gmail.deliver(_raw(files=(LOG, MAP)), "9988", uid=7)
+    async with GmailSource(_binding()) as source:
+        (item,) = (await source.fetch()).items
+        log, chart = item.data.attachments
+        assert [(f.origin.key, f.data.name, f.data.media_type, f.data.size, f.data.as_) for f in (log, chart)] == [
+            ("<incoming@gmail.test>#0", "log.pdf", "application/pdf", len(LOG[2]), FileKind.DOCUMENT),
+            ("<incoming@gmail.test>#1", "map.png", "image/png", len(MAP[2]), FileKind.IMAGE),
+        ]
+        assert chart.origin.namespace == item.origin.namespace and item.data.text.strip() == "The treasure is under the mast."
+        fetches = len(gmail.calls)
+        assert (await _read(source, chart), await _read(source, log)) == (MAP[2], LOG[2])
+        assert len(gmail.calls) == fetches  # served from this session's copy, no round trip
+
+
+async def test_an_attachment_of_mail_without_a_message_id_reopens_by_its_uid(gmail):
+    gmail.deliver(_raw(message_id="", files=(MAP,)), "9988", uid=3)
+    async with GmailSource(_binding()) as source:
+        assert await _read(source, _attachment(source, "imap:44:3", 0)) == MAP[2]
+        with pytest.raises(Exception, match="no attachment 4"):
+            await _read(source, _attachment(source, "imap:44:3", 4))
+
+
+async def test_files_go_out_as_mime_attachments_on_the_threaded_reply(gmail, tmp_path):
+    gmail.deliver(_raw(), "9988")
+    paths = []
+    for name, _media_type, blob in (LOG, MAP):
+        (path := tmp_path / name).write_bytes(blob)
+        paths.append(local_file(path))
+    out = await DataDriver.loaded("gmail").send(
+        _row(), thread_key="", to="sailor@example.com", text="The log and the map.", in_reply_to="<incoming@gmail.test>", files=tuple(paths)
+    )
+    (sent,) = gmail.sent  # one email carries the body and every file
+    assert (sent["In-Reply-To"], sent["References"], sent["Subject"]) == ("<incoming@gmail.test>", "<incoming@gmail.test>", "Re: Treasure")
+    assert gmail_source.message_body(sent).strip() == "The log and the map."
+    assert gmail_source.message_attachments(sent) == [LOG, MAP]
+    assert out.parts == (str(sent["Message-ID"]),)
+
+
+async def test_a_file_without_text_sends_an_empty_body(gmail, tmp_path):
+    (path := tmp_path / "map.png").write_bytes(MAP[2])
+    async with GmailSource(_binding()) as source:
+        recipient = UserProfile(origin=source.origin("sailor@example.com"), address="sailor@example.com")
+        sent = await source.send(MessageData(recipients=(recipient,), attachments=(local_file(path),)))
+    (mail,) = gmail.sent
+    assert gmail_source.message_attachments(mail) == [MAP] and not gmail_source.message_body(mail).strip()
+    assert sent.data.text is None and [f.data.name for f in sent.data.attachments] == ["map.png"]
+
+
+async def test_a_file_that_is_not_local_is_refused_before_any_io(gmail):
+    async with GmailSource(_binding()) as source:
+        recipient = UserProfile(origin=source.origin("sailor@example.com"), address="sailor@example.com")
+        with pytest.raises(ValueError, match="local file"):
+            await source.send(MessageData(text="hi", recipients=(recipient,), attachments=(_attachment(source, "<m@x>", 0),)))
+    assert not gmail.sent and not gmail.calls
+
+
+async def test_the_double_carries_files_both_ways(monkeypatch, tmp_path):
+    Double = load_module(Path(__file__).parent, "matrix").Double
+    driver = DataDriver.loaded("gmail")
+    with Double() as double:
+        monkeypatch.setattr(driver, "credentials_for", double.credentials)
+        delivered = double.deliver("The map.", sender="sailor@example.com", files=[{"name": MAP[0], "media_type": MAP[1], "bytes": MAP[2]}])
+        async with await driver.open(_row(**double.config)) as source:
+            (item,) = (await source.fetch()).items
+            (chart,) = item.data.attachments
+            assert chart.origin.key == f"{delivered['external_id']}#0" and await _read(source, chart) == MAP[2]
+        (path := tmp_path / LOG[0]).write_bytes(LOG[2])
+        await driver.send(_row(**double.config), thread_key="", to="sailor@example.com", text="The log.", in_reply_to=delivered["external_id"], files=(local_file(path),))
+        (sent,) = double.sent()
+        assert sent["thread"] == delivered["external_id"] and sent["files"] == [{"name": LOG[0], "media_type": LOG[1], "bytes": LOG[2]}]

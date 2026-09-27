@@ -27,7 +27,10 @@ from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
+from flow_sdk.sources.errors import Rejected
+from flow_sdk.sources.files import local_file
 from flow_sdk.sources.testing import Subject, checks_for
+from flow_sdk.sources.values.items import FileItem, FileKind, MessageFileData, ReactionData, ReactionMode
 
 SlackSource = asset_module("slack").SlackSource
 slack_source = asset_module("slack")
@@ -103,12 +106,22 @@ def serve(monkeypatch, request):
 
 class _FakeSlack:
     """Channel histories, posts appended with fresh ts, DMs opened on demand. ``posts`` is every
-    ``chat.postMessage`` it accepted, in order; ``arrive`` is a message someone else wrote."""
+    ``chat.postMessage`` and completed upload it accepted, in order; ``arrive`` is a message someone
+    else wrote. Files go up in Slack's three steps and come down through ``files.info``; reactions
+    live on the history's messages, the bot reacting as ``UBOT``."""
+
+    #: Who the token is — ``auth.test``'s ``user_id``, and the reactor of every ``reactions.add``.
+    me = "UBOT"
 
     def __init__(self):
         self.clock = 300.0
         self.channels = {"C1": [_message("100.000100", "root"), _message("150.000150", "in thread", thread_ts="100.000100"), _message("200.000200", "later")]}
         self.posts: list[dict] = []
+        #: file id → {name, length, bytes}: every file that exists here, uploaded or arrived.
+        self.files: dict[str, dict] = {}
+        #: The Authorization header of every download.
+        self.downloads: list[str] = []
+        self.calls: list[tuple[str, dict]] = []
 
     def fresh_ts(self) -> str:
         """A ts later than every one handed out so far and never behind the wall clock, so a
@@ -116,19 +129,62 @@ class _FakeSlack:
         self.clock = max(time.time(), self.clock + 0.000001)
         return f"{self.clock:.6f}"
 
-    def arrive(self, channel: str, text: str, *, user: str, thread_ts: str | None = None) -> dict:
-        extra = {"thread_ts": thread_ts} if thread_ts else {}
+    def arrive(self, channel: str, text: str, *, user: str, thread_ts: str | None = None, files: tuple = (), reactions: dict | None = None) -> dict:
+        """``files``: ``(name, bytes)`` pairs the message carries; ``reactions``: ``{name: [user, ...]}``."""
+        extra: dict = {"thread_ts": thread_ts} if thread_ts else {}
+        if files:
+            extra["files"] = [self._file_entry(self._store_file(name, content)) for name, content in files]
+        if reactions:
+            extra["reactions"] = [{"name": n, "users": list(u), "count": len(u)} for n, u in reactions.items()]
         message = {**_message(self.fresh_ts(), text, **extra), "user": user}
         self.channels.setdefault(channel, []).append(message)
         return message
 
+    def _store_file(self, name: str, content: bytes | None = None, length: int | None = None) -> str:
+        file_id = f"F{len(self.files) + 1:08d}"
+        self.files[file_id] = {"name": name, "length": len(content) if content is not None else length, "bytes": content}
+        return file_id
+
+    def _file_entry(self, file_id: str, host: str = "") -> dict:
+        import mimetypes
+
+        f = self.files[file_id]
+        entry = {"id": file_id, "name": f["name"], "title": f["name"], "mimetype": mimetypes.guess_type(f["name"])[0] or "application/octet-stream",
+                 "size": len(f["bytes"] or b""), "permalink": f"https://example.slack.com/files/{file_id}"}
+        if host:
+            entry["url_private_download"] = f"http://{host}/download/{file_id}"
+        return entry
+
+    def message(self, channel: str, ts: str) -> dict:
+        return next(m for m in self.channels[channel] if m["ts"] == ts)
+
     def __call__(self, path, headers):
         route, _, query = path.partition("?")
         params = {k: v[0] for k, v in parse_qs(query).items()}
-        body = json.loads(headers["_body"]) if headers.get("_body") else {}
         method = route.lstrip("/")
+        host = str(headers.get("Host") or "")
+        if method.startswith("upload/"):
+            self.files[method.split("/", 1)[1]]["bytes"] = headers["_raw"]
+            return 200, b"OK - 5", {"Content-Type": "text/plain"}
+        body = json.loads(headers["_body"]) if headers.get("_body") else {}
+        self.calls.append((method, params or body))
         if method == "auth.test":
-            return self._ok(user_id="UBOT", bot_id="B1", user="flowpad", team_id="T1")
+            return self._ok(user_id=self.me, bot_id="B1", user="flowpad", team_id="T1")
+        if method.startswith("download/"):
+            self.downloads.append(str(headers.get("Authorization") or ""))
+            f = self.files.get(method.split("/", 1)[1])
+            return (200, f["bytes"], {"Content-Type": "application/octet-stream"}) if f else (404, b"", {})
+        if method == "files.getUploadURLExternal":
+            file_id = self._store_file(params["filename"], length=int(params["length"]))
+            return self._ok(upload_url=f"http://{host}/upload/{file_id}", file_id=file_id)
+        if method == "files.info":
+            if params.get("file") not in self.files:
+                return self._ok(ok=False, error="file_not_found")
+            return self._ok(file=self._file_entry(params["file"], host))
+        if method == "files.completeUploadExternal":
+            return self._complete(body)
+        if method.startswith("reactions."):
+            return self._react(method, params or body)
         if method == "conversations.open":
             self.channels.setdefault("D1", [])
             return self._ok(channel={"id": "D1"})
@@ -150,6 +206,45 @@ class _FakeSlack:
         more = start + limit < len(rows)
         return self._ok(messages=rows[start:start + limit], response_metadata={"next_cursor": str(start + limit) if more else ""})
 
+    def _complete(self, body: dict):
+        channel, thread = body.get("channel_id"), body.get("thread_ts") or None
+        if channel not in self.channels:
+            return self._ok(ok=False, error="channel_not_found")
+        ids = [f["id"] for f in body["files"]]
+        if any(self.files[i]["bytes"] is None or len(self.files[i]["bytes"]) != self.files[i]["length"] for i in ids):
+            return self._ok(ok=False, error="upload_incomplete")
+        ts, text = self.fresh_ts(), body.get("initial_comment") or ""
+        extra = {"thread_ts": thread} if thread else {}
+        self.channels[channel].append({**_message(ts, text, **extra), "user": self.me, "files": [self._file_entry(i) for i in ids]})
+        self.posts.append({"to": channel, "text": text, "thread": thread, "external_id": ts,
+                           "files": [(self.files[i]["name"], self.files[i]["bytes"]) for i in ids]})
+        return self._ok(files=[{"id": i, "title": self.files[i]["name"]} for i in ids])
+
+    def _react(self, method: str, args: dict):
+        channel, ts = args.get("channel"), args.get("timestamp")
+        found = [m for m in self.channels.get(channel, []) if m["ts"] == ts]
+        if not found:
+            return self._ok(ok=False, error="message_not_found")
+        reactions = found[0].setdefault("reactions", [])
+        if method == "reactions.get":
+            return self._ok(type="message", message=found[0])
+        entry = next((r for r in reactions if r["name"] == args["name"]), None)
+        if method == "reactions.add":
+            if entry is not None and self.me in entry["users"]:
+                return self._ok(ok=False, error="already_reacted")
+            if entry is None:
+                reactions.append(entry := {"name": args["name"], "users": [], "count": 0})
+            entry["users"].append(self.me)
+        else:
+            if entry is None or self.me not in entry["users"]:
+                return self._ok(ok=False, error="no_reaction")
+            entry["users"].remove(self.me)
+            if not entry["users"]:
+                reactions.remove(entry)
+        if entry in reactions:
+            entry["count"] = len(entry["users"])
+        return self._ok()
+
     @staticmethod
     def _ok(ok=True, **fields):
         return 200, json.dumps({"ok": ok, **fields}).encode(), {"Content-Type": "application/json"}
@@ -157,23 +252,31 @@ class _FakeSlack:
 
 @pytest.fixture
 def fake_slack():
-    with local_http_server(_FakeSlack()) as base:
-        yield base
+    slack = _FakeSlack()
+    with local_http_server(slack) as base:
+        yield SimpleNamespace(base=base, slack=slack)
+
+
+def _binding(base: str) -> SourceBinding:
+    return SourceBinding(
+        account_key="T1",
+        config={"channel": "C1", "base_url": base},
+        credentials=ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("xoxb-test")),
+    )
 
 
 @pytest.mark.parametrize("check", checks_for(SlackSource), ids=str)
 async def test_conformance(check, fake_slack):
-    binding = SourceBinding(
-        account_key="T1",
-        config={"channel": "C1", "base_url": fake_slack},
-        credentials=ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("xoxb-test")),
-    )
+    binding = _binding(fake_slack.base)
     probe = SlackSource(binding)
+    file_id = fake_slack.slack._store_file("notes.txt", b"handed out")
     await check.run(Subject(
         source=lambda: SlackSource(binding),
         seeded=tuple(probe.origin(ts, "C1") for ts in ("100.000100", "150.000150", "200.000200")),
         conversation=probe.origin("100.000100", "C1"),
         recipient=UserProfile(origin=probe.origin("U1"), name="Ada"),
+        inbound_file=FileItem(origin=probe.origin(file_id, "C1"), data=MessageFileData(name="notes.txt")),
+        inbound_bytes=b"handed out",
     ))
 
 
@@ -452,3 +555,194 @@ async def test_slack_message_spec_replies_into_the_channel_thread():
     r = SlackMessageSpec.reply_to(m, body="shipping")
     assert (r.to, r.thread_key, r.reply_to_external_id) == ([CHANNEL], "100.000100", "100.000100")
     assert DataDriver.loaded("slack").outbound_spec(_source()) is SlackMessageSpec
+
+
+# ── files ────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def double(monkeypatch):
+    from pathlib import Path
+
+    from flow_sdk.ingest.driver_registry import load_module
+
+    with load_module(Path(__file__).parent, "matrix").Double(channel=_saved_channel()) as d:
+        monkeypatch.setattr(DataDriver.loaded("slack"), "credentials_for", d.credentials)
+        yield d
+
+
+def test_the_channel_declares_what_it_takes():
+    assert SlackSource.files.kinds == {FileKind.IMAGE, FileKind.VIDEO, FileKind.AUDIO, FileKind.DOCUMENT}
+    assert (SlackSource.files.per_message, SlackSource.files.caption_max) == (10, 0)
+    assert SlackSource.quotes is False and SlackSource.reactions_per_actor == 0
+
+
+async def test_files_go_up_in_three_steps_with_the_text_as_their_comment_in_the_thread(double, tmp_path):
+    report, photo = tmp_path / "report.pdf", tmp_path / "site.jpg"
+    report.write_bytes(b"%PDF-1.7 report")
+    photo.write_bytes(b"\xff\xd8JPEG")
+    source = _source(**double.config)
+    await source.save()
+    outcome = await DataDriver.loaded("slack").send(
+        source, thread_key="100.000100", to=double.channel, text="the numbers", files=(local_file(report), local_file(photo))
+    )
+    (post,) = double.sent()
+    assert post["files"] == [("report.pdf", b"%PDF-1.7 report"), ("site.jpg", b"\xff\xd8JPEG")], "the bytes that arrived are the file's"
+    assert (post["text"], post["thread"]) == ("the numbers", "100.000100"), "one message: the text rides as initial_comment"
+    methods = [m for m, _ in double.slack.calls]
+    assert methods.count("files.getUploadURLExternal") == 2 and methods.count("files.completeUploadExternal") == 1
+    assert "chat.postMessage" not in methods
+    asked = [args for m, args in double.slack.calls if m == "files.getUploadURLExternal"]
+    assert [(a["filename"], a["length"]) for a in asked] == [("report.pdf", "15"), ("site.jpg", "6")]
+    assert outcome.external_id.startswith("file:F") and outcome.recorded is True
+    rows = await SourceItem.get_all({"data_source_id": str(source.id)})
+    assert rows == [], "no copy at send: Slack names no ts for an upload, so the echo is the record"
+
+
+async def test_a_files_only_send_has_no_comment_and_lands_top_level(double, tmp_path):
+    clip = tmp_path / "clip.mp3"
+    clip.write_bytes(b"ID3")
+    source = _source(**double.config)
+    await source.save()
+    await DataDriver.loaded("slack").send(source, thread_key="", to=double.channel, text="", files=(local_file(clip),))
+    (_, done), = [c for c in double.slack.calls if c[0] == "files.completeUploadExternal"]
+    assert "initial_comment" not in done and "thread_ts" not in done and done["channel_id"] == double.channel
+
+
+async def test_a_foreign_file_or_an_empty_message_is_refused_before_any_request(fake_slack):
+    from flow_sdk.sources.values.items import MessageData
+
+    async with SlackSource(_binding(fake_slack.base)) as s:
+        conversation = s.channel_origin("C1")
+        foreign = FileItem(origin=s.origin("F1", "C1"), data=MessageFileData(name="x"))
+        with pytest.raises(ValueError):
+            await s.send(MessageData(conversation=conversation, attachments=(foreign,)))
+        with pytest.raises(ValueError):
+            await s.send(MessageData(text=" ", conversation=conversation))
+    assert fake_slack.slack.calls == []
+
+
+async def test_inbound_files_are_mapped_and_their_bytes_read_with_the_token(fake_slack):
+    slack = fake_slack.slack
+    slack.arrive("C1", "see attached", user="U2", files=(("plan.png", b"\x89PNG"), ("spec.docx", b"PK")))
+    async with SlackSource(_binding(fake_slack.base)) as s:
+        page = await s.fetch(SlackSource.resume_after("200.000200"))
+        (item,) = page.items
+        png, docx = item.data.attachments
+        assert (png.data.name, png.data.media_type, png.data.as_, png.data.size) == ("plan.png", "image/png", FileKind.IMAGE, 4)
+        assert docx.data.as_ is FileKind.DOCUMENT and png.origin == s.origin(png.origin.key, "C1")
+        assert png.origin.url.startswith("https://example.slack.com/files/"), "the file's permalink, a link for people"
+        got = b""
+        async with s.open(png) as chunks:
+            async for chunk in chunks:
+                got += chunk
+    assert got == b"\x89PNG" and slack.downloads == ["Bearer xoxb-test"]
+
+
+async def test_a_traversal_stages_inbound_files_on_this_machine(double):
+    delivered = double.deliver("look", sender="U42", files=[("chart.png", b"\x89PNG chart")])
+    source = _source(**double.config)
+    await source.save()
+    result = await DataDriver.loaded("slack").traverse(source, _view())
+    (item,) = result.items
+    (staged,) = item.data.attachments
+    assert staged.origin.key == delivered["files"][0] and staged.data.fetch_error is None
+    from pathlib import Path
+
+    assert Path(staged.data.path).read_bytes() == b"\x89PNG chart"
+
+
+def test_a_file_slack_will_not_serve_keeps_its_metadata_and_says_why():
+    s = SlackSource(SourceBinding(account_key="T1", config={"channel": CHANNEL}))
+    item = s._item(CHANNEL, _message("1.0", "x", files=[{"id": "F9", "name": "gone.pdf", "mode": "tombstone"}]))
+    (f,) = item.data.attachments
+    assert f.data.name == "gone.pdf" and f.data.fetch_error == "deleted on Slack"
+
+
+# ── reactions ────────────────────────────────────────────────────────────────
+
+
+async def test_a_messages_reactions_are_one_set_per_person(fake_slack):
+    fake_slack.slack.arrive("C1", "ship it?", user="U2", reactions={"+1": ["U3", "U4"], "eyes": ["U3"], "partyparrot": ["U4"], "thumbsup::skin-tone-3": ["U5"]})
+    async with SlackSource(_binding(fake_slack.base)) as s:
+        page = await s.fetch(SlackSource.resume_after("200.000200"))
+    message, *reactions = page.items
+    assert all(isinstance(r.data, ReactionData) and r.data.mode is ReactionMode.SET for r in reactions)
+    assert {r.data.sender.origin.key: r.data.emojis for r in reactions} == {
+        "U3": ("👍", "👀"),
+        "U4": ("👍", ":partyparrot:"),
+        "U5": ("👍\U0001f3fc",),
+    }
+    assert {r.data.target for r in reactions} == {s.origin(message.origin.key, "C1")}
+    assert len({r.origin for r in reactions}) == 3
+
+
+async def test_a_traversal_hands_reactions_to_the_runtime_not_as_records(double):
+    delivered = double.deliver("ship it?", sender="U42")
+    double.react(delivered["external_id"], "tada", sender="U43")
+    source = _source(**double.config)
+    await source.save()
+    result = await DataDriver.loaded("slack").traverse(source, _view())
+    assert [i.body for i in result.items] == ["ship it?"]
+    (reaction,) = result.reactions
+    assert (reaction.data.target.key, reaction.data.emojis) == (delivered["external_id"], ("🎉",))
+
+
+async def test_we_react_by_slack_name_and_already_reacted_is_done(fake_slack):
+    async with SlackSource(_binding(fake_slack.base)) as s:
+        target = s.origin("100.000100", "C1")
+        await s.react(target, "👍")
+        await s.react(target, "👍")
+        await s.react(target, "❤")  # typed without U+FE0F: the same heart
+        await s.react(target, ":partyparrot:")
+    added = [args for m, args in fake_slack.slack.calls if m == "reactions.add"]
+    assert added[0] == {"channel": "C1", "timestamp": "100.000100", "name": "+1"}
+    assert [a["name"] for a in added] == ["+1", "+1", "heart", "partyparrot"]
+    assert {r["name"]: r["users"] for r in fake_slack.slack.message("C1", "100.000100")["reactions"]} == {
+        "+1": ["UBOT"], "heart": ["UBOT"], "partyparrot": ["UBOT"]
+    }
+
+
+async def test_an_emoji_slack_has_no_name_for_is_refused_before_any_request(fake_slack):
+    async with SlackSource(_binding(fake_slack.base)) as s:
+        with pytest.raises(Rejected):
+            await s.react(s.origin("100.000100", "C1"), "🦄")
+        with pytest.raises(Rejected):
+            await s.unreact(s.origin("100.000100", "C1"), "🦄")
+    assert fake_slack.slack.calls == []
+
+
+async def test_unreact_takes_back_one_or_all_of_ours_and_leaves_others(fake_slack):
+    slack = fake_slack.slack
+    slack.message("C1", "100.000100")["reactions"] = [
+        {"name": "+1", "users": ["UBOT", "U2"], "count": 2}, {"name": "eyes", "users": ["UBOT"], "count": 1}, {"name": "fire", "users": ["U2"], "count": 1},
+    ]
+    async with SlackSource(_binding(fake_slack.base)) as s:
+        target = s.origin("100.000100", "C1")
+        await s.unreact(target, "👀")
+        await s.unreact(target, "👀")  # no_reaction: already gone
+        assert {r["name"]: r["users"] for r in slack.message("C1", "100.000100")["reactions"]} == {"+1": ["UBOT", "U2"], "fire": ["U2"]}
+        await s.unreact(target)
+    assert {r["name"]: r["users"] for r in slack.message("C1", "100.000100")["reactions"]} == {"+1": ["U2"], "fire": ["U2"]}
+    removed = [args["name"] for m, args in slack.calls if m == "reactions.remove"]
+    assert removed == ["eyes", "eyes", "+1"]
+
+
+async def test_the_runtime_reacts_through_the_driver(double):
+    delivered = double.deliver("ship it?", sender="U42")
+    source = _source(**double.config)
+    await source.save()
+    driver = DataDriver.loaded("slack")
+    target = SlackSource(SourceBinding(account_key=source.account_key, config=double.config)).origin(delivered["external_id"], double.channel)
+    await driver.react(source, target, "✅")
+    assert double.reactions(delivered["external_id"]) == {"white_check_mark": ["UBOT"]}
+    await driver.react(source, target, "", remove=True)
+    assert double.reactions(delivered["external_id"]) == {}
+
+
+def test_the_emoji_table_round_trips():
+    emojis = asset_module("slack", "emojis")
+    for name in ("+1", "heart", "white_check_mark", "point_up", "100", "memo"):
+        assert emojis.name_of(emojis.unicode_of(name)) == name
+    assert emojis.name_of("👍🏽") == "+1::skin-tone-4" and emojis.unicode_of("+1::skin-tone-4") == "👍🏽"
+    assert emojis.unicode_of("thumbsup") == "👍" and emojis.name_of("🦄") is None

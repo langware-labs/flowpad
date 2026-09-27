@@ -684,9 +684,20 @@ export function FlowMessageBubble({
   // The attachment block (when present) + the per-message context-process control
   // (self-gates to advanced mode; renders nothing otherwise — empty fragment is
   // inert in MessageBubble's inline `{footer}` slot).
+  // A channel message's file whose bytes never came (the provider's link expired first): named,
+  // never offered as a download — there is no body bundle to pull.
+  const lostChannelFiles = fm?.origin
+    ? (fm.attachment ?? []).filter((a) => a.attachment_type === AttachmentType.FILE && !a.local_path)
+    : [];
   const footer = (
     <>
       {attachmentFooter}
+      {lostChannelFiles.map((a) => (
+        <p key={a.data} className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="channel-file-lost">
+          <File className="h-3 w-3" />
+          {t`${a.data.replace(/^data\//, '')} — not downloaded (the link expired)`}
+        </p>
+      ))}
       <MessageRunStatus
         fm={fm}
         run={run ?? null}

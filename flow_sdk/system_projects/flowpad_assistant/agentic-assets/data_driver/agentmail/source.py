@@ -7,12 +7,18 @@ projection, threading — is shared with every other mail channel.
 Email continues a thread by replying to a message in it, so a conversation-addressed send replies
 to the thread's latest message; a recipient-addressed send starts a new thread. The sent copy
 comes back through the same listing, so it is never recorded here.
+
+**Files.** Outgoing files ride the send/reply body base64-encoded (``attachments``). An inbound
+attachment is ``<message_id>#<attachment_id>``, mapped only from what the listing reports; ``open``
+asks AgentMail for a signed download URL and reads the bytes from it.
 """
 from __future__ import annotations
 
+import base64
+from contextlib import asynccontextmanager
 from datetime import datetime
 from email.utils import getaddresses, parseaddr
-from typing import Annotated, Any, AsyncGenerator, Mapping, Optional
+from typing import Annotated, Any, AsyncGenerator, AsyncIterator, Mapping, Optional
 from urllib.parse import quote
 
 from pydantic import StringConstraints
@@ -24,7 +30,16 @@ from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, OutcomeUnknown, Rejected, Unsupported
 from flow_sdk.sources.families import MessageSource
-from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
+from flow_sdk.sources.files import LOCAL_KIND, FileSupport, kind_of, read_file
+from flow_sdk.sources.values.items import (
+    EmailMessageData,
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    UserProfile,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
@@ -57,6 +72,8 @@ class AgentMailSource(EmailAddressing, MessageSource):
     durable_cursor = True
     page_size = PAGE_LIMIT
     pages_per_pass = 1
+    #: The send body carries the files base64-encoded; AgentMail takes a few MB a request.
+    files = FileSupport(kinds=frozenset(FileKind), per_message=50, max_message_bytes=6_000_000)
 
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
@@ -140,6 +157,21 @@ class AgentMailSource(EmailAddressing, MessageSource):
         address = address_of(sender)
         thread = str(message.get("thread_id") or "")
         recipients = [str(r) for field in ("to", "cc") for r in message.get(field) or [] if r]
+        message_id = str(message["message_id"])
+        replied = str(message.get("in_reply_to") or "").strip()
+        attachments = tuple(
+            FileItem(
+                origin=self.origin(f"{message_id}#{a['attachment_id']}"),
+                data=MessageFileData(
+                    name=str(a.get("filename") or "") or None,
+                    media_type=str(a.get("content_type") or "") or None,
+                    size=a.get("size") if isinstance(a.get("size"), int) else None,
+                    as_=kind_of(str(a.get("content_type") or "")),
+                ),
+            )
+            for a in message.get("attachments") or []
+            if isinstance(a, dict) and a.get("attachment_id")
+        )
         data = EmailMessageData(
             subject=str(message.get("subject") or "") or None,
             text=str(message.get("preview") or "") or None,
@@ -148,8 +180,38 @@ class AgentMailSource(EmailAddressing, MessageSource):
             sender=UserProfile(origin=self.origin(address), name=sender or None, address=address) if address else None,
             sent_at=_when(message.get("timestamp")),
             recipients=tuple(UserProfile(origin=self.origin(addr), name=name or None, address=addr) for name, addr in getaddresses(recipients) if addr),
+            in_reply_to=self.origin(replied) if replied else None,
+            attachments=attachments,
         )
-        return MessageItem(origin=self.origin(str(message["message_id"])), data=data)
+        return MessageItem(origin=self.origin(message_id), data=data)
+
+    # ── files ───────────────────────────────────────────────────────────────
+    def open(self, file: FileItem, *, chunk_size: int = 65536):
+        self._require_open()
+        return self._stream(file, chunk_size)
+
+    @asynccontextmanager
+    async def _stream(self, file: FileItem, chunk_size: int) -> AsyncIterator[AsyncIterator[bytes]]:
+        message_id, _, attachment_id = self._key_of(file.origin).rpartition("#")
+        if not message_id or not attachment_id:
+            raise NotFound("not an AgentMail attachment", origin=file.origin)
+        path = f"/inboxes/{self.inbox}/messages/{quote(message_id, safe='')}/attachments/{quote(attachment_id, safe='')}"
+        url = str((await self._api("GET", path)).get("download_url") or "")
+        if not url:
+            raise NotFound("AgentMail named no download URL for the attachment", origin=file.origin)
+        # A signed URL: our key never rides along to wherever it points.
+        if self._client is not None:
+            response = await http.request(self._client, "GET", url, hint="attachment download", origin=file.origin)
+        else:
+            async with http.client(REQUEST_TIMEOUT_SECONDS) as client:
+                response = await http.request(client, "GET", url, hint="attachment download", origin=file.origin)
+        blob = response.content
+
+        async def chunks() -> AsyncIterator[bytes]:
+            for i in range(0, len(blob), chunk_size):
+                yield blob[i : i + chunk_size]
+
+        yield chunks()
 
     # ── send ────────────────────────────────────────────────────────────────
     async def send(self, data: MessageData) -> MessageItem:
@@ -163,7 +225,7 @@ class AgentMailSource(EmailAddressing, MessageSource):
         if len(data.recipients) != 1:
             raise Unsupported("an AgentMail send has exactly one recipient")
         to = data.recipients[0].address or data.recipients[0].origin.key
-        body: dict[str, Any] = {"to": [to], "text": data.text}
+        body: dict[str, Any] = {"to": [to], **_content(data)}
         if getattr(data, "subject", None):
             body["subject"] = data.subject
         return self._sent(await self._api("POST", f"/inboxes/{self.inbox}/messages/send", json=body), data, None)
@@ -179,7 +241,7 @@ class AgentMailSource(EmailAddressing, MessageSource):
         # The RFC 5322 id rides in the PATH and holds `<`, `>` and `@`: raw, it is a 400 that reads
         # like a bad body.
         path = f"/inboxes/{self.inbox}/messages/{quote(self._key_of(answered), safe='')}/reply"
-        sent = self._sent(await self._api("POST", path, json={"text": data.text}), data, conversation)
+        sent = self._sent(await self._api("POST", path, json=_content(data)), data, conversation)
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": answered}))
 
     def _sent(self, body: dict, data: MessageData, conversation: Optional[CloudOrigin]) -> MessageItem:
@@ -187,7 +249,8 @@ class AgentMailSource(EmailAddressing, MessageSource):
         if not message_id:
             raise OutcomeUnknown("AgentMail accepted the message but returned no id for it")
         sent = EmailMessageData(
-            text=data.text, subject=getattr(data, "subject", None), conversation=conversation or (self.origin(thread) if thread else None)
+            text=data.text, subject=getattr(data, "subject", None), conversation=conversation or (self.origin(thread) if thread else None),
+            attachments=data.attachments,
         )
         return MessageItem(origin=self.origin(message_id), data=sent)
 
@@ -236,10 +299,30 @@ def address_of(sender: str) -> str:
 def _check_outgoing(data: object) -> None:
     if not isinstance(data, MessageData):
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
-    if not (data.text or "").strip():
-        raise ValueError("an AgentMail message needs text")
-    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None or data.attachments:
-        raise ValueError("sender, in_reply_to, sent_at and attachments are assigned by the provider")
+    if not (data.text or "").strip() and not data.attachments:
+        raise ValueError("an AgentMail message needs text or a file")
+    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
+        raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
+    for f in data.attachments:
+        if f.origin.kind != LOCAL_KIND or not isinstance(f.data, MessageFileData) or not f.data.path:
+            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
+        if f.data.as_ not in AgentMailSource.files.kinds:
+            raise ValueError(f"AgentMail does not send a {f.data.as_.value}")
+
+
+def _content(data: MessageData) -> dict[str, Any]:
+    """The body and files of a send or reply, as AgentMail's JSON takes them."""
+    content: dict[str, Any] = {"text": data.text or ""}
+    if data.attachments:
+        content["attachments"] = [
+            {
+                "filename": f.data.name or "file",
+                "content_type": f.data.media_type or "application/octet-stream",
+                "content": base64.b64encode(read_file(f)).decode("ascii"),
+            }
+            for f in data.attachments
+        ]
+    return content
 
 
 def _start(query: Optional[MessageQuery], cursor: Optional[str]) -> tuple[Optional[str], Optional[str], str]:

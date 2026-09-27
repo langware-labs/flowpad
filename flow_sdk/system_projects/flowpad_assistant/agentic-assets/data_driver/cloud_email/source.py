@@ -19,6 +19,10 @@ Three traps the code respects:
   the ids seen AT it) filters locally.
 * **A hydration failure stops the page.** Advancing past a message never read would lose it; the
   hydrated prefix is returned and the next pass retries the rest.
+
+**Files are metadata only.** The hub's mailbox API neither sends an attachment nor serves one's bytes,
+so ``files`` takes nothing and an inbound attachment keeps its name, type and size with a
+``fetch_error`` saying why its bytes never came. There is no ``open``.
 """
 from __future__ import annotations
 
@@ -40,7 +44,15 @@ from flow_sdk.sources.errors import (
     Unsupported,
 )
 from flow_sdk.sources.families import MessageSource
-from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
+from flow_sdk.sources.files import kind_of
+from flow_sdk.sources.values.items import (
+    EmailMessageData,
+    FileItem,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    UserProfile,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
@@ -52,6 +64,8 @@ PAGE_LIMIT = 25
 #: How far back an exclusive ``after`` is nudged, so the boundary second is never eaten.
 BOUNDARY_NUDGE_SECONDS = 1
 _MARK = "mark:"
+#: Why an inbound attachment has no bytes on this machine.
+NO_ATTACHMENT_BYTES = "the hub mailbox does not serve attachment bytes yet"
 
 
 class MailboxTransport(Protocol):
@@ -227,6 +241,21 @@ class CloudEmailSource(EmailAddressing, MessageSource):
             for r in message.get(field) or []
             if isinstance(r, dict) and r.get("address")
         ]
+        message_id = str(message["message_id"])
+        attachments = tuple(
+            FileItem(
+                origin=self.origin(f"{message_id}#{a['attachment_id']}"),
+                data=MessageFileData(
+                    name=str(a.get("filename") or "") or None,
+                    media_type=str(a.get("content_type") or "") or None,
+                    size=a.get("size") if isinstance(a.get("size"), int) else None,
+                    as_=kind_of(str(a.get("content_type") or "")),
+                    fetch_error=NO_ATTACHMENT_BYTES,
+                ),
+            )
+            for a in message.get("attachments") or []
+            if isinstance(a, dict) and a.get("attachment_id")
+        )
         data = CloudEmailMessageData(
             subject=str(message.get("subject") or "") or None,
             text=_body_of(message) or None,
@@ -235,9 +264,10 @@ class CloudEmailSource(EmailAddressing, MessageSource):
             sent_at=_when(message.get("timestamp")),
             in_reply_to=self.origin(replied) if replied else None,
             recipients=tuple(recipients),
+            attachments=attachments,
             raw=message,
         )
-        return MessageItem(origin=self.origin(str(message["message_id"])), data=data)
+        return MessageItem(origin=self.origin(message_id), data=data)
 
     # ── send ────────────────────────────────────────────────────────────────
     async def send(self, data: MessageData) -> MessageItem:
@@ -354,8 +384,10 @@ def _check_outgoing(data: object) -> None:
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
     if not (data.text or "").strip():
         raise ValueError("a mailbox message needs text")
-    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None or data.attachments:
-        raise ValueError("sender, in_reply_to, sent_at and attachments are assigned by the provider")
+    if data.attachments:
+        raise ValueError("the hub mailbox sends no files")
+    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
+        raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
 
 
-__all__ = ["BOUNDARY_NUDGE_SECONDS", "CHANNEL", "PAGE_LIMIT", "CloudEmailMessageData", "CloudEmailSource", "MailboxTransport"]
+__all__ = ["BOUNDARY_NUDGE_SECONDS", "CHANNEL", "NO_ATTACHMENT_BYTES", "PAGE_LIMIT", "CloudEmailMessageData", "CloudEmailSource", "MailboxTransport"]

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 import uuid
 
 import pytest
@@ -23,7 +24,11 @@ from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
+from flow_sdk.sources.errors import NotFound
+from flow_sdk.sources.files import local_file
 from flow_sdk.sources.testing import Subject, checks_for
+from flow_sdk.sources.values.origin import CloudOrigin
+from flow_sdk.sources.values.items import FileItem, FileKind, MessageData, MessageFileData, ReactionItem, ReactionMode
 
 WhatsAppSource = asset_module("whatsapp").WhatsAppSource
 digits = asset_module("whatsapp").digits
@@ -126,8 +131,47 @@ def test_a_quote_is_provenance_not_membership():
 
 
 def test_a_shape_we_do_not_render_yields_nothing_rather_than_raising():
-    image = {"id": "wamid.IMG", "from": WA_ID, "timestamp": "1789000002", "type": "image", "image": {"id": "media"}}
-    assert _items(_webhook(image)) == [] and _items({"entry": "not a list"}) == [] and _items({}) == []
+    notice = {"id": "wamid.SYS", "from": WA_ID, "timestamp": "1789000002", "type": "system", "system": {"body": "number changed"}}
+    bare = {"id": "wamid.IMG", "from": WA_ID, "timestamp": "1789000002", "type": "image", "image": {}}
+    assert _items(_webhook(notice, bare)) == [] and _items({"entry": "not a list"}) == [] and _items({}) == []
+
+
+def _events(payload):
+    return [e.item for e in WhatsAppSource(_binding()).events_from_webhook(payload)]
+
+
+@pytest.mark.parametrize(("wire", "extra", "kind"), [
+    ("image", {}, FileKind.IMAGE),
+    ("video", {}, FileKind.VIDEO),
+    ("audio", {}, FileKind.AUDIO),
+    ("audio", {"voice": True}, FileKind.VOICE),
+    ("document", {"filename": "report.pdf"}, FileKind.DOCUMENT),
+    ("sticker", {"animated": False}, FileKind.STICKER),
+])
+def test_an_inbound_media_message_carries_its_file_as_a_handle(wire, extra, kind):
+    media = {"id": "media-77", "mime_type": "application/x-test", "sha256": "abc123", **extra}
+    if wire in ("image", "video", "document"):
+        media["caption"] = "look at this"
+    (item,) = _events(_webhook({"id": "wamid.M", "from": WA_ID, "timestamp": "1789000003", "type": wire, wire: media}))
+    (f,) = item.data.attachments
+    probe = WhatsAppSource(_binding())
+    assert item.origin == probe.message_origin("wamid.M", WA_ID) and item.data.text is None
+    assert f.origin == probe.media_origin("media-77") and f.origin.namespace != item.origin.namespace
+    assert (f.data.as_, f.data.media_type, f.data.sha256) == (kind, "application/x-test", "abc123")
+    assert f.data.caption == ("look at this" if wire in ("image", "video", "document") else None)
+    assert f.data.name == ("report.pdf" if wire == "document" else None)
+
+
+def test_an_inbound_reaction_names_the_message_it_is_on_and_a_removal_is_the_empty_set():
+    on = {"id": "wamid.R1", "from": WA_ID, "timestamp": "1789000004", "type": "reaction", "reaction": {"message_id": "wamid.OUT1", "emoji": "👍"}}
+    off = {"id": "wamid.R2", "from": WA_ID, "timestamp": "1789000005", "type": "reaction", "reaction": {"message_id": "wamid.OUT1"}}
+    added, removed = _events(_webhook(on, off, contacts=[{"wa_id": WA_ID, "profile": {"name": "Dana"}}]))
+    probe = WhatsAppSource(_binding())
+    assert isinstance(added, ReactionItem) and isinstance(removed, ReactionItem)
+    # The same origin the reacted message has — ours from `send`, theirs from the webhook.
+    assert added.data.target == probe.message_origin("wamid.OUT1", WA_ID)
+    assert (added.data.emojis, added.data.mode, added.data.sender.name) == (("👍",), ReactionMode.SET, "Dana")
+    assert removed.data.emojis == () and added.origin != removed.origin
 
 
 def test_a_number_is_read_in_one_spelling():
@@ -142,18 +186,64 @@ async def test_fetch_reports_unchanged_because_there_is_nothing_to_poll():
 # ── the contract, over a Graph double ────────────────────────────────────────
 
 
+def _header(headers, name: str) -> str:
+    return next((str(v) for k, v in headers.items() if k.lower() == name.lower()), "")
+
+
+def multipart(content_type: str, raw: bytes) -> dict[str, tuple]:
+    """A multipart body, byte-exact: ``{field: (filename, content_type, bytes)}``."""
+    boundary = content_type.split("boundary=", 1)[1].strip('"').encode()
+    fields = {}
+    for chunk in raw.split(b"--" + boundary)[1:-1]:
+        head, body = chunk[2:-2].split(b"\r\n\r\n", 1)
+        text = head.decode()
+        name = re.search(r'name="([^"]*)"', text).group(1)
+        filename = re.search(r'filename="([^"]*)"', text)
+        ctype = re.search(r"(?im)^content-type:\s*(.+)$", text)
+        fields[name] = (filename.group(1) if filename else None, ctype.group(1).strip() if ctype else None, body)
+    return fields
+
+
 class _Graph:
+    """Graph's messages, media upload and media download routes. ``media`` is what Meta holds for
+    download by id (``(bytes, mime)``); an id it does not hold answers 404, as an expired one does."""
+
     def __init__(self, replies=None):
         self.replies, self.requests, self.bodies, self.sent = replies, [], [], 0
+        self.base = ""
+        self.media: dict[str, tuple[bytes, str]] = {}
+        #: Every upload: ``(media id, {field: (filename, content_type, bytes)})``.
+        self.uploads: list[tuple[str, dict]] = []
+        self.downloads: list[str] = []
 
     def __call__(self, path, headers):
         self.requests.append(path)
         self.bodies.append(str(headers.get("_body") or ""))
+        route = path.split("?")[0]
+        if route.startswith("/download/"):
+            self.bodies[-1] = ""
+            self.downloads.append(_header(headers, "Authorization"))
+            held = self.media.get(route.rsplit("/", 1)[-1])
+            if held is None:
+                return 404, b"gone", {}
+            return 200, held[0], {"Content-Type": held[1]}
         if self.replies is not None:
             status, reply = self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
-        elif path.split("?")[0].endswith("/messages"):
+        elif route.endswith("/media") and headers.get("_method") == "POST":
+            media_id = f"up{len(self.uploads) + 1}"
+            fields = multipart(_header(headers, "Content-Type"), headers["_raw"])
+            self.uploads.append((media_id, fields))
+            self.media[media_id] = (fields["file"][2], fields["type"][2].decode())
+            status, reply = 200, {"id": media_id}
+        elif route.endswith("/messages"):
             self.sent += 1
             status, reply = 200, {"messages": [{"id": f"wamid.OUT{self.sent}"}]}
+        elif route.rsplit("/", 1)[-1].startswith(("media", "up")):
+            media_id = route.rsplit("/", 1)[-1]
+            if media_id not in self.media:
+                status, reply = 404, {"error": {"message": "(#100) Media not found"}}
+            else:
+                status, reply = 200, {"url": f"{self.base}/download/{media_id}", "mime_type": self.media[media_id][1], "id": media_id}
         else:
             status, reply = 200, {"display_phone_number": "+1 555-000-1111", "id": PHONE_ID}
         return status, json.dumps(reply).encode(), {"Content-Type": "application/json"}
@@ -164,7 +254,7 @@ def serve(request):
     def _factory(replies=None):
         graph = _Graph(replies)
         server = local_http_server(graph)
-        LOOPBACK["base_url"] = server.__enter__()
+        LOOPBACK["base_url"] = graph.base = server.__enter__()
         request.addfinalizer(lambda: server.__exit__(None, None, None))
         return graph
 
@@ -174,12 +264,15 @@ def serve(request):
 
 @pytest.mark.parametrize("check", checks_for(WhatsAppSource), ids=str)
 async def test_conformance(check, serve):
-    serve()
+    graph = serve()
+    graph.media["media-conf"] = (b"\x89PNG conformance", "image/png")
     probe = WhatsAppSource(_binding())
     await check.run(Subject(
         source=lambda: WhatsAppSource(_binding()),
         conversation=probe.conversation_origin(WA_ID),
         recipient=UserProfile(origin=probe.conversation_origin("15551230000"), name="Ada"),
+        inbound_file=FileItem(origin=probe.media_origin("media-conf"), data=MessageFileData(media_type="image/png", as_=FileKind.IMAGE)),
+        inbound_bytes=b"\x89PNG conformance",
     ))
 
 
@@ -227,6 +320,128 @@ async def test_a_refused_send_does_not_park_the_source(serve):
 async def test_a_send_without_a_recipient_refuses():
     with pytest.raises(ValueError, match="wa_id"):
         await DataDriver.loaded("whatsapp").send(_source(), thread_key="", to="", text="hi")
+
+
+# ── files ────────────────────────────────────────────────────────────────────
+
+
+def _file(tmp_path, name: str, content: bytes, **kw) -> FileItem:
+    path = tmp_path / name
+    path.write_bytes(content)
+    return local_file(path, **kw)
+
+
+def _posts(graph: _Graph) -> list[dict]:
+    return [json.loads(b) for p, b in zip(graph.requests, graph.bodies) if p.split("?")[0].endswith("/messages") and b]
+
+
+@pytest.mark.parametrize(("name", "as_", "wire"), [
+    ("photo.png", "image", "image"),
+    ("clip.mp4", "video", "video"),
+    ("song.mp3", "audio", "audio"),
+    ("note.ogg", "voice", "audio"),
+    ("report.pdf", "document", "document"),
+    ("sticker.webp", "sticker", "sticker"),
+])
+async def test_each_kind_uploads_its_bytes_then_sends_the_media_id(serve, tmp_path, name, as_, wire):
+    graph = serve()
+    content = b"\x00\x01bytes of " + name.encode() + b"\r\n--not-a-boundary\xff"
+    item = _file(tmp_path, name, content, as_=as_)
+    async with WhatsAppSource(_binding()) as source:
+        sent = await source.send(MessageData(conversation=source.conversation_origin(WA_ID), attachments=(item,)))
+    ((media_id, fields),) = graph.uploads
+    assert fields["file"] == (name, item.data.media_type, content)  # byte-exact
+    assert (fields["messaging_product"][2], fields["type"][2]) == (b"whatsapp", item.data.media_type.encode())
+    assert graph.requests[0].split("?")[0].endswith(f"/{PHONE_ID}/media")
+    (body,) = _posts(graph)
+    assert (body["to"], body["type"], body[wire]["id"]) == (WA_ID, wire, media_id)
+    assert ("filename" in body[wire]) == (as_ == "document") and "caption" not in body[wire]
+    assert sent.data.attachments == (item,) and sent.data.text is None
+
+
+async def test_the_message_body_rides_as_the_caption_and_a_reply_still_quotes(serve, recorded, tmp_path, monkeypatch):
+    graph = serve()
+    monkeypatch.setattr(DataDriver.loaded("whatsapp"), "files_root", lambda row: tmp_path / "kept")
+    photo = tmp_path / "photo.jpg"
+    photo.write_bytes(b"jpeg!")
+    outcome = await DataDriver.loaded("whatsapp").send(
+        _source(), thread_key=WA_ID, to=WA_ID, text="the view", in_reply_to="wamid.AAA", files=[local_file(photo)]
+    )
+    (body,) = _posts(graph)
+    assert (body["type"], body["image"]["caption"], body["context"]) == ("image", "the view", {"message_id": "wamid.AAA"})
+    assert outcome.external_id == "wamid.OUT1" and len(outcome.parts) == 1
+
+
+async def test_a_voice_note_that_is_not_ogg_is_refused_before_anything_is_uploaded(serve, tmp_path):
+    graph = serve()
+    item = _file(tmp_path, "memo.mp3", b"mp3", as_="voice")
+    async with WhatsAppSource(_binding()) as source:
+        with pytest.raises(ValueError, match="OGG/Opus.*libopus"):
+            await source.send(MessageData(conversation=source.conversation_origin(WA_ID), attachments=(item,)))
+    assert graph.requests == []
+
+
+async def test_a_file_that_is_not_local_or_a_second_file_is_refused(serve, tmp_path):
+    serve()
+    foreign = FileItem(origin=WhatsAppSource(_binding()).media_origin("media-1"), data=MessageFileData(path="/etc/hosts"))
+    two = (_file(tmp_path, "a.png", b"a"), _file(tmp_path, "b.png", b"b"))
+    async with WhatsAppSource(_binding()) as source:
+        to = source.conversation_origin(WA_ID)
+        with pytest.raises(ValueError, match="local file"):
+            await source.send(MessageData(conversation=to, attachments=(foreign,)))
+        with pytest.raises(ValueError, match="one file"):
+            await source.send(MessageData(conversation=to, attachments=two))
+        with pytest.raises(ValueError, match="no caption"):
+            await source.send(MessageData(text="words", conversation=to, attachments=(_file(tmp_path, "s.webp", b"s", as_="sticker"),)))
+
+
+async def test_open_trades_the_media_id_for_a_link_and_reads_it_with_the_token(serve):
+    graph = serve()
+    graph.media["media-9"] = (b"A" * 70_000 + b"end", "image/jpeg")
+    async with WhatsAppSource(_binding()) as source:
+        got = b""
+        async with source.open(FileItem(origin=source.media_origin("media-9"), data=MessageFileData())) as chunks:
+            async for chunk in chunks:
+                got += chunk
+    assert got == b"A" * 70_000 + b"end" and graph.downloads == ["Bearer EAAG-test"]
+
+
+async def test_an_expired_media_id_is_not_found(serve):
+    serve()
+    async with WhatsAppSource(_binding()) as source:
+        with pytest.raises(NotFound):
+            async with source.open(FileItem(origin=source.media_origin("media-gone"), data=MessageFileData())):
+                pass
+
+
+async def test_an_inbound_file_is_copied_while_the_session_is_open_and_a_lost_one_says_why(serve, tmp_path, monkeypatch):
+    graph = serve()
+    graph.media["media-1"] = (b"voice bytes", "audio/ogg")
+    driver = DataDriver.loaded("whatsapp")
+    monkeypatch.setattr(driver, "files_root", lambda row: tmp_path)
+    voice = {"id": "wamid.V", "from": WA_ID, "timestamp": "1789000006", "type": "audio", "audio": {"id": "media-1", "mime_type": "audio/ogg", "voice": True}}
+    lost = {"id": "wamid.L", "from": WA_ID, "timestamp": "1789000007", "type": "image", "image": {"id": "media-lost", "mime_type": "image/jpeg"}}
+    async with WhatsAppSource(_binding()) as source:
+        events = await driver._stage_events(_source(), source, source.events_from_webhook(_webhook(voice, lost)))
+    kept, gone = (e.item.data.attachments[0].data for e in events)
+    assert kept.as_ is FileKind.VOICE and open(kept.path, "rb").read() == b"voice bytes" and kept.fetch_error is None
+    assert gone.path is None and "Media not found" in gone.fetch_error
+
+
+# ── reactions ────────────────────────────────────────────────────────────────
+
+
+async def test_react_and_unreact_post_a_reaction_to_the_person_the_message_is_with(serve):
+    graph = serve()
+    async with WhatsAppSource(_binding()) as source:
+        target = source.message_origin("wamid.AAA", WA_ID)
+        await source.react(target, "👍")
+        await source.unreact(target, "👍")
+        with pytest.raises(ValueError, match="emoji"):
+            await source.react(target, "")
+    on, off = _posts(graph)
+    assert on == {"messaging_product": "whatsapp", "recipient_type": "individual", "to": WA_ID, "type": "reaction", "reaction": {"message_id": "wamid.AAA", "emoji": "👍"}}
+    assert off["reaction"] == {"message_id": "wamid.AAA", "emoji": ""}
 
 
 # ── verify ───────────────────────────────────────────────────────────────────
@@ -364,4 +579,41 @@ async def test_the_double_delivers_after_the_source_exists_and_records_the_reply
 
         assert double.sent() == []
         outcome = await driver.send(source, thread_key=WA_ID, to=WA_ID, text="and this went out", in_reply_to=delivery["external_id"])
-        assert double.sent() == [{"to": WA_ID, "text": "and this went out", "thread": delivery["external_id"], "external_id": outcome.external_id}]
+        assert double.sent() == [{"to": WA_ID, "text": "and this went out", "thread": delivery["external_id"], "external_id": outcome.external_id, "files": []}]
+
+
+async def test_the_double_carries_files_quotes_and_reactions_both_ways(monkeypatch, tmp_path):
+    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
+
+    Double = load_module(SHIPPED_ROOT / "whatsapp" / "tests", "matrix").Double
+    driver = DataDriver.loaded("whatsapp")
+    monkeypatch.setattr(driver, "files_root", lambda row: tmp_path / "files")
+    with Double() as double:
+        monkeypatch.setattr(driver, "credentials_for", double.credentials)
+        source = DataSource(provider="whatsapp", name=f"WhatsApp double {uuid.uuid4().hex[:8]}", config=double.config)
+        await source.save()
+
+        first = double.deliver("hi", sender=WA_ID)
+        await driver.ingest_pushed(source, json.loads(first["body"]), headers=first["headers"], raw=first["body"])
+        delivery = double.deliver("a picture", sender=WA_ID, reply_to=first["external_id"],
+                                  files=[{"name": "p.jpg", "media_type": "image/jpeg", "as_": "image", "bytes": b"jpeg bytes"}])
+        pushed = await driver.ingest_pushed(source, json.loads(delivery["body"]), headers=delivery["headers"], raw=delivery["body"])
+        assert pushed["ingested"] == 1
+        (message,) = json.loads(delivery["body"])["entry"][0]["changes"][0]["value"]["messages"]
+        assert (message["image"]["caption"], message["context"]["id"]) == ("a picture", first["external_id"])
+
+        reacted = double.react(first["external_id"], "❤️", sender=WA_ID)
+        assert (await driver.ingest_pushed(source, json.loads(reacted["body"]), headers=reacted["headers"], raw=reacted["body"]))["reactions"] == 1
+
+        (row,) = await SourceItem.get_all({"data_source_id": source.id, "origin_key": first["external_id"]})
+        assert [(r.emoji, r.by_name) for r in row.reactions] == [("❤️", f"Person {WA_ID}")]  # landed on the message it named
+        target = CloudOrigin(kind=row.origin_kind, namespace=row.origin_namespace, key=row.origin_key)
+        await driver.react(source, target, "👍")
+        assert double.reactions() == [{"to": WA_ID, "target": first["external_id"], "emoji": "👍"}]
+
+        # A send stamps the number it went out as (`account_key`), which scopes every later origin — so last.
+        note = tmp_path / "note.ogg"
+        note.write_bytes(b"OggS voice")
+        await driver.send(source, thread_key=WA_ID, to=WA_ID, text="", files=[local_file(note, as_="voice")])
+        (sent,) = double.sent()
+        assert sent["files"] == [{"as_": "audio", "name": "note.ogg", "media_type": "audio/ogg", "caption": None, "bytes": b"OggS voice"}]
