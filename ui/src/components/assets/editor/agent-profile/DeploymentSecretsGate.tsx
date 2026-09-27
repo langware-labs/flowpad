@@ -55,7 +55,8 @@ export function DeploymentSecretsGate({ agent, deployment, readiness, onChange }
   const [notHere, setNotHere] = useState<string[]>([]);
 
   /** A value this computer does not hold either: "Use mine" has nothing to copy. */
-  const exhausted = (item: AgentReadinessItem) => item.vars.length > 0 && item.vars.every((v) => notHere.includes(v));
+  const exhausted = (item: AgentReadinessItem) =>
+    item.missing.length > 0 && item.missing.every((v) => notHere.includes(v));
 
   const fix = async (key: string, run: () => Promise<void>) => {
     setBusy(key);

@@ -27,5 +27,14 @@
       "placeholder": "972501234567",
       "hint": "Who may drive the owning agent from this number — phone numbers with country code, digits only, one per line. Empty allows nobody."
     }
+  },
+  "webhook": {
+    "url_var": "webhook_url",
+    "methods": [
+      "POST"
+    ],
+    "required_headers": [
+      "x-webhook-hmac"
+    ]
   }
 }

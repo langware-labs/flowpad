@@ -44,6 +44,7 @@ function item(name: string, extra: Partial<AgentReadinessItem> = {}): AgentReadi
     status: 'missing',
     where: 'hub',
     vars: [],
+    missing: [],
     connection: '',
     fix: `flow credentials set ${name} --stdin`,
     remedy: 'use_mine',
@@ -70,7 +71,7 @@ afterEach(() => {
 
 describe('the deploy gate', () => {
   it('"Use mine" copies the item\'s variables into the planned placement and shows the hub\'s new answer', async () => {
-    const stripe = item('stripe', { vars: ['STRIPE_KEY'] });
+    const stripe = item('stripe', { vars: ['STRIPE_KEY'], missing: ['STRIPE_KEY'] });
     const a = agent();
     const asked = vi
       .spyOn(a, 'readiness')
@@ -96,7 +97,7 @@ describe('the deploy gate', () => {
   });
 
   it('a value this computer lacks too says so and offers no "Use mine" again', async () => {
-    const stripe = item('stripe', { vars: ['STRIPE_KEY'] });
+    const stripe = item('stripe', { vars: ['STRIPE_KEY'], missing: ['STRIPE_KEY'] });
     const a = agent();
     vi.spyOn(a, 'readiness').mockResolvedValue(readiness([stripe]));
     vi.spyOn(credentialsService, 'useMine').mockResolvedValue({ copied: [], not_here: ['STRIPE_KEY'], hub_funded: [] });
@@ -172,7 +173,7 @@ describe('the new deployment dialog', () => {
         data: {
           data: {
             code: 'not_ready',
-            readiness: readiness([item('stripe', { vars: ['STRIPE_KEY'] })]),
+            readiness: readiness([item('stripe', { vars: ['STRIPE_KEY'], missing: ['STRIPE_KEY'] })]),
             deployment: DEPLOYMENT,
           },
         },

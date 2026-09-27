@@ -62,8 +62,11 @@ VALID: dict[str, dict] = {
     # name a registered kind — a filler string is refused at read, by design
     "compute_op": {"subkind": "cli", "exe_data": {"commands": {"linux": "true"}}, "output_spec_kind": "string"},
     # a source has ONE credential lifetime, not four at once; `reflect` is closed;
-    # a permission's key is a `permission.*` dot path and its mechanism a closed set
-    "data_driver": {"auth": None, "reflect": ["record"], "manifest_schema": 1, "permissions": {}},
+    # a permission's key is a `permission.*` dot path and its mechanism a closed set;
+    # a webhook's URL is one of the credential's variables
+    "data_driver": {"auth": {"credential": "hooked", "vars": {"webhook_url": "HOOKED_WEBHOOK_URL"}},
+                    "webhook": {"url_var": "webhook_url"},
+                    "reflect": ["record"], "manifest_schema": 1, "permissions": {}},
     # a poll interval below 60s is refused
     "data_source": {"poll_interval_seconds": 300},
     # `location_type` is a closed enum, and entity-only (not in the spec)

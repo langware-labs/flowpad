@@ -72,6 +72,8 @@ class ReadinessItemSpec(DataSpec):
     where: str = ""
     #: The variables a store must hold for it — empty for what a grant satisfies (a connection).
     vars: list[str] = Field(default_factory=list)
+    #: Which of ``vars`` the store lacks — what "use mine" copies; a value already there is never replaced.
+    missing: list[str] = Field(default_factory=list)
     #: The connection that grants it — what a cloud deployment's owner authorizes for its machine.
     connection: str = ""
     #: The one step that fixes a missing item, as a sentence.
@@ -97,8 +99,9 @@ class ReadinessSpec(DataSpec):
     def value_names(self, *, missing_only: bool = False) -> list[str]:
         """Every variable a deployment's store must hold (``missing_only``: that it does not yet) — the
         items a stored value satisfies, not what a grant satisfies."""
-        items = (i for i in self.items if not missing_only or i.status == STATUS_MISSING)
-        return list(dict.fromkeys(name for item in items for name in item.vars))
+        if missing_only:
+            return list(dict.fromkeys(n for i in self.items if i.status == STATUS_MISSING for n in i.missing))
+        return list(dict.fromkeys(name for item in self.items for name in item.vars))
 
 
 __all__ = [

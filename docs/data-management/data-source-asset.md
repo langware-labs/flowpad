@@ -212,6 +212,25 @@ and the second gets 403s at fetch while verification reports ready.
 
 None of the shapes ever contains a value.
 
+### `webhook`
+
+A driver that takes provider pushes names the `auth.vars` key holding its public URL, and the
+requests a provider sends it:
+
+```yaml
+webhook: { url_var: webhook_url, methods: [POST], required_headers: [x-webhook-hmac] }   # WAHA
+```
+
+`url_var` must be an `auth.vars` key (the manifest refuses one that is not): the URL is a
+per-machine credential variable, like any other. A cloud deploy asks the hub for one webhook
+per such driver among the agent's sources (`Agent.webhook_specs()` → `DeploymentWebhookSpec`,
+`flow_sdk/schema/data_spec/webhook_spec.py`); the hub keeps it for the deployment, stores its
+stable public URL as that variable and relays deliveries to
+`/api/v1/data_source/webhook/<driver>` on whatever machine the deployment has (hub
+`docs/webhooks.md`). Nobody sets `WAHA_WEBHOOK_URL` for a cloud deployment, and "use mine"
+never copies this computer's. A driver whose callback URL lives in the provider's dashboard
+(WhatsApp Cloud API, voice_phone) declares none; its owner sets the hub URL there by hand.
+
 ### `reflect`
 
 Supported modes, head first as the default. The values are `ReflectMode`: `record`
