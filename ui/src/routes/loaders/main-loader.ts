@@ -34,6 +34,7 @@ import { ProjectLoadError, loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog, perfTime } from './_perf';
 import { loadDockPointer } from './load-dock-pointer';
+import { resolveShellRoute } from './load-shell';
 import { runLoadRedirects } from './load-redirects';
 // Side-effect import: feature-owned redirect resolvers register themselves.
 import '@src/journey/journey-load-redirect';
@@ -321,6 +322,16 @@ async function loadAgentAppBody(args: LoaderArgs) {
     t.time('ensureComputeNode');
     if (dockForSetup) {
       redirectLegacyAssetFsDock(dockForSetup, requestUrl.pathname);
+      // RESOLVE (dock-loading step 3): a shell URL's identity redirects — scope,
+      // a dead process, a shell a process owns — before a tab is minted for a URL
+      // the loader is about to leave (I2).
+      if (dockForSetup.viewType === ViewType.SHELL) {
+        await resolveShellRoute(dockForSetup.pointer, requestUrl.pathname, {
+          scope: dockForSetup.scopeFilter,
+          viewMode: dockForSetup.viewMode,
+          options: dockForSetup.options,
+        });
+      }
     }
     let setupHandled = false;
 

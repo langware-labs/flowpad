@@ -300,6 +300,40 @@ export function restoreDisplayRedirect(processId: string, requestPath: string, c
   return placed.toUrl(requestPath);
 }
 
+/**
+ * A process URL that is dead (entity gone, or unreachable): fall back to the next
+ * candidate and ``replace()`` so BACK doesn't re-trigger this loader. Never returns.
+ */
+async function fallbackFromDeadProcess(processId: string, e: ProcessLoadError, shellUrl: ShellUrlBuilder): Promise<never> {
+  const directCleanup = buildProcessCleanup(e);
+  toplog.log(
+    'tab_switch',
+    `error ${sinceTabSwitch()} sink=process_missing kind=${e.kind} proc=${processId.slice(0, 8)} → fallback`,
+  );
+  const next = await loadNextProcess({
+    excludeIds: new Set([processId]),
+    projectId: dataContext.project?.id ?? null,
+  });
+  handleCleanups([directCleanup, ...next.cleaned]);
+  if (!next.loaded) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(shellUrl());
+  }
+  const fallbackPointer = loadedToPointer(next.loaded);
+  const requestedProc = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
+  const requestedName = requestedProc?.name ?? requestedProc?.displayName ?? `${processId.slice(0, 8)}…`;
+  const fallbackName =
+    next.loaded.kind === 'process'
+      ? (next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer)
+      : (next.loaded.shell.name ?? fallbackPointer);
+  notify.error({
+    title: t`Terminal "${requestedName}" not found`,
+    message: t`${directCleanup.title} — opened "${fallbackName}" instead.`,
+  });
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  throw replace(shellUrl(fallbackPointer));
+}
+
 async function routeProcessPointer(
   processId: string,
   shellUrl: ShellUrlBuilder,
@@ -362,35 +396,8 @@ async function routeProcessPointer(
       return;
     }
 
-    // Hard failure — the URL itself is dead. Fall back to the next
-    // candidate and ``replace()`` so BACK doesn't re-trigger this loader.
-    const directCleanup = buildProcessCleanup(e);
-    toplog.log(
-      'tab_switch',
-      `error ${sinceTabSwitch()} sink=process_missing kind=${e.kind} proc=${processId.slice(0, 8)} → fallback`,
-    );
-    const next = await loadNextProcess({
-      excludeIds: new Set([processId]),
-      projectId: dataContext.project?.id ?? null,
-    });
-    handleCleanups([directCleanup, ...next.cleaned]);
-    if (!next.loaded) {
-      // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw replace(shellUrl());
-    }
-    const fallbackPointer = loadedToPointer(next.loaded);
-    const requestedProc = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
-    const requestedName = requestedProc?.name ?? requestedProc?.displayName ?? `${processId.slice(0, 8)}…`;
-    const fallbackName =
-      next.loaded.kind === 'process'
-        ? (next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer)
-        : (next.loaded.shell.name ?? fallbackPointer);
-    notify.error({
-      title: t`Terminal "${requestedName}" not found`,
-      message: t`${directCleanup.title} — opened "${fallbackName}" instead.`,
-    });
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(shellUrl(fallbackPointer));
+    // Hard failure — the URL itself is dead.
+    await fallbackFromDeadProcess(processId, e, shellUrl);
   }
 }
 
@@ -458,6 +465,70 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
   }
 }
 
+// ── RESOLVE: identity-only redirects, before anything is written ────────────
+
+/**
+ * Identity of a process a URL names: the entity, or the typed reason the URL is
+ * dead. Cache-first; a cache hit costs nothing.
+ */
+async function processIdentity(processId: string): Promise<AgenticProcess | ProcessLoadError> {
+  const cached = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
+  if (cached) return cached;
+  try {
+    const proc = await AgenticProcess.getById<AgenticProcess>(processId);
+    return proc ?? new ProcessLoadError('entity_not_found', processId);
+  } catch (cause) {
+    const status =
+      (cause as { response?: { status?: number }; status?: number })?.response?.status ??
+      (cause as { status?: number })?.status;
+    return new ProcessLoadError(status === 404 ? 'entity_not_found' : 'network_error', processId, null, cause);
+  }
+}
+
+/**
+ * Step 3 of docs/navigation/dock-loading.md for shell URLs: every redirect a shell
+ * URL takes on IDENTITY alone — the owning project's scope, a dead process, a
+ * plain shell a process owns — decided before the route materializes a tab or
+ * writes context (I2). Throws a `replace()` redirect, or returns when the URL is
+ * already where it should be. Read-only apart from the dead-link fallback, which
+ * resolves the sibling to go to.
+ */
+export async function resolveShellRoute(
+  pointer: string | undefined,
+  requestPath: string = '/dock/shell',
+  carry?: ProcessRouteCarry,
+): Promise<void> {
+  const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p, carry?.options);
+  if (pointer && DockPointer.isAgenticProcessPointer(pointer)) {
+    const processId = DockPointer.extractAgenticProcessId(pointer);
+    const identity = await processIdentity(processId);
+    // Only a URL that is certainly dead falls back; a network blip keeps the user
+    // where they asked to be (the load phase surfaces it with a Retry).
+    if (identity instanceof ProcessLoadError) {
+      if (identity.kind === 'entity_not_found') await fallbackFromDeadProcess(processId, identity, shellUrl);
+      return;
+    }
+    await reconcileProcessScope(processId, requestPath, carry);
+    return;
+  }
+  if (!pointer || pointer === 'new_terminal') return;
+  const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
+  const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find((p) => p.shell_id === shellId);
+  const ownerId =
+    linkedProcess?.id ??
+    (Shell.getByIdFromCache<Shell>(shellId) ?? (await Shell.getById<Shell>(shellId).catch(() => null)))
+      ?.agentic_process_id;
+  if (ownerId) {
+    // A process owns this shell: its URL is the process's — in ONE hop, already
+    // scoped to the process's project (a bare process URL would redirect again).
+    // Scope alignment throws that URL; a projectless owner falls through to the
+    // bare one. `replace` so BACK doesn't pop back to the shell URL and re-bounce.
+    await reconcileProcessScope(ownerId, requestPath, { ...carry, scope: undefined });
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(shellUrl(new TypeId(AgenticProcess.type, ownerId).toString()));
+  }
+}
+
 // ── ROUTE: public entry point ───────────────────────────────────────────────
 
 /**
@@ -477,6 +548,11 @@ export async function loadShellRoute(
   // All redirects below preserve the request's layout keyword (dock/dev/win)
   // so a /win/shell focus window never falls back into full-app chrome (§7).
   const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p, carry?.options);
+
+  // Resolve first (the dock loader already ran it before materializing the tab;
+  // on a canonical URL this is a cache hit and returns). Direct callers get the
+  // same redirect policy.
+  await resolveShellRoute(pointer, requestPath, carry);
 
   // Every shell URL resolves identity/context only. The mounted TerminalPanel
   // owns the WS-bound start/attach (process and plain shell alike), so nothing

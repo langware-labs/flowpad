@@ -56,6 +56,8 @@ const fixtureRows: Row[] = (contract.url_cases as UrlCase[])
 /** Our world's own entities, so pointer rows resolve something real. */
 const worldRows: Row[] = [
   { name: 'shell: a plain shell', url: `/dock/shell/shell-${SHELL}` },
+  { name: 'shell: an agentic process with no scope (aligned to its project)', url: `/dock/shell/agentic_process-${PROC}` },
+  { name: "shell: a plain shell a process owns (its URL is the process's)", url: `/dock/shell/shell-${PROC_SHELL}` },
   {
     name: 'shell: an agentic process (scoped)',
     url: `/dock/shell/agentic_process-${PROC}?scope-mode=project&scope-activeProjectId=${P}`,
@@ -132,6 +134,12 @@ describe.each(ROWS)('dock loader — $name', ({ url }) => {
     // I2 — one redirect at most, to a URL that is itself canonical.
     let target = url;
     if (cold.outcome === 'redirect') {
+      // I2 — a redirect is decided before anything is written: no tab is minted
+      // for a URL the loader is about to leave.
+      expect(
+        show(log.filter((r) => r.path.endsWith('/graph/tab/new_tab'))),
+        `minted a tab for ${url} before redirecting to ${cold.location}`,
+      ).toEqual([]);
       target = cold.location;
       const followed = await runDockLoader(target);
       expect(
