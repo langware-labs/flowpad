@@ -78,10 +78,42 @@ async def _write_header(agent: "Agent", set_fields: dict[str, Any], drop_fields:
 # ── git probes ────────────────────────────────────────────────────────────
 
 
+def _hub_mirror(agent: "Agent") -> Optional[tuple[str, str]]:
+    """(this machine's mirror of the agent's hub repo, the agent's path in it), once published there."""
+    from flow_sdk.assets.hub_repo_sync import mirror_root  # noqa: PLC0415
+
+    origin = hub_origin(agent)
+    if origin is None or not origin.rel_path:
+        return None
+    root = mirror_root(origin.repo_id)
+    return (str(root), origin.rel_path) if (root / ".git").is_dir() else None
+
+
+def hub_origin(agent: "Agent"):
+    """The agent's hub-repo origin: its own field, else this desk's sync state for its folder."""
+    from flow_sdk.assets.hub_repo_sync import hub_origin_for_path  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
+
+    origin = getattr(agent, "origin", None)
+    if isinstance(origin, HubRepoOrigin):
+        return origin
+    try:
+        return hub_origin_for_path(Path(agent_folder(agent)))
+    except ScheduleError:
+        return None
+
+
 def _agent_repo(agent: "Agent") -> Optional[tuple[str, str]]:
-    """(repository root, the agent's folder relative to it), or None outside a checkout."""
+    """(repository root, the agent's folder relative to it), or None outside a checkout.
+
+    For an agent published into its project's hub repo that is this machine's
+    mirror of it — the commits a cloud machine runs are that repo's commits.
+    """
     from flow_sdk.utils.git import find_project_root  # noqa: PLC0415
 
+    hub = _hub_mirror(agent)
+    if hub is not None:
+        return hub
     try:
         folder = Path(agent_folder(agent))
     except ScheduleError:
@@ -135,6 +167,22 @@ def version_state(agent: "Agent") -> dict[str, Any]:
         "has_repo": False,
         "pending_changes": 0,
     }
+    hub = _hub_mirror(agent)
+    if hub is not None:
+        # Published into the project's hub repo: the local folder either still matches
+        # the published version (its tree) or it has changes to publish.
+        from flow_sdk.assets.hub_repo_sync import local_tree  # noqa: PLC0415
+
+        mirror, rel = hub
+        folder = Path(agent_folder(agent)).resolve()
+        worktree = folder.parents[len(Path(rel).parts) - 1] if len(Path(rel).parts) > 0 else folder
+        current = local_tree(Path(mirror), worktree, rel)
+        state["has_repo"] = True
+        published = hub_origin(agent)
+        state["published"] = True
+        state["published_commit"] = published.head_commit
+        state["pending_changes"] = 0 if current == published.tree else 1
+        return state
     repo = _agent_repo(agent)
     if repo is None:
         return state

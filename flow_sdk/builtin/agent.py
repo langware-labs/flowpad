@@ -678,7 +678,11 @@ class Agent(Entity):
         repairs the row rather than preserving a deployment that cannot load its
         files (notably ``avatar.png``).
         """
-        if self.remote and self.origin and not force:
+        from flow_sdk.builtin.agent_places import hub_origin  # noqa: PLC0415
+
+        # Published means "in its project's hub repo". A legacy GitHub/flow-cloud origin
+        # is republished into the hub repo on the next deploy.
+        if self.remote and hub_origin(self) is not None and not force:
             return False
 
         from flow_sdk.builtin.asset_publishing import (
