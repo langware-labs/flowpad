@@ -2,19 +2,17 @@
 id: 2408c41c-b3a4-42fe-8868-243b2ff11aae
 name: agent-builder
 description: >-
-  Builds a Flowpad agent together with the user — "make me an agent that…", "build a
-  tutor / guide / assistant agent", "an assistant / helper / bot / copilot our users or
-  customers use to do X", "an agent that watches this page and helps",
-  "an agent my code can call and get a result back", "deploy an agent to email /
-  WhatsApp / a chat endpoint", "give my agent a persona, an intro, auto-launch".
-  Interviews for the job, picks the kind (chat/guide, page-aware, typed service with
-  input and output shapes, deployed on a channel), writes `agent.json` and
-  `system_prompt.md` (plus the page snippet), indexes it, opens the agent's screens
-  and tells the user what to click, then tightens the prompt through a test script
-  the user runs. `improve <agent>` fixes an existing one ("my agent keeps giving away
-  the answer", "make my agent stricter", "it ignores the page"). NOT for a Claude
-  Code subagent in `.claude/agents/` (building-deliverables), creating other records
-  (flowpad-assistance), or just opening an agent that exists (flowpad-navigation).
+  Builds a Flowpad agent together with the user — "make me an agent that…", "a
+  tutor / guide / assistant agent", "an assistant / helper / bot our customers use to
+  do X", "an agent that watches this page", "an agent my code can call", "deploy an
+  agent to email / WhatsApp / a chat endpoint", "give my agent a persona or
+  auto-launch". Interviews for the job, picks the kind (chat, page-aware, typed
+  service, deployed), writes agent.json and system_prompt.md, opens the agent's
+  screens with the clicks to make, and tightens the prompt through a test script the
+  user runs. `improve <agent>` fixes one that misbehaves ("it keeps giving away the
+  answer", "it ignores the page"). NOT for a Claude Code subagent in `.claude/agents/`
+  (building-deliverables), other records (flowpad-assistance), or opening an agent
+  that exists (flowpad-navigation).
 tags: ''
 version: 1
 ---
