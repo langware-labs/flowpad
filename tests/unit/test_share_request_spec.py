@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from flow_sdk.app.actions.share_action import ShareInvitee, ShareRequestSpec
+from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee, ShareRequestSpec
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 

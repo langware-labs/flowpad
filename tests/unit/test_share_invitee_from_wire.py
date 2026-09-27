@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from flow_sdk.app.actions.share_action import ShareInvitee
+from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 GADI = "090ffc4d-af90-4d74-9514-aa8650abca7a"
 
