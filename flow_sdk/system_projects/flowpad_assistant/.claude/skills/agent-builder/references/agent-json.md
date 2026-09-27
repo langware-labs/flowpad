@@ -29,7 +29,7 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `color` | Avatar background, a hex from the palette | yes | all |
 | `worker_type` | `claude`, `codex` or `copilot` — the agent editor has no picker for it today, so set it here | yes | all |
 | `model` | `sm` / `md` / `lg`, or a concrete model id | yes | all |
-| `permission_mode` | How much the worker may do without asking | yes | all |
+| `permission_mode` | Leave it out. A chat worker runs headless: anything but the default (`bypassPermissions`) denies every tool call, `flow show` included, because nobody can approve it | yes | all |
 | `effort` | Reasoning effort for the worker | yes | all |
 | `enabled` | `false` refuses every launch — a kill switch | yes | all |
 | `mcp_servers` | MCP servers to attach, copied into the agent's folder at launch | yes | all |
