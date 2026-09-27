@@ -224,6 +224,6 @@ def test_type_scoped_scan_finds_what_a_full_scan_filters_to(tmp_path, wanted):
         _write(tmp_path, name, mount=mount)
     full = {(str(a.typeid), a.path) for a in AssetFolder(path=tmp_path, recursive=True).scan().assets
             if str(a.typeid.type) in wanted}
-    scoped = {(str(a.typeid), a.path) for a in AssetFolder(path=tmp_path, recursive=True, types=frozenset(wanted)).scan().assets
+    scoped = {(str(a.typeid), a.path) for a in AssetFolder(path=tmp_path, recursive=True, types=sorted(wanted)).scan().assets
               if str(a.typeid.type) in wanted}
     assert full and scoped == full

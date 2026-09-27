@@ -67,7 +67,7 @@ class AssetFolder(DataSpec):
     # The types the caller will keep; empty means every type. A declared mount
     # is only walked for these, so a picker that wants skills never parses the
     # thousand tasks, prompts and docs a home folder holds.
-    types: frozenset[str] = frozenset()
+    types: list[str] = []
 
     @field_validator("path")
     @classmethod
