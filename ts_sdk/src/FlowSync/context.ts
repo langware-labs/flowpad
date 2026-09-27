@@ -837,7 +837,11 @@ class DataContext extends EventEmitter {
       if (!hasNodeProcess) {
         defineGlobal('process', entity);
       }
-      await perfTime(`_onAddedToContext(${_entityKey}) entity.loadHistory`, () => entity.loadHistory());
+      // History is NOT loaded here. This runs inside the route loader's context
+      // write, and a full `get-history` there held the URL on the largest payload
+      // the app fetches — for PTY sessions nothing even reads. Every view that
+      // shows history loads it on its own mount (SimpleChatPane, VibeChatPane,
+      // EntityExecutionPanel, useFlowDataTrace); docs/navigation/dock-loading.md, I3.
     }
   }
 

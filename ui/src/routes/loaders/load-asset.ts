@@ -56,6 +56,18 @@ async function setEntityContext(entity: ContextEntity | null): Promise<void> {
   );
 }
 
+/** Machine paths `/assets/entity` answered with nothing, this session. */
+const pathMisses = new Set<string>();
+
+/** The cached entity whose `asset_ref` is `machinePath` (the form asset_ref is stored in). */
+function cachedEntityAtPath(machinePath: string): ContextEntity | null {
+  for (const ref of dataManager.entities.values()) {
+    const entity = ref.entity as unknown as ContextEntity | undefined;
+    if (entity?.asset_ref === machinePath) return entity;
+  }
+  return null;
+}
+
 /** Warm the cache by typeid, then push the resolved entity into context. */
 async function ensureInContext(typeId: TypeId): Promise<void> {
   const entity = await dataManager.getByTypeId(typeId).catch(() => null);
@@ -118,12 +130,22 @@ export async function loadAssetRoute(
     // `machinePath` (not `absVfsPath`) is the form `asset_ref` is stored in.
     // On a miss (not-yet-indexed) the view still self-resolves via
     // `AssetEditorRouter` → `EntityResolutionGate` → `useEntityByPath` (lazy
-    // discover). `getEntityByPath` already caches the hit, so this is the only
-    // network round-trip.
+    // discover).
     const machine = VFSPath.parse(ptr.value).machinePath;
     if (machine) {
-      const e = await dataManager.getEntityByPath(machine).catch(() => null);
-      await setEntityContext(e as ContextEntity | null);
+      // Cache-first (dock-loading I4): a revisit must not wait on a lookup it
+      // already made. A remembered miss (a file nothing indexed) stays a miss
+      // until an entity for the path reaches the cache — the scan above finds it
+      // first — so the negative memo heals itself; the view resolves a miss on
+      // its own either way.
+      const cached = cachedEntityAtPath(machine);
+      if (cached) {
+        await setEntityContext(cached);
+      } else if (!pathMisses.has(machine)) {
+        const e = await dataManager.getEntityByPath(machine).catch(() => null);
+        if (!e) pathMisses.add(machine);
+        await setEntityContext(e as ContextEntity | null);
+      }
     }
   } catch (e) {
     console.warn('[load-asset] resolve failed (view will handle):', pointer, e);

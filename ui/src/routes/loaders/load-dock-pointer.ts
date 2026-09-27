@@ -7,9 +7,7 @@ import {
   PageId,
   Plan,
   Project,
-  QueryRequest,
   RemoteWorkerSession,
-  Trigger,
   TypeId,
   VFSPath,
 } from '@sdk';
@@ -296,14 +294,14 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
       case ViewType.LIVE_SESSION:
         loadLiveSessionRoute(dock.pointer);
         break;
-      // The merged Events screen and its three URL aliases share one loader:
-      // the rules list is the navigator's data on all four.
+      // The merged Events screen and its three URL aliases: context only. The
+      // rules list is the navigator's own data (`useTriggers`), fetched by the
+      // mounted view — a query here repeated on every visit (dock-loading I3).
       case ViewType.EVENTS:
       case ViewType.TRIGGERS:
       case ViewType.SIGNALS:
       case ViewType.CRON:
         await adoptScopeProject(dock);
-        await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
         break;
       case ViewType.PLAN:
         await loadPlanRoute(dock.pointer);

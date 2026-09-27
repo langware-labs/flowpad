@@ -23,7 +23,7 @@ import {
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
-import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
+import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, ShellLoadError } from './load-shell';
 import { loadConversation } from './load-conversation';
 import { processLoadErrorToDockError } from './process-load-error-resolution';
@@ -126,28 +126,13 @@ function throwShellTabLoadError(error: ShellLoadError): never {
       error,
     );
   }
-  if (error.kind === 'error_status') {
-    throw new DockLoadError(
-      'shell_error_status',
-      'hard',
-      {
-        action: 'render_error',
-        title: t`Shell unavailable`,
-        message: error.errorMessage ?? 'Shell error',
-      },
-      'project',
-      error,
-    );
-  }
-  const { title, description } = describeProcessStartError(error.cause ?? error);
   throw new DockLoadError(
-    'shell_start_failed',
-    'soft',
+    'shell_error_status',
+    'hard',
     {
       action: 'render_error',
-      title,
-      message: description,
-      retryable: true,
+      title: t`Shell unavailable`,
+      message: error.errorMessage ?? 'Shell error',
     },
     'project',
     error,

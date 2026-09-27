@@ -344,7 +344,10 @@ export class TabManager {
   }
 
   async getTerminalTabsSnapshot(scope: TabScope = 'all', projectId: string | null = null): Promise<Tab[]> {
-    const tabs = await this.refresh();
+    // The loaded list, like every switch-path read (`snapshotOrRefresh`): writes
+    // and the `tabs_changed` broadcast keep it current, so re-listing here only
+    // made the default-shell / fallback routes wait on a round trip every visit.
+    const tabs = await this.snapshotOrRefresh();
     return terminalTabsForScope(tabs, scope, projectId);
   }
 

@@ -2,8 +2,8 @@
  * Shell dock loader for /dock/shell[/<pointer>].
  *
  * Two layers:
- *   - `loadShell(shellId)` — pure primitive. Attaches a plain Shell's PTY and
- *     writes dataContext. Throws typed errors. No redirects.
+ *   - `loadShell(shellId)` — pure primitive. Resolves a plain Shell's identity
+ *     and project and writes dataContext. Throws typed errors. No redirects.
  *   - `loadShellRoute(pointer)` — route wrapper. Dispatches on pointer shape,
  *     delegates to `loadShell` / `loadProcess`. On any per-candidate failure,
  *     hands off to `loadNextProcess` to find the next-best tab.
@@ -22,7 +22,6 @@ import type { ShowTarget } from '@sdk';
 import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
-  connectionManager,
   ContextEntitiesEnum,
   dataContext,
   dataManager,
@@ -72,7 +71,7 @@ import {
 
 export class ShellLoadError extends Error {
   constructor(
-    readonly kind: 'not_found' | 'error_status' | 'start_failed',
+    readonly kind: 'not_found' | 'error_status',
     readonly shellId: string,
     readonly errorMessage?: string | null,
     readonly cause?: unknown,
@@ -99,10 +98,13 @@ function cachedEntitiesByType<U>(type: string): U[] {
 // ── CORE: loadShell(shellId) — pure, no redirects ───────────────────────────
 
 /**
- * Load a plain Shell by id: cache-first fetch, attach PTY via `shell.start`,
- * write dataContext. Throws ShellLoadError. Never redirects. Does NOT check
- * for a linked AgenticProcess — the route wrapper is responsible for that
- * dispatch (and will call `loadProcess` instead when a process owns the shell).
+ * Load a plain Shell by id: cache-first fetch, resolve its project, write
+ * dataContext. Identity only — the PTY attach (`shell.start`) belongs to the
+ * mounted terminal panel, exactly as `loadProcess` leaves `process.start` to it
+ * (docs/navigation/dock-loading.md, I3): a loader that attaches holds the URL on
+ * a WS round trip, and repeated it on every switch back to the tab.
+ * Throws ShellLoadError. Never redirects. Does NOT check for a linked
+ * AgenticProcess — the route wrapper is responsible for that dispatch.
  */
 export async function loadShell(shellId: string): Promise<Shell> {
   const cached = Shell.getByIdFromCache<Shell>(shellId);
@@ -116,8 +118,8 @@ export async function loadShell(shellId: string): Promise<Shell> {
     throw new ShellLoadError('error_status', shellId, shell.error_message ?? null);
   }
 
-  // ── Project phase — URL-first: resolve project into context BEFORE
-  // `shell.start()` runs, so anything downstream reads the right project.
+  // ── Project phase — URL-first: resolve project into context before the
+  // route commits, so the mounted panel's attach reads the right project.
   if (shell.project_id) {
     await loadProject(new TypeId(Project.type, shell.project_id)).catch(() => {
       // Dangling project_id — fall through to workdir-based resolve below.
@@ -128,14 +130,6 @@ export async function loadShell(shellId: string): Promise<Shell> {
     // is a genuinely global shell and resolveProjectContext clears the active
     // project to null (the Global scope).
     await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
-  }
-
-  try {
-    await perfTime('shell.start (PTY attach)', () =>
-      shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined }),
-    );
-  } catch (cause) {
-    throw new ShellLoadError('start_failed', shellId, null, cause);
   }
 
   dataContext.setActiveShellId(shell.id);
@@ -418,7 +412,8 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
   // its owner directly (Shell.agentic_process_id, the reverse of
   // AgenticProcess.shell_id), so a plain get-by-id resolves ownership — no
   // reverse scan over processes.
-  const shell = await Shell.getById<Shell>(shellId).catch(() => null);
+  const shell =
+    Shell.getByIdFromCache<Shell>(shellId) ?? (await Shell.getById<Shell>(shellId).catch(() => null));
   if (shell?.agentic_process_id) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(shellUrl(new TypeId(AgenticProcess.type, shell.agentic_process_id).toString()));
@@ -442,7 +437,7 @@ async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder
     }
 
     // See routeProcessPointer for rationale on `replace`.
-    const directCleanup = await buildShellCleanup(e);
+    const directCleanup = buildShellCleanup(e);
     toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=shell_missing kind=${e.kind} shell=${shellId.slice(0, 8)} → fallback`);
     const next = await loadNextProcess({
       excludeIds: new Set([shellId]),
@@ -483,27 +478,14 @@ export async function loadShellRoute(
   // so a /win/shell focus window never falls back into full-app chrome (§7).
   const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p, carry?.options);
 
-  // A process URL resolves identity/context only. Its mounted TerminalPanel
-  // owns the WS-bound start/attach, so do not hold this route on realtime
-  // readiness before React Router can commit the URL.
+  // Every shell URL resolves identity/context only. The mounted TerminalPanel
+  // owns the WS-bound start/attach (process and plain shell alike), so nothing
+  // here waits on realtime readiness before React Router can commit the URL.
   if (pointer && DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
     await routeProcessPointer(processId, shellUrl, requestPath, carry);
     perfLog('loadShellRoute done (agentic process path)');
     return;
-  }
-
-  // Plain-Shell paths still attach inside loadShell, so retain their existing
-  // FlowSync readiness gate and budget. On timeout we surface a toast and let
-  // the existing failure/recovery chain decide what to render.
-  try {
-    await perfTime('connectionManager.waitForConnected', () => connectionManager.waitForConnected(5000));
-  } catch {
-    toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=no_realtime waited_ms=5000`);
-    notify.error({
-      title: t`No realtime connection`,
-      message: t`Terminal may be unresponsive until the connection recovers.`,
-    });
   }
 
   if (pointer === 'new_terminal') {
