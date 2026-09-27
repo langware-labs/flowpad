@@ -27,6 +27,7 @@ import logging
 import re
 import secrets
 import shlex
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -56,6 +57,22 @@ RUNNERS: dict[str, str] = {
     ".rs": "rustc --edition 2021 -o {out} {file} && {out}",
     ".sh": "sh {file}",
 }
+
+#: What differs on Windows, where ``run_shell`` runs POWERSHELL. ``python3``
+#: there is the Store alias stub, which fails even with Python installed: use
+#: the ``py`` launcher (what python.org and winget install), else python.exe.
+#: PowerShell's own braces are doubled: these are ``str.format`` templates.
+WIN32_RUNNERS: dict[str, str] = {
+    ".py": "if (Get-Command py -ErrorAction SilentlyContinue) {{ py -3 {file} }} else {{ python {file} }}; exit $LASTEXITCODE",
+}
+
+
+def runner_for(suffix: str, platform: str = "") -> Optional[str]:
+    """The command template for a file suffix on ``platform``, or ``None``."""
+    if (platform or sys.platform) == "win32" and suffix in WIN32_RUNNERS:
+        return WIN32_RUNNERS[suffix]
+    return RUNNERS.get(suffix)
+
 
 #: Where a snippet with no file of its own is written. The OS temp dir: outside
 #: every project, so it is never indexed and the OS cleans it up.
@@ -199,9 +216,7 @@ def read_snippet(path: Path) -> Optional[SnippetDoc]:
     return SnippetDoc.parse(Path(path).read_bytes().decode("utf-8"))
 
 
-def edit_region(
-    path: Path, index: int, kind: RegionKind, shown: str, base: Optional[str] = None
-) -> SnippetDoc:
+def edit_region(path: Path, index: int, kind: RegionKind, shown: str, base: Optional[str] = None) -> SnippetDoc:
     """Replace one region's text in the file on disk; returns the file re-read.
 
     Read, edit and write happen under ONE lock: two editors saving different
@@ -303,7 +318,7 @@ async def run_snippet(
         # Nothing by that name — NOT_FOUND, told apart from a run that failed.
         message = f"snippet file not found: {path}"
         return CliResult.not_found(message, command=str(path), stderr=message)
-    template = RUNNERS.get(path.suffix.lower())
+    template = runner_for(path.suffix.lower())
     if template is None:
         # A file this machine has no runner for: not this box's problem to run.
         known = ", ".join(sorted(RUNNERS))
@@ -333,6 +348,7 @@ async def run_snippet(
 
 __all__ = [
     "RUNNERS",
+    "WIN32_RUNNERS",
     "SnippetDoc",
     "SnippetReadRequest",
     "SnippetRunRequest",

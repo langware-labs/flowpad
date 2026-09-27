@@ -637,6 +637,32 @@ late reader (or the container test) reads instead is the fired trigger's
 `counter` / `last_triggered` and the trigger-log JSONL row, whose
 `cause_event_id` joins back to this envelope's id.
 
+### `app.tab.ready` — a UI is there to be talked to  ✅ (2026-09-23)
+
+`app.ready` says the BACKEND is up. It fires when the first bootstrap is served,
+which no tab has to be present for and none is known to — so a wizard that ASKS
+the person something cannot start on it: the question has nowhere to go.
+`app.tab.ready` is emitted per TAB, from the WebSocket frame handler
+(`flow_sdk/server/routes/websocket.py`), on the first `browser_context` frame of
+each connection.
+
+* **`browser_context`, not `presence`.** `presence` goes out the instant the
+  socket opens. `browser_context` carries the current URL and is re-sent on every
+  navigation, so its first frame means a route has loaded, not that the app began
+  mounting.
+* **Per tab, so per load.** A reload drops the socket and opens another; a new
+  window is one more; an app restart brings a new backend and a new tab. Each
+  emits it. A subscriber that must run on every load subscribes here without
+  `fire_once` (the `llm-setup` wizard does); one that wants it only the first
+  time ever says so with a `fire_once` trigger, as with `app.ready`.
+* **It waits for the same thing `app.ready` waits for.** The emit awaits
+  `bootstrap.system_content_ready`, set right after `reconcile_wizard_triggers()`
+  in `_app_ready_signal`. Emitted earlier, an unarmed trigger would never hear it
+  (law 4), and a tab that left while waiting is not announced at all.
+* **The frontend still cannot emit to the backend bus** (the app→backend
+  direction above stays deferred): the backend derives this from a frame the UI
+  already sends. No frontend change.
+
 ### Wizard triggers — derived, reconciled, pruned
 
 A `Wizard` asset declares its own subscriptions in `wizard.json`

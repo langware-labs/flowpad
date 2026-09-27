@@ -45,6 +45,10 @@ class AgentOp(ExeData):                       # compute_op.agent — a harness w
 class AskOp(ExeData):                         # compute_op.ask — a person
     prompt: str
     secret: bool                              # masked where it is typed (an API key)
+    detail: str                               # a paragraph under the heading: why, and what each answer does
+    submit_label: str                         # the button words; empty ⇒ Send / Cancel
+    cancel_label: str
+    until_answered: bool                      # no deadline — refuses alongside timeout_seconds
 
 class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     name: str
