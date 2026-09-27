@@ -474,6 +474,20 @@ class Agent(Entity):
         target = deployment or await self.local_deployment()
         return await dispatch_agent_run(target, prompt, wait=wait, input=input, output_spec=output_spec, **options)
 
+    async def fresh(self) -> "Agent":
+        """This agent as its folder defines it NOW — re-parsed when the files changed since the
+        last index, else ``self``.
+
+        The folder IS the definition and people edit it by hand (or through agent-builder), while
+        a row is only re-read on an HTTP GET. The paths that load an agent from its ROW in order to
+        launch it — the ``use`` / ``run`` actions and auto-launch — call this first; otherwise a
+        new chat started the old worker and the old prompt. A caller holding its own Agent object
+        launches that object as given: the primitives never swap it for the disk.
+        """
+        if await self.check_and_refresh_record():
+            return await Agent.get_by_id(self.id) or self
+        return self
+
     async def use(
         self, project_id: str | None = None, *, deployment: "Deployment | None" = None, owner=None
     ) -> "AgenticProcess":
@@ -543,7 +557,7 @@ class Agent(Entity):
             candidates.sort(key=age_key)
             winner, cancelled = candidates[0], candidates[1:]
 
-            process = await winner.use(project_id=project_id)
+            process = await (await winner.fresh()).use(project_id=project_id)
             update_project_device_state(
                 project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
             )
@@ -1088,7 +1102,8 @@ class Agent(Entity):
         # Every outcome — disabled here, placed remotely, busy, accepted — is the
         # launch's own answer, and the body of every response is that answer
         # (``executor`` names the process to navigate to). Only ``busy`` is 409.
-        answer = await self.launch(prompt, deployment=await self.local_deployment())
+        agent = await self.fresh()
+        answer = await agent.launch(prompt, deployment=await agent.local_deployment())
         payload = answer.model_dump(mode="json")
         if answer.busy:
             return ApiFailResponse(message=answer.detail, status_code=409, data=payload)
@@ -1315,18 +1330,19 @@ class Agent(Entity):
         project_id = str((body or {}).get("project_id") or "").strip() or None
         deployment_id = str((body or {}).get("deployment_id") or "").strip()
 
+        agent = await self.fresh()
         if deployment_id:
             if not is_valid_entity_id(deployment_id):
                 return ApiFailResponse(message="deployment_id must be a UUID v4 or v5", status_code=400)
             deployment = await Deployment.get_by_id(deployment_id)
-            if deployment is None or not deployment.is_agent_placement_of(self):
+            if deployment is None or not deployment.is_agent_placement_of(agent):
                 return ApiFailResponse(message="agent deployment not found", status_code=404)
-            deployment = deployment.with_element(self)
+            deployment = deployment.with_element(agent)
         else:
-            deployment = await self.local_deployment()
+            deployment = await agent.local_deployment()
         owner = request_info.someone_typeid if request_info else None
         try:
-            process = await self.use(project_id=project_id, deployment=deployment, owner=owner)
+            process = await agent.use(project_id=project_id, deployment=deployment, owner=owner)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()

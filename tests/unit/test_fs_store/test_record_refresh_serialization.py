@@ -205,7 +205,8 @@ async def test_a_launch_uses_the_definition_as_it_is_on_disk_now(sync_db, tmp_re
     """The agent's folder is its definition. Editing ``agent.json`` / ``system_prompt.md``
     by hand — or through agent-builder's improve loop — and opening a new chat launched
     the row as it was at the last index: the old worker and the old prompt. Only a GET
-    refreshed a changed asset, so the one path that matters, a launch, never did."""
+    refreshed a changed asset, so the one path that matters, a launch, never did.
+    ``Agent.fresh`` is what the launch entry points call on the agent they loaded."""
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.schema.type_info import register_all
 
@@ -223,8 +224,10 @@ async def test_a_launch_uses_the_definition_as_it_is_on_disk_now(sync_db, tmp_re
     for child in folder.iterdir():
         _advance_directory_mtime(child)
 
-    deployment = await agent.local_deployment()
-    process = await deployment.create_process()
+    # What the use/run actions and auto-launch do: load for launch, then launch.
+    loaded = await Agent.get_by_id(agent.id)
+    launched = await loaded.fresh()
+    process = await (await launched.local_deployment()).create_process()
 
     assert "copilot" in str(process.worker_type)
     assert "NEW PROMPT" in ((process.context_data or {}).get("instructions") or "")
