@@ -113,7 +113,6 @@ export function IncomingDeepLink() {
           gitOrigin={pendingProject.gitOrigin}
           projectName={pendingProject.projectName}
           senderName={pendingProject.senderName}
-          projectId={pendingProject.projectId}
           onClose={() => setPendingProject(null)}
         />
       )}

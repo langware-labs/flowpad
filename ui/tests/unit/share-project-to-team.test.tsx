@@ -8,11 +8,14 @@
  *    and its language — so refusing it would be wrong. What they cannot do is
  *    OPEN it without their own GitHub access, and Flowpad cannot grant that, so
  *    the admin is told before the invitations go out rather than after.
- *  - **One share call carries the whole team**, addressed by email, which is the
- *    only thing a `MembershipRequest` accepts.
- *  - **Inviting is not publishing.** A published project invites even with a
- *    dirty tree — the publish checks guard publishing only — and an unpublished
- *    one gets the publish popup INSTEAD of this dialog.
+ *  - **The team travels as a team, in ONE share action.** The dialog posts the
+ *    TEAM to the project's `share` action (`{recipients: [], teams: [team-<id>]}`);
+ *    the backend expands it through the team's member list and sends every
+ *    person a message-flagged invite. The dialog's own roster walk only counts
+ *    people for the preview. The returned `share_result` is shown per person.
+ *  - **An unpublished project gets the publish popup INSTEAD of this dialog.**
+ *    That a published one invites without the publish gate is the share
+ *    action's contract (tests/unit/test_project_share_invite_message.py).
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -20,17 +23,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  share: vi.fn(),
   recipients: vi.fn(),
-  preflight: {
-    loading: false,
-    available: true,
-    reason: null as string | null,
-    code: null as string | null,
-    origin: null,
-    answered: true,
-    refetch: vi.fn(),
-  },
   access: {
     loading: false,
     public: null as boolean | null,
@@ -38,11 +31,10 @@ const h = vi.hoisted(() => ({
     code: null as string | null,
     answered: true,
   },
-  project: { remote: true } as Record<string, unknown>,
+  project: null as unknown,
   hubOnly: false,
 }));
 
-vi.mock('@src/hooks/use-git-share-preflight', () => ({ useGitSharePreflight: () => h.preflight }));
 vi.mock('@src/hooks/use-git-anonymous-access', () => ({ useGitAnonymousAccess: () => h.access }));
 vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: h.project }) }));
 vi.mock('@src/components/organization/budgets/team-recipients', () => ({
@@ -80,20 +72,45 @@ vi.mock('@src/components/assets/ProjectPickerModal', () => ({
     ) : null,
 }));
 
+import { dataManager, Project, type ShareResult } from '@sdk';
 import { ShareProjectButton } from '@src/components/organization/budgets/ShareProjectPanel';
 
 const UUID = (n: number) => `550e8400-e29b-41d4-a716-4466554400${String(n).padStart(2, '0')}`;
 const TEAM_ID = UUID(1);
 const PROJECT_ID = UUID(2);
+// One instance per id: the SDK registers every entity it constructs.
+const PUBLISHED = new Project({ type: Project.type, id: PROJECT_ID, name: 'Atlas', remote: true } as Partial<Project>);
+const UNPUBLISHED = new Project({ type: Project.type, id: UUID(3), name: 'Atlas', remote: false } as Partial<Project>);
+
+const TWO_INVITED: ShareResult = {
+  invited: [
+    { user_id: 'u-ada', email: 'ada@example.com', name: 'Ada', conversation_id: null },
+    { user_id: 'u-grace', email: null, name: 'Grace', conversation_id: null },
+  ],
+  skipped: [],
+  failed: [],
+  skipped_teams: [],
+};
+
+/** The project's `share` action answering `shareResult` (or refusing with `error`). */
+function shareAction(shareResult: ShareResult | null, error?: Error) {
+  return vi
+    .spyOn(dataManager, 'callAction')
+    .mockImplementation(() =>
+      error ? Promise.reject(error) : Promise.resolve({ type: 'project', id: PROJECT_ID, share_result: shareResult }),
+    );
+}
+
+let call: ReturnType<typeof shareAction>;
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   vi.clearAllMocks();
-  h.preflight = { ...h.preflight, available: true, reason: null, code: null, answered: true };
   h.access = { loading: false, public: true, repo: 'acme/atlas', code: null, answered: true };
-  h.project = { remote: true, share: h.share };
+  h.project = PUBLISHED;
   h.hubOnly = false;
-  h.share.mockResolvedValue(undefined);
-  h.recipients.mockResolvedValue({ emails: ['ada@example.com', 'grace@example.com'], unreachable: 0 });
+  call = shareAction(TWO_INVITED);
+  h.recipients.mockResolvedValue({ people: ['u-ada', 'u-grace'], unreachable: 0 });
 });
 
 afterEach(() => cleanup());
@@ -109,15 +126,35 @@ async function openDialog() {
 }
 
 describe('sharing a project with a team', () => {
-  it('invites everyone the roster walk found, in one call', async () => {
+  it('posts the team to the project’s share action, once, with only the share keys', async () => {
     const user = await openDialog();
 
     expect(await screen.findByTestId('team-share-project-recipients')).toHaveTextContent('2 people');
     await waitFor(() => expect(screen.getByTestId('team-share-project-confirm')).toBeEnabled());
     await user.click(screen.getByTestId('team-share-project-confirm'));
 
-    await waitFor(() => expect(h.share).toHaveBeenCalledTimes(1));
-    expect(h.share).toHaveBeenCalledWith(['ada@example.com', 'grace@example.com']);
+    expect(await screen.findByTestId('share-invite-invited')).toHaveTextContent('Ada');
+    expect(call).toHaveBeenCalledTimes(1);
+    const info = call.mock.calls[0][0];
+    expect([info.name, info.method, info.targetEntity?.toString()]).toEqual(['share', 'POST', `project-${PROJECT_ID}`]);
+    expect(info.bodyParameters).toEqual({ recipients: [], teams: [`team-${TEAM_ID}`] });
+  });
+
+  it('shows who was invited and who could not be', async () => {
+    call = shareAction({
+      invited: [{ user_id: 'u-ada', email: 'ada@example.com', name: 'Ada', conversation_id: null }],
+      skipped: [{ user_id: 'u-grace', email: null, name: 'Grace', reason: 'already_member' }],
+      failed: [{ user_id: 'u-mia', email: null, name: 'Mia', status: 500, message: 'Hub error' }],
+      skipped_teams: [{ team: `team-${UUID(9)}`, name: 'Juniors', reason: 'not_listable' }],
+    });
+    const user = await openDialog();
+    await waitFor(() => expect(screen.getByTestId('team-share-project-confirm')).toBeEnabled());
+    await user.click(screen.getByTestId('team-share-project-confirm'));
+
+    expect(await screen.findByTestId('share-invite-invited')).toHaveTextContent('Ada');
+    expect(screen.getByTestId('share-invite-skipped')).toHaveTextContent('Grace');
+    expect(screen.getByTestId('share-invite-failed')).toHaveTextContent('Hub error');
+    expect(screen.getByTestId('share-invite-skipped-teams')).toHaveTextContent('Juniors');
   });
 
   it('warns about a private repository without blocking the share', async () => {
@@ -130,7 +167,7 @@ describe('sharing a project with a team', () => {
     // (b) is a warning, not a refusal — the project still shares.
     await waitFor(() => expect(screen.getByTestId('team-share-project-confirm')).toBeEnabled());
     await user.click(screen.getByTestId('team-share-project-confirm'));
-    await waitFor(() => expect(h.share).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(call).toHaveBeenCalledTimes(1));
   });
 
   it('says nothing about the repository when anyone can clone it', async () => {
@@ -140,23 +177,12 @@ describe('sharing a project with a team', () => {
     expect(screen.queryByTestId('team-share-project-private-repo')).toBeNull();
   });
 
-  it('invites into a published project even when its tree is dirty — publish checks do not apply', async () => {
-    h.preflight = {
-      ...h.preflight,
-      available: false,
-      reason: 'The repository has uncommitted changes — commit them so they travel.',
-      code: 'dirty',
-    };
-    const user = await openDialog();
-
-    await waitFor(() => expect(screen.getByTestId('team-share-project-confirm')).toBeEnabled());
-    await user.click(screen.getByTestId('team-share-project-confirm'));
-
-    await waitFor(() => expect(h.share).toHaveBeenCalledWith(['ada@example.com', 'grace@example.com']));
-  });
-
   it('offers GitHub when that is the only thing missing', async () => {
-    h.share.mockRejectedValue({ response: { data: { data: { code: 'github_not_connected' } } } });
+    // The share action runs the publish rules; this is the one refusal with a one-click fix.
+    call = shareAction(
+      null,
+      Object.assign(new Error('refused'), { response: { data: { data: { code: 'github_not_connected' } } } }),
+    );
     const user = await openDialog();
 
     await waitFor(() => expect(screen.getByTestId('team-share-project-confirm')).toBeEnabled());
@@ -173,7 +199,7 @@ describe('sharing a project with a team', () => {
   });
 
   it('shows the publish popup instead of the dialog for a project that is not in the cloud', async () => {
-    h.project = { remote: false, share: h.share };
+    h.project = UNPUBLISHED;
     const user = userEvent.setup();
     render(<ShareProjectButton teamId={TEAM_ID} teamName="Physics" />);
     await user.click(screen.getByTestId(`team-share-project-${TEAM_ID}`));
@@ -181,6 +207,6 @@ describe('sharing a project with a team', () => {
 
     expect(await screen.findByTestId('publish-project-dialog')).toBeInTheDocument();
     expect(screen.queryByTestId('team-share-project-dialog')).not.toBeInTheDocument();
-    expect(h.share).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
   });
 });

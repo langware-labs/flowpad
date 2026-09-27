@@ -562,10 +562,9 @@ msgstr "{0} test failed"
 msgid "{0} this session"
 msgstr "{0} this session"
 
-#. placeholder {0}: pending.length
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "{0} to invite"
-msgstr "{0} to invite"
+#~ msgid "{0} to invite"
+#~ msgstr "{0} to invite"
 
 #. placeholder {0}: frame.tool_call_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -740,6 +739,10 @@ msgstr "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 msgid "{left} of {limit} requests left {windowText}"
 msgstr "{left} of {limit} requests left {windowText}"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{listed} to invite"
+msgstr "{listed} to invite"
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr "{name} avatar"
@@ -797,8 +800,8 @@ msgid "{people, plural, one {# person will be invited.} other {# people will be 
 msgstr "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "{projectName} shared"
-msgstr "{projectName} shared"
+#~ msgid "{projectName} shared"
+#~ msgstr "{projectName} shared"
 
 #: src/components/conversation/SessionCard.tsx
 msgid "{promptCount, plural, one {# prompt} other {# prompts}}"
@@ -1567,6 +1570,10 @@ msgstr "Add secret"
 msgid "Add someone first"
 msgstr "Add someone first"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Add someone to invite."
+#~ msgstr "Add someone to invite."
+
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
 msgid "Add someone to share with."
@@ -2042,6 +2049,10 @@ msgstr "Already executed — open the run"
 msgid "Already focused"
 msgstr "Already focused"
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Already has access"
+msgstr "Already has access"
+
 #: src/components/connections-manager/credential-value-form.tsx
 #~ msgid "already in .env.local"
 #~ msgstr "already in .env.local"
@@ -2059,6 +2070,10 @@ msgstr "Already installed globally — uninstall first"
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Already installed in a project — uninstall first"
 msgstr "Already installed in a project — uninstall first"
+
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Already invited"
+msgstr "Already invited"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Already launched in this project"
@@ -4077,6 +4092,7 @@ msgstr "Cloning…"
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
+#: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/project-home/ProjectGitChecksDialog.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -4560,6 +4576,10 @@ msgstr "Connect GitHub and the gh CLI with a guided setup."
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 msgstr "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
+
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "Connect GitHub to install this project — its repository needs access."
+msgstr "Connect GitHub to install this project — its repository needs access."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Connect GitHub to link this project to the cloud."
@@ -5187,6 +5207,10 @@ msgstr "Could not give access"
 #: src/components/connections-manager.tsx
 msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
+
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Could not invite"
+msgstr "Could not invite"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
@@ -7923,8 +7947,8 @@ msgstr "Every team and budget inside {0} is deleted with it. This cannot be undo
 #~ msgstr "Every value is already on this machine — nothing to type."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} has been invited."
-msgstr "Everyone in {teamName} has been invited."
+#~ msgid "Everyone in {teamName} has been invited."
+#~ msgstr "Everyone in {teamName} has been invited."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its skills travel with its files, over Git."
@@ -10328,6 +10352,10 @@ msgstr "Install global"
 msgid "Install in project"
 msgstr "Install in project"
 
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "Install project"
+msgstr "Install project"
+
 #: src/components/install/InstallButton.tsx
 msgid "Install this asset on your desktop"
 msgstr "Install this asset on your desktop"
@@ -10367,6 +10395,7 @@ msgstr "Installed Plugins"
 msgid "Installing and restarting Flowpad… this can take up to a minute."
 msgstr "Installing and restarting Flowpad… this can take up to a minute."
 
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Installing…"
 msgstr "Installing…"
@@ -10497,6 +10526,7 @@ msgstr "Invite"
 #~ msgstr "Invite {0} as"
 
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Invite {label} as"
 msgstr "Invite {label} as"
 
@@ -10526,12 +10556,16 @@ msgstr "Invite members"
 msgid "Invite people"
 msgstr "Invite people"
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Invited"
+msgstr "Invited"
+
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
 msgid "Invited {trimmed}."
 msgstr "Invited {trimmed}."
 
-#: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #~ msgid "Inviting…"
 #~ msgstr "Inviting…"
 
@@ -11379,6 +11413,10 @@ msgstr "Loading preview…"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
 msgstr "Loading project resources..."
+
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "Loading project…"
+msgstr "Loading project…"
 
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Loading projects..."
@@ -13133,6 +13171,10 @@ msgstr "No member usage yet."
 msgid "No members"
 msgstr "No members"
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "No members to invite"
+msgstr "No members to invite"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No members yet — invite someone below."
 msgstr "No members yet — invite someone below."
@@ -13713,6 +13755,10 @@ msgstr "Not in a git repository — can't be published"
 #~ msgid "Not installed"
 #~ msgstr "Not installed"
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Not invited"
+msgstr "Not invited"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
 msgstr "Not launched yet in this project"
@@ -13757,6 +13803,10 @@ msgstr "not run yet"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
 msgstr "Not runnable here"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Not sent to {skippedTeamNames} — you can't see its member list."
+msgstr "Not sent to {skippedTeamNames} — you can't see its member list."
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "Not set"
@@ -14234,6 +14284,10 @@ msgstr "Open comment"
 msgid "Open Context"
 msgstr "Open Context"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Open conversations"
+#~ msgstr "Open conversations"
+
 #: src/components/account/database-section.tsx
 msgid "Open DB Folder"
 msgstr "Open DB Folder"
@@ -14445,6 +14499,7 @@ msgstr "Open Plan"
 msgid "Open process"
 msgstr "Open process"
 
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project"
@@ -15564,6 +15619,7 @@ msgstr "project"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -15698,6 +15754,7 @@ msgstr "Project tabs cannot load {0}."
 msgid "Project to load"
 msgstr "Project to load"
 
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/routes/loaders/load-project.ts
 msgid "Project unavailable"
 msgstr "Project unavailable"
@@ -16490,6 +16547,7 @@ msgstr "Remove {0} from {teamName}"
 msgid "Remove {label}"
 msgstr "Remove {label}"
 
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Remove {label} from the list"
 msgstr "Remove {label} from the list"
@@ -18240,6 +18298,10 @@ msgstr "Sender refused"
 msgid "Sending in {0}: “{sendingText}”"
 msgstr "Sending in {0}: “{sendingText}”"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Sending invitations…"
+#~ msgstr "Sending invitations…"
+
 #: src/components/conversation/SendProgressNotice.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
@@ -19705,6 +19767,10 @@ msgid "Still can't link this project"
 msgstr "Still can't link this project"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "Still loading — try again in a moment."
+#~ msgstr "Still loading — try again in a moment."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Still loading this project — try again in a moment."
 msgstr "Still loading this project — try again in a moment."
 
@@ -20188,6 +20254,10 @@ msgstr "Teams in this organization"
 msgid "Teams inside this team"
 msgstr "Teams inside this team"
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Teams not expanded"
+msgstr "Teams not expanded"
+
 #: src/components/llm-endpoints/FiltersEditor.tsx
 msgid "Temperature ≤"
 msgstr "Temperature ≤"
@@ -20289,8 +20359,12 @@ msgid "That project has no local workdir"
 msgstr "That project has no local workdir"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
-msgid "That project is no longer available."
-msgstr "That project is no longer available."
+#~ msgid "That project is no longer available."
+#~ msgstr "That project is no longer available."
+
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "That's you"
+msgstr "That's you"
 
 #: src/components/assets/editor/skill/skill-eval-analysis.ts
 msgid "The \"{attachSkillName}\" skill is not installed."
@@ -20492,6 +20566,10 @@ msgstr "The in-app terminal is always the primary shell. This controls whether a
 msgid "The index was not changed."
 msgstr "The index was not changed."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#~ msgid "The invitations could not be sent."
+#~ msgstr "The invitations could not be sent."
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "The key box is empty."
 msgstr "The key box is empty."
@@ -20537,6 +20615,10 @@ msgstr "The organization's budget and its stored key are deleted, and every team
 #: src/components/conversation/MessageComposer.tsx
 msgid "the other participant"
 msgstr "the other participant"
+
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "The project could not be installed."
+msgstr "The project could not be installed."
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "The project was not linked to the cloud."
@@ -21715,6 +21797,7 @@ msgstr "Trigger"
 msgid "Triggers"
 msgstr "Triggers"
 
+#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
@@ -21890,6 +21973,10 @@ msgstr "Unknown Lens Type"
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Unknown list"
 msgstr "Unknown list"
+
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "Unknown person"
+msgstr "Unknown person"
 
 #. placeholder {0}: draft.provider
 #: src/components/data-sources/source-form.ts
@@ -23031,9 +23118,17 @@ msgstr "You can change this later inside the session."
 msgid "You can close this window."
 msgstr "You can close this window."
 
+#: src/components/share-to-conversation/ShareInviteSummary.tsx
+msgid "You can't list this team's members"
+msgstr "You can't list this team's members"
+
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
+
+#: src/components/conversation/ProjectInstallChip.tsx
+msgid "You don't have access to this project's repository. Ask the project owner to add you as a collaborator."
+msgstr "You don't have access to this project's repository. Ask the project owner to add you as a collaborator."
 
 #: src/notifications/ingest.ts
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."

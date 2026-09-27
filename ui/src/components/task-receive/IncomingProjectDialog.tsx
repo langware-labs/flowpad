@@ -1,7 +1,7 @@
 import { formatGitOrigin, gitOriginCloneUrl } from '@sdk/models/GitOrigin';
-import { Project, type GitOrigin } from '@sdk';
+import { type GitOrigin } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { useCloneGitProjectAndOpen, useInstallSharedProjectAndOpen } from '@src/components/project-selector';
+import { useCloneGitProjectAndOpen } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -17,15 +17,13 @@ import { useCallback, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
- * "X shared a project with you" — the landing for a project that arrived.
+ * "X shared a project with you" — the landing for a template deep link.
  *
- * Two arrivals wear it, and they differ only in what "set up" means:
- *   * a shared project (`projectId`) already exists locally as a row with no
- *     files, so it is materialized IN PLACE and keeps the id both ends share;
- *   * a template deep link has no row yet, so it is cloned into a fresh Project
- *     (`create-project-from-git`), with the 409 collision path letting the user
- *     accept a suggested `<leaf>-N` folder name.
- * Both end in the same place: an indexed project, opened.
+ * A template link has no local row yet, so the repo is cloned into a fresh
+ * Project (`create-project-from-git`), with the 409 collision path letting the
+ * user accept a suggested `<leaf>-N` folder name, and the result is indexed and
+ * opened. A project somebody invites you to never lands here: it is installed
+ * from the Install project chip on the invite message (`ProjectInstallChip`).
  */
 type Step = 'confirm' | 'cloning' | 'collision' | 'success' | 'error';
 
@@ -34,16 +32,13 @@ interface Props {
   gitOrigin: GitOrigin;
   projectName: string;
   senderName: string;
-  /** A shared project's id: install it in place instead of cloning a template. */
-  projectId?: string;
   onClose: () => void;
 }
 
-export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName, projectId, onClose }: Props) {
+export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName, onClose }: Props) {
   const { t } = useLingui();
   const { computeNode } = useAgentContext();
   const cloneGitProject = useCloneGitProjectAndOpen();
-  const installSharedProject = useInstallSharedProjectAndOpen();
 
   const [step, setStep] = useState<Step>('confirm');
   const [errorMsg, setErrorMsg] = useState('');
@@ -65,32 +60,6 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
     setNameOverride('');
     onClose();
   }, [onClose]);
-
-  /**
-   * A shared project is materialized IN PLACE: the row already exists locally
-   * (the hub pushed it on the grant), it just has no files yet. Installing
-   * clones into the workspace, binds this id to that checkout and indexes it —
-   * so the agents the project ships with are rows before we navigate, which is
-   * what lets auto-launch find them on arrival.
-   */
-  const runInstallShared = useCallback(
-    async (id: string) => {
-      setStep('cloning');
-      try {
-        // The watcher that raised this dialog already held the row; prefer the
-        // cache and only pay for a fetch when this came from a cold start.
-        const project = Project.getByIdFromCache(id) ?? (await Project.getById(id));
-        if (!project) throw new Error(t`That project is no longer available.`);
-        await installSharedProject(project);
-        setStep('success');
-        setTimeout(handleClose, 600);
-      } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : String(e));
-        setStep('error');
-      }
-    },
-    [handleClose, installSharedProject, t],
-  );
 
   const runClone = useCallback(
     async (targetName?: string) => {
@@ -126,10 +95,8 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
   const handleConfirm = useCallback(() => {
     if (startedRef.current) return;
     startedRef.current = true;
-    // Two different things wear this one dialog: a shared project is installed
-    // in place, a template is cloned into a new one.
-    void (projectId ? runInstallShared(projectId) : runClone());
-  }, [projectId, runClone, runInstallShared]);
+    void runClone();
+  }, [runClone]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
@@ -247,11 +214,8 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
               <Button variant="ghost" onClick={handleClose}><Trans>Close</Trans></Button>
               <Button
                 onClick={() => {
-                  // Retry must take the SAME branch the confirm took. Calling
-                  // runClone() here minted a brand-new project from the template
-                  // path and discarded the shared id both ends agree on.
                   startedRef.current = false;
-                  void (projectId ? runInstallShared(projectId) : runClone());
+                  void runClone();
                 }}
               >
                 <Trans>Retry</Trans>

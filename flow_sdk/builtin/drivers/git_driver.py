@@ -18,6 +18,7 @@ from typing import Optional
 
 from flow_sdk.fs_store.origin.fs_origin import FSOrigin, safe_join
 from flow_sdk.fs_store.origin.git_origin import has_content
+from flow_sdk.utils.git_folder import GitError, GitFolder
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,10 @@ class GitOriginDriver:
             return await resolved(clone_target)
         cloned = await git_clone(origin.clone_url(), str(clone_target), branch=origin.branch or None, token=token)
         if not cloned.ok:
-            raise RuntimeError(cloned.detail)
+            # Typed, so a caller can say WHY (no access vs. no credential vs. the
+            # host is down) without parsing git's wording. The message stays the
+            # driver's verbatim detail: existing callers show and match on it.
+            raise GitError(GitFolder.failure_code(cloned), cloned.detail)
         return await resolved(clone_target)
 
     def matches(self, origin: FSOrigin, local_path: Path) -> bool:

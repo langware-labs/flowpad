@@ -677,6 +677,10 @@ class FlowMessage(Entity):
                 ref = {"attachment_type": atype, "data": raw}
                 if ref not in missing:
                     missing.append(ref)
+        if has_body and not self.has_downloadable_body():
+            # Body-free received references: nothing to pull, so nothing is
+            # pending (no Download affordance) and nothing is a missing asset.
+            return {"body_downloaded": True, "body_unpacked": False, "body_missing_attachments": []}
         return {
             "body_downloaded": has_body and (unpacked or not missing),
             "body_unpacked": unpacked,
@@ -754,6 +758,20 @@ class FlowMessage(Entity):
             if t == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
                 return True
         return False
+
+    def has_downloadable_body(self) -> bool:
+        """Receive-side: is there a body bundle to pull for this message?
+
+        ``has_body()`` answers for the SENDER (fresh local messages start at
+        ``na`` and senders call it to decide whether to upload), so it stays
+        attachment-only. On a received (``remote``) message, ``na`` reliably
+        means body-free: the hub stamps ``uploading`` whenever a client-sent
+        message needs a body, and a hub-authored reference (the share invite's
+        ``project-<id>``) is posted at ``na``. Such a message has no download
+        affordance and is never pulled by catch-up."""
+        if not self.has_body():
+            return False
+        return not (self.remote and self.body_status == BodyStatus.NA)
 
     @property
     def occurred_at(self) -> Optional[datetime]:

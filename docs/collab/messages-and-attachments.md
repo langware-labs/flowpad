@@ -163,6 +163,30 @@ body itself is a single `.flowmsg` zip named `BODY_FILENAME = "body.flowmsg"`
    Transitions enforced hub-side: NA is terminal; UPLOADING → READY only.
 ```
 
+### Body-free received references
+
+`has_body()` answers for the **sender**: every freshly composed message starts at
+`NA`, and the sender calls `has_body()` to decide whether to upload. So it stays
+attachment-only, and a `TYPE_ID` reference always "has a body" by it.
+
+The **receiver** asks `has_downloadable_body()` instead: `has_body()` holds **and**
+the message is not a received (`remote`) message still at `NA`. On a received
+message `NA` reliably means body-free, because the hub stamps `UPLOADING` whenever a
+client-sent message needs a body. The one message that arrives as a `TYPE_ID`
+reference at `NA` is **hub-authored**: the invite message the hub posts in the
+sharer's name when a person invite carries `notify_by_message` (its one attachment is
+`<type>-<id>` for the invited entity — see
+[Invitations §1a](./invites-members-identity.md#1a-invite-message-notify_by_message)).
+The reference resolves from the entity id; there is no bundle to pull. No new
+attachment type or `BodyStatus` value marks it, because older enums would reject one.
+
+`_body_download_state()` reports such a message as downloaded with nothing
+missing, so the bubble shows no
+Download affordance, the pending-download count skips it, and catch-up never
+fetches it. A project reference renders as the Install / Open project chip rather
+than a download chip (see
+[Sharing & Sync §3a](./sharing-and-sync.md#3a-project-share--an-invite-not-a-message)).
+
 ### Upload (sender)
 
 `upload_body()` (`flow_sdk/builtin/flow_message.py:572`) runs three steps:
@@ -352,6 +376,9 @@ Its transient fields are never persisted or accepted from the hub:
   content is unavailable locally. FILE and PROMPT-file attachments need actual
   bytes; TYPE_ID attachments use `_type_id_attachment_present` to check staged
   or materialized content. Structural references do not count as missing.
+- A **body-free received reference** (`has_downloadable_body()` false, nothing
+  unpacked) is reported as `body_downloaded` with no missing attachments: there is
+  nothing to pull, so nothing is pending.
 
 A downloaded bundle with missing assets is a **partial download**. The transcript
 shows “Downloaded” with a warning icon whose tooltip lists the missing references
@@ -438,6 +465,9 @@ the hub: share → accept → download → auto-installed MA + received row).
   `PENDING_SEND`/`CREATED`.
 - **Disk is the source of truth** for "is it downloaded?" — both probes read the
   filesystem, never trust a flag in isolation.
+- **Senders ask `has_body()`, receivers ask `has_downloadable_body()`.** A received
+  message at `NA` is body-free (the hub-authored invite reference); it is never
+  pending and never pulled.
 - **Git mode still materializes from disk.** The transferred declaration is only
   enough to locate the source; the entity row and FTS entry are rebuilt from the
   receiver's checkout.

@@ -1,5 +1,12 @@
 import type { AssetScanResult } from '../process/asset-descriptor';
-import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import {
+  APIEntity,
+  dataManager,
+  isNonEmptyString,
+  registerEntity,
+  shareRecipients,
+  type ShareInvitee,
+} from '../APIEntity';
 import type { IEntity } from '../IEntity';
 import apiClient, { getRaw } from '../client';
 import { QueryRequest } from '../FlowSync/query';
@@ -28,23 +35,26 @@ import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 import { Wiki } from './wiki';
-import { getMembers } from './members';
-import { isValidUUIDv4 } from '../models/TypeId';
-import { normalizeEmail } from '../utils/utils';
+import type { ShareResult } from './members';
 
-/** Role a Project invite grants when the caller names none (the hub's default too). */
-const PROJECT_DEFAULT_INVITE_ROLE = 'member';
+/** Who a Project share invites beyond the bare people list. */
+export interface ProjectInviteOptions {
+  /** Teams (``team-<uuid>``) the backend expands to their current people. */
+  teams?: TypeId[];
+  /** The sharer's personal note, carried in every invite and its message. */
+  note?: string;
+}
 
-/** A hub user id fit to address an invitation, or null — a bare UUID or a
- *  ``user-<uuid>`` typeid string. Mirrors ``flow_sdk.builtin.user.recipient_user_id``. */
-function recipientUserId(value: string): string | null {
-  if (isValidUUIDv4(value)) return value;
-  try {
-    const typeId = new TypeId(value);
-    return typeId.type === 'user' && isValidUUIDv4(typeId.id) ? typeId.id : null;
-  } catch {
-    return null; // not a typeid at all — an email, or garbage the hub will refuse
-  }
+/**
+ * The error a project share throws when the backend could not invite someone —
+ * the backend's own sentence for the first failure — or null when nobody failed.
+ * `Project.share` throws it; a caller of `Project.invite` can throw the same one.
+ */
+export function inviteFailure(result: ShareResult): Error | null {
+  const { failed } = result;
+  if (!failed.length) return null;
+  const who = failed.map((r) => r.email ?? r.name ?? r.user_id ?? '?').join(', ');
+  return new Error(`Could not invite ${who}: ${failed[0].message}`);
 }
 
 export interface ProjectMember {
@@ -140,6 +150,35 @@ export interface AdoptHelpdeskResult {
     display_name: string | null;
     desk_project_id: string;
   } | null;
+}
+
+/**
+ * Why installing a shared project's Git origin failed — the backend
+ * `GitErrorCode` NAME (`flow_sdk/utils/git_folder.py`) that `setup-from-git`
+ * answers in `data.code`. The four an install realistically hits are named;
+ * the open `string` keeps any other `GitErrorCode` (e.g. `BRANCH_NOT_FOUND`).
+ */
+export type GitSetupErrorCode =
+  | 'REPO_NOT_ACCESSIBLE'
+  | 'AUTH_REQUIRED'
+  | 'AUTH_FAILED'
+  | 'UPSTREAM_UNAVAILABLE'
+  | (string & {});
+
+/**
+ * Thrown by `Project.setupFromGitOrigin()` when the clone failed for a
+ * classified reason. `code` is the machine reason to branch on (the install
+ * chip's "no access to the repository" vs. "connect GitHub"); `message` is the
+ * backend's human sentence.
+ */
+export class GitSetupError extends Error {
+  readonly code: GitSetupErrorCode;
+
+  constructor(code: GitSetupErrorCode, message: string) {
+    super(message);
+    this.name = 'GitSetupError';
+    this.code = code;
+  }
 }
 
 export interface AddContextDirFromGitResult {
@@ -406,49 +445,46 @@ export class Project extends APIEntity<Project> {
   /**
    * Invite people to this Project — or, with nobody to invite, publish it.
    *
-   * With recipients this is a MEMBERSHIP grant on the Project's hub row: one
-   * reflected ``POST project/<id>/members`` per person, the same hub endpoint
-   * every other shareable type invites through. It never reaches the ``share``
-   * action, so an invite neither re-publishes the row nor runs the publish gates
-   * (clean tree, pushed branch, GitHub) — those guard creating the row, not a
-   * grant on one that exists. The row must exist: on an unpublished Project the
-   * call is not reflected and the local ``members`` body refuses it (409), so
-   * callers publish first.
-   *
-   * Anyone already on the roster (any status) is skipped — the hub refuses to
-   * re-invite an accepted member ("use change_role"). An unreadable roster
-   * invites everyone, so an outage costs a redundant invite, never a missing one.
+   * With recipients this is {@link invite}; when the backend could not invite
+   * someone, this throws with the backend's own sentence (``invite`` returns every
+   * per-person outcome instead).
    */
-  override async share(users: (string | { idOrEmail: string; role?: string })[] = []): Promise<Project> {
-    if (!users.length) return super.share();
-    const roster = await getMembers(this.typeId).catch(() => []);
-    const knownEmails = new Set<string>();
-    const knownUserIds = new Set<string>();
-    for (const m of roster) {
-      for (const key of ['email', 'user_email', 'recipient_email']) {
-        const email = normalizeEmail(m[key] as string | null | undefined);
-        if (email) knownEmails.add(email);
-      }
-      if (m.user_id?.trim()) knownUserIds.add(m.user_id.trim());
-    }
-    for (const u of users) {
-      const { idOrEmail, role } = typeof u === 'string' ? { idOrEmail: u, role: undefined } : u;
-      const trimmed = idOrEmail.trim();
-      if (!trimmed) continue;
-      // Hub id first: ``normalizeEmail`` has no ``@`` check, so testing email
-      // first would misfile every bare UUID (same order as the backend's _resolve).
-      const userId = recipientUserId(trimmed);
-      const email = userId ? null : normalizeEmail(trimmed);
-      if (userId ? knownUserIds.has(userId) : !email || knownEmails.has(email)) continue;
-      const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
-      info.hubReflect = true; // membership is hub-owned — reflect to the hub
-      info.bodyParameters = {
-        ...(userId ? { recipient_user_id: userId } : { recipient_email: email }),
-        invitation_targets: [{ typeid: this.typeId.toString(), role: role || PROJECT_DEFAULT_INVITE_ROLE }],
-      };
-      await dataManager.callAction(info);
-    }
+  override async share(users: ShareInvitee[] = []): Promise<Project> {
+    if (!shareRecipients(users).length) return super.share();
+    const failure = inviteFailure(await this.invite(users));
+    if (failure) throw failure;
     return this;
+  }
+
+  /**
+   * Invite people and whole teams to this Project through the ``share`` action,
+   * and return what happened to each person.
+   *
+   * One ``POST project/<id>/share`` carrying ONLY the share keys
+   * (``ShareRequestSpec``: ``recipients``, ``teams``, ``note``). The backend's
+   * ``Project.share`` (``flow_sdk/builtin/project.py``) owns the whole
+   * orchestration — team expansion through each team's member list, de-duping,
+   * skipping the sharer and anyone already on the roster, one message-flagged
+   * membership invite per new person — and answers the canonical Project plus
+   * its ``share_result``. ``users`` are emails or hub user ids (bare or
+   * ``user-<uuid>``), optionally with a role; the backend decides which by shape.
+   *
+   * On a Project that already has its hub row (``remote``) the action only
+   * invites — a membership grant, with no publish gate (a dirty tree still
+   * invites) and no re-publish. On an unpublished one it publishes first.
+   */
+  async invite(users: ShareInvitee[] = [], opts: ProjectInviteOptions = {}): Promise<ShareResult> {
+    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
+    const note = opts.note?.trim();
+    info.bodyParameters = {
+      recipients: shareRecipients(users),
+      ...(opts.teams?.length ? { teams: opts.teams.map((team) => team.toString()) } : {}),
+      ...(note ? { note } : {}),
+    };
+    const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
+    const { share_result: shareResult, ...entity } = response ?? {};
+    this.adoptShareResponse(entity);
+    return (shareResult as ShareResult | undefined) ?? { invited: [], skipped: [], failed: [], skipped_teams: [] };
   }
 
   /**
@@ -538,7 +574,9 @@ export class Project extends APIEntity<Project> {
    * Discover directory (`GET project/published_directory`), newest first, with
    * facets over the whole set. `typeid` / `project` / `type` narrow the rows.
    */
-  static async getPublishedDirectory(opts: { typeid?: string; project?: string; type?: string } = {}): Promise<PublishedDirectory> {
+  static async getPublishedDirectory(
+    opts: { typeid?: string; project?: string; type?: string } = {},
+  ): Promise<PublishedDirectory> {
     const actionInfo = new ActionInfo('published_directory', Project.type, null, 'GET');
     const params: Record<string, string> = {};
     if (opts.typeid) params.typeid = opts.typeid;
@@ -638,7 +676,13 @@ export class Project extends APIEntity<Project> {
     return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
   }
 
-  /** Clone/materialize the shared project's portable GitOrigin locally. */
+  /**
+   * Clone/materialize the shared project's portable GitOrigin locally.
+   *
+   * @throws {GitSetupError} when the clone failed for a classified reason
+   *   (`code` names it, e.g. `REPO_NOT_ACCESSIBLE`); a plain `Error` carrying
+   *   the server's sentence otherwise.
+   */
   async setupFromGitOrigin(): Promise<Project> {
     let response: Project | undefined;
     try {
@@ -648,8 +692,17 @@ export class Project extends APIEntity<Project> {
       // reason ("Git clone failed: Repository not found"). Axios throws on the
       // status and its own message is "Request failed with status code 400",
       // which is what the recipient saw — the one sentence that says nothing.
-      const ax = err as { response?: { data?: { message?: string } }; message?: string };
-      throw new Error(ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.');
+      const ax = err as {
+        response?: { data?: { message?: string; data?: { code?: unknown } | null } };
+        message?: string;
+      };
+      const message =
+        ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.';
+      // Graph actions put their machine code at `data.data.code` (the envelope's
+      // `data`), as the share dialog's `shareFailureCode` reads it.
+      const code = ax.response?.data?.data?.code;
+      if (typeof code === 'string' && code) throw new GitSetupError(code, message);
+      throw new Error(message);
     }
     // A FAIL envelope on a 200 unwraps to `undefined` rather than throwing.
     if (!response) throw new Error('The project could not be set up from its Git origin.');
@@ -667,9 +720,10 @@ export class Project extends APIEntity<Project> {
     }
     const infos = (response as { context_dir_infos?: unknown } | null)?.context_dir_infos;
     if (Array.isArray(infos)) {
-      this.context_dir_infos = infos.filter((item): item is ProjectContextDirInfo => (
-        !!item && typeof item === 'object' && typeof (item as ProjectContextDirInfo).path === 'string'
-      ));
+      this.context_dir_infos = infos.filter(
+        (item): item is ProjectContextDirInfo =>
+          !!item && typeof item === 'object' && typeof (item as ProjectContextDirInfo).path === 'string',
+      );
     }
   }
 
@@ -760,9 +814,10 @@ export class Project extends APIEntity<Project> {
     this.adoptContextDirs(response);
     const results = response?.context_folder_results;
     if (!Array.isArray(results)) return [];
-    return results.filter((item): item is ProjectContextFolderResolveResult => (
-      !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string'
-    ));
+    return results.filter(
+      (item): item is ProjectContextFolderResolveResult =>
+        !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string',
+    );
   }
 
   async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {
@@ -904,10 +959,7 @@ export class Project extends APIEntity<Project> {
     const memberId = hostMemberId ?? getOrCreateLocalMemberId();
     const info = new ActionInfo('ensure-collaboration-code', Project.type, this.typeId.id, 'POST');
     info.bodyParameters = { host_name: hostName, host_member_id: memberId };
-    const result = await dataManager.callAction<
-      { host_name: string; host_member_id: string },
-      Partial<Project>
-    >(info);
+    const result = await dataManager.callAction<{ host_name: string; host_member_id: string }, Partial<Project>>(info);
     if (result) {
       if (result.session_code !== undefined) this.session_code = result.session_code ?? null;
       if (result.host_member_id !== undefined) this.host_member_id = result.host_member_id ?? null;
@@ -920,10 +972,7 @@ export class Project extends APIEntity<Project> {
   async joinCollaboration(memberId: string, name: string): Promise<ProjectMember | null> {
     const info = new ActionInfo('join-collaboration', Project.type, this.typeId.id, 'POST');
     info.bodyParameters = { member_id: memberId, name };
-    const result = await dataManager.callAction<
-      { member_id: string; name: string },
-      Partial<Project>
-    >(info);
+    const result = await dataManager.callAction<{ member_id: string; name: string }, Partial<Project>>(info);
     if (result && Array.isArray(result.presence)) {
       this.presence = result.presence as ProjectMember[];
     }
@@ -934,10 +983,9 @@ export class Project extends APIEntity<Project> {
   async heartbeatCollaboration(memberId: string): Promise<ProjectMember[] | null> {
     const info = new ActionInfo('heartbeat-collaboration', Project.type, this.typeId.id, 'POST');
     info.bodyParameters = { member_id: memberId };
-    const result = await dataManager.callAction<
-      { member_id: string },
-      { ok: boolean; presence: ProjectMember[] }
-    >(info);
+    const result = await dataManager.callAction<{ member_id: string }, { ok: boolean; presence: ProjectMember[] }>(
+      info,
+    );
     if (result && Array.isArray(result.presence)) {
       this.presence = result.presence;
       return result.presence;
@@ -973,13 +1021,10 @@ export class Project extends APIEntity<Project> {
     if (!path) return null;
     const { lazyAssets, LazyAsset } = await import('../lazy');
     const projects = await lazyAssets.load(LazyAsset.Projects);
-    const candidates = projects.filter(
-      (p) => p.fs_storage_mount_path && path.startsWith(p.fs_storage_mount_path),
-    );
+    const candidates = projects.filter((p) => p.fs_storage_mount_path && path.startsWith(p.fs_storage_mount_path));
     return (
-      candidates.sort(
-        (a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0),
-      )[0] ?? null
+      candidates.sort((a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0))[0] ??
+      null
     );
   }
 
@@ -1034,12 +1079,13 @@ export class Project extends APIEntity<Project> {
         { project: unknown }
       >(action);
       if (!response?.project) return { kind: 'error', message: 'No project returned' };
-      const project = dataManager.updateEntityFromJson<Project>(
-        response.project as Record<string, unknown>,
-      );
+      const project = dataManager.updateEntityFromJson<Project>(response.project as Record<string, unknown>);
       return { kind: 'ok', project };
     } catch (err: unknown) {
-      const ax = err as { response?: { status?: number; data?: { data?: unknown; message?: string } }; message?: string };
+      const ax = err as {
+        response?: { status?: number; data?: { data?: unknown; message?: string } };
+        message?: string;
+      };
       if (ax.response?.status === 409) {
         const payload = ax.response.data?.data as { suggested_name?: string; attempted_name?: string } | undefined;
         return {
@@ -1064,7 +1110,9 @@ export class Project extends APIEntity<Project> {
   static async recoverOrphaned(orphanedId: string, computeNodeId: string): Promise<Project | null> {
     const action = new ActionInfo('recover-orphaned-project', 'compute_node', computeNodeId, 'POST');
     action.bodyParameters = { dangling_id: orphanedId };
-    const response = await dataManager.callAction<{ dangling_id: string }, { project: unknown; rebound: number }>(action);
+    const response = await dataManager.callAction<{ dangling_id: string }, { project: unknown; rebound: number }>(
+      action,
+    );
     if (!response?.project) return null;
     return dataManager.updateEntityFromJson<Project>(response.project as Record<string, unknown>);
   }
