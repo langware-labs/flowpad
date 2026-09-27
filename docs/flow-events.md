@@ -653,8 +653,9 @@ each connection.
 * **Per tab, so per load.** A reload drops the socket and opens another; a new
   window is one more; an app restart brings a new backend and a new tab. Each
   emits it. A subscriber that must run on every load subscribes here without
-  `fire_once` (the `llm-setup` wizard does); one that wants it only the first
-  time ever says so with a `fire_once` trigger, as with `app.ready`.
+  `fire_once`; one that wants it only the first time ever says so with a
+  `fire_once` trigger — the `llm-setup` wizard does: the first tab after install
+  runs it, because its chooser and its questions need someone looking.
 * **It waits for the same thing `app.ready` waits for.** The emit awaits
   `bootstrap.system_content_ready`, set right after `reconcile_wizard_triggers()`
   in `_app_ready_signal`. Emitted earlier, an unarmed trigger would never hear it

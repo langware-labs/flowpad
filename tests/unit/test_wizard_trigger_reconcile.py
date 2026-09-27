@@ -205,6 +205,104 @@ async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tm
         await _cleanup(wizard, trigger)
 
 
+@pytest.mark.parametrize("finished", [True, False])
+@async_context
+async def test_a_run_that_did_not_finish_tells_the_person_what_is_missing(monkeypatch, finished):
+    """Nobody watches an unattended run and its activity node is dropped when it ends, so a
+    short run says so — a warning (kept in the footer list, not only toasted) naming each
+    missing step by its label, with a click to the wizard. A run that finished says nothing."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.notifications import desktop
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+
+    async def _ends(spec, **kwargs):
+        if finished:
+            return WizardResult.satisfied("stubbed")
+        return WizardResult.not_yet(
+            "git: the cli call ran, but the check still fails.",
+            steps={"llm": CliResult.satisfied("funded"), "git": CliResult.not_yet("still missing")},
+        )
+
+    told: list[dict] = []
+
+    async def _notify(notify_type, **kwargs):
+        told.append({"notify_type": notify_type, **kwargs})
+
+    monkeypatch.setattr(wizard_execute, "run_wizard", _ends)
+    monkeypatch.setattr(desktop, "notify_desktop", _notify)
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    trigger = await _trigger_for(wizard)
+    try:
+        await _run_wizard_trigger(trigger, [])
+
+        if finished:
+            assert told == []
+            return
+        (note,) = told
+        assert note["level"] == "warning"
+        assert note["body"] == "Not done: Git."
+        assert note["click_target"] == {"view_type": "assets", "pointer": f"editor/wizard/typeid/{wizard.typeid}"}
+    finally:
+        await _cleanup(wizard, trigger)
+
+
+@pytest.mark.parametrize("funded", [True, False])
+@async_context
+async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monkeypatch, funded):
+    """The source comes BEFORE the wizard and outside it; without one the wizard
+    still runs (its plain commands need none), and the notice names the source."""
+    from flow_sdk.builtin import compute_op
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.notifications import desktop
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server.builtin_triggers import LLM_SOURCE_OP, _run_llm_setup_trigger
+
+    order: list[str] = []
+
+    class _Source:
+        async def run(self):
+            order.append("llm source")
+            return CliResult.satisfied("funded") if funded else CliResult.not_yet("skipped")
+
+    async def _by_name(name):
+        assert name == LLM_SOURCE_OP
+        return _Source()
+
+    async def _wizard(spec, **kwargs):
+        order.append("wizard")
+        return WizardResult.satisfied("stubbed")
+
+    told: list[dict] = []
+
+    async def _notify(notify_type, **kwargs):
+        told.append(kwargs)
+
+    monkeypatch.setattr(compute_op.ComputeOp, "by_name", staticmethod(_by_name))
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    monkeypatch.setattr(desktop, "notify_desktop", _notify)
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    trigger = await _trigger_for(wizard)
+    try:
+        await _run_llm_setup_trigger(trigger, [])
+
+        assert order == ["llm source", "wizard"], "the source is settled first, and the wizard runs either way"
+        if funded:
+            assert told == []
+        else:
+            (note,) = told
+            assert note["body"] == "Not done: LLM source."
+    finally:
+        await _cleanup(wizard, trigger)
+
+
 @async_context
 async def test_an_unattended_run_of_a_non_system_wizard_is_refused(tmp_path, monkeypatch):
     """There is no client to approve it, so the only safe answer is not to run.

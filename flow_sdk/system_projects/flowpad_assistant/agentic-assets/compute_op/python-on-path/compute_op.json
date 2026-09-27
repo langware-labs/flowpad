@@ -13,6 +13,16 @@
     },
     "timeout_seconds": 600
   },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install Python 3 (https://www.python.org/downloads/) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
   "completion_check": {
     "commands": {
       "darwin": "for c in python3 python; do v=$($c --version 2>&1) && case \"$v\" in \"Python 3\"*) exit 0;; esac; done; exit 1",

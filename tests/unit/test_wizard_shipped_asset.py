@@ -159,15 +159,16 @@ def test_every_op_says_how_a_person_would_do_it(name):
     assert _op(name).setup.strip()
 
 
-def test_it_runs_on_every_ui_load_not_once():
+def test_it_runs_once_on_the_first_ui_load():
     """The trigger is an ordinary child asset; what is asserted is the folder."""
     declared = read_trigger(LLM_SETUP / "agentic-assets" / "trigger" / "on-tab-ready")
     assert declared is not None, "the shipped wizard lost its trigger asset"
     assert declared.tag is not None and declared.tag.on == "app.tab.ready"
-    assert declared.fire_once is False, "a tool removed later, or a question cancelled, must be asked again"
-    # Empty means "my parent": the folder this asset lives in.
-    assert declared.actions[0].verb == "run_wizard"
-    assert declared.actions[0].run_wizard == ""
+    assert declared.fire_once is True, "setup runs on first install; Settings → General runs it again"
+    # First-run setup, not the bare wizard: the LLM source is settled before it.
+    # The callback resolves the wizard from the trigger's parent — this folder.
+    assert declared.actions[0].verb == "callback"
+    assert declared.actions[0].callback == "builtin_run_llm_setup"
 
 
 def test_the_trust_answer_reaches_the_ui_and_is_not_the_system_flag():

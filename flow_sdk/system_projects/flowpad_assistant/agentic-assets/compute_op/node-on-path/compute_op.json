@@ -13,6 +13,16 @@
     },
     "timeout_seconds": 600
   },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install Node.js LTS (https://nodejs.org/en/download) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
   "completion_check": {
     "commands": {
       "darwin": "node --version >/dev/null 2>&1",

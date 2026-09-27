@@ -4524,6 +4524,10 @@ msgstr "Connect a data source for me and help me define what I want out of each 
 msgid "Connect a data source to make it available here"
 msgstr "Connect a data source to make it available here"
 
+#: src/components/account/settings-section.tsx
+msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
+msgstr "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -7923,6 +7927,10 @@ msgstr "Everything in this project is published."
 msgid "Everything is already up to date."
 msgstr "Everything is already up to date."
 
+#: src/components/account/settings-section.tsx
+msgid "Everything is in place."
+msgstr "Everything is in place."
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
 msgstr "Everything the budget above allows"
@@ -11150,6 +11158,10 @@ msgstr "LLM key"
 msgid "LLM keys"
 msgstr "LLM keys"
 
+#: src/components/account/settings-section.tsx
+msgid "LLM source"
+msgstr "LLM source"
+
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
@@ -13652,6 +13664,11 @@ msgstr "Not copied into context folder"
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Not deployed yet — it runs nowhere until you launch it."
 msgstr "Not deployed yet — it runs nowhere until you launch it."
+
+#. placeholder {0}: missing.join('; ')
+#: src/components/account/settings-section.tsx
+msgid "Not done: {0}"
+msgstr "Not done: {0}"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
@@ -17305,6 +17322,10 @@ msgstr "Run on {hostName}'s machine"
 msgid "Run script"
 msgstr "Run script"
 
+#: src/components/account/settings-section.tsx
+msgid "Run setup again"
+msgstr "Run setup again"
+
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Run setup failed."
 msgstr "Run setup failed."
@@ -17365,6 +17386,7 @@ msgstr "Running in the background."
 msgid "Running on the host's machine · status: {0}"
 msgstr "Running on the host's machine · status: {0}"
 
+#: src/components/account/settings-section.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "Running…"
@@ -18495,9 +18517,22 @@ msgstr "Setting up your project…"
 msgid "Settings"
 msgstr "Settings"
 
+#: src/components/account/settings-section.tsx
+msgid "Setup"
+msgstr "Setup"
+
+#: src/components/account/settings-section.tsx
+#: src/components/account/settings-section.tsx
+msgid "Setup did not finish"
+msgstr "Setup did not finish"
+
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
 msgstr "Setup failed"
+
+#: src/components/account/settings-section.tsx
+msgid "Setup finished"
+msgstr "Setup finished"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
@@ -19185,6 +19220,10 @@ msgstr "Skip all permission prompts (--dangerously-skip-permissions)"
 msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 msgstr "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "Skip for now"
+msgstr "Skip for now"
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #~ msgid "Skip if"
 #~ msgstr "Skip if"
@@ -19243,6 +19282,10 @@ msgstr "Some deployments are stale or partial"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Some deployments have errors"
 msgstr "Some deployments have errors"
+
+#: src/components/account/settings-section.tsx
+msgid "some tools"
+msgstr "some tools"
 
 #: src/lib/publish-state.ts
 msgid "Someone else changed this too. Switch to Advanced view to merge."

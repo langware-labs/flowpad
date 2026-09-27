@@ -1,0 +1,23 @@
+{
+  "type": "compute_op",
+  "id": "4b3f0870-2fc4-47c5-a204-16c45e98dc3e",
+  "name": "llm-source-auto",
+  "label": "LLM source",
+  "description": "This machine has an LLM source to fund agent calls (`flow llm set auto`).",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "f=$(command -v flow || echo \"$HOME/.local/bin/flow\"); \"$f\" llm set auto",
+      "linux": "f=$(command -v flow || echo \"$HOME/.local/bin/flow\"); \"$f\" llm set auto",
+      "win32": "$f = (Get-Command flow -ErrorAction SilentlyContinue).Source; if (-not $f) { $f = \"$HOME\\.local\\bin\\flow.exe\" }; & $f llm set auto; exit $LASTEXITCODE"
+    }
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "f=$(command -v flow || echo \"$HOME/.local/bin/flow\"); \"$f\" llm set auto --no-browser >/dev/null 2>&1",
+      "linux": "f=$(command -v flow || echo \"$HOME/.local/bin/flow\"); \"$f\" llm set auto --no-browser >/dev/null 2>&1",
+      "win32": "$f = (Get-Command flow -ErrorAction SilentlyContinue).Source; if (-not $f) { $f = \"$HOME\\.local\\bin\\flow.exe\" }; & $f llm set auto --no-browser *> $null; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

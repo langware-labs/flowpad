@@ -4524,6 +4524,10 @@ msgstr ""
 msgid "Connect a data source to make it available here"
 msgstr ""
 
+#: src/components/account/settings-section.tsx
+msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -7923,6 +7927,10 @@ msgstr ""
 msgid "Everything is already up to date."
 msgstr "كل شيء محدث بالفعل"
 
+#: src/components/account/settings-section.tsx
+msgid "Everything is in place."
+msgstr ""
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
 msgstr ""
@@ -11150,6 +11158,10 @@ msgstr "مفتاح LLM"
 msgid "LLM keys"
 msgstr "مفاتيح LLM"
 
+#: src/components/account/settings-section.tsx
+msgid "LLM source"
+msgstr ""
+
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
@@ -13651,6 +13663,11 @@ msgstr "لم تُنسخ إلى مجلد السياق"
 
 #: src/components/assets/editor/agent-profile/AgentPlacesColumn.tsx
 msgid "Not deployed yet — it runs nowhere until you launch it."
+msgstr ""
+
+#. placeholder {0}: missing.join('; ')
+#: src/components/account/settings-section.tsx
+msgid "Not done: {0}"
 msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
@@ -17305,6 +17322,10 @@ msgstr ""
 msgid "Run script"
 msgstr "تشغيل البرنامج النصي"
 
+#: src/components/account/settings-section.tsx
+msgid "Run setup again"
+msgstr ""
+
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Run setup failed."
 msgstr "فشل إعداد التشغيل."
@@ -17365,6 +17386,7 @@ msgstr "قيد التشغيل في الخلفية."
 msgid "Running on the host's machine · status: {0}"
 msgstr "يعمل على جهاز المضيف · الحالة: {0}"
 
+#: src/components/account/settings-section.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "جارٍ التنفيذ…"
@@ -18495,9 +18517,22 @@ msgstr "جاري إعداد المشروع…"
 msgid "Settings"
 msgstr "الإعدادات"
 
+#: src/components/account/settings-section.tsx
+msgid "Setup"
+msgstr ""
+
+#: src/components/account/settings-section.tsx
+#: src/components/account/settings-section.tsx
+msgid "Setup did not finish"
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
 msgstr "فشل الإعداد"
+
+#: src/components/account/settings-section.tsx
+msgid "Setup finished"
+msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
@@ -19185,6 +19220,10 @@ msgstr "تخطي جميع طلبات الإذن (--dangerously-skip-permissions)
 msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 msgstr "تخطي الموافقات وبيئة العزل الآمن (--dangerously-bypass-approvals-and-sandbox)"
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "Skip for now"
+msgstr ""
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #~ msgid "Skip if"
 #~ msgstr ""
@@ -19243,6 +19282,10 @@ msgstr "بعض الإطلاقات قديمة أو جزئية"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Some deployments have errors"
 msgstr "بعض الإطلاقات بها أخطاء"
+
+#: src/components/account/settings-section.tsx
+msgid "some tools"
+msgstr ""
 
 #: src/lib/publish-state.ts
 msgid "Someone else changed this too. Switch to Advanced view to merge."

@@ -1,4 +1,7 @@
-"""The shipped `llm-setup` wizard: ask before installing, never install unasked.
+"""The shipped `llm-setup` wizard: ask before installing, never install
+unasked, and fall back to an agent when the plain install command does not get
+there. (The LLM source is settled BEFORE this wizard — `run_llm_setup`, covered
+in `test_wizard_trigger_reconcile.py` — so here it is simply present or not.)
 
 The real documents off disk, the real runner, the real ask waiter. Only the
 shell is a double — a fake machine whose tools are a set — and the person is
@@ -23,18 +26,27 @@ from flow_sdk.assets.types.wizard import read_wizard
 from flow_sdk.core.compute_op import ask, ask_window
 from flow_sdk.core.wizard.runner import Resolved, run_wizard
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
-from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, PromptResult
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ASSETS = Path(__file__).resolve().parents[2] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets"
-TOOLS = ("python", "git", "node", "npm")
+TOOLS = ("jq", "ripgrep", "claude-code", "python", "git", "node", "npm")
+#: Each tool whose install op carries an agent `fallback`. npm has none: it ships
+#: with node's own installer, and on apt it is a plain second package.
+AGENT_FALLBACK = ("jq", "ripgrep", "claude-code", "python", "git", "node")
+#: Whether the box has an LLM source. Settled before the wizard; here it only
+#: decides whether an agent fallback can run.
+LLM = "llm"
+EVERYTHING = {*TOOLS, LLM}
 PLATFORMS = pytest.mark.parametrize("platform", ["darwin", "linux", "win32"])
 
 
 @pytest.fixture(autouse=True)
 def _no_browser(monkeypatch):
     monkeypatch.setenv("FLOWPAD_NO_BROWSER", "1")
+    # The answers below are delivered in THIS process, so it plays the backend.
+    monkeypatch.setattr(ask, "_SERVED_HERE", True)
 
 
 @pytest.fixture(autouse=True)
@@ -78,19 +90,34 @@ class Machine:
     whose install op uses it — so `brew install node` bringing npm along is the
     documents' own claim, not the test's. A command it does not know fails the
     test, which is what catches an op that runs something it should not.
+
+    An install command the documents deliberately broke (a package id that does
+    not exist) fails and installs nothing, as it would for real. An agent
+    installs the tool it was launched for — when the box has an LLM source to
+    run it on.
     """
 
     def __init__(self, platform: str, installed: set[str]):
         self.installed = set(installed)
         self.ran: list[str] = []
+        self.agents: list[str] = []
         self.checks: dict[str, tuple[str, bool]] = {}
         self.installs: dict[str, set[str]] = {}
+        self.broken: set[str] = set()
+        self.by_agent_label: dict[str, str] = {}
         for tool in TOOLS:
             install, question = _op(f"{tool}-on-path"), _op(f"ask-install-{tool}")
             self.checks[install.completion_check.command_for(platform)] = (tool, False)
             # An ask op's check prints the value it returns: the empty confirm.
             self.checks[question.completion_check.command_for(platform)] = (tool, True)
-            self.installs.setdefault(install.exe_data.command_for(platform), set()).add(tool)
+            command = install.exe_data.command_for(platform)
+            if "deliberately" in command.lower():
+                self.broken.add(command)
+            else:
+                self.installs.setdefault(command, set()).add(tool)
+        for tool in AGENT_FALLBACK:
+            # The fallback runs under its op's own label — one op, one name.
+            self.by_agent_label[_op(f"{tool}-on-path").display_label] = tool
 
     async def shell(self, command: str, **_) -> CliResult:
         self.ran.append(command)
@@ -99,10 +126,20 @@ class Machine:
             if tool not in self.installed:
                 return CliResult.of_process(command, 1)
             return CliResult.of_process(command, 0, "{}\n" if echoes else "")
+        if command in self.broken:
+            return CliResult.of_process(command, 1, stderr="No package found matching input criteria.")
         if command in self.installs:
             self.installed |= self.installs[command]
             return CliResult.of_process(command, 0)
         raise AssertionError(f"unexpected command {command!r}")
+
+    async def launch(self, *, name: str, **_) -> PromptResult:
+        if LLM not in self.installed:
+            return PromptResult.not_yet("No LLM source can fund the agent.", ran=False)
+        tool = self.by_agent_label[name]
+        self.agents.append(tool)
+        self.installed.add(tool)
+        return PromptResult.satisfied(f"installed {tool}")
 
     @property
     def installed_anything(self) -> bool:
@@ -138,6 +175,7 @@ async def _run(machine: Machine, platform: str, replies: dict[str, str]):
             platform=platform,
             workdir=Path.cwd(),
             shell=machine.shell,
+            launch=machine.launch,
             resolve_op=_resolve_op,
             resolve_wizard=_resolve_wizard,
             parent=_Node(),
@@ -158,13 +196,27 @@ def test_every_document_parses():
     # npm has no sub-wizard of its own: its ask/install are steps of
     # llm-setup-node, reached only after node's own ask/install (see
     # `test_declining_node_never_asks_about_npm`).
-    for name in ("llm-setup", "llm-setup-python", "llm-setup-git", "llm-setup-node"):
-        assert read_wizard(ASSETS / "wizard" / name) is not None, name
+    setup = read_wizard(ASSETS / "wizard" / "llm-setup")
+    assert [s.id for s in setup.steps] == ["jq", "ripgrep", "claude-code", "python", "git", "node"]
+    for tool in AGENT_FALLBACK:
+        sub = read_wizard(ASSETS / "wizard" / f"llm-setup-{tool}")
+        assert sub is not None, tool
+        assert [s.id for s in sub.steps][:2] == ["ask", "install"]
     assert not (ASSETS / "wizard" / "llm-setup-npm").exists()
     node = read_wizard(ASSETS / "wizard" / "llm-setup-node")
     assert [s.id for s in node.steps] == ["ask", "install", "ask_npm", "install_npm"]
     for tool in TOOLS:
         assert _op(f"ask-install-{tool}").output_spec_kind == "confirm"
+
+
+def test_every_install_falls_back_to_an_agent_with_one_retry():
+    """The ladder is in the op: the command, then `provisioner` on the same check,
+    with one more turn in its session if the check still fails."""
+    for tool in AGENT_FALLBACK:
+        op = _op(f"{tool}-on-path")
+        assert op.subkind == "cli" and [r.subkind for r in op.attempts] == ["agent"], tool
+        assert op.attempts[0].exe_data.agent == "provisioner" and op.attempts[0].exe_data.retries == 1, tool
+        assert not (ASSETS / "compute_op" / f"{tool}-on-path-agent").exists(), "the agent lives in the op now"
 
 
 def test_windows_never_asks_for_python3_or_the_npm_script():
@@ -179,22 +231,24 @@ def test_windows_never_asks_for_python3_or_the_npm_script():
 
 @PLATFORMS
 async def test_everything_installed_asks_nothing_and_installs_nothing(platform):
-    machine = Machine(platform, set(TOOLS))
+    machine = Machine(platform, EVERYTHING)
     result, asked = await _run(machine, platform, {})
 
     assert result.exit_code is ExitCode.OK
     assert result.ran is False
     assert asked == []
     assert not machine.installed_anything
+    assert machine.agents == []
 
 
 @PLATFORMS
 async def test_a_missing_tool_is_installed_only_after_send(platform):
-    machine = Machine(platform, {"python", "git"})
+    machine = Machine(platform, EVERYTHING - {"node", "npm"})
     result, asked = await _run(machine, platform, {"ask-install-node": "yes", "ask-install-npm": "yes"})
 
     assert result.exit_code is ExitCode.OK
-    assert machine.installed == set(TOOLS)
+    assert machine.installed == EVERYTHING
+    assert machine.agents == [], "the plain command worked — the agent is never called"
     # Where npm ships with node (brew, winget) its check then holds and nobody
     # is asked; on apt it is its own package, so it is its own question.
     assert asked == (["ask-install-node", "ask-install-npm"] if platform == "linux" else ["ask-install-node"])
@@ -202,7 +256,7 @@ async def test_a_missing_tool_is_installed_only_after_send(platform):
 
 @PLATFORMS
 async def test_cancel_leaves_the_tool_uninstalled_and_the_run_goes_on(platform):
-    machine = Machine(platform, {"python", "node", "npm"})
+    machine = Machine(platform, EVERYTHING - {"git"})
     result, asked = await _run(machine, platform, {"ask-install-git": "cancel"})
 
     assert result.exit_code is ExitCode.NOT_YET
@@ -223,7 +277,7 @@ async def test_declining_node_never_asks_about_npm(platform):
     """npm is folded into node's own sub-wizard, checked strictly AFTER it —
     so a person who declines Node.js is never followed by a second, orphaned
     question about npm, which is useless without it."""
-    machine = Machine(platform, {"python", "git"})  # node AND npm both missing
+    machine = Machine(platform, EVERYTHING - {"node", "npm"})  # node AND npm both missing
     result, asked = await _run(machine, platform, {"ask-install-node": "cancel"})
 
     assert result.exit_code is ExitCode.NOT_YET
@@ -236,17 +290,13 @@ async def test_declining_node_never_asks_about_npm(platform):
     assert node.steps["ask"].cancelled
 
 
-def test_it_runs_on_every_ui_load_and_each_question_waits_for_an_answer():
-    """No `fire_once`: a reload, a new window or an app restart each ask again
-    about whatever is still missing — including a tool the person cancelled or
-    removed since, which a spent trigger would never mention again. What makes
-    a question that can come back acceptable is the OTHER flag —
-    `until_answered` on every ask op here — so an attempt is never lost to the
-    clock, only to nobody being there to answer at all (see
-    `test_nobody_to_ask_gives_up_after_the_presence_grace...`)."""
+def test_it_runs_once_on_the_first_ui_load():
+    """`fire_once`: the first tab that loads after install runs setup, and it
+    never runs on its own again — Settings → General runs it on demand. A tab,
+    not `app.ready`: the chooser and the questions need someone looking."""
     trigger = json.loads((ASSETS / "wizard/llm-setup/agentic-assets/trigger/on-tab-ready/trigger.json").read_text())
     assert trigger["tag"] == {"on": "app.tab.ready"}
-    assert not trigger.get("fire_once")
+    assert trigger["fire_once"] is True
 
 
 async def test_a_question_waits_with_no_deadline(monkeypatch):
@@ -261,7 +311,7 @@ async def test_a_question_waits_with_no_deadline(monkeypatch):
         return await real_wait(question, timeout=timeout)
 
     monkeypatch.setattr(ask, "wait_for", spy)
-    machine = Machine("darwin", {"python", "node", "npm"})
+    machine = Machine("darwin", EVERYTHING - {"git"})
     result, asked = await _run(machine, "darwin", {"ask-install-git": "yes"})
 
     assert result.exit_code is ExitCode.OK
@@ -279,9 +329,9 @@ async def test_nobody_to_ask_gives_up_after_the_presence_grace_and_installs_noth
 
     monkeypatch.setattr(op_ask, "PRESENCE_GRACE_SECONDS", 0.03)
     monkeypatch.setattr(op_ask, "PRESENCE_POLL_SECONDS", 0.01)
-    # Every tool but python is missing. Git and node's OWN asks each give up in
-    # turn — keyed by op name because their calls interleave in one flat
-    # timeline otherwise. npm's ask is never reached at all: it is node's
+    # Every tool but python is missing. Each one's OWN ask gives up in turn —
+    # keyed by op name because their calls interleave in one flat timeline
+    # otherwise. npm's ask is never reached at all: it is node's
     # sub-wizard's THIRD step, behind `on_fail: abort` on node's own ask giving
     # up — asking it too would just reach the identical "nobody's there"
     # conclusion a second time, 15s later, for nothing.
@@ -292,13 +342,14 @@ async def test_nobody_to_ask_gives_up_after_the_presence_grace_and_installs_noth
         return False
 
     monkeypatch.setattr(ask_window, "raise_question", not_shown)
-    machine = Machine(platform, {"python"})
+    machine = Machine(platform, {"python", LLM})
     result, asked = await _run(machine, platform, {})
 
     assert result.exit_code is ExitCode.NOT_YET
     assert asked == [] and ask.open_questions() == []
     assert not machine.installed_anything
-    assert set(calls) == {"ask-install-git", "ask-install-node"}
+    assert machine.agents == []
+    assert set(calls) == {f"ask-install-{tool}" for tool in ("jq", "ripgrep", "claude-code", "git", "node")}
     assert set(result.steps["node"].steps) == {"ask"}
     for op_calls in calls.values():
         # The FIRST attempt may still open a browser; every retry after it
@@ -325,12 +376,47 @@ async def test_a_live_tab_connecting_during_the_grace_window_is_still_shown(monk
         return len(attempts) >= 3
 
     monkeypatch.setattr(ask_window, "raise_question", connects_on_the_third_try)
-    machine = Machine("darwin", {"git", "node", "npm"})
+    machine = Machine("darwin", EVERYTHING - {"python"})
     result, asked = await _run(machine, "darwin", {"ask-install-python": "yes"})
 
     assert result.exit_code is ExitCode.OK
     assert asked == ["ask-install-python"]
-    assert machine.installed == set(TOOLS)
+    assert machine.installed == EVERYTHING
     assert result.steps["git"].steps["ask"].ran is False
     assert result.steps["node"].steps["ask"].ran is False
     assert result.steps["node"].steps["ask_npm"].ran is False
+
+
+# ── The LLM source, and the agent rung behind a failed command ───────────────
+
+
+@PLATFORMS
+async def test_a_failed_install_command_falls_back_to_the_agent(platform):
+    """jq's and ripgrep's install commands are broken on purpose (see their
+    setup.md). The command fails, the agent reaches the same goal, and the run
+    is a success — a rung covered by a later one is not a failure."""
+    machine = Machine(platform, EVERYTHING - {"jq", "ripgrep"})
+    result, asked = await _run(machine, platform, {"ask-install-jq": "yes", "ask-install-ripgrep": "yes"})
+
+    assert result.exit_code is ExitCode.OK, result.detail
+    assert asked == ["ask-install-jq", "ask-install-ripgrep"]
+    assert machine.agents == ["jq", "ripgrep"]
+    assert machine.installed == EVERYTHING
+    for tool in ("jq", "ripgrep"):
+        install = result.steps[tool].steps["install"]
+        assert install.ok and isinstance(install, PromptResult), "the agent's answer, from the one install step"
+        assert "after the cli attempt" in install.detail
+
+
+@PLATFORMS
+async def test_with_no_llm_source_the_plain_installs_still_run(platform):
+    """A person who never picks a source still gets every tool whose command
+    works. Only the agent rung needs the source, so a tool whose command failed
+    stays missing and the run says so."""
+    machine = Machine(platform, EVERYTHING - {LLM, "jq", "git"})
+    result, asked = await _run(machine, platform, {"ask-install-jq": "yes", "ask-install-git": "yes"})
+
+    assert result.exit_code is ExitCode.NOT_YET
+    assert "git" in machine.installed, "the command needs no LLM source"
+    assert "jq" not in machine.installed and machine.agents == []
+    assert not result.steps["jq"].steps["install"].ok

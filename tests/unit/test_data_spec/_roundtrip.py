@@ -9,11 +9,12 @@ declares is what the disk holds, and nothing else.
 Generic on purpose. A hand-written per-field test asserts what its author
 remembered; this asserts ``cls.model_fields``.
 """
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, get_args, get_origin
+from typing import Any, Literal, get_args, get_origin
 
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.assets.layout import Folder
@@ -34,20 +35,30 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
     if asset_cls is not None:
         built = populate(asset_cls)
         return [built] if is_list else built
-    if ann is DataSpec or ann is type:          # a field that HOLDS a shape
+    if ann is DataSpec or ann is type:  # a field that HOLDS a shape
         return DataSpec.parse({f"{name}_k": "string", f"{name}_n": ["int"]})
     if is_shape_form(annotation):
         # A ``ShapeForm`` field holds the authoring FORM, not a class.
         return {f"{name}_k": "string", f"{name}_n": ["int"]}
-    if ann is PhoneNumberSpec:                  # validated digits: a "<name>-v" placeholder is not a number
+    if ann is PhoneNumberSpec:  # validated digits: a "<name>-v" placeholder is not a number
         return PhoneNumberSpec(country_code="972", number="557709288")
-    if isinstance(ann, type) and issubclass(ann, DataSpec):   # a field whose VALUE is a shape
-        return ann(**{n: sample(n, f.annotation, f.default) for n, f in ann.model_fields.items()})
+    if isinstance(ann, type) and issubclass(ann, DataSpec):  # a field whose VALUE is a shape
+        # `OVERRIDES` is keyed by class everywhere else (``populate``'s own top-level
+        # loop); a shape reached only THROUGH another field's annotation — never
+        # populated directly — needs the same lookup, or a cross-field rule on it
+        # (a tagged union like `Rung`) can never be honoured.
+        overrides = OVERRIDES.get(ann, {})
+        return ann(
+            **{
+                n: overrides[n] if n in overrides else sample(n, f.annotation, f.default)
+                for n, f in ann.model_fields.items()
+            }
+        )
     if isinstance(ann, type) and issubclass(ann, FreeForm):  # the untyped data half
         return ann({f"{name}_key": f"{name}-v"})
-    if isinstance(ann, type) and issubclass(ann, Text):     # a document body
+    if isinstance(ann, type) and issubclass(ann, Text):  # a document body
         return ann(f"{name}-v")
-    if isinstance(ann, type) and issubclass(ann, Binary):   # a file of bytes
+    if isinstance(ann, type) and issubclass(ann, Binary):  # a file of bytes
         return ann(f"{name}-v".encode())
     if ann is str:
         return f"{name}-v"
@@ -68,9 +79,12 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
     if origin is dict:
         _, v = get_args(ann) or (str, str)
         return {f"{name}_key": sample(name, v, None)}
-    if isinstance(ann, type) and hasattr(ann, "__members__"):   # an Enum
+    if isinstance(ann, type) and hasattr(ann, "__members__"):  # an Enum
         members = list(ann.__members__.values())
         return next((m for m in members if m != default), members[0])
+    if get_origin(ann) is Literal:  # a closed subset of an Enum's own members
+        args = get_args(ann)
+        return next((a for a in args if a != default), args[0])
     if ann is Any:
         return {"free": name}
     if "origin_tag" in str(annotation):

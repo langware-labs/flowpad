@@ -1,12 +1,13 @@
 {
   "name": "LLM setup (app.tab.ready)",
-  "description": "Runs the LLM setup wizard every time a UI tab finishes loading — every app start, reload or new window: checks Python 3, Git, Node.js and npm, and asks before installing any that is missing. Nothing is asked when everything is installed. Deliberately NOT fire_once: a tool removed later, or a question cancelled, is asked about again on the next load.",
+  "description": "First-run setup, once, on the first UI tab that finishes loading after install: makes sure there is an LLM source (`flow llm set auto`, the llm-source-auto op), then runs this wizard — jq, ripgrep, Claude Code, Python 3, Git and Node.js, asking before installing any that is missing. fire_once: it never runs on its own again — Settings → General → Run setup again runs the same two steps on demand.",
   "tag": {
     "on": "app.tab.ready"
   },
+  "fire_once": true,
   "actions": [
     {
-      "run_wizard": ""
+      "callback": "builtin_run_llm_setup"
     }
   ]
 }
