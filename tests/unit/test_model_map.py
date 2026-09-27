@@ -159,26 +159,3 @@ async def test_override_scoped_flowpad_provider(env, monkeypatch) -> None:
         assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"
     finally:
         llm_endpoint.clear_hub_llm_endpoint()
-
-
-async def test_an_endpoint_bound_to_one_model_runs_that_model(env, monkeypatch) -> None:
-    """A deployment's token allocation allows ONE model; the hub names it in the binding, and every tier the
-    harness asks for runs it (the endpoint would refuse any other) — over any model_map override."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
-    from flow_sdk.cli.auth.hub_login import set_api_key
-    from flow_sdk.config import default_service_config
-    from flow_sdk.instance_settings import llm_endpoint
-
-    monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.test")
-    set_api_key("fp-hub-key")
-    llm_endpoint.reset_cache()
-    llm_endpoint.set_hub_llm_endpoint(
-        "llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke", model="anthropic/claude-haiku-4.5"
-    )
-    try:
-        await _set_harness("claude", provider="flowpad", model_map={"flowpad": {"lg": "z-ai/glm-4.6"}})
-        auth = await resolve_worker_api_auth(_proc("claude", "lg"))
-        assert auth.model_slug == "anthropic/claude-haiku-4.5"
-        assert llm_endpoint.get_hub_llm_endpoint().model == "anthropic/claude-haiku-4.5", "kept across a re-read"
-    finally:
-        llm_endpoint.clear_hub_llm_endpoint()

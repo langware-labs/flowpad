@@ -336,6 +336,14 @@ class Deployment(Entity):
 
         return await hub_get(self.type, self.id, action="secrets") or {"secrets": [], "authorizations": []}
 
+    async def funding(self) -> dict | None:
+        """What pays for this cloud placement's model turns (``kind``: ``allocation`` | ``default``, the
+        endpoint's ``name``) and ``exhausted``: the used-up limit its next turn would be refused with, or
+        empty. ``None`` when the hub cannot say."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+        return await hub_get(self.type, self.id, action="funding")
+
     # ── convergence ───────────────────────────────────────────────────────
 
     @classmethod

@@ -21,7 +21,12 @@ REQUIREMENT_PERMISSION = "permission"
 REQUIREMENT_CONNECTION = "connection"
 #: A variable read by name that no credential declares.
 REQUIREMENT_VARIABLE = "variable"
-REQUIREMENT_KINDS = (REQUIREMENT_CREDENTIAL, REQUIREMENT_PERMISSION, REQUIREMENT_CONNECTION, REQUIREMENT_VARIABLE)
+#: Model turns paid for — a cloud deployment's token allocation or its owner's default. Asked at readiness only,
+#: never written into an agent's requirements.
+REQUIREMENT_FUNDING = "funding"
+REQUIREMENT_KINDS = (
+    REQUIREMENT_CREDENTIAL, REQUIREMENT_PERMISSION, REQUIREMENT_CONNECTION, REQUIREMENT_VARIABLE, REQUIREMENT_FUNDING,
+)
 
 
 class RequirementSpec(DataSpec):
@@ -107,6 +112,7 @@ class ReadinessSpec(DataSpec):
 __all__ = [
     "REQUIREMENT_CONNECTION",
     "REQUIREMENT_CREDENTIAL",
+    "REQUIREMENT_FUNDING",
     "REQUIREMENT_KINDS",
     "REQUIREMENT_PERMISSION",
     "REQUIREMENT_VARIABLE",

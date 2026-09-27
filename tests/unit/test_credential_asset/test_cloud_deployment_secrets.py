@@ -10,7 +10,7 @@ import pytest
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.credential_service import CredentialError, delete_credential, save_credential, use_mine
 from flow_sdk.builtin.deployment import Deployment
-from flow_sdk.builtin.readiness import NotReady
+from flow_sdk.builtin.readiness import NotReady, readiness
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.secrets import SecretStore
 from tests.utils import fake_hub_store
@@ -206,3 +206,23 @@ async def test_use_mine_never_copies_an_llm_provider_key(home, project, hub):
 
     assert result == {"copied": [], "not_here": [], "hub_funded": ["OPENROUTER_API_KEY"]}
     assert "OPENROUTER_API_KEY" not in hub.values.get(str(deployment.id), {})
+
+
+async def test_a_cloud_deployment_that_cannot_pay_for_a_turn_is_not_ready_and_says_which_limit(home, project, hub):
+    agent = await _agent(project)
+    await _stripe_here(project)
+    deployment = await agent.plan_deployment("production")
+    await use_mine(str(deployment.id))
+
+    unknown = await readiness(agent, deployment)
+    hub.funding[str(deployment.id)] = {"kind": "allocation", "name": "cloud-agent tokens", "exhausted": ""}
+    funded = await readiness(agent, deployment)
+    hub.funding[str(deployment.id)]["exhausted"] = "limit 'cost_usd_per_day' used up on cloud-agent tokens"
+    spent = await readiness(agent, deployment)
+
+    assert unknown.ready and not [i for i in unknown.items if i.requirement.kind == "funding"], "a hub that cannot say blocks nothing"
+    (item,) = [i for i in funded.items if i.requirement.kind == "funding"]
+    assert funded.ready and item.status == "verified" and item.where == "cloud-agent tokens (its token allocation)"
+    (item,) = [i for i in spent.items if i.requirement.kind == "funding"]
+    assert not spent.ready and item.status == "missing" and "cost_usd_per_day" in item.fix
+    assert "funding" not in {r.kind for r in agent.requirements or []}, "asked at readiness, never written to the agent"

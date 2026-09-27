@@ -25,6 +25,7 @@ from flow_sdk.schema.data_spec.permission_spec import (
 from flow_sdk.schema.data_spec.requirement_spec import (
     REQUIREMENT_CONNECTION,
     REQUIREMENT_CREDENTIAL,
+    REQUIREMENT_FUNDING,
     REQUIREMENT_PERMISSION,
     REQUIREMENT_VARIABLE,
     ReadinessItemSpec,
@@ -213,6 +214,24 @@ async def _connection_item(req: RequirementSpec, connector: str, scopes: list[st
     return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=where, connection=connector)
 
 
+async def _funding_item(deployment: "Deployment") -> Optional[ReadinessItemSpec]:
+    """Can the cloud placement pay for a model turn? Its token allocation or its owner's capped default, as the
+    hub resolves it; a used-up limit is ``missing``, named. ``None`` when the hub cannot say (never a refusal)."""
+    try:
+        funding = await deployment.funding()
+    except Exception:  # noqa: BLE001 — an unanswerable question does not block a deploy
+        return None
+    if not isinstance(funding, dict):
+        return None
+    req = RequirementSpec(kind=REQUIREMENT_FUNDING, name="model funding", derived=True)
+    label = "its token allocation" if funding.get("kind") == "allocation" else "your capped default"
+    where = f"{funding.get('name') or '—'} ({label})"
+    if exhausted := str(funding.get("exhausted") or ""):
+        return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=where,
+                                 fix=f"{exhausted}: raise the limit (Configure) or wait for it to reset")
+    return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=where)
+
+
 def _values_item(
     req: RequirementSpec, names: list[str], present: dict[str, tuple[bool, str]], fix: str, remedy: str = ""
 ) -> ReadinessItemSpec:
@@ -269,7 +288,8 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
         return ReadinessItemSpec(requirement=req, status=STATUS_MISSING,
                                  fix="no grant for this permission here yet" if mapping else "no asset declares this permission")
 
-    items = list(await asyncio.gather(*(item(req) for req in wanted)))
+    asked = [item(req) for req in wanted] + ([_funding_item(deployment)] if cloud else [])
+    items = [i for i in await asyncio.gather(*asked) if i is not None]
     return ReadinessSpec(
         agent_id=str(agent.id), deployment_id=status.deployment_id, environment=status.environment,
         ready=all(i.status != STATUS_MISSING for i in items), items=items,

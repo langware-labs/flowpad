@@ -226,6 +226,12 @@ deployment: `verified` (an OAuth grant holding the mapped scopes), `declared` (a
 value present — what a key allows cannot be checked) or `missing`, with the one
 fix as a sentence and as a `remedy` a screen acts on (`use_mine`, `authorize`). At a cloud
 deployment a value counts only in its store, and a connection only when authorized for it.
+
+A cloud deployment also gets one **funding** item, asked of the hub (`Deployment.funding()` →
+`GET deployment/<id>/funding`). It names what pays for its model turns: its token allocation (the deploy
+dialog's "Token allocation", `TokenAllocationSpec`), else the owner's capped default. A used-up limit makes the
+item `missing`, and the fix names the limit. The item is asked at readiness only and never written into the
+agent's requirements. A hub that cannot answer blocks nothing.
 `flow project setup` folds the same per-source derivation (`--deployment` sets up a
 deployment's values).
 

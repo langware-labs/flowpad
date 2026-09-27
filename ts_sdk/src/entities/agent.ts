@@ -40,7 +40,7 @@ export interface AgentAutoLaunchState {
  */
 /** One thing an agent needs (`agent.requirement`). Never a value. */
 export interface AgentRequirement {
-  kind: 'credential' | 'permission' | 'connection' | 'variable';
+  kind: 'credential' | 'permission' | 'connection' | 'variable' | 'funding';
   name: string;
   vars: string[];
   scopes: string[];

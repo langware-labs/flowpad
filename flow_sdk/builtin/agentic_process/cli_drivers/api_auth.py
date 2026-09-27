@@ -521,14 +521,6 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     # re-pointed codex at a Claude slug.
     merged = {**spec.tier_models, **overrides}
     slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"
-    if is_hub:
-        # The box's bound endpoint allows ONE model (a deployment's token allocation): that is what runs
-        # here -- any other would be refused by the endpoint.
-        from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint  # noqa: PLC0415
-
-        bound = get_hub_llm_endpoint()
-        if bound is not None and bound.model and source.endpoint_typeid in ("", None, bound.endpoint_typeid):
-            slug = bound.model
     env = {**binding.base_env, binding.token_env_var: key}
     if slug:
         for var in spec.model_env_vars:
