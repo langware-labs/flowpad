@@ -570,7 +570,14 @@ class DriverRuntime:
         data = f.data
         if f.origin.kind == LOCAL_KIND or not isinstance(data, MessageFileData) or data.fetch_error:
             return f
-        home = self._file_home(row, f.origin, data.name or f.origin.key.rsplit("/", 1)[-1])
+        if not data.name:
+            # A provider that names no file (a WhatsApp photo): its handle, with the extension its type says.
+            import mimetypes  # noqa: PLC0415
+
+            stem = f.origin.key.rstrip("/").rsplit("/", 1)[-1] or "file"
+            ext = mimetypes.guess_extension(data.media_type or "") or ""
+            data = data.model_copy(update={"name": stem if stem.endswith(ext) else f"{stem}{ext}"})
+        home = self._file_home(row, f.origin, data.name)
         if not home.is_file():
             if not isinstance(source, Openable):
                 return f
