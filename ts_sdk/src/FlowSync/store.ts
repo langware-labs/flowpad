@@ -1023,6 +1023,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return null;
   }
 
+  /** The first live cached entity matching `predicate` (optionally of one `type`) — no request. */
+  public findInCache<U extends T>(predicate: (entity: U) => boolean, type?: string): U | null {
+    for (const [typeId, ref] of this.entities.entries()) {
+      if (type && typeId.type !== type) continue;
+      const entity = ref.entity as U | undefined;
+      if (entity && predicate(entity)) return entity;
+    }
+    return null;
+  }
+
   /**
    * Distinguished initial name for a tab opening on a DockPointer (called ONCE
    * at Tab creation; docs/tab-management.md). Resolves, in order:

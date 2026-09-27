@@ -44,10 +44,8 @@ interface TabbedTerminalProps {
 const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope = 'project', spawnProjectId, processId }) => {
   const { currentDock } = useDockNavigation();
   const allTerminalTabs = useTerminalTabs('all');
-  // The SUBSCRIBED project, not a read of the `dataContext` global: a global
-  // read at render time lags the URL by a render whenever the project moves, and
-  // for that render the tab the URL names is "missing" from the scoped list — the
-  // "This session has nothing to display" flash on a switch.
+  // The project scope decides only the empty landing (no terminals here yet). The
+  // subscribed project, not a render-time read of the `dataContext` global.
   const { project } = useContext();
   const scopeProjectId = spawnProjectId === undefined ? (project?.id ?? null) : spawnProjectId;
   const tabs = useMemo(
@@ -68,38 +66,37 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
   );
   const hostDisconnected = !!hostProcess && !hostProcess.shell_id;
 
-  // Active panel = the URL (every tab is keyed by its dockPointer.tabHash).
+  // Active panel = the URL (every tab is keyed by its dockPointer.tabHash), looked
+  // up among ALL terminal tabs: the URL is the truth and the loader already aligned
+  // its scope (dock-loading step 3). Checking it against a project-filtered list
+  // made a second source of truth — for the render where they disagreed, the tab
+  // was "missing" and "This session has nothing to display" flashed.
   const activeKey = currentDock?.tabHash ?? '';
-  const hasTab = !!activeKey && tabs.some((t) => tabKey(t) === activeKey);
+  const activeTab = activeKey ? allTerminalTabs.find((t) => tabKey(t) === activeKey) : undefined;
 
-  // The URL names a session but NO tab in this scope backs it (scope filtering,
-  // backend refusal, cross-project drift): without this arm the slot stays
-  // empty and the pane is silently blank — the recorded load error (if any)
-  // has no mounted reader. Loader-materialized tabs land in the store before
-  // first render (setupTab is awaited in the route loader), so this is not a
-  // hydration flash.
+  // The URL names a session but NO tab backs it (backend refusal, a closed tab):
+  // without this arm the slot stays empty and the pane is silently blank — the
+  // recorded load error (if any) has no mounted reader.
   const activePointer = currentDock?.pointer ?? '';
   const activeProcessId =
     activePointer && DockPointer.isAgenticProcessPointer(activePointer)
       ? DockPointer.extractAgenticProcessId(activePointer)
       : undefined;
-  const activeTabMissing = !!activeKey && tabs.length > 0 && !hasTab;
+  const activeTabMissing = !!activeKey && tabs.length > 0 && !activeTab;
 
-  // One line per time the dead-end overlay goes up, with what disagreed.
+  // One line per time the dead-end overlay goes up.
   useEffect(() => {
     if (!activeTabMissing) return;
-    const owner = allTerminalTabs.find((t) => tabKey(t) === activeKey);
     toplog.log(
       'tab_switch',
-      `error ${sinceTabSwitch()} sink=terminal_active_tab_missing key=${activeKey} scope_project=${scopeProjectId ?? 'global'} ` +
-        `tab_project=${owner ? (owner.project_id ?? 'global') : 'no-tab'} scoped_tabs=${tabs.length}`,
+      `error ${sinceTabSwitch()} sink=terminal_active_tab_missing key=${activeKey} terminal_tabs=${allTerminalTabs.length}`,
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per appearance
   }, [activeTabMissing, activeKey]);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const [slot] = useState(() => Symbol('terminal-slot'));
-  const shownKey = hostDisconnected || !hasTab ? '' : activeKey;
+  const shownKey = hostDisconnected || !activeTab ? '' : activeKey;
 
   // Layout effect: the container is in place before the browser paints, and
   // before the pooled panel's own effects run for a first mount (they measure).
@@ -109,12 +106,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
     // Warm = the pool already runs this panel (shown before, by any slot in any
     // layout); cold = this activation mounts it (attach + replay).
     const warm = terminalPool.has(shownKey);
-    if (toplog.isOn('tab_switch')) {
-      toplog.log('tab_switch', `terminal_flip ${sinceTabSwitch()} mode=${warm ? 'warm' : 'cold'} key=${shownKey}`);
-    }
     toplog.log(
-      ['process_load', 'pty', 'agentic_process.load'],
-      `TabbedTerminal active flip → ${shownKey} (${warm ? 'warm' : 'cold mount'})`,
+      ['tab_switch', 'process_load', 'pty', 'agentic_process.load'],
+      `terminal_flip ${sinceTabSwitch()} mode=${warm ? 'warm' : 'cold'} key=${shownKey}`,
     );
     terminalPool.show(slot, shownKey, host);
     return () => terminalPool.hide(slot);

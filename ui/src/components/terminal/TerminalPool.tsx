@@ -1,5 +1,4 @@
 import { tabKey, tabManager } from '@sdk';
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useTerminalTabs } from '@src/tabs/use-tab-manager';
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
@@ -41,7 +40,6 @@ export function TerminalPool() {
 }
 
 function PooledPanels({ snapshot }: { snapshot: TerminalPoolSnapshot }) {
-  const { flow } = useAgentContext();
   const tabs = useTerminalTabs('all');
   const liveKeys = useMemo(() => new Set(tabs.map(tabKey)), [tabs]);
 
@@ -58,7 +56,7 @@ function PooledPanels({ snapshot }: { snapshot: TerminalPoolSnapshot }) {
         .map((tab) => {
           const key = tabKey(tab);
           return createPortal(
-            <TerminalPanel tab={tab} isActive={snapshot.shown.has(key)} isMounted flow={flow ?? null} />,
+            <TerminalPanel tab={tab} isActive={snapshot.shown.has(key)} />,
             terminalPool.container(key),
             key,
           );
