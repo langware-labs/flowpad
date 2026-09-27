@@ -7,9 +7,13 @@ Double, plants the credentials the backend will resolve them with, and serves a 
     FLOW_INSTANCE=mx-8 FLOWPAD_HUB_URL=http://localhost:8093 uv run python tests/e2e/channel_doubles.py --backend http://localhost:6009 [--channels whatsapp,slack]
 
     GET  /channels                          {provider: {config, fields, secret_store?, sender, agent_only}}
-    POST /deliver   {channel, text, sender?, thread?} → the delivery (a webhook delivery is POSTed to the backend here);
-                    ``thread`` (a delivery's own ``thread``) continues that thread where the channel threads
-    GET  /sent?channel=<provider>           → [{to, text, thread, external_id}]
+    POST /deliver   {channel, text, sender?, thread?, files?, reply_to?} → the delivery (a webhook delivery is POSTed
+                    to the backend here); ``thread`` (a delivery's own ``thread``) continues that thread where the
+                    channel threads; ``files`` [{name, media_type, as_, b64, caption?}] ride as the channel's media;
+                    ``reply_to`` (a delivery's ``external_id``) quotes that message
+    POST /react     {channel, target, emoji, sender?} → a person's reaction on ``target`` ("" takes it back)
+    GET  /sent?channel=<provider>           → [{to, text, thread, external_id, files?, ...}]
+    GET  /reactions?channel=<provider>      → the reactions we put on the channel
     POST /pair      {channel}                → {paired}: the person's one setup step a Double stands for (a QR scanned)
     POST /agent_mailbox {agent_id, address} → {outsider_address}   (agent email: the outsider that writes in)
     POST /shutdown
@@ -165,9 +169,28 @@ class Doubles:
             out[provider] = entry
         return out
 
-    def deliver(self, channel: str, text: str, sender: str | None, thread: str | None = None) -> dict:
+    def deliver(self, channel: str, text: str, sender: str | None, thread: str | None = None, *, files=None, reply_to=None) -> dict:
+        import base64  # noqa: PLC0415
+
         double = self.doubles[channel]
-        delivered = self.run(self.call(double.deliver, text, sender=sender or double.sender, thread=thread))
+        extra: dict = {}
+        if files:
+            extra["files"] = [{**{k: v for k, v in f.items() if k != "b64"}, "bytes": base64.b64decode(f.get("b64") or "")} for f in files]
+        if reply_to:
+            extra["reply_to"] = reply_to
+        delivered = self.run(self.call(double.deliver, text, sender=sender or double.sender, thread=thread, **extra))
+        return self._post_webhook(delivered)
+
+    def react(self, channel: str, target: str, emoji: str, sender: str | None) -> dict:
+        double = self.doubles[channel]
+        return self._post_webhook(self.run(self.call(double.react, target, emoji, sender=sender or double.sender)))
+
+    def reactions(self, channel: str) -> list:
+        double = self.doubles[channel]
+        return self.run(self.call(double.reactions)) if hasattr(double, "reactions") else []
+
+    def _post_webhook(self, delivered: dict) -> dict:
+        """A push channel's delivery reaches the backend here; a polled one waits for its next poll."""
         if delivered.get("path"):
             r = self.run(self.http.post(delivered["path"], content=delivered["body"], headers={**delivered["headers"], "Content-Type": "application/json"}))
             delivered = {"external_id": delivered["external_id"], "thread": delivered["thread"], "webhook_status": r.status_code, "webhook_body": r.text[:200]}
@@ -211,7 +234,12 @@ def serve(doubles: Doubles) -> None:
                 if url.path == "/sent":
                     return reply(200, doubles.sent((parse_qs(url.query).get("channel") or [""])[0]))
                 if url.path == "/deliver":
-                    return reply(200, doubles.deliver(body["channel"], body["text"], body.get("sender"), body.get("thread")))
+                    return reply(200, doubles.deliver(body["channel"], body.get("text", ""), body.get("sender"), body.get("thread"),
+                                                      files=body.get("files"), reply_to=body.get("reply_to")))
+                if url.path == "/react":
+                    return reply(200, doubles.react(body["channel"], body["target"], body.get("emoji", ""), body.get("sender")))
+                if url.path == "/reactions":
+                    return reply(200, doubles.reactions((parse_qs(url.query).get("channel") or [""])[0]))
                 if url.path == "/pair":
                     return reply(200, doubles.pair(body["channel"]))
                 if url.path == "/agent_mailbox":

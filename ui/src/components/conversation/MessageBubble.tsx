@@ -14,6 +14,8 @@ import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
 import { ChannelBadge } from './ChannelBadge';
+import { ChannelMessageActions, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
+import type { IMessageReaction } from '@sdk/entities/flow-message';
 import { Trans } from '@lingui/react/macro';
 
 interface MessageBubbleProps {
@@ -58,6 +60,16 @@ interface MessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark it selected. */
   onSelect?: () => void;
+  /** The message this one quotes, drawn above the body; clicking it jumps there. */
+  quoted?: { sender: string; text: string; onJump?: () => void } | null;
+  /** Who reacted with what (a channel message). */
+  reactions?: IMessageReaction[];
+  /** When set, renders React — the channel shows reactions (`ChannelSpec.reacts`). */
+  onReact?: (emoji: string, remove: boolean) => void;
+  /** When set, renders Reply — the composer answers this message. */
+  onReply?: () => void;
+  /** The channel's replies only thread (`ChannelSpec.quotes` false): Reply says "Reply in thread". */
+  replyInThread?: boolean;
 }
 
 /**
@@ -172,6 +184,11 @@ export function MessageBubble({
   footer,
   isSelected,
   onSelect,
+  quoted,
+  reactions,
+  onReact,
+  onReply,
+  replyInThread,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -238,7 +255,7 @@ export function MessageBubble({
 
   return (
     <div
-      className={`flex gap-2 rounded p-1 transition-colors ${
+      className={`group flex gap-2 rounded p-1 transition-colors ${
         onSelect ? 'cursor-pointer' : ''
       } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40' : ''}`}
       onClick={handleBubbleClick}
@@ -324,12 +341,20 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
+          {!editing && (onReply || onReact) && (
+            <ChannelMessageActions
+              onReply={onReply}
+              replyInThread={replyInThread}
+              onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
+            />
+          )}
           <MessageChips
             flowMessageId={flowMessageId}
             conversationId={flowMessage?.conversation_id ?? undefined}
             messageText={message.content}
           />
         </div>
+        {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
         {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (
           <MessageBody content={message.content} isBot={isBot} />
         )}
@@ -348,6 +373,12 @@ export function MessageBubble({
           />
         )}
         {footer}
+        {reactions && reactions.length > 0 && (
+          <ReactionChips
+            reactions={reactions}
+            onToggle={onReact ? (emoji, ours) => onReact(emoji, ours) : undefined}
+          />
+        )}
       </div>
       {onDeleteMessage && (
         <ConfirmDialog
