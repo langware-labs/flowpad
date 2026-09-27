@@ -103,6 +103,12 @@ class _Run:
     launch: Launch
     resolve_op: Optional[OpResolver]
     resolve_wizard: Optional[WizardResolver]
+    #: The TOP-LEVEL Wizard entity's id, unchanged through any nested wizard
+    #: calls — unlike `subject_entity`, which is routing (who watches) and is
+    #: deliberately blanked for an unattended run. This is identity, so it
+    #: never is: an `ask` step raised three levels deep must still point back
+    #: at the one entity a person can open to see the whole run.
+    wizard_id: str = ""
     #: A person explicitly approved THIS run, so its callees inherit that.
     #: Being SHIPPED does not: a wizard Flowpad ships runs unprompted, and
     #: letting it pull in an op from a cloned repo is the hole the gate exists
@@ -133,6 +139,7 @@ async def run_wizard(
     platform: str = "",
     chain: tuple[str, ...] = (),
     parent: Any = None,
+    wizard_id: str = "",
 ) -> WizardResult:
     """Run every step in order. Never raises for an outcome.
 
@@ -151,10 +158,18 @@ async def run_wizard(
     workdir.mkdir(parents=True, exist_ok=True)
 
     run = _Run(
-        spec=spec, values=dict(inputs or {}), workdir=workdir, platform=platform,
-        subject_entity=subject_entity, shell=shell, launch=launch,
-        resolve_op=resolve_op, resolve_wizard=resolve_wizard,
-        approved=approved, chain=chain,
+        spec=spec,
+        values=dict(inputs or {}),
+        workdir=workdir,
+        platform=platform,
+        subject_entity=subject_entity,
+        shell=shell,
+        launch=launch,
+        resolve_op=resolve_op,
+        resolve_wizard=resolve_wizard,
+        approved=approved,
+        chain=chain,
+        wizard_id=wizard_id,
     )
 
     # A nested run reports INTO the caller's node, so the tree is one tree. Only
@@ -228,14 +243,13 @@ def _still_unmet(run: _Run) -> Optional[ReturnedValue]:
     later step that reached the SAME goal does not make the run a failure, while
     a step with a goal of its own that nobody reached still does.
     """
-    answers = list(run.steps.values())          # in the order the steps ran
+    answers = list(run.steps.values())  # in the order the steps ran
     for position, answer in enumerate(answers):
         if answer.ok:
             continue
         goal = answer.check.command if answer.check is not None else None
         covered = goal is not None and any(
-            later.ok and later.check is not None and later.check.command == goal
-            for later in answers[position + 1:]
+            later.ok and later.check is not None and later.check.command == goal for later in answers[position + 1 :]
         )
         if not covered:
             return answer
@@ -251,7 +265,9 @@ def _answer(run: _Run, make: Callable[..., WizardResult], detail: str) -> Wizard
     """
     outputs = {key: a.value for key, a in run.steps.items() if a.ok and a.value is not None}
     return make(
-        detail, value=outputs or None, steps=run.steps,
+        detail,
+        value=outputs or None,
+        steps=run.steps,
         ran=any(answer.ran for answer in run.steps.values()),
     )
 
@@ -274,7 +290,9 @@ def _held_to_output(run: _Run, result: WizardResult) -> WizardResult:
         return WizardResult.not_yet(
             f"{run.spec.name or 'wizard'}: the steps reached their goals, but what they "
             f"returned is not the declared output — {error}",
-            value=None, steps=result.steps, ran=result.ran,
+            value=None,
+            steps=result.steps,
+            ran=result.ran,
         )
     return result.model_copy(update={"value": value})
 
@@ -286,7 +304,9 @@ async def _step(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue:
     return await _call_op(run, step, child)
 
 
-async def _resolve(run: _Run, step: WizardStepSpec, resolver: Optional[OpResolver], noun: str) -> "Resolved | ReturnedValue":
+async def _resolve(
+    run: _Run, step: WizardStepSpec, resolver: Optional[OpResolver], noun: str
+) -> "Resolved | ReturnedValue":
     """The callee, or the answer that stands in for it: not found, or refused.
 
     Shipped trust does not compose — an explicit approval does (``_Run.approved``).
@@ -316,11 +336,16 @@ async def _call_op(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedValue
     if isinstance(found, ReturnedValue):
         return found
     return await run_op(
-        found.spec, subject=run.subject_entity or "", trusted=True,
-        workdir=run.workdir, platform=run.platform,
-        shell=run.shell, launch=run.launch,
+        found.spec,
+        subject=run.subject_entity or "",
+        trusted=True,
+        workdir=run.workdir,
+        platform=run.platform,
+        shell=run.shell,
+        launch=run.launch,
         env=input_env(_scope(run, step)),
         on_status=lambda text: child.current(text),
+        wizard_id=run.wizard_id,
     )
 
 
@@ -336,18 +361,27 @@ async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedV
         why = f"which is more than {MAX_WIZARD_DEPTH} levels deep"
     if why:
         return WizardResult.not_yet(
-            f"step {step.id!r} calls the wizard {step.ref!r}, {why}: "
-            f"{' -> '.join((*above, step.ref))}.",
+            f"step {step.id!r} calls the wizard {step.ref!r}, {why}: {' -> '.join((*above, step.ref))}.",
             ran=False,
         )
     found = await _resolve(run, step, run.resolve_wizard, "wizard")
     if isinstance(found, ReturnedValue):
         return found
     return await run_wizard(
-        found.spec, subject_entity=run.subject_entity, trusted=True,
-        workdir=run.workdir, inputs=_scope(run, step), shell=run.shell, launch=run.launch,
-        approved=run.approved, resolve_op=run.resolve_op, resolve_wizard=run.resolve_wizard,
-        platform=run.platform, chain=above, parent=child,
+        found.spec,
+        subject_entity=run.subject_entity,
+        trusted=True,
+        workdir=run.workdir,
+        inputs=_scope(run, step),
+        shell=run.shell,
+        launch=run.launch,
+        approved=run.approved,
+        resolve_op=run.resolve_op,
+        resolve_wizard=run.resolve_wizard,
+        platform=run.platform,
+        chain=above,
+        parent=child,
+        wizard_id=run.wizard_id,
     )
 
 

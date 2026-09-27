@@ -3325,6 +3325,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
@@ -3406,7 +3407,7 @@ msgstr "Can't update right now — showing the last synced list."
 msgid "Cancel"
 msgstr "Cancel"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/use-ask-question.ts
 msgid "Cancelled."
 msgstr "Cancelled."
 
@@ -4064,6 +4065,7 @@ msgstr "Cloning the repo and indexing it."
 msgid "Cloning…"
 msgstr "Cloning…"
 
+#: src/components/ask/AskModal.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
@@ -5186,6 +5188,10 @@ msgstr "Could not give access"
 msgid "Could not give this project access to {0}."
 msgstr "Could not give this project access to {0}."
 
+#: src/components/account/settings-section.tsx
+msgid "Could not hide tools"
+msgstr "Could not hide tools"
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Could not invite everyone"
 msgstr "Could not invite everyone"
@@ -6148,6 +6154,10 @@ msgstr "Debug level includes hook invocations."
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Debug logging"
 msgstr "Debug logging"
+
+#: src/components/account/settings-section.tsx
+msgid "DEBUG: hide 6 tools"
+msgstr "DEBUG: hide 6 tools"
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -9404,6 +9414,10 @@ msgstr "Go up"
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 
+#: src/components/ask/use-ask-question.ts
+msgid "Got it — your answer was sent."
+msgstr "Got it — your answer was sent."
+
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
 msgstr "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
@@ -9621,6 +9635,13 @@ msgstr "Hidden files"
 msgid "Hidden from your stream inbox"
 msgstr "Hidden from your stream inbox"
 
+#. placeholder {0}: answer.hidden.join(', ') || '–'
+#. placeholder {1}: answer.already_hidden.join(', ') || '–'
+#. placeholder {2}: answer.not_found.join(', ') || '–'
+#: src/components/account/settings-section.tsx
+msgid "hidden: {0} · already hidden: {1} · not found: {2}"
+msgstr "hidden: {0} · already hidden: {1} · not found: {2}"
+
 #. placeholder {0}: header.title
 #: src/components/navigator-panel/NavigatorPanel.tsx
 msgid "Hide {0}"
@@ -9683,6 +9704,10 @@ msgstr "Hide the guided journey"
 #: src/components/credentials/SecretValueInput.tsx
 msgid "Hide value"
 msgstr "Hide value"
+
+#: src/components/account/settings-section.tsx
+msgid "Hiding…"
+msgstr "Hiding…"
 
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "High CPU & Memory usage detected"
@@ -11471,6 +11496,7 @@ msgstr "Loading..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
@@ -14919,6 +14945,10 @@ msgstr "Parent folder to clone into…"
 msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
 msgstr "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
 
+#: src/components/ask/AskView.tsx
+msgid "Part of a setup — see its progress"
+msgstr "Part of a setup — see its progress"
+
 #: src/components/webapp-display/messages.tsx
 msgid "Part of your app didn't load."
 msgstr "Part of your app didn't load."
@@ -18009,6 +18039,11 @@ msgstr "See all {0} results →"
 msgid "See all sources"
 msgstr "See all sources"
 
+#: src/components/ask/AskModal.tsx
+#: src/components/ask/AskView.tsx
+msgid "See setup progress"
+msgstr "See setup progress"
+
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
 msgstr "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
@@ -18165,6 +18200,7 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
+#: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
@@ -20270,8 +20306,8 @@ msgid "Test trigger"
 msgstr "Test trigger"
 
 #: src/components/ask/AskView.tsx
-msgid "Thank you — sent."
-msgstr "Thank you — sent."
+#~ msgid "Thank you — sent."
+#~ msgstr "Thank you — sent."
 
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
@@ -21120,7 +21156,7 @@ msgstr "This project's agent could not start"
 msgid "this project's own desk"
 msgstr "this project's own desk"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/use-ask-question.ts
 msgid "This question is no longer waiting."
 msgstr "This question is no longer waiting."
 
@@ -21606,6 +21642,10 @@ msgstr "tools"
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
 msgid "Tools"
 msgstr "Tools"
+
+#: src/components/account/settings-section.tsx
+msgid "Tools hidden"
+msgstr "Tools hidden"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tools Used"

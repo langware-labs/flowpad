@@ -1,82 +1,47 @@
-import { useCallback, useEffect, useState } from 'react';
-import { msg } from '@lingui/core/macro';
+import { useCallback } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { useLingui } from '@lingui/react';
-import apiClient from '@sdk/client';
+import { Loader2 } from 'lucide-react';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
+import { fieldsOf, useAskQuestion } from './use-ask-question';
 
 /**
- * A question a ComputeOp put to a person.
+ * A question a ComputeOp put to a person — the full-page rendering, at
+ * `/dock/ask/<id>`.
  *
- * Two homes. In the dock it fills the content area — the rail (user avatar,
- * login) and the tab strip stay, because the person is still inside the app —
- * and answering hands them back to where they were. In `win/` (the browser
- * window opened when no tab was listening) it is the whole window and settles
- * on a message, since there is nothing to go back to. The fields come from the op's declared
- * `output_spec_kind`, opened one level by the backend into `fields` — never from
- * a hand-written list — so a kind that grows a field grows one here with no
- * change to this component.
+ * Two homes. In `win/` (the chrome-less window opened when no tab was
+ * listening) this is the whole window and settles on a message, since there
+ * is nothing to go back to — that is the ONE case this page still exists for.
+ * A live tab gets `AskModal` instead (a dialog over whatever it was already
+ * showing); this page and that modal are two thin renderings of the same
+ * `useAskQuestion` hook, never two copies of the logic.
  *
  * The op on the other end is waiting with a deadline. That shapes two things:
  * Cancel is a first-class answer rather than a way to close the window, and a
  * question that has already settled renders as settled instead of as a form
  * nobody is listening to.
  */
-
-type Shape = Record<string, unknown> | string | null;
-
-interface Question {
-  id: string;
-  op: string;
-  prompt: string;
-  /** Why it is asked and what each answer does. Empty: the op's name instead. */
-  detail?: string;
-  /** The op's words for the two buttons. Empty: the defaults, Send / Cancel. */
-  submit_label?: string;
-  cancel_label?: string;
-  /** The declared kind opened one level: `{field: form}`, or the kind itself for a scalar. */
-  fields: Shape;
-  /** The answer is a secret (an API key): drawn masked. */
-  secret?: boolean;
-}
-
-/** The field names to draw. An object shape is its keys; anything else is one
- *  unnamed value, which is what a scalar declaration means. */
-function fieldsOf(shape: Shape): string[] {
-  if (shape && typeof shape === 'object' && !Array.isArray(shape)) return Object.keys(shape);
-  return [''];
-}
-
 export default function AskView() {
-  const { _ } = useLingui();
   // The pointer comes from the parsed dock address, not from a route param:
   // the route is `:viewType/*`, so react-router never names this segment.
   const { navigation, currentDock, windowMode } = useDockNavigation();
   const questionId = currentDock?.pointer;
-  const [question, setQuestion] = useState<Question | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [error, setError] = useState('');
-  const [settled, setSettled] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!questionId) return;
-    let alive = true;
-    void (async () => {
-      const res = await apiClient.get<Question>(`/api/v1/ask/${questionId}`).catch(() => null);
-      if (!alive) return;
-      // A question that is gone is the NORMAL end: the op timed out, or someone
-      // else answered. Say so rather than showing a form that resolves nothing.
-      if (!res) setSettled(_(msg`This question is no longer waiting.`));
-      else setQuestion(res);
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [questionId, _]);
+  const {
+    question,
+    values,
+    setValues,
+    error,
+    busy,
+    settledKind,
+    settledMessage,
+    submit,
+    cancel,
+    wizardId,
+    openWizard,
+    runningNow,
+  } = useAskQuestion(questionId);
 
   // Leave the question. It was pushed over whatever the person was doing, so in
   // the dock the way out is back to it — or home when this tab has no history
@@ -87,40 +52,21 @@ export default function AskView() {
     else navigation.goHome();
   }, [navigation]);
 
-  const send = useCallback(
-    async (path: string, body?: unknown) => {
-      if (!questionId) return;
-      setBusy(true);
-      setError('');
-      try {
-        await apiClient.post(`/api/v1/ask/${questionId}${path}`, body);
-        // Settle in place rather than leaving automatically — in the dock this
-        // used to hand the person straight back to wherever they were, with no
-        // way to see that the answer actually landed. `leave()` is now only
-        // ever reached by the person's own click, on the Back button below.
-        setSettled(path === '/cancel' ? _(msg`Cancelled.`) : _(msg`Thank you — sent.`));
-      } catch (reason) {
-        // A 422 means the value did not match the shape the op declared. The
-        // question is still open, so this is correctable in place.
-        setError(reason instanceof Error ? reason.message : String(reason));
-      } finally {
-        setBusy(false);
-      }
-    },
-    [questionId, _],
-  );
-
-  const submit = useCallback(() => {
-    const names = fieldsOf(question?.fields ?? null);
-    const value =
-      names.length === 1 && names[0] === '' ? values[''] : Object.fromEntries(names.map((n) => [n, values[n] ?? '']));
-    return send('/answer', { value });
-  }, [question, values, send]);
-
-  if (settled) {
+  if (settledKind) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-6" data-testid="ask-settled">
-        <p className="text-sm text-muted-foreground">{settled}</p>
+        {settledMessage && <p className="text-sm text-muted-foreground">{settledMessage}</p>}
+        {wizardId && runningNow && (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="ask-wizard-live">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+            <span>{runningNow.current || runningNow.label || runningNow.name}</span>
+          </p>
+        )}
+        {wizardId && (
+          <Button data-testid="ask-see-wizard" onClick={openWizard}>
+            <Trans>See setup progress</Trans>
+          </Button>
+        )}
         {windowMode ? null : (
           <Button variant="ghost" data-testid="ask-back" onClick={leave}>
             <Trans>Back</Trans>
@@ -152,6 +98,16 @@ export default function AskView() {
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">{question.op}</p>
+          )}
+          {wizardId && (
+            <button
+              type="button"
+              className="mt-1 text-xs text-muted-foreground underline underline-offset-2"
+              data-testid="ask-wizard-link"
+              onClick={openWizard}
+            >
+              <Trans>Part of a setup — see its progress</Trans>
+            </button>
           )}
         </div>
 
@@ -187,7 +143,7 @@ export default function AskView() {
           <Button data-testid="ask-submit" disabled={busy} onClick={() => void submit()}>
             {question.submit_label || <Trans>Send</Trans>}
           </Button>
-          <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void send('/cancel')}>
+          <Button variant="ghost" data-testid="ask-cancel" disabled={busy} onClick={() => void cancel()}>
             {question.cancel_label || <Trans>Cancel</Trans>}
           </Button>
         </div>

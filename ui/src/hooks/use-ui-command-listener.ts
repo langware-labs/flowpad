@@ -21,6 +21,7 @@ import {
   type NotificationPayload,
 } from '@src/notifications/renderDesktopNotification';
 import { openInstallRequest } from '@src/components/install/install-request-store';
+import { openAskModal } from '@src/components/ask/ask-modal-store';
 
 /** The subset of the Electron preload bridge this hook uses. */
 interface NotifyBridge {
@@ -30,9 +31,7 @@ interface NotifyBridge {
    * SEPARATELY VERSIONED artifacts (an installed shell can be months behind the
    * UI it loads), so the return is optional and every caller must degrade.
    */
-  onNotificationClick?: (
-    cb: (data: { clickTarget?: NotificationClickTarget }) => void,
-  ) => (() => void) | void;
+  onNotificationClick?: (cb: (data: { clickTarget?: NotificationClickTarget }) => void) => (() => void) | void;
 }
 
 /**
@@ -153,6 +152,15 @@ export function useUiCommandListener(): void {
       if (msg.kind === 'install_request') {
         if (msg.request?.typeid) openInstallRequest(msg.request);
         else console.warn('[ui_command] install_request without a typeid', msg);
+        return;
+      }
+      // `open_ask_modal`: a ComputeOp `ask` was raised and this tab is live.
+      // Open it as a dialog over whatever the tab is already showing — never a
+      // navigation, so a wizard's own progress page (or anything else) stays
+      // visible right behind it. See `ask_window.py::_push_to_live_tab`.
+      if (msg.kind === 'open_ask_modal') {
+        if (msg.pointer) openAskModal(msg.pointer);
+        else console.warn('[ui_command] open_ask_modal without a pointer', msg);
         return;
       }
       // Forward-compat: log unknown kinds but don't crash.

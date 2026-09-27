@@ -3,7 +3,7 @@ import type { ActivityProgressSpec } from '@sdk/activity';
 import { isTerminal } from '@sdk/activity';
 import { ExitCode, type Wizard, type WizardResult, type WizardRunDetail } from '@sdk';
 
-import { useActivitySpec } from '@src/store/activity-store';
+import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 
 /** ONE step's answer — the op's own result (a `CliResult`, a `PromptResult`, an
  *  `AskResult`, a nested `WizardResult`) — with the step it belongs to. */
@@ -48,11 +48,11 @@ export interface WizardRunStep {
  *
  * They are genuinely different sources and neither subsumes the other:
  *
- * * **Live** is the Activity tree — present only while a run is in flight, and
- *   only for a run started from THIS viewer. A trigger-fired run is
- *   instance-scoped by design (so it reaches the footer chip), so it produces no
- *   rows here at all. A debugger that pretended live was complete would show an
- *   empty list for the runs people most want to inspect.
+ * * **Live** is the Activity tree — present only while a run is in flight. A
+ *   trigger-fired run is instance-scoped by design (so it reaches the footer
+ *   chip too), but this hook watches BOTH scopes for the same path (see
+ *   `pickLiveActivity`), so an unattended run shows up here just as well as one
+ *   started from this viewer.
  * * **Durable** is `run.json`, stamped when a run settles. It is the only
  *   record of an unattended run, and the only place step output exists.
  *
@@ -61,12 +61,18 @@ export interface WizardRunStep {
  * terminal EDGE and on demand — never polled.
  */
 export function useWizardRun(wizard: Wizard) {
-  // BOTH halves of the address come from the backend: the path is a computed
-  // field (re-deriving its slug convention here is how a viewer ends up
-  // subscribed to a tree nothing writes to), and the subject is the wizard's
-  // own typeid — `run_action` scopes the run to it so the tree reaches this
-  // viewer's watchers rather than every connection.
-  const root = useActivitySpec(wizard.activity_path ?? '', wizard.typeId.toString());
+  // The path is a computed field (re-deriving its slug convention here is how
+  // a viewer ends up subscribed to a tree nothing writes to) — but the SUBJECT
+  // differs by who started the run. `run_action` scopes an attended run to the
+  // wizard's own typeid, so the tree reaches this viewer's watchers. An
+  // unattended run (the first-run trigger) scopes to NOTHING on purpose — see
+  // `Wizard.run` — so it reaches the footer chip instead, whether or not this
+  // page is even open. Both land under the SAME path, which already carries
+  // this wizard's own id, so listening for both here can never cross-show a
+  // different wizard's run: whichever one is actually live wins.
+  const scoped = useActivitySpec(wizard.activity_path ?? '', wizard.typeId.toString());
+  const unattended = useActivitySpec(wizard.activity_path ?? '', undefined);
+  const root = pickLiveActivity(scoped, unattended);
   const [detail, setDetail] = useState<WizardRunDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   // Refs, not state: this tracks an EDGE, and putting it in state would make
@@ -106,10 +112,7 @@ export function useWizardRun(wizard: Wizard) {
   // `strip_heavy` removes on its way to the entity — the step's OUTPUT —
   // matched per step.
   const recordedResult = wizard.run_state?.result;
-  const recorded = useMemo(
-    () => (recordedResult ? answersOf(recordedResult) : NO_ANSWERS),
-    [recordedResult],
-  );
+  const recorded = useMemo(() => (recordedResult ? answersOf(recordedResult) : NO_ANSWERS), [recordedResult]);
   const detailed = detail?.result?.steps;
   const outcomes: WizardStepAnswer[] = useMemo(() => {
     if (!detailed) return recorded;
@@ -118,7 +121,14 @@ export function useWizardRun(wizard: Wizard) {
       // Only the stripped fields are taken back: everything else on the
       // entity's answer is fresher than this fetch.
       return from
-        ? { ...o, stdout: from.stdout, stderr: from.stderr, text: from.text, value: from.value, check: from.check ?? o.check }
+        ? {
+            ...o,
+            stdout: from.stdout,
+            stderr: from.stderr,
+            text: from.text,
+            value: from.value,
+            check: from.check ?? o.check,
+          }
         : o;
     });
   }, [recorded, detailed]);
@@ -143,8 +153,5 @@ export function useWizardRun(wizard: Wizard) {
 
   // Memoized as a whole: an unstable object here would defeat every
   // `useCallback` downstream that lists it as a dependency.
-  return useMemo(
-    () => ({ live, join, loadDetail, loadingDetail }),
-    [live, join, loadDetail, loadingDetail],
-  );
+  return useMemo(() => ({ live, join, loadDetail, loadingDetail }), [live, join, loadDetail, loadingDetail]);
 }

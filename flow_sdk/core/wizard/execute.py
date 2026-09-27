@@ -92,6 +92,7 @@ async def execute_wizard(
             approved=approved,
             resolve_op=_resolve_op,
             resolve_wizard=_resolve_wizard,
+            wizard_id=wizard_id,
         )
     finally:
         lock.release()

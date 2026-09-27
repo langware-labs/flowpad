@@ -63,6 +63,8 @@ class AskRequest(BaseModel):
     cancel_label: str = ""
     #: The answer is a secret: the window masks it.
     secret: bool = False
+    #: The Wizard entity this question is a step of, when it is one.
+    wizard_id: str = ""
 
 
 @router.post("")
@@ -79,6 +81,7 @@ async def ask_for_another_process(body: AskRequest):
         submit_label=body.submit_label,
         cancel_label=body.cancel_label,
         secret=body.secret,
+        wizard_id=body.wizard_id,
     )
     return ApiSuccessResponse(data=said.model_dump(mode="json"))
 

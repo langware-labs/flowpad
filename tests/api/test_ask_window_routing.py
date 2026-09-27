@@ -63,11 +63,12 @@ def test_the_frame_names_the_layout():
     assert (frame["layout"], frame["view_type"], frame["pointer"]) == ("win", "ask", "q-1")
 
 
-async def test_a_live_tab_is_sent_to_the_dock_not_a_chromeless_window(monkeypatch):
-    """The question replaces the content area; the rail and tab strip stay.
+async def test_a_live_tab_gets_a_modal_not_a_navigation(monkeypatch):
+    """The question opens as a dialog; whatever the tab was showing stays put.
 
-    A `layout` of "win" would strand the person on a screen with no app around
-    it and no way back short of a restart.
+    A navigation (`navigate_dock`) would replace that screen — a wizard's own
+    progress page included — with the ask view, then strand the person there
+    once it answers with no way back but Back/Home.
     """
     from flow_sdk.core.compute_op import ask_window
     from flow_sdk.notifications import ui_command
@@ -90,5 +91,5 @@ async def test_a_live_tab_is_sent_to_the_dock_not_a_chromeless_window(monkeypatc
         forget(question.id)
 
     ((socket, kind, fields),) = sent
-    assert (socket, kind) == ("the-socket", "navigate_dock")
-    assert fields == {"view_type": "ask", "pointer": question.id}, "no layout: the frame lands in the dock"
+    assert (socket, kind) == ("the-socket", "open_ask_modal")
+    assert fields == {"pointer": question.id}, "a modal needs only the question id, not a screen to navigate to"
