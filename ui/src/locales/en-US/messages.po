@@ -17,6 +17,10 @@ msgstr ""
 msgid " — not set"
 msgstr " — not set"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid " · not secret"
+msgstr " · not secret"
+
 #: src/components/asset-counters/agent-counters.tsx
 msgid " · paused"
 msgstr " · paused"
@@ -325,6 +329,8 @@ msgstr "{0} current · {1} stale · {2} partial · {3} error"
 
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 msgid "{0} deleted"
@@ -462,6 +468,11 @@ msgstr "{0} messages"
 msgid "{0} messages · {1} turns"
 msgstr "{0} messages · {1} turns"
 
+#. placeholder {0}: row.missing.length
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+msgid "{0} missing"
+msgstr "{0} missing"
+
 #. placeholder {0}: item.messageCount
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "{0} msgs"
@@ -516,6 +527,8 @@ msgid "records_on_disk"
 msgstr "{0} records on disk"
 
 #. placeholder {0}: saved.title
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 msgid "{0} saved"
 msgstr "{0} saved"
@@ -1470,6 +1483,10 @@ msgstr "Add connection"
 msgid "Add context folder"
 msgstr "Add context folder"
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+msgid "Add credential"
+msgstr "Add credential"
+
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Add data source"
 msgstr "Add data source"
@@ -2378,6 +2395,10 @@ msgstr "Appended to the current worker's prompt queue, tagged with this message.
 #: src/components/token-plan/SetBudgetSheet.tsx
 msgid "Applied to each member's own default endpoint; a member's budget can only be narrower."
 msgstr "Applied to each member's own default endpoint; a member's budget can only be narrower."
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "Applies to"
+msgstr "Applies to"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Apply"
@@ -4222,6 +4243,8 @@ msgstr "Co-author line for git commits"
 msgid "code"
 msgstr "code"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Code"
 msgstr "Code"
@@ -4478,6 +4501,10 @@ msgstr "Computing diff…"
 msgid "Config"
 msgstr "Config"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Config fields"
+msgstr "Config fields"
+
 #: src/components/hooks-manager/index.tsx
 msgid "Configure Claude Code hooks and triggers to automate workflows"
 msgstr "Configure Claude Code hooks and triggers to automate workflows"
@@ -4627,6 +4654,10 @@ msgstr "Connection verified"
 #: src/components/connections-manager.tsx
 msgid "Connections"
 msgstr "Connections"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Console"
+msgstr "Console"
 
 #: src/components/token-plan/ConsumptionPanel.tsx
 msgid "Consumption"
@@ -5094,6 +5125,8 @@ msgstr "Could not delete"
 #. placeholder {0}: connection.provider
 #. placeholder {0}: e.name
 #. placeholder {0}: org.name
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
 #: src/components/data-sources/use-source-delete.ts
@@ -5242,7 +5275,7 @@ msgstr "Could not open link"
 msgid "Could not open skill"
 msgstr "Could not open skill"
 
-#: src/components/data-sources/SourceMenu.tsx
+#: src/components/data-sources/OpenFolderButton.tsx
 msgid "Could not open the folder"
 msgstr "Could not open the folder"
 
@@ -5372,6 +5405,10 @@ msgstr "Could not resolve the chain."
 msgid "Could not resolve this folder"
 msgstr "Could not resolve this folder"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Could not restart"
+msgstr "Could not restart"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Could not resume the cloud machine"
 msgstr "Could not resume the cloud machine"
@@ -5388,6 +5425,7 @@ msgstr "Could not run schedule"
 msgid "Could not run the connection test."
 msgstr "Could not run the connection test."
 
+#: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
 msgid "Could not run the snippet"
 msgstr "Could not run the snippet"
@@ -5924,6 +5962,7 @@ msgstr "Creating..."
 msgid "Creating…"
 msgstr "Creating…"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Credential"
 msgstr "Credential"
@@ -5936,8 +5975,10 @@ msgstr "Credential environment"
 msgid "Credential environment this place reads"
 msgstr "Credential environment this place reads"
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/credentials-view/CredentialsView.tsx
 #: src/components/quick-create/registry.ts
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/types/ViewType.ts
 msgid "Credentials"
@@ -6261,8 +6302,11 @@ msgstr "Delegating to"
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/connections-manager.tsx
@@ -6306,8 +6350,9 @@ msgstr "Delete \"{0}\" from the OS keychain? This cannot be undone."
 
 #. placeholder {0}: c.displayName
 #. placeholder {0}: row.label
-#. placeholder {0}: s.name
+#. placeholder {0}: row.title
 #: src/components/account/secrets-section.tsx
+#: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -6324,10 +6369,12 @@ msgstr "Delete {0} contexts?"
 msgid "Delete {0} credential?"
 msgstr "Delete {0} credential?"
 
+#. placeholder {0}: deleting?.title ?? ''
 #. placeholder {0}: org.name
 #. placeholder {0}: pendingDeleteCredential?.title ?? ''
-#. placeholder {0}: request?.name ?? 'asset'
+#: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/assets/delete-asset-modal.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -7217,6 +7264,15 @@ msgstr "Draws from"
 msgid "Drill by"
 msgstr "Drill by"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Driver"
+msgstr "Driver"
+
+#: src/components/data-sources/DataSourcesView.tsx
+#: src/components/top-nav-bar/use-entity-breadcrumbs.ts
+msgid "Drivers"
+msgstr "Drivers"
+
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/drag-drop-overlay.tsx
@@ -7328,6 +7384,7 @@ msgstr "Edges by kind"
 
 #: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/data-sources/SourceMenu.tsx
@@ -7875,6 +7932,10 @@ msgstr "every project"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Every project is selected"
 msgstr "Every project is selected"
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "every project, unless one declares its own"
+msgstr "every project, unless one declares its own"
 
 #: src/i18n/pref-labels.ts
 msgid "Every selection"
@@ -8474,6 +8535,10 @@ msgstr "Fallback order under its parent"
 msgid "Fallbacks"
 msgstr "Fallbacks"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Family"
+msgstr "Family"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/i18n/pref-labels.ts
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -8573,6 +8638,8 @@ msgstr "File suggestion configuration"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/assets/useAssetsModel.tsx
+#: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
@@ -8889,6 +8956,8 @@ msgstr "Focus local graph here"
 msgid "Focused"
 msgstr "Focused"
 
+#: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/i18n/type-labels.ts
 msgid "Folder"
@@ -8987,6 +9056,11 @@ msgstr "Forwarded from another conversation"
 #: src/components/credentials/DetectedKeys.tsx
 #~ msgid "Found in .env.local in your home folder"
 #~ msgstr "Found in .env.local in your home folder"
+
+#. placeholder {0}: v.found_in
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "found in {0}, not where it is declared"
+msgstr "found in {0}, not where it is declared"
 
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Found in {fileName} in your home folder"
@@ -9834,6 +9908,10 @@ msgstr "How privacy modes work"
 msgid "How to finish setup"
 msgstr "How to finish setup"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "How to get the values"
+msgstr "How to get the values"
+
 #: src/components/html-preview/HtmlPreview.tsx
 msgid "HTML preview"
 msgstr "HTML preview"
@@ -10510,6 +10588,8 @@ msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full 
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 msgstr "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 msgid "It may be only partly removed."
 msgstr "It may be only partly removed."
@@ -10537,6 +10617,11 @@ msgstr "Its manifest has no usable desk id, so requests would go to the default 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "its own servers"
 msgstr "its own servers"
+
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "Its values are removed from where they are stored; runs that read them will no longer find them."
+msgstr "Its values are removed from where they are stored; runs that read them will no longer find them."
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Join"
@@ -10660,12 +10745,18 @@ msgstr "Keychain access is required to finish signing in to Flowpad."
 msgid "Keychain approval was not granted"
 msgstr "Keychain approval was not granted"
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+msgid "Keys and tokens this agent's runs can read"
+msgstr "Keys and tokens this agent's runs can read"
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "kind"
 msgstr "kind"
 
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
+#: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Kind"
@@ -11154,6 +11245,10 @@ msgstr "LLM keys"
 #: src/types/ViewType.ts
 msgid "LLM sources"
 msgstr "LLM sources"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "load error"
+msgstr "load error"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -11964,6 +12059,7 @@ msgstr "Message this deployed agent…"
 msgid "Message Thread"
 msgstr "Message Thread"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
 msgstr "Messages"
@@ -11975,6 +12071,10 @@ msgstr "Metrics"
 #: src/components/cron-view/CronForm.tsx
 msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Minimize the process"
+msgstr "Minimize the process"
 
 #: src/journey/JourneyTray.tsx
 #: src/journey/JourneyTray.tsx
@@ -11992,6 +12092,10 @@ msgstr "Minor"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "missing"
+msgstr "missing"
 
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Missing"
@@ -12064,6 +12168,11 @@ msgstr "Model per tier"
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Model pinned to {0}"
 msgstr "Model pinned to {0}"
+
+#. placeholder {0}: source.lm_provider
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "model provider · {0}"
+msgstr "model provider · {0}"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -12202,6 +12311,7 @@ msgstr "N/A"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -12580,6 +12690,10 @@ msgstr "Next scheduled poll"
 msgid "next: {0}"
 msgstr "next: {0}"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "no"
+msgstr "no"
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
 msgstr "No access to this repository. Connect GitHub if it's private, or check the URL."
@@ -12842,6 +12956,10 @@ msgstr "No Document Selected"
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "No document to show here."
 msgstr "No document to show here."
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "No driver named {name} is installed."
+msgstr "No driver named {name} is installed."
 
 #: src/components/graph-view/ui/NodeDetails.tsx
 msgid "no edges"
@@ -13596,6 +13714,7 @@ msgstr "nodes"
 msgid "Non-empty"
 msgstr "Non-empty"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "none"
 msgstr "none"
@@ -13613,6 +13732,10 @@ msgstr "None"
 #: src/components/quick-create/ScopeSelection.tsx
 #~ msgid "None (project root)"
 #~ msgstr "None (project root)"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "None yet."
+msgstr "None yet."
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Normal text"
@@ -13717,6 +13840,10 @@ msgstr "not run yet"
 msgid "Not runnable here"
 msgstr "Not runnable here"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Not saved"
+msgstr "Not saved"
+
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "Not set"
 #~ msgstr "Not set"
@@ -13737,6 +13864,10 @@ msgstr "Not signed in — please re-authenticate"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not started"
 msgstr "Not started"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Not started yet — its terminal appears when the deployment first runs."
+msgstr "Not started yet — its terminal appears when the deployment first runs."
 
 #: src/components/credentials/DetectedKeys.tsx
 msgid "Not used by any credential yet. Pack the keys that belong together into one credential."
@@ -14193,6 +14324,15 @@ msgstr "Open comment"
 msgid "Open Context"
 msgstr "Open Context"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Open data_driver.json"
+msgstr "Open data_driver.json"
+
+#: src/components/data-sources/DataDriversView.tsx
+#: src/components/data-sources/DataSourceRow.tsx
+msgid "Open data_source.json"
+msgstr "Open data_source.json"
+
 #: src/components/account/database-section.tsx
 msgid "Open DB Folder"
 msgstr "Open DB Folder"
@@ -14235,6 +14375,10 @@ msgstr "Open folder"
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Open Folder"
 msgstr "Open Folder"
+
+#: src/components/data-sources/OpenFolderButton.tsx
+msgid "Open folder: {path}"
+msgstr "Open folder: {path}"
 
 #: src/components/status-bar.tsx
 #: src/components/top-nav-bar/ProjectCrumbHoverCard.tsx
@@ -14478,6 +14622,11 @@ msgstr "Open terminal ({modLabel}+T)"
 msgid "Open terminal in {workdir}"
 msgstr "Open terminal in {workdir}"
 
+#. placeholder {0}: source.provider
+#: src/components/data-sources/DataSourceRow.tsx
+msgid "Open the {0} driver"
+msgstr "Open the {0} driver"
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
 msgstr "Open the {PRIVACY_WIKI_PAGE} page"
@@ -14652,6 +14801,10 @@ msgstr "Operation failed"
 msgid "Optional — leave blank for home"
 msgstr "Optional — leave blank for home"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "optional · not set"
+msgstr "optional · not set"
+
 #: src/components/artifacts/artifact-form.tsx
 msgid "Optional description"
 msgstr "Optional description"
@@ -14798,6 +14951,14 @@ msgstr "Output: {0}"
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Overfetch"
 msgstr "Overfetch"
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "Overridden"
+msgstr "Overridden"
+
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+msgid "overridden by the project's"
+msgstr "overridden by the project's"
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "Override"
@@ -15470,6 +15631,8 @@ msgstr "Problems found"
 msgid "process"
 msgstr "process"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/types/ViewType.ts
 msgid "Process"
@@ -15513,6 +15676,7 @@ msgstr "Profile Picture:"
 msgid "Progress"
 msgstr "Progress"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "project"
 msgstr "project"
@@ -16230,6 +16394,7 @@ msgstr "Record updated"
 msgid "Recorded"
 msgstr "Recorded"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/types/ViewType.ts
 msgid "Records"
@@ -16915,6 +17080,8 @@ msgstr "response"
 msgid "responses"
 msgstr "responses"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/journey/JourneyTray.tsx
@@ -17347,6 +17514,11 @@ msgstr "running"
 msgid "Running"
 msgstr "Running"
 
+#. placeholder {0}: process?.pid
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Running · pid {0}"
+msgstr "Running · pid {0}"
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Running /context…"
 msgstr "Running /context…"
@@ -17412,9 +17584,9 @@ msgstr "Runs on this file"
 msgid "Runs only while this computer is awake"
 msgstr "Runs only while this computer is awake"
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#~ msgid "Runtime"
-#~ msgstr "Runtime"
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Runtime"
+msgstr "Runtime"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Sample prompts"
@@ -17538,6 +17710,10 @@ msgstr "Save version"
 msgid "Saved"
 msgstr "Saved"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Saved — Restart runs it"
+msgstr "Saved — Restart runs it"
+
 #. placeholder {0}: payload.assetLabel
 #. placeholder {1}: result.version ?? ''
 #: src/components/code-editor/AssetCompareView.tsx
@@ -17565,6 +17741,7 @@ msgid "Saving..."
 msgstr "Saving..."
 
 #: src/components/account/secrets-section.tsx
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/conversation/ConversationView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -18189,6 +18366,10 @@ msgstr "Sending in {0}: “{sendingText}”"
 msgid "Sending…"
 msgstr "Sending…"
 
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Sends replies"
+msgstr "Sends replies"
+
 #: src/components/conversation/MessageBubble.tsx
 msgid "Sent"
 msgstr "Sent"
@@ -18374,6 +18555,11 @@ msgstr "Sessions ({0})"
 msgid "Sessions that used this skill — analyze, improve, commit"
 msgstr "Sessions that used this skill — analyze, improve, commit"
 
+#: src/components/agent-resources/AgentCredentialsSection.tsx
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "set"
+msgstr "set"
+
 #: src/components/token-plan/BudgetHero.tsx
 #: src/components/token-plan/BudgetHero.tsx
 msgid "Set budget"
@@ -18469,6 +18655,7 @@ msgstr "Set up project"
 msgid "Set up team budget"
 msgstr "Set up team budget"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid "Set values"
 msgstr "Set values"
@@ -18501,6 +18688,10 @@ msgstr "Setup failed"
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
 msgstr "Setup git"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Setup guide"
+msgstr "Setup guide"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Setup instructions"
@@ -18837,6 +19028,10 @@ msgstr "Show system skills"
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Show the other files this turn touched"
 msgstr "Show the other files this turn touched"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Show the process"
+msgstr "Show the process"
 
 #: src/components/settings-view/settings-utils.ts
 msgid "Show timing info for each turn"
@@ -19309,6 +19504,7 @@ msgstr "Source kind"
 msgid "Source:"
 msgstr "Source:"
 
+#: src/components/data-sources/DataDriversView.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 msgid "Sources"
 msgstr "Sources"
@@ -19316,6 +19512,10 @@ msgstr "Sources"
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Sources + filters + limits"
 msgstr "Sources + filters + limits"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "Sources using this driver"
+msgstr "Sources using this driver"
 
 #: src/components/assets/editor/mcp/McpViewer.tsx
 msgid "space separated"
@@ -19686,6 +19886,10 @@ msgstr "stop hooks"
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
 msgstr "stopped"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+msgid "Stopped"
+msgstr "Stopped"
 
 #. placeholder {0}: (result.duration_s ?? 0).toFixed(2)
 #: src/components/code-editor/SnippetView.tsx
@@ -20346,6 +20550,10 @@ msgstr "The document could not be put on the hub the last time it was published.
 msgid "The document could not be read."
 msgstr "The document could not be read."
 
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
+msgstr "The drivers installed here — the templates a source is made from. Each is a folder: its manifest, its code and its tests. Pick one to see its config and the sources made from it."
+
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "The encrypted vault is not enabled on this machine yet."
@@ -20477,6 +20685,10 @@ msgstr "The organization's budget and its stored key are deleted, and every team
 msgid "the other participant"
 msgstr "the other participant"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "The project declares the same variables; its values are the ones its runs get."
+msgstr "The project declares the same variables; its values are the ones its runs get."
+
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 msgid "The project was not linked to the cloud."
 msgstr "The project was not linked to the cloud."
@@ -20598,6 +20810,10 @@ msgstr "The value is stored in your operating system keychain and never readable
 #: src/components/connections-manager/credential-value-form.tsx
 #~ msgid "The value is written to this project's .env.local and stays on this machine."
 #~ msgstr "The value is written to this project's .env.local and stays on this machine."
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "the vault"
+msgstr "the vault"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -20767,6 +20983,10 @@ msgstr "This conversation is still saved, but part of it could not be read, so t
 msgid "This conversation no longer exists or is unavailable."
 msgstr "This conversation no longer exists or is unavailable."
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "This credential no longer exists."
+msgstr "This credential no longer exists."
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 msgid "This deployment"
 msgstr "This deployment"
@@ -20782,6 +21002,10 @@ msgstr "This document"
 #: src/components/vfs-markdown-pane.tsx
 msgid "This document no longer exists."
 msgstr "This document no longer exists."
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "This driver takes no config."
+msgstr "This driver takes no config."
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "this endpoint's own key"
@@ -21040,6 +21264,10 @@ msgstr "This project's agent could not start"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "this project's own desk"
 msgstr "this project's own desk"
+
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "this project's runs"
+msgstr "this project's runs"
 
 #: src/components/ask/AskView.tsx
 msgid "This question is no longer waiting."
@@ -22149,6 +22377,10 @@ msgstr "Used by"
 msgid "Used in transcript"
 msgstr "Used in transcript"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "user"
+msgstr "user"
+
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -22284,6 +22516,10 @@ msgstr "Values are kept in this machine's encrypted vault"
 msgid "Values are kept in this project's {0}"
 msgstr "Values are kept in this project's {0}"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+msgid "Values live in"
+msgstr "Values live in"
+
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
 msgstr "Values stay on this machine — in a .env.local file or the encrypted vault. Nothing is sent anywhere."
@@ -22300,6 +22536,7 @@ msgstr "Values stay on this machine — in a .env.local file or the encrypted va
 msgid "Variable name"
 msgstr "Variable name"
 
+#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Variables"
 msgstr "Variables"
@@ -22457,6 +22694,10 @@ msgstr "View Skill"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "View the changes in this file"
 msgstr "View the changes in this file"
+
+#: src/components/data-sources/DataSourcesView.tsx
+msgid "View the drivers every source is made from"
+msgstr "View the drivers every source is made from"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "View the session transcript"
@@ -22922,6 +23163,10 @@ msgstr "xterm memory: <0>{0}</0> chunks ({1})"
 #: src/components/version-popover/version-popover.tsx
 msgid "yanked"
 msgstr "yanked"
+
+#: src/components/data-sources/DataDriversView.tsx
+msgid "yes"
+msgstr "yes"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Yes"
