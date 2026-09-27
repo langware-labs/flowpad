@@ -27,7 +27,7 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `description` | One line on the card: what the agent is for | yes | all |
 | `avatar` | An emoji or an image file name in the folder | yes | all |
 | `color` | Avatar background, a hex from the palette | yes | all |
-| `worker_type` | `claude`, `codex` or `copilot` | yes | all |
+| `worker_type` | `claude`, `codex` or `copilot` — the agent editor has no picker for it today, so set it here | yes | all |
 | `model` | `sm` / `md` / `lg`, or a concrete model id | yes | all |
 | `permission_mode` | How much the worker may do without asking | yes | all |
 | `effort` | Reasoning effort for the worker | yes | all |

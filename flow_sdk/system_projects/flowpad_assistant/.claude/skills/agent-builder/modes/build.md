@@ -32,6 +32,9 @@ Building before they confirm is how a persona or a limit gets guessed wrong.
 5. **How it starts** — someone chats with it; it sits beside a page; code calls it;
    or it runs on its own (a channel or a schedule).
 6. **Where it lives** — this project (default) or everywhere the user works.
+7. **Which worker runs it** — default to the worker running this chat (`flow context`
+   names the current process; its worker is the one the user can run today). A
+   worker the user has no quota or login for makes an agent that cannot start.
 
 Before sending it, list the agents that already exist (`agentic-assets/agent/*/` in
 the project and in the user's home). When one already does this job, make the first
