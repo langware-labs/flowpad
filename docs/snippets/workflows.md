@@ -255,7 +255,7 @@ stream_inbox = StreamInbox("106540352242922", provider="whatsapp")
 
 ## Limits today
 
-* `StreamInbox.send` takes exactly one recipient and no attachments.
+* `StreamInbox.send` takes exactly one recipient; files ride `files=` (a channel refuses what it cannot take — see `message-channels.md`).
 * `listen()` is in-process polling. Under a running backend the heartbeat
   poller syncs the same source on its own schedule; both paths converge on the
   same rows — and on one position per workflow name, so two loops with the
