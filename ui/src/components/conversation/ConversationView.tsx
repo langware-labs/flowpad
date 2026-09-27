@@ -320,7 +320,9 @@ export function ConversationView({
     if (!parent) return null;
     const jump = () =>
       document.querySelector(`[data-testid="message-bubble-${parent.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    return { sender: parent.sender_name || parent.envelope?.sender?.name || t`Someone`, text: parent.text ?? '', onJump: jump };
+    // A files-only message is quoted by its files' names.
+    const files = (parent.attachment ?? []).filter((a) => a.attachment_type === 'file').map((a) => a.data.replace(/^data\//, ''));
+    return { sender: parent.sender_name || parent.envelope?.sender?.name || t`Someone`, text: parent.text || files.join(', '), onJump: jump };
   };
 
   // Attention-driven polling: while this source-backed conversation is the

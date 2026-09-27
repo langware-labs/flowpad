@@ -187,7 +187,7 @@ class Doubles:
 
     def reactions(self, channel: str) -> list:
         double = self.doubles[channel]
-        return self.run(self.call(double.reactions)) if hasattr(double, "reactions") else []
+        return _jsonable(self.run(self.call(double.reactions))) if hasattr(double, "reactions") else []
 
     def _post_webhook(self, delivered: dict) -> dict:
         """A push channel's delivery reaches the backend here; a polled one waits for its next poll."""
@@ -205,7 +205,7 @@ class Doubles:
         return {"paired": True}
 
     def sent(self, channel: str) -> list[dict]:
-        return self.run(self.call(self.doubles[channel].sent))
+        return _jsonable(self.run(self.call(self.doubles[channel].sent)))
 
     def agent_mailbox(self, agent_id: str, address: str) -> dict:
         """Agent email: the outsider mailbox that writes to ``address``, opened through the instance."""
@@ -214,6 +214,17 @@ class Doubles:
         self.run(double.open(self.backend))
         self.doubles["cloud_email"] = double
         return {"outsider_address": double.outsider_address}
+
+
+def _jsonable(value: Any) -> Any:
+    """A Double's record as JSON: a file's bytes become their size — what a check compares."""
+    if isinstance(value, (bytes, bytearray)):
+        return {"bytes": len(value)}
+    if isinstance(value, dict):
+        return {k: _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return value
 
 
 def serve(doubles: Doubles) -> None:

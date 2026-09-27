@@ -134,12 +134,23 @@ CHANNELS.forEach((channel, i) => {
     await sync(sourceId);
 
     await open(page, '/dock/stream_inbox');
-    const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce }).first();
+    // The newest conversation is this cell's (its source was made for it); the thread inside names the nonce.
+    const row = page.getByTestId('stream-inbox-conversation-row').first();
     await expect(row).toBeVisible();
     await row.click();
+    await expect(page.getByText(`is it bad ${nonce}?`)).toBeVisible();
+    // A thread shows its newest message; the photo is the one before it.
+    const earlier = page.getByRole('button', { name: /earlier in this thread/ });
+    if (await earlier.first().isVisible().catch(() => false)) await earlier.first().click();
 
     // The picture itself, decoded — its bytes were copied while the provider's session was open.
-    const img = page.locator(`img[alt="crack-${nonce}.png"]`);
+    // (WhatsApp names no photo, so the bubble is found by its caption — the message's words.)
+    const photoBubble = page
+      .locator('[data-testid^="message-bubble-"]')
+      .filter({ hasText: `photo ${nonce}` })
+      .filter({ has: page.locator('img') })
+      .first();
+    const img = photoBubble.locator('img').first();
     await expect(img).toBeVisible();
     await expect.poll(() => img.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
 
@@ -148,7 +159,6 @@ CHANNELS.forEach((channel, i) => {
     await expect(quote).toBeVisible();
 
     // We react from the photo's bubble.
-    const photoBubble = page.locator('[data-testid^="message-bubble-"]').filter({ has: img });
     await photoBubble.hover();
     await photoBubble.getByTestId('message-react').click();
     await page.getByRole('option', { name: 'thumbs up yes approve like' }).click();
@@ -164,19 +174,26 @@ CHANNELS.forEach((channel, i) => {
     await sync(sourceId);
     await expect(photoBubble.getByTestId('reaction-❤️')).toBeVisible();
 
+    if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/${channel}-reactions.png`, fullPage: true });
+
     // We answer the photo with a file.
     await photoBubble.hover();
     await photoBubble.getByTestId('message-reply').click();
     await expect(page.getByTestId('composer-reply-banner')).toContainText(`photo ${nonce}`);
     await expect(page.getByTestId('attach-file-button')).toBeEnabled();
-    await page.locator('input[type="file"]').first().setInputFiles({
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByTestId('attach-file-button').click();
+    await (await chooser).setFiles({
       name: `answer-${nonce}.png`,
       mimeType: 'image/png',
       buffer: Buffer.from(PNG_B64, 'base64'),
     });
+    // An image passes the annotator first (the composer's own step); attach it as is.
+    await page.getByRole('dialog', { name: 'Annotate image' }).getByRole('button', { name: 'Attach' }).click();
     await expect(page.getByText(`answer-${nonce}.png`)).toBeVisible();
     const composer = page.getByPlaceholder(/^Reply in /);
     await composer.fill(`see ${nonce}`);
+    if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/${channel}-reply.png`, fullPage: true });
     await page.locator('button[title="Send"]:not([data-testid])').click();
     await expect
       .poll(
@@ -187,6 +204,12 @@ CHANNELS.forEach((channel, i) => {
     const sent = await controlJson<Array<Record<string, unknown>>>('GET', `/sent?channel=${channel}`);
     const withFile = sent.find((m) => JSON.stringify(m).includes(`answer-${nonce}.png`)) ?? {};
     expect(JSON.stringify(withFile), 'the reply quotes the photo').toContain(photo.external_id.split('/').pop() ?? photo.external_id);
+
+    // Our reply lands in the conversation with its picture (the sent copy keeps its own durable file).
+    const ours = page.locator(`img[alt="answer-${nonce}.png"]`);
+    await expect(ours).toBeVisible();
+    await expect.poll(() => ours.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/${channel}-sent.png`, fullPage: true });
 
     await api.delete(`/api/v1/graph/data_source/${sourceId}`);
     created.splice(created.indexOf(sourceId), 1);
