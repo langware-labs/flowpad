@@ -1,12 +1,24 @@
 import { type TypeId, isImagePath } from '@sdk';
-import { copyToClipboard, fsStore } from '@sdk';
+import { fsStore } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { Check, ClipboardPaste, Copy, ExternalLink, File, FolderSearch, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Check,
+  ClipboardPaste,
+  Copy,
+  ExternalLink,
+  File,
+  FolderSearch,
+  RefreshCw,
+  Trash2,
+  type LucideIcon,
+} from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
+import { useCopied } from '@src/components/ui/copy-button';
 import { Dialog, DialogContent } from '@src/components/ui/dialog';
 import { useFS } from '@src/hooks/useFS';
+import { cn } from '@src/lib/utils';
 
 interface InputFilesPanelProps {
   computeNodeTypeId: TypeId;
@@ -15,7 +27,45 @@ interface InputFilesPanelProps {
   onInsertPath?: (path: string) => void;
 }
 
-const ROW_ACTION_CLASS = 'h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100';
+interface RowActionProps {
+  label: string;
+  title: string;
+  icon: LucideIcon;
+  onClick: () => void;
+  className?: string;
+  disabled?: boolean;
+}
+
+/** Hover-revealed icon button on a file row; never triggers the row's own click. */
+const RowAction: React.FC<RowActionProps> = ({ label, title, icon: Icon, onClick, className, disabled }) => (
+  <Button
+    variant="ghost"
+    size="sm"
+    className={cn('h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity group-hover:opacity-100', className)}
+    aria-label={label}
+    title={title}
+    disabled={disabled}
+    onClick={(e) => {
+      e.stopPropagation();
+      onClick();
+    }}
+  >
+    <Icon className="h-3.5 w-3.5" />
+  </Button>
+);
+
+const CopyPathAction: React.FC<{ name: string; path: string }> = ({ name, path }) => {
+  const { t } = useLingui();
+  const { copied, copy } = useCopied();
+  return (
+    <RowAction
+      label={t`Copy path of ${name}`}
+      title={t`Copy path`}
+      icon={copied ? Check : Copy}
+      onClick={() => void copy(path)}
+    />
+  );
+};
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -23,7 +73,11 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTypeId, inputDirAbsPath, onInsertPath }) => {
+export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
+  computeNodeTypeId,
+  inputDirAbsPath,
+  onInsertPath,
+}) => {
   const { t } = useLingui();
   const fs = useFS(computeNodeTypeId);
   const fsRef = React.useRef(fs);
@@ -31,7 +85,6 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTyp
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [deletingPath, setDeletingPath] = useState<string | null>(null);
-  const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
   const browseResult = fs?.browse(inputDirAbsPath);
   const items = browseResult?.items ?? [];
@@ -81,12 +134,6 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTyp
     } finally {
       setDeletingPath(null);
     }
-  };
-
-  const handleCopyPath = async (path: string) => {
-    await copyToClipboard(path);
-    setCopiedPath(path);
-    setTimeout(() => setCopiedPath((current) => (current === path ? null : current)), 1500);
   };
 
   return (
@@ -151,60 +198,28 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({ computeNodeTyp
                     )}
                   </div>
                   {onInsertPath && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className={ROW_ACTION_CLASS}
-                      aria-label={t`Paste path of ${item.name}`}
+                    <RowAction
+                      label={t`Paste path of ${item.name}`}
                       title={t`Paste path at cursor`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onInsertPath(itemPath);
-                      }}
-                    >
-                      <ClipboardPaste className="h-3.5 w-3.5" />
-                    </Button>
+                      icon={ClipboardPaste}
+                      onClick={() => onInsertPath(itemPath)}
+                    />
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={ROW_ACTION_CLASS}
-                    aria-label={t`Copy path of ${item.name}`}
-                    title={t`Copy path`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleCopyPath(itemPath);
-                    }}
-                  >
-                    {copiedPath === itemPath ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={ROW_ACTION_CLASS}
-                    aria-label={t`Reveal ${item.name} in Finder/Explorer`}
+                  <CopyPathAction name={item.name} path={itemPath} />
+                  <RowAction
+                    label={t`Reveal ${item.name} in Finder/Explorer`}
                     title={t`Reveal in Finder/Explorer`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void openExternalFromComputeNode(computeNodeTypeId.id, itemPath, { select: true });
-                    }}
-                  >
-                    <FolderSearch className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`${ROW_ACTION_CLASS} hover:text-destructive`}
-                    aria-label={`Delete ${item.name}`}
+                    icon={FolderSearch}
+                    onClick={() => void openExternalFromComputeNode(computeNodeTypeId.id, itemPath, { select: true })}
+                  />
+                  <RowAction
+                    label={`Delete ${item.name}`}
                     title={`Delete ${item.name}`}
+                    icon={Trash2}
+                    className="hover:text-destructive"
                     disabled={isDeleting}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      void handleDelete(itemPath);
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                    onClick={() => void handleDelete(itemPath)}
+                  />
                 </div>
               );
             })}

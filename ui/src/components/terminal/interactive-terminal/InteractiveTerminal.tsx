@@ -15,6 +15,7 @@ import {
   isProcessRunning,
   PrefKey,
   Shell,
+  shellQuote,
   toplog,
   type AgenticProcess,
 } from '@sdk';
@@ -44,6 +45,7 @@ import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
+import { type CompactExecutionInputHandle } from '@src/components/entity-execution-panel/CompactExecutionInput';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
 
@@ -1616,6 +1618,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     terminalRef.current?.focus();
   };
 
+  // "Paste path" from the Files tab lands where the user was last typing: the
+  // chat composer (at its caret) when it had focus last, else the PTY. The
+  // terminal's focusin below clears the flag.
+  const composerRef = useRef<CompactExecutionInputHandle>(null);
+  const composerFocusedLastRef = useRef(false);
+
   // Re-sync width whenever the terminal gains focus (click, tab, or programmatic).
   // xterm routes focus into a hidden <textarea> inside the container, so focusin
   // (which bubbles) captures every focus path.
@@ -1623,8 +1631,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!terminalReady) return;
     const container = xtermContainerRef.current;
     if (!container) return;
-    container.addEventListener('focusin', reassertGeometry);
-    return () => container.removeEventListener('focusin', reassertGeometry);
+    const onFocusIn = () => {
+      composerFocusedLastRef.current = false;
+      reassertGeometry();
+    };
+    container.addEventListener('focusin', onFocusIn);
+    return () => container.removeEventListener('focusin', onFocusIn);
   }, [terminalReady, reassertGeometry]);
 
   const handleFileDrop = useCallback(
@@ -1645,28 +1657,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
-  // "Paste path" from the Files tab lands where the user was last typing: the
-  // chat composer (at its caret) when that was the last focused input, else the PTY.
-  const lastComposerInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const handleFocusCapture = useCallback((e: React.FocusEvent) => {
-    const el = e.target;
-    if (el instanceof HTMLTextAreaElement && el.hasAttribute('data-path-insert-target')) {
-      lastComposerInputRef.current = el;
-    } else if (el instanceof HTMLElement && el.closest('.xterm')) {
-      lastComposerInputRef.current = null;
-    }
+  const handleComposerFocus = useCallback(() => {
+    composerFocusedLastRef.current = true;
   }, []);
   const handleInsertInputPath = useCallback((path: string) => {
-    const composer = lastComposerInputRef.current;
-    if (composer?.isConnected && !composer.disabled) {
-      composer.focus();
-      // insertText goes through the textarea's own editing path: it replaces the
-      // selection at the caret, fires `input` (so React's controlled value updates)
-      // and stays on the undo stack.
-      document.execCommand('insertText', false, path);
+    const composer = composerRef.current;
+    if (composerFocusedLastRef.current && composer) {
+      composer.insertAtCaret(path);
       return;
     }
-    void shellRef.current?.sendInput(/\s/.test(path) ? `'${path.replace(/'/g, `'\\''`)}'` : path);
+    void shellRef.current?.sendInput(shellQuote(path));
     requestAnimationFrame(() => terminalRef.current?.focus());
   }, []);
 
@@ -1775,11 +1775,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   return (
     <ChatPlanModeProvider process={process}>
-      <div
-        className={`relative flex h-full flex-col ${className}`}
-        onDragOver={(e) => e.preventDefault()}
-        onFocusCapture={handleFocusCapture}
-      >
+      <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
         {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
         {process && activePane === 'claude' && (
           <ProcessToolbar
@@ -1997,7 +1993,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             onOpenArtifact={handleOpenArtifact}
             composer={
               showSimpleChat && process ? (
-                <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
+                <ChatComposerBar
+                  process={process}
+                  onPasteImages={handleChatPasteImages}
+                  composerRef={composerRef}
+                  onComposerFocus={handleComposerFocus}
+                />
               ) : undefined
             }
           />

@@ -7,14 +7,17 @@ import {
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
-import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
+import {
+  CompactExecutionInput,
+  type CompactExecutionInputHandle,
+} from '@src/components/entity-execution-panel/CompactExecutionInput';
 import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
 import { isTerminalStatus } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications/notify';
 import { ScrollText } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, type Ref } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useChatPlanMode } from './chat-plan-mode-context';
 import { ChatToolsMenu } from './ChatToolsMenu';
@@ -29,6 +32,9 @@ interface ChatComposerBarProps {
    * by InteractiveTerminal so chat paste reuses the exact PTY paste behaviour.
    */
   onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
+  /** Forwarded to the composer so the owner can insert text at its caret. */
+  composerRef?: Ref<CompactExecutionInputHandle>;
+  onComposerFocus?: () => void;
 }
 
 /**
@@ -39,7 +45,7 @@ interface ChatComposerBarProps {
  * queue, and interrupts the in-flight turn via `interruptTurn()`. Status + busy
  * come from the gold entity, reflected live.
  */
-export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps) {
+export function ChatComposerBar({ process, onPasteImages, composerRef, onComposerFocus }: ChatComposerBarProps) {
   const { t } = useLingui();
   const plan = useChatPlanMode();
 
@@ -107,6 +113,8 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       running={busy}
       onStop={handleStop}
       onPasteImages={onPasteImages}
+      handleRef={composerRef}
+      onFocus={onComposerFocus}
       animateEnqueue
       draftScope={process.id}
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
