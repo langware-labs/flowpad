@@ -69,10 +69,10 @@ export async function createWorld(label: string): Promise<World> {
   // "missing marker" could be a slow worker rather than a lost terminal.
   await expect
     .poll(
-      async () => {
-        const r = await fetch(`${BACKEND}/api/v1/shell/${opened.shell_id}/pty-stream`);
-        return r.ok ? JSON.stringify(await r.json()).length > 0 && (await ptyText(opened.shell_id)).includes(MOCK_MARKER) : false;
-      },
+      // `ptyText` fetches the recording and answers '' when the route does not, so
+      // asking it is the whole question — a second fetch downloaded the recording
+      // (which the cold-open case grows past 10 MB) once more per poll.
+      async () => (await ptyText(opened.shell_id)).includes(MOCK_MARKER),
       { timeout: 15_000, message: 'the mock worker never printed its marker — is the instance launched with mock_worker_bin on PATH?' },
     )
     .toBe(true);

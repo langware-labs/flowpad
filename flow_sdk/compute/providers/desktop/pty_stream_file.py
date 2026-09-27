@@ -290,7 +290,12 @@ class PtyStreamFile:
     # ── reading ──────────────────────────────────────────────────────────────
 
     def read_frames(self) -> dict | None:
-        """Return ``{"v", "cols", "rows", "events"}`` or None if no file.
+        """Every frame. See ``_read_frames``, which this is the whole-file case of."""
+        frames, _ = self._read_frames()
+        return frames
+
+    def _read_frames(self, since_frame: int | None = None) -> tuple[dict | None, int]:
+        """``(frames, skipped)``. Return ``{"v", "cols", "rows", "base", "events"}`` or None if no file.
 
         ``events`` is a list of ``["o", b64]`` / ``["r", [cols, rows]]`` frames.
         Legacy raw files are surfaced as v0 with a single output frame and
@@ -298,31 +303,45 @@ class PtyStreamFile:
         unless a framed tail appended by a pre-upgrade-path build can be
         salvaged, in which case that tail is surfaced as v1 (replayable).
         A torn final line (crash mid-write) is dropped silently.
+
+        ``since_frame`` starts the events at that absolute frame, and the frames before
+        it are NEVER parsed — skipping them is the only reason a checkpoint saves
+        anything, since the parse of a long session is the dominant cost here.
         """
         if not self._path.exists():
-            return None
+            return None, 0
         raw = self._path.read_bytes()
         if not raw:
-            return None
+            return None, 0
         if raw[:1] != b"{":
             # Legacy raw-bytes file from before the framed format. Chimera
             # files (raw prefix + headerless framed tail) yield their tail.
             salvaged = self._salvage_framed_tail(raw)
             if salvaged is not None:
                 events, (cols, rows) = salvaged
-                return {"v": 1, "cols": cols, "rows": rows, "base": 0, "events": events}
+                return {"v": 1, "cols": cols, "rows": rows, "base": 0, "events": events}, 0
             return {
                 "v": 0,
                 "cols": None,
                 "rows": None,
                 "base": 0,
                 "events": [["o", base64.b64encode(raw).decode("ascii")]],
-            }
+            }, 0
         lines = raw.split(b"\n")
         header = self._parse_header(lines[0])
-        events = []
+        # How many frames to walk past without parsing. A frame line is counted by its
+        # opening bytes — the same lines ``json.loads`` would accept, except a torn one,
+        # which only the FINAL line can be; a checkpoint that far along is not usable
+        # anyway and the caller re-reads whole.
+        to_skip = max(0, (since_frame or 0) - header["base"]) if since_frame is not None else 0
+        events: list = []
+        skipped = 0
         for line in lines[1:]:
             if not line:
+                continue
+            if skipped < to_skip:
+                if line[:4] in (b'["o"', b'["r"'):
+                    skipped += 1
                 continue
             try:
                 frame = json.loads(line)
@@ -334,9 +353,9 @@ class PtyStreamFile:
             "v": header["v"],
             "cols": header["cols"],
             "rows": header["rows"],
-            "base": header["base"],
+            "base": header["base"] + skipped,
             "events": events,
-        }
+        }, skipped
 
     def max_seq(self) -> int:
         """Highest output-frame seq persisted in the file (0 if none).
@@ -466,20 +485,25 @@ class PtyStreamFile:
         lies outside the retained window. Otherwise ``events`` holds only the tail,
         ``base`` is the checkpoint's frame, and ``checkpoint`` carries its state.
         """
-        frames = self.read_frames()
-        if frames is None or frames["v"] < 1:
-            return frames
+        # The checkpoint first: it is a small file, and it says where to start reading,
+        # so the frames it stands in for are never parsed.
         ck = self.read_checkpoint()
         if ck is None:
+            return self.read_frames()
+        wanted = int(ck.get("frame", -1))
+        if wanted < 0:
+            return self.read_frames()
+        frames, _ = self._read_frames(since_frame=wanted)
+        if frames is None or frames["v"] < 1:
             return frames
-        base, events = frames["base"], frames["events"]
-        start = int(ck.get("frame", -1)) - base
-        if start < 0 or start > len(events):
-            return frames  # truncated past it, or from another recording — full replay
+        if frames["base"] != wanted:
+            # Truncated past it, or from another recording: the file no longer holds the
+            # frame the checkpoint stands on, so the terminal is rebuilt from the whole
+            # recording. Reading it twice costs one read on a path that then replays
+            # everything anyway.
+            return self.read_frames()
         return {
             **frames,
-            "base": base + start,
-            "events": events[start:],
             "checkpoint": {
                 "cols": ck["cols"],
                 "rows": ck["rows"],

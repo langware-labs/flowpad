@@ -69,14 +69,19 @@ def _get_report_urls() -> list[str]:
 
 def _post_detached(url: str, data: bytes, log_context: str, wait: bool) -> None:
     """POST via a detached child interpreter (survives parent exit). Blocking."""
+    from flow_sdk.instance_settings.cookie_gate import gate_headers  # noqa: PLC0415
+
+    # A gated instance (a cloud box) refuses a notification without its secret, and a refused notification
+    # is a turn the app never runs. The header rides the child's environment, never its command line.
     script = (
-        "import urllib.request, sys; "
+        "import json, os, urllib.request, sys; "
         "req = urllib.request.Request(sys.argv[1], data=sys.stdin.buffer.read(), "
-        "headers={'Content-Type': 'application/json'}, method='POST'); "
+        "headers={'Content-Type': 'application/json', **json.loads(os.environ.pop('FLOW_NOTIFY_HEADERS', '{}'))}, "
+        "method='POST'); "
         "urllib.request.urlopen(req, timeout=10)"
     )
     try:
-        kwargs = {}
+        kwargs = {"env": {**os.environ, "FLOW_NOTIFY_HEADERS": json.dumps(gate_headers(url))}}
         if not wait:
             if sys.platform == "win32":
                 CREATE_NO_WINDOW = 0x08000000

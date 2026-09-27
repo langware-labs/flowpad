@@ -11,32 +11,37 @@ from __future__ import annotations
 import asyncio
 
 import time
+from typing import TYPE_CHECKING
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from flow_sdk import toplog
 from flow_sdk.responses.response import ApiResponseStatus
 
+if TYPE_CHECKING:
+    from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
+
 router = APIRouter()
 
 
-def _stream_file(shell_id: str):
-    """The shell's current recording, or a 404 response."""
+def _stream_file(shell_id: str) -> "PtyStreamFile":
+    """The shell's current recording. Raises 404 when there is no shell or no pty —
+    every caller answered that identically, and a union return made each one narrow it."""
     from flow_sdk.builtin.shell import get_shell_record, shell_pty_stream_path
     from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
 
     record = get_shell_record(shell_id)
     if record is None:
-        return JSONResponse({"error": "shell not found"}, status_code=404)
+        raise HTTPException(status_code=404, detail="shell not found")
     pty_pid = record.__dict__.get("pty_pid")
     if not pty_pid:
-        return JSONResponse({"error": "shell has no pty"}, status_code=404)
+        raise HTTPException(status_code=404, detail="shell has no pty")
     try:
         path = shell_pty_stream_path(record.id, pty_pid)
-    except ValueError:
-        return JSONResponse({"error": "shell has no pty"}, status_code=404)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="shell has no pty") from exc
     return PtyStreamFile(path=path)
 
 
@@ -46,9 +51,6 @@ async def get_pty_stream(shell_id: str, since: str | None = None) -> JSONRespons
     the frames after it, when one is usable (the full stream otherwise) — a cold
     terminal open then replays the tail, not the session (dock-loading, step 7)."""
     stream = _stream_file(shell_id)
-    if isinstance(stream, JSONResponse):
-        return stream
-    path = stream._path
 
     t0 = time.monotonic()
     # Off the event loop: a long recording is tens of MB of JSON lines.
@@ -69,7 +71,7 @@ async def get_pty_stream(shell_id: str, since: str | None = None) -> JSONRespons
     if toplog.is_on("pty"):
         toplog.log(
             "pty", "stream_read shell=%s bytes=%s events=%s checkpoint=%s ms=%.0f render_ms=%.0f",
-            shell_id, path.stat().st_size, len(frames["events"]), "checkpoint" in frames,
+            shell_id, stream.size, len(frames["events"]), "checkpoint" in frames,
             (t_read - t0) * 1000, (time.monotonic() - t_read) * 1000,
         )
     return response
@@ -89,8 +91,6 @@ class PtyCheckpoint(BaseModel):
 async def put_pty_checkpoint(shell_id: str, body: PtyCheckpoint) -> JSONResponse:
     """Store a client's replay result so the next cold open replays only the tail."""
     stream = _stream_file(shell_id)
-    if isinstance(stream, JSONResponse):
-        return stream
     try:
         await asyncio.to_thread(
             stream.write_checkpoint, body.frame, body.cols, body.rows, body.serialized, body.last_seq
