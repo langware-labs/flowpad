@@ -26,8 +26,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, GitAuthor
+from flow_sdk.instances.atomic import locked, read_json, write_json_atomic
+from flow_sdk.utils.git_folder import KEEP_FILE
 
-_KEEP = ".flowpad-vfs-keep"
 _locks: dict[str, asyncio.Lock] = {}
 
 
@@ -51,35 +52,22 @@ def _state_file(repo_id: str) -> Path:
     return mirror_root(repo_id).parent.parent / "state" / f"{repo_id}.json"
 
 
-def _read_state(repo_id: str) -> dict:
-    import json  # noqa: PLC0415
-
-    path = _state_file(repo_id)
-    try:
-        return json.loads(path.read_text()) if path.is_file() else {}
-    except (OSError, ValueError):
-        return {}
-
-
 def remember_sync(repo_id: str, *, repo: str, rel_path: str, tree: str, head_commit: str, local_path: str) -> None:
-    import json  # noqa: PLC0415
-
-    state = _read_state(repo_id)
-    state.setdefault("assets", {})[rel_path] = {
-        "repo": repo,
-        "tree": tree,
-        "head_commit": head_commit,
-        "local_path": local_path,
-    }
     path = _state_file(repo_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=1))
-    tmp.replace(path)
+    with locked(path.with_suffix(".lock")):
+        state = read_json(path)
+        state.setdefault("assets", {})[rel_path] = {
+            "repo": repo,
+            "tree": tree,
+            "head_commit": head_commit,
+            "local_path": local_path,
+        }
+        write_json_atomic(path, state)
 
 
 def last_synced_tree(repo_id: str, rel_path: str) -> str | None:
-    entry = _read_state(repo_id).get("assets", {}).get(rel_path) or {}
+    entry = read_json(_state_file(repo_id)).get("assets", {}).get(rel_path) or {}
     return entry.get("tree") or None
 
 
@@ -90,12 +78,25 @@ def hub_origin_for_path(local_path: Path):
     target = str(Path(local_path).resolve())
     state_dir = mirror_root("x").parent.parent / "state"
     for path in sorted(state_dir.glob("*.json")) if state_dir.is_dir() else []:
-        for rel, entry in (_read_state(path.stem).get("assets") or {}).items():
+        for rel, entry in (read_json(path).get("assets") or {}).items():
             if entry.get("local_path") == target:
                 return HubRepoOrigin(
                     repo=entry["repo"], rel_path=rel, head_commit=entry.get("head_commit", ""), tree=entry["tree"]
                 )
     return None
+
+
+def hub_origin_of(entity, folder: Path | None):
+    """An asset's hub-repo origin: its own field, else this desk's sync state for ``folder``.
+
+    The field is lost on a re-index (it is not derivable from disk); the sync state is not.
+    """
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
+
+    origin = getattr(entity, "origin", None)
+    if isinstance(origin, HubRepoOrigin):
+        return origin
+    return hub_origin_for_path(folder) if folder is not None else None
 
 
 def local_tree(mirror: Path, worktree: Path, rel_path: str) -> str | None:
@@ -201,9 +202,7 @@ class HubRepoMirror:
 
     async def commit_and_push(self, message: str, author: GitAuthor, trailers: list[str]) -> str:
         body = "\n".join([message, "", *trailers])
-        await self.git(
-            "-c", f"user.name={author.name}", "-c", f"user.email={author.email}", "commit", "-q", "-m", body
-        )
+        await self.git("-c", f"user.name={author.name}", "-c", f"user.email={author.email}", "commit", "-q", "-m", body)
         code, _ = await self.git("push", "-q", "origin", f"HEAD:refs/heads/{self.branch}", check=False)
         if code != 0:
             raise AssetPublishError(
@@ -221,7 +220,7 @@ def _replace(source: Path, target: Path, *, is_file: bool) -> None:
         return
     if target.exists():
         shutil.rmtree(target)
-    shutil.copytree(source, target, ignore=shutil.ignore_patterns(".git", _KEEP))
+    shutil.copytree(source, target, ignore=shutil.ignore_patterns(".git", KEEP_FILE))
 
 
 @dataclass(frozen=True)
@@ -250,7 +249,7 @@ async def sync_asset_with_hub(
     async with _lock(mirror.root):
         await mirror.sync()
         upstream = await mirror.tree_at_head(rel)
-        _replace(asset_root, target, is_file=is_file)
+        await asyncio.to_thread(_replace, asset_root, target, is_file=is_file)
         local = await mirror.staged_tree(rel)
         if local is None:
             raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "The asset has no content to publish")
@@ -266,7 +265,7 @@ async def sync_asset_with_hub(
                 )
             # Only the hub changed it: bring the hub's version home, nothing to push.
             await mirror.discard(rel)
-            _replace(target, asset_root, is_file=is_file)
+            await asyncio.to_thread(_replace, target, asset_root, is_file=is_file)
             _, head = await mirror.git("rev-parse", "HEAD")
             return HubRepoSync(head_commit=head, tree=upstream, pushed=False, pulled_back=True)
 
