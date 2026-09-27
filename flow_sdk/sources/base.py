@@ -190,6 +190,12 @@ class Source:
         return self._session
 
     # ── notifications ───────────────────────────────────────────────────────
+    async def teardown(self) -> str:
+        """Undo what this source set up at its provider -- a webhook it registered, a subscription it made --
+        before the source (or the machine it runs on) goes. Open; its credentials are loaded. Returns a short
+        report ("" = nothing to undo). Must leave everything it did not set up alone. Default: nothing."""
+        return ""
+
     def on_change(self, handler: ChangeHandler) -> None:
         self._require_open()
         if not _is_async_callable(handler):

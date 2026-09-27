@@ -1411,8 +1411,25 @@ class DataSource(Entity):
             logger.warning("verify failed for %s: %s", self.id, exc, exc_info=True)
             return Verdict(ready=False, detail=f"could not verify: {exc}")
 
+    async def teardown(self) -> str:
+        """Undo what this source set up at its provider (the driver's ``Source.teardown``). Best effort: a
+        source that cannot open or undo is reported by the error's class, never raised -- a delete must not be
+        blocked by a provider that is down."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.sources.base import Source  # noqa: PLC0415
+
+        try:
+            driver = await DataDriver.get(self.provider or "")
+            if driver is None or getattr(driver.cls, "teardown", Source.teardown) is Source.teardown:
+                return ""  # nothing to undo: no source is opened for it
+            async with await self.open() as live:
+                return await live.source.teardown() or ""
+        except Exception as exc:  # noqa: BLE001 — reported, never raised
+            return f"not undone: {type(exc).__name__}"
+
     async def delete(self):
         """The verb in-process callers actually use."""
+        await self.teardown()
         await self.delete_children_of(self.id)
         await super().delete()
         remove_source_folder(self.asset_ref)
