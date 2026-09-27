@@ -314,6 +314,11 @@ msgstr ""
 msgid "{0} connection failed"
 msgstr "فشل الاتصال بـ {0}"
 
+#. placeholder {0}: result.kept.join(', ')
+#: src/components/connections-manager.tsx
+msgid "{0} could not be removed from {stuck}."
+msgstr ""
+
 #. placeholder {0}: connection.provider
 #: src/components/connections-manager.tsx
 msgid "{0} could not be updated for this project."
@@ -420,13 +425,17 @@ msgstr ""
 
 #. placeholder {0}: row.title
 #: src/components/connections-manager.tsx
-msgid "{0} is removed from {where}, and its values are deleted from the vault."
+msgid "{0} is removed from {where}, and {names} are deleted from every .env file they were saved to."
 msgstr ""
 
 #. placeholder {0}: row.title
 #: src/components/connections-manager.tsx
-msgid "{0} is removed from {where}. {names} stay in .env.local — Flowpad never removes lines from that file."
+msgid "{0} is removed from {where}, and its values are deleted from the vault."
 msgstr ""
+
+#: src/components/connections-manager.tsx
+#~ msgid "{0} is removed from {where}. {names} stay in .env.local — Flowpad never removes lines from that file."
+#~ msgstr ""
 
 #. placeholder {0}: workerLabel(unavailableWorker)
 #: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
@@ -550,10 +559,9 @@ msgstr "{0} سر{1}"
 msgid "{0} selected"
 msgstr "{0} محدد"
 
-#. placeholder {0}: kept.join(', ')
 #: src/components/connections-manager.tsx
-msgid "{0} stayed in .env.local."
-msgstr ""
+#~ msgid "{0} stayed in .env.local."
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 #~ msgid "{0} stayed in your .env.local."
@@ -593,6 +601,11 @@ msgstr "{0} نوع · {1}"
 msgid "{0} values"
 msgstr ""
 
+#. placeholder {0}: row.title
+#: src/components/connections-manager.tsx
+msgid "{0} was not fully deleted"
+msgstr ""
+
 #. placeholder {0}: node.name || 'The sandbox'
 #: src/hooks/use-sandboxes.ts
 msgid "{0} was upgraded and restarted."
@@ -623,9 +636,14 @@ msgstr ""
 msgid "{amount} left {windowText}"
 msgstr ""
 
+#. placeholder {0}: deployment?.name ?? ''
 #: src/components/credentials/CredentialDialog.tsx
-msgid "{baseTitle} · {environment}"
+msgid "{baseTitle} · {0}"
 msgstr ""
+
+#: src/components/credentials/CredentialDialog.tsx
+#~ msgid "{baseTitle} · {environment}"
+#~ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
@@ -787,6 +805,7 @@ msgstr ""
 msgid "{pct}% of your token budget used {windowText}"
 msgstr ">>>>>>> origin/release/v0.2"
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "{pending} changes not published"
 msgstr ""
@@ -1028,6 +1047,11 @@ msgstr "🤖 الموجِّه"
 msgid "🤖 Prompt - Query AI (Claude Haiku)"
 msgstr "🤖 الموجِّه - الاستعلام من الذكاء الاصطناعي (Claude Haiku)"
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "$/day"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "1 change not published"
 msgstr ""
@@ -1506,9 +1530,12 @@ msgstr ""
 
 #: src/components/project-home/ProjectGitChip.tsx
 #: src/components/project-home/ProjectGitChip.tsx
-#: src/components/project-home/ProjectGitChip.tsx
 msgid "Add Git"
 msgstr "إضافة Git"
+
+#: src/components/project-home/ProjectGitChip.tsx
+msgid "Add Git (optional — linking to the cloud doesn't need it)"
+msgstr ""
 
 #: src/hooks/use-add-context-folder.tsx
 #: src/hooks/use-add-context-folder.tsx
@@ -2759,6 +2786,10 @@ msgstr "رمز التفويض مع PKCE، مع إعادة التوجيه إلى 
 msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "فشلت عملية التفويض أو تم رفضها. يُرجى النقر على إعادة المحاولة للمحاولة مرة أخرى."
 
+#: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
+msgid "Authorize"
+msgstr ""
+
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Authorize connection"
 msgstr "تفويض الاتصال"
@@ -3533,8 +3564,8 @@ msgstr "التغييرات"
 #~ msgstr "التغييرات ({0})"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-msgid "Changes committed and pushed"
-msgstr "تم تثبيت التغييرات ودفعها"
+#~ msgid "Changes committed and pushed"
+#~ msgstr "تم تثبيت التغييرات ودفعها"
 
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 msgid "Channel details"
@@ -3642,7 +3673,6 @@ msgstr "جارٍ التحقق من جاهزية {folderName} للمشاركة."
 msgid "checking…"
 msgstr "جارٍ التحقق…"
 
-#: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Checking…"
 msgstr "جاري التحقق…"
@@ -3675,6 +3705,10 @@ msgstr ""
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Choose a task from the sidebar to view details"
 msgstr "اختيار مهمة من الشريط الجانبي لعرض التفاصيل"
+
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Choose a token source…"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Choose an artifact to open"
@@ -4505,6 +4539,10 @@ msgstr ""
 msgid "Config fields"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Configure"
+msgstr ""
+
 #: src/components/hooks-manager/index.tsx
 msgid "Configure Claude Code hooks and triggers to automate workflows"
 msgstr "إعداد خطاطيف Claude Code والمشغّلات لأتمتة سير العمل"
@@ -4527,7 +4565,6 @@ msgstr "إعداد حسابك وتفضيلات التطبيق والإشعارا
 msgid "Confirm"
 msgstr "تأكيد"
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
@@ -4551,7 +4588,6 @@ msgid "Connect a data source to make it available here"
 msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
-#: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/pages/entry/InstallLanding.tsx
 #: src/pages/entry/OpenSandboxLanding.tsx
@@ -4564,12 +4600,12 @@ msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr "ربط GitHub و gh CLI من خلال إعداد موجّه."
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
-msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
-msgstr ""
+#~ msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
+#~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Connect GitHub to link this project to the cloud."
-msgstr ""
+#~ msgid "Connect GitHub to link this project to the cloud."
+#~ msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect GitHub to pick from your repos, including private ones."
@@ -4654,6 +4690,10 @@ msgstr "تم التحقق من الاتصال"
 #: src/components/connections-manager.tsx
 msgid "Connections"
 msgstr "الاتصالات"
+
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "Connections this machine may use"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Console"
@@ -5038,6 +5078,10 @@ msgstr "تعذر إرفاق {0}"
 msgid "Could not attach {name}"
 msgstr "تعذر إرفاق {name}"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "Could not change {key}"
+msgstr ""
+
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Could not change enabled state"
 msgstr ""
@@ -5071,8 +5115,8 @@ msgstr "تعذر التحقق من تسجيل الدخول"
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Could not connect GitHub"
-msgstr "تعذر الاتصال بـ GitHub"
+#~ msgid "Could not connect GitHub"
+#~ msgstr "تعذر الاتصال بـ GitHub"
 
 #: src/components/connections-manager.tsx
 msgid "Could not connect to {displayName}."
@@ -5178,6 +5222,10 @@ msgstr "تعذر إنهاء الغرفة"
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "could not fetch — showing local copy"
 msgstr "تعذر الجلب — يتم عرض نسخة محلية"
+
+#: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
+msgid "Could not fix {key}"
+msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Could not forward diagnosis"
@@ -5287,6 +5335,7 @@ msgstr "تعذر الإيقاف المؤقت"
 msgid "Could not pause the cloud machine"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Could not publish"
 msgstr ""
@@ -5315,6 +5364,10 @@ msgstr ""
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "Could not read this budget's history."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "Could not read this machine's secrets"
 msgstr ""
 
 #: src/routes/loaders/process-load-error-resolution.ts
@@ -5490,10 +5543,10 @@ msgstr "تعذر إرسال التقرير إلى فريق Flowpad"
 msgid "Could not send the install"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/project-home/ProjectCloudLinkButton.tsx
-#: src/components/project-home/ProjectCloudLinkButton.tsx
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Could not set the token allocation"
+msgstr ""
+
 #: src/hooks/use-git-share-gate.ts
 #: src/hooks/use-git-share-gate.ts
 msgid "Could not set up Git"
@@ -5710,8 +5763,8 @@ msgid "Couldn't read this folder's Git status."
 msgstr "تعذر قراءة حالة Git لهذا المجلد."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-msgid "Couldn't read this project's Git status."
-msgstr "تعذرت قراءة حالة Git لهذا المشروع."
+#~ msgid "Couldn't read this project's Git status."
+#~ msgstr "تعذرت قراءة حالة Git لهذا المشروع."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Couldn't read this team's people."
@@ -5968,8 +6021,8 @@ msgid "Credential"
 msgstr ""
 
 #: src/components/connections-manager.tsx
-msgid "Credential environment"
-msgstr ""
+#~ msgid "Credential environment"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Credential environment this place reads"
@@ -6802,8 +6855,8 @@ msgid "Development · local"
 msgstr ""
 
 #: src/components/connections-manager.tsx
-msgid "development · this computer"
-msgstr ""
+#~ msgid "development · this computer"
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 #~ msgid "Device code"
@@ -7127,11 +7180,19 @@ msgid "Document"
 msgstr "مستند"
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
-msgid "Document not on the hub: connect GitHub on this desk, then publish again."
+#~ msgid "Document not on the hub: connect GitHub on this desk, then publish again."
+#~ msgstr ""
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Document not on the hub: it was changed both on the hub and on this desk. Keep one version, then publish again."
 msgstr ""
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
 msgid "Document not on the hub: link the project to the cloud first."
+msgstr ""
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Document not on the hub: sign in to Flowpad cloud on this desk, then publish again."
 msgstr ""
 
 #: src/components/docs-viewer/DocsNavigator.tsx
@@ -7959,8 +8020,12 @@ msgid "Everyone in {teamName} has been invited."
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its skills travel with its files, over Git."
+msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
 msgstr ""
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+#~ msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its skills travel with its files, over Git."
+#~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Everyone in {teamName} will be invited to the project you pick."
@@ -8525,6 +8590,10 @@ msgstr "فشل تحديث المشغّل"
 #: src/components/project-home/HomeCustomizationCard.tsx
 msgid "Failed to upload image"
 msgstr "فشل رفع الصورة"
+
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Failed."
+msgstr ""
 
 #: src/components/llm-endpoints/ChainTree.tsx
 msgid "Fallback order under its parent"
@@ -9264,8 +9333,8 @@ msgstr "Git مطلوب لمشاركة الملفات"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Git is set up"
-msgstr "تم إعداد Git"
+#~ msgid "Git is set up"
+#~ msgstr "تم إعداد Git"
 
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/status-bar/GitPushButton.tsx
@@ -9282,21 +9351,21 @@ msgid "Git repository"
 msgstr "مستودع Git"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-msgid "Git repository ready"
-msgstr "مستودع Git جاهز"
+#~ msgid "Git repository ready"
+#~ msgstr "مستودع Git جاهز"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Git setup cancelled"
-msgstr "تم إلغاء إعداد Git"
+#~ msgid "Git setup cancelled"
+#~ msgstr "تم إلغاء إعداد Git"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Git setup failed."
-msgstr "فشل إعداد Git."
+#~ msgid "Git setup failed."
+#~ msgstr "فشل إعداد Git."
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Git setup finished, but the project still isn't ready to link."
-msgstr "تم إعداد Git، لكن المشروع ما زال غير جاهز للربط."
+#~ msgid "Git setup finished, but the project still isn't ready to link."
+#~ msgstr "تم إعداد Git، لكن المشروع ما زال غير جاهز للربط."
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Git status of the working directory"
@@ -9310,19 +9379,11 @@ msgstr "تم تثبيت أدوات Git"
 msgid "Git URL"
 msgstr "عنوان Git URL"
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-#: src/components/organization/budgets/ShareProjectPanel.tsx
-#: src/components/organization/budgets/ShareProjectPanel.tsx
-#: src/components/project-home/ProjectCloudLinkButton.tsx
-#: src/components/project-home/ProjectCloudLinkButton.tsx
-#: src/components/project-home/ProjectCloudLinkButton.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "GitHub authorization did not complete."
 msgstr "لم تكتمل عملية التفويض مع GitHub."
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "GitHub connected"
 msgstr "تم ربط GitHub"
@@ -9372,6 +9433,10 @@ msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Give the pack a name"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Give this deployment its own model budget, drawn from an LLM endpoint you administer: a daily cap and the one model it runs. Unchecked, the agent spends your capped default. Deleted with the deployment."
 msgstr ""
 
 #: src/components/project-home/ProjectHome.tsx
@@ -9981,6 +10046,10 @@ msgstr "تم قمع أخطاء Hub"
 msgid "Hub release, and the UI build serving it"
 msgstr "إصدار Hub ونسخة بناء الواجهة التي تخدمه"
 
+#: src/pages/discover-page/ProvenanceLink.tsx
+msgid "hub repository"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "Hub WebSocket connected."
 msgstr "تم الاتصال بـ Hub WebSocket."
@@ -10584,6 +10653,11 @@ msgstr "جاري الدعوة…"
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
 msgstr "تشخيصات المشاكل التي سجلها المساعد. انقر على صف لعرض التشخيص الكامل."
 
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+#: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
+msgid "It failed."
+msgstr ""
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 msgstr ""
@@ -11118,10 +11192,9 @@ msgstr "ربط بالسحابة"
 msgid "Linked to cloud"
 msgstr "تم الربط بالسحابة"
 
-#. placeholder {0}: project.name ?? 'this project'
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Linking {0} to the cloud…"
-msgstr "جاري ربط {0} بالسحابة…"
+#~ msgid "Linking {0} to the cloud…"
+#~ msgstr "جاري ربط {0} بالسحابة…"
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
@@ -12127,6 +12200,8 @@ msgid "model"
 msgstr "النموذج"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/llm-endpoints/UsageByChildTable.tsx
 #: src/components/settings-view/settings-utils.ts
@@ -13391,7 +13466,7 @@ msgstr ""
 msgid "No published assets yet."
 msgstr "لا توجد أصول منشورة بعد."
 
-#: src/components/terminal/TabbedTerminal.tsx
+#: src/components/terminal/TerminalPanel.tsx
 #: src/routes/loaders/load-shell.ts
 msgid "No realtime connection"
 msgstr "لا يوجد اتصال مباشر"
@@ -13733,8 +13808,13 @@ msgstr "لا شيء"
 #~ msgid "None (project root)"
 #~ msgstr "بدون (جذر المشروع)"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 #: src/components/data-sources/DataDriversView.tsx
 msgid "None yet."
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "None."
 msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
@@ -13784,8 +13864,8 @@ msgid "Not found"
 msgstr "غير موجود"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Not in a git repository — can't be published"
-msgstr ""
+#~ msgid "Not in a git repository — can't be published"
+#~ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "Not indexed here yet — install it from its origin"
@@ -13809,6 +13889,11 @@ msgstr "غير مسجّل الدخول · شغّل /login"
 
 #: src/components/install/AddAssetDialog.tsx
 msgid "Not now"
+msgstr ""
+
+#. placeholder {0}: item.fix
+#: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
+msgid "Not on this computer either — {0}"
 msgstr ""
 
 #: src/pages/discover-page/DiscoverRow.tsx
@@ -14190,6 +14275,10 @@ msgstr "يمكن لمالك الرمل فقط تشغيله. عند مشاركت�
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "توجد هنا إدخالات Harness فقط — يمكن تفعيل \"عرض الكل\" لعرضها."
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+msgid "Only its row is on the hub: the publishing project isn't linked to the cloud yet."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Only people you share with can view this agent."
@@ -14656,8 +14745,8 @@ msgid "Open the project"
 msgstr "فتح المشروع"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Open the project and use \"Link to cloud\" to finish setting it up."
-msgstr ""
+#~ msgid "Open the project and use \"Link to cloud\" to finish setting it up."
+#~ msgstr ""
 
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 msgid "Open the provider, approve access, then paste the authorization code shown there."
@@ -16008,13 +16097,14 @@ msgstr "عارض PTY"
 msgid "Public access removed"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Publish"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-#~ msgid "Publish failed."
-#~ msgstr ""
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Publish failed."
+msgstr ""
 
 #: src/lib/publish-state.ts
 msgid "Publish hit a conflict"
@@ -16032,6 +16122,7 @@ msgstr "نشر هذا الوكيل إلى السحابة وإعطاؤه جهاز
 #~ msgid "published"
 #~ msgstr ""
 
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 #: src/components/project-home/ProjectPublishedButton.tsx
@@ -16055,8 +16146,8 @@ msgid "Published from a folder on the publisher's machine"
 msgstr ""
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
-msgid "Published from a folder that isn't linked to the cloud, so only its row is here."
-msgstr ""
+#~ msgid "Published from a folder that isn't linked to the cloud, so only its row is here."
+#~ msgstr ""
 
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Published to the project."
@@ -16064,6 +16155,14 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Published version — edit it on the author's computer"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Published version up to date"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
+msgid "Published when you deploy"
 msgstr ""
 
 #: src/components/data-sources/DataSourceRow.tsx
@@ -16102,7 +16201,6 @@ msgid "Pulling…"
 msgstr "جاري السحب…"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -16547,8 +16645,12 @@ msgid "Regenerate onboarding assets on next start"
 msgstr "إعادة إنشاء أصول الإعداد الأولي عند التشغيل التالي"
 
 #: src/pages/discover-page/DiscoverDetailPage.tsx
-msgid "Registered on the hub, but its files were not snapshotted yet."
+msgid "Registered on the hub, but its document hasn't been uploaded to the project's repository yet."
 msgstr ""
+
+#: src/pages/discover-page/DiscoverDetailPage.tsx
+#~ msgid "Registered on the hub, but its files were not snapshotted yet."
+#~ msgstr ""
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
@@ -17296,6 +17398,10 @@ msgstr "المراجعات"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Revisions v{0}"
 msgstr "المراجعة v{0}"
+
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "Revoke"
+msgstr ""
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Right-to-left paragraph"
@@ -18123,6 +18229,7 @@ msgid "Secret saved"
 msgstr "تم حفظ السر"
 
 #: src/components/account/account-info.tsx
+#: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Secrets"
 msgstr "الأسرار"
@@ -18583,7 +18690,6 @@ msgstr "تعيين المشروع"
 msgid "Set public"
 msgstr ""
 
-#: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
@@ -18620,12 +18726,12 @@ msgid "Set up Git"
 msgstr "إعداد Git"
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Set up Git for cloud linking"
-msgstr "إعداد Git للربط السحابي"
+#~ msgid "Set up Git for cloud linking"
+#~ msgstr "إعداد Git للربط السحابي"
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
-msgid "Set up Git for deploying"
-msgstr "إعداد Git للنشر"
+#~ msgid "Set up Git for deploying"
+#~ msgstr "إعداد Git للنشر"
 
 #: src/components/project-home/ProjectHome.tsx
 msgid "Set up Git for project sharing"
@@ -19840,8 +19946,8 @@ msgid "sticky for you"
 msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "Still can't link this project"
-msgstr "ما زال ربط هذا المشروع غير ممكن"
+#~ msgid "Still can't link this project"
+#~ msgstr "ما زال ربط هذا المشروع غير ممكن"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Still loading this project — try again in a moment."
@@ -19900,13 +20006,22 @@ msgstr ""
 msgid "Storage"
 msgstr ""
 
+#. placeholder {0}: deployment?.name ?? ''
 #: src/components/credentials/CredentialDialog.tsx
-msgid "Storage · {environment}"
+msgid "Storage · {0}"
 msgstr ""
+
+#: src/components/credentials/CredentialDialog.tsx
+#~ msgid "Storage · {environment}"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "stored →"
 msgstr "محفوظ →"
+
+#: src/pages/discover-page/ProvenanceLink.tsx
+msgid "Stored in the project's repository on the hub"
+msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Stored key"
@@ -20349,7 +20464,7 @@ msgstr "الطرفية"
 msgid "Terminal \"{requestedName}\" not found"
 msgstr "لم يتم العثور على المحطة الطرفية \"{requestedName}\"."
 
-#: src/components/terminal/TabbedTerminal.tsx
+#: src/components/terminal/TerminalPanel.tsx
 #: src/routes/loaders/load-shell.ts
 msgid "Terminal may be unresponsive until the connection recovers."
 msgstr "قد تكون الطرفية غير مستجيبة حتى عودة الاتصال."
@@ -20690,8 +20805,8 @@ msgid "The project declares the same variables; its values are the ones its runs
 msgstr ""
 
 #: src/components/project-home/ProjectCloudLinkButton.tsx
-msgid "The project was not linked to the cloud."
-msgstr "لم يتم ربط المشروع بالسحابة."
+#~ msgid "The project was not linked to the cloud."
+#~ msgstr "لم يتم ربط المشروع بالسحابة."
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "The prompt text…"
@@ -20721,14 +20836,13 @@ msgstr ""
 msgid "The recipient will see a PROMPT to approve."
 msgstr "سيرى المستلم PROMPT للموافقة عليه."
 
-#. placeholder {0}: anonAccess.repo ?? 'this project uses'
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
-msgstr ""
+#~ msgid "The repository {0} is private. They will see the project, but only someone who connects GitHub and already has access to that repository can open its files — Flowpad grants Flowpad membership, never GitHub access."
+#~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "The repository {repoLabel} is private. Everyone here will still see the project and its language, but only people who connect GitHub and already have access to that repository can open its files and its skills — Flowpad can't grant that access."
-msgstr ""
+#~ msgid "The repository {repoLabel} is private. Everyone here will still see the project and its language, but only people who connect GitHub and already have access to that repository can open its files and its skills — Flowpad can't grant that access."
+#~ msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "The requested agent could not be found."
@@ -20902,7 +21016,11 @@ msgstr "لا يمكن التراجع عن هذا الإجراء."
 #~ msgstr ""
 
 #: src/pages/entry/AgentLaunchLanding.tsx
-msgid "This agent isn't published from a git repository, so there's nothing to launch."
+#~ msgid "This agent isn't published from a git repository, so there's nothing to launch."
+#~ msgstr ""
+
+#: src/pages/entry/AgentLaunchLanding.tsx
+msgid "This agent isn't published to the cloud, so there's nothing to launch."
 msgstr ""
 
 #: src/routes/loaders/load-agent-stream-inbox.ts
@@ -20953,6 +21071,11 @@ msgstr "لم تعد غرفة التعاون هذه موجودة أو أنها غ
 
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "This computer"
+msgstr ""
+
+#. placeholder {0}: row.environment
+#: src/components/connections-manager.tsx
+msgid "This computer · {0}"
 msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -21234,8 +21357,8 @@ msgid "This project isn't in the cloud yet — sharing it links it there first."
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "This project isn't ready to link to the cloud."
-msgstr ""
+#~ msgid "This project isn't ready to link to the cloud."
+#~ msgstr ""
 
 #: src/components/connections-manager.tsx
 #~ msgid "This project stops using it and the stored value is deleted."
@@ -21254,8 +21377,8 @@ msgid "This project tab URL is malformed."
 msgstr "عنوان URL لعلامة تبويب المشروع غير صالح."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "this project uses"
-msgstr ""
+#~ msgid "this project uses"
+#~ msgstr ""
 
 #: src/agents/agent-auto-launch-warning.ts
 msgid "This project's agent could not start"
@@ -21643,10 +21766,18 @@ msgstr "تبديل المظهر"
 msgid "Toggle view"
 msgstr "تبديل العرض"
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Token allocation"
+msgstr ""
+
 #: src/components/token-plan/TokenPlanCard.tsx
 #: src/components/token-plan/TokenPlanView.tsx
 #: src/types/ViewType.ts
 msgid "Token plan"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Token source"
 msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
@@ -22334,6 +22465,11 @@ msgstr ""
 msgid "Use Google Vertex AI as the backend"
 msgstr "استخدام Google Vertex AI كخادم خلفي"
 
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+#: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
+msgid "Use mine"
+msgstr ""
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Use suggestion"
 msgstr "استخدام الاقتراح"
@@ -22516,6 +22652,10 @@ msgstr ""
 msgid "Values are kept in this project's {0}"
 msgstr ""
 
+#: src/components/connections-manager.tsx
+msgid "Values for"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/CredentialChild.tsx
 msgid "Values live in"
 msgstr ""
@@ -22527,6 +22667,10 @@ msgstr ""
 #: src/components/connections-manager/add-connection-dialog.tsx
 #~ msgid "Values stay on this machine. Nothing is sent anywhere by adding one."
 #~ msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "Values the hub holds"
+msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "Values you paste, kept in this project's environment"
@@ -22915,6 +23059,11 @@ msgstr ""
 msgid "What should the worker do with this message?"
 msgstr "ماذا يجب أن يفعل العامل بهذه الرسالة؟"
 
+#. placeholder {0}: readiness.environment
+#: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
+msgid "What the {0} machine still needs"
+msgstr ""
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #~ msgid "what the form asks"
 #~ msgstr ""
@@ -22967,7 +23116,11 @@ msgid "When on, the server re-creates the Welcome bookmark + feed entry on the n
 msgstr "عند التفعيل، يعيد الخادم إنشاء إشارة الترحيب ومدخل الموجز عند التشغيل التالي، ثم يوقف هذا الخيار."
 
 #: src/components/assets/editor/PublishedToggle.tsx
-msgid "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
+#~ msgid "When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed."
+#~ msgstr ""
+
+#: src/components/assets/editor/PublishedToggle.tsx
+msgid "When the project is linked to the cloud, the document itself is uploaded to the project's repository on the hub, so its members can read and install it. Otherwise only the row and where it comes from are listed."
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -23146,6 +23299,11 @@ msgstr ""
 msgid "Writing"
 msgstr "يكتب"
 
+#. placeholder {0}: when(row.written)
+#: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
+msgid "written {0}"
+msgstr ""
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Written down, not started. Launching boots it and sets the project up."
 msgstr "تم تسجيل المشروع ولم يبدأ بعد. سيتم تشغيله وإعداده عند الإطلاق."
@@ -23182,6 +23340,10 @@ msgstr "أمس"
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 msgid "You"
 msgstr "أنت"
+
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "You administer no LLM endpoint to allocate from, so this agent spends your capped default."
+msgstr ""
 
 #: src/components/organization/budgets/MemberStanding.tsx
 #~ msgid "you are {role}"
