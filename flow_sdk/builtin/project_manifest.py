@@ -128,16 +128,12 @@ def ensure_project_namespace(project) -> None:
 
 def _hub_origin_of(entity: Entity):
     """The asset's hub-repo origin once it has been published into its project's repo, else None."""
-    from flow_sdk.assets.hub_repo_sync import hub_origin_for_path  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
+    from flow_sdk.assets.hub_repo_sync import hub_origin_of  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    origin = getattr(entity, "origin", None)
-    if isinstance(origin, HubRepoOrigin):
-        return origin
     info = SchemaRegistry.get(entity.get_type())
     ref = getattr(entity, "asset_ref", None)
-    return hub_origin_for_path(info.storage_root_for(Path(str(ref)))) if info is not None and ref else None
+    return hub_origin_of(entity, info.storage_root_for(Path(str(ref))) if info is not None and ref else None)
 
 
 async def origin_for_asset(asset_ref: str):
@@ -202,9 +198,7 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
             )
         # The row reflects the stamped carrier before the manifest names it.
         resolved = await resolve_asset(asset_ref, write=False, type_name=type_name, owner_id=str(entity.id))
-        await index_one(
-            resolved, notify=True, scope=getattr(entity, "scope", None), project_id=str(project.id)
-        )
+        await index_one(resolved, notify=True, scope=getattr(entity, "scope", None), project_id=str(project.id))
         publish(
             mount,
             make_entry(
@@ -293,7 +287,11 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     request = request if isinstance(request, dict) else {}
     try:
         entry = PublishedAssetSpec.model_validate(
-            {k: request.get(k) for k in ("typeid", "rel_path", "name", "description", "published_at", "origin") if request.get(k) is not None}
+            {
+                k: request.get(k)
+                for k in ("typeid", "rel_path", "name", "description", "published_at", "origin")
+                if request.get(k) is not None
+            }
         )
     except Exception as exc:  # noqa: BLE001 — pydantic's message is the reason
         raise PublishRefused("bad_request", f"not a published row: {exc}") from exc
@@ -316,17 +314,21 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     if asset.typeid != TypeId(entry.typeid):
         raise PublishRefused("identity_mismatch", "the published files do not carry the requested asset identity")
     info = SchemaRegistry.get(asset.typeid.type)
-    family = resolve_destination(asset.typeid.type, Scope.PROJECT,
-                                 default_worker=await resolve_default_harness(), project_mount=mount)
+    family = resolve_destination(
+        asset.typeid.type, Scope.PROJECT, default_worker=await resolve_default_harness(), project_mount=mount
+    )
     if family is None:
         raise PublishRefused("unsupported", "this asset cannot be installed in a project")
     destination = family if info.singleton else family / asset.path.name
     try:
         import asyncio
+
         installed = await asyncio.to_thread(asset.install, destination, overwrite=overwrite)
         await index_installed_asset(asset, installed, scope=Scope.PROJECT, project_id=str(project.id))
     except FileExistsError as exc:
-        raise PublishRefused("exists", f"{src.name} is already in this project — install with overwrite to replace it") from exc
+        raise PublishRefused(
+            "exists", f"{src.name} is already in this project — install with overwrite to replace it"
+        ) from exc
     dest = installed.path
     cls = SchemaRegistry.get_entity_cls(entry.type)
     ent = await cls.get_one({"id": installed.typeid.id}) if cls is not None else None
@@ -591,7 +593,9 @@ async def published_view(project) -> dict:
                 "state": state,
                 "origin": entry.origin.model_dump(mode="json") if entry.origin is not None else None,
                 "posix_path": str(mount / entry.rel_path) if on_disk else None,
-                "body_ref": asset_body_ref(mount / entry.rel_path, authority=project.typeid, root=mount) if on_disk else None,
+                "body_ref": asset_body_ref(mount / entry.rel_path, authority=project.typeid, root=mount)
+                if on_disk
+                else None,
                 "indexed": ent is not None,
                 "hub_body": _HUB_BODY.get(entry.typeid),
             }
@@ -605,9 +609,11 @@ async def published_view(project) -> dict:
         listed = spec.typeids if spec is not None else frozenset()
         descriptors = [
             d
-            for d in (await scan_path_asset_descriptors(
-                sources, own_project_id=str(project.id), types=list(PUBLISHABLE_TYPES), limit=2000
-            )).assets
+            for d in (
+                await scan_path_asset_descriptors(
+                    sources, own_project_id=str(project.id), types=list(PUBLISHABLE_TYPES), limit=2000
+                )
+            ).assets
             if d.source is AssetSource.PROJECT_DIR and d.typeid not in listed
         ]
         wanted: dict[str, list[str]] = {}

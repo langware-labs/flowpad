@@ -48,13 +48,6 @@ async def _actor_author(actor: TypeId) -> GitAuthor:
     return GitAuthor(name=name, email=email, typeid=str(actor))
 
 
-def _asset_rel_path(mount: Path, asset_root: Path) -> str:
-    rel = PurePosixPath(*asset_root.relative_to(mount).parts).as_posix()
-    if not rel or rel == "." or ".git" in PurePosixPath(rel).parts:
-        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset path is not publishable")
-    return rel
-
-
 def publish_asset_payload(project_id: str, asset_type: str, asset_id: str, rel_path: str) -> dict:
     """What ``project/publish_asset`` receives: coordinates only.
 
@@ -79,6 +72,7 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         remember_sync,
         sync_asset_with_hub,
     )
+    from flow_sdk.assets.project_manifest import rel_path_for  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
     from flow_sdk.cloud_client.transport.hub_http import HubError, hub_post  # noqa: PLC0415
@@ -109,7 +103,9 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset or Project mount is unavailable") from exc
     if not real_asset.is_relative_to(real_mount):
         raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset is outside its owning Project")
-    rel_path = _asset_rel_path(real_mount, real_asset)
+    rel_path = rel_path_for(real_mount, real_asset)
+    if rel_path is None or ".git" in PurePosixPath(rel_path).parts:
+        raise AssetPublishError(AssetPublishCode.NOT_GIT_BACKED, "Asset path is not publishable")
 
     token = resolve_hub_api_key(require_live=True)
     if not token:
@@ -118,7 +114,9 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
     try:
         repo = await hub_post("project", {}, project.id, action="hosted_repo")
     except HubError as exc:
-        raise AssetPublishError(AssetPublishCode.HUB_PUBLISH_FAILED, "The hub has no repository for this project") from exc
+        raise AssetPublishError(
+            AssetPublishCode.HUB_PUBLISH_FAILED, "The hub has no repository for this project"
+        ) from exc
     if not repo or not repo.get("clone_url"):
         raise AssetPublishError(AssetPublishCode.HUB_PUBLISH_FAILED, "The hub has no repository for this project")
 
@@ -154,21 +152,22 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         ) from exc
     hub_result = hub_result or {}
 
-    remember_sync(
-        repo_id,
+    origin = HubRepoOrigin(
         repo=repo["repo"],
         rel_path=rel_path,
-        tree=str(hub_result.get("tree") or synced.tree),
         head_commit=str(hub_result.get("head_commit") or synced.head_commit or ""),
+        tree=str(hub_result.get("tree") or synced.tree),
+    )
+    remember_sync(
+        repo_id,
+        repo=origin.repo,
+        rel_path=rel_path,
+        tree=origin.tree,
+        head_commit=origin.head_commit,
         local_path=str(real_asset),
     )
     entity.remote = True
-    entity.origin = HubRepoOrigin(
-        repo=repo["repo"],
-        rel_path=rel_path,
-        head_commit=str(hub_result.get("head_commit") or synced.head_commit or ""),
-        tree=str(hub_result.get("tree") or synced.tree),
-    )
+    entity.origin = origin
     warning = None
     suppress = _SUPPRESS_STORE.set(True)
     try:
