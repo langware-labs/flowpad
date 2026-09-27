@@ -27,7 +27,7 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `description` | One line on the card: what the agent is for | yes | all |
 | `avatar` | An emoji or an image file name in the folder | yes | all |
 | `color` | Avatar background, a hex from the palette | yes | all |
-| `worker_type` | `claude`, `codex` or `copilot` — the agent editor has no picker for it today, so set it here | yes | all |
+| `worker_type` | `claude`, `codex` or `copilot` — set it here; in the app it is changed per deployment (`references/screens.md` → *Change its worker*) | yes | all |
 | `model` | `sm` / `md` / `lg`, or a concrete model id | yes | all |
 | `permission_mode` | Leave it out. A chat worker runs headless: anything but the default (`bypassPermissions`) denies every tool call, `flow show` included, because nobody can approve it | yes | all |
 | `effort` | Reasoning effort for the worker | yes | all |
