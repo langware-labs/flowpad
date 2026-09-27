@@ -60,6 +60,7 @@ export interface ProcessRouteCarry {
 import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
 import { replace } from 'react-router';
+import { errorStatus } from '@src/lib/error-message';
 import { perfLog, perfTime } from './_perf';
 import { loadProcess, ProcessLoadError } from './load-process';
 import { loadProject } from './load-project';
@@ -459,10 +460,9 @@ async function processIdentity(processId: string): Promise<AgenticProcess | Proc
     const proc = await AgenticProcess.getById<AgenticProcess>(processId);
     return proc ?? new ProcessLoadError('entity_not_found', processId);
   } catch (cause) {
-    const status =
-      (cause as { response?: { status?: number }; status?: number })?.response?.status ??
-      (cause as { status?: number })?.status;
-    return new ProcessLoadError(status === 404 ? 'entity_not_found' : 'network_error', processId, null, cause);
+    return new ProcessLoadError(
+      errorStatus(cause) === 404 ? 'entity_not_found' : 'network_error', processId, null, cause,
+    );
   }
 }
 

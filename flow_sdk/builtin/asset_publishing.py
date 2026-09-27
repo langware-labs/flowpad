@@ -11,6 +11,8 @@ only remote is the hub, reached with the user's hub token.
 
 from __future__ import annotations
 
+import asyncio
+
 from pathlib import Path, PurePosixPath
 
 from flow_sdk.assets.git_publish import (
@@ -122,7 +124,9 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
 
     repo_id = HubRepoOrigin(repo=repo["repo"]).repo_id
     previous = entity.origin if isinstance(getattr(entity, "origin", None), HubRepoOrigin) else None
-    last_tree = last_synced_tree(repo_id, rel_path) or (
+    # Off the loop: the ledger is a file read, and the write below takes a cross-process
+    # lock and fsyncs — stalling the loop stalls every request and every live terminal.
+    last_tree = await asyncio.to_thread(last_synced_tree, repo_id, rel_path) or (
         previous.tree if previous is not None and previous.rel_path == rel_path else None
     )
     mirror = HubRepoMirror(
@@ -158,7 +162,8 @@ async def publish_git_asset(entity, actor: TypeId) -> AssetPublishResult:
         head_commit=str(hub_result.get("head_commit") or synced.head_commit or ""),
         tree=str(hub_result.get("tree") or synced.tree),
     )
-    remember_sync(
+    await asyncio.to_thread(
+        remember_sync,
         repo_id,
         repo=origin.repo,
         rel_path=rel_path,
