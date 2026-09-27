@@ -14,15 +14,32 @@ Four facts shape the class:
   more, as an opaque ``<id>@lid``. A reply goes to the raw chat id; rebuilding one from digits
   addresses nobody. Only the SENDER key is folded to digits where it can be, so an allowlist of
   phone numbers still matches.
-* **No echo of itself.** The session subscribes to ``message`` only — never ``message.any`` — and
-  ``fromMe`` is dropped besides, so the agent cannot answer its own replies.
+* **No echo of itself.** The session subscribes to ``message`` and ``message.reaction`` — never
+  ``message.any`` — and ``fromMe`` is dropped besides, so the agent cannot answer its own replies.
 * **Signed deliveries.** WAHA signs each body with the key as ``X-Webhook-Hmac`` (hex HMAC-SHA512).
+
+Files and reactions:
+
+* **A file's handle is where WAHA keeps it.** WAHA downloads inbound media itself and reports a URL
+  on ITS host (``http://localhost:3000/api/files/<session>/<id>.<ext>``), which is rarely where this
+  machine reaches it. The file's origin key is that URL's path — ``(whatsapp, <account>/media,
+  /api/files/...)``, a stream of its own, named after the message id — and ``open`` reads the path
+  from the configured ``WAHA_BASE_URL`` with the API key. Media WAHA did not download (no URL) is
+  kept as metadata with its ``fetch_error``.
+* **A reaction is state, not a message.** It names the reacted message by the same serialized id the
+  message is keyed by, in the same chat, so it lands on that row. One emoji per person; ``""``
+  takes it back.
 """
 from __future__ import annotations
 
+import asyncio
+import base64
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Annotated, Any, ClassVar, Mapping, Optional
+from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Union
+from urllib.parse import urlsplit
 
+import httpx
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
@@ -39,15 +56,50 @@ from flow_sdk.sources.errors import (
     Unsupported,
 )
 from flow_sdk.sources.families import MessageSource
+from flow_sdk.sources.files import LOCAL_KIND, FileSupport, kind_of, read_file
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
-from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
+from flow_sdk.sources.values.items import (
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    ReactionData,
+    ReactionItem,
+    ReactionMode,
+    UserProfile,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 
 #: One number, one webhook: every conversation is a chat under it.
 MESSAGES_STREAM = "messages"
-#: The only event the session subscribes to. ``message.any`` would echo our own sends.
-WEBHOOK_EVENTS = ("message",)
+#: The events the session subscribes to. ``message.any`` would echo our own sends.
+WEBHOOK_EVENTS = ("message", "message.reaction")
+#: Where a media handle lives: beside the messages, never among them.
+MEDIA_STREAM = "media"
+#: Where a reaction report is keyed (by the id of the reaction itself).
+REACTIONS_STREAM = "reactions"
+#: The send route per kind. A voice note is converted to OGG/Opus by WAHA (``convert``); audio, a
+#: document and a sticker go as a file.
+SEND_ROUTE: dict[FileKind, str] = {
+    FileKind.IMAGE: "/api/sendImage",
+    FileKind.VIDEO: "/api/sendVideo",
+    FileKind.VOICE: "/api/sendVoice",
+    FileKind.AUDIO: "/api/sendFile",
+    FileKind.DOCUMENT: "/api/sendFile",
+    FileKind.STICKER: "/api/sendFile",
+}
+#: How the engines name a message's media (WEBJS ``_data.type``; NOWEB the key under ``_data.message``).
+WEBJS_KINDS = {"image": FileKind.IMAGE, "video": FileKind.VIDEO, "audio": FileKind.AUDIO, "ptt": FileKind.VOICE, "document": FileKind.DOCUMENT, "sticker": FileKind.STICKER}
+NOWEB_KINDS = {
+    "imageMessage": FileKind.IMAGE,
+    "videoMessage": FileKind.VIDEO,
+    "audioMessage": FileKind.AUDIO,
+    "documentMessage": FileKind.DOCUMENT,
+    "documentWithCaptionMessage": FileKind.DOCUMENT,
+    "stickerMessage": FileKind.STICKER,
+}
 #: Chat-id suffixes that name a phone number, so the sender key can be its digits.
 PHONE_SUFFIXES = ("@c.us", "@s.whatsapp.net")
 #: Statuses WAHA answers with a JSON message worth quoting, so the call reads the body before raising.
@@ -78,6 +130,15 @@ class WahaSource(MessageSource):
     #: The same channel as the Cloud API source: one WhatsApp, whichever transport carries it.
     origin_kind = "whatsapp"
     identity_config_key = "session"
+    #: WhatsApp's own limits hold whichever client carries them; WAHA adds none we know of.
+    files = FileSupport(
+        kinds=frozenset(FileKind),
+        per_message=1,
+        caption_max=1024,
+        caption_kinds=frozenset({FileKind.IMAGE, FileKind.VIDEO, FileKind.DOCUMENT}),
+    )
+    quotes = True
+    reactions_per_actor = 1
 
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
@@ -100,6 +161,10 @@ class WahaSource(MessageSource):
 
     def message_origin(self, message_id: str, chat: str) -> CloudOrigin:
         return self.origin(message_id, MESSAGES_STREAM, chat)
+
+    def media_origin(self, key: str) -> CloudOrigin:
+        """A media handle: the path WAHA serves it at (or, when it served none, ``<message id>:media``)."""
+        return self.origin(key, MEDIA_STREAM)
 
     @property
     def _scope_namespace(self) -> str:
@@ -161,28 +226,101 @@ class WahaSource(MessageSource):
         chat or a message with no words yields nothing, because a failed webhook is retried."""
         if not isinstance(payload, dict) or payload.get("event") not in WEBHOOK_EVENTS:
             return []
-        item = self._item(payload.get("payload"))
+        message = payload.get("payload")
+        item = self._reaction(message) if payload.get("event") == "message.reaction" else self._item(message)
         return [DataSourceEvent(id=item.origin.key, kind=EventKind.UPSERT, origin=item.origin, item=item)] if item else []
 
-    def _item(self, message: Any) -> Optional[MessageItem]:
+    @staticmethod
+    def _theirs(message: Any) -> tuple[str, str]:
+        """``(id, chat)`` of a delivery someone else wrote in a one-to-one chat; empty otherwise."""
         if not isinstance(message, dict) or message.get("fromMe"):
-            return None
+            return "", ""
         message_id, chat = str(message.get("id") or "").strip(), str(message.get("from") or "").strip()
+        return ("", "") if chat.endswith("@g.us") else (message_id, chat)
+
+    def _sender(self, message: dict, chat: str) -> UserProfile:
+        extra = message.get("_data") if isinstance(message.get("_data"), dict) else {}
+        name = str(extra.get("notifyName") or extra.get("pushName") or "") or None
+        return UserProfile(origin=self.origin(sender_key(phone_chat(extra, chat))), name=name)
+
+    def _item(self, message: Any) -> Optional[MessageItem]:
+        message_id, chat = self._theirs(message)
+        if not (message_id and chat):
+            return None
         text = str(message.get("body") or "").strip()
-        if not (message_id and chat and text) or chat.endswith("@g.us"):
+        files = (self._file(message, message_id, caption=text),) if message.get("hasMedia") else ()
+        if not (text or files):
             return None
         reply_to = message.get("replyTo")
         quoted = str(reply_to.get("id") or "") if isinstance(reply_to, dict) else ""
-        extra = message.get("_data") if isinstance(message.get("_data"), dict) else {}
         data = WahaMessageData(
-            text=text,
+            text=None if files else text,  # a media message's body is the file's caption
             conversation=self.conversation_origin(chat),
-            sender=UserProfile(origin=self.origin(sender_key(phone_chat(extra, chat))), name=str(extra.get("notifyName") or extra.get("pushName") or "") or None),
+            sender=self._sender(message, chat),
             sent_at=_when(message.get("timestamp")),
+            attachments=files,
             in_reply_to=self.message_origin(quoted, chat) if quoted else None,
             raw=message,
         )
         return MessageItem(origin=self.message_origin(message_id, chat), data=data)
+
+    def _file(self, message: dict, message_id: str, *, caption: str) -> FileItem:
+        media = message.get("media") if isinstance(message.get("media"), dict) else {}
+        media_type = str(media.get("mimetype") or "").strip() or None
+        url = str(media.get("url") or "").strip()
+        path = urlsplit(url)._replace(scheme="", netloc="").geturl() if url else ""
+        error = media.get("error")
+        missing = None
+        if not path:
+            missing = f"WAHA did not download this media: {error}" if error else "WAHA did not download this media (no URL)"
+        data = MessageFileData(
+            name=str(media.get("filename") or "").strip() or None,
+            media_type=media_type,
+            as_=_kind_of(message, media_type),
+            caption=caption or None,
+            fetch_error=missing,
+        )
+        return FileItem(origin=self.media_origin(path or f"{message_id}:media"), data=data)
+
+    def _reaction(self, message: Any) -> Optional[ReactionItem]:
+        """``{id, from, reaction: {text, messageId}}``: this person's one emoji on that message now."""
+        reaction_id, chat = self._theirs(message)
+        reaction = message.get("reaction") if reaction_id and isinstance(message.get("reaction"), dict) else {}
+        target = str(reaction.get("messageId") or "").strip()
+        if not (reaction_id and chat and target):
+            return None
+        emoji = str(reaction.get("text") or "")
+        data = ReactionData(
+            target=self.message_origin(target, chat),
+            sender=self._sender(message, chat),
+            emojis=(emoji,) if emoji else (),
+            mode=ReactionMode.SET,
+            sent_at=_when(message.get("timestamp")),
+        )
+        return ReactionItem(origin=self.origin(reaction_id, REACTIONS_STREAM, chat), data=data)
+
+    # ── the bytes of an inbound file ────────────────────────────────────────
+    def open(self, file: FileItem, *, chunk_size: int = 65536):
+        """GET the media's path from WHERE THIS MACHINE REACHES WAHA — the host WAHA reported is its own."""
+        self._require_open()
+        return self._download(file, chunk_size)
+
+    @asynccontextmanager
+    async def _download(self, file: FileItem, chunk_size: int) -> AsyncGenerator[AsyncIterator[bytes], None]:
+        origin = file.origin
+        if origin != self.media_origin(origin.key) or not origin.key.startswith("/"):
+            raise ValueError(f"{origin!r} is not a WAHA media file of this source")
+        key = self._secret("api_key")
+        if key is None:
+            raise AccessDenied("This WAHA source has no API key.")
+        url = f"{self.base_url}{origin.key}"
+        try:
+            async with self._client.stream("GET", url, headers={"X-Api-Key": key}) as response:
+                if response.status_code >= 400:
+                    raise http.error_for_status(response.status_code, "WAHA: media download", origin=origin)
+                yield response.aiter_bytes(chunk_size)
+        except httpx.HTTPError as exc:
+            raise SourceUnavailable(f"GET {url}: {exc}", origin=origin) from exc
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:
@@ -225,7 +363,10 @@ class WahaSource(MessageSource):
         except NotFound:
             return await self._api("POST", "/api/sessions", json={"name": self.session, "start": True, "config": {"webhooks": [webhook]}})
         hooks = ((session.get("config") or {}).get("webhooks") or []) if isinstance(session.get("config"), dict) else []
-        if not any(isinstance(h, dict) and h.get("url") == webhook["url"] for h in hooks):
+        ours = [h for h in hooks if isinstance(h, dict) and h.get("url") == webhook["url"]]
+        # Re-pointed when it calls elsewhere, and when it calls here for other events (an older
+        # instance's subscription predates reactions).
+        if not any(set(h.get("events") or ()) == set(WEBHOOK_EVENTS) for h in ours):
             session = await self._api("PUT", f"/api/sessions/{self.session}", json={"config": {**(session.get("config") or {}), "webhooks": [webhook]}})
         if str(session.get("status") or "") in ("STOPPED", "FAILED"):
             session = await self._api("POST", f"/api/sessions/{self.session}/start")
@@ -262,7 +403,7 @@ class WahaSource(MessageSource):
     # ── send ────────────────────────────────────────────────────────────────
     async def send(self, data: MessageData) -> MessageItem:
         self._require_open()
-        _check_outgoing(data)
+        _check_outgoing(data, self.files)
         if (data.conversation is None) == (not data.recipients):
             raise ValueError("address exactly one of a conversation or recipients")
         if data.conversation is not None:
@@ -274,32 +415,38 @@ class WahaSource(MessageSource):
             conversation = self.conversation_origin(chat)
         if not chat:
             raise NotFound("no WhatsApp chat to send to")
-        return await self._send(chat, data.text or "", conversation, quoted="")
+        return await self._send(chat, data, conversation, quoted="")
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
         self._require_open()
-        _check_outgoing(data)
+        _check_outgoing(data, self.files)
         if data.conversation is not None or data.recipients:
             raise ValueError("a reply is routed from the message it answers; leave conversation and recipients empty")
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
-        chat = self._chat_from(origin)
-        if not chat:
-            raise NotFound(f"{origin!r} names no message", origin=origin)
-        sent = await self._send(chat, data.text or "", self.conversation_origin(chat), quoted=origin.key)
+        chat = self._chat_of_message(origin)
+        sent = await self._send(chat, data, self.conversation_origin(chat), quoted=origin.key)
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
 
-    async def _send(self, chat: str, text: str, conversation: CloudOrigin, *, quoted: str) -> MessageItem:
-        payload: dict[str, Any] = {"session": self.session, "chatId": chat, "text": text}
+    async def _send(self, chat: str, data: MessageData, conversation: CloudOrigin, *, quoted: str) -> MessageItem:
+        payload: dict[str, Any] = {"session": self.session, "chatId": chat}
+        route = "/api/sendText"
+        if data.attachments:
+            file = data.attachments[0]
+            route = SEND_ROUTE[file.data.as_]
+            payload.update(await _media_body(file, data.text))
+        else:
+            payload["text"] = data.text or ""
         if quoted:
             payload["reply_to"] = quoted
-        body = await self._api("POST", "/api/sendText", json=payload)
+        body = await self._api("POST", route, json=payload)
         sent_id = _id_of(body)
         if not sent_id:
             raise OutcomeUnknown("WAHA accepted the message but returned no id for it")
         me = str(self.binding.account_key or self.session)
         data = WahaMessageData(
-            text=text,
+            text=data.text,
+            attachments=data.attachments,
             conversation=conversation,
             sender=UserProfile(origin=CloudOrigin(kind="whatsapp", namespace="account", key=me)),
             sent_at=datetime.now(timezone.utc),
@@ -307,7 +454,33 @@ class WahaSource(MessageSource):
         )
         return MessageItem(origin=self.message_origin(sent_id, chat), data=data)
 
+    # ── reactions ───────────────────────────────────────────────────────────
+    async def react(self, target: CloudOrigin, emoji: str) -> None:
+        """Our one emoji on ``target``; a second replaces the first."""
+        self._require_open()
+        if not emoji:
+            raise ValueError("react needs an emoji; unreact takes ours back")
+        await self._react(target, emoji)
+
+    async def unreact(self, target: CloudOrigin, emoji: str = "") -> None:
+        """Take ours back. We hold at most one, so whichever ``emoji`` is named, the one goes."""
+        self._require_open()
+        await self._react(target, "")
+
+    async def _react(self, target: CloudOrigin, emoji: str) -> None:
+        self._chat_of_message(target)
+        await self._api("PUT", "/api/reaction", json={"session": self.session, "messageId": target.key, "reaction": emoji})
+
     # ── transport ───────────────────────────────────────────────────────────
+    def _chat_of_message(self, origin: object) -> str:
+        """The chat a message origin hangs off."""
+        if not isinstance(origin, CloudOrigin):
+            raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
+        chat = self._chat_from(origin)
+        if not chat:
+            raise NotFound(f"{origin!r} names no message", origin=origin)
+        return chat
+
     def _chat_of(self, origin: object) -> str:
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
@@ -387,13 +560,58 @@ def _id_of(body: dict) -> str:
     return str(value or "").strip()
 
 
-def _check_outgoing(data: object) -> None:
+def _kind_of(message: dict, media_type: Optional[str]) -> FileKind:
+    """What the sender's app sent it as — the engine says (a voice note, a sticker, an image sent as a
+    document); the media type decides only when it does not."""
+    extra = message.get("_data") if isinstance(message.get("_data"), dict) else {}
+    named = WEBJS_KINDS.get(str(extra.get("type") or ""))
+    if named is not None:
+        return named
+    inner = extra.get("message") if isinstance(extra.get("message"), dict) else {}
+    for field, kind in NOWEB_KINDS.items():
+        if isinstance(inner.get(field), dict):
+            return FileKind.VOICE if kind is FileKind.AUDIO and inner[field].get("ptt") else kind
+    return kind_of(media_type or "")
+
+
+async def _media_body(file: FileItem, text: Optional[str]) -> dict:
+    """The file inline, base64 — WAHA takes the bytes in the body, not by upload."""
+    fd = file.data
+    content = await asyncio.to_thread(read_file, file)
+    body: dict[str, Any] = {
+        "file": {"mimetype": fd.media_type or "application/octet-stream", "filename": fd.name or "file", "data": base64.b64encode(content).decode()}
+    }
+    caption = fd.caption or (text or "").strip()
+    if caption:
+        body["caption"] = caption
+    if fd.as_ in (FileKind.VOICE, FileKind.VIDEO):
+        body["convert"] = True  # WhatsApp plays only OGG/Opus voice and MP4/H.264 video; WAHA transcodes
+    return body
+
+
+def _check_outgoing(data: object, support: FileSupport) -> None:
+    """Text or one local file of a kind WhatsApp shows; the provider's fields left empty. Before any I/O."""
     if not isinstance(data, MessageData):
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
-    if not (data.text or "").strip():
-        raise ValueError("a WhatsApp message needs text")
-    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None or data.attachments:
-        raise ValueError("sender, in_reply_to, sent_at and attachments are assigned by the provider")
+    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
+        raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
+    if not data.attachments:
+        if not (data.text or "").strip():
+            raise ValueError("a WhatsApp message needs text or a file")
+        return
+    if len(data.attachments) > support.per_message:
+        raise ValueError("a WhatsApp message carries one file; send the others as messages of their own")
+    for f in data.attachments:
+        fd = f.data
+        if f.origin.kind != LOCAL_KIND or not isinstance(fd, MessageFileData) or not fd.path:
+            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
+        if fd.as_ not in support.kinds:
+            raise ValueError(f"WhatsApp does not send a {fd.as_.value}")
+        text = (data.text or "").strip()
+        if text and fd.caption:
+            raise ValueError("a captioned file carries no text of its own; send the words as a message of their own")
+        if (fd.caption or text) and not support.captions(fd.as_):
+            raise ValueError(f"WhatsApp shows no caption on a {fd.as_.value}; send the words as a message of their own")
 
 
 def _when(timestamp: Any) -> datetime:
@@ -405,4 +623,4 @@ def _when(timestamp: Any) -> datetime:
     return datetime.fromtimestamp(value / 1000 if value > 10**12 else value, tz=timezone.utc)
 
 
-__all__ = ["MESSAGES_STREAM", "WEBHOOK_EVENTS", "WahaMessageData", "WahaSource", "chat_id", "digits", "sender_key"]
+__all__ = ["MEDIA_STREAM", "MESSAGES_STREAM", "REACTIONS_STREAM", "WEBHOOK_EVENTS", "WahaMessageData", "WahaSource", "chat_id", "digits", "sender_key"]

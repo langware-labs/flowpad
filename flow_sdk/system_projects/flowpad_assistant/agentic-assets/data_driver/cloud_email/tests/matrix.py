@@ -54,8 +54,12 @@ class Double:
 
         return ResolvedSecrets()
 
-    def deliver(self, text: str, *, sender: str, thread: str | None = None, subject: str = "Round trip") -> dict:
+    def deliver(self, text: str, *, sender: str, thread: str | None = None, subject: str = "Round trip", files=()) -> dict:
+        """An inbound message; ``files`` (``{name, media_type, bytes}``) are listed as the hub lists them —
+        references only, since the hub serves no attachment bytes."""
         self._delivered += 1
+        attachments = [{"attachment_id": f"att-{i}", "filename": f["name"], "content_type": f["media_type"],
+                        "size": len(f["bytes"]), "inline": False} for i, f in enumerate(files)]
         message_id = f"<in-{self._delivered}-{uuid.uuid4().hex[:8]}@mail.example>"
         thread_id = thread or f"t-{uuid.uuid4().hex[:8]}"
         self.mailbox.messages.append({
@@ -63,6 +67,7 @@ class Double:
             "sender": {"address": sender, "name": sender.split("@")[0].title()},
             "to": [{"address": self.config["address"], "name": None}],
             "subject": subject, "preview": text[:40], "text": text, "timestamp": _now(), "in_reply_to": None,
+            **({"attachments": attachments} if attachments else {}),
         })
         return {"external_id": message_id, "thread": thread_id}
 

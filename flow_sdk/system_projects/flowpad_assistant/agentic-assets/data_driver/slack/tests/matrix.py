@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from contextlib import contextmanager
+from pathlib import Path
 
 from pydantic import SecretStr
 
@@ -50,14 +51,37 @@ class Double:
         """The in-process stand-in for ``DataDriver.credentials_for``: the connector token."""
         return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(self.secrets["token"]))
 
-    def deliver(self, text: str, *, sender: str, thread: str | None = None) -> dict:
+    def deliver(self, text: str, *, sender: str, thread: str | None = None, files=(), reactions: dict | None = None) -> dict:
         """A message ``sender`` writes into the channel now (its ts is the wall clock, later than any
-        ts handed out so far): the next ``conversations.history`` returns it."""
-        message = self.slack.arrive(self.channel, text, user=sender, thread_ts=thread)
-        return {"external_id": message["ts"], "thread": message.get("thread_ts") or message["ts"]}
+        ts handed out so far): the next ``conversations.history`` returns it. ``files`` are paths or
+        ``(name, bytes)`` pairs it carries; ``reactions`` is ``{slack name: [user, ...]}`` already on it."""
+        pairs = tuple((Path(f).name, Path(f).read_bytes()) if isinstance(f, (str, Path)) else tuple(f) for f in files)
+        message = self.slack.arrive(self.channel, text, user=sender, thread_ts=thread, files=pairs, reactions=reactions)
+        return {
+            "external_id": message["ts"],
+            "thread": message.get("thread_ts") or message["ts"],
+            "files": [f["id"] for f in message.get("files") or ()],
+        }
+
+    def react(self, external_id: str, name: str, *, sender: str) -> None:
+        """``sender`` puts reaction ``name`` (Slack's name, ``thumbsup``) on a message. Polling reports it
+        only while that message is still unread — deliver, react, then traverse."""
+        message = self.slack.message(self.channel, external_id)
+        reactions = message.setdefault("reactions", [])
+        entry = next((r for r in reactions if r["name"] == name), None)
+        if entry is None:
+            reactions.append(entry := {"name": name, "users": [], "count": 0})
+        if sender not in entry["users"]:
+            entry["users"].append(sender)
+        entry["count"] = len(entry["users"])
+
+    def reactions(self, external_id: str) -> dict[str, list[str]]:
+        """``{slack name: [user, ...]}`` on a message now — ours are the bot's (``_FakeSlack.me``)."""
+        return {r["name"]: list(r["users"]) for r in self.slack.message(self.channel, external_id).get("reactions") or ()}
 
     def sent(self) -> list[dict]:
-        """Every ``chat.postMessage`` the double accepted, oldest first."""
+        """Every ``chat.postMessage`` and completed upload the double accepted, oldest first; an
+        upload's entry carries ``files``: its ``(name, bytes)`` pairs."""
         return list(self.slack.posts)
 
 

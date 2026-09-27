@@ -17,6 +17,14 @@
     "permission.slack.chat.write": {
       "mechanism": "oauth",
       "why": "Post replies as the app."
+    },
+    "permission.slack.files": {
+      "mechanism": "oauth",
+      "why": "Read the files people share in the channel, and send files (`files:read`, `files:write`)."
+    },
+    "permission.slack.reactions": {
+      "mechanism": "oauth",
+      "why": "See the emoji people react with, and react as the app (`reactions:read`, `reactions:write`)."
     }
   },
   "config": {

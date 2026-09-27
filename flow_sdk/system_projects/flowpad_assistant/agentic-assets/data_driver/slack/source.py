@@ -14,14 +14,31 @@ call goes through one translation into the contract's errors.
 
 Origins: a channel is ``(slack, <account>/<channel>, <channel>)``; a message and a thread root
 are ``(slack, <account>/<channel>, <ts>)``. A message's ``conversation`` is its thread root — a
-top-level message is its own — and ``in_reply_to`` is never guessed from the thread.
+top-level message is its own — and ``in_reply_to`` is never guessed from the thread. A file on a
+message is ``(slack, <account>/<channel>, <file id>)``; a reaction report is keyed
+``<ts>#reaction:<user>``.
+
+**Files** go up in Slack's three steps (``files.getUploadURLExternal`` → the bytes to the URL it
+hands out → ``files.completeUploadExternal``), all of a send's files and its text (as
+``initial_comment``) in ONE message. Slack answers that last step with no message ``ts``, so the
+send reports ``file:<first file id>`` and records nothing: the provider's echo, read on the next
+pass, is the record. An upload carries no persona (``username``/``icon_emoji`` are
+``chat.postMessage``'s alone). Inbound files are read through ``files.info`` → ``url_private_download``
+with the bot token.
+
+**Reactions** are read off ``conversations.history``: each message's ``reactions`` is reported as one
+SET per person — everything they hold on it. Polling only sees a message while it is in the page a
+pass reads, so a reaction added later, and a reaction taken back, are not seen: that is Slack's
+``reaction_added``/``reaction_removed`` over the Events API (ADD/REMOVE), a separate piece of work.
 """
 from __future__ import annotations
 
 import json
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime, timezone
-from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, Union
+from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Union
 
+import httpx
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
@@ -30,11 +47,24 @@ from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.families import MessageSource
+from flow_sdk.sources.files import LOCAL_KIND, FileSupport, kind_of, read_file
 from flow_sdk.sources.protocols import Verdict
-from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
+from flow_sdk.sources.values.items import (
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    ReactionData,
+    ReactionItem,
+    ReactionMode,
+    UserProfile,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
+
+from .emojis import name_of, unicode_of
 
 #: Slack's own base — the default when a row's ``base_url`` is empty.
 SLACK_API_BASE = "https://slack.com/api"
@@ -51,15 +81,25 @@ NOT_A_MESSAGE = frozenset(
     {"channel_join", "channel_leave", "channel_topic", "channel_purpose", "channel_name", "channel_archive", "channel_unarchive"}
 )
 
+#: A reaction we asked for that is already there, or a take-back of one that is not: done either way.
+ALREADY = frozenset({"already_reacted", "no_reaction"})
+#: A file Slack lists but will not serve.
+UNSERVED = {"tombstone": "deleted on Slack", "hidden_by_limit": "hidden by the workspace's plan limit"}
+#: Bytes one read of a file yields at most.
+CHUNK = 65536
+
 _RESUME = "resume:"
 _PAGE = "page:"
 
 
 class SlackMessageData(MessageData):
     spec_kind: ClassVar[str] = "ingest.message.slack"
-    volatile: ClassVar[frozenset[str]] = frozenset({"raw"})
+    volatile: ClassVar[frozenset[str]] = frozenset({"raw", "recorded"})
 
     raw: Optional[dict] = None
+    #: A sent message whose record is the provider's echo, not a copy made at send (an upload: Slack
+    #: names no message ``ts`` for it, so a copy would be a second row once the echo lands).
+    recorded: bool = False
 
 
 class SlackConfig(SourceConfig):
@@ -84,6 +124,12 @@ class SlackSource(MessageSource):
     #: A Slack source is ABOUT its channel: a caller reuses the row that names it.
     identity_config_key = "channel"
     connection = "slack"
+    #: Every kind goes up as a plain file; up to ten, and the text, in one message. No per-file caption.
+    files = FileSupport(kinds=frozenset({FileKind.IMAGE, FileKind.VIDEO, FileKind.AUDIO, FileKind.DOCUMENT}), per_message=10)
+    #: A reply threads; it never quotes the message it answers.
+    quotes = False
+    #: A person keeps any number of reactions on a message.
+    reactions_per_actor = 0
 
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
@@ -123,12 +169,11 @@ class SlackSource(MessageSource):
     def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
         """The application's send arguments as a Slack message: ``to`` is the channel (a Slack thread
         key is a bare ``ts`` and names none), and the thread it lands in is ``thread_key``. A subject
-        has no Slack equivalent."""
+        has no Slack equivalent. Text may be empty here — a files-only send; ``send`` refuses a
+        message with neither."""
         channel = str(to or "").strip()
         if not channel:
             raise ValueError("a slack send needs the channel id in `to`")
-        if not (text or "").strip():
-            raise ValueError("a slack send needs text")
         thread = str(thread_key or "").strip() or str(in_reply_to or "").strip()
         return MessageData(text=text, conversation=self.origin(thread, channel) if thread else self.channel_origin(channel)), None
 
@@ -169,8 +214,13 @@ class SlackSource(MessageSource):
         seen = [str(m["ts"]) for m in messages] + [ts for ts in (newest, oldest) if ts]
         newest = max(seen, key=_ts_key) if seen else None
         more = str((body.get("response_metadata") or {}).get("next_cursor") or "")
+        items: list = []
+        for m in messages:
+            if m.get("subtype") not in NOT_A_MESSAGE:
+                items.append(self._item(channel, m))
+                items.extend(self._reactions(channel, m))
         return ChangePage(
-            items=tuple(self._item(channel, m) for m in messages if m.get("subtype") not in NOT_A_MESSAGE),
+            items=tuple(items),
             next_cursor=_PAGE + json.dumps({"cursor": more, "oldest": oldest, "newest": newest}) if more else None,
             resume_cursor=_RESUME + newest if newest else None,
         )
@@ -194,9 +244,106 @@ class SlackSource(MessageSource):
             conversation=self.origin(str(message.get("thread_ts") or "") or ts, channel),
             sender=UserProfile(origin=self.origin(author, channel), name=str(message.get("username") or "") or None) if author else None,
             sent_at=_when(ts),
+            attachments=tuple(self._file(channel, f) for f in message.get("files") or () if f.get("id")),
             raw=message,
         )
         return MessageItem(origin=self._message_origin(ts, channel), data=data)
+
+    def _file(self, channel: str, f: dict) -> FileItem:
+        media_type = str(f.get("mimetype") or "") or None
+        size = f.get("size")
+        data = MessageFileData(
+            name=str(f.get("name") or f.get("title") or "") or None,
+            media_type=media_type,
+            size=size if isinstance(size, int) and size >= 0 else None,
+            as_=kind_of(media_type or ""),
+            fetch_error=UNSERVED.get(str(f.get("mode") or "")),
+        )
+        origin = self.origin(str(f["id"]), channel)
+        if f.get("permalink"):
+            origin = origin.model_copy(update={"url": str(f["permalink"])})
+        return FileItem(origin=origin, data=data)
+
+    def _reactions(self, channel: str, message: dict) -> list[ReactionItem]:
+        """One SET per person: every emoji they hold on ``message``, in Slack's order."""
+        ts = str(message["ts"])
+        held: dict[str, list[str]] = {}
+        for reaction in message.get("reactions") or ():
+            glyph = unicode_of(str(reaction.get("name") or ""))
+            for user in reaction.get("users") or ():
+                held.setdefault(str(user), []).append(glyph)
+        target = self.origin(ts, channel)
+        return [
+            ReactionItem(
+                origin=self.origin(f"{ts}#reaction:{user}", channel),
+                data=ReactionData(target=target, sender=UserProfile(origin=self.origin(user, channel)), emojis=tuple(emojis), mode=ReactionMode.SET),
+            )
+            for user, emojis in held.items()
+        ]
+
+    # ── files ───────────────────────────────────────────────────────────────
+    def open(self, file: FileItem, *, chunk_size: int = CHUNK) -> AbstractAsyncContextManager[AsyncIterator[bytes]]:
+        """The bytes of a file a message carried: ``files.info`` names the download URL, which takes
+        the same bot token."""
+        if not isinstance(file, FileItem):
+            raise TypeError(f"expected FileItem, got {type(file).__name__}")
+        return self._reader(file.origin, positive_int(chunk_size, "chunk_size", 16 * CHUNK))
+
+    @asynccontextmanager
+    async def _reader(self, origin: CloudOrigin, chunk_size: int) -> AsyncGenerator[AsyncIterator[bytes], None]:
+        self._require_open()
+        _, file_id = self._where(origin)
+        if file_id is None:
+            raise NotFound(f"{origin!r} names no file", origin=origin)
+        info = (await self._call("files.info", file=file_id)).get("file") or {}
+        url = str(info.get("url_private_download") or info.get("url_private") or "")
+        if not url:
+            raise NotFound(f"Slack offers no download for file {file_id}", origin=origin)
+        try:
+            async with self._client.stream("GET", url, headers=self._auth()) as response:
+                if response.status_code >= 400:
+                    raise http.error_for_status(response.status_code, origin=origin)
+                yield response.aiter_bytes(chunk_size)
+        except httpx.HTTPError as exc:
+            raise SourceUnavailable(f"GET {url}: {exc}", origin=origin) from exc
+
+    # ── reactions ───────────────────────────────────────────────────────────
+    async def react(self, target: CloudOrigin, emoji: str) -> None:
+        self._require_open()
+        channel, ts = self._message(target)
+        name = name_of(emoji)
+        if name is None:
+            raise Rejected(f"{emoji!r} is not an emoji this Slack source knows a name for")
+        await self._reaction("reactions.add", channel, ts, name)
+
+    async def unreact(self, target: CloudOrigin, emoji: str = "") -> None:
+        """Take back ``emoji``, or with ``""`` every reaction the bot holds on ``target`` — read off
+        ``reactions.get``, since only Slack knows which of the message's reactions are ours."""
+        self._require_open()
+        channel, ts = self._message(target)
+        if emoji:
+            name = name_of(emoji)
+            if name is None:
+                raise Rejected(f"{emoji!r} is not an emoji this Slack source knows a name for")
+            names = [name]
+        else:
+            me = str((await self._call("auth.test")).get("user_id") or "")
+            message = (await self._call("reactions.get", channel=channel, timestamp=ts, full="true")).get("message") or {}
+            names = [str(r.get("name")) for r in message.get("reactions") or () if me and me in (r.get("users") or ())]
+        for name in names:
+            await self._reaction("reactions.remove", channel, ts, name)
+
+    def _message(self, target: CloudOrigin) -> tuple[str, str]:
+        channel, ts = self._where(target)
+        if ts is None:
+            raise NotFound(f"{target!r} names no message", origin=target)
+        return channel, ts
+
+    async def _reaction(self, method: str, channel: str, ts: str, name: str) -> None:
+        body = await self._api(method, {"channel": channel, "timestamp": ts, "name": name}, verb="POST")
+        error = str(body.get("error") or "")
+        if not body.get("ok") and error not in ALREADY:
+            raise _refusal(error or "unknown_error", channel)
 
     def _message_origin(self, ts: str, channel: str) -> CloudOrigin:
         # A formula, not a `chat.getPermalink` call: one request per message against a
@@ -259,12 +406,12 @@ class SlackSource(MessageSource):
             raise ValueError("address exactly one of a conversation or recipients")
         if data.conversation is not None:
             channel, thread = self._where(data.conversation)
-            return await self._post(channel, thread, data, data.conversation)
+            return await self._deliver(channel, thread, data, data.conversation)
         if len(data.recipients) != 1:
             raise Unsupported("a Slack direct message has exactly one recipient")
         opened = await self._call("conversations.open", verb="POST", users=data.recipients[0].origin.key)
         channel = str((opened.get("channel") or {}).get("id") or "")
-        return await self._post(channel, None, data, self.channel_origin(channel))
+        return await self._deliver(channel, None, data, self.channel_origin(channel))
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
         self._require_open()
@@ -279,8 +426,35 @@ class SlackSource(MessageSource):
         if answered is None:
             raise NotFound(f"no message {ts} in {channel}", origin=origin)
         root = str(answered.get("thread_ts") or ts)
-        sent = await self._post(channel, root, data, self.origin(root, channel))
+        sent = await self._deliver(channel, root, data, self.origin(root, channel))
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
+
+    async def _deliver(self, channel: str, thread: Optional[str], data: MessageData, conversation: CloudOrigin) -> MessageItem:
+        if data.attachments:
+            return await self._upload(channel, thread, data, conversation)
+        return await self._post(channel, thread, data, conversation)
+
+    async def _upload(self, channel: str, thread: Optional[str], data: MessageData, conversation: CloudOrigin) -> MessageItem:
+        """Every file of ``data`` and its text in one message, in Slack's three steps."""
+        uploaded = []
+        for f in data.attachments:
+            content = read_file(f)
+            name = f.data.name or "file"
+            slot = await self._call("files.getUploadURLExternal", filename=name, length=len(content))
+            url, file_id = str(slot.get("upload_url") or ""), str(slot.get("file_id") or "")
+            if not url or not file_id:
+                raise SourceUnavailable("Slack handed out no upload URL")
+            # A pre-signed URL: it takes the bytes and no token.
+            await http.request(self._client, "POST", url, content=content, headers={"Content-Type": "application/octet-stream"})
+            uploaded.append({"id": file_id, "title": name})
+        payload: dict[str, Any] = {"files": uploaded, "channel_id": channel}
+        if thread:
+            payload["thread_ts"] = thread
+        if (data.text or "").strip():
+            payload["initial_comment"] = data.text
+        await self._call("files.completeUploadExternal", verb="POST", **payload)
+        sent = SlackMessageData(text=data.text, conversation=conversation, attachments=data.attachments, sent_at=datetime.now(timezone.utc), recorded=True)
+        return MessageItem(origin=self.origin(f"file:{uploaded[0]['id']}", channel), data=sent)
 
     async def _post(self, channel: str, thread: Optional[str], data: MessageData, conversation: CloudOrigin) -> MessageItem:
         payload: dict[str, Any] = {"channel": channel, "text": data.text}
@@ -314,14 +488,17 @@ class SlackSource(MessageSource):
 
     async def _api(self, method: str, payload: dict, *, verb: str = "GET") -> dict:
         """One Web API call, answered as Slack answered it — ``ok`` and all."""
-        if self.credentials.token is None:
-            raise AccessDenied("No Slack credential on this machine. Connect Slack, then verify the source.")
-        headers = {"Authorization": f"Bearer {self.credentials.token.get_secret_value()}"}
+        headers = self._auth()
         shape = {"json": payload} if verb == "POST" else {"params": payload}
         if self._client is not None:
             return await http.request_json(self._client, verb, f"{self.base_url}/{method}", headers=headers, **shape)
         async with http.client() as client:
             return await http.request_json(client, verb, f"{self.base_url}/{method}", headers=headers, **shape)
+
+    def _auth(self) -> dict:
+        if self.credentials.token is None:
+            raise AccessDenied("No Slack credential on this machine. Connect Slack, then verify the source.")
+        return {"Authorization": f"Bearer {self.credentials.token.get_secret_value()}"}
 
     async def _call(self, method: str, *, verb: str = "GET", **payload: Any) -> dict:
         body = await self._api(method, payload, verb=verb)
@@ -345,10 +522,15 @@ def _refusal(error: str, channel: str) -> Exception:
 def _check_outgoing(data: object) -> None:
     if not isinstance(data, MessageData):
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
-    if not (data.text or "").strip():
-        raise ValueError("a Slack message needs text")
-    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None or data.attachments:
-        raise ValueError("sender, in_reply_to, sent_at and attachments are assigned by the provider")
+    if not (data.text or "").strip() and not data.attachments:
+        raise ValueError("a Slack message needs text or a file")
+    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
+        raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
+    for f in data.attachments:
+        if f.origin.kind != LOCAL_KIND or not isinstance(f.data, MessageFileData) or not f.data.path:
+            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
+        if f.data.as_ not in SlackSource.files.kinds:
+            raise ValueError(f"Slack does not send a {f.data.as_.value}")
 
 
 def _start(query: Optional[MessageQuery], cursor: Optional[str]) -> tuple[Optional[str], Optional[str]]:

@@ -16,12 +16,27 @@ Three more facts:
 * **The 24-hour window.** A free-form message is allowed only within 24h of the person's last
   one; outside it Meta accepts nothing but an approved template. An answer is inside the window
   by construction, so this sends plain text and lets Meta's own refusal surface when it is not.
+
+Files and reactions:
+
+* **A file is a media handle.** Inbound media arrives as an id, never bytes; the file's origin is
+  ``(whatsapp, <account>/media, <media id>)`` — a stream of its own, so a media id can never be
+  read as a message id — and ``open`` trades the id for a short-lived download link and reads it.
+  Outbound, the bytes are uploaded to ``/media`` first and the message names the returned id; one
+  file per message, the caption on the file.
+* **A reaction is state, not a message.** It names the reacted message by its wamid in the same
+  person's scope as the message itself, so it lands on the row that message was ingested under
+  (ours included — a reaction to our reply names our wamid). One emoji per person: a new one
+  replaces the old, and a removal carries no emoji at all.
 """
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Annotated, Any, ClassVar, Mapping, Optional
+from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Union
 
+import httpx
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
@@ -38,9 +53,20 @@ from flow_sdk.sources.errors import (
     Unsupported,
 )
 from flow_sdk.sources.families import MessageSource
+from flow_sdk.sources.files import LOCAL_KIND, FileSupport, read_file
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
-from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
+from flow_sdk.sources.values.items import (
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    ReactionData,
+    ReactionItem,
+    ReactionMode,
+    UserProfile,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 
 #: Graph's base — the default when the config's ``base_url`` is empty; a test points it at a loopback double.
@@ -52,6 +78,28 @@ GRAPH_VERSION = "v23.0"
 MESSAGES_STREAM = "messages"
 #: Message types that are sentences someone wrote; a reaction or a system notice is not.
 TEXTUAL = frozenset({"text", "button", "interactive"})
+#: Where a media handle lives: beside the messages, never among them.
+MEDIA_STREAM = "media"
+#: Where a reaction report is keyed (by the wamid of the reaction itself).
+REACTIONS_STREAM = "reactions"
+#: Meta's message ``type`` for a file, by what the recipient's app shows. A voice note is an ``audio``
+#: whose bytes are OGG/Opus — Meta tells them apart by the codec, and reports ``voice: true`` inbound.
+WIRE_TYPE: dict[FileKind, str] = {
+    FileKind.IMAGE: "image",
+    FileKind.VIDEO: "video",
+    FileKind.AUDIO: "audio",
+    FileKind.VOICE: "audio",
+    FileKind.DOCUMENT: "document",
+    FileKind.STICKER: "sticker",
+}
+#: The inbound message types that carry a file, and the kind each is shown as.
+MEDIA_TYPES: dict[str, FileKind] = {
+    "image": FileKind.IMAGE,
+    "video": FileKind.VIDEO,
+    "audio": FileKind.AUDIO,
+    "document": FileKind.DOCUMENT,
+    "sticker": FileKind.STICKER,
+}
 
 
 class WhatsAppMessageData(MessageData):
@@ -76,6 +124,23 @@ class WhatsAppSource(MessageSource):
     Config = WhatsAppConfig
     provider = "whatsapp"
     identity_config_key = "phone_number_id"
+    #: Meta's documented media limits (Cloud API "Supported media types").
+    files = FileSupport(
+        kinds=frozenset(FileKind),
+        per_message=1,
+        max_bytes={
+            FileKind.IMAGE: 5_000_000,
+            FileKind.VIDEO: 16_000_000,
+            FileKind.AUDIO: 16_000_000,
+            FileKind.VOICE: 16_000_000,
+            FileKind.DOCUMENT: 100_000_000,
+            FileKind.STICKER: 500_000,
+        },
+        caption_max=1024,
+        caption_kinds=frozenset({FileKind.IMAGE, FileKind.VIDEO, FileKind.DOCUMENT}),
+    )
+    quotes = True
+    reactions_per_actor = 1
 
     def __init__(self, binding: SourceBinding) -> None:
         super().__init__(binding)
@@ -98,6 +163,10 @@ class WhatsAppSource(MessageSource):
 
     def message_origin(self, message_id: str, wa_id: str) -> CloudOrigin:
         return self.origin(message_id, MESSAGES_STREAM, wa_id)
+
+    def media_origin(self, media_id: str) -> CloudOrigin:
+        """A media handle: Meta's media id, account-wide (a download needs nothing but the id)."""
+        return self.origin(media_id, MEDIA_STREAM)
 
     # ── what the application asks ───────────────────────────────────────────
     @classmethod
@@ -189,21 +258,83 @@ class WhatsAppSource(MessageSource):
                         events.append(DataSourceEvent(id=item.origin.key, kind=EventKind.UPSERT, origin=item.origin, item=item))
         return events
 
-    def _item(self, message: dict, names: dict[str, str]) -> Optional[MessageItem]:
+    def _item(self, message: dict, names: dict[str, str]) -> Union[MessageItem, ReactionItem, None]:
         message_id, wa_id, kind = str(message.get("id") or "").strip(), digits(message.get("from")), str(message.get("type") or "")
+        if not (message_id and wa_id):
+            return None
+        sender = UserProfile(origin=self.conversation_origin(wa_id), name=names.get(wa_id) or None)
+        if kind == "reaction":
+            return self._reaction(message, message_id, wa_id, sender)
         text = _text_of(message, kind) if kind in TEXTUAL else ""
-        if not (message_id and wa_id and text):
+        files = tuple(f for f in (self._file(message, kind),) if f is not None)
+        if not (text or files):
             return None
         quoted = str((message.get("context") or {}).get("id") or "")
         data = WhatsAppMessageData(
-            text=text,
+            text=text or None,
             conversation=self.conversation_origin(wa_id),
-            sender=UserProfile(origin=self.conversation_origin(wa_id), name=names.get(wa_id) or None),
+            sender=sender,
             sent_at=_when(message.get("timestamp")),
+            attachments=files,
             in_reply_to=self.message_origin(quoted, wa_id) if quoted else None,
             raw=message,
         )
         return MessageItem(origin=self.message_origin(message_id, wa_id), data=data)
+
+    def _file(self, message: dict, kind: str) -> Optional[FileItem]:
+        """The file a media message carries, as its handle; the words on it are its caption."""
+        media = message.get(kind) if kind in MEDIA_TYPES else None
+        if not isinstance(media, dict) or not str(media.get("id") or "").strip():
+            return None
+        as_ = FileKind.VOICE if kind == "audio" and media.get("voice") else MEDIA_TYPES[kind]
+        data = MessageFileData(
+            name=str(media.get("filename") or "").strip() or None,
+            media_type=str(media.get("mime_type") or "").strip() or None,
+            as_=as_,
+            caption=str(media.get("caption") or "").strip() or None,
+            sha256=str(media.get("sha256") or "").strip() or None,
+        )
+        return FileItem(origin=self.media_origin(str(media["id"]).strip()), data=data)
+
+    def _reaction(self, message: dict, message_id: str, wa_id: str, sender: UserProfile) -> Optional[ReactionItem]:
+        """The person's one emoji on a message, now; a removal omits ``emoji`` and says ``()``."""
+        reaction = message.get("reaction") if isinstance(message.get("reaction"), dict) else {}
+        target = str(reaction.get("message_id") or "").strip()
+        if not target:
+            return None
+        emoji = str(reaction.get("emoji") or "")
+        data = ReactionData(
+            target=self.message_origin(target, wa_id),
+            sender=sender,
+            emojis=(emoji,) if emoji else (),
+            mode=ReactionMode.SET,
+            sent_at=_when(message.get("timestamp")),
+        )
+        return ReactionItem(origin=self.origin(message_id, REACTIONS_STREAM, wa_id), data=data)
+
+    # ── the bytes of an inbound file ────────────────────────────────────────
+    def open(self, file: FileItem, *, chunk_size: int = 65536):
+        """A media id is traded for a download link (valid minutes), and the link is read with the same
+        token. An expired id is Meta's 404 — ``NotFound``."""
+        self._require_open()
+        return self._download(file, chunk_size)
+
+    @asynccontextmanager
+    async def _download(self, file: FileItem, chunk_size: int) -> AsyncGenerator[AsyncIterator[bytes], None]:
+        origin = file.origin
+        if origin != self.media_origin(origin.key):
+            raise ValueError(f"{origin!r} is not a WhatsApp media handle of this source")
+        link = str((await self._graph("GET", origin.key)).get("url") or "")
+        if not link:
+            raise NotFound("Meta has no download link for this media", origin=origin)
+        headers = {"Authorization": f"Bearer {self._token()}"}
+        try:
+            async with self._client.stream("GET", link, headers=headers) as response:
+                if response.status_code >= 400:
+                    raise http.error_for_status(response.status_code, "Meta: media download", origin=origin)
+                yield response.aiter_bytes(chunk_size)
+        except httpx.HTTPError as exc:
+            raise SourceUnavailable(f"GET media {origin.key}: {exc}", origin=origin) from exc
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:
@@ -239,7 +370,7 @@ class WhatsAppSource(MessageSource):
     # ── send ────────────────────────────────────────────────────────────────
     async def send(self, data: MessageData) -> MessageItem:
         self._require_open()
-        _check_outgoing(data)
+        _check_outgoing(data, self.files)
         if (data.conversation is None) == (not data.recipients):
             raise ValueError("address exactly one of a conversation or recipients")
         if data.conversation is not None:
@@ -251,13 +382,93 @@ class WhatsAppSource(MessageSource):
             conversation = self.conversation_origin(wa_id)
         if not wa_id:
             raise NotFound("no WhatsApp number to send to")
-        return await self._send(wa_id, data.text or "", conversation, quoted="")
+        return await self._send(wa_id, data, conversation, quoted="")
 
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
         self._require_open()
-        _check_outgoing(data)
+        _check_outgoing(data, self.files)
         if data.conversation is not None or data.recipients:
             raise ValueError("a reply is routed from the message it answers; leave conversation and recipients empty")
+        wa_id = self._person_of_message(origin)
+        sent = await self._send(wa_id, data, self.conversation_origin(wa_id), quoted=origin.key)
+        return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
+
+    async def _send(self, wa_id: str, data: MessageData, conversation: CloudOrigin, *, quoted: str) -> MessageItem:
+        if not self.phone_number_id:
+            raise Rejected("this source has no phone_number_id; verify it first")
+        payload: dict[str, Any] = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": wa_id}
+        if data.attachments:
+            payload.update(await self._media_message(data.attachments[0], data.text))
+        else:
+            payload.update({"type": "text", "text": {"body": data.text or ""}})
+        if quoted:
+            payload["context"] = {"message_id": quoted}
+        body = await self._graph("POST", f"{self.phone_number_id}/messages", json=payload)
+        sent_id = str(((body.get("messages") or [{}])[0]).get("id") or "")
+        if not sent_id:
+            raise OutcomeUnknown("Meta accepted the message but returned no id for it")
+        data = WhatsAppMessageData(
+            text=data.text,
+            attachments=data.attachments,
+            conversation=conversation,
+            sender=UserProfile(origin=CloudOrigin(kind="whatsapp", namespace="business", key=self.phone_number_id)),
+            sent_at=datetime.now(timezone.utc),
+            raw=body,
+        )
+        return MessageItem(origin=self.message_origin(sent_id, wa_id), data=data)
+
+    async def _media_message(self, file: FileItem, text: Optional[str]) -> dict:
+        """Upload the bytes, then the message names the media id Meta answered with."""
+        fd = file.data
+        media_type = fd.media_type or "application/octet-stream"
+        content = await asyncio.to_thread(read_file, file)
+        uploaded = await self._graph(
+            "POST",
+            f"{self.phone_number_id}/media",
+            data={"messaging_product": "whatsapp", "type": media_type},
+            files={"file": (fd.name or "file", content, media_type)},
+        )
+        media_id = str(uploaded.get("id") or "")
+        if not media_id:
+            raise OutcomeUnknown("Meta accepted the upload but returned no media id")
+        wire = WIRE_TYPE[fd.as_]
+        media: dict[str, Any] = {"id": media_id}
+        caption = fd.caption or (text or "").strip()
+        if caption:
+            media["caption"] = caption
+        if fd.as_ is FileKind.DOCUMENT and fd.name:
+            media["filename"] = fd.name
+        return {"type": wire, wire: media}
+
+    # ── reactions ───────────────────────────────────────────────────────────
+    async def react(self, target: CloudOrigin, emoji: str) -> None:
+        """Our one emoji on ``target``; a second replaces the first (Meta keeps one per person)."""
+        self._require_open()
+        if not emoji:
+            raise ValueError("react needs an emoji; unreact takes ours back")
+        await self._react(target, emoji)
+
+    async def unreact(self, target: CloudOrigin, emoji: str = "") -> None:
+        """Take ours back. We hold at most one, so whichever ``emoji`` is named, the one goes."""
+        self._require_open()
+        await self._react(target, "")
+
+    async def _react(self, target: CloudOrigin, emoji: str) -> None:
+        if not self.phone_number_id:
+            raise Rejected("this source has no phone_number_id; verify it first")
+        wa_id = self._person_of_message(target)
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": wa_id,
+            "type": "reaction",
+            "reaction": {"message_id": target.key, "emoji": emoji},
+        }
+        await self._graph("POST", f"{self.phone_number_id}/messages", json=payload)
+
+    # ── transport ───────────────────────────────────────────────────────────
+    def _person_of_message(self, origin: object) -> str:
+        """The wa_id a message origin hangs off — its conversation's person."""
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
         base = self.origin("-").namespace
@@ -266,29 +477,8 @@ class WhatsAppSource(MessageSource):
         wa_id = digits(origin.namespace[len(base) + 1:]) if origin.namespace != base else ""
         if not wa_id:
             raise NotFound(f"{origin!r} names no message", origin=origin)
-        sent = await self._send(wa_id, data.text or "", self.conversation_origin(wa_id), quoted=origin.key)
-        return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": origin}))
+        return wa_id
 
-    async def _send(self, wa_id: str, text: str, conversation: CloudOrigin, *, quoted: str) -> MessageItem:
-        if not self.phone_number_id:
-            raise Rejected("this source has no phone_number_id; verify it first")
-        payload: dict[str, Any] = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": wa_id, "type": "text", "text": {"body": text}}
-        if quoted:
-            payload["context"] = {"message_id": quoted}
-        body = await self._graph("POST", f"{self.phone_number_id}/messages", json=payload)
-        sent_id = str(((body.get("messages") or [{}])[0]).get("id") or "")
-        if not sent_id:
-            raise OutcomeUnknown("Meta accepted the message but returned no id for it")
-        data = WhatsAppMessageData(
-            text=text,
-            conversation=conversation,
-            sender=UserProfile(origin=CloudOrigin(kind="whatsapp", namespace="business", key=self.phone_number_id)),
-            sent_at=datetime.now(timezone.utc),
-            raw=body,
-        )
-        return MessageItem(origin=self.message_origin(sent_id, wa_id), data=data)
-
-    # ── transport ───────────────────────────────────────────────────────────
     def _person_of(self, origin: object) -> str:
         if not isinstance(origin, CloudOrigin):
             raise TypeError(f"expected CloudOrigin, got {type(origin).__name__}")
@@ -332,13 +522,34 @@ def digits(value: Any) -> str:
     return "".join(ch for ch in str(value or "") if ch.isdigit())
 
 
-def _check_outgoing(data: object) -> None:
+def _check_outgoing(data: object, support: FileSupport) -> None:
+    """Text or one local file of a kind WhatsApp shows; the provider's fields left empty. Before any I/O."""
     if not isinstance(data, MessageData):
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
-    if not (data.text or "").strip():
-        raise ValueError("a WhatsApp message needs text")
-    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None or data.attachments:
-        raise ValueError("sender, in_reply_to, sent_at and attachments are assigned by the provider")
+    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
+        raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
+    if not data.attachments:
+        if not (data.text or "").strip():
+            raise ValueError("a WhatsApp message needs text or a file")
+        return
+    if len(data.attachments) > support.per_message:
+        raise ValueError("a WhatsApp message carries one file; send the others as messages of their own")
+    for f in data.attachments:
+        fd = f.data
+        if f.origin.kind != LOCAL_KIND or not isinstance(fd, MessageFileData) or not fd.path:
+            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
+        if fd.as_ not in support.kinds:
+            raise ValueError(f"WhatsApp does not send a {fd.as_.value}")
+        if fd.as_ is FileKind.VOICE and not (fd.media_type or "").lower().startswith("audio/ogg"):
+            raise ValueError(
+                f"a WhatsApp voice note must be OGG/Opus (audio/ogg); {fd.name or 'this file'} is {fd.media_type or 'of no known type'}. "
+                "Convert it (ffmpeg -i in -c:a libopus out.ogg) or send it with as_='audio'."
+            )
+        text = (data.text or "").strip()
+        if text and fd.caption:
+            raise ValueError("a captioned file carries no text of its own; send the words as a message of their own")
+        if (fd.caption or text) and not support.captions(fd.as_):
+            raise ValueError(f"WhatsApp shows no caption on a {fd.as_.value}; send the words as a message of their own")
 
 
 def _text_of(message: dict, kind: str) -> str:
@@ -367,4 +578,14 @@ def _list(value: Any) -> list:
     return value if isinstance(value, list) else []
 
 
-__all__ = ["GRAPH_API_BASE", "GRAPH_VERSION", "MESSAGES_STREAM", "TEXTUAL", "WhatsAppMessageData", "WhatsAppSource", "digits"]
+__all__ = [
+    "GRAPH_API_BASE",
+    "GRAPH_VERSION",
+    "MEDIA_STREAM",
+    "MESSAGES_STREAM",
+    "REACTIONS_STREAM",
+    "TEXTUAL",
+    "WhatsAppMessageData",
+    "WhatsAppSource",
+    "digits",
+]
