@@ -198,3 +198,33 @@ async def test_a_stale_refresh_keeps_the_body_that_lives_only_in_the_asset(sync_
     assert await agent.check_and_refresh_record() is True
     persisted = await Agent.get_by_id(agent.id)
     assert persisted is not None and persisted.system_prompt == "KEEP THIS PROMPT"
+
+
+@pytest.mark.asyncio
+async def test_a_launch_uses_the_definition_as_it_is_on_disk_now(sync_db, tmp_records_root) -> None:
+    """The agent's folder is its definition. Editing ``agent.json`` / ``system_prompt.md``
+    by hand — or through agent-builder's improve loop — and opening a new chat launched
+    the row as it was at the last index: the old worker and the old prompt. Only a GET
+    refreshed a changed asset, so the one path that matters, a launch, never did."""
+    from flow_sdk.builtin.agent import Agent
+    from flow_sdk.schema.type_info import register_all
+
+    register_all()
+    agent = Agent(name=f"launch-fresh-{uuid.uuid4().hex[:6]}", system_prompt="OLD PROMPT", worker_type="claude")
+    await agent.save()
+    folder = Path(FSRecord.load("agent", agent.id).ensure_asset_ref().asset_ref.path)
+    folder = folder if folder.is_dir() else folder.parent
+
+    spec = json.loads((folder / "agent.json").read_text())
+    spec["worker_type"] = "copilot"
+    (folder / "agent.json").write_text(json.dumps(spec))
+    (folder / "system_prompt.md").write_text("NEW PROMPT\n")
+    _advance_directory_mtime(folder)
+    for child in folder.iterdir():
+        _advance_directory_mtime(child)
+
+    deployment = await agent.local_deployment()
+    process = await deployment.create_process()
+
+    assert "copilot" in str(process.worker_type)
+    assert "NEW PROMPT" in ((process.context_data or {}).get("instructions") or "")

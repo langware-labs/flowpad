@@ -895,6 +895,14 @@ class Deployment(Entity):
             raise AgentUnavailable(
                 f"deployment {self.id}: agent {self.parent_type_id!r} not found", ExitCode.NOT_FOUND,
             )
+        # The agent's folder IS its definition, and people edit it by hand (or
+        # through agent-builder). Launch what is on disk now, not what the row
+        # held at the last index — a stale row started the old worker and prompt.
+        if await agent.check_and_refresh_record():
+            from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
+
+            agent = await Agent.get_by_id(agent.id) or agent
+            self._element = agent
         if not agent.enabled_on(self.id):
             raise AgentUnavailable(
                 f"agent {agent.name!r} is disabled on {self.name or self.id}", ExitCode.REFUSED,

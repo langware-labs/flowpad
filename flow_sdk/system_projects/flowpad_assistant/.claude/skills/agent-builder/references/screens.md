@@ -14,7 +14,7 @@ the `flowpad-navigation` skill has the full screen table.
 | Task | Open with | Tell the user |
 | --- | --- | --- |
 | **See and edit the agent** | `flow show file <agent>/agent.json` | 1. The agent's page opens beside the chat. 2. **Definition** holds title, description and avatar. 3. **Behaviour — who this agent is, its system prompt** holds the prompt. |
-| **Chat with it** | `flow show view home` | 1. On the project home, find the agent's tile. 2. Click the tile — a new chat with the agent opens. (The pencil on the tile edits it instead.) |
+| **Chat with it** | `flow show view home` | 1. On Home ("Hey …"), under **Agents**, find the agent's tile — not the project's asset page. 2. Click the tile — a new chat with the agent opens. (The pencil on the tile edits it instead.) |
 | **Turn auto-launch on** | `flow show file <agent>/agent.json` | 1. Switch **Auto-launch on project open** on. 2. Fill **Auto-launch prompt** with the first message. |
 | **Re-test auto-launch** | `flow show file <agent>/agent.json` | 1. Next to auto-launch it says **Already launched in this project**. 2. Click **Reset**. 3. Open the project again — the agent starts. |
 | **Schedule it** | `flow show file <agent>/agent.json` | 1. Click **Add schedule**. 2. Pick when, and write the prompt it runs with. 3. **Run now** tries it once. |
