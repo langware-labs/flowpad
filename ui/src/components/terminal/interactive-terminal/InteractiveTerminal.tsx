@@ -579,7 +579,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
     enterRefetchTimerRef.current = setTimeout(() => {
       enterRefetchTimerRef.current = null;
-      refreshPromptsRef.current?.();
+      refreshPromptsRef.current?.({ force: true });
     }, 1000);
   }, []);
   useEffect(
