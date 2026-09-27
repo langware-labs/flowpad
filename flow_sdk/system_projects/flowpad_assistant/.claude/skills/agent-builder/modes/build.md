@@ -33,6 +33,11 @@ Building before they confirm is how a persona or a limit gets guessed wrong.
    or it runs on its own (a channel or a schedule).
 6. **Where it lives** — this project (default) or everywhere the user works.
 
+Before sending it, list the agents that already exist (`agentic-assets/agent/*/` in
+the project and in the user's home). When one already does this job, make the first
+question "improve `<name>`, or build a new agent beside it?" — improving goes to
+`modes/improve.md`; never rename or rewrite an existing agent on your own.
+
 ## 2. Pick the kind
 
 Match the answer to question 5 against the *Kinds* table in `SKILL.md` and load every

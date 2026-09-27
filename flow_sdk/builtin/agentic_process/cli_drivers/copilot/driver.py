@@ -445,6 +445,37 @@ class CopilotDriver:
         """
         return assets_dir / ".github" / "skills"
 
+    def link_mounted_skills(self, assets_dir: Path, add_dirs: Sequence[str]) -> None:
+        """Make a mounted folder's ``.claude/skills`` visible to copilot.
+
+        ``--add-dir`` loads only ``.github/skills``, so the skills the Flowpad
+        Assistant (and any Claude-layout context folder) ships were never
+        registered: its persona named `building-deliverables` and the worker had
+        no such skill. Link each one into the process's own mounted
+        ``.github/skills`` — per process, never into a user's folder — and drop
+        links whose source is gone. A folder that already ships ``.github/skills``
+        is copilot-native and left alone; a name already present (an embedded
+        skill) wins.
+        """
+        target = assets_dir / ".github" / "skills"
+        for link in target.glob("*") if target.is_dir() else ():
+            if link.is_symlink() and not link.exists():
+                link.unlink()
+        for directory in add_dirs:
+            mounted = Path(directory)
+            source = mounted / ".claude" / "skills"
+            if mounted == assets_dir or (mounted / ".github" / "skills").is_dir() or not source.is_dir():
+                continue
+            for skill in sorted(source.iterdir()):
+                link = target / skill.name
+                if not (skill / "SKILL.md").is_file() or link.exists() or link.is_symlink():
+                    continue
+                target.mkdir(parents=True, exist_ok=True)
+                try:
+                    link.symlink_to(skill, target_is_directory=True)
+                except OSError:
+                    logger.warning("copilot: could not link mounted skill %s", skill, exc_info=True)
+
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path = copilot_transcript_path_for_process(process.id)
         if not path.exists():

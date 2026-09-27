@@ -23,7 +23,8 @@ already owns. After every deliverable, present it with `flow show` (see the
 `.mcp.html` format and the submission protocol.
 
 **Agent** — a Flowpad agent the user chats with, puts beside a page, calls from code or
-deploys to a channel (`agentic-assets/agent/<name>/`), and "my agent keeps doing X" → the
+deploys to a channel (`agentic-assets/agent/<name>/`), including "an assistant / helper /
+bot our users or customers use", and "my agent keeps doing X" → the
 **agent-builder** skill, which owns the interview, `agent.json` + `system_prompt.md`, the
 screens and the test loop with the user.
 
