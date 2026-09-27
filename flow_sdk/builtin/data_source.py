@@ -554,7 +554,7 @@ class DataSource(Entity):
             rows = [r for r in rows if (r.channel or "").strip() == channel]
         return rows
 
-    def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
+    def reply_spec(self, item, *, body: str, files=(), quote: bool = True) -> MessageSpec:
         """The reply to ``item``, in THIS channel's shape.
 
         The one constructor a caller should reach for, because picking the class
@@ -570,7 +570,8 @@ class DataSource(Entity):
         driver = self._driver()
         if driver is None:
             raise RuntimeError(f"no driver for {self.provider}")
-        return driver.outbound_spec(self).reply_to(item, body=body, attachments=attachments)
+        spec = driver.outbound_spec(self).reply_to(item, body=body, files=files)
+        return spec if quote else spec.model_copy(update={"quote": False})
 
     async def start(self, *, to: str, body: str, subject: str = "") -> "Conversation":
         """Open a conversation with *to* on this line — send the email, place the call, write the first chat
@@ -600,11 +601,6 @@ class DataSource(Entity):
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
 
-        if spec.attachments:
-            raise NotImplementedError(
-                "attachments are not supported on this channel yet — "
-                "the driver send contract carries text only"
-            )
         if len(spec.to) != 1:
             raise ValueError(f"exactly one recipient for now, got {len(spec.to)}")
 
@@ -618,6 +614,9 @@ class DataSource(Entity):
             text=spec.body,
             subject=spec.subject if isinstance(spec, EmailMessageSpec) else "",
             in_reply_to=spec.reply_to_external_id,
+            # Checked against the channel's own limits before any provider I/O (``resolve_files``).
+            files=tuple(f.to_item() for f in spec.files),
+            quote=spec.quote,
         )
 
     async def expect_reply(self, sent: SendOutcome) -> SourceItemSpec:

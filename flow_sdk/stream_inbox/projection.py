@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
@@ -353,7 +354,7 @@ async def project_source_item(
     )
     # A born-`flowpad` conversation (a help desk ticket) takes the source's channel here;
     # a source channel is never overwritten (`Conversation.adopt_channel`).
-    changed = conversation.adopt_channel(channel, str(source.id))
+    changed = conversation.adopt_channel(channel, str(source.id), str(getattr(source, "provider", "") or ""))
     ours = item.is_ours(source)
     if stamp_conversation(conversation, item, ours=ours):
         changed = True
@@ -481,6 +482,43 @@ async def _placed_message(item):
     return await FlowMessage.get_one({"id": hinted} if hinted else {"source_item_id": str(item.id)})
 
 
+def _message_files(item, fm_id: str) -> list:
+    """The files a channel message carried, as the message row's FILE attachments — the bytes the
+    runtime staged, hard-linked into the row's own storage (``data/<name>``) so they are served the
+    way a native chat file is. A file whose bytes never came keeps its attachment with nothing on
+    disk: a surface shows it as not downloaded rather than pretending it never existed."""
+    import os  # noqa: PLC0415
+    import shutil  # noqa: PLC0415
+
+    from flow_sdk.builtin.flow_message import FILE_VFS_PREFIX, Attachment, AttachmentType  # noqa: PLC0415
+    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+    from flow_sdk.sources.values.items import MessageFileData  # noqa: PLC0415
+
+    files = [f.data for f in (getattr(getattr(item, "data", None), "attachments", None) or ()) if isinstance(f.data, MessageFileData)]
+    if not files:
+        return []
+    root = data_dir_for("flow_message", fm_id) / "embedded"
+    out, used = [], set()
+    for f in files:
+        name = (f.name or (Path(f.path).name if f.path else "") or "file").replace("/", "_")
+        stem, dot, ext = name.rpartition(".")
+        n = 1
+        while name in used:
+            n += 1
+            name = f"{stem} ({n}).{ext}" if dot else f"{ext} ({n})"
+        used.add(name)
+        rel = f"{FILE_VFS_PREFIX}{name}"
+        dest = root / rel
+        if f.path and Path(f.path).is_file() and not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.link(f.path, dest)
+            except OSError:  # another device, or a filesystem without hard links
+                shutil.copyfile(f.path, dest)
+        out.append(Attachment(attachment_type=AttachmentType.FILE, data=rel))
+    return out
+
+
 async def _place_message(
     item, source, channel, subject, key, thread, thread_id,
     conversation_id, sender, sender_name, existing_fm,
@@ -536,6 +574,14 @@ async def _place_message(
         if existing_fm.envelope != envelope:
             existing_fm.envelope = envelope
             dirty = True
+        # Files and reactions are projection-owned: a row placed before either arrived heals here.
+        files = _message_files(item, fm_id)
+        if files and [a.data for a in files] != [a.data for a in (existing_fm.attachment or []) if a.attachment_type == "file"]:
+            existing_fm.attachment = [a for a in (existing_fm.attachment or []) if a.attachment_type != "file"] + files
+            dirty = True
+        if list(existing_fm.reactions or []) != list(getattr(item, "reactions", None) or []):
+            existing_fm.reactions = list(getattr(item, "reactions", None) or [])
+            dirty = True
         if dirty:
             try:
                 await existing_fm.save(notify=False)
@@ -568,6 +614,8 @@ async def _place_message(
         "origin": origin.model_dump(),
         "origin_local": origin_local.model_dump(),
         "envelope": envelope.model_dump(mode="json") if envelope else None,
+        "attachment": [a.model_dump(mode="json") for a in _message_files(item, fm_id)],
+        "reactions": [r.model_dump(mode="json") for r in (getattr(item, "reactions", None) or [])],
     }
     if item.reply_to_external_id:
         # Two lookups, no derivation: the parent item by its natural key, then

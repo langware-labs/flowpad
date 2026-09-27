@@ -16,6 +16,8 @@ from typing import ClassVar, Optional
 
 from pydantic import AwareDatetime, Field
 
+from flow_sdk._compat import StrEnum
+
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 from flow_sdk.sources.values.origin import CloudOrigin
 
@@ -47,6 +49,34 @@ class FileData(Payload):
     media_type: Optional[str] = None
     #: Source-reported byte length; zero is empty, ``None`` is unknown.
     size: Optional[int] = Field(default=None, ge=0)
+
+
+class FileKind(StrEnum):
+    """How a file rides a message — what the recipient's app shows. A voice note is not an audio file,
+    and an image sent as a ``DOCUMENT`` arrives uncompressed."""
+
+    IMAGE = "image"
+    VIDEO = "video"
+    AUDIO = "audio"
+    VOICE = "voice"
+    DOCUMENT = "document"
+    STICKER = "sticker"
+
+
+class MessageFileData(FileData):
+    """A file that rides a message. Inbound, ``origin.key`` is the provider's media handle and ``path``
+    is the local copy the runtime staged while the session was open (``None`` until then, or when
+    ``fetch_error`` says why it never came). Outbound, the origin is ``local`` and ``path`` is the
+    readable file to send."""
+
+    spec_kind: ClassVar[str] = "ingest.file.message"
+
+    as_: FileKind = FileKind.DOCUMENT
+    caption: Optional[str] = None
+    #: Reported by the provider (WhatsApp); never computed here.
+    sha256: Optional[str] = None
+    #: Why the bytes could not be copied — the link expired, the file is over the provider's cap.
+    fetch_error: Optional[str] = None
 
 
 class UserProfile(Payload):
@@ -102,6 +132,35 @@ class MessageItem(SourceItemSpec):
     data: Tagged[MessageData]
 
 
+class ReactionMode(StrEnum):
+    """What a reaction report says. ``SET``: ``emojis`` is this person's whole set on the target now
+    (``()`` = they took it back) — WhatsApp, WAHA and Telegram report state, and a WhatsApp removal
+    carries no emoji at all, so only the holder of the previous state can tell what went. ``ADD`` /
+    ``REMOVE``: a delta (Slack's ``reaction_added``)."""
+
+    SET = "set"
+    ADD = "add"
+    REMOVE = "remove"
+
+
+class ReactionData(Payload):
+    """An emoji on a message: a change of state on ``target``, never a message of its own — it is
+    not threaded and never wakes a turn. ``emojis`` are unicode; a custom emoji with no unicode
+    form travels as ``:name:``."""
+
+    spec_kind: ClassVar[str] = "ingest.message.reaction"
+
+    target: CloudOrigin
+    sender: UserProfile
+    emojis: tuple[str, ...] = ()
+    mode: ReactionMode = ReactionMode.SET
+    sent_at: Optional[AwareDatetime] = None
+
+
+class ReactionItem(SourceItemSpec):
+    data: Tagged[ReactionData]
+
+
 class RecordData(Payload):
     """A record: a row a record source keeps, updated in place (an issue, a ticket, a table row, a
     feed entry). What every record has — a title, a text, a link; a provider narrows it with its own
@@ -135,6 +194,11 @@ __all__ = [
     "FeedItemData",
     "FileData",
     "FileItem",
+    "FileKind",
+    "MessageFileData",
+    "ReactionData",
+    "ReactionItem",
+    "ReactionMode",
     "MessageData",
     "MessageItem",
     "Payload",

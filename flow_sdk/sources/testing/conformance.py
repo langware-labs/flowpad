@@ -20,7 +20,8 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.errors import InvalidCursor, NotFound, Unsupported
 from flow_sdk.sources.families import MessageSource, ObjectSource, RecordSource
-from flow_sdk.sources.protocols import ByteStore, Drafting, Listable, Messaging, Mutable, Readable
+from flow_sdk.sources.files import FileSupport
+from flow_sdk.sources.protocols import ByteStore, Drafting, Listable, Messaging, Mutable, Openable, Reacting, Readable
 from flow_sdk.sources.values import (
     CloudOrigin,
     DataSourceEvent,
@@ -52,6 +53,9 @@ class Subject:
     create_data: Optional[DataSpec] = None
     #: A relative path ``write`` may use, for ``ByteStore`` sources.
     writable_path: str = "conformance/written.bin"
+    #: A file the source handed out after seeding and its bytes, for ``Openable`` message sources.
+    inbound_file: Optional[FileItem] = None
+    inbound_bytes: bytes = b""
 
     async def opened(self) -> Source:
         s = self.source()
@@ -454,8 +458,9 @@ async def provider_assigned_fields_must_be_empty_on_send(subject: Subject) -> No
         await _expect(ValueError, s.send(MessageData(conversation=c)))  # type: ignore[attr-defined]
         await _expect(ValueError, s.send(MessageData(text="hi", conversation=c, sender=subject.recipient)))  # type: ignore[attr-defined]
         await _expect(ValueError, s.send(MessageData(text="hi", conversation=c, in_reply_to=c)))  # type: ignore[attr-defined]
-        attachment = FileItem(origin=CloudOrigin(kind="x", namespace="y", key="z"), data=FileData())
-        await _expect(ValueError, s.send(MessageData(text="hi", conversation=c, attachments=(attachment,))))  # type: ignore[attr-defined]
+        # A file that is not a local one is never sent — the provider names a file, the caller does not.
+        foreign = FileItem(origin=CloudOrigin(kind="x", namespace="y", key="z"), data=FileData())
+        await _expect(ValueError, s.send(MessageData(text="hi", conversation=c, attachments=(foreign,))))  # type: ignore[attr-defined]
         await _expect(TypeError, s.send({"text": "hi"}))  # type: ignore[attr-defined,arg-type]
 
 
@@ -498,6 +503,43 @@ async def reply_is_routed_from_the_answered_message(subject: Subject) -> None:
         assert reply.data.in_reply_to == sent.origin and reply.data.conversation == subject.conversation
         await _expect(ValueError, s.reply(sent.origin, MessageData(text="x", conversation=subject.conversation)))  # type: ignore[attr-defined]
         await _expect(NotFound, s.reply(s.origin("conformance-missing"), MessageData(text="x")))  # type: ignore[attr-defined]
+
+
+@check(MessageSource)
+async def channel_traits_are_well_formed(subject: Subject) -> None:
+    cls = type(subject.source())
+    assert isinstance(cls.files, FileSupport), f"{cls.__name__}.files must be a FileSupport"
+    assert isinstance(cls.quotes, bool) and cls.reactions_per_actor >= 0
+    for kind, cap in cls.files.max_bytes.items():
+        assert kind in cls.files.kinds and cap > 0, f"{cls.__name__}.files.max_bytes[{kind}]"
+    if cls.files.kinds:
+        assert issubclass(cls, Messaging), "a channel that takes files must send"
+
+
+# ── Reacting / Openable ────────────────────────────────────────────────────
+
+
+@check(Reacting)
+async def unreact_all_is_idempotent(subject: Subject) -> None:
+    assert subject.conversation is not None
+    async with await _closing(subject) as s:
+        if not isinstance(s, Messaging):
+            return
+        sent = await s.send(MessageData(text="react to me", conversation=subject.conversation))
+        await s.unreact(sent.origin)  # type: ignore[attr-defined]
+        await s.unreact(sent.origin)  # type: ignore[attr-defined]
+
+
+@check(Openable)
+async def open_yields_the_bytes_of_a_handed_out_file(subject: Subject) -> None:
+    if subject.inbound_file is None:
+        return  # a file store's own checks cover it; a channel names the file it handed out
+    async with await _closing(subject) as s:
+        got = b""
+        async with s.open(subject.inbound_file) as chunks:  # type: ignore[attr-defined]
+            async for chunk in chunks:
+                got += chunk
+        assert got == subject.inbound_bytes
 
 
 # ── Drafting ───────────────────────────────────────────────────────────────

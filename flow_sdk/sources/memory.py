@@ -11,15 +11,25 @@ from __future__ import annotations
 
 import itertools
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, ClassVar, Iterable, Mapping, Optional
+from typing import Any, AsyncIterator, ClassVar, Iterable, Mapping, Optional
 
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.base import Altitude, CollectionSource
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.errors import NotFound, Unsupported
+from flow_sdk.sources.errors import NotFound, Rejected, Unsupported
 from flow_sdk.sources.families import MessageSource, RecordSource
-from flow_sdk.sources.values.items import MessageData, MessageItem, SourceItemSpec, UserProfile
+from flow_sdk.sources.files import LOCAL_KIND, FileSupport
+from flow_sdk.sources.values.items import (
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    SourceItemSpec,
+    UserProfile,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.query import DataQuery, MessageQuery
 
@@ -112,16 +122,26 @@ class MemorySource(MemoryStore):
 
 
 class MemoryMessages(MessageSource, MemoryStore):
-    """Conversations of ``MessageData`` supporting history, send, reply and draft."""
+    """Conversations of ``MessageData`` supporting history, send, reply, draft, files and reactions.
+
+    Files and reactions are held in memory: ``receive(data, blobs=)`` delivers a message whose
+    attachments ``open`` then serves; ``reacted`` is our emoji per target, one each."""
 
     schema = MessageData
     supported_queries = (MessageQuery,)
     item_type = MessageItem
+    files = FileSupport(kinds=frozenset(FileKind), per_message=1, caption_max=1024)
+    quotes = True
+    reactions_per_actor = 1
+    #: The emoji this channel can show — a stand-in for a provider's list.
+    allowed_emoji: ClassVar[frozenset[str]] = frozenset({"👍", "👀", "✅", "❤️", "🔥", "🎉", "🙏", "😂"})
 
     def __init__(self, binding: SourceBinding, schema: Optional[type[DataSpec]] = None, *, sender: Optional[UserProfile] = None) -> None:
         super().__init__(binding, schema)
         self.sender = sender
         self._conversations: set[CloudOrigin] = set()
+        self._blobs: dict[CloudOrigin, bytes] = {}
+        self.reacted: dict[CloudOrigin, str] = {}
 
     @classmethod
     def of(cls, schema=None, *, namespace: str = "chat", kind: str = "memory", sender: Optional[UserProfile] = None, **binding: Any):
@@ -143,14 +163,47 @@ class MemoryMessages(MessageSource, MemoryStore):
         assert isinstance(item, MessageItem)
         return item
 
-    async def receive(self, data: MessageData) -> MessageItem:
-        """Record an incoming message, as a provider would deliver it."""
+    async def receive(self, data: MessageData, *, blobs: Optional[Mapping[CloudOrigin, bytes]] = None) -> MessageItem:
+        """Record an incoming message, as a provider would deliver it; ``blobs`` are its files' bytes."""
         self._require_open()
+        self._blobs.update(blobs or {})
         return self._store(data)
+
+    @asynccontextmanager
+    async def _stream(self, file: FileItem, chunk_size: int) -> AsyncIterator[AsyncIterator[bytes]]:
+        blob = self._blobs.get(file.origin)
+        if blob is None:
+            raise NotFound("file does not exist", origin=file.origin)
+
+        async def chunks() -> AsyncIterator[bytes]:
+            for i in range(0, len(blob), chunk_size):
+                yield blob[i : i + chunk_size]
+
+        yield chunks()
+
+    def open(self, file: FileItem, *, chunk_size: int = 65536):
+        self._require_open()
+        return self._stream(file, chunk_size)
+
+    async def react(self, target: CloudOrigin, emoji: str) -> None:
+        self._require_open()
+        if self._scope.key(target) not in self._records:
+            raise NotFound("reaction target does not exist", origin=target)
+        if emoji and emoji not in self.allowed_emoji:
+            raise Rejected(f"{emoji} is not a reaction this channel shows")
+        if emoji:
+            self.reacted[target] = emoji
+        else:
+            self.reacted.pop(target, None)
+
+    async def unreact(self, target: CloudOrigin, emoji: str = "") -> None:
+        self._require_open()
+        if not emoji or self.reacted.get(target) == emoji:
+            self.reacted.pop(target, None)
 
     async def send(self, data: MessageData) -> MessageItem:
         self._require_open()
-        check_outgoing(data, reply=False)
+        check_outgoing(data, reply=False, support=self.files)
         if data.conversation is None:
             return self._deliver(data, conversation=self._conversation_for(data.recipients))
         if data.conversation not in self._conversations:
@@ -160,7 +213,7 @@ class MemoryMessages(MessageSource, MemoryStore):
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem:
         self._require_open()
         key = self._scope.key(origin)
-        check_outgoing(data, reply=True)
+        check_outgoing(data, reply=True, support=self.files)
         target = self._records.get(key)
         if target is None:
             raise NotFound("reply target does not exist", origin=origin)
@@ -169,7 +222,7 @@ class MemoryMessages(MessageSource, MemoryStore):
 
     async def draft(self, data: MessageData) -> MessageItem:
         self._require_open()
-        check_outgoing(data, reply=False)
+        check_outgoing(data, reply=False, support=self.files)
         return self._store(data.model_copy(update={"sender": self.sender}), key=f"draft-{next(self._keys):08d}")
 
     def _deliver(self, data: MessageData, **routing: Optional[CloudOrigin]) -> MessageItem:
@@ -181,16 +234,19 @@ class MemoryMessages(MessageSource, MemoryStore):
         return CloudOrigin(kind=self._scope.kind, namespace=f"{self._scope.namespace}/conversations", key=json.dumps(members))
 
 
-def check_outgoing(data: object, *, reply: bool) -> None:
-    """The input rules every ``send``/``reply``/``draft`` shares: text is required, attachments are
-    not sent, provider-assigned fields must be empty, and routing is exactly one of a known
-    conversation or recipients — or, for a reply, neither."""
+def check_outgoing(data: object, *, reply: bool, support: FileSupport = FileSupport()) -> None:
+    """The input rules every ``send``/``reply``/``draft`` shares: text or a file is required, a file
+    is a local one of a kind the channel takes (``support``), provider-assigned fields must be empty,
+    and routing is exactly one of a known conversation or recipients — or, for a reply, neither."""
     if not isinstance(data, MessageData):
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
-    if data.text is None:
+    if data.text is None and not data.attachments:
         raise ValueError("text is required")
-    if data.attachments:
-        raise ValueError("sending attachments is not supported")
+    for f in data.attachments:
+        if f.origin.kind != LOCAL_KIND or not isinstance(f.data, MessageFileData) or not f.data.path:
+            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
+        if f.data.as_ not in support.kinds:
+            raise ValueError(f"this channel does not send a {f.data.as_.value}")
     for name in ("sender", "sent_at", "in_reply_to"):
         if getattr(data, name) is not None:
             raise ValueError(f"{name} is assigned by the provider and must be None")

@@ -32,13 +32,13 @@ class HttpChatMessageSpec(MessageSpec):
     """A reply in a chat thread: to the caller who asked, answering their message."""
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "HttpChatMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "HttpChatMessageSpec":
         return cls(
             to=[str(getattr(m, "author_external_id", "") or "")],
             body=body,
             thread_key=str(getattr(m, "thread_key", "") or ""),
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            attachments=list(attachments),
+            files=list(files),
         )
 
 

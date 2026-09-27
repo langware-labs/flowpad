@@ -54,9 +54,9 @@ class TaskMessageSpec(MessageSpec):
     """Said into a task's thread: a reply to its owner. The task IS the thread."""
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "TaskMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "TaskMessageSpec":
         thread_key = str(getattr(m, "thread_key", "") or "")
-        return cls(to=[thread_key], body=body, thread_key=thread_key, attachments=list(attachments))
+        return cls(to=[thread_key], body=body, thread_key=thread_key, files=list(files))
 
 
 class TaskManagerConfig(SourceConfig):
