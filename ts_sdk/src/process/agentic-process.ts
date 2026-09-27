@@ -1477,18 +1477,42 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * file as a Markdown record, and returns it. Returns ``null`` if no
    * plan has been produced yet.
    */
-  async getPlan(): Promise<import('../entities/markdown.js').Markdown | null> {
-    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
-    actionInfo.subpath = 'plan';
-    const response = await dataManager.callAction<
-      unknown,
-      { markdown?: Record<string, unknown> | null; plan_path?: string | null }
-    >(actionInfo);
+  async getPlan(options: { force?: boolean } = {}): Promise<import('../entities/markdown.js').Markdown | null> {
+    const response = await this.cachedTranscriptRead('plan', options.force ?? false, () => {
+      const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+      actionInfo.subpath = 'plan';
+      return dataManager.callAction<unknown, { markdown?: Record<string, unknown> | null; plan_path?: string | null }>(
+        actionInfo,
+      );
+    });
     if (response?.plan_path !== undefined) this.plan_path = response.plan_path ?? null;
     if (!response?.markdown) return null;
     return dataManager.updateEntityFromJson<import('../entities/markdown').Markdown>(
       response.markdown as Record<string, unknown>,
     );
+  }
+
+  /**
+   * Transcript reads answered while nothing that changes their answer moved.
+   * `transcript/*` parses the whole JSONL transcript server-side; views that
+   * mount on every tab switch (the terminal body, its header) asked for the same
+   * plan and prompts on every switch. A turn boundary changes `status`, a restart
+   * changes `session_id`/`shell_id`, a detected plan changes `plan_path` — any of
+   * them re-reads. A live refresh (the prompt just submitted) passes `force`.
+   */
+  private _transcriptReads = new Map<string, { key: string; value: Promise<unknown> }>();
+
+  private cachedTranscriptRead<T>(subpath: string, force: boolean, read: () => Promise<T>): Promise<T> {
+    const key = `${this.session_id ?? ''}|${this.shell_id ?? ''}|${this.status ?? ''}|${this.plan_path ?? ''}`;
+    const hit = this._transcriptReads.get(subpath);
+    if (!force && hit && hit.key === key) return hit.value as Promise<T>;
+    const value = read();
+    this._transcriptReads.set(subpath, { key, value });
+    // A failed read is not an answer: the next caller asks again.
+    value.catch(() => {
+      if (this._transcriptReads.get(subpath)?.value === value) this._transcriptReads.delete(subpath);
+    });
+    return value;
   }
 
   /**
@@ -1500,11 +1524,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
    * ``[Request interrupted by user for tool use]`` synthetic. Hydrates
    * each entry via the analyzer's ``fromJson`` factory.
    */
-  async getPrompts(): Promise<import('../utils/agent-transcript').UserMessageEntry[]> {
+  async getPrompts(options: { force?: boolean } = {}): Promise<import('../utils/agent-transcript').UserMessageEntry[]> {
     const { isUserMessage } = await import('../utils/agent-transcript');
-    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
-    actionInfo.subpath = 'prompts';
-    const response = await dataManager.callAction<unknown, { prompts?: Record<string, unknown>[] | null }>(actionInfo);
+    const response = await this.cachedTranscriptRead('prompts', options.force ?? false, () => {
+      const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+      actionInfo.subpath = 'prompts';
+      return dataManager.callAction<unknown, { prompts?: Record<string, unknown>[] | null }>(actionInfo);
+    });
     const raw = (response?.prompts ?? []) as unknown as import('../utils/agent-transcript').GenericEntry[];
     return raw.filter(isUserMessage);
   }

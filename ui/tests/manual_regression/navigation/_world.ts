@@ -1,0 +1,253 @@
+/**
+ * A real world for browser navigation specs (docs/navigation/dock-loading.md):
+ * a project with a markdown report, a PTY agentic process running the MOCK
+ * worker, and a plain shell — all created through the HTTP API on a disposable
+ * instance, and driven in-app through the real control plane (`flow navigate`).
+ *
+ * The instance must be launched with the mock worker first on PATH so the
+ * process's terminal runs a scripted program instead of an LLM:
+ *
+ *   PATH=$PWD/tests/fixtures/mock_worker_bin:$PATH \
+ *   SHELL=$PWD/tests/fixtures/mock_worker_shell \
+ *     scripts/instance_ctl.sh launch dlm-7
+ */
+import { execFileSync } from 'child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import path from 'path';
+import { expect, type Page } from '@playwright/test';
+import { apiOrigin, REPO_ROOT } from '../_shared/api';
+
+export const INSTANCE = process.env.FLOW_INSTANCE || 'dlm-7';
+export const BACKEND = apiOrigin();
+export const MOCK_MARKER = 'MOCK-WORKER-READY';
+
+export interface World {
+  root: string;
+  projectId: string;
+  processId: string;
+  /** The PTY shell the process's terminal attaches to. */
+  processShellId: string;
+  shellId: string;
+  reportPath: string;
+}
+
+async function data<T = Record<string, unknown>>(res: Response): Promise<T> {
+  const body = (await res.json()) as { status: string; data: T; message?: string };
+  if (body.status !== 'SUCCESS') throw new Error(`API ${res.url} → ${body.message ?? res.status}`);
+  return body.data;
+}
+
+const post = (route: string, body: unknown) =>
+  fetch(`${BACKEND}/api/v1/${route}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+export async function createWorld(label: string): Promise<World> {
+  const root = mkdtempSync(path.join(tmpdir(), `flowpad-${label}-`));
+  const reportPath = path.join(root, 'report.md');
+  writeFileSync(reportPath, '# Validation report\n\nEverything the round trip needs.\n');
+  const project = await data<{ id: string }>(
+    await post('graph/project', { name: path.basename(root), fs_storage_mount_path: root }),
+  );
+  const proc = await data<{ id: string }>(
+    await post('graph/agentic_process', {
+      name: `${label} mock session`,
+      project_id: project.id,
+      workdir: root,
+      worker_type: 'claude_code',
+      visible: true,
+      pty_mode: true,
+    }),
+  );
+  const opened = await data<{ shell_id: string }>(
+    await post(`graph/agentic_process/${proc.id}/open`, { visible: true, cols: 120, rows: 30 }),
+  );
+  // The marker must be on the recording before any browser attaches, or a
+  // "missing marker" could be a slow worker rather than a lost terminal.
+  await expect
+    .poll(
+      async () => {
+        const r = await fetch(`${BACKEND}/api/v1/shell/${opened.shell_id}/pty-stream`);
+        return r.ok ? JSON.stringify(await r.json()).length > 0 && (await ptyText(opened.shell_id)).includes(MOCK_MARKER) : false;
+      },
+      { timeout: 15_000, message: 'the mock worker never printed its marker — is the instance launched with mock_worker_bin on PATH?' },
+    )
+    .toBe(true);
+  const shell = await data<{ id: string }>(
+    await post('graph/shell', { name: `${label} plain shell`, project_id: project.id, workdir: root }),
+  );
+  return { root, projectId: project.id, processId: proc.id, processShellId: opened.shell_id, shellId: shell.id, reportPath };
+}
+
+/** The recorded PTY output of a shell, decoded. */
+export async function ptyText(shellId: string): Promise<string> {
+  const r = await fetch(`${BACKEND}/api/v1/shell/${shellId}/pty-stream`);
+  if (!r.ok) return '';
+  const body = (await r.json()) as { data: { events: [string, string, number][] } };
+  return body.data.events
+    .filter((e) => e[0] === 'o')
+    .map((e) => Buffer.from(e[1], 'base64').toString('utf8'))
+    .join('');
+}
+
+export async function destroyWorld(world: World): Promise<void> {
+  await fetch(`${BACKEND}/api/v1/graph/agentic_process/${world.processId}/exit`, { method: 'POST' }).catch(() => {});
+  rmSync(world.root, { recursive: true, force: true });
+}
+
+/** Run a flow CLI verb against the instance under test. */
+export function flow(args: string[]): { code: number; out: string } {
+  try {
+    const out = execFileSync('uv', ['run', 'flow', ...args], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, FLOW_INSTANCE: INSTANCE },
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    return { code: 0, out };
+  } catch (e: unknown) {
+    const err = e as { status?: number; stdout?: string; stderr?: string };
+    return { code: err.status ?? 1, out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
+  }
+}
+
+/**
+ * Wait until the backend can steer THIS page: the same connection answered
+ * twice and the page did not move between the answers (a dying registration
+ * from a previous page cannot survive both reads — see dock_sweep.md.ts).
+ */
+export async function awaitSteerable(page: Page): Promise<void> {
+  let lastCid: string | null = null;
+  let lastUrl: string | null = null;
+  await expect
+    .poll(
+      async () => {
+        const urlBefore = page.url();
+        const r = await fetch(`${BACKEND}/api/v1/agent/context`);
+        if (r.status !== 200) {
+          lastCid = lastUrl = null;
+          return false;
+        }
+        const cid = ((await r.json()) as { connection_id?: string }).connection_id ?? null;
+        const settled = cid !== null && cid === lastCid && urlBefore === lastUrl && page.url() === urlBefore;
+        lastCid = cid;
+        lastUrl = urlBefore;
+        return settled;
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
+
+/** Steer the page in-app to a dock address (`<view>/<pointer>?<options>`) and wait for the URL. */
+export async function navigateTo(page: Page, address: string, expectPath: string): Promise<void> {
+  const res = flow(['navigate', 'view', address]);
+  expect(res.code, `flow navigate view ${address} → ${res.out}`).toBe(0);
+  await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: 15_000 }).toContain(expectPath);
+}
+
+/**
+ * Record, from the first script on the page, every time the "This session has
+ * nothing to display" screen appears (either of its two render sites), and the
+ * toplog lines the app prints.
+ */
+export async function installObservers(page: Page): Promise<{ toplog: string[] }> {
+  const toplog: string[] = [];
+  page.on('console', (m) => {
+    const text = m.text();
+    if (text.startsWith('[toplog:')) toplog.push(text);
+  });
+  await page.addInitScript(() => {
+    const w = window as unknown as {
+      __nothingToDisplay: string[];
+      __tabSwitchAt: { t: number; line: string }[];
+      __apiRequests: { t: number; method: string; path: string }[];
+    };
+    w.__nothingToDisplay = [];
+    // One clock for both: when each tab_switch line was printed, and when each
+    // API request was issued — so a request can be placed inside a switch.
+    w.__tabSwitchAt = [];
+    w.__apiRequests = [];
+    const log = console.log.bind(console);
+    console.log = (...args: unknown[]) => {
+      if (typeof args[0] === 'string' && args[0].startsWith('[toplog:') && args[0].includes('tab_switch')) {
+        w.__tabSwitchAt.push({ t: performance.now(), line: args.map(String).join(' ') });
+      }
+      log(...args);
+    };
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- re-bound with .call below
+    const open = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+      const path = new URL(String(url), location.href).pathname;
+      if (path.startsWith('/api/')) w.__apiRequests.push({ t: performance.now(), method, path });
+      return (open as (...a: unknown[]) => void).call(this, method, url, ...rest);
+    } as typeof XMLHttpRequest.prototype.open;
+    const check = () => {
+      for (const id of ['terminal-panel-error', 'terminal-active-tab-missing']) {
+        const el = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+        if (el && el.offsetParent !== null) w.__nothingToDisplay.push(`${id} @ ${location.pathname}`);
+      }
+    };
+    new MutationObserver(check).observe(document, { childList: true, subtree: true });
+  });
+  return { toplog };
+}
+
+export async function nothingToDisplaySightings(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as unknown as { __nothingToDisplay: string[] }).__nothingToDisplay ?? []);
+}
+
+/** Turn toplog tags on for this instance (the page receives the state over its socket). */
+export async function toplogOn(tags: string[]): Promise<void> {
+  await fetch(`${BACKEND}/api/v1/toplog/enable`, { method: 'POST' });
+  await post('toplog/on', { tags });
+}
+
+/**
+ * The API requests issued INSIDE each switch's wait — between its `start` line
+ * and the dock loader's own `loader` / `loader_redirect` line, i.e. what the URL
+ * commit waits on. (The `committed` line trails the new view's first render —
+ * the router re-renders from its own subscription first — so it would count the
+ * new view's mount effects.) `ignore` drops fire-and-forget calls.
+ */
+export async function lastSwitchId(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const lines = (window as unknown as { __tabSwitchAt: { line: string }[] }).__tabSwitchAt;
+    return Math.max(0, ...lines.map((l) => Number(/sw=(\d+)/.exec(l.line)?.[1] ?? 0)));
+  });
+}
+
+export async function requestsInsideSwitches(page: Page, ignore: RegExp[], afterSwitch = 0): Promise<string[]> {
+  const { lines, requests } = await page.evaluate(() => {
+    const w = window as unknown as {
+      __tabSwitchAt: { t: number; line: string }[];
+      __apiRequests: { t: number; method: string; path: string }[];
+    };
+    return { lines: w.__tabSwitchAt, requests: w.__apiRequests };
+  });
+  // `committed` here = the loader settled (see above).
+  const windows = new Map<string, { start?: number; committed?: number }>();
+  for (const { t, line } of lines) {
+    const start = /start sw=(\d+)/.exec(line);
+    const committed = /loader(?:_redirect)? sw=(\d+)/.exec(line);
+    const id = start?.[1] ?? committed?.[1];
+    if (!id) continue;
+    const w = windows.get(id) ?? {};
+    if (start) w.start = t;
+    if (committed && w.committed === undefined) w.committed = t;
+    windows.set(id, w);
+  }
+  const inside: string[] = [];
+  for (const [id, w] of windows) {
+    if (Number(id) <= afterSwitch || w.start === undefined || w.committed === undefined) continue;
+    for (const r of requests) {
+      if (r.t < w.start || r.t > w.committed) continue;
+      if (ignore.some((re) => re.test(r.path))) continue;
+      inside.push(`sw=${id} ${r.method} ${r.path}`);
+    }
+  }
+  return inside;
+}

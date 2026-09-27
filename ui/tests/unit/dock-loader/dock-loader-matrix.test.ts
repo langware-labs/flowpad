@@ -67,6 +67,12 @@ const worldRows: Row[] = [
     url: `/dock/project/${P}/editor/markdown/vfs/compute_node-%40local/w/p/report.md`,
   },
   { name: 'project: the project page', url: `/dock/project/${P}` },
+  {
+    // The entity's asset_ref is the REAL path; the URL spells it through a symlink
+    // (macOS tmp: /var → /private/var). Warm must still ask nothing.
+    name: 'project: an indexed document whose URL path is a symlink of its asset_ref',
+    url: `/dock/project/${P}/editor/markdown/vfs/compute_node-%40local/var/w/indexed.md`,
+  },
 ];
 
 const coveredByRows = new Set(
@@ -94,6 +100,21 @@ function seedWorld(): void {
     visible: true,
   } as never).markAsExpanded();
 }
+
+/** `/assets/entity`: the indexed document, stored under its real (non-symlink) path. */
+const indexedDocument = (req: RecordedRequest) =>
+  req.path === '/assets/entity'
+    ? { type: 'markdown', id: 'f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b', project_id: P, asset_ref: '/private/var/w/indexed.md' }
+    : undefined;
+
+/** The project's wiki (the backend gets-or-creates it). */
+const WIKI = 'a9b8c7d6-e5f4-4a3b-8c2d-1e0f9a8b7c6d';
+const projectWiki = (req: RecordedRequest) => {
+  if (req.path === `/graph/project/${P}/default-wiki`) return { type: 'wiki', id: WIKI, project_id: P, name: 'p wiki' };
+  // A word no page is named after yet: the answer is "missing", and it is an answer.
+  if (req.path === `/graph/wiki/${WIKI}/resolve`) return { kind: 'missing' };
+  return undefined;
+};
 
 /** The backend's answer for a project with no auto-launch agent. */
 const noAgentToLaunch = (req: RecordedRequest) =>
@@ -124,7 +145,7 @@ describe('dock loader matrix — coverage', () => {
 
 describe.each(ROWS)('dock loader — $name', ({ url }) => {
   it('settles with at most one redirect, and a warm visit asks the backend for nothing', async () => {
-    const log = recordRequests([fakeTabStore(), noAgentToLaunch]);
+    const log = recordRequests([fakeTabStore(), noAgentToLaunch, indexedDocument, projectWiki]);
 
     const cold = await runDockLoader(url);
     expect(cold.outcome, `threw instead of settling: ${cold.outcome === 'error' ? String(cold.error) : ''}`).not.toBe(

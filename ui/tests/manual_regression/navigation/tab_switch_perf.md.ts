@@ -1,0 +1,273 @@
+/**
+ * Speed gate — docs/navigation/dock-loading.md, on a PRODUCTION build.
+ *
+ * Numbers come from the app's own `tab_switch` trail: `start sw=<n>` at the
+ * click, then `committed` / `painted` / `ready` lines each stamped `+<ms>` since
+ * that start. "Content visible" is `ready` for a terminal (its panel is showing
+ * the worker's screen) and `painted` for a document or page.
+ *
+ * Budgets (p90), agreed 2026-09-27 — asserted, never raised (CLAUDE.md): a miss
+ * is a slow path to fix.
+ *   warm tab switch       content visible ≤ 150 ms, and no request inside the
+ *                         switch's wait (between its `start` and the loader settling)
+ *   project switch        content visible ≤ 300 ms (both projects visited before)
+ *   first terminal open   content visible ≤ 1 s, on a large recording
+ *
+ * Opt-in (FLOWPAD_PERF_GATE=1): the numbers mean something only on a production
+ * build (`vite build` + `vite preview`, see ../../../../.github/actions/e2e-tests).
+ */
+import { expect, test, type Page } from '@playwright/test';
+import {
+  awaitSteerable,
+  BACKEND,
+  createWorld,
+  destroyWorld,
+  installObservers,
+  MOCK_MARKER,
+  lastSwitchId,
+  navigateTo,
+  ptyText,
+  requestsInsideSwitches,
+  toplogOn,
+  type World,
+} from './_world';
+
+test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
+
+const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
+const ROUNDS = 20;
+/**
+ * What only a LOADER asks for: tab materialization, an entity's identity, an asset
+ * or wiki lookup, a runtime attach or its recording, a chat history. Inside a warm
+ * switch's wait none of these may appear (I4). Widgets already on screen that
+ * react to the context the loader writes (the footer git pill, a header's git or
+ * session probe) run concurrently and are awaited by nothing; the unit matrix
+ * (ui/tests/unit/dock-loader) proves at the source that the loader itself issues
+ * no request on a warm visit — this is its in-browser twin.
+ */
+const LOADER_SURFACE = [
+  /\/graph\/tab\/(new_tab|list_all)$/,
+  /^\/api\/v1\/graph\/[a-z_]+\/[0-9a-f-]{36}$/,
+  /\/assets\/entity$/,
+  /\/(default-wiki|resolve)$/,
+  /\/open$/,
+  /\/pty-stream$/,
+  /\/get-history$/,
+];
+
+/** Let the view just shown finish its own mount fetches, so they cannot land inside the NEXT switch's window. */
+async function networkQuiet(page: Page, quietMs = 250): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((q) => {
+          const reqs = (window as unknown as { __apiRequests: { t: number }[] }).__apiRequests;
+          const last = reqs.length ? reqs[reqs.length - 1].t : 0;
+          return performance.now() - last >= q;
+        }, quietMs),
+      { timeout: 10_000, intervals: [50] },
+    )
+    .toBe(true);
+}
+
+let a: World;
+let b: World;
+
+test.beforeAll(async () => {
+  a = await createWorld('perf-a');
+  b = await createWorld('perf-b');
+  await toplogOn(['tab_switch']);
+});
+
+test.afterAll(async () => {
+  for (const w of [a, b]) if (w) await destroyWorld(w);
+});
+
+interface Switch {
+  id: number;
+  to: string;
+  committed?: number;
+  painted?: number;
+  ready?: number;
+}
+
+/** Group the `tab_switch` trail into one record per switch. */
+function switches(lines: string[]): Map<number, Switch> {
+  const out = new Map<number, Switch>();
+  for (const line of lines) {
+    const start = /start sw=(\d+) .* to=(\S+)/.exec(line);
+    if (start) {
+      out.set(Number(start[1]), { id: Number(start[1]), to: start[2] });
+      continue;
+    }
+    // `\b`: `terminal_runtime_ready sw=` is the process start settling, not the content showing.
+    const stamp = /\b(committed|painted|ready) sw=(\d+) \+(\d+)ms/.exec(line);
+    if (!stamp) continue;
+    const s = out.get(Number(stamp[2]));
+    if (!s) continue;
+    const key = stamp[1] as 'committed' | 'painted' | 'ready';
+    s[key] ??= Number(stamp[3]);
+  }
+  return out;
+}
+
+function p(values: number[], q: number): number {
+  const sorted = [...values].sort((x, y) => x - y);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(q * sorted.length) - 1)] ?? NaN;
+}
+
+/** Click a tab chip and wait until its switch has written the line we measure. */
+async function clickChip(page: Page, chip: string, trail: string[], metric: 'ready' | 'painted'): Promise<Switch> {
+  const before = switches(trail).size;
+  await page.locator(chip).first().click();
+  let found: Switch | undefined;
+  await expect
+    .poll(
+      () => {
+        const all = [...switches(trail).values()];
+        found = all.length > before ? all[all.length - 1] : undefined;
+        return found?.[metric] !== undefined;
+      },
+      { timeout: 10_000, message: `no ${metric} line for ${chip}` },
+    )
+    .toBe(true);
+  await networkQuiet(page);
+  return found!;
+}
+
+test('warm tab switches: content visible within budget, nothing waited on', async ({ page }) => {
+  const { toplog } = await installObservers(page);
+  const trail = toplog;
+  const waited: string[] = [];
+  let measuring = false;
+  page.on('request', (r) => {
+    const url = new URL(r.url());
+    if (!measuring || !url.pathname.startsWith('/api/')) return;
+    waited.push(`${r.method()} ${url.pathname}`);
+  });
+
+  await page.goto('/dock/desktop?viewMode=advanced');
+  await awaitSteerable(page);
+  // Visit each place once (cold), so every later visit is warm.
+  await navigateTo(page, `shell/agentic_process-${a.processId}`, `/shell/agentic_process-${a.processId}`);
+  await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, { timeout: 15_000 });
+  await navigateTo(page, `project/${a.projectId}/editor/markdown/vfs/compute_node-%40local${a.reportPath}`, '/editor/markdown/');
+  await navigateTo(page, `shell/shell-${a.shellId}`, `/shell/shell-${a.shellId}`);
+
+  const terminalChip = `[data-testid="tab-shell|agentic_process-${a.processId}"]`;
+  const reportChip = '[data-testid^="tab-"]:has-text("report.md")';
+  const shellChip = `[data-testid="tab-shell|shell-${a.shellId}"]`;
+
+  const terminal: number[] = [];
+  const report: number[] = [];
+  const shell: number[] = [];
+  const warmFrom = await lastSwitchId(page);
+  measuring = true;
+  for (let i = 0; i < ROUNDS; i++) {
+    terminal.push((await clickChip(page, terminalChip, trail, 'ready')).ready!);
+    report.push((await clickChip(page, reportChip, trail, 'painted')).painted!);
+    shell.push((await clickChip(page, shellChip, trail, 'ready')).ready!);
+  }
+  measuring = false;
+
+  const table = {
+    terminal: { p50: p(terminal, 0.5), p90: p(terminal, 0.9) },
+    report: { p50: p(report, 0.5), p90: p(report, 0.9) },
+    plainShell: { p50: p(shell, 0.5), p90: p(shell, 0.9) },
+  };
+  console.log(`[perf] warm switches (${ROUNDS} rounds) ms`, JSON.stringify(table));
+  // Background refreshes views make after they mount — not waited on (content is
+  // already visible, see the budgets above), reported so they stay visible.
+  const counts = waited.reduce<Record<string, number>>((acc, r) => ((acc[r] = (acc[r] ?? 0) + 1), acc), {});
+  console.log(`[perf] view refreshes over ${ROUNDS * 3} warm switches`, JSON.stringify(counts));
+
+  expect(table.terminal.p90, 'warm switch to a terminal').toBeLessThanOrEqual(BUDGET.warmMs);
+  expect(table.report.p90, 'warm switch to a document').toBeLessThanOrEqual(BUDGET.warmMs);
+  expect(table.plainShell.p90, 'warm switch to a plain shell').toBeLessThanOrEqual(BUDGET.warmMs);
+  if (process.env.PERF_DEBUG) {
+    const tl = await page.evaluate((from) => {
+      const w = window as unknown as { __tabSwitchAt: { t: number; line: string }[]; __apiRequests: { t: number; method: string; path: string }[] };
+      const firstT = w.__tabSwitchAt.find((l) => Number(/sw=(\d+)/.exec(l.line)?.[1] ?? 0) === from + 4)?.t ?? 0;
+      const rows = [
+        ...w.__tabSwitchAt.map((l) => [l.t, 'LOG ' + l.line.slice(20, 110)] as [number, string]),
+        ...w.__apiRequests.map((r) => [r.t, 'REQ ' + r.method + ' ' + r.path.slice(0, 80)] as [number, string]),
+      ].filter(([t]) => t >= firstT && t < firstT + 1500).sort((x, y) => x[0] - y[0]);
+      return rows.map(([t, l]) => `${Math.round(t - firstT)} ${l}`).join('\n');
+    }, warmFrom);
+    console.log('[perf-debug]\n' + tl);
+  }
+  const inside = await requestsInsideSwitches(page, [], warmFrom);
+  const concurrent = inside.filter((r) => !LOADER_SURFACE.some((re) => re.test(r.split(' ').pop() ?? '')));
+  console.log(`[perf] concurrent reactions inside warm switches: ${concurrent.length}`);
+  expect(
+    inside.filter((r) => LOADER_SURFACE.some((re) => re.test(r.split(' ').pop() ?? ''))),
+    'a warm switch waited on the backend',
+  ).toEqual([]);
+});
+
+test('project switch between visited projects: content visible within budget', async ({ page }) => {
+  const { toplog } = await installObservers(page);
+  await page.goto('/dock/desktop?viewMode=advanced');
+  await awaitSteerable(page);
+  const toA = () => navigateTo(page, `shell/agentic_process-${a.processId}`, `/shell/agentic_process-${a.processId}`);
+  const toB = () => navigateTo(page, `shell/agentic_process-${b.processId}`, `/shell/agentic_process-${b.processId}`);
+  await toA();
+  await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, { timeout: 15_000 });
+  await toB();
+  await expect(page.locator(`[data-session-id="agentic_process-${b.processId}"]`)).toContainText(MOCK_MARKER, { timeout: 15_000 });
+
+  const measured: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    for (const go of [toA, toB]) {
+      const before = switches(toplog).size;
+      await go();
+      let sw: Switch | undefined;
+      await expect
+        .poll(() => {
+          const all = [...switches(toplog).values()];
+          sw = all.length > before ? all[all.length - 1] : undefined;
+          return sw?.ready !== undefined;
+        })
+        .toBe(true);
+      measured.push(sw!.ready!);
+    }
+  }
+  const p90 = p(measured, 0.9);
+  console.log(`[perf] project switch ms p50=${p(measured, 0.5)} p90=${p90}`);
+  expect(p90, 'project switch').toBeLessThanOrEqual(BUDGET.projectMs);
+});
+
+test('first open of a terminal with a large recording: content visible within budget', async ({ page }) => {
+  // A session whose recording is large: the worker floods its screen first.
+  const flood = await fetch(`${BACKEND}/api/v1/graph/compute_node/%40local/terminal-command/input`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ shell_id: a.processShellId, data: 'flood 200000\r' }),
+  });
+  expect(flood.ok, 'could not send input to the mock worker').toBe(true);
+  await expect.poll(() => ptyText(a.processShellId).then((t) => t.length), { timeout: 60_000 }).toBeGreaterThan(10_000_000);
+
+  const { toplog } = await installObservers(page);
+  await page.goto('/dock/desktop?viewMode=advanced');
+  await awaitSteerable(page);
+  const before = switches(toplog).size;
+  await navigateTo(page, `shell/agentic_process-${a.processId}`, `/shell/agentic_process-${a.processId}`);
+  let sw: Switch | undefined;
+  await expect
+    .poll(
+      () => {
+        const all = [...switches(toplog).values()];
+        sw = all.length > before ? all[all.length - 1] : undefined;
+        return sw?.ready !== undefined;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+  // Non-vacuous: it WAS a cold open, and it replayed a large recording.
+  const readyLine = toplog.find((l) => new RegExp(`\\bready sw=${sw!.id} `).test(l)) ?? '';
+  const historyKb = Number(/history_kb=(\d+)/.exec(readyLine)?.[1] ?? 0);
+  console.log(`[perf] cold terminal open on a large recording: ${sw!.ready}ms — ${readyLine.slice(readyLine.indexOf('ready'))}`);
+  expect(readyLine, 'the open was not a cold terminal mount').toContain('mode=cold');
+  expect(historyKb, 'the replayed recording was not large').toBeGreaterThan(1000);
+  expect(sw!.ready!, 'first terminal open').toBeLessThanOrEqual(BUDGET.coldTerminalMs);
+});
