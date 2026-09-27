@@ -10,12 +10,8 @@
  *
  * **What actually travels, and what doesn't.** The project must already be
  * published — an unpublished one gets the publish popup instead of this dialog —
- * and sharing is then `Project.invite([], {teams: [team]})` — one `share` action
- * whose backend expands the team through its member list and sends each person a
- * membership invite with the message option, so every new invitee also gets
- * their own conversation with the sharer (the same path as the project share
- * dialog). The roster walk here only counts people for the preview; the backend
- * does its own walk at send time. The published row carries its metadata — its `locale`, so a
+ * and sharing is then a membership grant per person (`Project.share(users)` → the
+ * `members` action). The published row carries its metadata — its `locale`, so a
  * recipient opens it in the language its author works in — and its shared
  * context and secret DECLARATIONS. The files, and therefore the project's
  * skills, travel by Git: the recipient's client clones the repository the first
@@ -32,11 +28,9 @@
  * the invitations go out, because afterwards it is N people's problem.
  *
  * **Nothing here runs the publish rules.** They guard publishing (the popup's
- * `ProjectCloudLinkButton`), not an invite to a Project that is already
- * published — the `share` action runs an invite on a published Project as a
- * membership grant only.
+ * `ProjectCloudLinkButton`), not an invite to a Project that is already published.
  */
-import { OAUTH_PROVIDERS, OAuthStatus, TypeId, oauthService, type Project, type ShareResult } from '@sdk';
+import { OAUTH_PROVIDERS, OAuthStatus, TypeId, oauthService, type Project } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { AlertTriangle, FolderGit2, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -57,7 +51,6 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useGitAnonymousAccess } from '@src/hooks/use-git-anonymous-access';
 import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
-import { ShareInviteSummary } from '@src/components/share-to-conversation/ShareInviteSummary';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 
@@ -145,7 +138,6 @@ function ShareProjectDialog({
   const [recipients, setRecipients] = useState<TeamRecipients | null>(null);
   const [rosterError, setRosterError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
-  const [result, setResult] = useState<ShareResult | null>(null);
   const [needsGitHub, setNeedsGitHub] = useState(false);
   const [connecting, setConnecting] = useState(false);
 
@@ -166,12 +158,16 @@ function ShareProjectDialog({
   }, [teamId, t]);
 
   const share = useCallback(async () => {
-    if (!project || !recipients?.people.length || sharing) return;
+    if (!project || !recipients?.emails.length || sharing) return;
     setSharing(true);
     try {
-      // The TEAM travels, not this dialog's walk: the backend expands it through
-      // the member list at send time and messages each new invitee (KTD5, KTD8).
-      setResult(await project.invite([], { teams: [new TypeId('team', teamId)] }));
+      await project.share(recipients.emails);
+      notify.success({
+        title: t`${projectName} shared`,
+        message: t`Everyone in ${teamName} has been invited.`,
+        id: 'team-share-project',
+      });
+      onClose();
     } catch (e) {
       // The one refusal with a one-click fix. Everything else the backend
       // explains in its own words, which are better than anything guessed here.
@@ -187,7 +183,7 @@ function ShareProjectDialog({
     } finally {
       setSharing(false);
     }
-  }, [project, recipients, sharing, projectName, teamId, t]);
+  }, [project, recipients, sharing, projectName, teamName, onClose, t]);
 
   // Subscribed only while THIS dialog's connect is pending, so an abandoned flow
   // leaves no listener behind and someone else's connect can't share a project.
@@ -219,7 +215,7 @@ function ShareProjectDialog({
     }
   }, [connecting, t]);
 
-  const people = recipients?.people.length ?? 0;
+  const people = recipients?.emails.length ?? 0;
   const repoLabel = access.repo ?? t`this project uses`;
   const checking = !recipients;
   const canShare = !!project && !checking && people > 0 && !sharing && !connecting;
@@ -245,85 +241,79 @@ function ShareProjectDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {result ? (
-          <ShareInviteSummary result={result} />
-        ) : (
-          <div className="flex flex-col gap-3 text-sm">
-            {rosterError ? (
-              <p className="text-destructive" data-testid="team-share-project-roster-error">
-                {rosterError}
-              </p>
-            ) : !recipients ? (
-              <p className="flex items-center gap-2 text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <Trans>Reading this team's people…</Trans>
-              </p>
-            ) : (
-              <p data-testid="team-share-project-recipients">
-                <Plural value={people} one="# person will be invited." other="# people will be invited." />
-                {recipients.unreachable > 0 && (
-                  <span className="text-muted-foreground">
-                    {' '}
-                    <Plural
-                      value={recipients.unreachable}
-                      one="# person on this team has no email address, so they can't be invited."
-                      other="# people on this team have no email address, so they can't be invited."
-                    />
-                  </span>
-                )}
-              </p>
-            )}
-
-            {/* (b) Warn up front. Shown even while the rest is fine — being able to
-              share is exactly when this matters. */}
-            {access.public === false && (
-              <p
-                className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-amber-700 dark:text-amber-400"
-                data-testid="team-share-project-private-repo"
-              >
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-                <span>
-                  <Trans>
-                    The repository {repoLabel} is private. Everyone here will still see the project and its language,
-                    but only people who connect GitHub and already have access to that repository can open its files and
-                    its skills — Flowpad can't grant that access.
-                  </Trans>
-                </span>
-              </p>
-            )}
-
-            {needsGitHub && (
-              <div
-                className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2"
-                data-testid="team-share-project-connect-github"
-              >
+        <div className="flex flex-col gap-3 text-sm">
+          {rosterError ? (
+            <p className="text-destructive" data-testid="team-share-project-roster-error">
+              {rosterError}
+            </p>
+          ) : !recipients ? (
+            <p className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <Trans>Reading this team's people…</Trans>
+            </p>
+          ) : (
+            <p data-testid="team-share-project-recipients">
+              <Plural value={people} one="# person will be invited." other="# people will be invited." />
+              {recipients.unreachable > 0 && (
                 <span className="text-muted-foreground">
-                  <Trans>Connect GitHub to link this project to the cloud.</Trans>
+                  {' '}
+                  <Plural
+                    value={recipients.unreachable}
+                    one="# person on this team has no email address, so they can't be invited."
+                    other="# people on this team have no email address, so they can't be invited."
+                  />
                 </span>
-                <Button size="sm" disabled={connecting} onClick={() => void connectGitHub()}>
-                  {connecting && <Loader2 className="h-4 w-4 animate-spin" />}
-                  <Trans>Connect GitHub</Trans>
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </p>
+          )}
+
+          {/* (b) Warn up front. Shown even while the rest is fine — being able to
+              share is exactly when this matters. */}
+          {access.public === false && (
+            <p
+              className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-amber-700 dark:text-amber-400"
+              data-testid="team-share-project-private-repo"
+            >
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+              <span>
+                <Trans>
+                  The repository {repoLabel} is private. Everyone here will still see the project and its language, but
+                  only people who connect GitHub and already have access to that repository can open its files and its
+                  skills — Flowpad can't grant that access.
+                </Trans>
+              </span>
+            </p>
+          )}
+
+          {needsGitHub && (
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2"
+              data-testid="team-share-project-connect-github"
+            >
+              <span className="text-muted-foreground">
+                <Trans>Connect GitHub to link this project to the cloud.</Trans>
+              </span>
+              <Button size="sm" disabled={connecting} onClick={() => void connectGitHub()}>
+                {connecting && <Loader2 className="h-4 w-4 animate-spin" />}
+                <Trans>Connect GitHub</Trans>
+              </Button>
+            </div>
+          )}
+        </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
-            {result ? <Trans>Close</Trans> : <Trans>Cancel</Trans>}
+            <Trans>Cancel</Trans>
           </Button>
-          {!result && (
-            <Button
-              disabled={!canShare}
-              onClick={() => void share()}
-              data-testid="team-share-project-confirm"
-              className="gap-1.5"
-            >
-              {(sharing || checking) && <Loader2 className="h-4 w-4 animate-spin" />}
-              {sharing ? <Trans>Sharing…</Trans> : <Trans>Share with team</Trans>}
-            </Button>
-          )}
+          <Button
+            disabled={!canShare}
+            onClick={() => void share()}
+            data-testid="team-share-project-confirm"
+            className="gap-1.5"
+          >
+            {(sharing || checking) && <Loader2 className="h-4 w-4 animate-spin" />}
+            {sharing ? <Trans>Sharing…</Trans> : <Trans>Share with team</Trans>}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

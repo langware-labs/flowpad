@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.app.actions.share_action import ShareInvitee
 from flow_sdk.builtin.project import Project
-from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 GADI = "090ffc4d-af90-4d74-9514-aa8650abca7a"
 NOA = "11111111-2222-4333-8444-555555555555"

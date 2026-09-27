@@ -435,7 +435,7 @@ interface ConversationRowProps {
   onHiddenChange: (convId: string, hidden: boolean) => void;
 }
 
-export function ConversationRow({
+function ConversationRow({
   conv,
   attributionFor,
   acceptingId,
@@ -554,24 +554,17 @@ export function ConversationRow({
   // recipient), not the inviter (the "from <my git user.name>" bug).
   const titleSender = parseSenderFromTitle(conv.title);
   const wireSender = firstMessage?.sender_name?.trim() || null;
-  const me = { id: cloudUser?.id ?? currentUser?.id ?? null, email: myEmail || null };
-  const others = (conv.members ?? []).filter((p) => p && !participantIsUser(p, me));
-  const rosterSender = others.length > 0 ? participantName(others[0]) : null;
+  const rosterSender = (() => {
+    const me = { id: cloudUser?.id ?? currentUser?.id ?? null, email: myEmail || null };
+    const other = (conv.members ?? []).find((p) => p && !participantIsUser(p, me));
+    return other ? participantName(other) : null;
+  })();
   const inviterName = titleSender || wireSender || rosterSender;
-  // A two-person conversation leads with the counterpart's name: a project
-  // share opens one conversation per invitee, all titled after the project,
-  // and the sharer tells them apart by who is on the other side (R18).
-  // Only a custom title needs it — an untitled row already lists participants.
-  const counterpartName =
-    (conv.members?.length ?? 0) === 2 && others.length === 1 && conv.title?.trim()
-      ? participantName(others[0])
-      : null;
   const fromName = isInvitationRow
     ? inviterName
       ? `from ${inviterName}`
       : null
-    : (parseParticipantsFromTitle(conv.title) ??
-      (counterpartName && !title.includes(counterpartName) ? `${counterpartName} · ${title}` : null));
+    : parseParticipantsFromTitle(conv.title);
 
   const handleClick = () => {
     if (isInvitationRow) return; // primary CTA is Accept; don't navigate

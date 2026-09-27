@@ -9,9 +9,8 @@ Multi-instance vitest (two real SDK clients in one process, one realm per instan
 ## The course journey (share → install → auto-launch)
 
 `course_project_share_two_client.ui.test.ts` runs the whole recipient journey across two
-instances: Alice shares a git-backed project, Bob opens her invite message, clicks the chip's
-**Install project**, and the project opens straight into its `auto_launch` agent; back in the
-message, the chip reads **Open project**. No popup offers the project. The origin is a LOCAL bare repo over
+instances: Alice shares a git-backed project, Bob is offered it, clicks **Install**, and the
+project opens straight into its `auto_launch` agent. The origin is a LOCAL bare repo over
 `file://`, so it needs no GitHub account — a `github_not_connected` refusal is a failure, not a
 skip (the share gate only demands a token for GitHub origins).
 

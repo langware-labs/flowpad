@@ -57,21 +57,18 @@ skill, …) are anchored to the conversation and recursively auto-share.
    derived state), the deterministic `resolve_project_id` algorithm, and
    roster-based ownership.
 2. **[Messages & Attachments](./messages-and-attachments.md)** — `FlowMessage`,
-   the `AttachmentType` taxonomy, the body-bundle lifecycle (`BodyStatus`,
-   including body-free received references), and the monotonic delivery state
-   machine (`PENDING_SEND → … → RECEIVED`).
+   the `AttachmentType` taxonomy, the body-bundle lifecycle (`BodyStatus`), and
+   the monotonic delivery state machine (`PENDING_SEND → … → RECEIVED`).
 3. **[Sharing & Sync](./sharing-and-sync.md)** — the unified share dialog (many
    surfaces → one `ShareSource`), the three backend share paths (new / reply /
-   forward), the `Conversation.share()` hub-invite sequence, the project share
-   (an invite whose message carries the Install project chip), and recursive
-   share via the effective-remote parent chain.
+   forward), the `Conversation.share()` hub-invite sequence, and recursive share
+   via the effective-remote parent chain.
 4. **[Cloud sharing — what leaves your machine](./cloud-sharing.md)** — the
    user-facing privacy answer: metadata and git coordinates travel, document
    bytes and secret values do not. Pinned against the code by
    `tests/unit/test_cloud_share_contract.py`.
 5. **[Invitations, Members & Sender Identity](./invites-members-identity.md)** —
-   the `Invitation` entity, the invite message (`notify_by_message`) and
-   client-side team expansion, the invite → accept → join algorithm, the role
+   the `Invitation` entity, the invite → accept → join algorithm, the role
    ladder, late-joiner history sync, and the hub-authoritative sender-identity
    model (resolution chain + unresolved-sender alert).
 6. **[Hub Fan-out & Conversation Loader](./hub-fanout-and-loader.md)** — how a

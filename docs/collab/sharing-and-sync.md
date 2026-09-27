@@ -56,7 +56,6 @@ The ~7 sources, each a thin factory:
 | `agenticProcessShareSource` (`108-143`) | the session's `claude_session` transcript as the chip; shared context = `[transcript, process]` so backend mutual-linking joins process ↔ message. Optionally attaches the raw `.jsonl` (`isProcess` → transcript toggle). |
 | `fileShareSource` (`150-172`) | **raw bytes, no entity** — downloads via `fsManager`, rides as a FILE in the body bundle (same path as a pasted screenshot). `assetReferences`/`sharedContextEntities` are empty. |
 | `messageForwardShareSource` (`195-197`) | nothing — a `noAssetShareSource` (`179-188`) that only labels the share; the backend `forward` action owns packaging. Committed via the dialog's `commit` override. |
-| `projectShareSource` | nothing to attach — it sets `inviteRef`, which puts the dialog in **invite mode** (§3a): no conversation to pick, no `prepare`, no send. |
 | task / plan / ask-help | (sibling sources) task/plan ride as entity refs; ask-help has no entity, so `requiresTitle` forces the user to type a title. |
 
 ### Dialog flow
@@ -84,12 +83,6 @@ doShare(existingId|null)                                                 (~182-2
   ▼
 success screen → onShared(convId) → "Open message"
 ```
-
-A source with `inviteRef` (a Project) skips the conversation steps: after the
-contacts, the dialog calls `Project.invite(people, {teams, note})` once and shows
-`ShareInviteSummary` — who was invited, who was skipped and why, who failed, and
-any team that could not be expanded. "Open message" opens the one invitee's new
-conversation, or the conversation list when there were several. See §3a.
 
 **Invariant (the de-dup fix):** the *first* contact yields one conversation +
 one invite; a later share to the same people **threads into the existing
@@ -188,12 +181,9 @@ the git setup wizard and retries with the wizard's local checkout result.
 The generic `share` action (`types="all"`). It loads the authoritative local row
 named by the URL (`entity_model.get_one`). For a `Conversation` it calls
 `Conversation.share(recipients=…, recipient_user_ids=…)` (`:160-161`) — the
-hub-invite sequence in §3. For a `Project` it calls
-`Project.share(invitees=…, teams=…, note=…)`, each invitee a `ShareInvitee`
-(`email`/`user_id` + optional `role`); `teams` (`team-<uuid>` typeids) and `note`
-are accepted for a project share only (400 otherwise). The response then carries
-`share_result` — the per-person outcome (§3a). Otherwise it calls plain
-`entity.share()` (`:163-165`).
+hub-invite sequence in §3. For a `Project` it calls `Project.share(invitees=…)`,
+each a `ShareInvitee` (`email`/`user_id` + optional `role`). Otherwise it calls
+plain `entity.share()` (`:163-165`).
 
 After `share()` returns it persists `remote=True` on the local row when it is not
 already set (`:217-222`), because `handle_add_message`'s `is_remote_send` gate
@@ -332,62 +322,6 @@ job (`share_action.share_entity`, §2 Path A) — see the docstring at `:202-204
 
 ---
 
-## 3a. Project share — an invite, not a message
-
-Sharing a Project sends the sharer's client **nothing to post**. What the invitee
-needs is a role on the project (that is what makes the hub push the row), and the
-hub itself delivers the news: each person invite carries `notify_by_message`, so
-the hub opens a **new** conversation between the sharer and that person, titled
-after the project, and posts the invite message there in the sharer's name — a
-generic line, the sharer's note, and one `TYPE_ID` reference `project-<id>`. The
-hub side is `flowpad-hub/docs/invite-message.md`; the client's invite and team
-expansion are in [Invitations §1a](./invites-members-identity.md#1a-invite-message-notify_by_message).
-
-```
-share surface (dialog in invite mode · members popover · team page "Share project")
-  │  unpublished project → publish first (existing publish checks)
-  ▼
-Project.invite(people, {teams, note})                  ts_sdk/src/entities/project.ts
-  │  ONE POST <project>/share {recipients, teams, note}
-  ▼
-share action → Project.invite (remote: no publish gate) · Project.share (publishes first)
-  │  teams → _expand_share_teams (each team's member list)   flow_sdk/builtin/project.py
-  │  merge + de-dup (user_id, then email); drop the sharer and anyone on the roster
-  ▼
-one POST <project>/members per new person, notify_by_message + note (4 at a time)
-  ▼
-ShareResult {invited[{conversation_id}], skipped[{reason}], failed[{status,message}],
-             skipped_teams[{reason}]}                  → ShareInviteSummary
-```
-
-Every surface that shares a project goes through the `share` action — `Project.invite`
-/ `Project.share(users)` in the TS SDK, `Project.share` / `Project.invite` in Python
-(the CLI): the share dialog's invite mode, the members popover's Apply
-(`useMembers.addMembers` → `Project.share`), and the team page's **Share project**.
-One person's failure does not stop the others.
-
-**The invitee installs from the message.** `MessageEntityChip` renders a `project`
-reference as `ProjectInstallChip`, stated from the **local** Project row: **Install
-project** while the row has no `fs_storage_mount_path`, **Open project** once it
-has one, wherever the install happened. Install is `useInstallSharedProjectAndOpen`
-(`Project.setupFromGitOrigin` — clone the row's own origin in place, keeping the
-shared id) and lands in the project. A refused clone shows its typed reason
-(`REPO_NOT_ACCESSIBLE`, `AUTH_REQUIRED`) and leaves the project uninstalled. A
-hub-only runtime has nowhere to install, so it shows no Install action.
-
-The chip is the **only** place a shared project is offered. The old watcher that
-raised an "X shared a project with you" dialog for every uninstalled shared row is
-gone; `IncomingProjectDialog` now serves only the template deep link
-(`?action=open&setup_git=1&git_origin=…`), which clones into a fresh project.
-
-The reference is **body-free** on the receiving side (the hub posts it at
-`body_status: na`), so it shows no Download affordance — see
-[Messages & Attachments §3](./messages-and-attachments.md#body-free-received-references).
-The sharer's own copy of the message arrives as a hub push and is kept, not dropped
-as a send echo — see [Hub Fan-out §2](./hub-fanout-and-loader.md#_handle_flow_message_op-hub_bridgepy490).
-
----
-
 ## 4. Recursive share — the `effective_remote` chain
 
 There is no "share the comments" code. A comment under a shared markdown
@@ -474,9 +408,6 @@ on the exact route the UI's role-walk `QueryRequest` resolves to).
   no-op — no duplicate context, no duplicate invite.
 - **Access ≠ channel.** Per-asset `reader` edges are direct and durable; the
   conversation membership is just the delivery channel.
-- **A project share is an invite.** One person invite per new invitee, each with
-  `notify_by_message`; the hub opens a new conversation per invite, and the
-  message's chip is the only install offer.
 - **Recursive share is emergent.** `parent_type_id` → `effective_remote` makes
   children of shared docs fan out with zero bespoke code.
 - **Materialization is replication.** The receiver kernel
