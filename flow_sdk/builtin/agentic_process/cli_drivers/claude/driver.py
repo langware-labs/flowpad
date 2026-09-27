@@ -533,13 +533,17 @@ class ClaudeDriver:
             AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=settings.claude_home / "agents", recursive=True),
         ]
         for directory in project_ancestors(process.workdir):
-            roots.extend([
-                AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / ".claude/skills", recursive=True),
-                AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=directory / ".claude/agents", recursive=True),
-            ])
+            roots.extend(
+                [
+                    AssetSearchRoot(asset_type=EntityType.SKILL, path=directory / ".claude/skills", recursive=True),
+                    AssetSearchRoot(asset_type=EntityType.SUBAGENT, path=directory / ".claude/agents", recursive=True),
+                ]
+            )
         # --add-dir discovers skills, but does not register custom subagents.
-        roots.extend(AssetSearchRoot(asset_type=EntityType.SKILL, path=Path(directory) / ".claude/skills", recursive=True)
-                     for directory in process.resolved_add_dirs)
+        roots.extend(
+            AssetSearchRoot(asset_type=EntityType.SKILL, path=Path(directory) / ".claude/skills", recursive=True)
+            for directory in process.resolved_add_dirs
+        )
         return roots
 
     def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
@@ -566,6 +570,12 @@ class ClaudeDriver:
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:
         if not process.session_id:
             return []
+        # A fork has no JSONL of its own until its first turn materialises it
+        # (claude copies the parent's history in then). Until that happens, the
+        # parent's transcript IS the fork's history — show it right away.
+        fork_source = (process.cli_config or {}).get("fork_session_id")
+        if fork_source and self.transcript_path(process) is None:
+            return _claude_load_session_history(fork_source)
         return _claude_load_session_history(process.session_id)
 
     # ── Prompt composition ───────────────────────────────────────────────────
