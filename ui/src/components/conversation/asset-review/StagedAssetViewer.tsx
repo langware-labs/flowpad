@@ -3,7 +3,10 @@ import { Trans } from '@lingui/react/macro';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { MarkdownView } from '@src/components/markdown-view';
+import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { workerForSessionType } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { editorForPath, isPreviewEditor } from '@src/navigation/asset-doc-types';
 import { StagedTranscriptPreview } from './StagedTranscriptPreview';
 
 /** Strip a leading YAML frontmatter block.
@@ -67,9 +70,15 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
   // raw-text read below: it's a multi-MB JSONL whose text form is unreadable.
   const transcriptWorker = workerForSessionType(attachment.asset_type);
   const isTranscript = Boolean(transcriptWorker) && Boolean(selected?.endsWith('.jsonl'));
+  // A display file (pdf, image, video, audio, html) renders through its file-type
+  // viewer by path — the same one the dock uses — and never through the text read,
+  // which refuses binaries (415). These viewers only display, so the staged copy
+  // stays untouched.
+  const viewer = selected ? editorForPath(selected) : undefined;
+  const isViewerFile = isPreviewEditor(viewer);
 
   useEffect(() => {
-    if (!selected || isTranscript) return;
+    if (!selected || isTranscript || isViewerFile) return;
     let cancelled = false;
     setLoadingFile(true);
     setContent(null);
@@ -112,6 +121,10 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
   const pane =
     isTranscript && transcriptWorker && selected ? (
       <StagedTranscriptPreview workerType={transcriptWorker} path={`${listing.abs_root}/${selected}`} />
+    ) : isViewerFile && viewer && selected ? (
+      <div className="h-[50vh] overflow-hidden rounded border border-border">
+        <AssetEditorRouter pointer={AssetDocPointer.forVfs(viewer, `${listing.abs_root}/${selected}`).toPointer()} />
+      </div>
     ) : loadingFile ? (
       <div className="flex items-center justify-center py-8 text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
