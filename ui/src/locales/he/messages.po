@@ -6407,13 +6407,14 @@ msgid "Delete \"{0}\" from the OS keychain? This cannot be undone."
 msgstr "מחק את \"{0}\" מה-keychain של מערכת ההפעלה? לא ניתן לבטל פעולה זו."
 
 #. placeholder {0}: c.displayName
+#. placeholder {0}: item.name
 #. placeholder {0}: row.label
-#. placeholder {0}: row.title
 #: src/components/account/secrets-section.tsx
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/agent-resources/AgentResourcesBody.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Delete {0}"
 msgstr "מחק {0}"
 
