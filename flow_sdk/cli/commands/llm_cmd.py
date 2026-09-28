@@ -787,7 +787,7 @@ def _is_evidence(pick: dict) -> bool:
     return pick.get("unverified") is False
 
 
-def _probe_unproven_device_logins(status: dict) -> dict:
+def _probe_unproven_device_logins(status: dict, project_id: str | None = None) -> dict:
     """Ask every un-probed device login whether it is REALLY signed in, and re-read.
 
     Without this, requiring evidence (:func:`_is_evidence`) is too strict on the transport that
@@ -823,7 +823,9 @@ def _probe_unproven_device_logins(status: dict) -> dict:
         except Exception:  # noqa: BLE001 -- an unanswerable probe IS an answer ("not installed")
             pass
         asked = True
-    return _status(_project_for_cwd(required=False)) if asked else status
+    if not asked:
+        return status
+    return _status(_project_for_cwd(required=False) if project_id is None else project_id)
 
 
 def _auto_source(status: dict) -> Row | None:
@@ -1044,20 +1046,26 @@ def _is_auto(ref: str) -> bool:
     return ref.strip().lower() == "auto"
 
 
-def _resolve_or_choose(*, no_browser: bool = False) -> Row:
+def _resolve_or_choose(*, no_browser: bool = False, project_id: str | None = None) -> Row:
     """The source that funds LLM calls — obtaining one, via the chooser, if the box has none.
 
     The whole of `auto`, minus the reporting, so the user scope can reuse the answer instead of
     running the command for its side effect and then asking again.
+
+    ``project_id`` names the scope outright; ``None`` (the CLI) derives it from the working
+    directory. The backend passes ``""`` — the box — because it calls this in-process, where the
+    working directory is the server's own and says nothing about what the person meant.
     """
     # Project-scoped when there is one, for the same reason `list` is: a project pin outranks
     # the box, so the box-wide question would report a source a spawn here would not get.
-    status = _status(_project_for_cwd(required=False))
+    if project_id is None:
+        project_id = _project_for_cwd(required=False)
+    status = _status(project_id)
     row = _auto_source(status)
     if row is None:
         # Nothing has EVIDENCE yet -- but on a box with no backend nothing has ever been asked,
         # so ask before sending the user to a browser.
-        row = _auto_source(_probe_unproven_device_logins(status))
+        row = _auto_source(_probe_unproven_device_logins(status, project_id))
     if row is not None:
         return row
 

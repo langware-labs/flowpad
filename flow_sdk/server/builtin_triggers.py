@@ -12,11 +12,9 @@ Adding a new system trigger:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
-import shlex
-import sys
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.builtin import trigger_callbacks
@@ -339,30 +337,39 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
 LLM_SETUP_WIZARD = "llm-setup"
 
 
-def _flow_cli(*args: str, platform: str) -> str:
-    """This interpreter's ``flow`` — ``sys.executable -m flow_sdk.cli.flow_cli``,
-    never a bare ``flow`` that depends on PATH. Electron launched from
-    Finder/Dock/Start Menu inherits a minimal PATH (see `electron/uv-manager.js`'s
-    own ``_enrichedPath()``, which exists to patch exactly that), and this runs
-    before anything has a chance to fix it. ``sys.executable`` also guarantees
-    the SAME install and instance this backend is itself running — the identical
-    reasoning behind ``builtin/project_setup.py``'s own ``_flow`` helper.
-    """
-    if platform == "win32":
-        quoted = " ".join("'" + a.replace("'", "''") + "'" for a in args)
-        return f"& '{sys.executable}' -m flow_sdk.cli.flow_cli {quoted}; exit $LASTEXITCODE"
-    return " ".join([shlex.quote(sys.executable), "-m", "flow_sdk.cli.flow_cli", *map(shlex.quote, args)])
-
-
 async def _resolve_llm_source() -> "CliResult":
-    """Run `flow llm set auto` directly. No completion check needed first: the
-    command is already idempotent — it returns at once when the box is already
-    funded, without opening anything."""
-    from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.compute_op_spec import CLI_TIMEOUT  # noqa: PLC0415
+    """`flow llm set auto`, run IN this process. Idempotent: it returns at once
+    when the box is already funded, without opening anything.
 
-    command = _flow_cli("llm", "set", "auto", platform=sys.platform)
-    return await run_shell(command, timeout_seconds=CLI_TIMEOUT, workdir=Path.home(), platform=sys.platform)
+    In-process, not a `flow` subprocess. The command is only this backend's own
+    resolver plus a socket back to it, and a subprocess made the person pay a
+    fresh shell and a cold ``flow_sdk`` import before the chooser appeared — on
+    Windows ~3s (PowerShell, then ~1000 modules), a visible pause between the
+    wizard page opening and the chooser. The resolver is synchronous and blocks
+    on the chooser's socket, so it runs on a worker thread; its HTTP calls come
+    back to this loop, which stays free to serve them.
+
+    ``project_id=""`` is the box, which is what the subprocess answered too: it
+    ran from the home directory, and the server's own working directory says
+    nothing about what the person meant.
+    """
+    import typer  # noqa: PLC0415
+
+    from flow_sdk.cli.commands import llm_cmd  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import CLI_TIMEOUT  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
+
+    try:
+        row = await asyncio.wait_for(asyncio.to_thread(llm_cmd._resolve_or_choose, project_id=""), timeout=CLI_TIMEOUT)
+    except asyncio.TimeoutError:
+        return CliResult.not_yet("no LLM source was chosen in time")
+    except typer.Exit as exc:
+        # `_fail` has already said why, to this process's stderr — the log.
+        return CliResult.not_yet(f"no LLM source was settled (exit {exc.exit_code})")
+    except Exception as exc:  # noqa: BLE001 — the setup that follows must still run
+        _log.warning("llm setup: resolving an LLM source failed", exc_info=True)
+        return CliResult.not_yet(f"resolving an LLM source failed: {exc}")
+    return CliResult.satisfied(f"{row.name} ({row.kind}) funds {', '.join(row.active_for)}")
 
 
 async def _navigate_to_wizard(wizard: "Wizard") -> None:
@@ -408,7 +415,19 @@ async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[Returne
     steer the active tab to the wizard's own page before running it: neither
     caller is "the person is already looking at the wizard", so without this
     the whole run is invisible behind whatever screen was already open.
+
+    The previous run's answers are cleared FIRST, before the page is shown.
+    `execute_wizard` clears them too, but only once the wizard itself starts —
+    after the LLM source, which can mean minutes in the chooser — so the page
+    opened onto the last run's leftovers and only emptied later. A run already
+    in progress keeps its record (`reset_run` refuses); `wizard.run` then
+    answers "already running", as it always did.
     """
+    from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
+    from flow_sdk.core.wizard.state import reset_run  # noqa: PLC0415
+
+    if reset_run(str(wizard.id)) is not None:
+        await _notify_wizard_watchers(str(wizard.id))
     await _navigate_to_wizard(wizard)
     source = await _resolve_llm_source()
     _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
