@@ -20,6 +20,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.project import Project
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from tests.unit._project_names import unique_project_name
 
 # ---------------------------------------------------------------------------
 # Project.recover_by_path
@@ -161,7 +162,7 @@ async def test_reap_protected_path_projects(bootstrapped_client, tmp_path, monke
     sub = mount_root / "real-project"
     sub.mkdir()
     sub_path = canonical_posix_path(sub)
-    keep = Project(name="real-project", fs_storage_mount_path=sub_path)
+    keep = Project(name=unique_project_name("real-project"), fs_storage_mount_path=sub_path)
     keep.id = Project.allocate_id(keep.model_dump())
     await keep.save()
     await stale.add_child(keep)
