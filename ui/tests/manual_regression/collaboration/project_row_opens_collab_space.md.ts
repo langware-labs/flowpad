@@ -42,7 +42,7 @@ test.describe('Project view = asset browser', () => {
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
     // Project identity is URL-owned and projected by the pressed scope control;
     // ProjectChip is a content-header component, not a ProjectHome affordance.
-    await expect(page.getByText('Project assets').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: /^Current project/ }).first()).toHaveAttribute('aria-pressed', 'true');
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));

@@ -37,7 +37,7 @@ vi.mock('@src/navigation', () => ({
 }));
 
 const { useTerminalLinks } = await import('@src/components/terminal/interactive-terminal/TerminalLinkMenu');
-const { loadBrowserProfiles, resetBrowserProfiles } = await import('@src/lib/browser-profiles');
+const { fetchBrowserProfiles } = await import('@src/lib/browser-profiles');
 
 const BROWSERS = [
   {
@@ -73,7 +73,6 @@ beforeEach(() => {
   mocks.post.mockReset();
   mocks.openLinkInBrowserProfile.mockReset();
   mocks.runtimeKind = 'browser';
-  resetBrowserProfiles();
 });
 afterEach(cleanup);
 
@@ -110,29 +109,26 @@ describe('Open in ▸ submenu', () => {
   });
 });
 
-describe('loadBrowserProfiles', () => {
-  it('asks the backend once per session', async () => {
-    mocks.get.mockResolvedValue({ browsers: BROWSERS });
-    expect(await loadBrowserProfiles()).toEqual(BROWSERS);
-    expect(await loadBrowserProfiles()).toEqual(BROWSERS);
-    expect(mocks.get).toHaveBeenCalledTimes(1);
+describe('fetchBrowserProfiles', () => {
+  it('asks the backend every time, so a new profile shows on the next right-click', async () => {
+    mocks.get.mockResolvedValueOnce({ browsers: [] }).mockResolvedValueOnce({ browsers: BROWSERS });
+    expect(await fetchBrowserProfiles()).toEqual([]);
+    expect(await fetchBrowserProfiles()).toEqual(BROWSERS);
+    expect(mocks.get).toHaveBeenCalledTimes(2);
     expect(mocks.get).toHaveBeenCalledWith('/api/v1/browser-profiles');
   });
 
-  it('forgets a failed fetch so the next right-click retries', async () => {
-    mocks.get.mockRejectedValueOnce(new Error('down')).mockResolvedValueOnce({ browsers: BROWSERS });
-    expect(await loadBrowserProfiles()).toEqual([]);
-    expect(await loadBrowserProfiles()).toEqual(BROWSERS);
-    expect(mocks.get).toHaveBeenCalledTimes(2);
+  it('lists nothing when the backend cannot answer', async () => {
+    mocks.get.mockRejectedValueOnce(new Error('down'));
+    expect(await fetchBrowserProfiles()).toEqual([]);
   });
 
   it('asks from the Electron shell, never from the hub', async () => {
     mocks.runtimeKind = 'desktop';
     mocks.get.mockResolvedValue({ browsers: BROWSERS });
-    expect(await loadBrowserProfiles()).toEqual(BROWSERS);
+    expect(await fetchBrowserProfiles()).toEqual(BROWSERS);
     mocks.runtimeKind = 'hub';
-    resetBrowserProfiles();
-    expect(await loadBrowserProfiles()).toEqual([]);
+    expect(await fetchBrowserProfiles()).toEqual([]);
     expect(mocks.get).toHaveBeenCalledTimes(1);
   });
 });

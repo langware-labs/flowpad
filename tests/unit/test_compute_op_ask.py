@@ -26,7 +26,7 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 #: Short enough that a person who never answers does not hold the suite. This
-#: PASSES a smaller deadline; it never raises ASK_TIMEOUT_SECONDS.
+#: PASSES a smaller deadline as the caller's span.
 BRIEF = 0.25
 
 
@@ -220,3 +220,64 @@ async def test_a_secret_ask_says_so_to_whoever_draws_the_field(tmp_path):
     assert question.secret is True and question.to_payload()["secret"] is True
     answer(question.id, {"token": "sk-live-1"})
     assert (await run).ok
+
+
+@pytest.mark.parametrize(
+    ("op_timeout", "caller_timeout", "expected"),
+    [
+        (None, None, 60.0),     # the product default
+        (900.0, None, 900.0),   # the op's own span, longer than the default
+        (900.0, 7200.0, 7200.0),  # the caller's span wins, longer still
+        (900.0, 5.0, 5.0),      # and may be shorter
+    ],
+)
+async def test_the_wait_is_the_callers_else_the_ops_else_the_default(tmp_path, monkeypatch, op_timeout, caller_timeout, expected):
+    """A step done in another application takes minutes: an author or a caller sets any span, the
+    default only applies when nobody did. The person is not waited on here — the span is read off
+    the ask the runner makes."""
+    from flow_sdk.core.compute_op import ask
+    from flow_sdk.schema.data_spec.returned_value_spec import AskResult
+
+    seen: list[float] = []
+
+    async def fake_ask(*_args, timeout, **_kw):
+        seen.append(timeout)
+        return AskResult.not_yet("nobody", timed_out=True)
+
+    monkeypatch.setattr(ask, "ask_person", fake_ask)
+    exe = {"prompt": "Service X API token"} | ({"timeout_seconds": op_timeout} if op_timeout else {})
+    spec = _spec(tmp_path, exe_data=exe)
+    await run_op(spec, trusted=True, workdir=Path(tmp_path), platform=sys.platform, ask_timeout=caller_timeout)
+    assert seen == [expected]
+
+
+async def test_a_question_names_the_run_that_asked_and_carries_the_ops_guide(tmp_path):
+    """A setup screen showing a run claims that run's questions and draws them in place, beside the
+    step's guide — so the question has to say which run asked, and bring the guide along."""
+    from flow_sdk.core.compute_op.ask import ASKING_RUN
+
+    spec = _spec(tmp_path, setup="Open WhatsApp → API Setup and copy the **Phone number ID**.")
+    token = ASKING_RUN.set("wizard-whatsapp-test-1-data_source_a")
+    try:
+        run = asyncio.create_task(_run(spec, tmp_path, timeout=5))
+        for _ in range(200):
+            if open_questions():
+                break
+            await asyncio.sleep(0.01)
+    finally:
+        ASKING_RUN.reset(token)
+    (question,) = open_questions()
+    payload = question.to_payload()
+    assert payload["run"] == "wizard-whatsapp-test-1-data_source_a"
+    assert "Phone number ID" in payload["guide"]
+    cancel(question.id)
+    assert not (await run).ok
+
+
+async def test_an_ask_whose_goal_already_holds_asks_nobody_even_when_its_check_prints_no_value(tmp_path):
+    """The resume rule: an ask carries its goal's check (``flow source step … --check`` prints a status, not
+    the value). Holding means nothing to ask — satisfied, no value — never "the document disagrees"."""
+    spec = _spec(tmp_path, completion_check={"commands": {sys.platform: "echo '{\"ok\": true}'"}})
+    said = await _run(spec, tmp_path)
+    assert said.ok is True and said.ran is False and said.value is None
+    assert open_questions() == []

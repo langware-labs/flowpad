@@ -32,7 +32,6 @@ import {
   humanizeType,
   LazyProcessTooltip,
   PROVIDER_META,
-  ShownTargetBadge,
 } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY, viewerTitle } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
@@ -90,15 +89,9 @@ export function tabItem(tab: Tab, lifecycle: TabLifecycleEntry | null = null): T
           aria-label={i18n._(meta.label)}
         />
       ),
-      // Worktree glyph + the agent's "I showed you something" marker. The badge
-      // slot is inline markers after the icon; both are optional and either can
-      // be absent, so render whatever is present rather than branching.
-      badge: (
-        <>
-          {tab.worktree && <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />}
-          {processId && <ShownTargetBadge processId={processId} />}
-        </>
-      ),
+      // Worktree glyph. What the agent has shown lives on the process's bottom
+      // ribbon (the Shown chip beside Open Plan), not on its tab chip.
+      badge: tab.worktree ? <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" /> : undefined,
       isDisabled,
       hasError: lifecycleOverlay.hasError,
       statusReason,

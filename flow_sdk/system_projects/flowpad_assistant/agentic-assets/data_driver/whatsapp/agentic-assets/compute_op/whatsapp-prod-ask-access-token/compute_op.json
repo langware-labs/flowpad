@@ -1,0 +1,14 @@
+{
+  "type": "compute_op",
+  "id": "20f02159-5c0c-4cc2-bbdc-84c99100bb96",
+  "name": "whatsapp-prod-ask-access-token",
+  "label": "Permanent token",
+  "description": "Permanent token, for the number step. (Runs every time: the test mode already satisfies the checks it would share.)",
+  "subkind": "ask",
+  "output_spec_kind": "string",
+  "exe_data": {
+    "prompt": "The System User token (never expires)",
+    "secret": true,
+    "timeout_seconds": 1800
+  }
+}

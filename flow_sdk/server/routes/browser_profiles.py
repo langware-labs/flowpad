@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 def _fail(status: int, error_code: str, message: str) -> JSONResponse:
-    body = ApiFailResponse(message=message, data={"error_code": error_code})
+    body = ApiFailResponse(message=message, data={"error_code": error_code}, status_code=status)
     return JSONResponse(content=body.model_dump(mode="json"), status_code=status)
 
 

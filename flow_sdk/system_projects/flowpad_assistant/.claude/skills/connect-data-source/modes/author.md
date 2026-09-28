@@ -109,7 +109,8 @@ class WikiSource(RecordSource, CollectionSource):   # the family first
 | `MessageSource` | messages (`MessageData`) in conversations — mail, chat | `SourceItem`s threaded into the stream inbox | omit it (`["record"]`) |
 
 A `MessageSource` must also send (`send`/`reply` + `message_for`). One provider with two kinds of
-stream is two drivers (Jira: issues are records, their comments are messages).
+stream is two drivers (the shipped `jira` reads issues as records; their comments, as messages,
+would be a separate driver).
 
 One source reads one stream: a config names ONE feed, channel, drive or prefix,
 and a person watching three adds three sources. Implement only the protocols the

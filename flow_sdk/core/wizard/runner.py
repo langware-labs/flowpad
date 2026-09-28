@@ -354,7 +354,7 @@ async def _call_wizard(run: _Run, step: WizardStepSpec, child: Any) -> ReturnedV
 def _scope(run: _Run, step: WizardStepSpec) -> dict:
     """What the callee is given: its bound arguments over the run's own values.
 
-    ``args`` binds by NAME — ``{"API_KEY": "WAHA_API_KEY"}`` means "my API_KEY is
+    ``args`` binds by NAME — ``{"API_KEY": "FLOW_WHATSAPP_TOKEN"}`` means "my API_KEY is
     that value of mine" — and falls back to the literal when the name is not one
     of ours. There is no template form, and there must not be.
     """
