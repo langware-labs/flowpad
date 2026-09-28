@@ -36,10 +36,9 @@ import asyncio
 import base64
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Union
+from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional
 from urllib.parse import urlsplit
 
-import httpx
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
@@ -56,7 +55,7 @@ from flow_sdk.sources.errors import (
     Unsupported,
 )
 from flow_sdk.sources.families import MessageSource
-from flow_sdk.sources.files import LOCAL_KIND, FileSupport, kind_of, read_file
+from flow_sdk.sources.files import FileSupport, check_files, kind_of, read_file
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import (
@@ -254,7 +253,7 @@ class WahaSource(MessageSource):
         reply_to = message.get("replyTo")
         quoted = str(reply_to.get("id") or "") if isinstance(reply_to, dict) else ""
         data = WahaMessageData(
-            text=None if files else text,  # a media message's body is the file's caption
+            text=text or None,  # a media message's body is its words, and rides the file as its caption too
             conversation=self.conversation_origin(chat),
             sender=self._sender(message, chat),
             sent_at=_when(message.get("timestamp")),
@@ -291,7 +290,7 @@ class WahaSource(MessageSource):
             return None
         emoji = str(reaction.get("text") or "")
         data = ReactionData(
-            target=self.message_origin(target, chat),
+            target=self.message_origin(target, _chat_of_id(target) or chat),
             sender=self._sender(message, chat),
             emojis=(emoji,) if emoji else (),
             mode=ReactionMode.SET,
@@ -314,13 +313,8 @@ class WahaSource(MessageSource):
         if key is None:
             raise AccessDenied("This WAHA source has no API key.")
         url = f"{self.base_url}{origin.key}"
-        try:
-            async with self._client.stream("GET", url, headers={"X-Api-Key": key}) as response:
-                if response.status_code >= 400:
-                    raise http.error_for_status(response.status_code, "WAHA: media download", origin=origin)
-                yield response.aiter_bytes(chunk_size)
-        except httpx.HTTPError as exc:
-            raise SourceUnavailable(f"GET {url}: {exc}", origin=origin) from exc
+        async with http.stream(self._client, url, headers={"X-Api-Key": key}, hint="WAHA: media download", origin=origin, chunk_size=chunk_size) as chunks:
+            yield chunks
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:
@@ -560,6 +554,14 @@ def _id_of(body: dict) -> str:
     return str(value or "").strip()
 
 
+def _chat_of_id(message_id: str) -> str:
+    """The chat a message someone else wrote was keyed under, read from its serialized id
+    (``false_<chat>_<id>``) — exactly the ``from`` it arrived with, whichever way (``@lid`` or
+    ``@c.us``) the reaction's own ``from`` names the person. "" for our own messages and bare ids."""
+    fields = message_id.split("_")
+    return fields[1] if len(fields) >= 3 and fields[0] == "false" and "@" in fields[1] else ""
+
+
 def _kind_of(message: dict, media_type: Optional[str]) -> FileKind:
     """What the sender's app sent it as — the engine says (a voice note, a sticker, an image sent as a
     document); the media type decides only when it does not."""
@@ -595,23 +597,15 @@ def _check_outgoing(data: object, support: FileSupport) -> None:
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
     if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
         raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
-    if not data.attachments:
-        if not (data.text or "").strip():
-            raise ValueError("a WhatsApp message needs text or a file")
-        return
-    if len(data.attachments) > support.per_message:
-        raise ValueError("a WhatsApp message carries one file; send the others as messages of their own")
+    if not data.attachments and not (data.text or "").strip():
+        raise ValueError("a WhatsApp message needs text or a file")
+    check_files(data.attachments, support, title="WhatsApp", text=data.text)
+    text = (data.text or "").strip()
     for f in data.attachments:
-        fd = f.data
-        if f.origin.kind != LOCAL_KIND or not isinstance(fd, MessageFileData) or not fd.path:
-            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
-        if fd.as_ not in support.kinds:
-            raise ValueError(f"WhatsApp does not send a {fd.as_.value}")
-        text = (data.text or "").strip()
-        if text and fd.caption:
+        if text and f.data.caption:
             raise ValueError("a captioned file carries no text of its own; send the words as a message of their own")
-        if (fd.caption or text) and not support.captions(fd.as_):
-            raise ValueError(f"WhatsApp shows no caption on a {fd.as_.value}; send the words as a message of their own")
+        if text and not support.captions(f.data.as_):
+            raise ValueError(f"WhatsApp shows no caption on a {f.data.as_.value}; send the words as a message of their own")
 
 
 def _when(timestamp: Any) -> datetime:

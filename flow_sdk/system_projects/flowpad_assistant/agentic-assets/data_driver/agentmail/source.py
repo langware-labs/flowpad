@@ -14,6 +14,7 @@ asks AgentMail for a signed download URL and reads the bytes from it.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -30,7 +31,7 @@ from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, OutcomeUnknown, Rejected, Unsupported
 from flow_sdk.sources.families import MessageSource
-from flow_sdk.sources.files import LOCAL_KIND, FileSupport, kind_of, read_file
+from flow_sdk.sources.files import FileSupport, check_files, kind_of, read_file
 from flow_sdk.sources.values.items import (
     EmailMessageData,
     FileItem,
@@ -201,17 +202,12 @@ class AgentMailSource(EmailAddressing, MessageSource):
             raise NotFound("AgentMail named no download URL for the attachment", origin=file.origin)
         # A signed URL: our key never rides along to wherever it points.
         if self._client is not None:
-            response = await http.request(self._client, "GET", url, hint="attachment download", origin=file.origin)
+            async with http.stream(self._client, url, hint="attachment download", origin=file.origin, chunk_size=chunk_size) as chunks:
+                yield chunks
         else:
             async with http.client(REQUEST_TIMEOUT_SECONDS) as client:
-                response = await http.request(client, "GET", url, hint="attachment download", origin=file.origin)
-        blob = response.content
-
-        async def chunks() -> AsyncIterator[bytes]:
-            for i in range(0, len(blob), chunk_size):
-                yield blob[i : i + chunk_size]
-
-        yield chunks()
+                async with http.stream(client, url, hint="attachment download", origin=file.origin, chunk_size=chunk_size) as chunks:
+                    yield chunks
 
     # ── send ────────────────────────────────────────────────────────────────
     async def send(self, data: MessageData) -> MessageItem:
@@ -225,7 +221,7 @@ class AgentMailSource(EmailAddressing, MessageSource):
         if len(data.recipients) != 1:
             raise Unsupported("an AgentMail send has exactly one recipient")
         to = data.recipients[0].address or data.recipients[0].origin.key
-        body: dict[str, Any] = {"to": [to], **_content(data)}
+        body: dict[str, Any] = {"to": [to], **await asyncio.to_thread(_content, data)}
         if getattr(data, "subject", None):
             body["subject"] = data.subject
         return self._sent(await self._api("POST", f"/inboxes/{self.inbox}/messages/send", json=body), data, None)
@@ -241,7 +237,7 @@ class AgentMailSource(EmailAddressing, MessageSource):
         # The RFC 5322 id rides in the PATH and holds `<`, `>` and `@`: raw, it is a 400 that reads
         # like a bad body.
         path = f"/inboxes/{self.inbox}/messages/{quote(self._key_of(answered), safe='')}/reply"
-        sent = self._sent(await self._api("POST", path, json=_content(data)), data, conversation)
+        sent = self._sent(await self._api("POST", path, json=await asyncio.to_thread(_content, data)), data, conversation)
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update={"in_reply_to": answered}))
 
     def _sent(self, body: dict, data: MessageData, conversation: Optional[CloudOrigin]) -> MessageItem:
@@ -303,15 +299,11 @@ def _check_outgoing(data: object) -> None:
         raise ValueError("an AgentMail message needs text or a file")
     if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
         raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
-    for f in data.attachments:
-        if f.origin.kind != LOCAL_KIND or not isinstance(f.data, MessageFileData) or not f.data.path:
-            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
-        if f.data.as_ not in AgentMailSource.files.kinds:
-            raise ValueError(f"AgentMail does not send a {f.data.as_.value}")
+    check_files(data.attachments, AgentMailSource.files, title="AgentMail", text=data.text)
 
 
 def _content(data: MessageData) -> dict[str, Any]:
-    """The body and files of a send or reply, as AgentMail's JSON takes them."""
+    """The body and files of a send or reply, as AgentMail's JSON takes them. Reads the files: run it off the loop."""
     content: dict[str, Any] = {"text": data.text or ""}
     if data.attachments:
         content["attachments"] = [

@@ -354,6 +354,7 @@ async def test_inbound_attachments_map_in_order_and_open_from_the_session(gmail)
             ("<incoming@gmail.test>#1", "map.png", "image/png", len(MAP[2]), FileKind.IMAGE),
         ]
         assert chart.origin.namespace == item.origin.namespace and item.data.text.strip() == "The treasure is under the mast."
+        assert item.data.sender.name == "Sailor"  # the sender's name, never an attachment's file name
         fetches = len(gmail.calls)
         assert (await _read(source, chart), await _read(source, log)) == (MAP[2], LOG[2])
         assert len(gmail.calls) == fetches  # served from this session's copy, no round trip

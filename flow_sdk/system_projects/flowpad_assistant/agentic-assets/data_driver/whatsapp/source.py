@@ -36,7 +36,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Union
 
-import httpx
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
@@ -53,7 +52,7 @@ from flow_sdk.sources.errors import (
     Unsupported,
 )
 from flow_sdk.sources.families import MessageSource
-from flow_sdk.sources.files import LOCAL_KIND, FileSupport, read_file
+from flow_sdk.sources.files import FileSupport, check_files, read_file
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import (
@@ -265,8 +264,9 @@ class WhatsAppSource(MessageSource):
         sender = UserProfile(origin=self.conversation_origin(wa_id), name=names.get(wa_id) or None)
         if kind == "reaction":
             return self._reaction(message, message_id, wa_id, sender)
-        text = _text_of(message, kind) if kind in TEXTUAL else ""
         files = tuple(f for f in (self._file(message, kind),) if f is not None)
+        # The words are the message's own even when they ride a file: a media message's are its caption.
+        text = _text_of(message, kind) if kind in TEXTUAL else (files[0].data.caption or "" if files else "")
         if not (text or files):
             return None
         quoted = str((message.get("context") or {}).get("id") or "")
@@ -328,13 +328,8 @@ class WhatsAppSource(MessageSource):
         if not link:
             raise NotFound("Meta has no download link for this media", origin=origin)
         headers = {"Authorization": f"Bearer {self._token()}"}
-        try:
-            async with self._client.stream("GET", link, headers=headers) as response:
-                if response.status_code >= 400:
-                    raise http.error_for_status(response.status_code, "Meta: media download", origin=origin)
-                yield response.aiter_bytes(chunk_size)
-        except httpx.HTTPError as exc:
-            raise SourceUnavailable(f"GET media {origin.key}: {exc}", origin=origin) from exc
+        async with http.stream(self._client, link, headers=headers, hint="Meta: media download", origin=origin, chunk_size=chunk_size) as chunks:
+            yield chunks
 
     # ── setup ───────────────────────────────────────────────────────────────
     async def verify(self) -> Verdict:
@@ -528,18 +523,11 @@ def _check_outgoing(data: object, support: FileSupport) -> None:
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
     if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
         raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
-    if not data.attachments:
-        if not (data.text or "").strip():
-            raise ValueError("a WhatsApp message needs text or a file")
-        return
-    if len(data.attachments) > support.per_message:
-        raise ValueError("a WhatsApp message carries one file; send the others as messages of their own")
+    if not data.attachments and not (data.text or "").strip():
+        raise ValueError("a WhatsApp message needs text or a file")
+    check_files(data.attachments, support, title="WhatsApp", text=data.text)
     for f in data.attachments:
         fd = f.data
-        if f.origin.kind != LOCAL_KIND or not isinstance(fd, MessageFileData) or not fd.path:
-            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
-        if fd.as_ not in support.kinds:
-            raise ValueError(f"WhatsApp does not send a {fd.as_.value}")
         if fd.as_ is FileKind.VOICE and not (fd.media_type or "").lower().startswith("audio/ogg"):
             raise ValueError(
                 f"a WhatsApp voice note must be OGG/Opus (audio/ogg); {fd.name or 'this file'} is {fd.media_type or 'of no known type'}. "
@@ -548,7 +536,7 @@ def _check_outgoing(data: object, support: FileSupport) -> None:
         text = (data.text or "").strip()
         if text and fd.caption:
             raise ValueError("a captioned file carries no text of its own; send the words as a message of their own")
-        if (fd.caption or text) and not support.captions(fd.as_):
+        if text and not support.captions(fd.as_):
             raise ValueError(f"WhatsApp shows no caption on a {fd.as_.value}; send the words as a message of their own")
 
 

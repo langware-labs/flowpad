@@ -190,7 +190,14 @@ class _AgentRunner:
         process before the prompt and its text after — a redelivery is answered
         from the record, never by a second turn.
         """
-        from flow_sdk.builtin.agent_serve import Turn, TurnEngine, reply_outbox, turn_body, turn_key  # noqa: PLC0415
+        from flow_sdk.builtin.agent_serve import (  # noqa: PLC0415
+            Turn,
+            TurnEngine,
+            outbox_files,
+            reply_outbox,
+            turn_body,
+            turn_key,
+        )
         from flow_sdk.builtin.deployment import AgentUnavailable  # noqa: PLC0415
 
         try:
@@ -213,7 +220,7 @@ class _AgentRunner:
             # Not taken, busy, errored or out of time — the engine's own answer,
             # with ``busy``, ``timed_out`` and ``executor`` intact.
             return outcome
-        files = sorted(str(p) for p in outbox.iterdir() if p.is_file()) if outbox is not None and outbox.is_dir() else []
+        files = outbox_files(outbox)
         return self._output(outcome.text, executor).model_copy(update={"ran": outcome.ran, "files": files})
 
     def _output(self, text: str, executor: str) -> PromptResult:
@@ -568,9 +575,11 @@ class StreamInbox:
                             continue
                         spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
                         quoted = None
-                        if item.reply_to_external_id:
-                            quoted = await SourceItem.get_one(
-                                {"data_source_id": str(source.id), "external_id": item.reply_to_external_id}
+                        if item.reply_to_external_id and item.origin is not None:
+                            # The identity lookup (indexed, and scoped like the item: a Slack ts repeats
+                            # across channels) — the one the projection just used for the same parent.
+                            quoted = await SourceItem.find_existing(
+                                str(source.id), item.origin.model_copy(update={"key": item.reply_to_external_id, "url": None})
                             )
                         handed.append(Delivered(
                             spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered, quoted=quoted
