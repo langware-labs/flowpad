@@ -1193,6 +1193,10 @@ msgstr ""
 msgid "A request just failed because {name} isn't signed in on this machine."
 msgstr "בקשה נכשלה כרגע מכיוון ש-{name} לא מחובר במחשב הזה."
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "A restart of the worker is required."
+msgstr ""
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
 msgstr ""
@@ -2680,6 +2684,14 @@ msgstr "asset_ref לא הוגדר — האם MarkdownIndex זה בנוי אי פ
 msgid "Assets"
 msgstr "נכסים"
 
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Assets in folders added to this run"
+msgstr ""
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Assets the worker brings with it (plugins, bundled extras)"
+msgstr ""
+
 #: src/components/assets/AssetsNavigator.tsx
 msgid "Assets unavailable. Retry"
 msgstr ""
@@ -2696,14 +2708,14 @@ msgstr "הקצאה מתבצעת…"
 msgid "Assistance"
 msgstr "סיוע"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Assistant"
 msgstr "עוזר"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Assistant assets"
-msgstr "נכסי העוזר"
+#~ msgid "Assistant assets"
+#~ msgstr "נכסי העוזר"
 
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 msgid "Assistant is responding"
@@ -6023,7 +6035,7 @@ msgstr "צור חדש"
 msgid "Create New Project"
 msgstr "צור פרויקט חדש"
 
-#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreateTile.tsx
 msgid "Create new…"
 msgstr "צור חדש…"
 
@@ -7055,6 +7067,10 @@ msgstr "תיקיות"
 #: src/components/settings-view/settings-utils.ts
 msgid "Directory for saving plan files"
 msgstr "תיקייה לשמירת קבצי תוכנית"
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Dirs"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Disable all"
@@ -9064,16 +9080,16 @@ msgid "Flowpad Assistant"
 msgstr "עוזר Flowpad"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant — click to browse the assets available to this worker."
-msgstr ""
+#~ msgid "Flowpad Assistant — click to browse the assets available to this worker."
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
 #~ msgstr "Flowpad Assistant — המיומנויות והסוכנים שלו מותקנים בתהליך זה דרך --add-dir. לחצו כדי לעיין בהם."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
-msgstr ""
+#~ msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
@@ -12455,12 +12471,16 @@ msgid "More…"
 msgstr "עוד…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required."
-msgstr "הרכב את עוזר Flowpad כך שמיומנויותיו וסוכניו יהיו זמינים. לחץ להפעלה — יידרש הפעלה מחדש."
+msgid "Mount Flowpad Assistant"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "mounted"
-msgstr "מעודכן"
+#~ msgid "Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required."
+#~ msgstr "הרכב את עוזר Flowpad כך שמיומנויותיו וסוכניו יהיו זמינים. לחץ להפעלה — יידרש הפעלה מחדש."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "mounted"
+#~ msgstr "מעודכן"
 
 #: src/components/assets/useAssetsModel.tsx
 msgid "Moved"
@@ -12631,7 +12651,7 @@ msgstr "מעולם לא סונכרן לענן"
 #: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreateTile.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
@@ -14632,8 +14652,8 @@ msgstr "פתח מהיסטוריה"
 
 #: src/components/quick-create/MiniDesktop.tsx
 #: src/components/quick-create/MiniDesktop.tsx
-msgid "Open full desktop"
-msgstr "פתחו שולחן עבודה מלא"
+#~ msgid "Open full desktop"
+#~ msgstr "פתחו שולחן עבודה מלא"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Open full page"
@@ -15937,6 +15957,7 @@ msgid "project"
 msgstr "פרויקט"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -16435,7 +16456,7 @@ msgstr "הוספה לתור"
 msgid "Queued messages"
 msgstr "הודעות בתור"
 
-#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreateTile.tsx
 msgid "Quick create"
 msgstr "יצירה מהירה"
 
@@ -20925,6 +20946,10 @@ msgstr ""
 msgid "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
 msgstr "ייתכן שהקובץ נמחק, הועבר או שאינו תואם את פורמט {typeLabel}."
 
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "The Flowpad Assistant's assets"
+msgstr ""
+
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "The FlowPad backend server is not responding."
 msgstr "שרת backend של FlowPad אינו מגיב."
@@ -21038,6 +21063,10 @@ msgstr ""
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #~ msgid "The project was not linked to the cloud."
 #~ msgstr "הפרויקט לא קושר לענן."
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "The project's own assets"
+msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "The prompt text…"
@@ -22286,6 +22315,10 @@ msgstr "משך תור"
 msgid "Turn failed"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Turn on a scope above to see its assets."
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Two quick steps in your browser:"
 msgstr "שני צעדים מהירים בדפדפן:"
@@ -22442,6 +22475,10 @@ msgstr "ללא הגבלה"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "Unlimited here — {parent} caps you at {limit} {windowText}"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unmount Flowpad Assistant"
 msgstr ""
 
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
@@ -22769,6 +22806,7 @@ msgstr ""
 msgid "user"
 msgstr ""
 
+#: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -23465,6 +23503,7 @@ msgstr "אשף"
 msgid "Wizard close failed"
 msgstr "סגירת האשף נכשלה"
 
+#: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/workers/WorkerTypeSelect.tsx
@@ -23775,6 +23814,10 @@ msgstr "מפתח ה-API החדש שלך נוצר. אנא שמור אותו בצ�
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
 msgstr "קוד החד-פעמי שלך נמצא להלן. לחץ על <0>העתק קוד ופתח GitHub</0> — אנחנו נעתיק אותו ללוח הגזירה שלך ונפתח את עמוד ההפעלה של GitHub כדי שתוכל להדביק אותו שם."
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Your own assets, shared by every project"
+msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
