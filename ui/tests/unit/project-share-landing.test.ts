@@ -5,7 +5,7 @@
  * `callback_override` (its Python twin is `project_share_landing_path`), and
  * `projectOpenTargetPath` is what "Open in FlowPad" hands the desktop: the
  * `?action=open` link `IncomingDeepLink` reads. These pin both ends of that
- * hand-off, so a rename on either side fails here instead of in an inbox.
+ * hand-off, so a rename on either side fails here instead of in a sent email.
  */
 import { type GitOrigin } from '@sdk';
 import { describe, expect, it } from 'vitest';
