@@ -5,10 +5,10 @@ import { usePreference } from '@src/hooks/use-preference';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import Editor, { loader } from '@monaco-editor/react';
-import type { editor as monacoEditor } from 'monaco-editor';
+import type { editor as monacoEditor, MarkerSeverity } from 'monaco-editor';
 import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
 import { useLingui } from '@lingui/react/macro';
-import { Import, ListStart, Play, Square } from 'lucide-react';
+import { CircleAlert, CircleCheck, Import, ListStart, Play, Square } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -17,9 +17,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
  * markers split it into hidden (imports) / init / snippet. Only the snippet
  * region shows by default; the toolbar reveals the others (remembered prefs).
  *
- * Deliberately a renderer only. Reading regions, writing one back and running
- * the file are the backend's (`flow_sdk/core/snippet.py`, `/api/v1/snippet/*`),
- * proven there by unit tests — nothing here decides what a region is.
+ * Deliberately a renderer only. Reading regions, writing one back, checking and
+ * running the file are the backend's (`flow_sdk/core/snippet.py`, `/api/v1/snippet/*`),
+ * proven there by unit tests — nothing here decides what a region is or what a
+ * problem is. The check's problems come back in FILE lines; this view only maps
+ * them onto the region that holds each line.
  */
 
 interface SnippetRegionView {
@@ -37,6 +39,26 @@ interface SnippetRead {
   error_code?: string;
 }
 
+/** One problem `/api/v1/snippet/check` found, in FILE lines, 1-based columns, end exclusive. */
+export interface SnippetDiagnostic {
+  line: number;
+  col: number;
+  end_line: number;
+  end_col: number;
+  severity: 'error' | 'warning';
+  kind: 'syntax' | 'name' | 'import' | 'check';
+  message: string;
+}
+
+/** The region holding file line `line`, and the line within it — `null` for a marker line. */
+export function regionLine(regions: SnippetRegionView[], line: number): { index: number; line: number } | null {
+  for (const r of regions) {
+    const last = r.line + Math.max(r.shown.split('\n').length, 1) - 1;
+    if (line >= r.line && line <= last) return { index: r.index, line: line - r.line + 1 };
+  }
+  return null;
+}
+
 /** The run's answer, and whether THIS view stopped it. A stop is a fact the
  *  view knows — it pressed the button — not something to infer from the answer:
  *  reading "any detail means stopped" labelled every failed run "stopped", since
@@ -47,6 +69,9 @@ type SnippetOutcome = CliResult & { stopped: boolean };
 const stopRun = (runId: string) => apiClient.post<{ stopped?: boolean }>('/api/v1/snippet/stop', { run_id: runId });
 
 const LINE_HEIGHT = 19;
+/** The owner name the check's markers are set under (one set per region editor). */
+const MARKER_OWNER = 'flowpad-snippet-check';
+type SetModelMarkers = (model: monacoEditor.ITextModel, owner: string, markers: monacoEditor.IMarkerData[]) => void;
 const SAVE_DEBOUNCE_MS = 500;
 
 interface SnippetViewProps {
@@ -88,6 +113,11 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const error = readError || notice;
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<SnippetOutcome | null>(null);
+  // What the check says about the file on disk — null until the first answer.
+  const [problems, setProblems] = useState<SnippetDiagnostic[] | null>(null);
+  // Only the newest check's answer counts: a slow check of an older text must not
+  // overwrite the answer for the text on screen.
+  const checkSeqRef = useRef(0);
   // The run in flight, by the id the backend knows it by — what Stop names.
   const runIdRef = useRef<string | null>(null);
   const stopRequestedRef = useRef(false);
@@ -128,6 +158,20 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
 
   const loadedRef = useRef(false);
 
+  /** Ask what would stop the file as it is on disk now (after a read or a save). */
+  const check = useCallback(async () => {
+    const seq = ++checkSeqRef.current;
+    try {
+      const res = await apiClient.post<{ diagnostics?: SnippetDiagnostic[] }>('/api/v1/snippet/check', {
+        path,
+        timeout_seconds: timeoutSeconds,
+      });
+      if (seq === checkSeqRef.current) setProblems(res?.diagnostics ?? []);
+    } catch {
+      // A check that could not be asked says nothing about the file: keep the last answer.
+    }
+  }, [path, timeoutSeconds]);
+
   const load = useCallback(async () => {
     let res: SnippetRead;
     try {
@@ -155,7 +199,8 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
       setGeneration((g) => g + 1);
     }
     setRegions(res.regions);
-  }, [path, onNotSnippet, synced, t]);
+    void check();
+  }, [path, onNotSnippet, synced, check, t]);
 
   useEffect(() => {
     if (revision !== syncedRef.current) void load();
@@ -191,6 +236,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
             baseRef.current.set(region.index, read.regions[region.index]?.shown ?? shown);
             setRegions(read.regions);
             synced(read.text);
+            void check();
           } else {
             // STALE: the file changed under us (the agent edited it). Take theirs —
             // writing ours would erase their change. The notice is set AFTER the
@@ -209,7 +255,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
       inflight.add(request);
       return request;
     },
-    [path, synced, load, t],
+    [path, synced, load, check, t],
   );
 
   const onEdit = useCallback(
@@ -307,6 +353,13 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const visible = regions.filter((r) => r.kind === 'snippet' || (r.kind === 'init' ? showInit : showImports));
   const has = (kind: SnippetRegionView['kind']) => regions.some((r) => r.kind === kind);
   const label = { hidden: t`imports`, init: t`init`, snippet: '' };
+  const markersOf = (index: number) =>
+    (problems ?? []).flatMap((d) => {
+      const at = regionLine(regions, d.line);
+      if (!at || at.index !== index) return [];
+      const end = regionLine(regions, d.end_line);
+      return [{ ...d, line: at.line, end_line: end?.index === index ? end.line : at.line }];
+    });
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="snippet-view">
@@ -339,6 +392,22 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
             {showImports ? t`Hide imports` : t`Show imports`}
           </Button>
         )}
+        {problems &&
+          (problems.length === 0 ? (
+            <span className="ml-2 flex items-center gap-1 text-xs text-muted-foreground" data-testid="snippet-check">
+              <CircleCheck className="h-3.5 w-3.5" />
+              {t`checks pass`}
+            </span>
+          ) : (
+            <span
+              className="ml-2 flex items-center gap-1 text-xs text-destructive"
+              data-testid="snippet-check"
+              title={problems.map((d) => `${d.line}:${d.col} ${d.message}`).join('\n')}
+            >
+              <CircleAlert className="h-3.5 w-3.5" />
+              {problems.length === 1 ? t`1 problem` : t`${problems.length} problems`}
+            </span>
+          ))}
         {error && <span className="ml-2 text-xs text-destructive">{error}</span>}
       </div>
 
@@ -351,6 +420,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
               language={language}
               theme={monacoTheme(resolvedTheme)}
               readOnly={readOnly}
+              markers={markersOf(region.index)}
               onChange={(value) => onEdit(region, value)}
             />
           </div>
@@ -388,20 +458,41 @@ function RegionEditor({
   language,
   theme,
   readOnly,
+  markers,
   onChange,
 }: {
   region: SnippetRegionView;
   language: string;
   theme: string;
   readOnly?: boolean;
+  /** This region's problems, in the region's own lines. */
+  markers: SnippetDiagnostic[];
   onChange: (value: string | undefined) => void;
 }) {
   const [height, setHeight] = useState(() => Math.max(region.shown.split('\n').length, 1) * LINE_HEIGHT + 8);
-  const onMount = useCallback((editor: monacoEditor.IStandaloneCodeEditor) => {
+  const [mounted, setMounted] = useState<{ editor: monacoEditor.IStandaloneCodeEditor; setMarkers: SetModelMarkers } | null>(null);
+  const onMount = useCallback((editor: monacoEditor.IStandaloneCodeEditor, monaco: { editor: { setModelMarkers: SetModelMarkers } }) => {
     const fit = () => setHeight(editor.getContentHeight());
     editor.onDidContentSizeChange(fit);
     fit();
+    setMounted({ editor, setMarkers: monaco.editor.setModelMarkers });
   }, []);
+  useEffect(() => {
+    const model = mounted?.editor.getModel();
+    if (!mounted || !model) return;
+    mounted.setMarkers(
+      model,
+      MARKER_OWNER,
+      markers.map((d) => ({
+        startLineNumber: d.line,
+        startColumn: d.col,
+        endLineNumber: d.end_line,
+        endColumn: d.end_col,
+        message: d.message,
+        severity: (d.severity === 'error' ? 8 : 4) as MarkerSeverity, // monaco.MarkerSeverity.Error / .Warning
+      })),
+    );
+  }, [mounted, markers]);
   return (
     <Editor
       height={height}

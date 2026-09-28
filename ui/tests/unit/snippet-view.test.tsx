@@ -12,7 +12,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PrefKey, instancePreferences } from '@sdk';
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(), fileChanged: null as null | (() => void), watched: [] as string[] }));
+const mocks = vi.hoisted(() => ({
+  post: vi.fn(),
+  fileChanged: null as null | (() => void),
+  watched: [] as string[],
+  // Monaco's setModelMarkers, by the model (the region's text) it was called for.
+  markers: new Map<string, Array<Record<string, unknown>>>(),
+}));
 
 vi.mock('@sdk/client', () => ({ __esModule: true, default: { post: mocks.post } }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({
@@ -26,15 +32,34 @@ vi.mock('@src/components/code-editor/shikiMonaco', () => ({
   ensureShikiMonaco: () => Promise.resolve(),
   monacoTheme: () => 'dark-plus',
 }));
-vi.mock('@monaco-editor/react', () => ({
-  __esModule: true,
-  loader: { init: () => Promise.resolve({}) },
-  default: ({ defaultValue, onChange }: { defaultValue: string; onChange: (v: string) => void }) => (
-    <textarea data-testid="region-editor" defaultValue={defaultValue} onChange={(e) => onChange(e.target.value)} />
-  ),
-}));
+vi.mock('@monaco-editor/react', async () => {
+  const { useEffect } = await import('react');
+  return {
+    __esModule: true,
+    loader: { init: () => Promise.resolve({}) },
+    default: ({
+      defaultValue,
+      onChange,
+      onMount,
+    }: {
+      defaultValue: string;
+      onChange: (v: string) => void;
+      onMount?: (editor: unknown, monaco: unknown) => void;
+    }) => {
+      useEffect(() => {
+        const model = { region: defaultValue };
+        onMount?.(
+          { getContentHeight: () => 19, onDidContentSizeChange: () => undefined, getModel: () => model },
+          { editor: { setModelMarkers: (m: typeof model, _owner: string, list: Array<Record<string, unknown>>) => mocks.markers.set(m.region, list) } },
+        );
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return <textarea data-testid="region-editor" defaultValue={defaultValue} onChange={(e) => onChange(e.target.value)} />;
+    },
+  };
+});
 
-const { SnippetView } = await import('@src/components/code-editor/SnippetView');
+const { SnippetView, regionLine } = await import('@src/components/code-editor/SnippetView');
 
 const PATH = '/tmp/flowpad-snippets/t.py';
 const REGIONS = [
@@ -50,6 +75,7 @@ function backend(overrides: Record<string, unknown> = {}) {
     if (url in overrides) return Promise.resolve(overrides[url]);
     if (url.endsWith('/read')) return Promise.resolve({ path: PATH, regions: REGIONS, text: 'READ TEXT' });
     if (url.endsWith('/save')) return Promise.resolve({ path: PATH, regions: REGIONS, text: 'FILE TEXT' });
+    if (url.endsWith('/check')) return Promise.resolve({ path: PATH, diagnostics: [] });
     return Promise.resolve({ returncode: 0, stdout: 'ok\n', stderr: '', timed_out: false, duration_s: 0.12 });
   });
   return calls;
@@ -75,6 +101,35 @@ describe('SnippetView', () => {
     mocks.post.mockReset();
     mocks.fileChanged = null;
     mocks.watched = [];
+    mocks.markers.clear();
+  });
+
+  const problem = (line: number, message: string, kind = 'name') => ({ line, col: 1, end_line: line, end_col: 4, severity: 'error', kind, message });
+
+  it('marks each problem on the region that holds its line, and counts folded regions too', async () => {
+    backend({ '/api/v1/snippet/check': { diagnostics: [problem(2, "No module named 'jsonx'", 'import'), problem(6, "name 'NOTES' is not defined")] } });
+    view();
+    const chip = await screen.findByTestId('snippet-check');
+    await waitFor(() => expect(chip.textContent).toContain('2 problems'));
+    // the snippet region starts at file line 6: the problem is its line 1
+    await waitFor(() => expect(mocks.markers.get('print(d)')).toEqual([expect.objectContaining({ startLineNumber: 1, message: "name 'NOTES' is not defined", severity: 8 })]));
+    expect(mocks.markers.has('import json')).toBe(false); // imports are folded — only the chip counts it
+    fireEvent.click(screen.getByTestId('snippet-toggle-imports'));
+    await waitFor(() => expect(mocks.markers.get('import json')).toEqual([expect.objectContaining({ startLineNumber: 1 })]));
+  });
+
+  it('says the checks pass when the file is clean, and asks again after each save', async () => {
+    const calls = backend();
+    view();
+    await waitFor(() => expect(screen.getByTestId('snippet-check').textContent).toContain('checks pass'));
+    fireEvent.change(editors()[0], { target: { value: 'print(d + 1)' } });
+    await waitFor(() => expect(calls.map(([url]) => url).lastIndexOf('/api/v1/snippet/check')).toBeGreaterThan(calls.map(([url]) => url).indexOf('/api/v1/snippet/save')));
+  });
+
+  it('maps a file line to its region, and a marker line to none', () => {
+    const regions = REGIONS as Parameters<typeof regionLine>[0];
+    expect(regionLine(regions, 6)).toEqual({ index: 2, line: 1 });
+    expect(regionLine(regions, 5)).toBeNull(); // the `# %% flowpad:snippet` line
   });
 
   it('shows only the snippet region until init and imports are asked for, and remembers', async () => {
