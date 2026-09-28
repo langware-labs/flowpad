@@ -1,6 +1,7 @@
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { BrowseableTree, ToolbarButton } from '@src/components/browseable-tree/BrowseableTree';
 import { TreeSelectionContext, useTreeSelection } from '@src/components/browseable-tree/useTreeSelection';
 import { useNavigatorSearch } from './NavigatorSearch';
@@ -50,8 +51,11 @@ export function NavigatorPanel({
   const { t } = useLingui();
 
   // Open by default on first sight; an explicit choice (incl. '0' = open) is
-  // remembered across reloads.
-  const [collapsed, setCollapsed] = useState(() => readCollapsed(id) ?? false);
+  // remembered across reloads. A `win/` popout (a tab opened in its own
+  // window) always starts collapsed — the window is for the content — and its
+  // toggles stay local, so they never rewrite the main window's choice.
+  const { windowMode } = useDockNavigation();
+  const [collapsed, setCollapsed] = useState(() => windowMode || (readCollapsed(id) ?? false));
   const [width, setWidth] = useState<number>(() => readWidth(id, bounds, legacyKeys));
   const [isResizing, setIsResizing] = useState(false);
 
@@ -112,9 +116,9 @@ export function NavigatorPanel({
   }, [selectionEnabled]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || windowMode) return;
     window.localStorage.setItem(`navigator:${id}:collapsed`, collapsed ? '1' : '0');
-  }, [id, collapsed]);
+  }, [id, collapsed, windowMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
