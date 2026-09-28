@@ -11,6 +11,7 @@ step's OWN result. A step never reached is absent.
 
 Every case drives the real runner with stub resolvers and stub I/O.
 """
+
 from __future__ import annotations
 
 import json
@@ -68,6 +69,7 @@ def _shell(code_for, *, seen=None):
         if seen is not None:
             seen.append((command, dict(kw.get("extra_env") or {})))
         return CliResult.of_process(command, code_for(command))
+
     return shell
 
 
@@ -92,24 +94,36 @@ def _converges(name: str):
 def _launch():
     async def launch(**_kw):
         return PromptResult.satisfied("The agent finished.", executor="agentic_process-proc-1")
+
     return launch
 
 
 async def _run_wizard(spec, *, tmp_path, shell=None, **over):
     return await run_wizard(
-        spec, trusted=True, platform="linux", workdir=Path(tmp_path),
-        shell=shell or _shell(lambda _c: 0), launch=_launch(),
-        activity_path=f"wz/{tmp_path.name}", **over,
+        spec,
+        trusted=True,
+        platform="linux",
+        workdir=Path(tmp_path),
+        shell=shell or _shell(lambda _c: 0),
+        launch=_launch(),
+        activity_path=f"wz/{tmp_path.name}",
+        **over,
     )
 
 
 # ── dispatch ─────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_a_compute_step_takes_the_ops_answer_as_its_own(tmp_path):
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "jq", "kind": "compute", "ref": "jq"},
-    ]})
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
     result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=_ops(_op("jq")))
 
     assert isinstance(result, WizardResult) and result.ok
@@ -121,9 +135,14 @@ async def test_a_compute_step_takes_the_ops_answer_as_its_own(tmp_path):
 
 @pytest.mark.asyncio
 async def test_an_unknown_ref_fails_the_step_naming_it(tmp_path):
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "nope", "kind": "compute", "ref": "missing-op"},
-    ]})
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "nope", "kind": "compute", "ref": "missing-op"},
+            ],
+        }
+    )
     result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=_ops())
 
     assert result.exit_code is ExitCode.NOT_YET
@@ -134,14 +153,25 @@ async def test_an_unknown_ref_fails_the_step_naming_it(tmp_path):
 
 @pytest.mark.asyncio
 async def test_a_step_calling_another_wizard_runs_it_and_reads_one_answer(tmp_path):
-    inner = WizardSpec.model_validate({"name": "inner", "steps": [
-        {"id": "jq", "kind": "compute", "ref": "jq"},
-    ]})
-    outer = WizardSpec.model_validate({"name": "outer", "steps": [
-        {"id": "sub", "kind": "wizard", "ref": "inner"},
-    ]})
-    result = await _run_wizard(outer, tmp_path=tmp_path, resolve_op=_ops(_op("jq")),
-                               resolve_wizard=_wizards({"inner": inner}))
+    inner = WizardSpec.model_validate(
+        {
+            "name": "inner",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
+    outer = WizardSpec.model_validate(
+        {
+            "name": "outer",
+            "steps": [
+                {"id": "sub", "kind": "wizard", "ref": "inner"},
+            ],
+        }
+    )
+    result = await _run_wizard(
+        outer, tmp_path=tmp_path, resolve_op=_ops(_op("jq")), resolve_wizard=_wizards({"inner": inner})
+    )
 
     assert result.ok
     sub = result.steps["sub"]
@@ -158,22 +188,37 @@ async def test_a_nested_wizard_that_actually_works_reports_that_it_ran(tmp_path)
     """The other half of the pair above: `ran=False` must mean "nothing ran",
     not "the callee was a wizard". Here the inner op's goal does not hold until
     its call runs, so the calling step reports real work."""
-    inner = WizardSpec.model_validate({"name": "inner", "steps": [
-        {"id": "jq", "kind": "compute", "ref": "jq"},
-    ]})
-    outer = WizardSpec.model_validate({"name": "outer", "steps": [
-        {"id": "sub", "kind": "wizard", "ref": "inner"},
-    ]})
+    inner = WizardSpec.model_validate(
+        {
+            "name": "inner",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
+    outer = WizardSpec.model_validate(
+        {
+            "name": "outer",
+            "steps": [
+                {"id": "sub", "kind": "wizard", "ref": "inner"},
+            ],
+        }
+    )
     asked: list[str] = []
 
     def code_for(command: str) -> int:
-        if command.startswith("have "):          # the completion check
+        if command.startswith("have "):  # the completion check
             asked.append(command)
-            return 1 if len(asked) == 1 else 0   # missing, then present
-        return 0                                  # the install call
+            return 1 if len(asked) == 1 else 0  # missing, then present
+        return 0  # the install call
 
-    result = await _run_wizard(outer, tmp_path=tmp_path, shell=_shell(code_for),
-                               resolve_op=_ops(_op("jq")), resolve_wizard=_wizards({"inner": inner}))
+    result = await _run_wizard(
+        outer,
+        tmp_path=tmp_path,
+        shell=_shell(code_for),
+        resolve_op=_ops(_op("jq")),
+        resolve_wizard=_wizards({"inner": inner}),
+    )
 
     assert result.ok and result.ran is True
     assert result.steps["sub"].ran is True
@@ -181,14 +226,21 @@ async def test_a_nested_wizard_that_actually_works_reports_that_it_ran(tmp_path)
 
 # ── on_fail: the sequence's policy, not the op's ─────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_abort_stops_the_run_and_later_steps_are_absent(tmp_path):
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "first", "kind": "compute", "ref": "broken", "on_fail": "abort"},
-        {"id": "second", "kind": "compute", "ref": "jq"},
-    ]})
-    result = await _run_wizard(spec, tmp_path=tmp_path, shell=_shell(lambda _c: 1),
-                               resolve_op=_ops(_op("broken"), _op("jq")))
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "first", "kind": "compute", "ref": "broken", "on_fail": "abort"},
+                {"id": "second", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
+    result = await _run_wizard(
+        spec, tmp_path=tmp_path, shell=_shell(lambda _c: 1), resolve_op=_ops(_op("broken"), _op("jq"))
+    )
 
     assert result.exit_code is ExitCode.NOT_YET
     assert result.steps["first"].exit_code is ExitCode.NOT_YET
@@ -198,12 +250,18 @@ async def test_abort_stops_the_run_and_later_steps_are_absent(tmp_path):
 
 @pytest.mark.asyncio
 async def test_continue_lets_the_rest_of_the_run_proceed(tmp_path):
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "first", "kind": "compute", "ref": "broken", "on_fail": "continue"},
-        {"id": "second", "kind": "compute", "ref": "jq"},
-    ]})
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "first", "kind": "compute", "ref": "broken", "on_fail": "continue"},
+                {"id": "second", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
     result = await _run_wizard(
-        spec, tmp_path=tmp_path,
+        spec,
+        tmp_path=tmp_path,
         shell=_shell(lambda c: 1 if "broken" in c else 0),
         resolve_op=_ops(_op("broken"), _op("jq")),
     )
@@ -218,18 +276,34 @@ async def test_continue_lets_the_rest_of_the_run_proceed(tmp_path):
 
 # ── arguments ────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_args_bind_a_value_in_scope_to_the_callees_parameter(tmp_path):
     seen: list[tuple[str, dict]] = []
-    inner = WizardSpec.model_validate({"name": "inner", "steps": [
-        {"id": "use", "kind": "compute", "ref": "use-key"},
-    ]})
-    outer = WizardSpec.model_validate({"name": "outer", "steps": [
-        {"id": "sub", "kind": "wizard", "ref": "inner", "args": {"API_KEY": "WAHA_KEY"}},
-    ]})
-    result = await _run_wizard(outer, tmp_path=tmp_path, inputs={"WAHA_KEY": "s3cret"},
-                               shell=_shell(lambda _c: 0, seen=seen),
-                               resolve_op=_ops(_op("use-key")), resolve_wizard=_wizards({"inner": inner}))
+    inner = WizardSpec.model_validate(
+        {
+            "name": "inner",
+            "steps": [
+                {"id": "use", "kind": "compute", "ref": "use-key"},
+            ],
+        }
+    )
+    outer = WizardSpec.model_validate(
+        {
+            "name": "outer",
+            "steps": [
+                {"id": "sub", "kind": "wizard", "ref": "inner", "args": {"API_KEY": "WAHA_KEY"}},
+            ],
+        }
+    )
+    result = await _run_wizard(
+        outer,
+        tmp_path=tmp_path,
+        inputs={"WAHA_KEY": "s3cret"},
+        shell=_shell(lambda _c: 0, seen=seen),
+        resolve_op=_ops(_op("use-key")),
+        resolve_wizard=_wizards({"inner": inner}),
+    )
 
     assert result.ok
     # The callee's parameter carries the caller's VALUE, by name.
@@ -239,14 +313,29 @@ async def test_args_bind_a_value_in_scope_to_the_callees_parameter(tmp_path):
 @pytest.mark.asyncio
 async def test_an_arg_that_names_nothing_in_scope_is_a_literal(tmp_path):
     seen: list[tuple[str, dict]] = []
-    inner = WizardSpec.model_validate({"name": "inner", "steps": [
-        {"id": "use", "kind": "compute", "ref": "use-port"},
-    ]})
-    outer = WizardSpec.model_validate({"name": "outer", "steps": [
-        {"id": "sub", "kind": "wizard", "ref": "inner", "args": {"PORT": "3010"}},
-    ]})
-    result = await _run_wizard(outer, tmp_path=tmp_path, shell=_shell(lambda _c: 0, seen=seen),
-                               resolve_op=_ops(_op("use-port")), resolve_wizard=_wizards({"inner": inner}))
+    inner = WizardSpec.model_validate(
+        {
+            "name": "inner",
+            "steps": [
+                {"id": "use", "kind": "compute", "ref": "use-port"},
+            ],
+        }
+    )
+    outer = WizardSpec.model_validate(
+        {
+            "name": "outer",
+            "steps": [
+                {"id": "sub", "kind": "wizard", "ref": "inner", "args": {"PORT": "3010"}},
+            ],
+        }
+    )
+    result = await _run_wizard(
+        outer,
+        tmp_path=tmp_path,
+        shell=_shell(lambda _c: 0, seen=seen),
+        resolve_op=_ops(_op("use-port")),
+        resolve_wizard=_wizards({"inner": inner}),
+    )
 
     assert result.ok
     assert any(env.get("FLOWPAD_WIZARD_INPUT_PORT") == "3010" for _c, env in seen), seen
@@ -261,13 +350,26 @@ async def test_a_value_reaches_a_command_as_env_and_is_never_inlined(tmp_path):
     whether this may run shell at all.
     """
     seen: list[tuple[str, dict]] = []
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "clone", "kind": "compute", "ref": "clone"},
-    ]})
-    op = _op("clone", completion_check={"commands": {"linux": "test -d repo"}},
-             exe_data={"commands": {"linux": 'git clone "$FLOWPAD_WIZARD_INPUT_REPO_URL"'}})
-    await _run_wizard(spec, tmp_path=tmp_path, shell=_shell(lambda _c: 0, seen=seen),
-                      inputs={"REPO_URL": "; rm -rf / #"}, resolve_op=_ops(op))
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "clone", "kind": "compute", "ref": "clone"},
+            ],
+        }
+    )
+    op = _op(
+        "clone",
+        completion_check={"commands": {"linux": "test -d repo"}},
+        exe_data={"commands": {"linux": 'git clone "$FLOWPAD_WIZARD_INPUT_REPO_URL"'}},
+    )
+    await _run_wizard(
+        spec,
+        tmp_path=tmp_path,
+        shell=_shell(lambda _c: 0, seen=seen),
+        inputs={"REPO_URL": "; rm -rf / #"},
+        resolve_op=_ops(op),
+    )
 
     commands = [command for command, _env in seen]
     assert not any("rm -rf" in command for command in commands), commands
@@ -276,14 +378,26 @@ async def test_a_value_reaches_a_command_as_env_and_is_never_inlined(tmp_path):
 
 # ── trust ────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_an_unapproved_wizard_refuses_before_it_runs_anything(tmp_path):
     seen: list = []
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "jq", "kind": "compute", "ref": "jq"},
-    ]})
-    result = await run_wizard(spec, trusted=False, platform="linux", workdir=Path(tmp_path),
-                              shell=_shell(lambda _c: 0, seen=seen), resolve_op=_ops(_op("jq")))
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
+    result = await run_wizard(
+        spec,
+        trusted=False,
+        platform="linux",
+        workdir=Path(tmp_path),
+        shell=_shell(lambda _c: 0, seen=seen),
+        resolve_op=_ops(_op("jq")),
+    )
 
     assert type(result) is WizardResult
     assert result.exit_code is ExitCode.REFUSED and result.ran is False
@@ -299,12 +413,18 @@ async def test_being_shipped_does_not_lend_approval_to_a_callee(tmp_path):
     primitive through one indirection.
     """
     seen: list = []
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "jq", "kind": "compute", "ref": "jq", "on_fail": "continue"},
-        {"id": "after", "kind": "compute", "ref": "jq"},
-    ]})
-    result = await _run_wizard(spec, tmp_path=tmp_path, shell=_shell(lambda _c: 0, seen=seen),
-                               resolve_op=_ops(_op("jq"), trusted=False))
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq", "on_fail": "continue"},
+                {"id": "after", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
+    result = await _run_wizard(
+        spec, tmp_path=tmp_path, shell=_shell(lambda _c: 0, seen=seen), resolve_op=_ops(_op("jq"), trusted=False)
+    )
 
     assert result.exit_code is ExitCode.REFUSED
     assert "jq" in result.detail
@@ -319,10 +439,16 @@ async def test_being_shipped_does_not_lend_approval_to_a_callee(tmp_path):
 async def test_a_refusal_after_real_work_does_not_report_that_nothing_ran(tmp_path):
     """`ran=False` means SKIPPED to every reader — so a run that installed
     something before it hit an untrusted callee must not claim it."""
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "jq", "kind": "compute", "ref": "jq"},
-        {"id": "rg", "kind": "compute", "ref": "rg"},
-    ]})
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+                {"id": "rg", "kind": "compute", "ref": "rg"},
+            ],
+        }
+    )
+
     # `have jq` fails until `install jq` has run, so the first step really works;
     # `rg` does not resolve as trusted, so the second step refuses.
     async def resolve(name: str):
@@ -342,9 +468,14 @@ async def test_a_wizard_that_calls_itself_answers_instead_of_recursing(tmp_path)
     Unbounded nesting ends in a crash — the Activity tree's own depth cap raises
     before the stack gives out — and a crash is not an answer.
     """
-    spec = WizardSpec.model_validate({"name": "loop", "steps": [
-        {"id": "again", "kind": "wizard", "ref": "loop"},
-    ]})
+    spec = WizardSpec.model_validate(
+        {
+            "name": "loop",
+            "steps": [
+                {"id": "again", "kind": "wizard", "ref": "loop"},
+            ],
+        }
+    )
     result = await _run_wizard(spec, tmp_path=tmp_path, resolve_wizard=_wizards({"loop": spec}))
 
     assert result.exit_code is ExitCode.NOT_YET
@@ -356,9 +487,17 @@ async def test_a_wizard_that_calls_itself_answers_instead_of_recursing(tmp_path)
 async def test_a_chain_that_never_repeats_still_has_a_floor(tmp_path):
     """The other runaway: each wizard calls a DIFFERENT one, forever."""
     # One more level than the cap allows, so the floor is what stops it.
-    table = {f"w{i}": WizardSpec.model_validate({"name": f"w{i}", "steps": [
-        {"id": "down", "kind": "wizard", "ref": f"w{i + 1}"},
-    ]}) for i in range(MAX_WIZARD_DEPTH + 1)}
+    table = {
+        f"w{i}": WizardSpec.model_validate(
+            {
+                "name": f"w{i}",
+                "steps": [
+                    {"id": "down", "kind": "wizard", "ref": f"w{i + 1}"},
+                ],
+            }
+        )
+        for i in range(MAX_WIZARD_DEPTH + 1)
+    }
     result = await _run_wizard(table["w0"], tmp_path=tmp_path, resolve_wizard=_wizards(table))
 
     assert result.exit_code is ExitCode.NOT_YET
@@ -371,11 +510,13 @@ async def test_a_declared_output_the_steps_do_not_satisfy_fails_the_wizard(tmp_p
     """A wizard's `output` binds, exactly as an op's `output_spec_kind` does —
     otherwise a caller binds a value that does not hold and carries the breakage
     somewhere it cannot be explained."""
-    spec = WizardSpec.model_validate({
-        "name": "w",
-        "output": {"port": "int"},
-        "steps": [{"id": "jq", "kind": "compute", "ref": "jq", "bind": "jq"}],
-    })
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "output": {"port": "int"},
+            "steps": [{"id": "jq", "kind": "compute", "ref": "jq", "bind": "jq"}],
+        }
+    )
     result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=_ops(_op("jq")))
 
     assert result.exit_code is ExitCode.NOT_YET
@@ -391,11 +532,15 @@ async def test_an_explicit_approval_does_reach_the_callees(tmp_path):
     refs are right there. Without this an approved wizard could not run its own
     ops, which is not a gate, it is a dead end.
     """
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "jq", "kind": "compute", "ref": "jq"},
-    ]})
-    result = await _run_wizard(spec, tmp_path=tmp_path, approved=True,
-                               resolve_op=_ops(_op("jq"), trusted=False))
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
+    result = await _run_wizard(spec, tmp_path=tmp_path, approved=True, resolve_op=_ops(_op("jq"), trusted=False))
     assert result.ok
 
 
@@ -422,20 +567,34 @@ async def test_a_bound_value_reaches_a_later_step_as_environment(tmp_path):
 
     # An op with no completion check is a CALL: it always runs, and its answer
     # is its value — returned through the receipt the agent writes.
-    producer = ComputeOpSpec.model_validate({
-        "name": "release", "subkind": "agent", "output_spec_kind": "string",
-        "exe_data": {"agent": "provisioner", "prompt": "which release"},
-    })
+    producer = ComputeOpSpec.model_validate(
+        {
+            "name": "release",
+            "subkind": "agent",
+            "output_spec_kind": "string",
+            "exe_data": {"agent": "provisioner", "prompt": "which release"},
+        }
+    )
     consumer = _op("use-it", completion_check={"commands": {"linux": "echo $FLOWPAD_WIZARD_INPUT_RELEASE"}})
-    spec = WizardSpec.model_validate({"name": "chained", "steps": [
-        {"id": "ask-agent", "kind": "compute", "ref": "release", "bind": "RELEASE"},
-        {"id": "use-it", "kind": "compute", "ref": "use-it"},
-    ]})
+    spec = WizardSpec.model_validate(
+        {
+            "name": "chained",
+            "steps": [
+                {"id": "ask-agent", "kind": "compute", "ref": "release", "bind": "RELEASE"},
+                {"id": "use-it", "kind": "compute", "ref": "use-it"},
+            ],
+        }
+    )
 
     result = await run_wizard(
-        spec, trusted=True, platform="linux", workdir=Path(tmp_path),
-        shell=shell, launch=launch,
-        resolve_op=_ops(producer, consumer), activity_path=f"wz/bind-{tmp_path.name}",
+        spec,
+        trusted=True,
+        platform="linux",
+        workdir=Path(tmp_path),
+        shell=shell,
+        launch=launch,
+        resolve_op=_ops(producer, consumer),
+        activity_path=f"wz/bind-{tmp_path.name}",
     )
 
     assert result.ok, result.detail
@@ -450,12 +609,121 @@ async def test_the_result_round_trips_through_its_dump(tmp_path):
     answers — each step as its own subclass, not a flattened base."""
     from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
-    spec = WizardSpec.model_validate({"name": "w", "steps": [
-        {"id": "jq", "kind": "compute", "ref": "jq"},
-    ]})
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
     result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=_ops(_op("jq")))
 
     again = WizardResult.model_validate(json.loads(json.dumps(result.model_dump(mode="json"))))
     assert type(again) is WizardResult
     assert type(again.steps["jq"]) is CliResult
     assert again == result
+
+
+# ── on_step — a live, per-step progress snapshot ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_on_step_fires_once_per_top_level_step_with_the_run_so_far(tmp_path):
+    """A caller watching a run live sees each step's OWN answer as soon as that
+    step settles — not only once, at the very end, after every step (including
+    slow ones later in the list) has also finished."""
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+                {"id": "rg", "kind": "compute", "ref": "rg"},
+            ],
+        }
+    )
+    seen: list[WizardResult] = []
+
+    async def on_step(partial: WizardResult) -> None:
+        seen.append(partial)
+
+    result = await _run_wizard(
+        spec,
+        tmp_path=tmp_path,
+        resolve_op=_ops(_op("jq"), _op("rg")),
+        on_step=on_step,
+    )
+
+    assert result.ok
+    # Once per top-level step, in order — never zero, never batched into one
+    # call at the end.
+    assert len(seen) == 2
+    assert list(seen[0].steps) == ["jq"], "the first callback sees only the first step"
+    assert list(seen[1].steps) == ["jq", "rg"], "the second sees both — it never forgets the first"
+    # Each callback reports a snapshot, not a verdict: the run has not settled
+    # yet, so nothing here should claim it has, even though every step so far
+    # happens to have succeeded.
+    assert all(snapshot.exit_code is ExitCode.NOT_YET for snapshot in seen)
+
+
+@pytest.mark.asyncio
+async def test_on_step_does_not_fire_for_a_nested_wizards_own_steps(tmp_path):
+    """`on_step` is a per-TOOL trace for the caller's own step list. Threading it
+    into a nested `run_wizard` call would fire it once per ask/install
+    micro-step inside a callee, not once per top-level step — a much noisier
+    signal than the one the caller asked for."""
+    inner = WizardSpec.model_validate(
+        {
+            "name": "inner",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
+    outer = WizardSpec.model_validate(
+        {
+            "name": "outer",
+            "steps": [
+                {"id": "sub", "kind": "wizard", "ref": "inner"},
+            ],
+        }
+    )
+    seen: list[WizardResult] = []
+
+    async def on_step(partial: WizardResult) -> None:
+        seen.append(partial)
+
+    result = await _run_wizard(
+        outer,
+        tmp_path=tmp_path,
+        resolve_op=_ops(_op("jq")),
+        resolve_wizard=_wizards({"inner": inner}),
+        on_step=on_step,
+    )
+
+    assert result.ok
+    # One top-level step ("sub"), so exactly one callback — not one for "sub"
+    # and a second for the inner wizard's own "jq".
+    assert len(seen) == 1
+    assert list(seen[0].steps) == ["sub"]
+
+
+@pytest.mark.asyncio
+async def test_a_broken_on_step_watcher_does_not_break_the_run_it_watches(tmp_path):
+    """Reporting progress is best-effort: a watcher's own bug must not turn into
+    a run that never finishes."""
+    spec = WizardSpec.model_validate(
+        {
+            "name": "w",
+            "steps": [
+                {"id": "jq", "kind": "compute", "ref": "jq"},
+            ],
+        }
+    )
+
+    async def on_step(_partial: WizardResult) -> None:
+        raise RuntimeError("watcher blew up")
+
+    result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=_ops(_op("jq")), on_step=on_step)
+
+    assert result.ok, result.detail

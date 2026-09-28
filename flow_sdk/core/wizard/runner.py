@@ -125,6 +125,18 @@ class _Run:
     #: the depth, so there is no second counter to keep in step.
     chain: tuple[str, ...] = ()
     steps: dict[str, ReturnedValue] = field(default_factory=dict)
+    #: Told the run's PARTIAL answer after each TOP-LEVEL step settles — never
+    #: threaded into a nested `run_wizard` call (`_call_wizard` passes no
+    #: `on_step`), so a caller that wants a live per-tool trace gets exactly
+    #: one call per top-level step, not one per ask/install micro-step inside
+    #: it. `execute_wizard` is the one caller that supplies this: without it,
+    #: `run_state` is written and broadcast exactly twice — blank at the
+    #: start, complete at the very end — so a step that finished minutes ago
+    #: (its own agent fallback settled) sits looking untouched until every
+    #: OTHER step also finishes, which reads as "nothing happens until the
+    #: whole thing ends" even though this step's own answer has been sitting
+    #: there the whole time.
+    on_step: Optional[Callable[["WizardResult"], Awaitable[None]]] = None
 
 
 async def run_wizard(
@@ -145,6 +157,7 @@ async def run_wizard(
     parent: Any = None,
     wizard_id: str = "",
     check_only: bool = False,
+    on_step: Optional[Callable[["WizardResult"], Awaitable[None]]] = None,
 ) -> WizardResult:
     """Run every step in order. Never raises for an outcome.
 
@@ -152,6 +165,11 @@ async def run_wizard(
     subprocess — so an unapproved wizard cannot even take the address.
     ``inputs`` are the values the caller put in scope: a calling step's
     bound ``args``, or a person's own call.
+
+    ``on_step`` — see ``_Run.on_step``: awaited with the run's partial answer
+    after each TOP-LEVEL step settles. Not threaded into ``_call_wizard``'s
+    own recursive call, so it fires once per top-level step, never once per
+    nested ask/install micro-step.
     """
     if not trusted:
         return wizard_refused(spec.name)
@@ -176,6 +194,7 @@ async def run_wizard(
         chain=chain,
         wizard_id=wizard_id,
         check_only=check_only,
+        on_step=on_step,
     )
 
     # A nested run reports INTO the caller's node, so the tree is one tree. Only
@@ -209,6 +228,7 @@ async def _steps(run: _Run, root: Any) -> WizardResult:
         root.current(step.display_label)
         answer = await _step(run, step, child)
         run.steps[step.id] = answer
+        await _report_progress(run)
 
         if answer.exit_code is ExitCode.REFUSED:
             # A refusal stops the run whatever ``on_fail`` says: continuing past
@@ -276,6 +296,21 @@ def _answer(run: _Run, make: Callable[..., WizardResult], detail: str) -> Wizard
         steps=run.steps,
         ran=any(answer.ran for answer in run.steps.values()),
     )
+
+
+async def _report_progress(run: _Run) -> None:
+    """Tell ``run.on_step`` the run's answer so far — a snapshot, not a verdict:
+    ``WizardResult.not_yet`` regardless of how the LATEST step went, because
+    the run itself has not settled yet and nothing here should claim it has.
+    Best-effort: a broken watcher must not break the step loop it is only
+    watching.
+    """
+    if run.on_step is None:
+        return
+    try:
+        await run.on_step(_answer(run, WizardResult.not_yet, "still running"))
+    except Exception:  # noqa: BLE001 — reporting must never fail the run it reports on
+        logger.exception("wizard on_step callback failed")
 
 
 def _held_to_output(run: _Run, result: WizardResult) -> WizardResult:
