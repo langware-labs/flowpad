@@ -332,3 +332,15 @@ async def test_a_call_silent_on_this_platform_with_a_declared_kind_stays_not_app
 
     assert answer.exit_code is ExitCode.NOT_APPLICABLE
     assert "no command for this platform" in answer.detail
+
+
+@pytest.mark.asyncio
+async def test_a_failed_call_says_why_in_its_own_words(tmp_path):
+    """A call that failed printed its reason ("Meta refused that App ID …") — the person's next step. The
+    op's sentence carries it rather than the generic "the check still fails"; a call that succeeded but did
+    not reach the goal has no reason of its own, and keeps the generic one."""
+    failed = await _run_op(_spec(), _shell(lambda _c: 1), tmp_path=tmp_path)
+    assert failed.exit_code is ExitCode.NOT_YET and failed.detail == "jq: install jq: nope"
+
+    quiet = await _run_op(_spec(), _shell(lambda c: 0 if c.startswith("install") else 1), tmp_path=tmp_path)
+    assert quiet.detail == "jq: the cli call ran, but the check still fails."
