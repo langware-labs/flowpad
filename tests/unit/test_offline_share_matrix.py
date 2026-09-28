@@ -191,6 +191,11 @@ async def test_one_message_carries_every_type_intact(tmp_path):
     staged = up.data["attachments"]
     assert sorted(a["asset_type"] for a in staged) == sorted(placement), staged
     assert {a["asset_id"] for a in staged} == {r.id for r in sent.values()}, "the file renamed an asset"
+    # The review rail names each attachment after the asset itself — not after
+    # whichever *.md the folder happens to carry (an agent read as `system_prompt`).
+    named = {a["asset_type"]: a["name"] for a in staged}
+    for type_name in ("skill", "subagent", "agent", "mcp", "data_driver", "credential"):
+        assert named[type_name] == sent[type_name].name, f"{type_name} staged as {named[type_name]!r}"
 
     res = await handle_message_install_all(up.data["message_id"], receiver.id)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)

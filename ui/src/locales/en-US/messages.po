@@ -1426,8 +1426,8 @@ msgid "Add a note to the running session about this message"
 msgstr "Add a note to the running session about this message"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Add a personal note..."
-msgstr "Add a personal note..."
+#~ msgid "Add a personal note..."
+#~ msgstr "Add a personal note..."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a personal note…"
@@ -1677,6 +1677,10 @@ msgstr "Add Trigger"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Add variable"
 msgstr "Add variable"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Add…"
+msgstr "Add…"
 
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: source.name
@@ -3249,8 +3253,8 @@ msgid "Bullet list"
 msgstr "Bullet list"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Bundle ready — download started."
-msgstr "Bundle ready — download started."
+#~ msgid "Bundle ready — download started."
+#~ msgstr "Bundle ready — download started."
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "By"
@@ -3536,6 +3540,10 @@ msgstr "Capabilities unavailable. Retry"
 #: src/i18n/type-labels.ts
 msgid "Capability"
 msgstr "Capability"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Carries"
+msgstr "Carries"
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/SourcePicker.tsx
@@ -7292,12 +7300,13 @@ msgstr "Done!"
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Download"
 msgstr "Download"
 
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download .flowmsg"
 msgstr "Download .flowmsg"
 
@@ -7306,6 +7315,10 @@ msgstr "Download .flowmsg"
 msgid "Download {count} {0}"
 msgstr "Download {count} {0}"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Download a <0>.flowmsg</0> file. The recipient uploads it on their project home, reviews what it carries, and installs it."
+msgstr "Download a <0>.flowmsg</0> file. The recipient uploads it on their project home, reviews what it carries, and installs it."
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Download again"
 msgstr "Download again"
@@ -7313,6 +7326,10 @@ msgstr "Download again"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download all attachments"
 msgstr "Download all attachments"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Download as a file instead of sending"
+msgstr "Download as a file instead of sending"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download attachments"
@@ -7333,6 +7350,7 @@ msgid "Download file"
 msgstr "Download file"
 
 #: src/components/conversation/chips/MessageChips.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "Download message"
 
@@ -12147,16 +12165,21 @@ msgstr "Merge conflicts"
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message"
 msgstr "Message"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Message (optional)"
-msgstr "Message (optional)"
+#~ msgid "Message (optional)"
+#~ msgstr "Message (optional)"
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
 msgstr "Message Attachment"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Message downloaded"
+msgstr "Message downloaded"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Message not queued"
@@ -14167,6 +14190,10 @@ msgstr "Nothing to improve"
 msgid "Nothing to index"
 msgstr "Nothing to index"
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Nothing to install"
+msgstr "Nothing to install"
+
 #: src/lib/publish-state.ts
 msgid "Nothing to publish"
 msgstr "Nothing to publish"
@@ -15176,8 +15203,8 @@ msgid "Pack keys into credentials"
 msgstr "Pack keys into credentials"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
-msgstr "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+#~ msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+#~ msgstr "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
@@ -16786,8 +16813,10 @@ msgstr "Remote Worker Session"
 msgid "Remove"
 msgstr "Remove"
 
+#. placeholder {0}: c.label
 #. placeholder {0}: source.name
 #. placeholder {0}: source.name || source.provider
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
@@ -18173,6 +18202,7 @@ msgstr "Search any entity. Selecting one inserts a [[wikilink]] at the cursor."
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Search assets…"
 msgstr "Search assets…"
 
@@ -21384,6 +21414,10 @@ msgstr "This live-session URL is malformed or unavailable."
 msgid "this machine"
 msgstr "this machine"
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "This message carries no assets."
+msgstr "This message carries no assets."
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this minute"
 msgstr "this minute"
@@ -21839,8 +21873,6 @@ msgstr "Tip: connect GitHub to clone private repos."
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Title"
 msgstr "Title"
 
@@ -22508,9 +22540,17 @@ msgstr "Upgrading…"
 msgid "Upload"
 msgstr "Upload"
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Upload a .flowmsg and install what it carries into this project"
+msgstr "Upload a .flowmsg and install what it carries into this project"
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Upload CSV"
 msgstr "Upload CSV"
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Upload failed"
+msgstr "Upload failed"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Upload failed."
@@ -22525,6 +22565,7 @@ msgid "Upload image"
 msgstr "Upload image"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "Upload message"
 msgstr "Upload message"
 
@@ -23206,6 +23247,10 @@ msgstr "What should the agent do each time it runs?"
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "What should they know?"
+msgstr "What should they know?"
 
 #. placeholder {0}: readiness.environment
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
