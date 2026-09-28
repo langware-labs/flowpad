@@ -58,6 +58,7 @@ def _invited_roles(calls, proj: Project) -> dict[str, str]:
         for method, path, body in calls
         if method == "POST" and path == f"/graph/project/{proj.id}/members"
         for target in body["invitation_targets"]
+        if target["typeid"] == f"project-{proj.id}"
     }
 
 
@@ -95,7 +96,18 @@ async def test_invite_grants_a_different_role_per_recipient(hub):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("role", ["owner", "editor", "", "Admin"])
+async def test_invite_grants_editor(hub):
+    proj = Project(name="invite-role-editor")
+
+    await proj.share(invitees=[ShareInvitee(email="noa@langware.ai", role="editor")])
+
+    assert _invited_roles(hub, proj) == {"noa@langware.ai": "editor"}
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+@pytest.mark.parametrize("role", ["owner", "reader", "", "Admin"])
 async def test_invite_rejects_a_role_outside_the_allowlist(hub, role):
     """Refused before any hub call — nothing is published or invited."""
     proj = Project(name="invite-role-bad")
