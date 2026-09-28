@@ -54,6 +54,7 @@ from .routes import (
     asset_share_router,
     assets_router,
     auth_router,
+    browser_profiles_router,
     capabilities_router,
     cloud_router,
     data_source_webhook_router,
@@ -242,6 +243,8 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Tag forwarding: failed to arm ({_e})")
 
+    await _lift_credential_stores()
+    await _lift_place_settings()
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_keep_alive_loop()
@@ -395,10 +398,36 @@ async def _prune_orphan_scheduler_jobs() -> None:
         logging.getLogger(__name__).exception("Scheduler jobstore: orphan prune failed")
 
 
-#: Entity types renamed without a migration (0.2.170: data_driver, secret_pack; later: stream_inbox_manager):
-#: their folders re-index (or the singleton self-heals) under the new type, so a row still carrying the
-#: old string is dead weight no index sweep reaches.
-RETIRED_TYPES = ("data_source_spec", "credential_spec", "inbox_manager", "data_source_cursor")
+#: Entity types renamed (0.2.170: data_driver, secret_pack; 0.2.178: secret_pack → credential, its folders
+#: moved by the 0.2.178 migration; later: stream_inbox_manager): their folders re-index (or the singleton
+#: self-heals) under the new type, so a row still carrying the old string is dead weight no index sweep reaches.
+RETIRED_TYPES = ("data_source_spec", "credential_spec", "secret_pack", "inbox_manager", "data_source_cursor")
+
+
+async def _boot_lift(module: str, label: str) -> None:
+    """Run a boot migration's ``lift`` before anything that reads what it moves; log its report when it
+    did something. A failure is logged, never raised: boot goes on."""
+    import importlib
+
+    try:
+        report = await importlib.import_module(f"flow_sdk.migrations.{module}").lift(dry_run=False)
+        if any(getattr(report, name, None) for name in ("stripped", "moved", "failed")):
+            for line in report.lines():
+                logging.getLogger(__name__).info("%s", line)
+    except Exception:
+        logging.getLogger(__name__).exception("%s: lift failed", label)
+
+
+async def _lift_credential_stores() -> None:
+    """Where credential values live moves off pre-0.2.178 ``credential.json`` files onto deployments —
+    before anything that reads a credential starts (``migration_2026_09_credential_stores``)."""
+    await _boot_lift("migration_2026_09_credential_stores", "Credential stores")
+
+
+async def _lift_place_settings() -> None:
+    """A data source's per-machine settings move out of ``data_source.json`` into its credential — before
+    any source reads them (``migration_2026_09_place_settings``)."""
+    await _boot_lift("migration_2026_09_place_settings", "Place settings")
 
 
 async def _prune_retired_type_rows() -> None:
@@ -767,6 +796,7 @@ server = FlowServer()
 server.add_router(auth_router)
 server.add_router(cloud_router)
 server.add_router(privacy_router)
+server.add_router(browser_profiles_router)
 server.add_router(hooks_router)
 server.add_router(directory_router)
 server.add_router(detection_router)

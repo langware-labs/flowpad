@@ -1,9 +1,8 @@
-"""``secret_pack.json`` — the on-disk shape of a ``SecretPack``.
+"""``credential.json`` — the on-disk shape of a ``Credential``.
 
-A credential is a named set of environment variables (a "secret pack"). The
-manifest declares them; it never carries a value. Where the values live is one
-field, ``value_store``: the scope's ``.env.local`` (default) or the encrypted
-vault. See ``credential_contract``.
+A credential is a named set of environment variables: WHAT is needed. The
+manifest declares them; it never carries a value, and it never says where values
+live — each Deployment does (``DeploymentSecretsSpec``). See ``credential_contract``.
 """
 from __future__ import annotations
 
@@ -13,14 +12,7 @@ from typing import Any, ClassVar
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
-from flow_sdk.schema.data_spec.credential_contract import (
-    VALUE_STORE_ENV,
-    VALUE_STORE_VAULT,
-    VALUE_STORES,
-    assert_value_free,
-    is_valid_env_var,
-    normalize_environment,
-)
+from flow_sdk.schema.data_spec.credential_contract import assert_value_free, is_valid_env_var
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 CURRENT_SCHEMA = 2
@@ -30,16 +22,9 @@ LM_PROVIDERS = tuple(p.value for p in LMApiProvider if p is not LMApiProvider.FL
 #: The name is the folder name, so it must be a path segment.
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
-#: ``env_file`` is the SecretStore type's own name; a manifest keeps the ``env`` spelling.
-_STORE_ALIASES = {"env_file": VALUE_STORE_ENV}
-
-
-def _normalize_store(value: str) -> str:
-    """The store's canonical name; raises for one this build does not know."""
-    value = _STORE_ALIASES.get(value, value)
-    if value not in VALUE_STORES:
-        raise ValueError(f"unknown value_store {value!r}; expected one of {list(VALUE_STORES)}")
-    return value
+#: Where-keys a manifest carried before deployments held them (0.2.178). Dropped on read; the boot
+#: lift (``migration_2026_09_credential_stores``) moves them onto deployments and off the file.
+LEGACY_STORE_KEYS = ("value_store", "environments")
 
 
 class CredentialVarSpec(DataSpec):
@@ -66,31 +51,10 @@ class CredentialVarSpec(DataSpec):
     help_url: str = ""
 
 
-class CredentialEnvironmentSpec(DataSpec):
-    """How one environment differs from the credential's defaults.
-
-    Keyed by environment name in ``CredentialSpec.environments``. The
-    list of environments is never declared here — it is ``development`` plus
-    every Deployment's ``environment``; an entry only overrides.
-    """
-
-    #: This environment's store; the credential's ``value_store`` when unset.
-    value_store: str | None = None
-    #: The variables that must have a value in this environment; each
-    #: variable's own ``required`` when unset.
-    required: list[str] | None = None
-
-    @field_validator("value_store")
-    @classmethod
-    def _known_store(cls, value: str | None) -> str | None:
-        value = str(value or "").strip()
-        return _normalize_store(value) if value else None
-
-
 class CredentialSpec(DataSpec):
-    """``secret_pack.json`` — the shape, with every authoring rule as a validator."""
+    """``credential.json`` — the shape, with every authoring rule as a validator."""
 
-    main_file: ClassVar[str | None] = "secret_pack.json"
+    main_file: ClassVar[str | None] = "credential.json"
 
     model_config = ConfigDict(populate_by_name=True)  # extra="forbid" is DataSpec's
 
@@ -106,35 +70,15 @@ class CredentialSpec(DataSpec):
     help_url: str = ""
     setup_wiki: str = ""
     #: How to obtain the values and store them, written for an AGENT to follow (markdown): where the
-    #: key is created, what to click, and the ``flow credentials set <name> VAR=…`` that stores it.
+    #: key is created, what to click, and the ``flow credentials set <name> --stdin`` it is piped into.
     #: Authoring requires it (``credential_service.save_credential``); a pack read from disk without
     #: it still loads — ``flow project setup`` reports it, and offers no AI setup for it.
     setup: str = ""
-    #: Where this credential's values are read from and written to. Not
-    #: ``store``: ``Entity.store`` is a method and a field would shadow it.
-    value_store: str = VALUE_STORE_ENV
-    #: The LLM provider this credential's single key funds. Forces the vault
-    #: (the funding resolver reads ``lm_api.<provider>`` there).
+    #: The LLM provider this credential's single key funds. Its value always lives in the vault
+    #: entry the funding resolver reads (``lm_api.<provider>``), whatever a deployment says.
     lm_provider: str = ""
     #: The variables, keyed by env var NAME.
     vars: dict[str, CredentialVarSpec] = Field(default_factory=dict)
-    #: Per-environment overrides, keyed by environment name. Optional.
-    environments: dict[str, CredentialEnvironmentSpec] = Field(default_factory=dict)
-
-    @field_validator("environments")
-    @classmethod
-    def _named_environments(cls, value: dict[str, CredentialEnvironmentSpec]) -> dict[str, CredentialEnvironmentSpec]:
-        return {normalize_environment(name): spec for name, spec in (value or {}).items()}
-
-    @model_validator(mode="after")
-    def _environment_rules(self) -> "CredentialSpec":
-        if self.environments and self.lm_provider:
-            raise ValueError("an lm_provider credential has no environments; deployments are hub-funded")
-        for name, spec in self.environments.items():
-            unknown = sorted(set(spec.required or []) - set(self.vars))
-            if unknown:
-                raise ValueError(f"environment {name!r} requires undeclared variables: {', '.join(unknown)}")
-        return self
 
     @field_validator("name")
     @classmethod
@@ -161,11 +105,6 @@ class CredentialSpec(DataSpec):
             raise ValueError(f"unknown lm_provider {value!r}; expected one of {sorted(LM_PROVIDERS)}")
         return value
 
-    @field_validator("value_store")
-    @classmethod
-    def _known_store(cls, value: str) -> str:
-        return _normalize_store(str(value or "").strip() or VALUE_STORE_ENV)
-
     @field_validator("vars")
     @classmethod
     def _usable_vars(cls, value: dict[str, CredentialVarSpec]) -> dict[str, CredentialVarSpec]:
@@ -189,19 +128,23 @@ class CredentialSpec(DataSpec):
     @model_validator(mode="before")
     @classmethod
     def _lm_provider_rules(cls, data: Any) -> Any:
-        """An LLM provider credential is exactly one key, kept in the vault."""
+        """An LLM provider credential is exactly one key."""
         if not isinstance(data, dict):
             return data
         provider = str(data.get("lm_provider") or "").strip()
-        if not provider:
-            return data
         raw_vars = data.get("vars")
-        if isinstance(raw_vars, dict) and len(raw_vars) != 1:
+        if provider and isinstance(raw_vars, dict) and len(raw_vars) != 1:
             raise ValueError(f"an lm_provider credential is one key; {provider!r} declares {len(raw_vars)} variables")
-        store = str(data.get("value_store") or "").strip()
-        if store and store != VALUE_STORE_VAULT:
-            raise ValueError(f"an lm_provider credential is stored in the vault, not {store!r}")
-        return {**data, "value_store": VALUE_STORE_VAULT}
+        return data
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_legacy_store_keys(cls, data: Any) -> Any:
+        """A manifest written before 0.2.178 still says where its values live; that is a deployment's
+        now. The keys are dropped here and moved by the boot lift — never an error on read."""
+        if isinstance(data, dict) and any(key in data for key in LEGACY_STORE_KEYS):
+            return {k: v for k, v in data.items() if k not in LEGACY_STORE_KEYS}
+        return data
 
     @model_validator(mode="before")
     @classmethod

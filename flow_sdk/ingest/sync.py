@@ -50,7 +50,7 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
     # `reflect` is a property of the SOURCE, knowable before any I/O: a reflecting source has no
     # record destination, and with a mode that has no reflector its files would be dropped while
     # the cursor advanced past them.
-    if stype.reflects and get_reflector(source.reflect) is None:
+    if stype.is_object and get_reflector(source.reflect) is None:
         await _fail_source(source, "reflect_mode", f"reflect={source.reflect!r} cannot place files; pick a filesystem mode", now)
         return report
 
@@ -116,6 +116,11 @@ async def _place(source: DataSource, found: Pass) -> Optional[IngestReport]:
         # `sync_source` refused the run before traversing if this source cannot place files, so a
         # reflector exists here.
         await reflect_refs(source, found.refs, found.tombstones, found.renames)
+    if found.reactions:
+        # After the records: a reaction in the same page as its message lands on that message.
+        from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
+
+        await apply_reactions(source, found.reactions)
     return report
 
 

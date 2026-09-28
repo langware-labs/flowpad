@@ -53,10 +53,16 @@ vi.mock('@src/components/agent-layout/agent-layout', () => ({
 }));
 
 import TabbedTerminal from '@src/components/terminal/TabbedTerminal';
+import { TerminalPool } from '@src/components/terminal/TerminalPool';
+import { terminalPool } from '@src/components/terminal/terminal-pool';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 const Wrap = ({ children }: PropsWithChildren) => (
-  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  // The pool owns the runtimes (RootLayout mounts it once); TabbedTerminal is a slot.
+  <QueryClientProvider client={queryClient}>
+    {children}
+    <TerminalPool />
+  </QueryClientProvider>
 );
 
 function mkSession(procId: string, shellId: string): void {
@@ -94,6 +100,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   tabManager.resetForTests();
+  terminalPool.resetForTests();
   vi.restoreAllMocks();
 });
 

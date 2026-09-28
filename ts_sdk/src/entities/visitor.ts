@@ -1,11 +1,7 @@
-import { IEntity, EntityMerge } from '../IEntity';
+import { EntityMerge } from '../IEntity';
 import { APIEntity, registerEntity } from '../APIEntity';
-
-export interface IVisitor extends IEntity {
-  ga_client_id?: string | null;
-  utm_params?: Record<string, string> | null;
-  visitor_role?: string;
-}
+import { IVisitor } from './visitor-types';
+export type * from './visitor-types';
 
 // `implements IVisitor` only checks the class; it contributes no members, so every
 // field declared solely on IVisitor read as "does not exist". deepAssign populates

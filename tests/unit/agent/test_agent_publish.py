@@ -1,33 +1,28 @@
-"""Publishing an agent to the hub — Git-backed, id verbatim, once."""
+"""Publishing an agent to the hub — into its project's hub repo, id verbatim, once."""
 
 from unittest.mock import AsyncMock
 
-from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.project import Project
-from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
+from flow_sdk.fs_store.type_id import TypeId
 
 
 async def test_publish_is_idempotent(monkeypatch):
     """A second deploy must not re-publish.
 
-    A complete publication has both ``remote`` and ``git_origin``. The latter is
-    what lets deployment clone the complete repository instead of synthesizing
-    one file.
+    A complete publication has both ``remote`` and a hub-repo origin — the
+    project's hosted repository the deployment clones, and the asset's place in it.
     """
     calls: list[int] = []
 
     async def _publish(entity, actor):
         calls.append(1)
         entity.remote = True
-        entity.origin = {
-            "provider": "github",
-            "owner": "flowpad",
-            "name": "flowpad-os",
-            "branch": "main",
-            "head_commit": "a" * 40,
-            "rel_path": "agentic-assets/agent/joe",
-        }
+        entity.origin = HubRepoOrigin(
+            repo="git_repo-" + "1" * 32, rel_path="agentic-assets/agent/joe", head_commit="a" * 40, tree="b" * 40
+        )
 
     monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", _publish)
 
@@ -35,14 +30,14 @@ async def test_publish_is_idempotent(monkeypatch):
     actor = TypeId(type="user", id=mint_uuid())
     assert await agent.ensure_on_hub(actor) is True
     assert agent.remote is True
-    assert agent.origin["rel_path"] == "agentic-assets/agent/joe"
+    assert agent.origin.rel_path == "agentic-assets/agent/joe"
     # second call is a no-op
     assert await agent.ensure_on_hub(actor) is False
     assert calls == [1]
 
 
-async def test_legacy_remote_without_git_origin_is_republished(monkeypatch):
-    """The former field-only share must not poison deploy idempotency."""
+async def test_legacy_remote_without_a_hub_repo_origin_is_republished(monkeypatch):
+    """The former field-only share (or a GitHub origin) must not poison deploy idempotency."""
     calls: list[int] = []
 
     async def _publish(entity, actor):
@@ -100,7 +95,7 @@ def test_local_path_never_travels_to_the_hub():
     """`asset_ref` is an absolute path on THIS machine.
 
     It is Sharing.PRIVATE precisely so publishing cannot leak it. The portable
-    locator is ``git_origin.rel_path``; the Hub reads files through Git VFS.
+    locator is the hub-repo origin's ``rel_path``; the Hub reads files from its repo.
     """
     excluded = Agent.fields_not_sent_to_hub()
     assert "asset_ref" in excluded

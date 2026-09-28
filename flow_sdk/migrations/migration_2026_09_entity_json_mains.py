@@ -112,31 +112,15 @@ def convert(info: Any, folder: Path, retired: str) -> tuple[str, list[str]]:
     return "converted", dropped
 
 
-def _default_roots() -> list[Path]:
-    """The instance's index roots; without a store, the ones a fresh install still has."""
-    try:
-        from flow_sdk.migrations.migration_2026_09_identity_live_forms import _open, _roots
-
-        conn = _open(None)
-        try:
-            return [Path(root._path) for root in _roots(conn)]
-        finally:
-            conn.close()
-    except Exception as exc:  # noqa: BLE001 — no store yet is an install, not a failure
-        logger.info("entity documents: no instance store (%s); walking the default roots", type(exc).__name__)
-        from flow_sdk.fs_store.indexer.roots import default_roots
-
-        return [Path(root._path) for root in default_roots()]
-
-
 def migrate(*, dry_run: bool = True, roots: list[Path] | None = None) -> Report:
     """Convert every retired entity-document folder under ``roots`` (the instance's when None)."""
+    from flow_sdk.migrations._roots import instance_roots
     from flow_sdk.schema.type_info import register_all
 
     register_all()
     report = Report(dry_run=dry_run)
     seen: set[str] = set()
-    for root in roots if roots is not None else _default_roots():
+    for root in roots if roots is not None else instance_roots():
         for info, folder, retired in retired_folders(Path(root)):
             key = str(Path(folder).resolve())
             if info is None or key in seen:

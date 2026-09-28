@@ -14,7 +14,7 @@ import {
 import { ReportAssetShell } from '@src/components/assets/editor/ReportAssetShell';
 import { useJsonDoc } from '@src/hooks/use-json-doc';
 import { PublishedToggle } from '@src/components/assets/editor/PublishedToggle';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useAssetReadOnly } from '../read-only';
 
 /** The on-disk shape — `McpSpec` (flow_sdk/schema/data_spec/mcp_spec.py). Taken
  *  off the entity so the two cannot drift; the row mirrors the file's fields. */
@@ -274,8 +274,8 @@ function McpForm({ initial, mainRef, mcp, readOnly }: { initial: McpSpecDoc; mai
 }
 
 export function McpViewer({ fsRef, mcp }: { fsRef: FSRef; mcp?: Mcp }) {
-  const { currentDock } = useDockNavigation();
-  const readOnly = fsRef.readOnly || currentDock?.options?.readOnly === '1';
+  const forcedReadOnly = useAssetReadOnly();
+  const readOnly = fsRef.readOnly || forcedReadOnly;
   const mainRef = fsRef.child(MAIN_FILE);
   const { doc, error, loading } = useJsonDoc<Partial<McpSpecDoc>>(mainRef);
 

@@ -1,7 +1,9 @@
 import { enableMapSet } from 'immer';
 import { immer } from 'zustand/middleware/immer';
 import { createStore } from 'zustand/vanilla';
-import type { FileUpload, FSEntry, TypeId } from '../index';
+import type { FileUpload } from '../services/FileUpload';
+import type { FSEntry } from '../fs/FSEntry';
+import type { TypeId } from '../models/TypeId';
 import { fsManager } from '../services/fsService';
 import { dataContext } from '../FlowSync/context';
 
@@ -296,8 +298,7 @@ export const fsStore = createStore<FSStoreState>()(
       return get().contentCache.get(`${cacheKey}:text`) || get().contentCache.get(`${cacheKey}:blob`) || null;
     },
 
-    getRevision: (typeid: TypeId, path: string) =>
-      get().pathRevisions.get(getRevisionKey(typeid, path)) ?? 0,
+    getRevision: (typeid: TypeId, path: string) => get().pathRevisions.get(getRevisionKey(typeid, path)) ?? 0,
 
     listDirectory: async (typeid: TypeId, path: string) => {
       const cacheKey = getCacheKey(typeid, path);
@@ -312,29 +313,32 @@ export const fsStore = createStore<FSStoreState>()(
       let pending = listDirInFlight.get(cacheKey);
       if (!pending) {
         // eslint-disable-next-line @typescript-eslint/no-shadow
-        const fetchPromise: Promise<BrowseCache> = fsManager.listDirectory(typeid, path).then((result) => {
-          const entry: BrowseCache = {
-            items: [...result.items],
-            path: result.path,
-            totalSize: result.totalSize,
-            itemCount: result.itemCount,
-            fetchedAt: new Date(),
-          };
-          // Only commit to cache if we are still the active in-flight fetch.
-          // If invalidate dropped us or a newer fetch replaced us, our result
-          // is stale and would clobber the fresh data.
-          if (listDirInFlight.get(cacheKey) === fetchPromise) {
-            set((state) => {
-              state.browseCache.set(cacheKey, entry as any);
-            });
-          }
-          return entry;
-        }).finally(() => {
-          // Only clear our own slot, not a successor's
-          if (listDirInFlight.get(cacheKey) === fetchPromise) {
-            listDirInFlight.delete(cacheKey);
-          }
-        });
+        const fetchPromise: Promise<BrowseCache> = fsManager
+          .listDirectory(typeid, path)
+          .then((result) => {
+            const entry: BrowseCache = {
+              items: [...result.items],
+              path: result.path,
+              totalSize: result.totalSize,
+              itemCount: result.itemCount,
+              fetchedAt: new Date(),
+            };
+            // Only commit to cache if we are still the active in-flight fetch.
+            // If invalidate dropped us or a newer fetch replaced us, our result
+            // is stale and would clobber the fresh data.
+            if (listDirInFlight.get(cacheKey) === fetchPromise) {
+              set((state) => {
+                state.browseCache.set(cacheKey, entry as any);
+              });
+            }
+            return entry;
+          })
+          .finally(() => {
+            // Only clear our own slot, not a successor's
+            if (listDirInFlight.get(cacheKey) === fetchPromise) {
+              listDirInFlight.delete(cacheKey);
+            }
+          });
         listDirInFlight.set(cacheKey, fetchPromise);
         pending = fetchPromise;
       }

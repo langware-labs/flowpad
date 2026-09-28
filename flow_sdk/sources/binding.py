@@ -13,7 +13,7 @@ from typing import Any, ClassVar, Optional
 from pydantic import Field
 
 from flow_sdk.schema.data_spec.spec import DataSpec
-from flow_sdk.sources.credentials import Credentials
+from flow_sdk.sources.credentials import ResolvedSecrets
 
 
 class Persona(DataSpec):
@@ -35,7 +35,7 @@ class SourceBinding(DataSpec):
     name: str = ""
     account_key: str = ""
     config: dict[str, Any] = Field(default_factory=dict)
-    credentials: Credentials = Field(default_factory=Credentials)
+    credentials: ResolvedSecrets = Field(default_factory=ResolvedSecrets)
     #: Who this row posts as, when the application knows.
     persona: Persona = Field(default_factory=Persona)
     #: A per-row page size, when the row overrides the class default.

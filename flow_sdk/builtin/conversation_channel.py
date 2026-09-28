@@ -25,20 +25,28 @@ FLOWPAD = ChannelSpec(
 #: The channel every conversation is born with.
 HOME_CHANNEL = FLOWPAD.name
 
-def channel_spec(name: str | None) -> ChannelSpec:
+def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
     """The spec for channel ``name``: a built-in, else a data source channel described by the
-    manifest of the driver registered under that name (``DataDriver.loaded`` is a registry
-    lookup — safe on a serialization path), else a bare source channel titled from its name."""
+    driver behind it — ``provider`` when the conversation names one (two drivers can speak one
+    channel), else the driver registered under the channel's name (``DataDriver.loaded`` is a
+    registry lookup — safe on a serialization path), else a bare source channel titled from its
+    name. What the channel can do — files, quotes, reactions — is read off the driver's class."""
     key = (name or "").strip() or HOME_CHANNEL
     if key == HOME_CHANNEL:
         return FLOWPAD
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415 — builtin must not import drivers at load
+    from flow_sdk.sources.protocols import Reacting  # noqa: PLC0415
 
-    driver = DataDriver.loaded(key)
+    driver = (DataDriver.loaded(provider) if provider else None) or DataDriver.loaded(key)
+    cls = getattr(driver, "cls", None)
+    files = getattr(cls, "files", None)
     return ChannelSpec(
         name=key,
         title=str(getattr(driver, "title", "") or "") or humanize_type(key),
         icon_name=str(getattr(driver, "icon_name", "") or ""),
+        accepts_attachments=bool(getattr(files, "kinds", None)),
+        quotes=bool(getattr(cls, "quotes", False)),
+        reacts=isinstance(cls, type) and issubclass(cls, Reacting),
     )
 
 

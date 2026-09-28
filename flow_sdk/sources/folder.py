@@ -20,6 +20,7 @@ from flow_sdk.sources._paths import Folder, Upload, real_directory, relative_key
 from flow_sdk.sources.base import Altitude, CollectionSource, positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import NotFound
+from flow_sdk.sources.families import ObjectSource
 from flow_sdk.sources.values.items import FileData, FileItem
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import FileDataPage
@@ -41,11 +42,10 @@ class LocalFileData(FileData):
     handle: Optional[str] = None
 
 
-class FolderSource(CollectionSource):
+class FolderSource(ObjectSource, CollectionSource):
     provider = "folder"
     origin_kind = "local"
     altitude = Altitude.IN_PROCESS
-    reflects = True
     local_tree_key = "root"
     supported_queries = (ObjectQuery,)
     page_type = FileDataPage

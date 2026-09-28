@@ -1,27 +1,21 @@
 """Share one file-backed asset to the cloud and hand back a reviewer's link.
 
 The verb behind ``flow record share``. It composes machinery that already
-exists — the display-target resolver, the git preflight, the scoped commit, the
-asset publisher, the hub URL builder — and adds the thing none of them own:
-an *order*, and a refusal at every step that can be refused before anything is
+exists — the display-target resolver, the optional scoped commit, the asset
+publisher, the hub URL builder — and adds the thing none of them own: an
+*order*, and a refusal at every step that can be refused before anything is
 mutated.
 
-Two properties the gate order exists to guarantee:
+**Nothing is mutated until every refusal is behind us.** A user who is told
+"your project isn't linked to the cloud" must find their folder exactly as they
+left it — not with a commit already pushed on their branch.
 
-* **Nothing is mutated until every refusal is behind us.** A user who is told
-  "your project isn't linked to the cloud" must find their working tree exactly
-  as they left it — not with a commit already pushed on their branch.
-* **We commit, then publish.** ``publish_git_asset`` rejects ``BRANCH_AHEAD``
-  when local HEAD is ahead of origin and the extra commit is not its own
-  trailer-marked retry, so committing without pushing is a guaranteed failure
-  one step later. Because we push first, the publisher's own internal commit
-  finds no delta and no-ops — which is what puts the doc and the capsule in ONE
-  commit authored by the user's real git identity, rather than a hand commit
-  followed by a robot one.
-
-Scoped throughout: only the paths the caller named are ever staged. In a shared
-checkout a repo-wide ``git add`` would sweep a colleague's half-finished work
-into a commit a breadcrumb tool authored.
+The asset reaches the cloud through its project's hub-hosted repository
+(``publish_git_asset``), so the project folder need not be a git checkout. When
+it is one, the named paths are also committed and pushed on the user's own
+branch — scoped throughout: only the paths the caller named are ever staged. In
+a shared checkout a repo-wide ``git add`` would sweep a colleague's
+half-finished work into a commit a breadcrumb tool authored.
 """
 
 from __future__ import annotations
@@ -75,23 +69,6 @@ class ShareOutcome:
         }
 
 
-#: Preflight code → what the user should actually do about it. The backend's own
-#: `reason` says what is wrong; these say what to type.
-_PREFLIGHT_REMEDIATION = {
-    "not-in-repo": "Run `git init`, add a GitHub `origin`, and push once.",
-    "missing-remote": "`git remote add origin https://github.com/<owner>/<repo>.git` then `git push -u origin <branch>`.",
-    "unsupported-origin": "Cloud sharing supports https GitHub origins only. Re-point `origin` at one.",
-    "detached-head": "`git checkout <branch>` — cloud sharing pins a branch name, and a detached HEAD has none.",
-    "no-commit": "`git add -A && git commit -m \"initial\" && git push -u origin <branch>`.",
-    "dirty": (
-        "Cloud sharing pins the exact commit reviewers clone, so the whole tree must be clean. "
-        "Your breadcrumb files were NOT committed either — nothing was mutated. Commit or stash the rest."
-    ),
-    "unpushed": "`git push` — reviewers clone from GitHub, so local-only commits are invisible to them.",
-    "status-failure": "Check the repository is healthy (`git status` by hand) and re-run.",
-}
-
-
 async def share_asset_to_hub(
     *,
     typeid: Optional[str] = None,
@@ -104,7 +81,6 @@ async def share_asset_to_hub(
     actor: Any = None,
 ) -> ShareOutcome:
     """Run the gate sequence. Raises :class:`ShareBlocked` for anything a user can fix."""
-    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.builtin.asset_publishing import owning_project
     from flow_sdk.core.display_target import (
         DisplayTargetKind,
@@ -115,6 +91,7 @@ async def share_asset_to_hub(
     )
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.fs_store.type_id import TypeId
 
     # ── G0: resolve the address. `discover=False` — a share must not index. ──
     try:
@@ -166,7 +143,7 @@ async def share_asset_to_hub(
     project_info = {"id": str(project.id), "name": project.name, "linked": getattr(project, "remote", False) is True}
     url = hub_asset_url(target, hub_origin=hub_origin, project_id=str(project.id))
 
-    # ── G4: every path must live inside the repo. ──
+    # ── G4: every path must live inside the project. ──
     # Ahead of the link gate on purpose: this is pure path arithmetic, and
     # linking is a network mutation visible to every project member. Refusing a
     # typo'd `--with` AFTER publishing a repo declaration would make the
@@ -215,8 +192,11 @@ async def share_asset_to_hub(
     warnings: list[str] = []
 
     # ── G6: mutation 1 — commit and push exactly our paths. ──
+    # Optional: when the project folder is itself a git checkout, its own branch
+    # is committed too. Publishing never depends on it — the asset reaches the
+    # cloud through the project's hub repo (G7).
     commit_info: dict = {"paths": rel_paths, "state": "skipped", "pushed": False}
-    if not no_commit:
+    if not no_commit and (Path(repo_root) / ".git").exists():
         commit_info = await _commit_paths(repo_root, rel_paths, message, entity, warnings)
 
     # ── G7: mutation 2 — register the asset with the hub. ──
@@ -253,34 +233,30 @@ async def _link_project(project, actor) -> None:
     try:
         origin = await assert_project_publishable(project, actor)
     except ProjectPublishBlocked as blocked:
-        # Codes pass through verbatim (upper-snake). Collapsing the ones without
-        # a remediation hint to PROJECT_NOT_READY made `cloud_login_required`
-        # and `github_not_connected` unreachable — so the CLI could never tell a
-        # user which of the two they actually needed to fix.
-        hint = _PREFLIGHT_REMEDIATION.get(blocked.code)
+        # Codes pass through verbatim (upper-snake), so the CLI can tell a user
+        # exactly which gate to fix.
         raise ShareBlocked(
             code=blocked.code.upper().replace("-", "_"),
             message=blocked.message,
-            remediation=[hint] if hint else [],
             data=blocked.data(),
         ) from blocked
 
-    project.origin = origin
+    if origin is not None:
+        project.origin = origin
     await project.share()
     await project.save(actor)
 
 
 def _repo_relative_paths(entity, mount: str, with_paths: list[str]) -> tuple[str, list[str]]:
-    """(repo root, repo-relative posix paths) for the asset plus every ``--with``."""
+    """(root, root-relative posix paths) for the asset plus every ``--with``.
+
+    The root is the project's git checkout when the folder is one (so the user's
+    own repo can still be committed), else the project folder itself: publishing
+    goes through the project's hub repo and needs no repository here.
+    """
     from flow_sdk.utils.git import find_project_root
 
-    repo_root = find_project_root(mount)
-    if not repo_root:
-        raise ShareBlocked(
-            code="NOT_IN_REPO",
-            message=f"{mount} is not inside a Git repository, so there is nothing for the cloud to reference.",
-            remediation=[_PREFLIGHT_REMEDIATION["not-in-repo"]],
-        )
+    repo_root = find_project_root(mount) or mount
 
     root = Path(repo_root).resolve()
     rels: list[str] = []
@@ -291,7 +267,7 @@ def _repo_relative_paths(entity, mount: str, with_paths: list[str]) -> tuple[str
         except ValueError as exc:
             raise ShareBlocked(
                 code="INVALID_ARG",
-                message=f"{candidate} is outside the project's repository ({root}) — refusing to commit it.",
+                message=f"{candidate} is outside the project ({root}) — refusing to share it.",
             ) from exc
         posix = rel.as_posix()
         if posix not in rels:
@@ -368,10 +344,8 @@ async def _publish(entity, actor, warnings: list[str]) -> dict:
     try:
         result = await publish_git_asset(entity, actor)
     except AssetPublishError as e:
-        # `remediation` is the wire field the CLI already renders for git
-        # preflight failures (`_PREFLIGHT_REMEDIATION`). Publish failures were
-        # the one family arriving with it empty — the remedy exists, it just had
-        # nowhere to go until now.
+        # `remediation` is the wire field the CLI renders; the publish code
+        # carries its own remedy.
         raise ShareBlocked(
             code=str(e.code).upper(),
             message=str(e),

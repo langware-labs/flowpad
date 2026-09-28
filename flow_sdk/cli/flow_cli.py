@@ -1319,6 +1319,10 @@ from flow_sdk.cli.commands.credentials_cmd import credentials_app
 
 app.add_typer(credentials_app, name="credentials")
 
+from flow_sdk.cli.commands.agent_cmd import agent_app  # noqa: E402
+
+app.add_typer(agent_app, name="agent")
+
 from flow_sdk.cli.commands.project_cmd import project_app
 
 app.add_typer(project_app, name="project")

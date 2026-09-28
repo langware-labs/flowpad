@@ -324,7 +324,7 @@ def _status(monkeypatch, rows):
     status = CredentialsStatusSpec(
         credentials=[
             CredentialStatusRowSpec(
-                typeid=f"secret_pack-{name}",
+                typeid=f"credential-{name}",
                 name=name,
                 title=name.title(),
                 scope=scope,

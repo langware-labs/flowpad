@@ -26,12 +26,8 @@ import { Plural, Trans, useLingui } from '@lingui/react/macro';
 
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { InviteRow } from '@src/components/organization/invite-row';
-import {
-  MemberRow,
-  isGroupMember,
-  memberPrincipalId,
-  type MemberActions,
-} from '@src/components/organization/member-list';
+import { MemberRow, type MemberActions } from '@src/components/organization/member-list';
+import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-roles';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useMembers } from '@src/hooks/use-members';

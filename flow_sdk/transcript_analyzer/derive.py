@@ -37,6 +37,7 @@ SHELL_TOOL_NAMES = frozenset({"bash", "shell", "run_command", "exec_command", "t
 # verb does NOT derive — better a generic shell chip than a bogus flow chip.
 _FLOW_VERBS = frozenset(
     {
+        "agent",
         "app",
         "artifact",
         "asset",

@@ -40,6 +40,11 @@ class ChannelSpec(DataSpec):
     home: bool = False
     transport: ChannelTransport = ChannelTransport.SOURCE
     accepts_attachments: bool = False
+    #: A reply to one message quotes it where the recipient reads (WhatsApp, Telegram); ``False``
+    #: means it only lands in that message's thread (email, Slack) — the surface says "Reply in thread".
+    quotes: bool = False
+    #: People can put an emoji on a message, and so can we.
+    reacts: bool = False
     needs_cloud_login: bool = False
     hosts_sessions: bool = False
 

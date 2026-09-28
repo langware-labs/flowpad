@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from pydantic import ValidationError
 
 from flow_sdk.api.api_types.identifier import mint_uuid
-from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.assets.projection import layout_for_origin, read_asset_tree
 from flow_sdk.builtin.asset_projection import project_asset_tree
+from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
@@ -18,29 +18,32 @@ def _git(path: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _origin(rel_path: str, *, head: str = "a" * 40) -> PortableGitOrigin:
-    return PortableGitOrigin(
-        provider="github",
-        owner="flowpad",
-        name="assets",
-        branch="main",
-        head_commit=head,
-        rel_path=rel_path,
-    )
+@dataclass(frozen=True)
+class _Placement:
+    """All a projection reads of an origin — the hub passes an object with only this."""
+
+    rel_path: str
 
 
-def test_portable_origin_is_strict_and_keeps_legacy_key() -> None:
-    origin = _origin("docs/q.md")
-    assert origin.clone_url() == "https://github.com/flowpad/assets.git"
-    assert origin.key() == "87d26ad2-1b3c-5a54-b409-5aaf5c2759f8"
+def _origin(rel_path: str) -> _Placement:
+    return _Placement(rel_path=rel_path)
 
-    with pytest.raises(ValidationError):
-        PortableGitOrigin.model_validate({**origin.model_dump(), "token": "secret"})
-    for bad in ("/tmp/q.md", "../q.md", "docs\\q.md", ".git/config", "docs/q.md?token=x"):
-        with pytest.raises(ValidationError):
-            _origin(bad)
-    with pytest.raises(ValidationError):
-        _origin("docs/q.md", head="A" * 40)
+
+def test_hosted_repo_origin_satisfies_the_placement_contract(tmp_path: Path) -> None:
+    """The desk's own ``HubRepoOrigin`` projects exactly like a bare placement."""
+    markdown = SchemaRegistry.get("markdown")
+    assert markdown
+    hosted = HubRepoOrigin(repo="git_repo-" + "1" * 32, rel_path="docs/q.md", head_commit="a" * 40, tree="b" * 40)
+    assert layout_for_origin(markdown, hosted) == layout_for_origin(markdown, _origin("docs/q.md"))
+
+
+def test_reader_refuses_a_placement_that_leaves_the_checkout_or_enters_git(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    asset_id = mint_uuid()
+    (tmp_path / "q.md").write_text(f"---\nid: {asset_id}\n---\nQ\n", encoding="utf-8")
+    for bad in ("/tmp/q.md", "../q.md", "docs\\q.md", ".git/config", ""):
+        with pytest.raises(ValueError, match="checkout-relative"):
+            read_asset_tree(entity_type="markdown", expected_id=asset_id, checkout_root=tmp_path, origin=_origin(bad))
 
 
 def test_layout_mapper_handles_file_and_both_folder_shapes() -> None:

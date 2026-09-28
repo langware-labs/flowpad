@@ -204,6 +204,12 @@ interface FlowMessageBubbleProps {
   /** Staged MessageAttachment rows for THIS message (parent-resolved via the
    *  conversation-wide query). Drive the dashed staged chips + review modal. */
   messageAttachments?: MessageAttachment[];
+  /** What the conversation's channel can do (`ChannelSpec` traits) — gates Reply and React. */
+  channelTraits?: { quotes?: boolean; reacts?: boolean } | null;
+  /** The message this one quotes, resolved by the parent from the loaded list. */
+  quoted?: { sender: string; text: string; onJump?: () => void } | null;
+  /** Answer this message from the composer (a channel conversation). */
+  onReply?: (fm: FlowMessage) => void;
 }
 
 export function FlowMessageBubble({
@@ -230,6 +236,9 @@ export function FlowMessageBubble({
   attachmentProjectId,
   messageAttachments,
   showEmailHeaders = false,
+  channelTraits = null,
+  quoted = null,
+  onReply,
 }: FlowMessageBubbleProps) {
   // Prefer the FlowMessage handed down from the parent's batched conversation
   // query; fall back to a per-id fetch only when it wasn't provided (so the
@@ -237,6 +246,22 @@ export function FlowMessageBubble({
   // fetch — the same pattern the creator lookup below uses.
   const { data: fetchedFm } = useEntity<FlowMessage>(fmProp ? null : new TypeId(FlowMessage.type, messageId));
   const fm = fmProp ?? fetchedFm;
+  // Our click shows at once; the server's answer (or the projection's next update) is the truth.
+  const [reactions, setReactions] = useState(fm?.reactions ?? []);
+  const [reactError, setReactError] = useState<string | null>(null);
+  useEffect(() => setReactions(fm?.reactions ?? []), [fm?.reactions]);
+  const handleReact = useCallback(
+    async (emoji: string, remove: boolean) => {
+      if (!fm) return;
+      setReactError(null);
+      try {
+        setReactions(await fm.react(emoji, remove));
+      } catch (e) {
+        setReactError(e instanceof Error ? e.message : String(e));
+      }
+    },
+    [fm],
+  );
   // Resolve the message author via `created_by`. Used as the sender-name
   // fallback for messages that carry no `sender_id`/`sender_name` — notably
   // the invitation-kind placeholder, whose author is the inviter.
@@ -659,9 +684,20 @@ export function FlowMessageBubble({
   // The attachment block (when present) + the per-message context-process control
   // (self-gates to advanced mode; renders nothing otherwise — empty fragment is
   // inert in MessageBubble's inline `{footer}` slot).
+  // A channel message's file whose bytes never came (the provider's link expired first): named,
+  // never offered as a download — there is no body bundle to pull.
+  const lostChannelFiles = fm?.origin
+    ? (fm.attachment ?? []).filter((a) => a.attachment_type === AttachmentType.FILE && !a.local_path)
+    : [];
   const footer = (
     <>
       {attachmentFooter}
+      {lostChannelFiles.map((a) => (
+        <p key={a.data} className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="channel-file-lost">
+          <File className="h-3 w-3" />
+          {t`${a.data.replace(/^data\//, '')} — not downloaded (the link expired)`}
+        </p>
+      ))}
       <MessageRunStatus
         fm={fm}
         run={run ?? null}
@@ -717,7 +753,17 @@ export function FlowMessageBubble({
         footer={footer}
         isSelected={isSelected}
         onSelect={onSelect}
+        quoted={quoted}
+        reactions={reactions}
+        onReact={channelTraits?.reacts && fm?.origin ? handleReact : undefined}
+        onReply={onReply && fm?.origin ? () => onReply(fm) : undefined}
+        replyInThread={!channelTraits?.quotes}
       />
+      {reactError && (
+        <p className="ms-10 text-xs text-destructive" role="alert" data-testid="reaction-error">
+          {reactError}
+        </p>
+      )}
       {forwardOpen && forwardSource && (
         <ShareToConversationDialog
           open={forwardOpen}

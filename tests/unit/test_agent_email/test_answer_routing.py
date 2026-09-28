@@ -48,7 +48,7 @@ class _Message:
     async def _source(self):
         return SOURCE
 
-    async def reply_spec(self, *, body):
+    async def reply_spec(self, *, body, files=()):
         return body
 
     async def reply(self, spec):

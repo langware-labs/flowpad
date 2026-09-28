@@ -392,3 +392,51 @@ async def test_index_status_reports_a_type_with_pending_changes_as_stale(
         f"markdown has an edited, un-reindexed file but index-status reports "
         f"stale={row['stale']} — the freshness signal is hardcoded"
     )
+
+
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("type_name", "layout"),
+    [
+        ("agent", {"agent.json": '{"title": "Probe"}', "system_prompt.md": "You probe.\n"}),
+        ("skill", {"SKILL.md": "---\nname: probe-skill\ndescription: Probes folder indexing of a skill asset.\n---\nbody\n"}),
+    ],
+)
+async def test_a_folder_asset_indexes_when_its_own_folder_is_named(
+    clean_target_types, tmp_path, type_name, layout,
+):
+    """`flow record index <asset folder> --types <t>` must index THAT asset. The
+    direct branch used to run for files only, so a folder path fell through to the
+    subtree walk, which looks inside the folder and never at the folder itself —
+    `ok: true, indexed: 0, typeid: null` for every agent and skill named by folder."""
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    family = {"agent": "agentic-assets/agent", "skill": ".claude/skills"}[type_name]
+    folder = tmp_path / family / "probe"
+    folder.mkdir(parents=True)
+    for name, body in layout.items():
+        (folder / name).write_text(body, encoding="utf-8")
+
+    resp = await _Handler()._handle_fs_records_index(FakeRequestInfo({"type": type_name, "path": str(folder)}))
+
+    assert isinstance(resp, ApiSuccessResponse)
+    assert resp.data["indexed"] == 1, resp.data
+    assert resp.data["typeid"].startswith(f"{type_name}-"), resp.data
+
+
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+async def test_a_plain_folder_is_still_walked_for_the_assets_inside(clean_target_types, tmp_path):
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes" / "inside.md").write_text("# inside\n", encoding="utf-8")
+
+    resp = await _Handler()._handle_fs_records_index(FakeRequestInfo({"type": "markdown", "path": str(tmp_path / "notes")}))
+
+    assert isinstance(resp, ApiSuccessResponse)
+    # The walk answers the single-type shape: `indexed`, and no one TypeId.
+    assert resp.data["indexed"] >= 1 and resp.data["typeid"] is None, resp.data

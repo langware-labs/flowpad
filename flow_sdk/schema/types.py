@@ -250,7 +250,7 @@ class EntityType(StrEnum):
     # message). Generic and discriminated by `kind`, NOT one type per provider
     # — the stream inbox projection has to be one queryable table.
     SOURCE_ITEM = "source_item"
-    # A configured remote system of record we sync from (flow_sdk/ingest).
+    # A configured source we sync from — files, records or messages (flow_sdk/ingest).
     DATA_SOURCE = "data_source"
     # One independently-checkpointed stream within a DataSource — a feed URL, a
     # channel. DB-only: written every poll, so it must never touch disk.
@@ -264,7 +264,7 @@ class EntityType(StrEnum):
     #: The authored definition of a NAMED SET OF ENV VARS a provider needs
     #: (gmail = GMAIL_ADDRESS + GMAIL_APP_PASSWORD) — the only way secrets are
     #: declared, in user or project scope.
-    SECRET_PACK = "secret_pack"
+    CREDENTIAL = "credential"
     # One thread of ingested cloud messages (a Gmail thread, a Slack
     # `thread_ts`). MANY threads may point at ONE conversation — that is the
     # merge seam, and why the conversation id is not derived from the thread.

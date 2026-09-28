@@ -1,5 +1,7 @@
 import { lazyAssets, LazyAsset } from '../lazy';
-import { ActionInfo, dataContext, dataManager } from '../index';
+import { ActionInfo } from '../models/ActionInfo';
+import { dataContext } from '../FlowSync/context';
+import { dataManager } from '../APIEntity';
 import { isHubOnly } from '../utils/hub-runtime';
 import type { GitOrigin } from '../models';
 

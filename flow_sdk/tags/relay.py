@@ -54,8 +54,12 @@ async def _relay(event: FlowEvent) -> None:
 
     if _client is None:
         _client = httpx.AsyncClient(timeout=5.0)
+    from flow_sdk.instance_settings.cookie_gate import gate_headers  # noqa: PLC0415
+
     try:
-        await _client.post(url, json=event.model_dump(mode="json"))
+        # The app of a gated instance (a cloud box) refuses a relay without its secret -- and a refused relay
+        # is a deployment page that never updates while its loop answers.
+        await _client.post(url, json=event.model_dump(mode="json"), headers=gate_headers(url))
     except (httpx.HTTPError, asyncio.CancelledError) as exc:
         if isinstance(exc, asyncio.CancelledError):
             raise
