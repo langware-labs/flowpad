@@ -9,14 +9,19 @@ one placement of it: *this agent runs on that machine*. The two verbs that
 start a session (`run`, `use`) go through a placement, and today every caller
 resolves the `local` one — the seam for choosing another is `deployment=`.
 
-    Agent.deploy(provider)  -> Deployment        kind "runtime.agent"
+    Agent.deploy(provider)  -> Deployment        parent = the agent, identity "agent"
     Deployment.launch(...)  -> PromptResult      executor: the AgenticProcess
+
+A placement stores no kind: what it places is its PARENT (`element_type`), and what it serves is its
+endpoints' `subkind` (`admin`, `app`, `agent`, `service` — `service-endpoints.md`). The machine it runs on
+is a `ComputeNode` (a box): this computer hosts many deployments, a cloud box one. `identity` says who
+the box logs in as for it: `agent`, `user` (its owner) or `none`.
 
 A deployment is also where the agent ANSWERS. A running local deployment **is a process on this
 machine running the agent loop** (`python -m flow_sdk.builtin.agent_loop`, §7): plain SDK code in the
 same instance, pulling from the channels it answers and replying on them — its `chat` endpoint
 (`service-endpoints.md` §6) is one more channel. A source's `answer_place` names the deployment that
-answers it; a source that names none is the default local deployment's. Every turn goes through one
+answers it; a source that names none is the agent's local deployment's. Every turn goes through one
 turn engine (`flow_sdk/builtin/agent_serve.py`): one process per conversation, one turn at a time, a
 redelivered message answered from its record. The app only keeps those processes running.
 
@@ -41,13 +46,14 @@ here = await agent.deploy("local")             # "This computer" — nothing is 
 again = await agent.deploy("local")
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.kind == "runtime.agent"
+assert here.element_type == "agent"            # what it places is its parent — no stored kind
+assert here.identity == "agent"                # a box it runs on logs in as the agent
 assert here.target.provider == "local"
 assert here.is_local                           # an id comparison, not a provider test
 ```
 
-`deploy()` is idempotent **per provider**: `find_existing` matches
-`(parent_type_id, target.provider, kind)`, so a second provider is a second
+`deploy()` is idempotent **per provider** (and environment): `find_existing` matches
+`(parent_type_id, target.provider, environment)`, so a second provider is a second
 row, and re-deploying the same one converges on the row it already has.
 
 ```python
@@ -104,12 +110,13 @@ draft.context_data["instructions"]             # the system prompt travels here,
 ## 3. Read a placement
 
 ```python
-from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+from flow_sdk.builtin.deployment import Deployment
 
-d = await Deployment.find_existing(str(agent.typeid), "local", kind=KIND_AGENT)
+d = await Deployment.find_existing(str(agent.typeid), "local")
 await d.agent()                                # the placed Agent, or None
 d.compute_node_id                              # the machine, for a node-backed provider
 await d.endpoints()                            # where it is reached: one ServiceEndpoint per service (service-endpoints.md)
+await d.health()                               # as healthy as its least healthy service (their last checks)
 await d.runs(limit=10)                         # its processes, newest first
 ```
 
@@ -206,22 +213,23 @@ async with workflow("acme-support"):                          # names the durabl
 
 ## 7. Run it on this computer — a process per deployment
 
-"This computer" under New deployment is `run_locally()`: one more local deployment, each its own
-process. The first takes the default slot and answers every channel that names no place; the next
-ones (`"2"`, `"3"`, …) answer only what names them. Each gets its `chat` endpoint — an HTTP message
-channel — at launch.
+"This computer" under New deployment is `run_locally()`: the agent's ONE local deployment, as its own
+process. It answers every channel that names no place (and those that name it). Running it again —
+after a pause — starts the same deployment, never a second. It gets its `chat` endpoint — an HTTP
+message channel (`subkind` `agent`) — at launch.
 
 ```python
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name("researcher")
-first = await agent.run_locally()               # a process on this computer running the agent loop
-second = await agent.run_locally()              # one more — its own process, its own chat
-assert (first.slot, second.slot) == ("", "2") and first.serving and second.serving
+here = await agent.run_locally()                # a process on this computer running the agent loop
+again = await agent.run_locally()               # the same deployment — one per agent here
+assert again.id == here.id and here.serving
 
-chat = await ServiceEndpoint.find_existing(str(second.typeid), "chat")
+chat = await ServiceEndpoint.find_existing(str(here.typeid), "chat")
 assert chat.backend.type == "channel"           # POST v1/chat/completions → a message → its loop answers
+assert chat.subkind == "agent"                  # what it is for: talking to the agent
 ```
 
 Each deployment runs its own Python file — `~/.flow/instances/<instance>/deployments/<id>.py`, typed as
@@ -250,8 +258,8 @@ whenever the channels it answers change. Edit the loop and press Restart; the ap
 again in the same terminal. The app adopts a running loop after its own restart (the lock says who
 runs), starts it again if it dies (a Ctrl-C counts), and stops it when the deployment stops serving or
 the agent is switched off. `run_locally(snippet=path)` runs that file instead. Proven by
-`tests/long_tests/test_local_deployment_process.py` (two deployments, two terminals, each answering its
-own chat) and live in a browser by `tests/e2e/deployment_process_validate.cjs`.
+`tests/long_tests/test_local_deployment_process.py` (two agents' deployments, two terminals, each
+answering its own chat) and live in a browser by `tests/e2e/deployment_process_validate.cjs`.
 
 ## From TypeScript and HTTP
 

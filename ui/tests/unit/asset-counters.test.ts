@@ -4,7 +4,6 @@
  * table behind a box is addressed by its URL alone.
  */
 import type { Agent, Deployment } from '@sdk';
-import { KIND_AGENT } from '@sdk';
 import { agentSource, deploymentsByAgent, runningRows, toAgentRows } from '@src/components/asset-counters/agent-counters';
 import { matchesQuickSearch, quickSearchTerms } from '@src/components/asset-counters/quick-search';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -13,8 +12,8 @@ import { describe, expect, it } from 'vitest';
 
 const agent = (id: string, name: string, bundleDirectory: string | null = null) =>
   ({ id, displayName: name, bundleDirectory, typeId: { toString: () => `agent:${id}` } }) as unknown as Agent;
-const deployment = (id: string, parent: string | null, kind = KIND_AGENT) =>
-  ({ id, kind, agentTypeId: parent?.startsWith('agent:') ? { toString: () => parent } : null }) as unknown as Deployment;
+const deployment = (id: string, parent: string | null) =>
+  ({ id, agentTypeId: parent?.startsWith('agent:') ? { toString: () => parent } : null }) as unknown as Deployment;
 
 describe('agent counters', () => {
   const zed = agent('z', 'Zed');
@@ -23,7 +22,7 @@ describe('agent counters', () => {
     deployment('d1', 'agent:z'),
     deployment('d2', 'agent:z'),
     deployment('d3', 'agent:elsewhere'),
-    deployment('web', 'project:p', 'runtime.web'),
+    deployment('web', 'project:p'),
     deployment('orphan', null),
   ];
 

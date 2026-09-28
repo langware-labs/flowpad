@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.cloud_client.shared.errors import HubError
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(5)]  # do not increase timeout without approval
@@ -48,7 +48,6 @@ def hub(monkeypatch):
 async def _placement(*, remote: bool, provider: str = "e2b") -> Deployment:
     row = Deployment(
         name=f"delete-test ({provider})",
-        kind=KIND_AGENT,
         parent_type_id="agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d",
         target={"provider": provider, "scope": "machine", "location": "sandbox"},
     )

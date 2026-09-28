@@ -28,11 +28,9 @@ def upstream():
 
 async def _local_deployment() -> Deployment:
     """A placement on THIS machine (provider ``local`` resolves to the ``@local`` node)."""
-    from flow_sdk.builtin.deployment import KIND_WEB  # noqa: PLC0415 — goes when Deployment.kind does
 
     row = Deployment(
         name=f"health-{uuid.uuid4().hex[:6]}",
-        kind=KIND_WEB,
         parent_type_id=f"project-{uuid.uuid4()}",
         target={"provider": "local", "scope": "machine", "location": "here"},
     )
@@ -114,7 +112,6 @@ async def test_the_node_report_lists_every_service_on_the_machine(client, upstre
 async def test_a_cloud_placement_is_not_on_this_node(client):
     cloud = Deployment(
         name="cloud",
-        kind="runtime.web",
         parent_type_id=f"project-{uuid.uuid4()}",
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
     )

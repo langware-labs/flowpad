@@ -2,20 +2,24 @@
 
 Every placement is this entity, whatever is placed and wherever it lands:
 
-    Agent      → a sandbox of its own            (kind ``runtime.agent``)
-    WebApp   → a dev server, or a sandbox      (kind ``runtime.web``)
-    ComputeNode→ a desktop                       (kind ``compute.node``)
-    GCP/AWS/…  → an inventoried cloud resource   (kind ``gcp.*``)
+    Agent       → its loop on this computer, or a box of its own
+    Project     → its web apps on a dev server, or a box of its own
+    ComputeNode → the machine's own placement: its admin services (the box's
+                  FlowPad), and on this computer the credential binding every
+                  process without a deployment of its own reads
+    GCP/AWS/…   → an inventoried cloud resource (the resource's own kind rides
+                  on ``origin.kind`` — the kind of what it carries)
 
 Two axes, each declared exactly once:
 
-* ``kind``            — WHAT is placed.
+* the PARENT          — WHAT is placed (:attr:`Deployment.element_type`). There is
+  no stored ``kind``: an entity's kind is derived (``docs/ontology.md`` rule 1),
+  and what a placement serves is its endpoints' ``subkind``.
 * ``target.provider`` — WHERE it runs: ``local``, ``e2b``, ``gcp``, ``aws``, …
   A provider is a *type of deployment*, never a parent of anything.
 
-They used to be one field (``local.runtime.web``), which meant three call sites
-asked the same question three different ways — ``kind_matches("local.runtime.
-web", …)``, ``target.provider == "gcp"``, and ``kind.endswith(".agent")``.
+A box (a ``ComputeNode``) hosts deployments; on this computer many, in the cloud
+one each. ``identity`` says who a box logs in as for it.
 
 **Parenting: a Deployment is a child of the deployed element**, and the chain
 reaches a Project. ``artifact_id`` is a REFERENCE, not parenting — an Artifact
@@ -32,7 +36,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 
 from pydantic import BaseModel, PrivateAttr, field_validator
 
@@ -51,7 +55,6 @@ from flow_sdk.worldview.models import (
     DeploymentStatus,
     DeploymentTarget,
 )
-from flow_sdk.worldview.ontology import KindStr, kind_matches, normalize_kind
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agent import Agent
@@ -59,14 +62,8 @@ if TYPE_CHECKING:
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.secrets import SecretStoreRef
 
-#: What is placed. The ``compute.node`` kind is a desktop — a machine placed for
-#: a human rather than for an agent; from inside the box the two are identical
-#: (same template, same app), which is why they are one entity and not two.
-KIND_AGENT = "runtime.agent"
-KIND_WEB = "runtime.web"
-KIND_NODE = "compute.node"
-#: This computer itself: the place every process with no deployment of its own reads its credentials in.
-KIND_THIS_COMPUTER = "compute.this_computer"
+#: Who a box logs in as for a deployment: nobody, the placed agent's own identity, or its owner.
+DeploymentIdentity = Literal["none", "agent", "user"]
 
 #: Providers that place a resource on a ComputeNode, so ``origin.external_id``
 #: names that node. An inventoried ``gcp`` resource is not node-backed — its
@@ -175,7 +172,9 @@ class Deployment(Entity):
 
     type: str = APIField(default=EntityType.DEPLOYMENT.value)
     name: str = APIField(description="Display name")
-    kind: KindStr = APIField(description="Open dot-path ontology kind — WHAT is placed")
+    #: Who the machine logs in as for this placement: ``agent`` (the placed agent's own identity),
+    #: ``user`` (its owner), ``none`` (not logged in). Resolved server-side, never from a request.
+    identity: DeploymentIdentity = APIField(default="user", description="Who the box logs in as: none, agent or user")
     artifact_id: str | None = APIField(default=None, description="Referenced Artifact (not the parent)")
     artifact_link_source: ArtifactLinkSource | None = APIField(default=None)
     target: DeploymentTarget = APIField(description="Provider placement target — WHERE it runs")
@@ -218,9 +217,6 @@ class Deployment(Entity):
         description="Where credential values live here: a store, per-variable exceptions, extra required variables",
     )
 
-    #: Which of an element's deployments on one provider this is: ``""`` the default one, else a
-    #: short name ("2", "3", …). How one agent runs in several places on this computer.
-    slot: str = APIField(default="", description="Which of the element's deployments on this provider ('' = the default)")
     #: A local agent deployment that RUNS: a subprocess on this machine running its loop
     #: (``builtin/agent_loop``). A placement processes are only spawned through does not.
     serving: bool = APIField(default=False, description="A local deployment that runs its own agent loop process")
@@ -245,22 +241,23 @@ class Deployment(Entity):
 
     @classmethod
     async def this_computer(cls, *, save: bool = True) -> "Deployment":
-        """This instance's own placement — found, else created once (a lookup, never a minted key).
-        ``save=False`` (a dry run) returns an unsaved one instead of creating it.
+        """This computer's own placement — the local ComputeNode's, found, else created once (a lookup,
+        never a minted key). ``save=False`` (a dry run) returns an unsaved one instead of creating it.
 
         Its ``secrets`` are the binding every process without a deployment of its own reads with —
-        terminals, ``flow credentials``, project setup. Its environment is not stored: it is the
-        instance default (``development``; a cloud box adopts ``production``), read as it is now.
+        terminals, ``flow credentials``, project setup — and it is where a project-less web app on this
+        machine is served from. Its environment is not stored: it is the instance default
+        (``development``; a cloud box adopts ``production``), read as it is now.
         """
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
         from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
 
-        rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["kind", KIND_THIS_COMPUTER])))
-        row = min(rows, key=lambda r: str(r.created_date or "")) if rows else None
+        parent = _local_node_typeid()
+        row = await cls.find_existing(parent, "local")
         if row is None:
             row = cls(
                 name="This computer",
-                kind=KIND_THIS_COMPUTER,
+                parent_type_id=parent,
+                identity="user",
                 target=DeploymentTarget(provider="local", scope="machine", location="this computer"),
                 secrets=DeploymentSecretsSpec(),
             )
@@ -272,9 +269,8 @@ class Deployment(Entity):
     @classmethod
     async def others(cls) -> "list[Deployment]":
         """Every deployment but this computer."""
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-
-        return await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.NE, operands=["kind", KIND_THIS_COMPUTER])))
+        parent = _local_node_typeid()
+        return [row for row in await cls.get_all() if not (str(row.parent_type_id) == parent and row.target.provider == "local")]
 
     @classmethod
     async def resolve(cls, deployment_id: str = "") -> "Deployment":
@@ -289,8 +285,22 @@ class Deployment(Entity):
         return row
 
     @property
+    def element_type(self) -> Optional[str]:
+        """What this places — the type of its parent (``agent``, ``project``, ``compute_node``…), or None."""
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+        try:
+            return TypeId(str(self.parent_type_id)).type if self.parent_type_id else None
+        except (ValueError, TypeError):
+            return None
+
+    @property
+    def places_agent(self) -> bool:
+        return self.element_type == EntityType.AGENT.value
+
+    @property
     def is_this_computer(self) -> bool:
-        return kind_matches(KIND_THIS_COMPUTER, self.kind)
+        return str(self.parent_type_id or "") == _local_node_typeid() and self.target.provider == "local"
 
     async def secrets_binding(self) -> DeploymentSecretsSpec:
         """Where this placement's values live: its own binding, else this computer's."""
@@ -352,9 +362,7 @@ class Deployment(Entity):
         parent_type_id: str,
         provider: str,
         *,
-        kind: str | None = None,
         environment: str | None = None,
-        slot: str = "",
     ) -> Optional["Deployment"]:
         """The placement of *parent_type_id* on *provider* (in *environment*, when given), or None.
 
@@ -367,26 +375,14 @@ class Deployment(Entity):
         Python rather than in the query — a nested-JSON predicate is not a
         supported filter, and the row count per element is tiny.
         """
-        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
-
         rows = await cls.get_all({"match": {"parent_type_id": str(parent_type_id)}})
         wanted = str(provider).strip()
         for row in rows:
             if row.target.provider != wanted:
                 continue
-            # Exact-or-DESCENDANT, never equality: the ontology is hierarchical,
-            # so a row refined to `runtime.web.vite` is still the web runtime of
-            # this element. Matching on equality forked a second row the moment
-            # anything specialized the kind.
-            if kind is not None and not kind_matches(kind, row.kind):
-                continue
             # One placement per environment: a staging and a production machine
             # of the same element on the same provider are two rows.
             if environment is not None and (row.environment or DEFAULT_ENVIRONMENT) != environment:
-                continue
-            # Several deployments of one element on one provider are told apart by their slot;
-            # the default one has none.
-            if (row.slot or "") != (slot or ""):
                 continue
             return row
         return None
@@ -397,10 +393,8 @@ class Deployment(Entity):
         *,
         parent_type_id: str,
         provider: str,
-        kind: str,
         payload: dict[str, Any],
         element: Optional[Entity] = None,
-        slot: str = "",
     ) -> "Deployment":
         """Create the placement, or update it in place when something changed.
 
@@ -415,8 +409,8 @@ class Deployment(Entity):
         ``NotImplemented`` — so the guard was True on 100% of calls and every
         resolve wrote.
         """
-        body = {**payload, "kind": normalize_kind(kind), "parent_type_id": str(parent_type_id), "slot": slot}
-        existing = await cls.find_existing(parent_type_id, provider, kind=kind, slot=slot)
+        body = {**payload, "parent_type_id": str(parent_type_id)}
+        existing = await cls.find_existing(parent_type_id, provider, environment=payload.get("environment"))
         if existing is None:
             body.setdefault("status", {}).setdefault("observed_at", datetime.now(UTC).isoformat())
             deployment = cls(**body)
@@ -615,7 +609,7 @@ class Deployment(Entity):
     def _runs_here(self) -> bool:
         """An agent deployment on this machine: it runs as a process here, so pausing it stops that
         process (``serving``) — never the machine under it."""
-        return not self.remote and self.is_local and kind_matches(KIND_AGENT, self.kind)
+        return not self.remote and self.is_local and self.places_agent
 
     async def _set_serving(self, serving: bool) -> bool:
         """Stop (or start) this deployment's process. Stopping ends it now — and, not serving, the
@@ -881,13 +875,7 @@ class Deployment(Entity):
     def is_agent_placement_of(self, agent) -> bool:
         """The one rule for "may this placement open a session as ``agent``":
         its row, an agent placement, on a machine — the hub asks the same."""
-        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
-
-        return (
-            str(self.parent_type_id) == str(agent.typeid)
-            and kind_matches(KIND_AGENT, self.kind)
-            and self.target.provider in NODE_PROVIDERS
-        )
+        return str(self.parent_type_id) == str(agent.typeid) and self.target.provider in NODE_PROVIDERS
 
     async def _require_agent(self) -> "Agent":
         """The placed Agent, or ``AgentUnavailable`` — a launch site naming a
@@ -1148,4 +1136,11 @@ class Deployment(Entity):
         return value
 
 
-__all__ = ["KIND_AGENT", "KIND_NODE", "KIND_WEB", "NODE_PROVIDERS", "Deployment"]
+def _local_node_typeid() -> str:
+    """This computer's ComputeNode, by its deterministic id — pure, no DB read (``compute_node_id`` rule)."""
+    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+    return f"{EntityType.COMPUTE_NODE.value}-{ComputeNode._local_id()}"
+
+
+__all__ = ["NODE_PROVIDERS", "Deployment", "DeploymentIdentity"]

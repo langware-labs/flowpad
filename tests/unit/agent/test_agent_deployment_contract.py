@@ -55,7 +55,8 @@ async def test_deploy_is_idempotent_and_local():
     second = await a.local_deployment()
     assert first.id == second.id
     assert UUID(first.id).version == 4
-    assert first.kind == "runtime.agent"
+    assert first.element_type == "agent" and first.places_agent, "what it places is its parent"
+    assert first.identity == "agent", "a box it runs on logs in as the agent"
     assert first.target.provider == "local"
     assert str(first.parent_type_id) == str(a.typeid)
     assert first.is_local
@@ -133,19 +134,23 @@ async def test_unknown_agent_fails_loudly():
 
 
 def test_the_placement_vocabulary_is_pinned_on_this_side_too():
-    """The kinds and the node-backed provider set live in THREE places: here,
+    """The node-backed provider set and the identity vocabulary live in THREE places: here,
     the hub's `builtin/deployment.py`, and `ts_sdk/src/entities/deployment.ts`.
 
     The hub has the mirror of this assertion. Both sides assert the LITERALS, so
     a change to either one fails a test rather than silently making a placement
-    unaddressable on the tier that wasn't updated.
+    unaddressable on the tier that wasn't updated. There is no stored kind: what a
+    placement places is its parent.
 
     This tier holds the UNION: the hub's set (`local`, `e2b`, `docker`,
     `gcp_vm`) plus `user_machine`, which the hub never allocates. A placement the
     hub made on `gcp_vm` is adopted here at the hub's id and must resolve its
     node — it used to read as not node-backed on this side.
     """
-    from flow_sdk.builtin.deployment import KIND_AGENT, KIND_NODE, KIND_WEB, NODE_PROVIDERS
+    from typing import get_args
 
-    assert (KIND_AGENT, KIND_WEB, KIND_NODE) == ("runtime.agent", "runtime.web", "compute.node")
+    from flow_sdk.builtin.deployment import NODE_PROVIDERS, Deployment, DeploymentIdentity
+
+    assert "kind" not in Deployment.model_fields and "slot" not in Deployment.model_fields
+    assert set(get_args(DeploymentIdentity)) == {"none", "agent", "user"}
     assert NODE_PROVIDERS == frozenset({"local", "local_machine", "e2b", "docker", "gcp_vm", "user_machine"})

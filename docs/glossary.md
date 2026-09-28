@@ -31,7 +31,7 @@ Names should make that obvious.
 profile and session store, with channel bindings routing to it; many live in one Gateway
 process, and it has no subagent concept. Our `SubAgent` is only a provider-owned prompt
 asset. The closest Flowpad analogue is `Agent`: a native, launchable identity plus bundle
-stored at `agentic-assets/agent/<name>/agent.json` (+ `system_prompt.md`). A `Deployment` (kind `runtime.agent`) places it, and
+stored at `agentic-assets/agent/<name>/agent.json` (+ `system_prompt.md`). A `Deployment` (its parent: the agent) places it, and
 each launch becomes an `AgenticProcess`. Unlike OpenClaw's tenant, Flowpad keeps deployment
 placement and each run as separate entities.
 
@@ -156,7 +156,7 @@ mechanism: [`ontology.md`](ontology.md).
 ## Agent capability fields
 
 `Agent` is the persistent, named binding of identity, system prompt, worker/model choices,
-and launch configuration. A `Deployment` (kind `runtime.agent`) places it; `AgenticProcess` records one run.
+and launch configuration. A `Deployment` (its parent: the agent) places it; `AgenticProcess` records one run.
 Some capability fields are currently declaration-only: `max_turns`, tool allow/deny lists,
 skills, and SubAgent references round-trip through `agent.json` but are not yet projected into the
 worker. They must not be presented as enforced controls until that projection exists.
@@ -218,7 +218,17 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   whole defence. NOT "public" in the `visitor_role` / public-listing sense — it is stamped as
   `Entity.public_role`, which no listing matches, so a public endpoint is usable but never
   enumerable. See [llm-endpoints §7](snippets/llm-endpoints.md).
-* **`ServiceEndpoint`** — ours. One service a `Deployment` EXPOSES, a child of it: `protocol` (a
+* **box / `ComputeNode`** — ours. The machine a `Deployment` runs on: this computer (`@local`), an e2b /
+  docker / GCP VM box, or an enrolled machine. It hosts deployments — this computer many, a cloud box
+  one — and answers on their `ServiceEndpoint`s; `health_check()` is the list of all of its services'.
+  "Box" is the spoken word; the type is `ComputeNode`.
+* **control plane** — ours. Hub → box, command driven: `ComputeNode.run_command` / `http` /
+  `write_files` and the hub's `compute_node_tools` (clone, index, place secrets, run a health check).
+  Hub-internal — never a `ServiceEndpoint` and never a REST verb (a REST caller asks for lifecycle and
+  outcomes: `ops/<lifecycle>`, `ops/provision-project`, `sign-out`).
+* **`ServiceEndpoint`** — ours. One service a `Deployment` EXPOSES, a child of it: `subkind` (what it
+  is FOR — `admin`, `app`, `agent`, `service`; its kind `service_endpoint.<subkind>` is derived),
+  `check` / `health` (how to tell it is alive, and the last check's result — see §7), `protocol` (a
   tagged kind — `web.app`, `api.rest`, `api.chat.openai`, `api.mcp`, `flowpad.workspace`, or a
   `--ns--` one), `backend` (`static` files, a `proxy` to a loopback port, or a `channel` — each
   request a message on a message channel, its recorded reply the answer: every agent deployment's
@@ -245,7 +255,7 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 * **`SecretStore`** — ours (was *value store*). A place secret values live, keyed by environment variable name: a type plus its config (`flow_sdk/secrets`). Three ship: `env_file` (a dotenv file, the scope root's `.env.local` by default; a form spells it `env`), `vault` (the per-instance encrypted store, `sodot` on disk) and `gcp_secret_manager` (a Google Cloud Secret Manager project, read through a bound `google` connection). A Deployment says which one keeps each variable (`DeploymentSecretsSpec`); a `DataSource` instance binds one (`set_secret_store`). Not a `Connection`, which is an account that hands out a token. See [secret-stores](snippets/secret-stores.md).
 * **`UserProfile`** — **two things, deliberately kept apart.** In the SDK it is a *payload* (`flow_sdk/sources/values/items.py`, kind `ingest.profile`): who a provider said sent or received a message — an `origin` (a Slack user id, an address) plus observed display fields, minted per item inside `SourceItem.data`, never a row. On the **hub** it is an *entity* (`flowpad/hub/builtin/user_profile.py`, type `user_profile`, formerly `ProviderIdentity`): one external provider account, keyed `provider:external_id`, that a person proved is theirs by signing in with it, `partof` their `User`. The SDK one is an OBSERVATION about anybody; the hub one is an ASSERTION only its own holder can make — they are the input and the output of the same lookup ("which Flow user is this Slack sender?"). Neither is the display name/picture, which live on `User` itself.
 * **environment** — ours. A Deployment's `environment` — Deployment == environment, there is no environment asset. It names which set of values a deployment reads (`.env.<env>.local`, `credential.<env>.…`); the deployment's own binding (`DeploymentSecretsSpec`) says which store keeps each variable. `development` is this computer and the default. Not the hub's `DEPLOY_ENV` tier, which the e2b/GCP `environment` labels carry. See [secret_share](secret_share.md#where-the-values-live--a-deployments-never-the-credentials).
-* **deployment secrets / this computer** — ours. `DeploymentSecretsSpec` (kind `deployment.secrets`) on a Deployment: its `store`, per-variable `exceptions`, extra `require`d variables, `protected`. **This computer** is the one Deployment per instance (kind `compute.this_computer`) whose binding every process without a deployment of its own reads, and that an agent's local deployment inherits. `credential_store.Placement` = a binding plus its environment.
+* **deployment secrets / this computer** — ours. `DeploymentSecretsSpec` (kind `deployment.secrets`) on a Deployment: its `store`, per-variable `exceptions`, extra `require`d variables, `protected`. **This computer** is the one Deployment per instance — the local `ComputeNode`'s own placement — whose binding every process without a deployment of its own reads, and that an agent's local deployment inherits; a project-less web app on this machine is served from it. `credential_store.Placement` = a binding plus its environment.
 * **hub `Webhook`** — ours (hub). A stable public URL (`<hub>/api/v1/webhook/<id>`) relayed to a compute node, with its own filters, routes and mode (sync / queue); owned by its creator, it targets a node and can be retargeted with the URL unchanged. Not a plugin webhook (`webhook/plugin/<name>` on the same router), not the desktop's `listen` hooks, and not a ServiceEndpoint (what a placement serves, at a box-minted id). A **deployment's webhook** is one planning a cloud deployment asked for (`DeploymentWebhookSpec`, one per driver whose manifest declares `webhook`): stamped with its deployment, delivering to whatever machine that deployment has (no node of its own, never retargeted), its URL stored as the driver's URL variable and deleted with the deployment. See the hub's `docs/webhooks.md`.
 * **token allocation** — ours. A cloud deployment's own model budget: a hub `LLMEndpoint` allocated from a source its owner administers (`TokenAllocationSpec`: `source`, `cost_usd_per_day`, `model`), set by planning the deployment (the deploy dialog's "Token allocation"), named by `Deployment.llm_endpoint_typeid`, bound to its machine, deleted with it. Unset, the agent spends its owner's capped default. See the hub's `docs/llm-endpoint.md`.
 * **per-machine setting** — ours. A data source value that differs by where it runs (where a container answers, how a provider reaches this instance): a credential variable in the driver's `auth.vars` (`secret: false` when not a secret), resolved per deployment — never `data_source.json` config, which travels with the repo. See [data-source-asset](data-management/data-source-asset.md#auth).

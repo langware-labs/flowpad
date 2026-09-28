@@ -48,14 +48,13 @@ async def project_artifacts(project) -> list:
 
 
 async def project_deployments(project) -> list:
-    """This project's web runtime placements."""
-    from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
+    """This project's web runtime placements — the project's own (anywhere), or this machine's for none."""
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.core import QueryFilter  # noqa: PLC0415
-    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
 
     source = project.typeid if project is not None else None
     rows = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
-    return [row for row in rows if kind_matches(KIND_WEB, row.kind)]
+    return [row for row in rows if row.element_type == "project" or row.is_this_computer]
 
 
 async def artifact_by_port(project, port) -> Optional[Any]:
@@ -196,19 +195,22 @@ async def local_web_deployment(project, *, artifact=None) -> Optional[Any]:
     generated and lives under its own parent, while the placement belongs to the
     project that owns the running thing. Something served here that belongs to no
     project (a user-scope webapp, a dev server a project-less run started) is the
-    MACHINE's: its placement hangs off the local compute node. A placement carries
-    no port — ports belong to the endpoints it exposes. ``artifact_id`` names the
-    app registered most recently; placing anything else leaves it alone.
+    MACHINE's: it is served from this computer's own placement
+    (``Deployment.this_computer``). A placement carries no port — ports belong to
+    the endpoints it exposes. ``artifact_id`` names the app registered most
+    recently; placing anything else leaves it alone.
     """
-    from flow_sdk.builtin.deployment import KIND_WEB, Deployment  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
     local_id = ComputeNode._local_id()
     owner = project if project is not None else await ComputeNode.get_by_id(local_id)
     if owner is None:
         return None
+    if project is None:
+        await Deployment.this_computer()  # the machine's placement exists before it is upserted below
     payload: dict = {
-        "name": f"{project.name or 'project'} (local)" if project is not None else "This machine",
+        "name": f"{project.name or 'project'} (local)" if project is not None else "This computer",
         "target": {"provider": "local", "scope": project.id if project is not None else local_id},
         "origin": {"kind": "local", "provider": "local", "external_id": local_id},
         "status": {"sync_state": "current", "provider_state": "configured"},
@@ -224,7 +226,7 @@ async def local_web_deployment(project, *, artifact=None) -> Optional[Any]:
             "source_revision": getattr(artifact.origin, "head_commit", None),
         }
     deployment = await Deployment.upsert(
-        parent_type_id=str(owner.typeid), provider="local", kind=KIND_WEB, element=owner, payload=payload
+        parent_type_id=str(owner.typeid), provider="local", element=owner, payload=payload
     )
     await owner.attach_child(deployment)
     return deployment
@@ -233,6 +235,7 @@ async def local_web_deployment(project, *, artifact=None) -> Optional[Any]:
 _ENDPOINT_FIELDS = {
     "parent_type_id",
     "name",
+    "subkind",
     "protocol",
     "backend",
     "supports_direct_access",
@@ -248,6 +251,7 @@ def _endpoint(
     name: str,
     backend: dict,
     protocol: Optional[dict] = None,
+    subkind: Optional[str] = None,
     artifact_id: Optional[str] = None,
     webapp_id: Optional[str] = None,
     project_id: Optional[str] = None,
@@ -256,12 +260,15 @@ def _endpoint(
 ):
     """The endpoint row these fields describe, at *existing*'s id when there is one."""
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.service_endpoint_spec import default_subkind  # noqa: PLC0415
 
+    protocol = protocol or {"spec_kind": PROTOCOL_WEB_APP}
     return ServiceEndpoint(
         **({"id": existing.id} if existing is not None else {}),
         parent_type_id=str(parent_type_id),
         name=name,
-        protocol=protocol or {"spec_kind": PROTOCOL_WEB_APP},
+        subkind=subkind or default_subkind(str(protocol.get("spec_kind") or "")),
+        protocol=protocol,
         backend=backend,
         supports_direct_access=supports_direct_access,
         artifact_id=artifact_id,
@@ -511,11 +518,10 @@ async def _agent_placement(deployment_typeid: str):
     """
     from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.agent_serve import ensure_chat_channel  # noqa: PLC0415
-    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment  # noqa: PLC0415
-    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
     deployment = await Deployment.get_by_id(deployment_typeid.partition("-")[2])
-    if deployment is None or not kind_matches(KIND_AGENT, deployment.kind):
+    if deployment is None or not deployment.places_agent:
         return None
     agent = await Agent.get_by_id(str(deployment.parent_type_id or "").partition("-")[2])
     if agent is None or not deployment.is_local:

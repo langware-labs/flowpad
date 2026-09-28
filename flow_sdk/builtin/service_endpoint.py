@@ -36,7 +36,13 @@ from flow_sdk.schema.data_spec.health_spec import (
     HealthCheck,
     HttpCheck,
 )
-from flow_sdk.schema.data_spec.service_endpoint_spec import Backend, TaggedProtocol, surface_of
+from flow_sdk.schema.data_spec.service_endpoint_spec import (
+    Backend,
+    EndpointSubkind,
+    TaggedProtocol,
+    default_subkind,
+    surface_of,
+)
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import DeploymentStatus
 
@@ -46,6 +52,8 @@ class ServiceEndpoint(Entity):
 
     type: str = APIField(default=EntityType.SERVICE_ENDPOINT.value)
     name: str = APIField(description="Unique within its deployment: 'app', 'dev', 'chat', 'workspace'")
+    #: What it is FOR — admin, app, agent or service. Its kind (``service_endpoint.<subkind>``) is derived.
+    subkind: EndpointSubkind = APIField(default="service", description="What it is for: admin, app, agent, service")
     protocol: TaggedProtocol = APIField(description="What the service speaks — a tagged dot-path kind")
     backend: Backend = APIField(description="How this machine produces the responses")
     supports_direct_access: bool = APIField(
@@ -65,6 +73,12 @@ class ServiceEndpoint(Entity):
 
     def __init__(self, **data: Any) -> None:
         data["id"] = self.allocate_id(data)
+        if not data.get("subkind"):
+            # A writer that does not say gets what its protocol implies (a row stored before subkind
+            # existed, a box that reports none).
+            protocol = data.get("protocol")
+            kind = protocol.get("spec_kind") if isinstance(protocol, dict) else getattr(protocol, "kind", "")
+            data["subkind"] = default_subkind(str(kind or ""))
         super().__init__(**data)
 
     @property

@@ -193,3 +193,15 @@ def test_a_declared_check_rides_the_endpoint_wire_form():
     dumped = endpoint.model_dump(mode="json")
     assert dumped["check"] == {"type": "command", "cmd": "pg_isready"}
     assert ServiceEndpoint(**{k: v for k, v in dumped.items() if k in ServiceEndpoint.model_fields}).check == endpoint.check
+
+
+async def test_the_documented_health_check_runs_as_written():
+    """``docs/snippets/service-endpoints.md`` §7, verbatim."""
+    from types import SimpleNamespace
+
+    from tests.utils.snippets import doc, fence_under, run_fence
+
+    deployment = SimpleNamespace(typeid=f"deployment-{uuid.uuid4()}")
+    ns = await run_fence(fence_under(doc("service-endpoints.md"), "7."), {"deployment": deployment}, filename="service-endpoints.md §7")
+    assert ns["result"].state == "alive"
+    assert ns["db"].subkind == "service"

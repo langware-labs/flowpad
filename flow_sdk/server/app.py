@@ -243,6 +243,7 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Tag forwarding: failed to arm ({_e})")
 
+    await _lift_this_computer_placement()
     await _lift_credential_stores()
     await _lift_place_settings()
     await _lift_credential_guides()
@@ -417,6 +418,12 @@ async def _boot_lift(module: str, label: str) -> None:
                 logging.getLogger(__name__).info("%s", line)
     except Exception:
         logging.getLogger(__name__).exception("%s: lift failed", label)
+
+
+async def _lift_this_computer_placement() -> None:
+    """Deployments lost ``kind``/``slot``: this computer becomes the local node's placement, extra agent
+    slots go — before anything reads this computer (``migration_2026_09_this_computer_placement``)."""
+    await _boot_lift("migration_2026_09_this_computer_placement", "This computer placement")
 
 
 async def _lift_credential_stores() -> None:

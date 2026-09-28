@@ -21,7 +21,6 @@ async def test_worldview_load_and_manual_link_use_standard_envelopes(client):
     deployment = Deployment(
         id=mint_uuid(),
         name="API deployment",
-        kind="runtime.web",
         target=DeploymentTarget(provider="local", scope="machine"),
     )
     await artifact.save(notify=False)

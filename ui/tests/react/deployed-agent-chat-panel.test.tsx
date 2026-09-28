@@ -32,7 +32,6 @@ const agent = new Agent({
 const deployment = new Deployment({
   id: '00000000-0000-4000-8000-000000000002',
   name: 'GCP production box',
-  kind: 'runtime.agent',
   parent_type_id: agent.typeId.toString(),
   target: { provider: 'gcp_vm', scope: agent.typeId.toString() },
   status: { sync_state: 'current', provider_state: 'running' },

@@ -53,6 +53,17 @@ export interface ChannelBackend {
 
 export type ServiceBackend = StaticBackend | ProxyBackend | ChannelBackend;
 
+/** What an endpoint is FOR (its kind, `service_endpoint.<subkind>`, is derived). Twin of `EndpointSubkind`. */
+export type EndpointSubkind = 'admin' | 'app' | 'agent' | 'service';
+
+/** What an endpoint speaking `protocolKind` is for, when a row does not say. Twin of `default_subkind`. */
+export function defaultSubkind(protocolKind: string): EndpointSubkind {
+  const kind = normalizeKind(protocolKind);
+  if (kind === PROTOCOL_WORKSPACE) return 'admin';
+  if (kind === PROTOCOL_API_CHAT_OPENAI) return 'agent';
+  return surfaceOf(kind) === 'web' ? 'app' : 'service';
+}
+
 /** How to tell a service is alive. Twin of `HealthCheck` in `flow_sdk/schema/data_spec/health_spec.py`. */
 export type HealthCheck = { type: 'http'; path: string } | { type: 'command'; cmd: string } | { type: 'builtin' };
 
@@ -86,6 +97,8 @@ export function worstHealth(states: Iterable<HealthState>): HealthState {
 
 export interface IServiceEndpoint extends Omit<IEntity, 'status'> {
   name: string;
+  /** What it is for: admin, app, agent or service. */
+  subkind?: EndpointSubkind;
   protocol: ServiceProtocol;
   backend: ServiceBackend;
   supports_direct_access?: boolean;
@@ -118,6 +131,7 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
   static type: string = 'service_endpoint';
 
   name: string;
+  subkind: EndpointSubkind;
   protocol: ServiceProtocol;
   backend: ServiceBackend;
   supports_direct_access: boolean;
@@ -136,6 +150,7 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
       throw new Error('Invalid ServiceEndpoint structure: protocol.spec_kind is required');
     }
     this.protocol = { ...endpoint.protocol, spec_kind: normalizeKind(endpoint.protocol.spec_kind) };
+    this.subkind = endpoint.subkind ?? defaultSubkind(this.protocol.spec_kind);
     this.backend = normalizeBackend(endpoint.backend);
     this.supports_direct_access = endpoint.supports_direct_access ?? false;
     this.status = {
