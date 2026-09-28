@@ -226,12 +226,17 @@ describe('sandbox provisioning asks the hub for the outcome', () => {
   });
 
   it('paints every planned row from the steps the hub reports', async () => {
-    answers({ 'provision-project': provisioned(['validate', 'clone', 'index', 'context', 'default'], { context: 'acme-support' }) });
+    answers({
+      'provision-project': provisioned(['validate', 'clone', 'index', 'context', 'default'], {
+        context: 'acme-support',
+      }),
+    });
 
     const result = await launchWithGit();
 
     const byId = Object.fromEntries(result.current.steps.map((s) => [s.id, s]));
-    for (const id of ['validate', 'clone', 'index', 'context', 'default', 'open']) expect(byId[id].status).toBe('success');
+    for (const id of ['validate', 'clone', 'index', 'context', 'default', 'open'])
+      expect(byId[id].status).toBe('success');
     expect(byId.context.detail).toBe('acme-support');
   });
 
