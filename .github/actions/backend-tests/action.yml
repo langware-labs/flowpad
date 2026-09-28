@@ -83,7 +83,7 @@ runs:
         K='${{ inputs.k }}'
         if [ "$SHARDS" -le 1 ]; then
           if [ -n "$K" ]; then
-            uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long -k "$K"
+            uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long -k "$K" || [ $? -eq 5 ]
           else
             uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long
           fi
@@ -118,7 +118,9 @@ runs:
         fi
         echo "shard $SHARD/$SHARDS: ${#SEL[@]} of $total files"
         if [ -n "$K" ]; then
-          uv run pytest "${SEL[@]}" -q --long -k "$K"
+          # Exit 5 ("no tests collected") is expected here: a `-k` filter usually
+          # matches nothing in most shards, and that is not this shard's failure.
+          uv run pytest "${SEL[@]}" -q --long -k "$K" || [ $? -eq 5 ]
         else
           uv run pytest "${SEL[@]}" -q --long
         fi
@@ -136,7 +138,7 @@ runs:
       run: |
         K='${{ inputs.k }}'
         if [ -n "$K" ]; then
-          uv run pytest tests/api -q -k "$K"
+          uv run pytest tests/api -q -k "$K" || [ $? -eq 5 ]
         else
           uv run pytest tests/api -q
         fi
