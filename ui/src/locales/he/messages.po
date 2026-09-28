@@ -2569,9 +2569,13 @@ msgstr "לבקש עזרה ממישהו"
 msgid "Ask the agent to connect one"
 msgstr ""
 
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "Ask the Flowpad Assistant anything about this page."
+msgstr ""
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
-msgid "Ask the Flowpad Assistant anything."
-msgstr "שאל את עוזר Flowpad כל דבר."
+#~ msgid "Ask the Flowpad Assistant anything."
+#~ msgstr "שאל את עוזר Flowpad כל דבר."
 
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
@@ -3598,7 +3602,11 @@ msgstr ""
 msgid "Chat"
 msgstr "צ'אט"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantContextChips.tsx
+msgid "Chat context"
+msgstr ""
+
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Chat history"
 msgstr "היסטוריית צ'אט"
 
@@ -8969,10 +8977,12 @@ msgstr "Flowpad"
 msgid "FlowPad API Key"
 msgstr "מפתח API של FlowPad"
 
+#: src/components/floating-chat/AssistantPopoutView.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
+#: src/types/ViewType.ts
 msgid "Flowpad Assistant"
 msgstr "עוזר Flowpad"
 
@@ -8992,7 +9002,7 @@ msgstr ""
 #~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 #~ msgstr "עוזר Flowpad מעודכן (מיומנויותיו וסוכניו מועברים לעובד דרך --add-dir). לחץ להסרה — יידרש הפעלה מחדש."
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Flowpad Assistant project not available."
 msgstr "פרויקט עוזר Flowpad אינו זמין."
 
@@ -11472,7 +11482,7 @@ msgstr "טוען שגיאות..."
 msgid "Loading feed item"
 msgstr "טעינת פריט הזנה"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Loading Flowpad Assistant…"
 msgstr "טוען עוזר Flowpad…"
 
@@ -12586,9 +12596,13 @@ msgid "New build"
 msgstr "בנייה חדשה"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "צ'אט חדש"
+
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "New chat for this page"
+msgstr ""
 
 #: src/components/organization/org-node-management.tsx
 msgid "New class"
@@ -13375,7 +13389,7 @@ msgstr "עדיין אין עמוד בשם זה."
 msgid "No past builds"
 msgstr "אין בניות קודמות"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "No past chats"
 msgstr "אין צ'אטים קודמים"
 
@@ -14532,6 +14546,10 @@ msgstr "פתח חיפוש מלא"
 msgid "Open help desk"
 msgstr ""
 
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+msgid "Open in"
+msgstr ""
+
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Open in a new browser tab"
 msgstr "פתיחה בכרטיסיית דפדפן חדשה"
@@ -14592,6 +14610,7 @@ msgstr ""
 msgid "Open in new tab"
 msgstr "פתח בכרטיסייה חדשה"
 
+#: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/top-nav-bar/OpenInWindowButton.tsx
 msgid "Open in new window"
 msgstr ""
@@ -15174,7 +15193,7 @@ msgstr "ניתוחים קודמים"
 msgid "Past builds"
 msgstr "בניות קודמות"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Past chats"
 msgstr "צ'אטים קודמים"
 
@@ -23045,7 +23064,7 @@ msgstr ""
 msgid "What"
 msgstr ""
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "What can flowpad do for you ?"
 msgstr "מה יכול Flowpad לעשות בשבילך?"
 
@@ -23164,6 +23183,10 @@ msgstr "מה לבדוק"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "מה השתבש? (השאר ריק לסריקה מלאה)"
+
+#: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
+msgid "What would you like the agent {displayName} to do?"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
