@@ -422,6 +422,29 @@ def _last_turn_assistant_text(entries) -> str:
     return "\n\n".join(reversed(out)).strip()
 
 
+def _last_turn_error_text(entries) -> str:
+    """The last system-level error MESSAGE of the LAST turn, from typed transcript entries.
+
+    Same walk as :func:`_last_turn_assistant_text`, same reason: vendor-agnostic by
+    construction. A turn that ends in error is otherwise reported as the bare
+    ``"The agent ended error."`` — true, but it throws away the one sentence that would
+    have told a person WHY (a model an endpoint's chain refused, a budget exceeded, an
+    auth failure) in favor of a completion-check-shaped "still fails" that names no cause
+    at all. deepagents and opencode already emit their own failures as
+    ``SystemEntry(subtype="error", payload={"message": ...})`` — a fifth vendor's parser
+    needs only to do the same for this to pick it up with no vendor-specific branch here.
+    """
+    for entry in reversed(list(entries)):
+        kind = getattr(entry, "kind", None)
+        if kind is EntryKind.USER_MESSAGE and not getattr(entry, "is_meta", False):
+            break  # the prompt that opened this turn — everything older is a prior turn
+        if kind is EntryKind.SYSTEM and getattr(entry, "subtype", None) == "error":
+            message = (getattr(entry, "payload", None) or {}).get("message")
+            if message:
+                return str(message).strip()
+    return ""
+
+
 async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
     """Run the turn to completion and return ONLY the latest turn's assistant text.
 
@@ -898,10 +921,7 @@ async def recover_interrupted_sessions() -> None:
     sessions = []
     for status in ACTIVE_STATUSES:
         sessions.extend(await RemoteWorkerSession.get_all({"status": status.value}) or [])
-    mine = [
-        s for s in sessions
-        if getattr(s, "conversation_id", None) and getattr(s, "host_user_id", None) == me
-    ]
+    mine = [s for s in sessions if getattr(s, "conversation_id", None) and getattr(s, "host_user_id", None) == me]
     if not mine:
         return
 
@@ -927,10 +947,13 @@ async def _session_messages(session_ids: set) -> dict:
 
     if not session_ids:
         return {}
-    rows = await FlowMessage.get_all(
-        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["remote_worker_session_id", list(session_ids)])),
-        hydrate=False,
-    ) or []
+    rows = (
+        await FlowMessage.get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["remote_worker_session_id", list(session_ids)])),
+            hydrate=False,
+        )
+        or []
+    )
     grouped: dict = {}
     for m in rows:
         grouped.setdefault(getattr(m, "remote_worker_session_id", None), []).append(m)
@@ -950,7 +973,8 @@ async def _release_interrupted_turn(session, msgs: list, someone_typeid: str) ->
         return str(getattr(m, "created_date", "") or "")
 
     prompts = [
-        m for m in msgs
+        m
+        for m in msgs
         if getattr(m, "prompt_auto_handled", False)
         and not getattr(m, "is_draft", False)
         and any(_is_prompt_attachment(a) for a in (m.attachment or []))

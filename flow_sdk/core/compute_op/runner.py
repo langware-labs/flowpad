@@ -351,18 +351,30 @@ async def _call_and_check(
     )
 
 
+#: `_build_run_result`'s bare boilerplate, with no cause appended — the discriminator between
+#: "the agent said nothing more" and "the agent's own detail names the real reason".
+_AGENT_BOILERPLATE = {"The agent finished.", "The agent ended error.", "The agent ended interrupted."}
+
+
 def _why(call: Any) -> str:
     """The call's own last word, for a log line that otherwise says only "failed".
 
     An installer that exits at once (a refused agreement, an ambiguous package
     id) is indistinguishable from one whose binary landed off the PATH unless
     its exit code and last line of output travel with the verdict.
+
+    A CliResult's exit code/output IS that word; a PromptResult (the agent rung) has neither
+    — its own ``detail`` is the equivalent one, when `_build_run_result` found a real reason
+    (a model an endpoint's chain refused, a budget exceeded) to append past the bare
+    boilerplate. Without this, ``the agent call ran, but the check still fails`` says nothing
+    a person can act on even when the transcript held the answer all along.
     """
     code = getattr(call, "returncode", None)
     output = (getattr(call, "stderr", "") or "").strip() or (getattr(call, "stdout", "") or "").strip()
     last = output.splitlines()[-1].strip() if output else ""
     if code is None and not last:
-        return ""
+        detail = (getattr(call, "detail", "") or "").strip()
+        return f" ({detail})" if detail and detail not in _AGENT_BOILERPLATE else ""
     return f" (exit {code}{': ' + last[:200] if last else ''})"
 
 

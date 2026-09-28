@@ -9,6 +9,7 @@ and these are its rules — an agent op's, because an agent run IS a ComputeOp
 Everything here is seam-injected (`run_op(launch=…)`), so the whole verdict
 matrix runs with no process anywhere, in milliseconds.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -51,6 +52,7 @@ def _op(*, output: object = "string", check: bool = False) -> ComputeOpSpec:
 
 def _writer(payload: "dict | None", *, seen: "list | None" = None):
     """A launch double that writes the receipt its prompt asked for."""
+
     async def launch(*, workdir: Path, prompt: str = "", **_kw) -> PromptResult:
         if seen is not None:
             seen.append(prompt)
@@ -68,19 +70,26 @@ async def _ok_shell(command, **_kw):
 
 
 def _run_op(tmp_path, spec, launch, shell=_ok_shell):
-    return asyncio.run(run_op(
-        spec, trusted=True, workdir=Path(tmp_path), platform="linux",
-        shell=shell, launch=launch,
-    ))
+    return asyncio.run(
+        run_op(
+            spec,
+            trusted=True,
+            workdir=Path(tmp_path),
+            platform="linux",
+            shell=shell,
+            launch=launch,
+        )
+    )
 
 
 def test_the_agents_own_summary_is_its_reply(tmp_path):
-    """"agent finished" told a person nothing. Its own sentence tells them what
+    """ "agent finished" told a person nothing. Its own sentence tells them what
     happened — as the answer's ``text``, beside the value."""
-    answer = _run_op(tmp_path, _op(), _writer(
-        {"status": "done", "summary": "installed Python 3.12.4 via Homebrew",
-         "data": {VALUE_KEY: "3.12.4"}}
-    ))
+    answer = _run_op(
+        tmp_path,
+        _op(),
+        _writer({"status": "done", "summary": "installed Python 3.12.4 via Homebrew", "data": {VALUE_KEY: "3.12.4"}}),
+    )
     assert answer.ok and isinstance(answer, PromptResult)
     assert answer.text == "installed Python 3.12.4 via Homebrew"
     assert answer.value == "3.12.4"
@@ -90,9 +99,9 @@ def test_the_agents_own_summary_is_its_reply(tmp_path):
 def test_an_agent_that_reports_failure_fails_the_rung(tmp_path):
     """Honouring only the agent's successes and ignoring its failures would be
     the same bug wearing a smile."""
-    answer = _run_op(tmp_path, _op(), _writer(
-        {"status": "error", "summary": "no package manager", "error": "brew is not installed"}
-    ))
+    answer = _run_op(
+        tmp_path, _op(), _writer({"status": "error", "summary": "no package manager", "error": "brew is not installed"})
+    )
     assert not answer.ok
 
 
@@ -108,9 +117,7 @@ def test_a_stale_receipt_cannot_pass_a_rung_that_did_nothing(tmp_path):
     run that produced nothing. The receipt is cleared before the launch."""
     stale = receipt_path(Path(tmp_path), OP_NAME)
     stale.parent.mkdir(parents=True, exist_ok=True)
-    stale.write_text(json.dumps(
-        {"status": "done", "summary": "from LAST time", "data": {VALUE_KEY: "old"}}
-    ))
+    stale.write_text(json.dumps({"status": "done", "summary": "from LAST time", "data": {VALUE_KEY: "old"}}))
 
     answer = _run_op(tmp_path, _op(), _writer(None))
     assert not answer.ok
@@ -140,24 +147,62 @@ def test_the_result_contract_is_added_only_when_an_output_is_declared(tmp_path):
 
 def test_the_check_still_outranks_the_agents_claim(tmp_path):
     """The receipt is the agent's claim; the check is the machine's evidence."""
+
     async def failing_check(command, **_kw):
         return CliResult.of_process(command, 1)
 
     answer = _run_op(
-        tmp_path, _op(check=True),
+        tmp_path,
+        _op(check=True),
         _writer({"status": "done", "summary": "all good", "data": {VALUE_KEY: "1"}}),
         shell=failing_check,
     )
     assert not answer.ok, "the agent said it worked; the machine says otherwise"
 
 
+def test_the_agents_own_detail_explains_a_check_that_still_fails(tmp_path):
+    """ "the agent call ran, but the check still fails" names no cause on its own — the one
+    place a real reason (a model an endpoint's chain refused, a budget exceeded) can travel is
+    the agent's own PromptResult.detail, which `_build_run_result` fills in exactly for this.
+    A CliResult's exit code/output is its "last word"; a PromptResult's own detail is the
+    equivalent one, and the wrapper message must not discard it."""
+
+    async def failing_check(command, **_kw):
+        return CliResult.of_process(command, 1)
+
+    async def launch(*, workdir: Path, prompt: str = "", **_kw) -> PromptResult:
+        return PromptResult.not_yet(
+            "The agent ended error. OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Gadi 72",
+            executor="agentic_process-proc-1",
+        )
+
+    answer = _run_op(tmp_path, _op(check=True), launch, shell=failing_check)
+
+    assert not answer.ok
+    assert "cost_usd_total" in answer.detail, answer.detail
+
+
+def test_the_bare_agent_ended_boilerplate_is_not_repeated_for_nothing(tmp_path):
+    """No real reason behind a failure (the ordinary case: the agent tried and simply did not
+    get there) must not print the bare boilerplate a second time in parens."""
+
+    async def failing_check(command, **_kw):
+        return CliResult.of_process(command, 1)
+
+    async def launch(*, workdir: Path, prompt: str = "", **_kw) -> PromptResult:
+        return PromptResult.not_yet("The agent ended error.", executor="agentic_process-proc-1")
+
+    answer = _run_op(tmp_path, _op(check=True), launch, shell=failing_check)
+
+    assert not answer.ok
+    assert answer.detail == "ask-agent: the agent call ran, but the check still fails."
+
+
 def test_a_value_over_the_cap_is_refused_with_an_instruction(tmp_path):
     """A returned value rides the run record and can become an environment
     variable. Past the cap it is an artifact, and the agent is told to say where
     it put it."""
-    answer = _run_op(tmp_path, _op(), _writer(
-        {"status": "done", "data": {VALUE_KEY: "x" * (RESULT_VALUE_CAP + 10)}}
-    ))
+    answer = _run_op(tmp_path, _op(), _writer({"status": "done", "data": {VALUE_KEY: "x" * (RESULT_VALUE_CAP + 10)}}))
     assert not answer.ok
 
 
@@ -186,8 +231,15 @@ def test_the_rung_ticks_while_the_agent_works(tmp_path):
         on_status(ProcessProgress(text="working · src/foo.py", counters={"messages": 3}))
         return PromptResult.satisfied("The agent finished.", executor="agentic_process-proc-1")
 
-    asyncio.run(run_op(
-        _op(output=None), trusted=True, workdir=Path(tmp_path), platform="linux",
-        shell=_ok_shell, launch=launch, on_status=seen.append,
-    ))
+    asyncio.run(
+        run_op(
+            _op(output=None),
+            trusted=True,
+            workdir=Path(tmp_path),
+            platform="linux",
+            shell=_ok_shell,
+            launch=launch,
+            on_status=seen.append,
+        )
+    )
     assert "working · src/foo.py" in seen
