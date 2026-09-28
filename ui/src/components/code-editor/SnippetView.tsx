@@ -4,6 +4,7 @@ import { useFileWatch } from '@sdk/react/hooks';
 import { usePreference } from '@src/hooks/use-preference';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
+import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
 import Editor, { loader } from '@monaco-editor/react';
 import type { editor as monacoEditor, MarkerSeverity } from 'monaco-editor';
 import { ensureShikiMonaco, monacoTheme } from './shikiMonaco';
@@ -67,15 +68,13 @@ type SnippetOutcome = CliResult & { stopped: boolean };
 
 /** Elapsed run time as the clock shows it: tenths under a minute, then m:ss. */
 export function formatElapsed(ms: number): string {
-  const seconds = Math.max(ms, 0) / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const whole = Math.floor(seconds);
-  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+  return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : formatClock(ms);
 }
 
-/** The clock beside Stop: how long the run in flight has been going. */
-function RunClock({ since }: { since: number }) {
-  const [now, setNow] = useState(() => Date.now());
+/** The clock beside Stop: how long the run in flight has been going — it mounts with the run. */
+function RunClock() {
+  const [since] = useState(() => Date.now());
+  const [now, setNow] = useState(since);
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 100);
     return () => clearInterval(tick);
@@ -134,8 +133,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const [notice, setNotice] = useState('');
   const error = readError || notice;
   const [running, setRunning] = useState(false);
-  // When the run in flight started — the clock beside Stop counts from it.
-  const [startedAt, setStartedAt] = useState<number | null>(null);
   const [result, setResult] = useState<SnippetOutcome | null>(null);
   // What the check says about the file on disk — null until the first answer.
   const [problems, setProblems] = useState<SnippetDiagnostic[] | null>(null);
@@ -304,8 +301,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
     // A new run starts on a clean console: the last run's output is gone the moment Run is
     // clicked, not when the new answer lands (a long run would otherwise show stale output).
     setResult(null);
-    setNotice('');
-    setStartedAt(Date.now());
     setRunning(true);
     try {
       // Run what is on screen: flush unsaved edits first.
@@ -327,7 +322,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
       setNotice(errorMessage(reason, t`Could not run the snippet`));
     } finally {
       runIdRef.current = null;
-      setStartedAt(null);
       setRunning(false);
     }
   }, [path, regions, save, timeoutSeconds, t]);
@@ -335,7 +329,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   /** The host's runner: what is on screen is saved first, then the host runs it. */
   const runByHost = useCallback(async () => {
     if (!runner) return;
-    setStartedAt(Date.now());
     setRunning(true);
     try {
       const flushing = [...pendingRef.current.keys()].map((index) => {
@@ -347,7 +340,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not run the snippet`));
     } finally {
-      setStartedAt(null);
       setRunning(false);
     }
   }, [runner, regions, save, t]);
@@ -412,7 +404,7 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
             {t`Run`}
           </Button>
         )}
-        {startedAt !== null && <RunClock since={startedAt} />}
+        {running && !runner && <RunClock />}
         {has('init') && (
           <Button variant={showInit ? 'secondary' : 'ghost'} size="sm" onClick={() => setShowInit(!showInit)} data-testid="snippet-toggle-init">
             <ListStart className="mr-1 h-3.5 w-3.5" />

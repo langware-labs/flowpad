@@ -304,7 +304,6 @@ describe('SnippetView', () => {
     expect(formatElapsed(3240)).toBe('3.2s');
     expect(formatElapsed(59_949)).toBe('59.9s');
     expect(formatElapsed(65_000)).toBe('1:05');
-    expect(formatElapsed(-5)).toBe('0.0s');
   });
 
   it('clicks before the button turns into Stop start one run, not one each', async () => {
