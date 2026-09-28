@@ -1,14 +1,12 @@
 /**
- * Setting a sandbox up = composing computeNodeTools, one command per step.
+ * Setting a sandbox up = lifecycle ops, then ONE `provision-project`.
  *
- * The hub owns the commands; this hook decides the ORDER and what the tab
- * finally opens. Two things it must get right, and got wrong before:
- *
- *  - the project the hub just created has to be the one the tab lands in.
- *    Its id came back from the box and was thrown away unless a content-install
- *    spec happened to be present, so "Open from git" dropped you on the
- *    sandbox's front door with the project merely somewhere in the list.
- *  - a name clash has to be caught BEFORE a repo is transferred.
+ * The box commands (validate, clone, index, attach, default) are the hub's
+ * control plane and are not reachable from a browser: the hub runs the
+ * sequence (`compute_node_tools.provision_project`, pinned hub-side by
+ * `test_provision_project.py`) and reports each step. This hook sends the
+ * recorded setup, paints the checklist from the reported steps, and decides
+ * what the tab finally opens.
  *
  * `ComputeNode.ops` is the seam: every command is `ops/<name>` on the node, so
  * capturing that one method captures the whole conversation with the hub, in
@@ -19,6 +17,7 @@
  * nothing (it did — this file went to zero recorded calls when the hook moved).
  */
 import { act, cleanup, renderHook } from '@testing-library/react';
+import { AxiosError } from 'axios';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
@@ -106,8 +105,28 @@ function answers(map: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(map)) h.responses.set(key, () => Promise.resolve(value));
 }
 
-function fails(op: string, message: string): void {
-  h.responses.set(op, () => Promise.reject(new Error(message)));
+/** What the hub answers for a provisioning run whose listed steps all succeeded. */
+function provisioned(ids: string[], details: Record<string, string> = {}) {
+  return {
+    project: { id: PROJECT_ID },
+    path: '/root/workspace/flowpad-hub',
+    steps: ids.map((id) => ({ id, ok: true, detail: details[id] ?? '' })),
+  };
+}
+
+/** The hub refuses a provisioning run, naming the steps it got through and the one that broke. */
+function provisionFails(message: string, steps: Array<{ id: string; ok: boolean; detail: string }>): void {
+  h.responses.set('provision-project', () =>
+    Promise.reject(
+      new AxiosError(message, 'ERR_BAD_REQUEST', undefined, undefined, {
+        data: { status: 'FAIL', message, data: { steps } },
+        status: 400,
+        statusText: 'Bad Request',
+        headers: {},
+        config: {} as never,
+      }),
+    ),
+  );
 }
 
 beforeEach(() => {
@@ -117,8 +136,7 @@ beforeEach(() => {
   answers({
     setup: 'provider-1',
     'workspace-ready': { healthy: true, logged_in: true, login_detail: 'someone' },
-    'validate-project-name': { available: true, suggested: 'flowpad-hub' },
-    'clone-project': { project: { id: PROJECT_ID }, path: '/root/workspace/flowpad-hub', manifest: [] },
+    'provision-project': provisioned(['validate', 'clone', 'index', 'default']),
   });
   // The tab is now opened WITH its final url — there is no placeholder document
   // to write and no `location.href` assigned afterwards, so the url to assert on
@@ -153,7 +171,7 @@ function rows(result: { current: { steps: { id: string }[] } }): string[] {
   return result.current.steps.map((s) => s.id);
 }
 
-describe('sandbox provisioning composes computeNodeTools', () => {
+describe('sandbox provisioning asks the hub for the outcome', () => {
   it('creates the node on the provider selected by Hub bootstrap', async () => {
     await launchWithoutRepo();
 
@@ -164,17 +182,28 @@ describe('sandbox provisioning composes computeNodeTools', () => {
     );
   });
 
-  it('runs the commands in order: validate before clone, default before open', async () => {
+  it('boots, signs in, then provisions — one call, no box command from the browser', async () => {
     await launchWithGit();
 
-    expect(ops()).toEqual([
-      'setup',
-      'workspace-ready',
-      'validate-project-name',
-      'clone-project',
-      'index-project',
-      'set-default-project',
-    ]);
+    expect(ops()).toEqual(['setup', 'workspace-ready', 'provision-project']);
+  });
+
+  it('sends the recorded setup in the hub spelling', async () => {
+    await launchWithGit({ projectId: PROJECT_ID });
+
+    expect(bodyOf('provision-project')).toEqual({ name: 'flowpad-hub', project_id: PROJECT_ID, git_origin: ORIGIN });
+  });
+
+  it('forwards chosen context projects and an install spec', async () => {
+    await launchWithGit({
+      contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      install: { kind: 'journey', id: 'onboarding' },
+    });
+
+    expect(bodyOf('provision-project')).toMatchObject({
+      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+      install: { kind: 'journey', id: 'onboarding' },
+    });
   });
 
   it('opens through open-service, and never resolves a host itself', async () => {
@@ -189,41 +218,37 @@ describe('sandbox provisioning composes computeNodeTools', () => {
   });
 
   it('no longer deep-links into the cloned project', async () => {
-    // An accepted consequence of collapsing the two open paths into one:
     // open-service takes no landing path, so a box created with a repo opens on
-    // its front door rather than inside that project. Asserted rather than left
-    // implicit, so re-adding a landing path is a deliberate change to this test.
+    // its front door; the box's default project is what lands the user.
     await launchWithGit();
 
     expect(h.openedUrl).not.toContain(PROJECT_ID);
   });
 
-  it('adopts one project id across hub and box, and names it as the default', async () => {
-    await launchWithGit({ projectId: PROJECT_ID });
-
-    expect(bodyOf('clone-project')?.project_id).toBe(PROJECT_ID);
-    expect(bodyOf('set-default-project')?.project_id).toBe(PROJECT_ID);
-  });
-
-  it('indexes the path the box reported, not a guess at where it landed', async () => {
-    await launchWithGit();
-
-    expect(bodyOf('index-project')?.path).toBe('/root/workspace/flowpad-hub');
-  });
-
-  it('stops on a name clash before any repo is transferred', async () => {
-    answers({ 'validate-project-name': { available: false, suggested: 'flowpad-hub-2' } });
+  it('paints every planned row from the steps the hub reports', async () => {
+    answers({ 'provision-project': provisioned(['validate', 'clone', 'index', 'context', 'default'], { context: 'acme-support' }) });
 
     const result = await launchWithGit();
 
-    expect(ops()).not.toContain('clone-project');
-    const validate = result.current.steps.find((s) => s.id === 'validate');
-    expect(validate?.status).toBe('error');
-    expect(validate?.detail).toContain('flowpad-hub-2');
+    const byId = Object.fromEntries(result.current.steps.map((s) => [s.id, s]));
+    for (const id of ['validate', 'clone', 'index', 'context', 'default', 'open']) expect(byId[id].status).toBe('success');
+    expect(byId.context.detail).toBe('acme-support');
   });
 
-  it('keeps the steps that succeeded when a later one fails', async () => {
-    fails('index-project', 'indexer is busy');
+  it('marks a planned context row done when the repo declared nothing', async () => {
+    const result = await launchWithGit();
+
+    const context = result.current.steps.find((s) => s.id === 'context');
+    expect(context?.status).toBe('success');
+    expect(context?.detail).toBe('none declared');
+  });
+
+  it('shows the step the hub says broke, keeps the ones before, and does not finish', async () => {
+    provisionFails('indexer is busy', [
+      { id: 'validate', ok: true, detail: '' },
+      { id: 'clone', ok: true, detail: '' },
+      { id: 'index', ok: false, detail: 'indexer is busy' },
+    ]);
 
     const result = await launchWithGit();
 
@@ -231,65 +256,29 @@ describe('sandbox provisioning composes computeNodeTools', () => {
     expect(byId.clone.status).toBe('success');
     expect(byId.index.status).toBe('error');
     expect(byId.index.detail).toContain('indexer is busy');
-    // A failed step must not be reported as a finished launch.
+    // Rows after the failure never ran.
+    expect(byId.default.status).toBe('idle');
     expect(h.openedUrl).toBeNull();
   });
 
-  it('clones and attaches what the repo declares, without being told', async () => {
-    answers({
-      'clone-project': {
-        project: { id: PROJECT_ID },
-        path: '/root/workspace/flowpad-hub',
-        manifest: [{ url: 'https://github.com/acme/acme-support', branch: 'main', scope: 'shared' }],
-      },
-    });
+  it('blames the first row when the failure names no step', async () => {
+    h.responses.set('provision-project', () => Promise.reject(new Error('hub unreachable')));
 
-    await launchWithGit();
+    const result = await launchWithGit();
 
-    // Two clones: the engagement, then the declared help desk.
-    const clones = h.calls.filter((c) => c.op === 'clone-project');
-    expect(clones).toHaveLength(2);
-    expect((clones[1].body?.git_origin as { name?: string })?.name).toBe('acme-support');
-    expect(bodyOf('attach-context-project')).toMatchObject({
-      project_id: PROJECT_ID,
-      scope: 'shared',
-    });
+    const validate = result.current.steps.find((s) => s.id === 'validate');
+    expect(validate?.status).toBe('error');
+    expect(validate?.detail).toContain('hub unreachable');
   });
 
-  it('leaves a declarative install to reconcile instead of attaching twice', async () => {
-    answers({
-      'clone-project': {
-        project: { id: PROJECT_ID },
-        path: '/root/workspace/flowpad-hub',
-        manifest: [{ url: 'https://github.com/acme/acme-support', branch: 'main', scope: 'shared' }],
-      },
-      'reconcile-manifest': { target_project_id: PROJECT_ID, auto_launch_journey_id: null },
-    });
-
-    await launchWithGit({ install: { kind: 'journey', id: 'onboarding' } });
-
-    expect(ops()).toContain('reconcile-manifest');
-    expect(ops()).not.toContain('attach-context-project');
-    expect(h.calls.filter((c) => c.op === 'clone-project')).toHaveLength(1);
-  });
-
-  it('mounts a repo-less project instead of cloning it', async () => {
-    answers({
-      'init-empty-project': { project: { id: PROJECT_ID }, path: '/root/workspace/scratch' },
-    });
+  it('mounts a repo-less project: no git origin in the setup, no clone or index rows', async () => {
+    answers({ 'provision-project': provisioned(['init', 'default']) });
 
     const result = await launchWithoutRepo();
 
-    expect(ops()).toEqual(['setup', 'workspace-ready', 'init-empty-project', 'set-default-project']);
-    expect(ops()).not.toContain('clone-project');
-    expect(ops()).not.toContain('validate-project-name');
-    // Nothing was fetched, so there is nothing to scan — no index step, no row.
-    expect(ops()).not.toContain('index-project');
+    expect(ops()).toEqual(['setup', 'workspace-ready', 'provision-project']);
+    expect(bodyOf('provision-project')).toEqual({ name: 'scratch' });
     expect(rows(result)).toEqual(['launch', 'health', 'init', 'default', 'open']);
-    // Still the project the box opens on — but that is now the BOX's doing, set
-    // via set-default-project, not something encoded in the url. open-service
-    // takes no landing path.
-    expect(bodyOf('set-default-project')?.project_id).toBe(PROJECT_ID);
     expect(h.openedUrl).toContain('/open-service/workspace');
     expect(h.openedUrl).not.toContain(PROJECT_ID);
   });
@@ -303,16 +292,16 @@ describe('sandbox provisioning composes computeNodeTools', () => {
   });
 
   it('plans a context row for a repo-less project only when assets were asked for', async () => {
-    answers({
-      'init-empty-project': { project: { id: PROJECT_ID }, path: '/root/workspace/scratch' },
-    });
+    answers({ 'provision-project': provisioned(['init', 'context', 'default']) });
 
     const result = await launchWithoutRepo({
       contextProjects: [{ gitOrigin: ORIGIN, name: 'acme-support', scope: 'shared' }],
     });
 
     expect(rows(result)).toContain('context');
-    expect(bodyOf('attach-context-project')).toMatchObject({ project_id: PROJECT_ID, scope: 'shared' });
+    expect(bodyOf('provision-project')).toMatchObject({
+      context_projects: [{ git_origin: ORIGIN, name: 'acme-support', scope: 'shared' }],
+    });
   });
 
   it('creates without booting: one save, and no ops at all', async () => {
@@ -334,7 +323,7 @@ describe('sandbox provisioning composes computeNodeTools', () => {
   });
 
   it('launches from what the node was created with, with nothing passed in', async () => {
-    answers({ 'init-empty-project': { project: { id: PROJECT_ID }, path: '/root/workspace/scratch' } });
+    answers({ 'provision-project': provisioned(['init', 'default']) });
     const { result } = renderHook(() => useSandboxes());
 
     // A node as the LIST hands it back — the card's Launch button has no dialog
@@ -349,8 +338,8 @@ describe('sandbox provisioning composes computeNodeTools', () => {
       await result.current.launchSandbox(node);
     });
 
-    expect(ops()).toEqual(['setup', 'workspace-ready', 'init-empty-project', 'set-default-project']);
-    expect(bodyOf('set-default-project')?.project_id).toBe(PROJECT_ID);
+    expect(ops()).toEqual(['setup', 'workspace-ready', 'provision-project']);
+    expect(bodyOf('provision-project')).toEqual({ name: 'scratch' });
     // Launching does not open anything: that is the caller's separate click.
     expect(h.openedUrl).toBeNull();
   });

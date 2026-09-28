@@ -7,9 +7,12 @@ import {
   dataManager,
   ExecutionEnvironmentStatus,
   type GitOrigin,
-  gitOriginFromUrl,
   type HubRepoOrigin,
+  isApiError,
   type NodeStatus,
+  type ProvisionResult,
+  type ProvisionSetup,
+  type ProvisionStep,
   QueryRequest,
   SANDBOX_PROVIDERS,
   TypeId,
@@ -18,7 +21,6 @@ import {
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import {
   type ContentInstallSpec,
-  type InstallNavigationResult,
   installProjectLandingUrl,
 } from '@src/lib/content-install';
 import { errorMessage } from '@src/lib/error-message';
@@ -317,140 +319,83 @@ export interface ContextProject {
   scope: 'private' | 'shared';
 }
 
-/** What `clone-project` returns: the box's Project, where it landed, and what
- *  the repo declares it wants alongside it (read hub-side from the checkout). */
-interface CloneResult extends InstallNavigationResult {
-  path: string;
-  manifest?: ManifestEntry[];
+/** Rows the hub reports for one provisioning run, keyed by step. */
+type ReportedSteps = Map<ProvisionStep['id'], ProvisionStep>;
+
+/** The steps a failed `provision-project` still reported, when the failure carried them. */
+function reportedStepsOf(error: unknown): ProvisionStep[] {
+  if (!isApiError(error)) return [];
+  const data = (error.response?.data as { data?: { steps?: ProvisionStep[] } } | undefined)?.data;
+  return Array.isArray(data?.steps) ? data.steps : [];
 }
 
-/** One `content_projects` entry from the cloned repo's `.flowpad/bootstrap.json`. */
-interface ManifestEntry {
-  url: string;
-  branch: string;
-  scope: 'private' | 'shared';
+/** What the hub is asked to set the box up with: the recorded setup, in the hub's spelling. */
+function provisionSetupOf(setup: SandboxSetup): ProvisionSetup {
+  return {
+    name: setup.name,
+    ...(setup.projectId ? { project_id: setup.projectId } : {}),
+    ...(setup.gitOrigin ? { git_origin: setup.gitOrigin as unknown as Record<string, unknown> } : {}),
+    ...(setup.contextProjects
+      ? {
+          context_projects: setup.contextProjects.map((ctx) => ({
+            git_origin: ctx.gitOrigin as unknown as Record<string, unknown>,
+            name: ctx.name,
+            scope: ctx.scope,
+          })),
+        }
+      : {}),
+    ...(setup.install ? { install: setup.install as unknown as Record<string, unknown> } : {}),
+  };
 }
 
-/** What `validate-project-name` answers. */
-interface NameCheck {
-  available: boolean;
-  suggested: string;
+/** Paint the project rows from what the hub reported. A planned row the hub did not report
+ *  succeeded with nothing to do (no context declared); after a failure it never ran. */
+function paintProvisionRows(rows: ProvisionStep['id'][], reported: ReportedSteps, patch: PatchStep, failed: boolean): void {
+  for (const id of rows) {
+    const step = reported.get(id);
+    if (step) {
+      patch(id, { status: step.ok ? 'success' : 'error', detail: step.detail || undefined });
+    } else if (!failed) {
+      patch(id, { status: 'success', detail: id === 'context' ? 'none declared' : undefined });
+    } else {
+      patch(id, { status: 'idle', detail: undefined });
+    }
+  }
 }
 
-/** The repo's declared help desks / content projects, as context projects to
- *  clone and attach. A declaration that isn't a usable git URL is dropped
- *  rather than failing a setup that has otherwise finished — the manifest comes
- *  from a third-party repo and is a claim, never a capability. */
-function manifestContextProjects(cloned: CloneResult): ContextProject[] {
-  return (cloned.manifest ?? []).flatMap((entry) => {
-    const gitOrigin = gitOriginFromUrl(entry.url, entry.branch ?? '');
-    if (!gitOrigin) return [];
-    return [{ gitOrigin, name: gitOrigin.name, scope: entry.scope ?? 'shared' }];
-  });
-}
-
-/** Type of the step runner `launch` hands to the git provisioning helper. */
-type RunStep = <T>(id: StepId, fn: () => Promise<T>) => Promise<T>;
 type PatchStep = (id: StepId, next: Partial<Step>) => void;
 
 /**
  * Set the sandbox up with its project and make that the project it opens on.
  *
- * Extracted from `launch` so the launch reads as its sequence of steps and the
- * result can be a return value rather than a mutated `let` every later step has
- * to non-null-assert.
+ * ONE hub call. The box commands underneath (validate, clone, index, attach, default) are the
+ * hub's control plane and are not reachable from a browser; the hub runs the sequence and
+ * reports each step, which is what paints the checklist rows.
  */
 async function provisionSandboxProject(
   node: ComputeNode,
   setup: SandboxSetup,
-  run: RunStep,
   patch: PatchStep,
-): Promise<CloneResult> {
-  const cloned = setup.gitOrigin
-    ? await cloneSandboxProject(node, setup, run)
-    : await run('init', async () => {
-        // No repository behind this project — the box mounts it empty, which
-        // is still what gives the directory its identity.
-        const result = (await node.initEmptyProject(setup.name, setup.projectId ?? '')) as CloneResult;
-        if (!result?.project?.id) throw new Error('Setup did not return a project');
-        return result;
-      });
-
-  const projectId = cloned.project!.id!;
-  if (setup.gitOrigin) {
-    await run('index', () => node.indexProject(cloned.path, projectId));
-  }
-
-  if (hasContextWork(setup)) {
-    await run('context', async () => {
-      // A declarative install converges its own dependencies through the
-      // manifest, so driving them from here too would attach each twice.
-      if (setup.install) {
-        // The box answers with the reconcile result itself, which is what names
-        // the project (and journey) the install wants opened.
-        const reconciled = (await node.reconcileManifest(projectId)) as CloneResult['install_result'];
-        if (reconciled) cloned.install_result = reconciled;
-        patch('context', { detail: 'from the install manifest' });
-        return reconciled;
-      }
-      // What the caller asked for, else what the repo itself declares.
-      const contextProjects = setup.contextProjects ?? manifestContextProjects(cloned);
-      const attached = await attachContextProjects(node, projectId, contextProjects);
-      patch('context', { detail: attached.length ? attached.join(', ') : 'none declared' });
-      return attached;
-    });
-  }
-
-  await run('default', () => node.setDefaultProject(projectId));
-  return cloned;
-}
-
-/** Ask the box whether the name is free, then have the hub clone into it. */
-async function cloneSandboxProject(node: ComputeNode, setup: SandboxSetup, run: RunStep): Promise<CloneResult> {
-  await run('validate', async () => {
-    const check = (await node.validateProjectName(setup.name)) as NameCheck;
-    if (check && check.available === false) {
-      throw new Error(`"${setup.name}" already exists — try "${check.suggested}".`);
-    }
-    return check;
-  });
-
-  return run('clone', async () => {
-    const result = (await node.cloneProject({
-      git_origin: setup.gitOrigin,
-      name: setup.name,
-      project_id: setup.projectId ?? '',
-      ...(setup.install ? { install: setup.install } : {}),
-    })) as CloneResult;
-    if (!result?.project?.id) throw new Error('Clone did not return a project');
+): Promise<ProvisionResult> {
+  const rows = plannedProjectSteps(setup)
+    .map((s) => s.id)
+    .filter((id): id is ProvisionStep['id'] => id !== 'open' && id !== 'launch' && id !== 'health');
+  for (const id of rows) patch(id, { status: 'loading', detail: undefined });
+  try {
+    const result = await node.provisionProject(provisionSetupOf(setup));
+    if (!result?.project?.id) throw new Error('Setup did not return a project');
+    paintProvisionRows(rows, new Map(result.steps.map((s) => [s.id, s])), patch, false);
     return result;
-  });
-}
-
-/**
- * Clone each context project and link it into `projectId`.
- *
- * Serial on purpose: the box's indexer is single-flight, and every attach is a
- * read-modify-write of the same parent project, so overlapping them would drop
- * context entries. One failure doesn't cost the others.
- */
-async function attachContextProjects(
-  node: ComputeNode,
-  projectId: string,
-  contextProjects: ContextProject[],
-): Promise<string[]> {
-  const attached: string[] = [];
-  for (const ctx of contextProjects) {
-    const ctxClone = (await node.cloneProject({
-      git_origin: ctx.gitOrigin,
-      name: ctx.name,
-    })) as CloneResult;
-    if (!ctxClone?.path) continue;
-    await node.indexProject(ctxClone.path, ctxClone.project?.id ?? '');
-    await node.attachContextProject(projectId, ctxClone.path, ctx.scope);
-    attached.push(ctx.name);
+  } catch (e) {
+    const reported: ReportedSteps = new Map(reportedStepsOf(e).map((s) => [s.id, s]));
+    if (![...reported.values()].some((s) => !s.ok)) {
+      // The failure named no step: blame the first row that did not report success.
+      const first = rows.find((id) => !reported.get(id)?.ok);
+      if (first) reported.set(first, { id: first, ok: false, detail: errorMessage(e, 'Setup failed') });
+    }
+    paintProvisionRows(rows, reported, patch, true);
+    throw e;
   }
-  return attached;
 }
 
 export function useSandboxes() {
@@ -635,7 +580,7 @@ export function useSandboxes() {
         // The HUB clones (its token is the only one that reaches a private repo)
         // and copies the tree in; the box places, indexes and links it. Runs after
         // the box is up so copy_folder has a target.
-        if (sandboxProject) await provisionSandboxProject(node, sandboxProject, run, patch);
+        if (sandboxProject) await provisionSandboxProject(node, sandboxProject, patch);
 
         await run('open', () => {
           // Nothing to resolve any more: the link is derived from the node id, and
@@ -712,7 +657,7 @@ export function useSandboxes() {
       };
 
       try {
-        await provisionSandboxProject(node, setup, run, patch);
+        await provisionSandboxProject(node, setup, patch);
         await run('open', () => Promise.resolve(workspaceServiceUrl(node.id)));
         try {
           await refetch();
@@ -768,7 +713,7 @@ export function useSandboxes() {
     async (node: ComputeNode) => {
       setLoggingOutId(node.id);
       try {
-        await node.logoutUser();
+        await node.signOut();
         // Clear the cached field HERE, on the entity, because a refetch cannot:
         // the hub sets `logged_in_user` to null, and the API serializer drops
         // every null field, so the refetched payload simply has no
