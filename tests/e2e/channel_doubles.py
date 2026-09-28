@@ -61,7 +61,9 @@ class Doubles:
         #: ``(kind, key)`` to undo at shutdown: a credential's typeid, a connector's name.
         self.planted: list[tuple[str, str]] = []
         self.loop = asyncio.new_event_loop()
-        self.http = httpx.AsyncClient(base_url=self.backend, timeout=30)
+        from flow_sdk.instance_settings.cookie_gate import gate_headers  # noqa: PLC0415 — a gated box answers 403 without it
+
+        self.http = httpx.AsyncClient(base_url=self.backend, timeout=30, headers=gate_headers(self.backend))
 
     def run(self, coroutine):
         return self.loop.run_until_complete(coroutine)
