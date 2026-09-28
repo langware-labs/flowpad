@@ -1,8 +1,8 @@
 """The boot lift of per-machine settings: a row written before its driver mapped a config field into
 ``auth.vars`` still carries it in ``data_source.json``; it moves into the driver's credential at this
 computer and leaves the file. Idempotent; a value this computer already holds is kept; names only are
-reported. (WAHA was the case that needed it, in 0.2.178; it is an external connector now, so a shipped
-driver with two mapped variables — the WhatsApp Cloud API — stands in: the lift names no driver.)"""
+reported. The lift names no driver; a shipped one with two mapped variables — the WhatsApp Cloud API —
+stands in for any."""
 from __future__ import annotations
 
 import json

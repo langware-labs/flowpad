@@ -191,8 +191,8 @@ class Conversation(ProjectedFields, Entity):
     # is PRIVATE.
     channel: str = APIField(default=HOME_CHANNEL, sharing=Sharing.HUB_WRITE)
     channel_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
-    # The driver behind the channel — two drivers can speak one channel (WhatsApp's Cloud API and
-    # WAHA are both ``whatsapp``), and what the channel can do (files, quotes, reactions) is the
+    # The driver behind the channel — two drivers can speak one channel (WhatsApp's Cloud API and an
+    # external WhatsApp connector are both ``whatsapp``), and what the channel can do (files, quotes, reactions) is the
     # driver's. Stamped with ``channel_source_id``.
     channel_provider: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     # ── the conversation on its channel: an email topic, a chat, a phone call, a Slack thread ──

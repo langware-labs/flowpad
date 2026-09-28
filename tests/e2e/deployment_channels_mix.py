@@ -340,7 +340,7 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", required=True)
     parser.add_argument("--control", required=True)
-    # waha is an external connector: add it (--channels ...,waha) once its project is installed on the backend.
+    # An external connector's channel joins with --channels ...,<name> once it is installed on the backend.
     parser.add_argument("--channels", default="gmail,slack,whatsapp,telegram,teams,agentmail,cloud_email")
     parser.add_argument("--timeout", type=int, default=90, help="each source's thread_timeout_seconds")
     parser.add_argument("--answer-budget", type=float, default=240, help="how long one real turn may take to answer")

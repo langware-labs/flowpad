@@ -1,8 +1,8 @@
 """Run a data source's setup wizard headless, answering its questions — what a person does in the Set up dialog.
 
     uv run python tests/e2e/source_setup_wizard.py --backend http://localhost:6005 --source <data_source id> \\
-        --answers '{"waha-ask-base-url": "http://127.0.0.1:41234", "waha-ask-api-key": "..."}' \\
-        --before 'waha-ask-pair=http://127.0.0.1:<doubles control>/pair {"channel": "waha"}'
+        --answers '{"<driver>-ask-base-url": "http://127.0.0.1:41234", "<driver>-ask-api-key": "..."}' \\
+        --before '<driver>-ask-pair=http://127.0.0.1:<doubles control>/pair {"channel": "<driver>"}'
 
 The first stage the source's driver declares that is not done (``setup_stages``) is run through the same
 route the dialog uses (``wizard/<id>/run`` with the source as target and ``source`` / ``owner`` as inputs,

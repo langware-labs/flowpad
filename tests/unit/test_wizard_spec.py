@@ -71,10 +71,10 @@ def test_specs_are_frozen_values():
 
 def test_args_survive_a_dump_validate_round_trip():
     spec = WizardSpec.model_validate({"name": "w", "steps": [
-        _step(args={"API_KEY": "WAHA_API_KEY", "PORT": "3010"}),
+        _step(args={"API_KEY": "GATEWAY_API_KEY", "PORT": "3010"}),
     ]})
     again = WizardSpec.model_validate(spec.model_dump())
-    assert again.steps[0].args == {"API_KEY": "WAHA_API_KEY", "PORT": "3010"}
+    assert again.steps[0].args == {"API_KEY": "GATEWAY_API_KEY", "PORT": "3010"}
 
 
 def test_a_step_must_name_what_it_calls():

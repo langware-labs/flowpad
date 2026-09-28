@@ -49,7 +49,7 @@ from tests.long_tests.conftest import _openrouter_key
 REPO = Path(__file__).resolve().parents[2]
 IMAGE = os.environ.get("FLOWPAD_DOCKER_IMAGE", "flowpad-backend:offline-share")
 #: A shipped message driver with a named credential, copied and renamed into the sender project: what an
-#: external connector looks like (WAHA itself is one now — it lives in its own project).
+#: external connector looks like.
 SHIPPED = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets"
 DRIVER = "telegram"
 pytestmark = [pytest.mark.timeout(900)]  # two fresh containers + four model turns; do not increase without approval

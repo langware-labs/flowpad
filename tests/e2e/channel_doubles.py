@@ -1,6 +1,6 @@
 """The message-channel doubles as ONE process a running backend can talk to.
 
-Every message driver — shipped, or an external connector the backend has indexed (WAHA) — ships a
+Every message driver — shipped, or an external connector the backend has indexed — ships a
 ``Double`` in its ``tests/matrix.py`` (a loopback provider with an inbound you can inject and the outbound
 it saw). This hosts them all for a browser test: it enters each
 Double, plants the credentials the backend will resolve them with, and serves a small control API::
@@ -71,7 +71,7 @@ class Doubles:
     # ── lifecycle ────────────────────────────────────────────────────────────
     def folder(self, provider: str) -> Path:
         """Where the driver ``provider`` lives: shipped, or an external connector the backend indexed
-        (its ``data_driver`` row names the folder) — WAHA is one."""
+        (its ``data_driver`` row names the folder)."""
         if (SHIPPED_ROOT / provider).is_dir():
             return SHIPPED_ROOT / provider
         rows = self.run(self.http.get("/api/v1/graph/data_driver", params={"filter": json.dumps({"name": provider})})).json().get("data") or []
