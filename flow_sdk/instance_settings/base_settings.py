@@ -302,7 +302,12 @@ class BaseInstanceSettings:
             claude_commands_dir=claude_home / "commands",
             claude_plans_dir=claude_home / "plans",
             claude_workflows_dir=claude_home / "workflows",
-            user_docs_dir=Path.home() / "docs",
+            # ``~/docs`` is prod's. Every other instance sharing the user's home
+            # (``oss``, ``dev-1``, an e2e ``test-*``) keeps its user docs in its own
+            # instance dir — a test that leaves a document behind otherwise leaves
+            # it in the user's real vault, where prod lists it as theirs (906 test
+            # files had piled up there by 2026-09-28). Same rule as ``workspace_root``.
+            user_docs_dir=(Path.home() / "docs") if instance_name == "prod" else instance_dir / "docs",
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",
