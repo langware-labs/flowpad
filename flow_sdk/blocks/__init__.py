@@ -14,12 +14,12 @@ The canonical program::
 
     async with workflow("mail-concierge"):
         stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
-        agent        = await get_agent("email-summarizer")
+        agent        = await Agent.by_name("email-summarizer")
 
         async with agent.process_messages():
-            async for m in stream_inbox.listen():         # m: SourceItemSpec
+            async for m in stream_inbox.listen():         # m: Delivered[SourceItemSpec]
                 out   = await agent.process_message(m)    # out: PromptResult
-                await stream_inbox.send(await stream_inbox.reply_spec(m, body=out.text))
+                await m.reply(out.text)                   # send → record → ack
 
 Verbs live on their owners (``listen``, ``process_message``, ``send``);
 control flow — allow lists, branches, errors, prints — is never configuration,
