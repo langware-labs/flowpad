@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "42fac849-a92f-4ecf-ad3b-5923c365921e",
   "name": "whatsapp-ask-phone-number-id",
   "label": "Phone number ID",
   "description": "Phone number ID, for the number step.",

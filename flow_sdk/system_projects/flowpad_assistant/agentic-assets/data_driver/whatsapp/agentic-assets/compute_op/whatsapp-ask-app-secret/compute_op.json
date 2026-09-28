@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "d27b754c-438a-406a-b395-97f1724069d6",
   "name": "whatsapp-ask-app-secret",
   "label": "App secret",
   "description": "App secret, for the app step.",

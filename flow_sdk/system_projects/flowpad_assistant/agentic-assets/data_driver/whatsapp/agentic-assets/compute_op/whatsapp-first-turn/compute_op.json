@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "aba382c2-bc18-43d3-a45a-453beaa2da59",
   "name": "whatsapp-first-turn",
   "label": "First conversation",
   "description": "A message from you came in and the agent's answer went back.",

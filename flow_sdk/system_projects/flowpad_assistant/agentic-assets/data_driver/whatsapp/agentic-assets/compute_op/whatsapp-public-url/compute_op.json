@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "7014ba7a-91be-473e-aa57-da8c6b91368e",
   "name": "whatsapp-public-url",
   "label": "Public URL",
   "description": "Flowpad cloud holds a public URL for this computer and passes Meta's messages to it.",

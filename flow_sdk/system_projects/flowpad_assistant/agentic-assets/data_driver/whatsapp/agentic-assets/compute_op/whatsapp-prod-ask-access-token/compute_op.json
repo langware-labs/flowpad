@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "20f02159-5c0c-4cc2-bbdc-84c99100bb96",
   "name": "whatsapp-prod-ask-access-token",
   "label": "Permanent token",
   "description": "Permanent token, for the number step. (Runs every time: the test mode already satisfies the checks it would share.)",

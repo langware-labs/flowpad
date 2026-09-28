@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "026e697a-f952-4553-bae3-71acdae52a7e",
   "name": "whatsapp-ask-say-hi",
   "label": "Say hi",
   "description": "Your first message to the agent.",

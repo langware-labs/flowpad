@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "c6f18e88-51ef-4daf-9ffa-06ccb627237e",
   "name": "whatsapp-verify",
   "label": "Ready to send",
   "description": "The channel is verified and active.",

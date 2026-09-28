@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "5e133738-0345-4f32-afd0-883ab96a07ba",
   "name": "whatsapp-app",
   "label": "Meta app",
   "description": "The App ID and App secret authenticate as the app.",
