@@ -69,14 +69,20 @@ def move_one(folder: Path, *, dry_run: bool) -> bool:
 async def lift(*, dry_run: bool = True, force: bool = False) -> Report:
     from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
     from flow_sdk.cli import app_config  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.credential_contract import SCOPE_SYSTEM  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_USER  # noqa: PLC0415
 
     report = Report(dry_run=dry_run)
     if app_config.get_config(DONE_KEY) and not force:
         return report
-    for row in await Credential.get_all({}) or []:
-        if row.scope == SCOPE_SYSTEM or not row.asset_ref:
-            continue  # the shipped templates moved with the change; a row with no folder has no file
+    # The AUTHORED credentials only: the shipped templates moved with the change.
+    authored = ExpressionNode(op=QueryOp.OR, operands=[
+        ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_USER]),
+        ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_PROJECT]),
+    ])
+    for row in await Credential.get_all(QueryFilter(match=authored)) or []:
+        if not row.asset_ref:
+            continue  # a row with no folder has no file
         folder = Path(row.asset_ref)
         try:
             if (folder / MAIN).is_file() and move_one(folder, dry_run=dry_run):
