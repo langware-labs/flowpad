@@ -31,10 +31,10 @@ from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, P
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ASSETS = Path(__file__).resolve().parents[2] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets"
-TOOLS = ("jq", "ripgrep", "claude-code", "python", "git", "node", "npm")
+TOOLS = ("claude-code", "python", "git", "node", "npm")
 #: Each tool whose install op carries an agent `fallback`. npm has none: it ships
 #: with node's own installer, and on apt it is a plain second package.
-AGENT_FALLBACK = ("jq", "ripgrep", "claude-code", "python", "git", "node")
+AGENT_FALLBACK = ("claude-code", "python", "git", "node")
 #: Whether the box has an LLM source. Settled before the wizard; here it only
 #: decides whether an agent fallback can run.
 LLM = "llm"
@@ -197,7 +197,7 @@ def test_every_document_parses():
     # llm-setup-node, reached only after node's own ask/install (see
     # `test_declining_node_never_asks_about_npm`).
     setup = read_wizard(ASSETS / "wizard" / "llm-setup")
-    assert [s.id for s in setup.steps] == ["jq", "ripgrep", "claude-code", "python", "git", "node"]
+    assert [s.id for s in setup.steps] == ["claude-code", "python", "git", "node"]
     for tool in AGENT_FALLBACK:
         sub = read_wizard(ASSETS / "wizard" / f"llm-setup-{tool}")
         assert sub is not None, tool
@@ -375,7 +375,7 @@ async def test_nobody_to_ask_gives_up_after_the_presence_grace_and_installs_noth
     assert asked == [] and ask.open_questions() == []
     assert not machine.installed_anything
     assert machine.agents == []
-    assert set(calls) == {f"ask-install-{tool}" for tool in ("jq", "ripgrep", "claude-code", "git", "node")}
+    assert set(calls) == {f"ask-install-{tool}" for tool in ("claude-code", "git", "node")}
     assert set(result.steps["node"].steps) == {"ask"}
     for op_calls in calls.values():
         # The FIRST attempt may still open a browser; every retry after it
@@ -418,11 +418,10 @@ async def test_a_live_tab_connecting_during_the_grace_window_is_still_shown(monk
 
 @PLATFORMS
 async def test_a_failed_install_command_falls_back_to_the_agent(platform):
-    """jq's, ripgrep's, claude-code's and node's install commands are broken on
-    purpose (see their setup.md). The command fails, the agent reaches the same
-    goal, and the run is a success — a rung covered by a later one is not a
-    failure."""
-    broken = ("jq", "ripgrep", "claude-code", "node")
+    """claude-code's and node's install commands are broken on purpose (see
+    their setup.md). The command fails, the agent reaches the same goal, and
+    the run is a success — a rung covered by a later one is not a failure."""
+    broken = ("claude-code", "node")
     machine = Machine(platform, EVERYTHING - set(broken))
     result, asked = await _run(machine, platform, {f"ask-install-{tool}": "yes" for tool in broken})
 
@@ -441,10 +440,10 @@ async def test_with_no_llm_source_the_plain_installs_still_run(platform):
     """A person who never picks a source still gets every tool whose command
     works. Only the agent rung needs the source, so a tool whose command failed
     stays missing and the run says so."""
-    machine = Machine(platform, EVERYTHING - {LLM, "jq", "git"})
-    result, asked = await _run(machine, platform, {"ask-install-jq": "yes", "ask-install-git": "yes"})
+    machine = Machine(platform, EVERYTHING - {LLM, "claude-code", "git"})
+    result, asked = await _run(machine, platform, {"ask-install-claude-code": "yes", "ask-install-git": "yes"})
 
     assert result.exit_code is ExitCode.NOT_YET
     assert "git" in machine.installed, "the command needs no LLM source"
-    assert "jq" not in machine.installed and machine.agents == []
-    assert not result.steps["jq"].steps["install"].ok
+    assert "claude-code" not in machine.installed and machine.agents == []
+    assert not result.steps["claude-code"].steps["install"].ok

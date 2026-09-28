@@ -348,6 +348,113 @@ async def test_run_setup_clears_the_last_run_before_the_llm_source(monkeypatch):
         await _cleanup(wizard)
 
 
+@async_context
+async def test_a_new_setup_run_stops_the_one_in_flight_and_starts_clean(monkeypatch):
+    """ "Run setup again" while the first-run trigger's setup is still going means start
+    over: the old run is cancelled (and lets go of the wizard's run lock), its progress
+    is cleared before the new run settles its source, and the new run is the one that
+    runs — not a 409 "already running"."""
+    import asyncio
+
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import state
+    from flow_sdk.core.wizard.state import read_result
+    from flow_sdk.instances.atomic import write_json_atomic
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server import builtin_triggers
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    old_started = asyncio.Event()
+    old_cancelled: list[bool] = []
+    seen_at_source: list = []
+    runs = 0
+
+    async def _resolve_source():
+        seen_at_source.append(read_result(str(wizard.id)))
+        return CliResult.satisfied("funded")
+
+    async def _wizard(spec, **kwargs):
+        nonlocal runs
+        runs += 1
+        if runs == 1:
+            # Written straight to the file, not through `record_result`: this stub
+            # runs inside `execute_wizard`'s held run lock, and only the progress
+            # on disk matters here, not how it got there.
+            state._CACHE.pop(str(wizard.id), None)
+            write_json_atomic(
+                state._state_path(str(wizard.id)),
+                {"result": WizardResult.not_yet("old run, halfway").model_dump(mode="json")},
+            )
+            old_started.set()
+            try:
+                await asyncio.Event().wait()  # a step that never settles on its own
+            except asyncio.CancelledError:
+                old_cancelled.append(True)
+                raise
+        return WizardResult.satisfied("new run")
+
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    try:
+        old = asyncio.ensure_future(builtin_triggers.run_llm_setup(wizard, unattended=True))
+        await old_started.wait()
+
+        _source, new_result = await builtin_triggers.run_llm_setup(wizard, unattended=False)
+        _old_source, old_result = await old
+
+        assert old_cancelled == [True], "the old run was not stopped"
+        assert old_result.busy and builtin_triggers.SETUP_REPLACED in old_result.detail
+        assert new_result.ok, new_result.detail
+        assert seen_at_source[-1] is None, "the old run's progress was still there when the new run started"
+        assert read_result(str(wizard.id)).detail == "new run"
+    finally:
+        await _cleanup(wizard)
+
+
+@async_context
+async def test_run_setup_re_steers_to_the_wizard_after_the_llm_source_settles(monkeypatch):
+    """`_resolve_llm_source` opens its OWN screen (the chooser, `/dock/llm-setup`) whenever the
+    box is not already funded — landing well after the first steer-to-the-wizard and
+    overwriting it. A person sent to the wizard, then past it to the chooser, then presses the
+    chooser's own "Done" with nothing left to send them back to the wizard — they watch it run
+    on a screen they cannot see. So the steer must happen a SECOND time, after the source
+    settles and right before the wizard actually starts, not just once up front."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server import builtin_triggers
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    order: list[str] = []
+
+    async def _navigate(_wizard):
+        order.append("navigate")
+
+    async def _resolve_source():
+        order.append("llm source")
+        return CliResult.satisfied("funded")
+
+    async def _wizard(spec, **kwargs):
+        order.append("wizard")
+        return WizardResult.satisfied("stubbed")
+
+    monkeypatch.setattr(builtin_triggers, "_navigate_to_wizard", _navigate)
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    try:
+        await builtin_triggers.run_llm_setup(wizard, unattended=False)
+        assert order == ["navigate", "llm source", "navigate", "wizard"], (
+            "must steer again AFTER the source settles (the chooser may have navigated away), not just once before it"
+        )
+    finally:
+        await _cleanup(wizard)
+
+
 @pytest.mark.parametrize("funded", [True, False])
 @async_context
 async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monkeypatch, funded):

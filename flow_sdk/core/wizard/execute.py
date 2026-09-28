@@ -94,6 +94,20 @@ async def execute_wizard(
     except Timeout:
         return WizardResult.held(f"{spec.name or wizard_id} {ALREADY_RUNNING}")
 
+    async def _on_step(partial: WizardResult) -> None:
+        # Every OTHER step's own record too, so this step settling does not
+        # revert what a slower sibling already reported — `run.steps` (what
+        # `partial` is built from) accumulates every step run so far, so this
+        # is never a step behind, only ever a step ahead of the final answer.
+        #
+        # `already_locked=True`: the `lock` above is held for this whole `try`
+        # block, including this callback's own invocation — `record_result`
+        # locking the SAME path again here would not be reentrant (a plain
+        # `FileLock` does not know one is already held) and self-deadlocks.
+        # This lock is what keeps the write safe without re-acquiring it.
+        record_result(wizard_id, partial, already_locked=True)
+        await _notify_wizard_watchers(wizard_id)
+
     try:
         result = await run_wizard(
             spec,
@@ -112,6 +126,12 @@ async def execute_wizard(
             resolve_wizard=_resolve_wizard,
             wizard_id=wizard_id,
             check_only=check_only,
+            # A person watching should see a step's own answer (an agent
+            # fallback that settled minutes ago, say) as soon as THAT step
+            # concludes — not sit looking untouched until every other step
+            # also finishes just because the durable record is otherwise
+            # written once, at the very end.
+            on_step=_on_step,
         )
     finally:
         lock.release()
