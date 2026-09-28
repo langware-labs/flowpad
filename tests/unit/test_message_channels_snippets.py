@@ -42,7 +42,7 @@ async def _conversation(script, address: str) -> str:
     return str(fm.conversation_id)
 
 
-@pytest.mark.long  # the §2 turn runs on the mock worker, which waits out its transcript's settle window
+@pytest.mark.long  # 1.30s: the §2 turn runs on the mock worker, which waits out its transcript's settle window
 async def test_the_page_runs_as_written(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "invoice.pdf").write_bytes(b"%PDF-1.4")
