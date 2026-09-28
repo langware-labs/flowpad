@@ -84,6 +84,7 @@ def _invited_by_id(calls, proj: Project) -> dict[str, str]:
         for method, path, body in calls
         if method == "POST" and path == f"/graph/project/{proj.id}/members" and "recipient_user_id" in body
         for target in body["invitation_targets"]
+        if target["typeid"] == f"project-{proj.id}"
     }
 
 
@@ -101,12 +102,13 @@ async def test_invite_by_user_id_defaults_to_member(hub):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_invite_by_user_id_honors_its_own_role(hub):
+@pytest.mark.parametrize("role", ["admin", "editor"])
+async def test_invite_by_user_id_honors_its_own_role(hub, role):
     proj = Project(name="invite-by-id-role")
 
-    await proj.share(invitees=[ShareInvitee(user_id=GADI, role="admin")])
+    await proj.share(invitees=[ShareInvitee(user_id=GADI, role=role)])
 
-    assert _invited_by_id(hub, proj) == {GADI: "admin"}
+    assert _invited_by_id(hub, proj) == {GADI: role}
 
 
 # do not increase timeout without approval
@@ -143,6 +145,7 @@ async def test_invite_by_user_id_and_by_email_each_keep_their_own_role(hub):
         for method, path, body in hub
         if method == "POST" and path == f"/graph/project/{proj.id}/members" and "recipient_email" in body
         for target in body["invitation_targets"]
+        if target["typeid"] == f"project-{proj.id}"
     ]
     assert email_posts == ["admin"]
 
@@ -177,7 +180,7 @@ async def test_invite_silently_skips_an_unparseable_id(hub):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("role", ["owner", "editor", ""])
+@pytest.mark.parametrize("role", ["owner", "guest", ""])
 async def test_invite_by_user_id_rejects_a_role_outside_the_allowlist(hub, role):
     """Refused before any hub call — nothing is published or invited."""
     proj = Project(name="invite-by-id-bad-role")

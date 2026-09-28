@@ -1,16 +1,44 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Check, Link as LinkIcon, Loader2, UserPlus, X } from 'lucide-react';
-import { mintInviteLink, type ConversationParticipant, type TypeId } from '@sdk';
+import { Check, Link as LinkIcon, Loader2, Plus, UserPlus, UsersRound, X } from 'lucide-react';
+import {
+  Conversation,
+  mintInviteLink,
+  normalizeEmail,
+  Project,
+  Team,
+  type ContactsGroup,
+  type ConversationParticipant,
+  type ShareResult,
+  type TypeId,
+} from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
+import { Input } from '@src/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useMembers } from '@src/hooks/use-members';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
-import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
-import { participantKey } from '@src/components/contact-picker/use-contacts';
+import {
+  filterTeams,
+  TEAM_INVITE_ROLE,
+  teamParticipant,
+  teamTypeIdOf,
+  useTeamSuggestions,
+  type TeamSuggestion,
+} from '@src/components/contact-picker/use-team-suggestions';
+import {
+  EMAIL_RE,
+  filterContacts,
+  participantFromContact,
+  participantKey,
+  useContacts,
+} from '@src/components/contact-picker/use-contacts';
+import { filterGroups, mergeGroupMembers, useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
+import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-roles';
 import { useLocalUser } from './useLocalUser';
+import { nestTeamMembers, useTeamRosters } from './team-member-nesting';
 import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 import {
@@ -27,6 +55,21 @@ import {
 } from './participant-display';
 
 const MAX_INLINE_AVATARS = 4;
+const MAX_CONTACT_SUGGESTIONS = 6;
+const MAX_GROUP_SUGGESTIONS = 3;
+const MAX_TEAM_SUGGESTIONS = 3;
+/** Roles below admin that may still invite (``canInviteMembers`` covers admin+). */
+const INVITER_ROLES: readonly string[] = ['editor'];
+
+/** What the add row's text resolved to when a suggestion was picked. */
+type DraftPick = { kind: 'contact'; participant: ConversationParticipant } | { kind: 'group'; group: ContactsGroup };
+
+/** A recipient added to the list but not sent yet — Apply sends the batch. */
+interface PendingInvite {
+  participant: ConversationParticipant;
+  /** Unset on a surface with no ``inviteRoles`` (the entity's default applies). */
+  role?: string;
+}
 
 interface MembersAvatarStackProps {
   typeId: TypeId;
@@ -36,9 +79,10 @@ interface MembersAvatarStackProps {
   allowInviteLink?: boolean;
   /** Show a visible invite trigger beside the member avatars. */
   showInviteButton?: boolean;
-  /** Optional entity-specific prerequisite. Returning false keeps both invite
-   *  paths closed; project sharing uses this for its GitHub capability test. */
-  beforeInvite?: () => Promise<boolean>;
+  /** Optional entity-specific prerequisite, asked when the invite pane is about
+   *  to open. Returning false keeps it closed — the caller shows its own UI
+   *  instead (a Project that isn't published yet shows its publish popup). */
+  beforeInvite?: () => boolean;
   /** Roles the invite form may grant, e.g. ``['member', 'admin']`` for a
    *  project. Omitted = no picker, and the entity's own default role applies. */
   inviteRoles?: readonly string[];
@@ -67,7 +111,24 @@ export function MembersAvatarStack({
   const { localUser } = useLocalUser();
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
   const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<ConversationParticipant[]>([]);
+  // The add row's draft: the typed text, plus the suggestion it resolved to
+  // when one was picked from the dropdown (dropped as soon as the text changes).
+  const [draft, setDraft] = useState('');
+  const [draftPick, setDraftPick] = useState<DraftPick | null>(null);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  // Added recipients, each with the role it will be granted. Nothing reaches
+  // the backend until Apply sends the whole list as one batch.
+  const [pending, setPending] = useState<PendingInvite[]>([]);
+  // Whole teams picked on a Project — one chip each (a ``teamParticipant``),
+  // never expanded: Apply sends them and the hub grants each team as ONE principal.
+  const [pendingTeams, setPendingTeams] = useState<ConversationParticipant[]>([]);
+  // What the last Apply did per recipient, for the partial outcomes it reports
+  // (a refused team, a team granted without its message, a failed person).
+  const [shareOutcome, setShareOutcome] = useState<ShareResult | null>(null);
+  // The hub's own message when it refused a removal or a role change — e.g. a
+  // person who reaches this entity through a granted team, whose access no
+  // per-person DELETE can revoke (KTD8: the row keeps its controls).
+  const [memberError, setMemberError] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
@@ -78,16 +139,43 @@ export function MembersAvatarStack({
   const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
 
   // My roster row drives every affordance gate: rank for the role selector
-  // (mirrors the hub's ``can_assign`` ceiling), owner for remove, admin+ for
-  // invite. The hub enforces all of these too — hiding here just keeps the UI
-  // from offering controls that would 403.
+  // (mirrors the hub's ``can_assign`` ceiling), editor+ for invite and — on
+  // rows below my rank — remove. The hub enforces all of these too — hiding
+  // here just keeps the UI from offering controls that would 403.
+  const teamRosters = useTeamRosters(members);
+  const roster = useMemo(() => nestTeamMembers(members, teamRosters), [members, teamRosters]);
   const me = members.find((m) => !!m.user_id && !!localUser?.id && m.user_id === localUser.id) ?? null;
   const iAmOwner = participantRank(me) === 0;
   // Invite gate applies only when my roster row resolved. A local-only /
   // not-yet-shared conversation has an empty roster (no ``me``) — keep the
   // form there, since this popover is also the first-share entry point and
-  // the sharer becomes the owner.
-  const mayInvite = me === null ? true : canInviteMembers(me);
+  // the sharer becomes the owner. Editors invite too (a project's hub policy
+  // grants them ``members``); ``offeredRoles`` below still caps what they may
+  // grant at roles under editor.
+  const mayInvite =
+    me === null ||
+    canInviteMembers(me) ||
+    (me.role ?? '')
+      .toLowerCase()
+      .split(',')
+      .some((r) => INVITER_ROLES.includes(r.trim()));
+  // Remove mirrors the hub's ``delete_membership``: on a conversation only its
+  // owner may remove anyone; elsewhere anyone who may manage members may
+  // remove a member ranked strictly below them (the ``can_assign`` ceiling —
+  // peers, those above, an unranked role and myself are untouchable).
+  const myRank = participantRank(me);
+  const mayRemove = (p: ConversationParticipant) => {
+    // A team row carries its principal in ``id``, not ``user_id``; the same rank
+    // ceiling applies (the hub's group removal checks it too).
+    if (isGroupMember(p)) {
+      const theirRank = participantRank(p);
+      return mayInvite && myRank !== null && theirRank !== null && theirRank > myRank;
+    }
+    if (!p.user_id || p.user_id === me?.user_id) return false;
+    if (typeId.type === Conversation.type) return iAmOwner && (p.role ?? '').toLowerCase() !== 'owner';
+    const theirRank = participantRank(p);
+    return mayInvite && myRank !== null && theirRank !== null && theirRank > myRank;
+  };
   // Invite roles capped by my rank (the hub refuses a grant at or above it).
   // No roster row yet = first share, which makes me the owner: offer them all.
   const offeredRoles = useMemo(() => {
@@ -96,27 +184,67 @@ export function MembersAvatarStack({
     const grantable = grantableRoles(me);
     return inviteRoles.filter((r) => grantable.includes(r));
   }, [inviteRoles, me]);
-  // The role selector on the add row — defaults to ``member``, sits beside the
-  // picker and the Add button. Applied to every recipient staged AFTER this
-  // selector is set, and it seeds each new row's own default below; a row can
-  // still be overridden individually (a project invite is one
+  // A member row's role options: what the ladder lets me assign that member,
+  // narrowed to ``inviteRoles`` when the surface passes them — so changing a
+  // role offers exactly what inviting does (a project's ``share-roles``).
+  const rowRoles = (p: ConversationParticipant) => {
+    // A team's role is shown locked: re-roling a group is out of scope here.
+    if (isGroupMember(p)) return [];
+    const assignable = assignableRoles(me, p);
+    return inviteRoles?.length ? inviteRoles.filter((r) => assignable.includes(r)) : assignable;
+  };
+  // The role selector on the add row — defaults to ``member``. Whatever it
+  // shows when Add is clicked is the role that recipient joins the list with;
+  // each listed row can still be changed individually (a project invite is one
   // ``MembershipRequest`` per person, and each may carry a different role).
   const [inviteRole, setInviteRole] = useState('member');
-  const effectiveInviteRole = offeredRoles.includes(inviteRole) ? inviteRole : offeredRoles[0];
-  // Per-recipient role, keyed by ``participantKey`` (user_id, else email, else
-  // name) — the same identity key ContactPicker/AddressBookButton already use,
-  // so a staged contact keeps its chosen role however it ends up addressed
-  // (by email or by hub id) once submitted.
-  const [rolesByKey, setRolesByKey] = useState<Record<string, string>>({});
+  const effectiveInviteRole: string | undefined = offeredRoles.includes(inviteRole) ? inviteRole : offeredRoles[0];
+  // A listed row's role, re-checked against the offer (it can shrink when the
+  // roster refreshes my rank) so Apply never sends a grant the hub would 403.
+  const roleOf = (invite: PendingInvite) =>
+    invite.role && offeredRoles.includes(invite.role) ? invite.role : effectiveInviteRole;
 
-  const handleRemove = async (userId: string) => {
-    setRemovingId(userId);
+  // Contacts + groups feed the add row's suggestions — only queried while the
+  // form is actually on screen (every conversation header renders this stack).
+  const formOpen = open && mayInvite && available && !stale;
+  const { contacts } = useContacts(localUser?.id, formOpen);
+  const { groups } = useContactsGroups(formOpen);
+  const draftText = draft.trim();
+  const suggestedGroups = useMemo(
+    () => (draftText ? filterGroups(groups, draftText).slice(0, MAX_GROUP_SUGGESTIONS) : []),
+    [groups, draftText],
+  );
+  const suggestedContacts = useMemo(
+    () => (draftText ? filterContacts(contacts, draftText).slice(0, MAX_CONTACT_SUGGESTIONS) : []),
+    [contacts, draftText],
+  );
+  // Whole teams — a Project only (the one entity whose ``share`` action takes
+  // ``teams``), offered to anyone who can open this form.
+  const offersTeams = typeId.type === Project.type;
+  const { teams } = useTeamSuggestions(formOpen && offersTeams);
+  const TeamIcon = iconForType(Team.type);
+  const suggestedTeams = useMemo(
+    () => (draftText ? filterTeams(teams, draftText).slice(0, MAX_TEAM_SUGGESTIONS) : []),
+    [teams, draftText],
+  );
+  const teamPicked = (team: TeamSuggestion) =>
+    members.some((m) => isGroupMember(m) && memberPrincipalId(m) === team.id) ||
+    pendingTeams.some((p) => participantKey(p) === participantKey(teamParticipant(team)));
+  const showSuggestions =
+    suggestOpen &&
+    !draftPick &&
+    (suggestedGroups.length > 0 || suggestedTeams.length > 0 || suggestedContacts.length > 0);
+
+  const handleRemove = async (principalId: string) => {
+    setRemovingId(principalId);
+    setMemberError(null);
     try {
-      await removeMember(userId);
-    } catch {
-      // Hub rejects non-owner/owner-self with 403; the control is already
-      // owner-gated, so a failure here is a transient/again-case — leave the
-      // row as-is rather than surfacing a modal in this compact popover.
+      await removeMember(principalId);
+    } catch (err) {
+      // The control is rank-gated, so a refusal is the hub knowing something
+      // the roster can't show — typically a person whose access comes through a
+      // granted team. The row stays; the hub's own sentence says why.
+      setMemberError(err instanceof Error ? err.message : t`Couldn't remove this member.`);
     } finally {
       setRemovingId(null);
     }
@@ -124,12 +252,13 @@ export function MembersAvatarStack({
 
   const handleRoleChange = async (userId: string, role: string) => {
     setChangingId(userId);
+    setMemberError(null);
     try {
       await setRole(userId, role);
-    } catch {
-      // The selector is already ceiling-gated, so a hub denial here is a
-      // stale-roster/transient case; the post-change refresh in setRole didn't
-      // run, so the row simply keeps showing the hub-authoritative role.
+    } catch (err) {
+      // Ceiling-gated already, so a denial is the hub's call (e.g. an inherited
+      // member); the row keeps the hub-authoritative role and shows why.
+      setMemberError(err instanceof Error ? err.message : t`Couldn't change this member's role.`);
     } finally {
       setChangingId(null);
     }
@@ -147,22 +276,97 @@ export function MembersAvatarStack({
     [members],
   );
 
-  const handleSelectionChange = (next: ConversationParticipant[]) => {
-    setSelected(next);
-    if (inviteError) setInviteError(null);
-    if (!offeredRoles.length) return;
-    // Keep the role map in lockstep with the staged list: a newly-added
-    // recipient gets the default, a removed one drops out (so a re-add starts
-    // fresh rather than resurrecting a role picked in an earlier selection).
-    setRolesByKey((prev) => {
-      const nextRoles: Record<string, string> = {};
-      for (const p of next) {
-        const key = participantKey(p);
+  const isMember = (p: ConversationParticipant) => {
+    const email = (p.email ?? '').trim().toLowerCase();
+    return email ? existingEmails.has(email) : !!p.user_id && existingUserIds.has(p.user_id);
+  };
+  // Reachable = has an address the hub can invite by, and isn't on the roster.
+  const isInvitable = (p: ConversationParticipant) => !!(p.email || p.user_id) && !isMember(p);
+
+  /** Put people on the list at `role`; someone already listed just takes the new role. */
+  const addToList = (people: ConversationParticipant[], role: string | undefined) => {
+    setPending((prev) => {
+      const next = [...prev];
+      for (const participant of people) {
+        const key = participantKey(participant);
         if (!key) continue;
-        nextRoles[key] = prev[key] && offeredRoles.includes(prev[key]) ? prev[key] : effectiveInviteRole;
+        const at = next.findIndex((x) => participantKey(x.participant) === key);
+        if (at >= 0) next[at] = { ...next[at], role };
+        else next.push({ participant, role });
       }
-      return nextRoles;
+      return next;
     });
+  };
+
+  /**
+   * What the add row's draft means: the suggestion picked from the dropdown,
+   * else the one contact the text names (exact name/email, or the only match),
+   * else a free-form email. Returns a message when it names nobody.
+   */
+  const resolveDraft = (): ConversationParticipant[] | string => {
+    if (draftPick?.kind === 'group') return mergeGroupMembers([], draftPick.group.contacts ?? [], localUser?.id);
+    if (draftPick) return [draftPick.participant];
+    if (!draftText) return t`Type an email or a name`;
+    const q = draftText.toLowerCase();
+    const matches = filterContacts(contacts, draftText);
+    const exact = matches.find((u) => (u.email ?? '').toLowerCase() === q || (u.name ?? '').toLowerCase() === q);
+    const contact = exact ?? (matches.length === 1 ? matches[0] : undefined);
+    if (contact) return [participantFromContact(contact)];
+    if (EMAIL_RE.test(draftText)) return [{ email: normalizeEmail(draftText) || q, name: null }];
+    return matches.length > 1
+      ? t`Several contacts match — pick one from the list`
+      : t`No contact by that name — enter a full email`;
+  };
+
+  const clearDraft = () => {
+    setDraft('');
+    setDraftPick(null);
+    setSuggestOpen(false);
+  };
+
+  const handleAdd = () => {
+    const resolved = resolveDraft();
+    if (typeof resolved === 'string') {
+      setInviteError(resolved);
+      return;
+    }
+    const fresh = resolved.filter(isInvitable);
+    if (!fresh.length) {
+      setInviteError(t`Already a member — change their role in the list above`);
+      return;
+    }
+    addToList(fresh, effectiveInviteRole);
+    clearDraft();
+    setInviteError(null);
+  };
+
+  /** A picked team goes straight onto the list as one chip; picking it again adds nothing. */
+  const addTeam = (team: TeamSuggestion) => {
+    if (!teamPicked(team)) setPendingTeams((prev) => [...prev, teamParticipant(team)]);
+    clearDraft();
+    setInviteError(null);
+  };
+
+  const pickSuggestion = (pick: DraftPick, label: string) => {
+    setDraftPick(pick);
+    setDraft(label);
+    setSuggestOpen(false);
+    setInviteError(null);
+  };
+
+  // The address book is a multi-select over the same list: a newly ticked
+  // contact joins at the add row's role, an unticked one leaves the list.
+  const handleAddressBookChange = (next: ConversationParticipant[]) => {
+    const keep = new Set(next.map(participantKey));
+    setPending((prev) => {
+      const kept = prev.filter((x) => keep.has(participantKey(x.participant)));
+      const listed = new Set(kept.map((x) => participantKey(x.participant)));
+      const added = next
+        .filter((p) => !listed.has(participantKey(p)) && isInvitable(p))
+        .map((participant) => ({ participant, role: effectiveInviteRole }));
+      return [...kept, ...added];
+    });
+    setInviteError(null);
   };
 
   /**
@@ -182,7 +386,6 @@ export function MembersAvatarStack({
     setLinking(true);
     setLinkError(null);
     try {
-      if (beforeInvite && !(await beforeInvite())) return;
       if (!(entity as { remote?: boolean }).remote) await entity.share();
       const link = await mintInviteLink(typeId);
       await navigator.clipboard.writeText(link.url);
@@ -197,38 +400,41 @@ export function MembersAvatarStack({
     }
   };
 
-  const handleInvite = async () => {
+  /** Apply — the one step that reaches the backend: every listed recipient, one batch. */
+  const handleApply = async () => {
     // Two addressing forms, because the address book knows people two ways —
     // a contact learned from a conversation roster carries a hub ``user_id``
     // and NO email (the hub never discloses another member's email), so an
     // email-only invite makes exactly those contacts unreachable even though
-    // the picker offers them. Mirrors ``Project.share`` / ``Conversation.share``.
-    // One pass over ``selected``: pick the identifier, skip anyone already on
-    // the roster, attach the role staged under the same ``participantKey`` —
-    // the exact ``{idOrEmail, role?}[]`` shape ``addMembers``/``share`` take.
-    const invitable = selected.flatMap((p) => {
-      const role = rolesByKey[participantKey(p)] ?? effectiveInviteRole;
+    // the suggestions offer them. Mirrors ``Project.share`` / ``Conversation.share``.
+    // One pass over the list: pick the identifier, skip anyone who joined the
+    // roster since being listed, attach the row's role — the exact
+    // ``{idOrEmail, role?}[]`` shape ``addMembers``/``share`` take.
+    const invitable = pending.flatMap((invite) => {
+      const p = invite.participant;
+      const role = roleOf(invite);
       const email = (p.email ?? '').trim().toLowerCase();
       if (email) return existingEmails.has(email) ? [] : [{ idOrEmail: email, role }];
       const userId = (p.user_id ?? '').trim();
       if (userId) return existingUserIds.has(userId) ? [] : [{ idOrEmail: userId, role }];
       return [];
     });
-    if (!invitable.length) {
+    // Picked teams travel as teams (``team-<id>``) in the same one share action.
+    const teamIds = pendingTeams.map(teamTypeIdOf).filter((id): id is TypeId => id !== null);
+    if (!invitable.length && !teamIds.length) {
       setInviteError(
-        selected.length > 0
-          ? t`Already a member — change their role in the list above`
-          : t`Pick a contact or enter an email`,
+        pending.length > 0 ? t`Already a member — change their role in the list above` : t`Add someone first`,
       );
       return;
     }
     setInviting(true);
     setInviteError(null);
+    setShareOutcome(null);
     try {
-      if (beforeInvite && !(await beforeInvite())) return;
-      await addMembers(invitable);
-      setSelected([]);
-      setRolesByKey({});
+      const result = teamIds.length ? await addMembers(invitable, { teams: teamIds }) : await addMembers(invitable);
+      setPending([]);
+      setPendingTeams([]);
+      setShareOutcome(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Invite failed';
       // Re-inviting an accepted member is hub-rejected (400 "use change_role")
@@ -241,6 +447,14 @@ export function MembersAvatarStack({
     }
   };
 
+  /** People and teams on the list — what Apply would send. */
+  const listed = pending.length + pendingTeams.length;
+  const teamLabel = (team: { name?: string | null; team: string }) => team.name || team.team;
+  const failedTeams = shareOutcome?.failed_teams ?? [];
+  const alreadyGranted = shareOutcome?.skipped_teams ?? [];
+  const grantedWithoutMessage = (shareOutcome?.granted_teams ?? []).filter((g) => !g.conversation_id);
+  const failedPeople = shareOutcome?.failed ?? [];
+
   const inline = members.slice(0, MAX_INLINE_AVATARS);
   const overflow = members.length - inline.length;
 
@@ -248,6 +462,104 @@ export function MembersAvatarStack({
   // popup (not authenticated) or, in Local mode, opens the popover to a short
   // "unavailable" notice. Offline-but-authenticated is NOT gated here — it shows
   // the cached roster + a "can't update" note (the ``stale`` flag below).
+  // One roster row. ``nested`` rows sit under their team row: their access is
+  // the team's, so they show its role and carry no controls of their own.
+  const renderMember = (p: ConversationParticipant, i: number, key: string, nested: boolean) => {
+    const role = participantRoleLabel(p);
+    // Role selector mirrors the hub ``can_assign`` ceiling: options
+    // strictly below my rank, only on members strictly below my rank,
+    // never my own row / the owner. Empty = render the static label.
+    // Where the surface passes ``inviteRoles`` (the backend's
+    // ``share-roles`` list) the options are that list, the same one
+    // the invite form offers; otherwise the full ladder.
+    // A nested row's access is its team's: no role change, no remove.
+    const roles = nested ? [] : rowRoles(p);
+    const group = isGroupMember(p);
+    const principalId = memberPrincipalId(p);
+    const contact = group || participantIsUser(p, localUser) ? null : contactFromParticipant(p);
+    const identity = (
+      <>
+        <Avatar className="h-6 w-6">
+          {group ? (
+            <AvatarFallback className="bg-muted text-muted-foreground" data-testid="member-team-icon">
+              <TeamIcon className="h-3.5 w-3.5" aria-hidden />
+            </AvatarFallback>
+          ) : (
+            <AvatarFallback
+              className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
+            >
+              {participantInitials(p)}
+            </AvatarFallback>
+          )}
+        </Avatar>
+        <span className="flex-1 truncate">{participantLabel(p)}</span>
+      </>
+    );
+    return (
+      <li
+        key={key}
+        className={`flex items-center gap-2 text-xs ${nested ? 'ms-6' : ''}`}
+        data-testid={nested ? 'member-nested' : undefined}
+      >
+        {contact ? (
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
+            onClick={() => {
+              setPermissionsContact(contact);
+              setOpen(false);
+            }}
+            aria-label={`Open permissions for ${participantLabel(p)}`}
+            data-testid={`member-contact-${p.user_id || p.email || i}`}
+          >
+            {identity}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
+        )}
+        {roles.length > 0 ? (
+          <select
+            aria-label={`Change role of ${participantLabel(p)}`}
+            data-testid="member-role-select"
+            value={(p.role ?? '').toLowerCase()}
+            disabled={changingId === p.user_id}
+            onChange={(e) => void handleRoleChange(p.user_id as string, e.target.value)}
+            className="rounded border border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
+          >
+            {/* Current role stays selectable when it's outside the
+        offered menu (a rankable-but-not-assignable role like
+        ``guest``, or a comma-joined multi-role value) so the
+        select never shows a blank value. */}
+            {!roles.includes((p.role ?? '').toLowerCase()) && (
+              <option value={(p.role ?? '').toLowerCase()} disabled>
+                {role}
+              </option>
+            )}
+            {roles.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        ) : (
+          role && <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>
+        )}
+        {!nested && mayRemove(p) && (
+          <button
+            type="button"
+            aria-label={`Remove ${participantLabel(p)}`}
+            data-testid="member-remove"
+            disabled={removingId === principalId}
+            onClick={() => principalId && void handleRemove(principalId)}
+            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </li>
+    );
+  };
+
   const handleOpenChange = (next: boolean) => {
     if (next && reason === 'unauthenticated') {
       // Route through the shared sign-in dialog; don't open the roster popover.
@@ -256,12 +568,16 @@ export function MembersAvatarStack({
       });
       return;
     }
+    if (next && beforeInvite && !beforeInvite()) return;
     setOpen(next);
     if (!next) {
       // Reset transient state so reopening the popover doesn't show a stale
       // selection or error from a previous attempt.
-      setSelected([]);
-      setRolesByKey({});
+      clearDraft();
+      setPending([]);
+      setPendingTeams([]);
+      setShareOutcome(null);
+      setMemberError(null);
       setInviteRole('member');
       setInviteError(null);
       setInviting(false);
@@ -301,12 +617,18 @@ export function MembersAvatarStack({
                 </span>
               ) : (
                 inline.map((p, i) => (
-                  <Avatar key={p.user_id || p.email || i} className="h-6 w-6 ring-2 ring-background">
-                    <AvatarFallback
-                      className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
-                    >
-                      {participantInitials(p)}
-                    </AvatarFallback>
+                  <Avatar key={memberPrincipalId(p) || p.email || i} className="h-6 w-6 ring-2 ring-background">
+                    {isGroupMember(p) ? (
+                      <AvatarFallback className="bg-muted text-muted-foreground">
+                        <TeamIcon className="h-3.5 w-3.5" aria-hidden />
+                      </AvatarFallback>
+                    ) : (
+                      <AvatarFallback
+                        className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
+                      >
+                        {participantInitials(p)}
+                      </AvatarFallback>
+                    )}
                   </Avatar>
                 ))
               )}
@@ -318,10 +640,10 @@ export function MembersAvatarStack({
             </button>
           </PopoverTrigger>
           {/* Wider only when the add row grows a role selector (Project) — the
-          merged picker/address-book/role/Add row needs the room; a surface
-          with no ``inviteRoles`` (Conversation) never renders that control and
-          keeps the original compact width. */}
-          <PopoverContent className={offeredRoles.length > 0 ? 'w-96 p-2' : 'w-72 p-2'} align="start">
+          input/address-book/role/Add row needs the room; a surface with no
+          ``inviteRoles`` (Conversation) never renders that control and keeps
+          the compact width. */}
+          <PopoverContent className={offeredRoles.length > 0 ? 'w-[26rem] p-3' : 'w-80 p-3'} align="start">
             {reason === 'local' ? (
               <div className="px-1 py-2 text-[11px] text-muted-foreground" data-testid="members-local-notice">
                 <Trans>Members are unavailable in Local mode.</Trans>
@@ -351,127 +673,163 @@ export function MembersAvatarStack({
                   </div>
                 )}
                 <ul className="flex flex-col gap-1.5">
-                  {members.map((p, i) => {
-                    const role = participantRoleLabel(p);
-                    // Role selector mirrors the hub ``can_assign`` ceiling: options
-                    // strictly below my rank, only on members strictly below my rank,
-                    // never my own row / the owner. Empty = render the static label.
-                    const roles = assignableRoles(me, p);
-                    const contact = participantIsUser(p, localUser) ? null : contactFromParticipant(p);
-                    const identity = (
-                      <>
-                        <Avatar className="h-6 w-6">
-                          <AvatarFallback
-                            className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
-                          >
-                            {participantInitials(p)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="flex-1 truncate">{participantLabel(p)}</span>
-                      </>
-                    );
+                  {roster.top.map((p, i) => {
+                    const key = memberPrincipalId(p) || p.email || String(i);
+                    const children = isGroupMember(p) ? (roster.childrenOf.get(memberPrincipalId(p) ?? '') ?? []) : [];
                     return (
-                      <li key={p.user_id || p.email || i} className="flex items-center gap-2 text-xs">
-                        {contact ? (
-                          <button
-                            type="button"
-                            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
-                            onClick={() => {
-                              setPermissionsContact(contact);
-                              setOpen(false);
-                            }}
-                            aria-label={`Open permissions for ${participantLabel(p)}`}
-                            data-testid={`member-contact-${p.user_id || p.email || i}`}
-                          >
-                            {identity}
-                          </button>
-                        ) : (
-                          <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
-                        )}
-                        {roles.length > 0 ? (
-                          <select
-                            aria-label={`Change role of ${participantLabel(p)}`}
-                            data-testid="member-role-select"
-                            value={(p.role ?? '').toLowerCase()}
-                            disabled={changingId === p.user_id}
-                            onChange={(e) => void handleRoleChange(p.user_id as string, e.target.value)}
-                            className="rounded border border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
-                          >
-                            {/* Current role stays selectable when it's outside the
-                        offered menu (a rankable-but-not-assignable role like
-                        ``guest``, or a comma-joined multi-role value) so the
-                        select never shows a blank value. */}
-                            {!roles.includes((p.role ?? '').toLowerCase()) && (
-                              <option value={(p.role ?? '').toLowerCase()} disabled>
-                                {role}
-                              </option>
-                            )}
-                            {roles.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          role && (
-                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>
-                          )
-                        )}
-                        {/* Remove — owner only, never on the owner's own row. */}
-                        {iAmOwner && (p.role ?? '').toLowerCase() !== 'owner' && p.user_id && (
-                          <button
-                            type="button"
-                            aria-label={`Remove ${participantLabel(p)}`}
-                            data-testid="member-remove"
-                            disabled={removingId === p.user_id}
-                            onClick={() => void handleRemove(p.user_id as string)}
-                            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                      </li>
+                      <Fragment key={key}>
+                        {renderMember(p, i, key, false)}
+                        {children.map((c, j) => renderMember(c, j, `${key}/${c.user_id ?? j}`, true))}
+                      </Fragment>
                     );
                   })}
                 </ul>
+                {memberError && (
+                  <div className="mt-1.5 px-1 text-[11px] text-destructive" role="alert" data-testid="member-error">
+                    {memberError}
+                  </div>
+                )}
                 {/* Invite — admin+/owner only (the hub policy method-scopes the
             mutating ``members`` action; a plain member's POST would 403).
             Also requires an available hub; hidden when stale/offline so an
             invite can't be attempted only to 409. */}
-                {mayInvite && available && !stale && (
-                  <div className="mt-2 border-t border-border pt-2">
-                    {/* One row: picker (chips + input, grows/wraps) → address
-                    book → role (defaults to member) → Add — all on the same
-                    line, sized to the input's own height (``h-9``) so nothing
-                    looks like an afterthought below it. ``items-start`` keeps
-                    role/Add pinned to the top when a staged chip wraps the
-                    picker onto two lines. */}
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0 flex-1">
-                        <ContactPicker
-                          value={selected}
-                          onChange={handleSelectionChange}
-                          excludeUserId={localUser?.id}
+                {formOpen && (
+                  <div className="mt-3 border-t border-border pt-3" data-testid="members-invite-form">
+                    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <Trans>Invite people</Trans>
+                    </div>
+                    {/* The add row: who (typed, or picked from the suggestions /
+                    address book) → role → Add. Order doesn't matter — Add
+                    reads both at click time. Nothing is sent from here; Add
+                    only puts the person on the list below. */}
+                    <div className="flex items-center gap-1.5">
+                      <div className="relative min-w-0 flex-1">
+                        <Input
+                          value={draft}
+                          onChange={(e) => {
+                            setDraft(e.target.value);
+                            setDraftPick(null);
+                            setSuggestOpen(true);
+                            if (inviteError) setInviteError(null);
+                          }}
+                          onFocus={() => setSuggestOpen(true)}
+                          onBlur={() => setSuggestOpen(false)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAdd();
+                            } else if (e.key === 'Escape' && showSuggestions) {
+                              // Close the suggestions, not the whole popover.
+                              e.stopPropagation();
+                              setSuggestOpen(false);
+                            }
+                          }}
                           disabled={inviting}
-                          placeholder={t`Invite by name or email…`}
-                          testId="members-invite-input"
+                          placeholder={t`Email or name`}
+                          aria-label={t`Email or name to invite`}
+                          className="h-9 text-xs md:text-xs"
+                          data-testid="members-invite-input"
                         />
+                        {showSuggestions && (
+                          <div
+                            className="absolute inset-x-0 top-full z-50 mt-1 max-h-52 overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-md"
+                            data-testid="members-invite-suggestions"
+                          >
+                            {/* Groups first — adding one lists every member. */}
+                            {suggestedGroups.map((g) => (
+                              <button
+                                key={g.id}
+                                type="button"
+                                // Keep focus in the input so its blur doesn't
+                                // close the list before the click lands.
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => pickSuggestion({ kind: 'group', group: g }, g.displayName ?? '')}
+                                className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-start text-xs hover:bg-muted"
+                                data-testid={`members-invite-suggestion-group-${g.id}`}
+                              >
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <UsersRound className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  <span className="truncate">{g.displayName}</span>
+                                </span>
+                                <span className="shrink-0 text-[10px] text-muted-foreground">
+                                  {t`${(g.contacts ?? []).length} people`}
+                                </span>
+                              </button>
+                            ))}
+                            {/* Teams — one chip each, granted as one principal when sent. */}
+                            {suggestedTeams.map((team) => (
+                              <button
+                                key={team.id}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => addTeam(team)}
+                                disabled={teamPicked(team)}
+                                className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-start text-xs hover:bg-muted disabled:opacity-50"
+                                data-testid={`contact-team-option-${team.id}`}
+                              >
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <TeamIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  <span className="truncate">{team.name}</span>
+                                </span>
+                                <span
+                                  className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground"
+                                  data-testid={`contact-team-option-label-${team.id}`}
+                                >
+                                  <Trans>Team</Trans>
+                                </span>
+                              </button>
+                            ))}
+                            {suggestedContacts.map((u) => {
+                              const participant = participantFromContact(u);
+                              return (
+                                <button
+                                  key={u.id}
+                                  type="button"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() =>
+                                    pickSuggestion(
+                                      { kind: 'contact', participant },
+                                      u.name || u.email || participant.user_id || '',
+                                    )
+                                  }
+                                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-start text-xs hover:bg-muted"
+                                  data-testid={`members-invite-suggestion-${u.id}`}
+                                >
+                                  <Avatar className="h-5 w-5">
+                                    <AvatarFallback
+                                      className={`text-[9px] text-white ${avatarColorForParticipant(participant, false)}`}
+                                    >
+                                      {participantInitials(participant)}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                  <span className="min-w-0 flex-1 truncate">{u.name || u.email || 'unknown'}</span>
+                                  {u.name && u.email && (
+                                    <span className="max-w-[45%] truncate text-[10px] text-muted-foreground">
+                                      {u.email}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                       <AddressBookButton
-                        value={selected}
-                        onChange={handleSelectionChange}
+                        value={pending.map((x) => x.participant)}
+                        onChange={handleAddressBookChange}
                         excludeUserId={localUser?.id}
+                        enabled={formOpen}
                         disabled={inviting}
                         testId="members-address-book"
                       />
                       {offeredRoles.length > 0 && (
                         <select
-                          aria-label={t`Invite as`}
+                          aria-label={t`Role`}
                           data-testid="members-invite-role"
                           value={effectiveInviteRole}
                           disabled={inviting}
                           onChange={(e) => setInviteRole(e.target.value)}
-                          className="h-9 shrink-0 rounded-md border border-border bg-transparent px-2 text-xs uppercase tracking-wide text-muted-foreground outline-none hover:border-primary focus:border-primary disabled:opacity-40"
+                          className="h-9 shrink-0 rounded-md border border-input bg-background px-2 text-xs capitalize text-foreground outline-none transition-colors hover:border-primary/60 focus:border-primary disabled:opacity-40"
                         >
                           {offeredRoles.map((r) => (
                             <option key={r} value={r}>
@@ -482,85 +840,214 @@ export function MembersAvatarStack({
                       )}
                       <button
                         type="button"
-                        onClick={() => void handleInvite()}
-                        disabled={inviting || selected.length === 0}
-                        className="h-9 shrink-0 rounded-md border border-border bg-muted px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:bg-accent disabled:opacity-50"
-                        data-testid="members-invite-submit"
+                        onClick={handleAdd}
+                        disabled={inviting || (!draftText && !draftPick)}
+                        className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-input bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+                        data-testid="members-invite-add"
                       >
-                        {inviting ? t`Inviting…` : t`+ Add`}
+                        <Plus className="h-3.5 w-3.5" />
+                        <Trans>Add</Trans>
                       </button>
                     </div>
-                    {/* Selected recipients + the role each will be granted —
-                    per-row so a mixed batch (some admin, some member, some
-                    addressed by email, some only by hub id) is one
-                    submission, not several. Skips anyone already on the
-                    roster or with neither identifier, same filters
-                    ``handleInvite`` applies. */}
-                    {offeredRoles.length > 0 && selected.length > 0 && (
-                      <ul className="mt-1.5 flex flex-col gap-1">
-                        {selected.map((p) => {
-                          const email = (p.email ?? '').trim().toLowerCase();
-                          const isExisting = email
-                            ? existingEmails.has(email)
-                            : !!p.user_id && existingUserIds.has(p.user_id);
-                          if (isExisting || (!email && !p.user_id)) return null;
+                    {inviteError && (
+                      <div className="mt-1.5 text-[11px] text-destructive" role="alert">
+                        {inviteError}
+                      </div>
+                    )}
+                    {failedTeams.map((f) => (
+                      <div
+                        key={f.team}
+                        className="mt-1.5 text-[11px] text-destructive"
+                        role="alert"
+                        data-testid="members-invite-failed-team"
+                      >
+                        {t`Couldn't share with ${teamLabel(f)}: ${f.message}`}
+                      </div>
+                    ))}
+                    {alreadyGranted.map((s) => (
+                      <div
+                        key={s.team}
+                        className="mt-1.5 text-[11px] text-muted-foreground"
+                        data-testid="members-invite-team-already-granted"
+                      >
+                        {t`${teamLabel(s)} already has access.`}
+                      </div>
+                    ))}
+                    {grantedWithoutMessage.map((g) => (
+                      <div
+                        key={g.team}
+                        className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-400"
+                        data-testid="members-invite-team-no-message"
+                      >
+                        {t`${teamLabel(g)} now has access, but the invite message wasn't sent.`}
+                      </div>
+                    ))}
+                    {failedPeople.map((f) => (
+                      <div
+                        key={f.user_id || f.email || f.message}
+                        className="mt-1.5 text-[11px] text-destructive"
+                        role="alert"
+                        data-testid="members-invite-failed-person"
+                      >
+                        {t`Couldn't invite ${f.email || f.user_id || ''}: ${f.message}`}
+                      </div>
+                    ))}
+                    {/* The list Apply sends — one row per recipient with the
+                    role they'll be granted, changeable until Apply. A mixed
+                    batch (some admin, some member, some addressed by email,
+                    some only by hub id, whole teams) is still one submission.
+                    A team row's role is fixed: its people join as ``member``. */}
+                    {listed > 0 && (
+                      <ul
+                        className="mt-2 flex max-h-44 flex-col gap-0.5 overflow-y-auto rounded-md border border-border p-1"
+                        data-testid="members-invite-list"
+                      >
+                        {pendingTeams.map((p) => {
                           const key = participantKey(p);
-                          const roleValue = rolesByKey[key] ?? effectiveInviteRole;
+                          const label = p.name || key;
+                          // The team entry's own role (set when it was picked), shown locked.
+                          const teamRole = p.role ?? TEAM_INVITE_ROLE;
                           return (
-                            <li key={key} className="flex items-center justify-between gap-2 text-[10px]">
-                              <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                                {p.name || p.email}
+                            <li
+                              key={key}
+                              className="flex items-center gap-2 rounded px-1.5 py-1 text-xs"
+                              data-testid={`members-invite-row-${key}`}
+                            >
+                              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted">
+                                <TeamIcon className="h-3 w-3 text-muted-foreground" />
+                              </span>
+                              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                                <span className="truncate">{label}</span>
+                                <span
+                                  className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground"
+                                  data-testid={`members-invite-row-label-${key}`}
+                                >
+                                  <Trans>Team</Trans>
+                                </span>
                               </span>
                               <select
-                                aria-label={t`Invite ${p.name || p.email || key} as`}
+                                aria-label={t`Invite ${label} as`}
                                 data-testid={`members-invite-role-${key}`}
-                                value={roleValue}
-                                disabled={inviting}
-                                onChange={(e) =>
-                                  setRolesByKey((prev) => ({ ...prev, [key]: e.target.value }))
-                                }
-                                className="rounded border border-border bg-transparent px-1 py-0.5 uppercase tracking-wide text-muted-foreground outline-none hover:border-primary focus:border-primary disabled:opacity-40"
+                                value={teamRole}
+                                disabled
+                                className="h-6 shrink-0 rounded border border-transparent bg-background px-1 text-[11px] capitalize text-muted-foreground outline-none disabled:opacity-60"
                               >
-                                {offeredRoles.map((r) => (
-                                  <option key={r} value={r}>
-                                    {r}
-                                  </option>
-                                ))}
+                                <option value={teamRole}>{teamRole}</option>
                               </select>
+                              <button
+                                type="button"
+                                aria-label={t`Remove ${label} from the list`}
+                                disabled={inviting}
+                                onClick={() => setPendingTeams((prev) => prev.filter((x) => participantKey(x) !== key))}
+                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                                data-testid={`members-invite-remove-${key}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </li>
+                          );
+                        })}
+                        {pending.map((invite) => {
+                          const p = invite.participant;
+                          const key = participantKey(p);
+                          const label = p.name || p.email || p.user_id || key;
+                          return (
+                            <li
+                              key={key}
+                              className="flex items-center gap-2 rounded px-1.5 py-1 text-xs"
+                              data-testid={`members-invite-row-${key}`}
+                            >
+                              <Avatar className="h-5 w-5">
+                                <AvatarFallback
+                                  className={`text-[9px] text-white ${avatarColorForParticipant(p, false)}`}
+                                >
+                                  {participantInitials(p)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="min-w-0 flex-1 truncate">
+                                {label}
+                                {p.name && p.email && (
+                                  <span className="ms-1.5 text-[10px] text-muted-foreground">{p.email}</span>
+                                )}
+                              </span>
+                              {offeredRoles.length > 0 && (
+                                <select
+                                  aria-label={t`Invite ${label} as`}
+                                  data-testid={`members-invite-role-${key}`}
+                                  value={roleOf(invite)}
+                                  disabled={inviting}
+                                  onChange={(e) => {
+                                    const role = e.target.value;
+                                    setPending((prev) =>
+                                      prev.map((x) => (participantKey(x.participant) === key ? { ...x, role } : x)),
+                                    );
+                                  }}
+                                  className="h-6 shrink-0 rounded border border-transparent bg-background px-1 text-[11px] capitalize text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
+                                >
+                                  {offeredRoles.map((r) => (
+                                    <option key={r} value={r}>
+                                      {r}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                              <button
+                                type="button"
+                                aria-label={t`Remove ${label} from the list`}
+                                disabled={inviting}
+                                onClick={() =>
+                                  setPending((prev) => prev.filter((x) => participantKey(x.participant) !== key))
+                                }
+                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                                data-testid={`members-invite-remove-${key}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
                             </li>
                           );
                         })}
                       </ul>
                     )}
-                    {inviteError && (
-                      <div className="mt-1 text-[10px] text-destructive" role="alert">
-                        {inviteError}
-                      </div>
-                    )}
                     {allowInviteLink && (
-                      <div className="mt-2 border-t border-border pt-2">
+                      <div className="mt-3">
                         <button
                           type="button"
                           onClick={() => void handleGenerateLink()}
                           disabled={linking}
-                          className="flex w-full items-center justify-center gap-1.5 rounded border border-border bg-muted px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-accent disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded px-1 py-0.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
                           data-testid="members-invite-link"
                         >
                           {linkCopied ? <Check className="h-3 w-3" /> : <LinkIcon className="h-3 w-3" />}
-                          {linking ? t`Generating…` : linkCopied ? t`Link copied` : t`Generate link & copy`}
+                          {linking ? t`Generating…` : linkCopied ? t`Link copied` : t`Or copy an invite link`}
                         </button>
-                        <p className="mt-1 text-[10px] text-muted-foreground">
+                        <p className="mt-0.5 px-1 text-[10px] text-muted-foreground">
                           {linkCopied
                             ? t`Anyone with the link can join as a member. It's on your clipboard — it can't be shown again.`
                             : t`Creates a link anyone can use to join as a member.`}
                         </p>
                         {linkError && (
-                          <div className="mt-1 text-[10px] text-destructive" role="alert">
+                          <div className="mt-1 px-1 text-[10px] text-destructive" role="alert">
                             {linkError}
                           </div>
                         )}
                       </div>
                     )}
+                    {/* Apply — the only control that reaches the backend. */}
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-border pt-3">
+                      <span className="text-[11px] text-muted-foreground" data-testid="members-invite-count">
+                        {listed === 0 ? t`No one added yet` : t`${listed} to invite`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleApply()}
+                        disabled={inviting || listed === 0}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-md bg-brand px-4 text-xs font-semibold text-brand-foreground shadow-sm transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                        data-testid="members-invite-submit"
+                      >
+                        {inviting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        {inviting ? t`Applying…` : t`Apply`}
+                      </button>
+                    </div>
                   </div>
                 )}
               </>

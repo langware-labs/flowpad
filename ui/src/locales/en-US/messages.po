@@ -219,10 +219,9 @@ msgstr "{0, plural, one {# item cut} other {# items cut}}"
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# item} other {# items}}"
 
-#. placeholder {0}: recipients.unreachable
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
-msgstr "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
+#~ msgid "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
+#~ msgstr "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
 
 #. placeholder {0}: people.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -292,6 +291,11 @@ msgstr "{0} added, {1} updated in {teamName}."
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} already has a cloud machine"
 msgstr "{0} already has a cloud machine"
+
+#. placeholder {0}: teamLabel(s)
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{0} already has access."
+msgstr "{0} already has access."
 
 #. placeholder {0}: group.length
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -510,6 +514,11 @@ msgstr "{0} not tested"
 msgid "{0} now has \"{1}\"."
 msgstr "{0} now has \"{1}\"."
 
+#. placeholder {0}: teamLabel(g)
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{0} now has access, but the invite message wasn't sent."
+msgstr "{0} now has access, but the invite message wasn't sent."
+
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} now runs on a cloud machine"
@@ -532,6 +541,11 @@ msgstr "{0} of {1}"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "orphan_count"
 msgstr "{0} orphan{1}"
+
+#. placeholder {0}: (g.contacts ?? []).length
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{0} people"
+msgstr "{0} people"
 
 #. placeholder {0}: problems.length
 #: src/components/code-editor/SnippetView.tsx
@@ -776,6 +790,10 @@ msgstr "{latchedReason} Auto-relaunch is paused — Retry to launch again."
 msgid "{left} of {limit} requests left {windowText}"
 msgstr "{left} of {limit} requests left {windowText}"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{listed} to invite"
+msgstr "{listed} to invite"
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr "{name} avatar"
@@ -830,9 +848,14 @@ msgid "{pendingChanges} not published"
 msgstr "{pendingChanges} not published"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
-msgstr "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
+#~ msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
+#~ msgstr "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
 
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+msgid "{projectName} is already shared"
+msgstr "{projectName} is already shared"
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "{projectName} shared"
 msgstr "{projectName} shared"
@@ -883,6 +906,14 @@ msgstr "{suppressed} hub errors were suppressed in the current window."
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "{targetLabel} is now available in your workspace."
 msgstr "{targetLabel} is now available in your workspace."
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+msgid "{teamName} already has access to {projectName}."
+msgstr "{teamName} already has access to {projectName}."
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+msgid "{teamName} now has access, but the invite message wasn't sent."
+msgstr "{teamName} now has access, but the invite message wasn't sent."
 
 #. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
@@ -948,8 +979,8 @@ msgid "→ {0} (drifted)"
 msgstr "→ {0} (drifted)"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "+ Add"
-msgstr "+ Add"
+#~ msgid "+ Add"
+#~ msgstr "+ Add"
 
 #: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
 #~ msgid "+ Add a cloud machine"
@@ -1392,6 +1423,7 @@ msgstr "Activity"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -1622,6 +1654,10 @@ msgstr "Add schedule"
 #: src/components/account/secrets-section.tsx
 msgid "Add secret"
 msgstr "Add secret"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Add someone first"
+msgstr "Add someone first"
 
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
@@ -2086,6 +2122,7 @@ msgstr "Allowed senders"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Already a member — change their role in the list above"
 msgstr "Already a member — change their role in the list above"
 
@@ -2458,9 +2495,14 @@ msgstr "Applied to each member's own default endpoint; a member's budget can onl
 msgid "Applies to"
 msgstr "Applies to"
 
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Apply"
 msgstr "Apply"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Applying…"
+msgstr "Applying…"
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approval failed"
@@ -4123,6 +4165,7 @@ msgstr "Clone"
 msgid "Clone @ {branch}"
 msgstr "Clone @ {branch}"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "Clone & Open"
@@ -5627,6 +5670,7 @@ msgid "Could not set up the budget"
 msgstr "Could not set up the budget"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Could not share {projectName}"
 msgstr "Could not share {projectName}"
 
@@ -5759,6 +5803,10 @@ msgstr "Could not verify {0}"
 msgid "Could not verify available assets."
 msgstr "Could not verify available assets."
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't change this member's role."
+msgstr "Couldn't change this member's role."
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "Couldn't check for updates: {error}"
@@ -5782,6 +5830,12 @@ msgstr "Couldn't finish preparing your sandbox."
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
 msgstr "Couldn't finish preparing your workspace"
+
+#. placeholder {0}: f.email || f.user_id || ''
+#. placeholder {1}: f.message
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't invite {0}: {1}"
+msgstr "Couldn't invite {0}: {1}"
 
 #. placeholder {0}: shellId.slice(0, 8)
 #. placeholder {1}: directCleanup.title
@@ -5842,8 +5896,12 @@ msgstr "Couldn't read this folder's Git status."
 #~ msgstr "Couldn't read this project's Git status."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Couldn't read this team's people."
-msgstr "Couldn't read this team's people."
+#~ msgid "Couldn't read this team's people."
+#~ msgstr "Couldn't read this team's people."
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't remove this member."
+msgstr "Couldn't remove this member."
 
 #: src/components/terminal/project-launch-bar.tsx
 msgid "Couldn't resolve the launch commands for this folder"
@@ -5863,6 +5921,12 @@ msgstr "Couldn't set up the project"
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Couldn't set up the sandbox."
 msgstr "Couldn't set up the sandbox."
+
+#. placeholder {0}: teamLabel(f)
+#. placeholder {1}: f.message
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't share with {0}: {1}"
+msgstr "Couldn't share with {0}: {1}"
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Couldn't start GitHub connection."
@@ -7668,6 +7732,14 @@ msgstr "Email {0} an invitation to {teamName}"
 #~ msgid "Email not moved."
 #~ msgstr "Email not moved."
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Email or name"
+msgstr "Email or name"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Email or name to invite"
+msgstr "Email or name to invite"
+
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Email settings could not be saved."
 msgstr "Email settings could not be saved."
@@ -8106,20 +8178,32 @@ msgstr "Every team and budget inside {0} is deleted with it. This cannot be undo
 #~ msgstr "Every value is already on this machine — nothing to type."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} has been invited."
-msgstr "Everyone in {teamName} has been invited."
+msgid "Everyone in {teamName} gets this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
+msgstr "Everyone in {teamName} gets this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
-msgstr "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
+#~ msgid "Everyone in {teamName} has been invited."
+#~ msgstr "Everyone in {teamName} has been invited."
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+#~ msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
+#~ msgstr "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #~ msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its skills travel with its files, over Git."
 #~ msgstr "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its skills travel with its files, over Git."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} will be invited to the project you pick."
-msgstr "Everyone in {teamName} will be invited to the project you pick."
+msgid "Everyone in {teamName} now has access."
+msgstr "Everyone in {teamName} now has access."
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+#~ msgid "Everyone in {teamName} will be invited to the project you pick."
+#~ msgstr "Everyone in {teamName} will be invited to the project you pick."
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+msgid "Everyone in {teamName} will get the project you pick."
+msgstr "Everyone in {teamName} will get the project you pick."
 
 #. placeholder {0}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -9383,8 +9467,8 @@ msgid "Generate FlowPad API Key"
 msgstr "Generate FlowPad API Key"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Generate link & copy"
-msgstr "Generate link & copy"
+#~ msgid "Generate link & copy"
+#~ msgstr "Generate link & copy"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Generated"
@@ -9472,6 +9556,7 @@ msgstr "Git status of the working directory"
 msgid "Git tooling installed"
 msgstr "Git tooling installed"
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Git URL"
 msgstr "Git URL"
@@ -10547,6 +10632,10 @@ msgstr "Install global"
 msgid "Install in project"
 msgstr "Install in project"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "Install project"
+msgstr "Install project"
+
 #: src/components/install/InstallButton.tsx
 msgid "Install this asset on your desktop"
 msgstr "Install this asset on your desktop"
@@ -10711,22 +10800,26 @@ msgstr "Invitations — dismiss"
 msgid "Invite"
 msgstr "Invite"
 
-#. placeholder {0}: p.name || p.email || key
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Invite {0} as"
-msgstr "Invite {0} as"
+#~ msgid "Invite {0} as"
+#~ msgstr "Invite {0} as"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Invite as"
-msgstr "Invite as"
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite {label} as"
+msgstr "Invite {label} as"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+#~ msgid "Invite as"
+#~ msgstr "Invite as"
 
 #: src/components/account/organization-panel.tsx
 msgid "Invite by email…"
 msgstr "Invite by email…"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Invite by name or email…"
-msgstr "Invite by name or email…"
+#~ msgid "Invite by name or email…"
+#~ msgstr "Invite by name or email…"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
@@ -10737,6 +10830,7 @@ msgstr "Invite failed"
 msgid "Invite members"
 msgstr "Invite members"
 
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "Invite people"
 msgstr "Invite people"
@@ -10747,8 +10841,8 @@ msgid "Invited {trimmed}."
 msgstr "Invited {trimmed}."
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Inviting…"
-msgstr "Inviting…"
+#~ msgid "Inviting…"
+#~ msgstr "Inviting…"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
@@ -11615,6 +11709,10 @@ msgstr "Loading preview…"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
 msgstr "Loading project resources..."
+
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "Loading project…"
+msgstr "Loading project…"
 
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Loading projects..."
@@ -12492,6 +12590,7 @@ msgstr "N/A"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -13061,6 +13160,10 @@ msgstr "No connection test is defined for this provider."
 msgid "No connections yet"
 msgstr "No connections yet"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "No contact by that name — enter a full email"
+msgstr "No contact by that name — enter a full email"
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "No contacts found."
 msgstr "No contacts found."
@@ -13430,6 +13533,10 @@ msgstr "No models."
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
 msgstr "No narrowing — everything the roots allow."
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "No one added yet"
+msgstr "No one added yet"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "No Operation (Trace Only)"
@@ -14411,6 +14518,7 @@ msgid "Only people you share with can view this agent."
 msgstr "Only people you share with can view this agent."
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -15037,6 +15145,10 @@ msgstr "Optional message to the members…"
 msgid "Optional message to the owner…"
 msgstr "Optional message to the owner…"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Or copy an invite link"
+msgstr "Or copy an invite link"
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Or send them this link"
 msgstr "Or send them this link"
@@ -15475,7 +15587,6 @@ msgstr "Phone number"
 msgid "Phone number — recorded on the agent's card, not yet used to route messages"
 msgstr "Phone number — recorded on the agent's card, not yet used to route messages"
 
-#: src/components/conversation/MembersAvatarStack.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Pick a contact or enter an email"
 msgstr "Pick a contact or enter an email"
@@ -15912,7 +16023,10 @@ msgstr "project"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -16014,6 +16128,10 @@ msgstr "Project not found locally"
 msgid "Project not found."
 msgstr "Project not found."
 
+#: src/components/project-home/PublishProjectDialog.tsx
+msgid "Project not published"
+msgstr "Project not published"
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Project not recoverable from this workdir."
 msgstr "Project not recoverable from this workdir."
@@ -16043,6 +16161,7 @@ msgstr "Project tabs cannot load {0}."
 msgid "Project to load"
 msgstr "Project to load"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/routes/loaders/load-project.ts
 msgid "Project unavailable"
 msgstr "Project unavailable"
@@ -16241,6 +16360,10 @@ msgstr "Public access removed"
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Publish"
 msgstr "Publish"
+
+#: src/components/project-home/PublishProjectDialog.tsx
+msgid "Publish {name} to the cloud before inviting people — invitees get the project from there."
+msgstr "Publish {name} to the cloud before inviting people — invitees get the project from there."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 msgid "Publish failed."
@@ -16488,8 +16611,8 @@ msgid "Reading the history…"
 msgstr "Reading the history…"
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Reading this team's people…"
-msgstr "Reading this team's people…"
+#~ msgid "Reading this team's people…"
+#~ msgstr "Reading this team's people…"
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Reading…"
@@ -16557,6 +16680,10 @@ msgstr "Received attachments — review before installing."
 #: src/components/show-view/ShowView.tsx
 msgid "Received pointer: {0}"
 msgstr "Received pointer: {0}"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received project — review before installing."
+msgstr "Received project — review before installing."
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Recency Boost"
@@ -16851,6 +16978,11 @@ msgstr "Remove {0} from {teamName}"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
 msgstr "Remove {label}"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Remove {label} from the list"
+msgstr "Remove {label} from the list"
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Remove access"
@@ -17563,6 +17695,10 @@ msgstr "Review each attached asset and choose how to install it."
 msgid "Review prompts"
 msgstr "Review prompts"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Review the shared project and install it."
+msgstr "Review the shared project and install it."
+
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Revision history of this file"
 msgstr "Revision history of this file"
@@ -17584,6 +17720,7 @@ msgstr "Revoke"
 msgid "Right-to-left paragraph"
 msgstr "Right-to-left paragraph"
 
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
@@ -18989,6 +19126,10 @@ msgstr "Setup guide"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Setup instructions"
 msgstr "Setup instructions"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Several contacts match — pick one from the list"
+msgstr "Several contacts match — pick one from the list"
 
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/entity-actions/ShareButton.tsx
@@ -20600,6 +20741,8 @@ msgid "Tasks"
 msgstr "Tasks"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/token-plan/token-plan-math.ts
 #: src/i18n/type-labels.ts
 msgid "Team"
@@ -20992,6 +21135,10 @@ msgstr "The organization's budget and its stored key are deleted, and every team
 #: src/components/conversation/MessageComposer.tsx
 msgid "the other participant"
 msgstr "the other participant"
+
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "The project could not be installed."
+msgstr "The project could not be installed."
 
 #: src/components/assets/editor/agent-profile/CredentialChild.tsx
 msgid "The project declares the same variables; its values are the ones its runs get."
@@ -21550,8 +21697,8 @@ msgid "This project is now available in the cloud."
 msgstr "This project is now available in the cloud."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "This project isn't in the cloud yet — sharing it links it there first."
-msgstr "This project isn't in the cloud yet — sharing it links it there first."
+#~ msgid "This project isn't in the cloud yet — sharing it links it there first."
+#~ msgstr "This project isn't in the cloud yet — sharing it links it there first."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #~ msgid "This project isn't ready to link to the cloud."
@@ -22213,6 +22360,7 @@ msgstr "Trigger"
 msgid "Triggers"
 msgstr "Triggers"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/terminal/TerminalPanel.tsx
@@ -22268,6 +22416,10 @@ msgstr "Type a comment..."
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Type a note..."
 msgstr "Type a note..."
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Type an email or a name"
+msgstr "Type an email or a name"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Type it manually on the GitHub page."

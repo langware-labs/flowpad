@@ -219,10 +219,9 @@ msgstr "{0, plural, one {تم قص # عنصر} other {تم قص # عناصر}}"
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# عنصر} other {# عناصر}}"
 
-#. placeholder {0}: recipients.unreachable
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
-msgstr ""
+#~ msgid "{0, plural, one {# person on this team has no email address, so they can't be invited.} other {# people on this team have no email address, so they can't be invited.}}"
+#~ msgstr ""
 
 #. placeholder {0}: people.length
 #: src/components/organization/budgets/OrgSharePanel.tsx
@@ -291,6 +290,11 @@ msgstr ""
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} already has a cloud machine"
+msgstr ""
+
+#. placeholder {0}: teamLabel(s)
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{0} already has access."
 msgstr ""
 
 #. placeholder {0}: group.length
@@ -510,6 +514,11 @@ msgstr "{0} لم يُختبر"
 msgid "{0} now has \"{1}\"."
 msgstr "لدى {0} الآن \"{1}\"."
 
+#. placeholder {0}: teamLabel(g)
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{0} now has access, but the invite message wasn't sent."
+msgstr ""
+
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
 msgid "{0} now runs on a cloud machine"
@@ -532,6 +541,11 @@ msgstr ""
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "orphan_count"
 msgstr "{0} سجل يتيم{1}"
+
+#. placeholder {0}: (g.contacts ?? []).length
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{0} people"
+msgstr ""
 
 #. placeholder {0}: problems.length
 #: src/components/code-editor/SnippetView.tsx
@@ -776,6 +790,10 @@ msgstr "{latchedReason} تم إيقاف إعادة التشغيل التلقائ
 msgid "{left} of {limit} requests left {windowText}"
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{listed} to invite"
+msgstr ""
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr ""
@@ -830,9 +848,14 @@ msgid "{pendingChanges} not published"
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
+#~ msgid "{people, plural, one {# person will be invited.} other {# people will be invited.}}"
+#~ msgstr ""
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+msgid "{projectName} is already shared"
 msgstr ""
 
+#: src/components/organization/budgets/ShareProjectPanel.tsx
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "{projectName} shared"
 msgstr ""
@@ -883,6 +906,14 @@ msgstr "تم قمع {suppressed} من أخطاء Hub في النافذة الح�
 #: src/components/stream-inbox-view/MembershipInvitations.tsx
 msgid "{targetLabel} is now available in your workspace."
 msgstr "أصبح {targetLabel} متاحاً الآن في مساحة عملك."
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+msgid "{teamName} already has access to {projectName}."
+msgstr ""
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+msgid "{teamName} now has access, but the invite message wasn't sent."
+msgstr ""
 
 #. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
@@ -948,8 +979,8 @@ msgid "→ {0} (drifted)"
 msgstr "→ {0} (انزاح)"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "+ Add"
-msgstr "+ إضافة"
+#~ msgid "+ Add"
+#~ msgstr "+ إضافة"
 
 #: src/components/assets/editor/agent-profile/AgentAddCloudMachine.tsx
 #~ msgid "+ Add a cloud machine"
@@ -1392,6 +1423,7 @@ msgstr "النشاط"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -1622,6 +1654,10 @@ msgstr ""
 #: src/components/account/secrets-section.tsx
 msgid "Add secret"
 msgstr "إضافة سر"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Add someone first"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
 #: src/components/llm-endpoints/ShareEndpointDialog.tsx
@@ -2086,6 +2122,7 @@ msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Already a member — change their role in the list above"
 msgstr "عضو بالفعل — يمكن تغيير دوره من القائمة أعلاه"
 
@@ -2458,9 +2495,14 @@ msgstr ""
 msgid "Applies to"
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Apply"
 msgstr "تطبيق"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Applying…"
+msgstr ""
 
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approval failed"
@@ -4123,6 +4165,7 @@ msgstr "استنساخ"
 msgid "Clone @ {branch}"
 msgstr "استنساخ @ {branch}"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "استنساخ وفتح"
@@ -5627,6 +5670,7 @@ msgid "Could not set up the budget"
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
+#: src/components/organization/budgets/ShareProjectPanel.tsx
 msgid "Could not share {projectName}"
 msgstr ""
 
@@ -5759,6 +5803,10 @@ msgstr "تعذر التحقق من {0}"
 msgid "Could not verify available assets."
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't change this member's role."
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "تعذر التحقق من التحديثات: {error}"
@@ -5782,6 +5830,12 @@ msgstr ""
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
 msgstr "تعذّر إكمال تحضير مساحة العمل"
+
+#. placeholder {0}: f.email || f.user_id || ''
+#. placeholder {1}: f.message
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't invite {0}: {1}"
+msgstr ""
 
 #. placeholder {0}: shellId.slice(0, 8)
 #. placeholder {1}: directCleanup.title
@@ -5842,7 +5896,11 @@ msgstr "تعذر قراءة حالة Git لهذا المجلد."
 #~ msgstr "تعذرت قراءة حالة Git لهذا المشروع."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Couldn't read this team's people."
+#~ msgid "Couldn't read this team's people."
+#~ msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't remove this member."
 msgstr ""
 
 #: src/components/terminal/project-launch-bar.tsx
@@ -5862,6 +5920,12 @@ msgstr "تعذر إعداد المشروع"
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Couldn't set up the sandbox."
+msgstr ""
+
+#. placeholder {0}: teamLabel(f)
+#. placeholder {1}: f.message
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't share with {0}: {1}"
 msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -7668,6 +7732,14 @@ msgstr ""
 #~ msgid "Email not moved."
 #~ msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Email or name"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Email or name to invite"
+msgstr ""
+
 #: src/hooks/use-allocate-agent-mailbox.ts
 msgid "Email settings could not be saved."
 msgstr ""
@@ -8106,19 +8178,31 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} has been invited."
+msgid "Everyone in {teamName} gets this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
-msgstr ""
+#~ msgid "Everyone in {teamName} has been invited."
+#~ msgstr ""
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+#~ msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its published skills and documents come with it, from the project's repository on the hub."
+#~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #~ msgid "Everyone in {teamName} is invited to this project and sees it in their own project list, in the language the project is worked in. Its skills travel with its files, over Git."
 #~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Everyone in {teamName} will be invited to the project you pick."
+msgid "Everyone in {teamName} now has access."
+msgstr ""
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+#~ msgid "Everyone in {teamName} will be invited to the project you pick."
+#~ msgstr ""
+
+#: src/components/organization/budgets/ShareProjectPanel.tsx
+msgid "Everyone in {teamName} will get the project you pick."
 msgstr ""
 
 #. placeholder {0}: team.name
@@ -9383,8 +9467,8 @@ msgid "Generate FlowPad API Key"
 msgstr "إنشاء مفتاح FlowPad API"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Generate link & copy"
-msgstr "إنشاء ونسخ الرابط"
+#~ msgid "Generate link & copy"
+#~ msgstr "إنشاء ونسخ الرابط"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Generated"
@@ -9472,6 +9556,7 @@ msgstr "حالة Git لدليل العمل"
 msgid "Git tooling installed"
 msgstr "تم تثبيت أدوات Git"
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Git URL"
 msgstr "عنوان Git URL"
@@ -10547,6 +10632,10 @@ msgstr "تثبيت عالمياً"
 msgid "Install in project"
 msgstr "تثبيت في المشروع"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "Install project"
+msgstr ""
+
 #: src/components/install/InstallButton.tsx
 msgid "Install this asset on your desktop"
 msgstr ""
@@ -10711,22 +10800,26 @@ msgstr "الدعوات — المتجاهلة"
 msgid "Invite"
 msgstr "دعوة"
 
-#. placeholder {0}: p.name || p.email || key
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Invite {0} as"
+#~ msgid "Invite {0} as"
+#~ msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite {label} as"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Invite as"
-msgstr ""
+#~ msgid "Invite as"
+#~ msgstr ""
 
 #: src/components/account/organization-panel.tsx
 msgid "Invite by email…"
 msgstr "دعوة عبر البريد الإلكتروني…"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Invite by name or email…"
-msgstr "دعوة بالاسم أو البريد الإلكتروني…"
+#~ msgid "Invite by name or email…"
+#~ msgstr "دعوة بالاسم أو البريد الإلكتروني…"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/organization/invite-row.tsx
@@ -10737,6 +10830,7 @@ msgstr "فشل إرسال الدعوة"
 msgid "Invite members"
 msgstr "دعوة الأعضاء"
 
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/organization/org-detail-panel.tsx
 msgid "Invite people"
 msgstr ""
@@ -10747,8 +10841,8 @@ msgid "Invited {trimmed}."
 msgstr "تمت دعوة {trimmed}."
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Inviting…"
-msgstr "جاري الدعوة…"
+#~ msgid "Inviting…"
+#~ msgstr "جاري الدعوة…"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
@@ -11615,6 +11709,10 @@ msgstr ""
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Loading project resources..."
 msgstr "جاري تحميل موارد المشروع..."
+
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "Loading project…"
+msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Loading projects..."
@@ -12492,6 +12590,7 @@ msgstr "غير متاح"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -13061,6 +13160,10 @@ msgstr "لم يتم تعريف اختبار اتصال لهذا المزود."
 msgid "No connections yet"
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "No contact by that name — enter a full email"
+msgstr ""
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "No contacts found."
 msgstr "لم يتم العثور على جهات اتصال."
@@ -13429,6 +13532,10 @@ msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 msgid "No narrowing — everything the roots allow."
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "No one added yet"
 msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
@@ -14411,6 +14518,7 @@ msgid "Only people you share with can view this agent."
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -15037,6 +15145,10 @@ msgstr "رسالة اختيارية للأعضاء…"
 msgid "Optional message to the owner…"
 msgstr "رسالة إلى المالك (اختياري)…"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Or copy an invite link"
+msgstr ""
+
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Or send them this link"
 msgstr "أو يمكنك إرسال هذا الرابط إليهم"
@@ -15475,7 +15587,6 @@ msgstr "رقم الهاتف"
 msgid "Phone number — recorded on the agent's card, not yet used to route messages"
 msgstr "رقم الهاتف — مُسجَّل في بطاقة الوكيل، ولا يُستخدم بعد لتوجيه الرسائل"
 
-#: src/components/conversation/MembersAvatarStack.tsx
 #: src/pages/hub-home/ShareSandboxDialog.tsx
 msgid "Pick a contact or enter an email"
 msgstr "يمكن اختيار جهة اتصال أو إدخال بريد إلكتروني"
@@ -15912,7 +16023,10 @@ msgstr "مشروع"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -16014,6 +16128,10 @@ msgstr "لم يتم العثور على المشروع محليًا"
 msgid "Project not found."
 msgstr "لم يتم العثور على المشروع."
 
+#: src/components/project-home/PublishProjectDialog.tsx
+msgid "Project not published"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Project not recoverable from this workdir."
 msgstr "المشروع غير قابل للاسترجاع من مجلد العمل هذا."
@@ -16043,6 +16161,7 @@ msgstr "تعذر تحميل علامة التبويب {0}."
 msgid "Project to load"
 msgstr "المشروع المراد تحميله"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/routes/loaders/load-project.ts
 msgid "Project unavailable"
 msgstr "المشروع غير متاح"
@@ -16240,6 +16359,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Publish"
+msgstr ""
+
+#: src/components/project-home/PublishProjectDialog.tsx
+msgid "Publish {name} to the cloud before inviting people — invitees get the project from there."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -16488,8 +16611,8 @@ msgid "Reading the history…"
 msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "Reading this team's people…"
-msgstr ""
+#~ msgid "Reading this team's people…"
+#~ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Reading…"
@@ -16557,6 +16680,10 @@ msgstr "تم استلام مرفقات — يُرجى المراجعة قبل ا
 #: src/components/show-view/ShowView.tsx
 msgid "Received pointer: {0}"
 msgstr "المؤشر المستلم: {0}"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received project — review before installing."
+msgstr ""
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Recency Boost"
@@ -16851,6 +16978,11 @@ msgstr ""
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove {label}"
 msgstr "إزالة {label}"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Remove {label} from the list"
+msgstr ""
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Remove access"
@@ -17563,6 +17695,10 @@ msgstr "يُرجى مراجعة كل عنصر مرفق واختيار كيفية
 msgid "Review prompts"
 msgstr "مراجعة التعليمات"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Review the shared project and install it."
+msgstr ""
+
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Revision history of this file"
 msgstr "سجل مراجعات هذا الملف"
@@ -17584,6 +17720,7 @@ msgstr ""
 msgid "Right-to-left paragraph"
 msgstr "فقرة من اليمين إلى اليسار"
 
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/git/RepoPicker.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/invite-row.tsx
@@ -18988,6 +19125,10 @@ msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Setup instructions"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Several contacts match — pick one from the list"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/ShareAgentDialog.tsx
@@ -20600,6 +20741,8 @@ msgid "Tasks"
 msgstr "المهام"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/token-plan/token-plan-math.ts
 #: src/i18n/type-labels.ts
 msgid "Team"
@@ -20991,6 +21134,10 @@ msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "the other participant"
+msgstr ""
+
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
+msgid "The project could not be installed."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/CredentialChild.tsx
@@ -21550,8 +21697,8 @@ msgid "This project is now available in the cloud."
 msgstr "أصبح هذا المشروع متاحًا الآن في السحابة."
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
-msgid "This project isn't in the cloud yet — sharing it links it there first."
-msgstr ""
+#~ msgid "This project isn't in the cloud yet — sharing it links it there first."
+#~ msgstr ""
 
 #: src/components/organization/budgets/ShareProjectPanel.tsx
 #~ msgid "This project isn't ready to link to the cloud."
@@ -22213,6 +22360,7 @@ msgstr "مشغل"
 msgid "Triggers"
 msgstr "المشغّلات"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/terminal/TerminalPanel.tsx
@@ -22268,6 +22416,10 @@ msgstr "كتابة تعليق..."
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Type a note..."
 msgstr "كتابة ملاحظة..."
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Type an email or a name"
+msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Type it manually on the GitHub page."
