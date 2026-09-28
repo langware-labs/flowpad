@@ -23,8 +23,7 @@ register_all()
 
 
 async def _project_with_values(tmp_path, **secrets):
-    project = Project(name=unique_project_name("load-proj"), fs_storage_mount_path=str(tmp_path / "load-proj"))
-    project.fs_storage_mount_path = str(tmp_path)
+    project = Project(name=unique_project_name("load-proj"), fs_storage_mount_path=str(tmp_path))
     await project.save()
     if secrets:
         await save_credential(

@@ -35,8 +35,7 @@ async def _declare(project, *env_vars, name="pack", values=None):
 
 async def _project_with(tmp_path, *env_vars, name="node-secrets-proj"):
     tmp_path.mkdir(parents=True, exist_ok=True)
-    project = Project(name=unique_project_name(name))
-    project.fs_storage_mount_path = str(tmp_path)
+    project = Project(name=unique_project_name(name), fs_storage_mount_path=str(tmp_path))
     await project.save()
     if env_vars:
         await _declare(project, *env_vars)
