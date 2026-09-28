@@ -222,6 +222,9 @@ runs:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
         FLOWPAD_SKIP_LOCK: 'true'
+        # A fresh DB fires first-run setup on the first tab: it steers that tab to
+        # the wizard page and runs tool checks while the speed budgets are measured.
+        FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
       run: |
         kill "$BACKEND_PID" 2>/dev/null || true
         for i in $(seq 1 30); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; done
