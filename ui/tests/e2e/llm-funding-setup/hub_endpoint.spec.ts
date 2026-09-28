@@ -86,6 +86,11 @@ test('a box bound to a hub LLMEndpoint falls back to the model its CHAIN allows,
   await expect(viewer.getByRole('heading', { name: WIZARD_NAME })).toBeVisible();
   await page.getByTestId('wizard-run').click();
 
+  // This fixture is indexed from a test-only folder, not the shipped flowpad_assistant tree,
+  // so the backend correctly reports it as unshipped and the UI asks for one-time approval
+  // before running shell commands from it.
+  await page.getByTestId('wizard-approve').click();
+
   const modal = page.getByTestId('ask-modal');
   await expect(async () => {
     if (await modal.isVisible()) {

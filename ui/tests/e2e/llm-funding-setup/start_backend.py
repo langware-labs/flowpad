@@ -19,8 +19,12 @@ Does, in order:
   4. Boots the real backend with FLOWPAD_HUB_URL pointing at the fake hub and
      FLOWPAD_SKIP_FIRST_RUN_SETUP=true (the spec navigates to the wizard directly; the
      fire-once trigger is a different scenario's coverage, not this one's).
-  5. Waits for bootstrap readiness, then writes launcher.json (the headless instance
-     contract) and prints the backend PID on its own stdout line for the caller to capture.
+  5. Waits for bootstrap readiness, pins the default agent harness to deepagents (otherwise
+     an installed CLI harness like claude silently wins — see `_pin_harness_to_deepagents`),
+     and indexes this script's own wizard/compute_op fixtures (see `_index_fixture_assets` —
+     they ship from beside this script, never from the real flowpad_assistant asset tree).
+  6. Writes launcher.json (the headless instance contract) and prints the backend PID on its
+     own stdout line for the caller to capture.
 """
 
 from __future__ import annotations
@@ -129,6 +133,30 @@ def _pin_harness_to_deepagents(be_port: int) -> None:
         raise RuntimeError(f"failed to pin default harness to deepagents: {result}")
 
 
+def _index_fixture_assets(be_port: int) -> None:
+    """Index this script's own wizard/compute_op fixtures into the running backend.
+
+    The fixtures live under `fixtures/agentic-assets/` beside this script — never under the
+    shipped `flow_sdk/system_projects/flowpad_assistant/agentic-assets/` tree, so a real user
+    never gets these e2e-only assets (deliberately broken install commands, made-up model
+    names, ...). That means they aren't on the eager SYSTEM_ROOT sweep every real asset rides,
+    so they have to be indexed explicitly: the `@local` compute_node's `fs-records/index`
+    action runs `FSIndexer.index()` synchronously and returns only once done — no polling, no
+    race with an eager-but-elsewhere sweep (confirmed the alternative, `FLOWPAD_SKILL_DIRS`
+    env var, is never picked up eagerly — 40s of polling never turned it up).
+    """
+    fixtures_dir = Path(__file__).resolve().parent / "fixtures"
+    request = urllib.request.Request(
+        f"http://localhost:{be_port}/api/v1/graph/compute_node/@local/fs-records/index?path={fixtures_dir}",
+        data=b"",
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as resp:
+        result = json.loads(resp.read())
+    if result.get("status") != "SUCCESS" or result.get("data", {}).get("indexed", 0) < 1:
+        raise RuntimeError(f"failed to index e2e fixture assets: {result}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=["hub-endpoint", "global-default"], required=True)
@@ -233,6 +261,7 @@ def main() -> None:
         raise RuntimeError(f"backend on port {args.be_port} did not become ready within 60s")
 
     _pin_harness_to_deepagents(args.be_port)
+    _index_fixture_assets(args.be_port)
 
     launcher_dir = Path(args.flow_home) / "instances" / args.instance
     launcher_dir.mkdir(parents=True, exist_ok=True)
