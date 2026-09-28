@@ -999,10 +999,12 @@ class AgentServer:
         and every local one whose process is alive though it should not be (stopped serving, or its
         agent switched off, while this server did not hold it — a restart)."""
         from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         wanted: dict[str, tuple] = {}
         strays: list = []
-        for deployment in await Deployment.get_all():
+        agents = QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["parent_type_id", "agent-%"]))
+        for deployment in await Deployment.get_all(agents):
             if not deployment.places_agent or not deployment.is_local:
                 continue
             agent = await deployment.agent() if deployment.serving else None

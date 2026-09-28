@@ -788,9 +788,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     async def deployments_here(self) -> list:
         """Every deployment placed on this machine."""
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import NODE_PROVIDERS, Deployment  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-        return [d for d in await Deployment.get_all() if d.compute_node_id == self.id]
+        # A placement is on a node only if its provider is node-backed; the node itself is derived.
+        node_backed = QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["target.provider", sorted(NODE_PROVIDERS)]))
+        return [d for d in await Deployment.get_all(node_backed) if d.compute_node_id == self.id]
 
     async def service_endpoints(self) -> list:
         """Every service this machine answers on: the endpoints of every deployment placed on it."""
