@@ -11727,6 +11727,7 @@ msgstr "טוען..."
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -13853,6 +13854,10 @@ msgstr "אין סוגים תואמים את הסינון"
 msgid "No uncommitted changes"
 msgstr "אין שינויים ממתינים"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "No unpushed commits"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No unread conversations"
 msgstr "אין שיחות שלא נקראו"
@@ -14016,6 +14021,10 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not published yet"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Not pushed yet"
 msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
@@ -19356,6 +19365,10 @@ msgstr "הצגת עקבה"
 #: src/components/settings-view/settings-utils.ts
 msgid "Show Turn Duration"
 msgstr "הצגת משך הסבב"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Show unpushed commits"
+msgstr ""
 
 #: src/components/credentials/SecretValueInput.tsx
 msgid "Show value"

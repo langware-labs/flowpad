@@ -11727,6 +11727,7 @@ msgstr "Loading..."
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/wiki-tip/HubWikiMarkdown.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -13853,6 +13854,10 @@ msgstr "No types match filter"
 msgid "No uncommitted changes"
 msgstr "No uncommitted changes"
 
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "No unpushed commits"
+msgstr "No unpushed commits"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "No unread conversations"
 msgstr "No unread conversations"
@@ -14017,6 +14022,10 @@ msgstr "Not published"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not published yet"
 msgstr "Not published yet"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Not pushed yet"
+msgstr "Not pushed yet"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "not reachable"
@@ -19356,6 +19365,10 @@ msgstr "Show Trace"
 #: src/components/settings-view/settings-utils.ts
 msgid "Show Turn Duration"
 msgstr "Show Turn Duration"
+
+#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
+msgid "Show unpushed commits"
+msgstr "Show unpushed commits"
 
 #: src/components/credentials/SecretValueInput.tsx
 msgid "Show value"
