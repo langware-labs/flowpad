@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Iterator
 
 from flow_sdk.config import agent_workspace_root, is_hidden_project
@@ -70,6 +70,12 @@ async def get_cached_projects(*, force: bool = False):
         from flow_sdk.builtin.project import Project  # local: avoid circular import
         _PROJECTS_CACHE = await Project.get_all()
     return _PROJECTS_CACHE
+
+
+def is_inside_any(cwd: str, mounts) -> bool:
+    """True when a STRICT ancestor of ``cwd`` is one of ``mounts`` (canonical posix
+    paths) — the folder lies inside another project."""
+    return any(str(parent) in mounts for parent in PurePosixPath(cwd).parents)
 
 
 def _entity_to_project_info(proj, cwd: str) -> ProjectInfo:
@@ -287,6 +293,13 @@ async def join_projects(
                 # the folder to the LAST row while every find_by_cwd caller got
                 # the FIRST. One folder, two project ids, depending on who asked.
                 by_cwd.setdefault(canonical, proj)
+
+    # A session running is not a project. A folder an agent ran in INSIDE another
+    # project (a service's per-user home, a subpackage someone opened a session in)
+    # belongs to that project; minting it its own row spun a project per folder.
+    claimed = set(by_cwd) | set(fs_by_cwd)
+    for cwd in [c for c in fs_by_cwd if c not in by_cwd and is_inside_any(c, claimed)]:
+        del fs_by_cwd[cwd]
 
     to_create: list[ProjectInfo] = []
     for cwd, info in fs_by_cwd.items():

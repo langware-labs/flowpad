@@ -589,3 +589,53 @@ async def test_duplicate_mount_path_resolves_to_the_same_row_everywhere(
     assert len(scanned) == 1, scanned
     assert found is not None and indexed is not None
     assert scanned[0] == found.id == indexed.id
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_a_session_inside_an_existing_project_mints_no_project(project_db, tmp_path, monkeypatch):
+    """A session running is not a project. Spora's chat-service runs an agent in each
+    user's home under ``platform/var/users/<u>``, and a developer runs one in
+    ``ui/sim/backend``; each leaves a ``~/.claude/projects`` entry for that folder.
+    The picker scan used to mint a Project per such folder — 16 of them inside one
+    checkout — and each new Project wrote a manifest into the folder."""
+    import dataclasses
+    import json
+
+    import flow_sdk.instance_settings as isettings
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    home = tmp_path / "home"
+    spora = home / "dev" / "spora"
+    user_home = spora / "platform" / "var" / "users" / "alice"
+    user_home.mkdir(parents=True)
+    records_root = tmp_path / "records"
+    records_root.mkdir(exist_ok=True)
+
+    existing = Project(name="spora", fs_storage_mount_path=canonical_posix_path(spora))
+    existing.id = Project.allocate_id(existing.model_dump())
+    await existing.save()
+
+    # Claude Code's own record of a session: one folder per cwd, a JSONL naming it.
+    for cwd in (spora, user_home):
+        folder = home / ".claude" / "projects" / str(cwd).replace("/", "-")
+        folder.mkdir(parents=True)
+        (folder / "session.jsonl").write_text(json.dumps({"type": "user", "cwd": str(cwd)}) + "\n")
+
+    patched = dataclasses.replace(
+        isettings.get_instance_settings(),
+        user_home=home,
+        claude_projects_dir=home / ".claude" / "projects",
+        codex_config_path=home / ".codex" / "config.toml",
+        records_root=records_root,
+    )
+    import flow_sdk.fs_store.operations.all_projects as ap
+    monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
+
+    projects = await ap.get_all_projects(include_temp=True, create_missing=True)
+
+    assert [p.cwd for p in projects] == [canonical_posix_path(spora)]
+    assert await Project.find_by_cwd(canonical_posix_path(user_home)) is None
+    assert [p.id for p in await Project.get_all()] == [existing.id]
