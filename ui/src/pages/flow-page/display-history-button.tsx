@@ -10,7 +10,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Human label for a display target — an app's name, a file's basename, or the
  *  entity's type/id. */
-function entryLabel(entry: DisplayEntry): string {
+export function entryLabel(entry: DisplayEntry): string {
   if (entry.kind === 'app' && entry.name) return entry.name;
   if (entry.path) return entry.path.split('/').pop() || entry.path;
   if (entry.type && entry.id) return `${entry.type} · ${entry.id.slice(0, 8)}`;
@@ -19,7 +19,7 @@ function entryLabel(entry: DisplayEntry): string {
 
 /** Per-entry glyph: the backend TypeInfo icon for a shown entity, else a
  *  kind-based fallback (file / globe). */
-function EntryIcon({ entry }: { entry: DisplayEntry }) {
+export function EntryIcon({ entry }: { entry: DisplayEntry }) {
   if (entry.kind === 'app') return <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
   if (entry.type) {
     const Icon = iconForType(entry.type);

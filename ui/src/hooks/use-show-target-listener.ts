@@ -20,8 +20,8 @@ import { useCallback, useEffect, useRef } from 'react';
  * **It never navigates.** A show is the agent saying "this is ready", not "drop
  * what you are doing" — and unlike vibe's pane repaint, navigating here would
  * yank a user who is mid-task in another tab. The intent is carried instead by
- * a brief glow on the destination tab and `ShownTargetBadge` on the process's
- * own chip. Three problems
+ * a brief glow on the destination tab and the Shown chip on the process's
+ * bottom ribbon (beside Open Plan). Three problems
  * fall away with the navigation: a background agent cannot interrupt anyone,
  * `on_show`'s broadcast to EVERY client (browser tabs, `/win` popouts, the
  * desktop shell) becomes idempotent — minting one deterministic row N times is

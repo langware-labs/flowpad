@@ -1,12 +1,14 @@
 import React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Artifact, type AgenticProcess } from '@sdk';
+import { Artifact, type AgenticProcess, type DisplayEntry } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText } from 'lucide-react';
+import { BookMarked, ChevronDown, Eye, FileText } from 'lucide-react';
+import { EntryIcon, entryLabel } from '@src/pages/flow-page/display-history-button';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
@@ -28,6 +30,10 @@ interface TerminalBottomRibbonProps {
   artifacts?: Artifact[];
   /** Open an artifact's REFERENCED ASSET by path — never the artifact row. */
   onOpenArtifact?: (assetRef: string) => void;
+  /** What this run has shown (`flow show`), oldest first — `display_stack`. */
+  shown?: readonly DisplayEntry[];
+  /** Open a shown target as its own tab. */
+  onOpenShown?: (entry: DisplayEntry) => void;
   /** Enables the Prompt Library button (prompt → queue needs a process). */
   process?: AgenticProcess | null;
   /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
@@ -59,6 +65,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenLastPlan,
   artifacts = [],
   onOpenArtifact,
+  shown = [],
+  onOpenShown,
   process = null,
   composer,
 }) => {
@@ -98,6 +106,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
               </Tooltip>
             </TooltipProvider>
           )}
+          {shown.length > 0 && onOpenShown && <ShownChip shown={shown} onOpen={onOpenShown} />}
           {artifacts.length > 0 && onOpenArtifact && <ArtifactsChip artifacts={artifacts} onOpen={onOpenArtifact} />}
         </div>
 
@@ -252,6 +261,86 @@ const ArtifactsChip: React.FC<{
                     <span className="min-w-0 flex-1 truncate text-xs text-foreground">{artifact.name}</span>
                   </button>
                 ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
+    </TooltipProvider>
+  );
+};
+
+/**
+ * "Shown" chip — what this run has put in front of the user with `flow show`,
+ * beside the Open-Plan chip. It replaces the glyph that used to sit on the
+ * process's tab chip: the tab strip is for tabs, and a run's output belongs on
+ * the run's own ribbon.
+ *
+ * The button opens the newest show; when there is more than one, the chevron
+ * lists the whole `display_stack` newest-first with an "ago" stamp.
+ */
+const SHOWN_CHIP_CLASSES = 'h-6 text-sky-400 border-sky-400/40 hover:border-sky-400 hover:text-sky-300';
+
+const ShownChip: React.FC<{
+  shown: readonly DisplayEntry[];
+  onOpen: (entry: DisplayEntry) => void;
+}> = ({ shown, onOpen }) => {
+  const { t } = useLingui();
+  // Stored oldest-first; list newest-first.
+  const ordered = [...shown].reverse();
+  const latest = ordered[0];
+  const hasMore = ordered.length > 1;
+  return (
+    <TooltipProvider delayDuration={400}>
+      <div className="flex items-center" data-testid="ribbon-shown">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onOpen(latest)}
+              data-testid="ribbon-shown-latest"
+              className={cn(SHOWN_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]', hasMore && 'rounded-e-none border-e-0')}
+            >
+              <Eye className="h-3.5 w-3.5" />
+              <span className="max-w-[10rem] truncate">{entryLabel(latest)}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            <Trans>Open the last thing shown</Trans>
+          </TooltipContent>
+        </Tooltip>
+        {hasMore && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                aria-label={t`Everything this run has shown`}
+                data-testid="ribbon-shown-list"
+                className={cn(SHOWN_CHIP_CLASSES, 'rounded-s-none px-1')}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" side="top" className="w-72 p-1">
+              <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
+                {ordered.map((entry, i) => {
+                  const ago = formatTimeAgo(entry.shown_at);
+                  return (
+                    <button
+                      key={`${entry.shown_at ?? ''}:${i}`}
+                      type="button"
+                      onClick={() => onOpen(entry)}
+                      data-testid="ribbon-shown-row"
+                      className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start hover:bg-accent"
+                    >
+                      <EntryIcon entry={entry} />
+                      <span className="min-w-0 flex-1 truncate text-xs text-foreground">{entryLabel(entry)}</span>
+                      {ago && <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{ago}</span>}
+                    </button>
+                  );
+                })}
               </div>
             </PopoverContent>
           </Popover>
