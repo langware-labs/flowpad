@@ -57,12 +57,14 @@ class _Hub(list):
 
     ``rosters`` maps a members path to its rows (or an int status to refuse);
     ``answers`` maps a recipient key (user id, email or team typeid) to an int
-    status for a refused members POST; ``refuse`` maps a path suffix to the
-    status every call ending in it answers with.
+    status for a refused members POST; ``conversation_answers`` does the same for
+    conversation members POSTs only; ``refuse`` maps a path suffix to the status
+    every call ending in it answers with.
     """
 
     rosters: dict
     answers: dict
+    conversation_answers: dict
     refuse: dict
 
 
@@ -71,6 +73,7 @@ def hub(monkeypatch):
     calls = _Hub()
     calls.rosters = {}
     calls.answers = {}
+    calls.conversation_answers = {}
     calls.refuse = {}
 
     async def fake_request(self, method, path, **kwargs):
@@ -87,6 +90,8 @@ def hub(monkeypatch):
         if path.endswith("/members") and isinstance(body, dict):
             key = body.get("recipient_user_id") or body.get("recipient_email") or body.get("principal")
             answer = calls.answers.get(key)
+            if path.startswith("/graph/conversation/"):
+                answer = calls.conversation_answers.get(key, answer)
             if isinstance(answer, int):
                 return _FakeResponse(answer, {"detail": "boom"})
         return _ok({})
@@ -149,9 +154,10 @@ def _message_headers(hub: _Hub) -> list[dict]:
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_grant(hub):
-    """R1/R6/R7: a person gets [project, conversation] targets and no hub
-    ``notify_by_message``; a team is ONE group grant plus a conversation granted
-    to it; nobody reads the team's member list."""
+    """R1/R6/R7: a person gets two single-target invitations — the project one
+    (emailed, so its link lands on the project) and a conversation one sent with
+    ``notify_by_email: false``; no hub ``notify_by_message``. A team is ONE group
+    grant plus a conversation granted to it; nobody reads the team's member list."""
     proj = _project(hub, "share-person-and-team")
 
     await proj.share(invitees=[ShareInvitee(user_id=ISHAY)], teams=[f"team-{ZSCHOOL}"], note="Welcome aboard")
@@ -160,14 +166,20 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     assert person["recipient_user_id"] == ISHAY
     assert "notify_by_message" not in person
     assert person["message"] == "Welcome aboard"
-    project_target, conversation_target = person["invitation_targets"]
-    assert project_target == {"typeid": f"project-{proj.id}", "role": "member"}
+    assert person["invitation_targets"] == [{"typeid": f"project-{proj.id}", "role": "member"}]
+    assert "notify_by_email" not in person
+
+    grants = dict(_conversation_grants(hub))
+    ((person_conv_path, person_conv),) = [(p, b) for p, b in grants.items() if b.get("recipient_user_id") == ISHAY]
+    (conversation_target,) = person_conv["invitation_targets"]
     assert conversation_target["typeid"].startswith("conversation-") and conversation_target["role"] == "member"
+    assert person_conv["notify_by_email"] is False
+    assert person_conv_path == f"/graph/conversation/{conversation_target['typeid'][len('conversation-'):]}/members"
 
     assert _group_grants(hub, proj) == [
         {"principal": f"team-{ZSCHOOL}", "invitation_targets": [{"typeid": f"project-{proj.id}", "role": "member"}]}
     ]
-    ((path, team_conv_grant),) = _conversation_grants(hub)
+    ((path, team_conv_grant),) = [(p, b) for p, b in _conversation_grants(hub) if "principal" in b]
     assert team_conv_grant["principal"] == f"team-{ZSCHOOL}"
     assert path == f"/graph/conversation/{team_conv_grant['invitation_targets'][0]['typeid'][len('conversation-'):]}/members"
 
@@ -257,6 +269,25 @@ async def test_a_refused_person_invite_is_failed_and_its_conversation_discarded(
     result = proj.last_share_result
     assert [(r.user_id, r.status) for r in result.failed] == [(ISHAY, 403)]
     assert result.invited == []
+    deletes = [p for m, p, _ in hub if m == "DELETE"]
+    assert len(deletes) == 1 and deletes[0].startswith("/graph/conversation/")
+    assert _message_headers(hub) == []
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_refused_conversation_invite_keeps_the_person_invited_without_a_conversation(hub):
+    """The project invite landed, so the person is invited; the conversation the
+    message would go into is discarded and no message is sent."""
+    proj = _project(hub, "share-person-conversation-refused")
+    hub.conversation_answers[ISHAY] = 403
+
+    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)])
+
+    result = proj.last_share_result
+    assert [(r.user_id, r.conversation_id) for r in result.invited] == [(ISHAY, None)]
+    assert result.failed == []
     deletes = [p for m, p, _ in hub if m == "DELETE"]
     assert len(deletes) == 1 and deletes[0].startswith("/graph/conversation/")
     assert _message_headers(hub) == []
