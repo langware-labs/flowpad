@@ -846,8 +846,9 @@ function useAttachedParentTaskIds(entities: TypeId[]): Set<string> {
 /**
  * A project referenced by a message, on the generic entity chip. Not installed
  * on this machine: dashed, and clicking opens the review popup, whose project
- * branch offers Install project. Installed: the normal chip, which opens the
- * project. The popup is hoisted above the branch so installing from it (which
+ * branch offers Install project. Installed: the normal chip, like any installed
+ * shared entity — Advanced reopens the popup (preview, greyed install, Open),
+ * Standard / Vibe open the project. The popup is hoisted above the branch so installing from it (which
  * flips the chip) doesn't unmount it mid-install.
  */
 function ProjectMessageChip({
@@ -866,6 +867,7 @@ function ProjectMessageChip({
   projectId?: string | null;
 }) {
   const [reviewOpen, setReviewOpen] = useState(false);
+  const isAdvanced = useIsAdvanced();
   const { row, installed } = useLocalProject(typeId, entityRow);
   return (
     <span
@@ -874,10 +876,13 @@ function ProjectMessageChip({
       data-state={installed ? 'installed' : 'staged'}
     >
       {installed ? (
+        // Like any installed shared entity: Advanced reopens the review popup
+        // (preview, greyed install, Open); Standard / Vibe open the project.
         <ContextEntityChip
           typeId={typeId}
           inside={{ type: 'conversation', id: conversationId }}
           projectId={projectId}
+          onClick={isAdvanced ? () => setReviewOpen(true) : undefined}
         />
       ) : (
         <EntityChip

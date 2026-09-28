@@ -9285,6 +9285,7 @@ msgstr "מצב Git של תיקיית העבודה"
 msgid "Git tooling installed"
 msgstr "כלי Git הותקנו"
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Git URL"
 msgstr "כתובת Git"
@@ -11426,6 +11427,10 @@ msgstr "טוען פרויקטים..."
 msgid "Loading prompts…"
 msgstr "טוען פרומפטים…"
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Loading published assets…"
+#~ msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading records…"
 msgstr "טוען רשומות…"
@@ -12272,6 +12277,7 @@ msgstr "לא זמין"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -13935,6 +13941,10 @@ msgstr ""
 msgid "Nothing published yet by the projects you can see."
 msgstr ""
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Nothing published yet."
+#~ msgstr ""
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Nothing selected — launches an empty sandbox."
 msgstr "לא נבחר דבר — יופעל ארגז חול ריק."
@@ -14155,6 +14165,7 @@ msgid "Only people you share with can view this agent."
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -14498,7 +14509,6 @@ msgstr "פתח תוכנית"
 msgid "Open process"
 msgstr "פתח תהליך"
 
-#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project"
@@ -15618,6 +15628,7 @@ msgstr "פרויקט"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -15985,6 +15996,14 @@ msgstr "פרסום הסוכן הזה לענן מעניק לו מכונה המת�
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Published"
 msgstr "פורסם"
+
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Published assets"
+#~ msgstr ""
+
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Published assets could not be loaded."
+#~ msgstr ""
 
 #: src/components/project-home/ProjectPublishedButton.tsx
 msgid "Published assets of this project"
