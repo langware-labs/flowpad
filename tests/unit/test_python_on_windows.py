@@ -1,10 +1,10 @@
 """Python is never asked for as `python3` on Windows.
 
 On a stock Windows `python3` is the Microsoft Store alias stub: it fails even
-when Python is installed. Three places the product runs a Python file, or a
-person types a command, by that name — a snippet, a node's machine-status
-script, and every interactive terminal the app opens — each pick the name the
-OS actually installs (or alias it in). These pin the command per platform;
+when Python is installed. A snippet runs on Flowpad's own interpreter, so it
+never looks a Python up by name; a node's machine-status script and every
+interactive terminal the app opens pick the name the OS actually installs (or
+alias it in). These pin the command per platform;
 they cannot run it, because the fast tier runs on whatever OS CI does.
 """
 
@@ -44,20 +44,22 @@ def _which(present: set[str]):
     return which
 
 
-def test_a_snippet_on_windows_uses_the_launcher_else_python():
+def test_a_snippet_on_windows_runs_on_flowpads_own_interpreter():
+    """Not `py -3`, not `python`: either may find another install whose flow_sdk is stale,
+    the failure `{python}` exists to prevent everywhere else."""
     template = runner_for(".py", "win32")
-    command = template.format(file="'C:\\snips\\a.py'", out="'x'")
+    command = template.format(python="'C:\\Program Files\\Flowpad\\python.exe'", file="'C:\\snips\\a.py'", out="'x'")
 
-    assert "python3" not in command
-    assert "py -3 'C:\\snips\\a.py'" in command
-    assert "python 'C:\\snips\\a.py'" in command
+    assert "python3" not in command and "py -3" not in command
+    # PowerShell runs a quoted path only behind its call operator.
+    assert command.startswith("& 'C:\\Program Files\\Flowpad\\python.exe' 'C:\\snips\\a.py'")
     # The script's exit code is the snippet's, not PowerShell's own verdict.
     assert command.endswith("exit $LASTEXITCODE")
 
 
-def test_a_snippet_on_unix_is_unchanged():
+def test_a_snippet_off_windows_runs_on_flowpads_own_interpreter():
     for platform in ("darwin", "linux"):
-        assert runner_for(".py", platform) == "python3 {file}"
+        assert runner_for(".py", platform) == "{python} {file}"
     assert runner_for(".js", "win32") == "node {file}"
     assert runner_for(".nope", "win32") is None
 

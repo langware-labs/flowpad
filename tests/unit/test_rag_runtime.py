@@ -3,9 +3,10 @@ cannot store.
 
 usearch's compiled module links MSVCP140.dll, which a clean Windows does not ship. The machine
 without it is played by an import finder that refuses usearch, the way ``DLL load failed`` does;
-the person is played by a stand-in for the ``install-vcredist`` wizard, whose own ask/install
-steps are covered in ``test_install_vcredist_wizard``. Installing is modelled as its effect: the modules
-become importable again.
+the person is played by a listener on ``rag.runtime.missing`` standing in for the
+``install-vcredist`` wizard's trigger, whose own ask/install steps are covered in
+``test_install_vcredist_wizard``. Installing is modelled as its effect: the modules become
+importable again.
 """
 
 from __future__ import annotations
@@ -19,8 +20,9 @@ import pytest
 import pytest_asyncio
 
 from flow_sdk.builtin.rag_index import RagIndex, RagStatus
-from flow_sdk.builtin.wizard import Wizard
 from flow_sdk.rag import reconcile, runtime
+from flow_sdk.rag.rag_on_tag import RUNTIME_MISSING_TAG
+from flow_sdk.tags import event_bus
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -62,21 +64,22 @@ def _fresh_answer():
 
 
 @pytest.fixture
-def person(monkeypatch):
-    """The `install-vcredist` wizard, answered by whoever the test says is at the keyboard."""
+def person():
+    """The `install-vcredist` wizard's trigger, answered by whoever the test says is at the keyboard.
+
+    A plain (sync) listener runs inline in ``emit``, so its answer has landed by the time the
+    pass that announced the miss returns.
+    """
     state = SimpleNamespace(asked=0, says="no", install=lambda: None)
 
-    async def run(**_kwargs):
+    def on_missing(_event):
         state.asked += 1
         if state.says == "yes":
             state.install()
-        return SimpleNamespace(ok=state.says == "yes", detail=f"person said {state.says}")
 
-    async def get_one(_query):
-        return SimpleNamespace(run=run)
-
-    monkeypatch.setattr(Wizard, "get_one", get_one)
-    return state
+    unsubscribe = event_bus.on(RUNTIME_MISSING_TAG, on_missing)
+    yield state
+    unsubscribe()
 
 
 @pytest.fixture
@@ -134,7 +137,7 @@ async def test_not_now_is_not_asked_again_every_tick(tmp_path, windows_without_r
     await reconcile.run_index(index)
 
     assert await reconcile.dispatch_due_indexes() == []
-    assert await runtime.ensure() == runtime.MISSING_RUNTIME
+    assert await runtime.ensure(str(index.id)) == runtime.MISSING_RUNTIME
     assert person.asked == 1
 
 
@@ -147,14 +150,17 @@ async def test_a_person_asking_for_search_is_asked_again(tmp_path, windows_witho
     assert person.asked == 2
 
 
-async def test_install_then_the_same_pass_indexes(tmp_path, windows_without_runtime, person, paid):
+async def test_install_then_the_next_pass_indexes(tmp_path, windows_without_runtime, person, paid):
     person.says, person.install = "yes", windows_without_runtime
     index = await _active(tmp_path)
 
-    await reconcile.run_index(index)
+    assert await reconcile.run_index(index) == [], "the pass that asked still had no runtime"
+    assert person.asked == 1 and paid == []
+    assert not runtime.parked(), "installed: the park lifts on its own, no person action needed"
 
+    await reconcile.run_index(index)
     assert person.asked == 1
-    assert paid, "installed, so the pass went on and embedded"
+    assert paid, "installed, so the next pass went on and embedded"
     saved = await RagIndex.get_by_id(str(index.id))
     assert saved.last_error == "" and saved.chunk_count > 0
 

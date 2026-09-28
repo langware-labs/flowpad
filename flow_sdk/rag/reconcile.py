@@ -72,7 +72,7 @@ async def run_index(index: "RagIndex", *, force: bool = False) -> list["IndexRep
 
     # Before a single paid embed: a pass that cannot load the index would pay for every chunk
     # and store none of them. On Windows this is where the person is asked for the runtime.
-    missing = await runtime.ensure()
+    missing = await runtime.ensure(str(index.id))
     if missing:
         if index.last_error != missing:
             index.last_error = missing
