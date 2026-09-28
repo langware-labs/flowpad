@@ -5,6 +5,7 @@ import {
   AgentTrace,
   APIEntity,
   AssetCleanupReport,
+  Credential,
   dataManager,
   Deck,
   DeckTemplate,
@@ -50,6 +51,7 @@ import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
 import { AgentChildView } from './agent-profile/AgentChildView';
+import { CredentialChild } from './agent-profile/CredentialChild';
 import { useNestedHost } from './nested-host';
 import { useAssetReadOnly, useHostReadOnlyOccurrence, useReadOnlyOccurrenceType } from './read-only';
 import { SubAgentAssetEditor } from './subagent/SubAgentAssetEditor';
@@ -66,6 +68,7 @@ import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
 import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { assetOccurrenceMainRef, ReadOnlyAssetPreview } from './ReadOnlyAssetPreview';
 
 const McpAppPreview = lazy(() =>
@@ -130,7 +133,7 @@ function ConnectingFallback() {
  * Editors resolve/refresh the backing entity off the FSRef themselves.
  */
 export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
-  const { currentDock } = useDockNavigation();
+  const { currentDock, navigation } = useDockNavigation();
   const readOnly = useAssetReadOnly();
   const occurrenceType = useReadOnlyOccurrenceType();
   const hostOccurrence = useHostReadOnlyOccurrence();
@@ -546,6 +549,23 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
             <AssetCollisionShell entity={report}>
               <AssetCleanupReportAssetEditor fsRef={fsRef} report={report} />
             </AssetCollisionShell>
+          )}
+        />
+      );
+    case AssetEditor.CREDENTIAL:
+      // The same view an agent nests for its credential: what it declares,
+      // where the values live, which are set. A delete lands on the type list.
+      return (
+        <EntityResolutionGate<Credential>
+          type={Credential.type}
+          fsRef={fsRef}
+          typeLabel="credential"
+          resolvedEntity={typeIdEntity as Credential | undefined}
+          render={(credential) => (
+            <CredentialChild
+              typeid={credential.typeId.toString()}
+              onGone={() => navigation.openDock(DockPointer.forAssetList(Credential.type))}
+            />
           )}
         />
       );
