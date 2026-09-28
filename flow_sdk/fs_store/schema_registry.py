@@ -927,6 +927,18 @@ class _ShapeTables:
         )
 
 
+
+def _same_definition(prior: Any, shape: Any) -> bool:
+    """Whether *shape* is *prior* defined again: two class objects with one module and one
+    qualified name. Two different classes that claim one kind still differ here."""
+    return (
+        isinstance(prior, type)
+        and isinstance(shape, type)
+        and prior.__module__ == shape.__module__
+        and prior.__qualname__ == shape.__qualname__
+    )
+
+
 class SchemaRegistry:
     """Unified type registry + scan/index orchestration."""
 
@@ -1035,6 +1047,12 @@ class SchemaRegistry:
         if kind in PRIMITIVES:
             raise ValueError(f"{kind!r} is a reserved primitive and cannot be registered")
         prior = cls._kinds.get(kind)
+        if prior is not None and prior is not shape and _same_definition(prior, shape):
+            # The SAME class defined again — a notebook cell re-run, a REPL paste, a module
+            # reloaded. The new class object replaces the old one: refusing would make every
+            # second run of a documented snippet raise, and nothing else can name that kind.
+            cls._kind_of_shape.pop(id(prior), None)
+            prior = None
         if prior is not None and prior is not shape:
             if derived:
                 return

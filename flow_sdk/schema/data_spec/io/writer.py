@@ -20,7 +20,7 @@ from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.io import names
 from flow_sdk.schema.data_spec.io.identity import Carrier, ensure_id
-from flow_sdk.schema.data_spec.io.placement import Placement, body_field, placements
+from flow_sdk.schema.data_spec.io.placement import Placement, body_field, placements, unwrap
 
 
 def _json(path: Path, payload: dict) -> None:
@@ -67,6 +67,16 @@ def _document_text(value: Any) -> str:
     return f"{front.rstrip()}\n{body}"
 
 
+def _drop_stale_elements(folder: Path, keep: "dict[str, Any]") -> None:
+    """Remove the element folders a previous save wrote that this one will not: the reader loads
+    every element folder it finds, so a list saved shorter would come back at its old length."""
+    import shutil  # noqa: PLC0415
+
+    for child in folder.iterdir():
+        if child.is_dir() and child.name not in keep:
+            shutil.rmtree(child)
+
+
 def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested: bool = False) -> str:
     """Write *value* into *root*, and return the folder's id.
 
@@ -96,11 +106,23 @@ def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested:
             # that document's text, under its frontmatter — which is why
             # ``_document_text`` reads it rather than this branch.
             text = str(held or "")
+            path = root / names.field_file(name, ".md")
             if text:
-                path = root / names.field_file(name, ".md")
                 path.write_text(text, encoding="utf-8")
                 held.path = path  # ``Text.path``: where it now lives
+            else:
+                # An emptied body leaves no file behind: the reader loads whatever file is
+                # there, so a stale ``setup.md`` would come back as the value just cleared.
+                path.unlink(missing_ok=True)
         elif held is None:
+            # Same rule for a document or bytes field set back to None.
+            annotation = unwrap(spec.model_fields[name].rebuild_annotation())
+            if place is Placement.DOCUMENT:
+                (root / names.field_file(name, names.ext_for(annotation))).unlink(missing_ok=True)
+            elif place is Placement.FILE_BYTES:
+                (root / names.field_file(name, getattr(annotation, "ext", ".bin"))).unlink(missing_ok=True)
+            elif place in (Placement.DIR_LIST, Placement.DIR_DICT) and (root / name).is_dir():
+                _drop_stale_elements(root / name, {})
             continue
         elif place is Placement.DOCUMENT:
             path = root / names.field_file(name, names.ext_for(type(held)))
@@ -113,13 +135,17 @@ def write(value: Any, root: Path, *, carrier: Optional[Carrier] = None, _nested:
         elif place is Placement.DIR_LIST:
             folder = root / name
             folder.mkdir(parents=True, exist_ok=True)
-            for index, element in enumerate(held or [], start=1):
-                write(element, folder / names.list_element(element, index), _nested=True)
+            elements = {names.list_element(element, index): element for index, element in enumerate(held or [], start=1)}
+            _drop_stale_elements(folder, elements)
+            for element_name, element in elements.items():
+                write(element, folder / element_name, _nested=True)
         elif place is Placement.DIR_DICT:
             folder = root / name
             folder.mkdir(parents=True, exist_ok=True)
-            for key, element in (held or {}).items():
-                write(element, folder / names.dict_element(key), _nested=True)
+            elements = {names.dict_element(key): element for key, element in (held or {}).items()}
+            _drop_stale_elements(folder, elements)
+            for element_name, element in elements.items():
+                write(element, folder / element_name, _nested=True)
 
     _json(root / names.main_document(spec), document)
     return "" if _nested else ensure_id(root, carrier)
