@@ -322,6 +322,35 @@ def test_python_syntax_error(tmp_path, py_path):
     assert r.returncode == 1 and "SyntaxError" in r.stderr
 
 
+def test_python_top_level_await_runs_as_written(tmp_path, py_path):
+    """Every SDK snippet awaits at its top level, the way the asyncio REPL reads. ``python file``
+    refused it before the first line ran ("'async with' outside async function")."""
+    body = "async def two():\n    return 2\n\nclass Scope:\n    async def __aenter__(self): return self\n    async def __aexit__(self, *a): pass\n\nasync with Scope():\n    print(await two())"
+    r = _run(_snip(tmp_path, "py", body, hidden="import asyncio"), py_path)
+    assert (r.returncode, r.stdout) == (0, "2\n"), r.stderr
+
+
+def test_python_error_after_an_await_points_at_the_files_own_line(tmp_path, py_path):
+    """The traceback is the file's frames only — the launcher's are not the user's."""
+    path = _snip(tmp_path, "py", "await asyncio.sleep(0)\nraise ValueError('boom')", hidden="import asyncio")
+    r = _run(path, py_path)
+    assert r.returncode == 1 and "ValueError: boom" in r.stderr
+    assert f'File "{path.resolve()}", line 5' in r.stderr
+    assert "snippet_launch" not in r.stderr
+
+
+def test_python_runs_as_main(tmp_path, py_path):
+    """A file that guards on ``__name__`` or pickles its own class runs as it would under ``python file``."""
+    body = "import pickle\nclass P:\n    pass\nif __name__ == '__main__':\n    print(type(pickle.loads(pickle.dumps(P()))).__name__, __file__ == sys.argv[0])"
+    r = _run(_snip(tmp_path, "py", body, hidden="import sys"), py_path)
+    assert (r.returncode, r.stdout) == (0, "P True\n"), r.stderr
+
+
+def test_python_exit_status_is_the_files_own(tmp_path, py_path):
+    r = _run(_snip(tmp_path, "py", "sys.exit(3)", hidden="import sys"), py_path)
+    assert r.returncode == 3
+
+
 def test_python_hang_is_killed_at_the_timeout(tmp_path, py_path):
     t0 = time.monotonic()
     r = _run(_snip(tmp_path, "py", "while True:\n    pass"), py_path, timeout=0.3)
