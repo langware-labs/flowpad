@@ -1,15 +1,12 @@
 /**
- * The project share landing (FLOWPAD-2177, part 2) — the paths it is built on.
- *
- * `projectShareLandingPath` is what `Project.share` sends as the invitation's
- * `callback_override` (its Python twin is `project_share_landing_path`), and
- * `projectOpenTargetPath` is what "Open in FlowPad" hands the desktop: the
- * `?action=open` link `IncomingDeepLink` reads. These pin both ends of that
- * hand-off, so a rename on either side fails here instead of in a sent email.
+ * The project share landing's hand-offs: the browser card's hub page, and the
+ * desktop path "Open in FlowPad" sends — the `?action=open` link
+ * `IncomingDeepLink` reads — plus the clone command both landings show.
  */
-import { type GitOrigin } from '@sdk';
+import { type GitOrigin, gitCloneCommand } from '@sdk';
 import { describe, expect, it } from 'vitest';
-import { hubProjectPath, projectOpenTargetPath, projectShareLandingPath } from '@src/pages/entry/project-share-landing';
+import { hubProjectPath } from '@src/lib/hub-page-url';
+import { projectOpenTargetPath } from '@src/pages/entry/project-share-landing';
 
 const ID = '3b91d0a8-0080-42b4-a4cf-d3ed9967678e';
 const ORIGIN: GitOrigin = {
@@ -21,15 +18,21 @@ const ORIGIN: GitOrigin = {
   rel_path: '.',
 };
 
-describe('projectShareLandingPath', () => {
-  it('is the path the share sends and the SPA routes to ProjectShareLanding', () => {
-    expect(projectShareLandingPath(ID)).toBe(`/project/${ID}`);
-  });
-});
-
 describe('hubProjectPath', () => {
   it('is the project on the hub page', () => {
     expect(hubProjectPath(ID)).toBe(`/dock/hub/project/${ID}`);
+  });
+});
+
+describe('gitCloneCommand', () => {
+  it('clones the branch the origin names', () => {
+    expect(gitCloneCommand(ORIGIN)).toBe('git clone -b main https://github.com/langware-labs/hello-flowpad-task.git');
+  });
+
+  it('leaves the branch to the remote default when the origin names none', () => {
+    expect(gitCloneCommand({ ...ORIGIN, branch: '' })).toBe(
+      'git clone https://github.com/langware-labs/hello-flowpad-task.git',
+    );
   });
 });
 

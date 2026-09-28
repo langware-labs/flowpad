@@ -1,23 +1,15 @@
 /**
- * `:entityType/:entityId` (FLOWPAD-2177) against the REAL route table.
- *
- * The route is a two-segment dynamic match at the root, so the risk is not that
- * it fails to match — it is that it matches something another route owns. This
- * asserts on `router.routes` from `@src/router` itself (not a copied table), so a
- * new static route or a reordering is checked by the same ranking the app runs.
+ * The entry landing routes against the REAL route table: the risk of a root
+ * two-segment dynamic route is matching a URL another route owns, so this asks
+ * the same ranking the app runs (`router.routes`), not a copied table.
  */
 import { matchRoutes, type RouteObject } from 'react-router';
 import { describe, expect, it } from 'vitest';
 
 const ID = 'a74e685c-348b-48fa-87fa-f84f742c7e06';
 
-// `@src/router` builds its browser router at import time, and a router that has
-// not been hydrated starts its initial navigation — running `loadRoot` against
-// the tier's no-backend URL. Hand it react-router's own hydration data for the
-// root route instead, so it starts initialized and runs no loader: the route
-// table is all this file reads. The URL is one only the loader-less catch-all
-// matches, so the root is the only route that needs the data. Done before the
-// import (hence the dynamic import below), at collection time.
+// `@src/router` builds its router at import time; hydration data for the only
+// matched loader (the root) keeps it from running `loadRoot` here.
 window.history.replaceState(null, '', '/__route-table-test__');
 (window as unknown as { __staticRouterHydrationData?: unknown }).__staticRouterHydrationData = {
   loaderData: { '0': null },

@@ -1,20 +1,13 @@
 /**
- * The generic `/<type>/<id>` landing (FLOWPAD-2177) — its view model.
- *
- * The hub sends an invitee to `/<type>/<id>` whenever the invitation carries no
- * `callback_override`, and the SPA used to 404 on it. The page that now renders
- * there must stay generic: everything it shows is derived from the route params,
- * the hub's TypeInfo and the entity row, never from which type it is. These
- * assertions pin that contract, including the card rule the product accepted
- * (desktop card when the entity has a git origin OR its type ships through git).
+ * The generic `/<type>/<id>` landing's view model: everything it shows comes from
+ * the route params, the hub's TypeInfo and the entity row — never from which
+ * type it is.
  */
 import { type GitOrigin, TypeId } from '@sdk';
 import { describe, expect, it } from 'vitest';
 import {
-  entityLandingInputFrom,
   entityLandingModel,
   entityLandingProblem,
-  hubEntityUrl,
   parseEntityLandingParams,
 } from '@src/pages/entry/entity-landing-model';
 
@@ -68,94 +61,66 @@ describe('entityLandingProblem', () => {
   });
 });
 
-describe('hubEntityUrl', () => {
-  it('is the hub page generic entity view, as an absolute path', () => {
-    expect(hubEntityUrl(new TypeId('agent', AGENT_ID))).toBe(`/dock/hub/entity/agent/${AGENT_ID}`);
-    expect(hubEntityUrl(new TypeId('project', PROJECT_ID))).toBe(`/dock/hub/entity/project/${PROJECT_ID}`);
-  });
-});
-
 describe('entityLandingModel', () => {
-  it('offers the desktop card and a clone line when the entity carries a git origin', () => {
-    const model = entityLandingModel({
-      typeId: new TypeId('project', PROJECT_ID),
-      cloudFileTransport: 'embedded',
-      displayName: 'testing-flow-again',
-      gitOrigin: origin({ branch: 'main', rel_path: '.' }),
-    });
-    expect(model.showDesktop).toBe(true);
-    expect(model.cloneCommand).toBe('git clone -b main https://github.com/langware-ishay-sela/testing-flow-again.git');
-    expect(model.repoPath).toBeNull();
-    expect(model.hubUrl).toBe(`/dock/hub/entity/project/${PROJECT_ID}`);
+  it('points the browser at the hub page generic entity view', () => {
+    const model = entityLandingModel(new TypeId('agent', AGENT_ID), { displayName: 'crm-manager' }, 'git');
+    expect(model.hubUrl).toBe(`/dock/hub/entity/agent/${AGENT_ID}`);
   });
 
-  it('names the path inside the repo when the entity is not the repo root', () => {
-    const model = entityLandingModel({
-      typeId: new TypeId('agent', AGENT_ID),
-      cloudFileTransport: 'git',
-      displayName: 'crm-manager',
-      gitOrigin: origin(),
-    });
-    expect(model.repoPath).toBe('agentic-assets/agent/crm-manager');
-    expect(model.cloneCommand).toContain('-b flow-cloud');
+  it('offers the desktop card with the repository when the entity carries a git origin', () => {
+    const model = entityLandingModel(
+      new TypeId('project', PROJECT_ID),
+      { displayName: 'testing-flow-again', git_origin: origin({ branch: 'main', rel_path: '.' }) },
+      'embedded',
+    );
+    expect(model.showDesktop).toBe(true);
+    expect(model.gitOrigin?.name).toBe('testing-flow-again');
   });
 
-  it('offers the desktop card without a clone line for a git-transport type with no origin', () => {
-    const model = entityLandingModel({
-      typeId: new TypeId('skill', AGENT_ID),
-      cloudFileTransport: 'git',
-      displayName: 'release-notes',
-    });
+  it("accepts a project's repo-root origin, whose rel_path is empty", () => {
+    const model = entityLandingModel(
+      new TypeId('project', PROJECT_ID),
+      { displayName: 'p', git_origin: origin({ rel_path: '' }) },
+      'embedded',
+    );
+    expect(model.gitOrigin).not.toBeNull();
+  });
+
+  it('offers the desktop card without a repository for a git-transport type with no origin', () => {
+    const model = entityLandingModel(new TypeId('skill', AGENT_ID), { displayName: 'release-notes' }, 'git');
     expect(model.showDesktop).toBe(true);
-    expect(model.cloneCommand).toBeNull();
+    expect(model.gitOrigin).toBeNull();
   });
 
   it('offers the browser card alone when there is neither an origin nor a git transport', () => {
-    const model = entityLandingModel({
-      typeId: new TypeId('team', AGENT_ID),
-      cloudFileTransport: 'embedded',
-      displayName: 'Langware R&D',
-    });
+    const model = entityLandingModel(new TypeId('team', AGENT_ID), { displayName: 'Langware R&D' }, 'embedded');
     expect(model.showDesktop).toBe(false);
-    expect(model.cloneCommand).toBeNull();
   });
 
   it('ignores an origin that names no repository', () => {
-    const model = entityLandingModel({
-      typeId: new TypeId('task', AGENT_ID),
-      cloudFileTransport: 'embedded',
-      displayName: 'a task',
-      gitOrigin: origin({ owner: '', name: '' }),
-    });
+    const model = entityLandingModel(
+      new TypeId('task', AGENT_ID),
+      { displayName: 'a task', git_origin: origin({ owner: '', name: '' }) },
+      'embedded',
+    );
     expect(model.showDesktop).toBe(false);
   });
 
   it('decides from the data, not the type name: two types with the same inputs get the same cards', () => {
-    const inputs = { cloudFileTransport: 'git', displayName: 'x', gitOrigin: origin() };
-    const a = entityLandingModel({ ...inputs, typeId: new TypeId('agent', AGENT_ID) });
-    const b = entityLandingModel({ ...inputs, typeId: new TypeId('team', AGENT_ID) });
+    const entity = { displayName: 'x', git_origin: origin() };
+    const a = entityLandingModel(new TypeId('agent', AGENT_ID), entity, 'git');
+    const b = entityLandingModel(new TypeId('team', AGENT_ID), entity, 'git');
     expect({ ...a, hubUrl: null }).toEqual({ ...b, hubUrl: null });
-  });
-});
-
-describe('entityLandingInputFrom', () => {
-  it('reads the hub wire name git_origin and a string description', () => {
-    const typeId = new TypeId('agent', AGENT_ID);
-    const input = entityLandingInputFrom(
-      typeId,
-      { displayName: 'crm-manager', description: 'Manage the customers', git_origin: origin() },
-      'git',
-    );
-    expect(input.gitOrigin?.name).toBe('testing-flow-again');
-    expect(input.description).toBe('Manage the customers');
-    expect(input.cloudFileTransport).toBe('git');
   });
 
   it('falls back to the id when the entity has no display name, and drops a non-string description', () => {
-    const typeId = new TypeId('agent', AGENT_ID);
-    const input = entityLandingInputFrom(typeId, { displayName: '', description: { rich: true } }, undefined);
-    expect(input.displayName).toBe(AGENT_ID);
-    expect(input.description).toBeNull();
-    expect(input.gitOrigin).toBeNull();
+    const model = entityLandingModel(new TypeId('agent', AGENT_ID), { displayName: '', description: { rich: true } });
+    expect(model.displayName).toBe(AGENT_ID);
+    expect(model.description).toBeNull();
+  });
+
+  it('keeps a text description, trimmed', () => {
+    const model = entityLandingModel(new TypeId('agent', AGENT_ID), { description: '  Manage customers ' });
+    expect(model.description).toBe('Manage customers');
   });
 });
