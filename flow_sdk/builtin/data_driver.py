@@ -34,6 +34,7 @@ from flow_sdk.schema.data_spec.data_driver_spec import (
     Runtime,
 )
 from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec
+from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec
 from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.sources.base import Source
@@ -73,6 +74,7 @@ class DataDriver(DriverRuntime, Entity):
     auth: Optional[AuthSpec] = APIField(default=None)
     permissions: dict[str, PermissionMappingSpec] = APIField(default_factory=dict)
     webhook: Optional[DriverWebhookSpec] = APIField(default=None)
+    setup_wizards: list[SetupStageSpec] = APIField(default_factory=list)
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)

@@ -46,7 +46,6 @@ from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.core.compute.process_step import launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.schema.data_spec.compute_op_spec import (
-    ASK_TIMEOUT_SECONDS,
     CHECK_TIMEOUT,
     AgentOp,
     AskOp,

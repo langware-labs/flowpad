@@ -1300,6 +1300,20 @@ class DataSource(Entity):
         await self.save_runtime()
         return ApiSuccessResponse(data={"status": self.status})
 
+    @core_action.get(action_name="setup_stages")
+    async def setup_stages_action(self) -> ApiResponse:
+        """GET /api/v1/graph/data_source/{id}/setup_stages — :meth:`setup_stages`."""
+        return ApiSuccessResponse(data=[s.model_dump(mode="json") for s in await self.setup_stages()])
+
+    async def setup_stages(self) -> list:
+        """The setup wizards this source's driver declares (``setup_wizards``), each as it stands for
+        THIS source: ``done`` / ``pending`` / ``locked``. Read off each wizard's run for the source."""
+        from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
+        from flow_sdk.core.wizard.stages import stage_states  # noqa: PLC0415
+
+        driver = await driver_of(self.provider)  # an authored driver loads on first use
+        return await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
+
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/verify — the route over ``verify``.
