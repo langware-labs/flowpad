@@ -260,6 +260,13 @@ test('warm tab switches: content visible within budget, nothing waited on', asyn
   const terminal: number[] = [];
   const report: number[] = [];
   const shell: number[] = [];
+  // Close the cold->warm boundary the same way `clickChip` closes the boundary
+  // between warm switches. The three cold `navigateTo`s above do NOT wait for the
+  // view's own mount fetches, so on a slower machine the markdown view's by-id GET
+  // was still in flight when the loop started and landed inside the first warm
+  // switch's window — reported as "a warm switch waited on the backend" when the
+  // warm switches had in fact asked for nothing.
+  await networkQuiet(page);
   const warmFrom = await lastSwitchId(page);
   const warmFromMs = await page.evaluate(() => performance.now());
   for (let i = 0; i < ROUNDS; i++) {
