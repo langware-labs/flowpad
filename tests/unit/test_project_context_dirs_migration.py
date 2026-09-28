@@ -22,6 +22,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.type_info import register_all
+from tests.unit._project_names import unique_project_name
 
 register_all()
 
@@ -38,7 +39,7 @@ def _dirs(tmp_path, *names):
 @pytest.mark.asyncio
 async def test_stash_and_readthrough_without_write(tmp_path):
     legacy = _dirs(tmp_path, "a", "b")
-    project = Project(name=str(tmp_path / "proj"), include_dirs=list(legacy))
+    project = Project(name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"), include_dirs=list(legacy))
 
     # Raw key captured; computed merge exposes it pre-migration.
     assert project.legacy_include_dirs_ == legacy
@@ -51,7 +52,7 @@ async def test_stash_and_readthrough_without_write(tmp_path):
 @pytest.mark.asyncio
 async def test_first_save_converges(tmp_path):
     legacy = _dirs(tmp_path, "a", "b")
-    project = Project(name=str(tmp_path / "proj"), include_dirs=list(legacy))
+    project = Project(name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"), include_dirs=list(legacy))
     await project.save()
 
     # Folders minted + linked privately; stash cleared; list unchanged.
@@ -72,7 +73,7 @@ async def test_first_save_converges(tmp_path):
 async def test_action_migrates_then_applies(tmp_path):
     legacy = _dirs(tmp_path, "old")
     (extra,) = _dirs(tmp_path, "new")
-    project = Project(name=str(tmp_path / "proj"), include_dirs=list(legacy))
+    project = Project(name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"), include_dirs=list(legacy))
 
     await project.add_context_dir(extra)
     assert sorted(project.include_dirs) == sorted(legacy + [extra])
@@ -95,7 +96,7 @@ async def test_action_migrates_then_applies(tmp_path):
 @pytest.mark.asyncio
 async def test_model_dump_feedback_is_harmless(tmp_path):
     (ctx,) = _dirs(tmp_path, "ctx")
-    project = Project(name=str(tmp_path / "proj"))
+    project = Project(name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"))
     await project.save()
     await project.add_context_dir(ctx)
 

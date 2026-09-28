@@ -37,6 +37,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.config import agent_workspace_root
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.type_id import TypeId
+from tests.unit._project_names import unique_project_name
 
 OWNER = TypeId("user-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 
@@ -68,11 +69,12 @@ async def test_create_with_partial_body_does_not_relocate_an_existing_project(tm
     """The body omits `fs_storage_mount_path`; the stored mount must survive."""
     real_dir = tmp_path / "Documents" / "dev" / "flowpad-oss"
     real_dir.mkdir(parents=True)
+    name = unique_project_name("flowpad-oss")
 
     project = Project(
         id=str(uuid.uuid4()),
         type="project",
-        name="flowpad-oss",
+        name=name,
         fs_storage_mount_path=str(real_dir),
     )
     await project.save()
@@ -83,7 +85,7 @@ async def test_create_with_partial_body_does_not_relocate_an_existing_project(tm
     body = {
         "id": str(project.id),
         "type": "project",
-        "name": "flowpad-oss",
+        "name": name,
         "visitor_role": "owner",
     }
     request = _create_request(body)
@@ -142,7 +144,7 @@ async def test_opening_the_same_folder_twice_yields_one_project(tmp_path):
 
     Same body ``use-open-project.ts`` sends: ``{type, name: <path>}``.
     """
-    folder = tmp_path / "Documents" / "dev" / "flowpad-oss"
+    folder = tmp_path / "Documents" / "dev" / unique_project_name("flowpad-oss")
     folder.mkdir(parents=True)
     body = {"type": "project", "name": str(folder)}
 

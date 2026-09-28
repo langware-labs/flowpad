@@ -37,6 +37,7 @@ from flow_sdk.fs_store.indexer.special_folders import PREF_PREFIX, STATE_ALLOW, 
 from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
 from flow_sdk.preferences import write_instance_pref
 from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
 
@@ -62,7 +63,7 @@ async def test_menu_count_of_a_documents_project_is_backed_by_the_index(
     (mount / "agentic-assets" / "prompt").mkdir(parents=True)
     (mount / "agentic-assets" / "prompt" / "report_issue.md").write_text(PROMPT_MD)
 
-    project = Project(name="flowpad-oss", fs_storage_mount_path=str(mount))
+    project = Project(name=unique_project_name("flowpad-oss"), fs_storage_mount_path=str(mount))
     await project.save()
     invalidate_projects_cache()
     pid = str(project.id)
