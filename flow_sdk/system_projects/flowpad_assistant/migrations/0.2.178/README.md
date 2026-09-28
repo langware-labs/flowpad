@@ -1,3 +1,6 @@
+---
+id: 42b9ec7f-494c-49c1-9714-20ebc535c1ca
+---
 # 0.2.178 — the open slot
 
 This directory is the next UNRELEASED recipe version: the only place a new

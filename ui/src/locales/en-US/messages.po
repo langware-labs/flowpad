@@ -123,6 +123,11 @@ msgstr "\"{0}\" will be removed. This cannot be undone."
 msgid "({selectedCount} selected)"
 msgstr "({selectedCount} selected)"
 
+#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageComposer.tsx
+msgid "(a file)"
+msgstr "(a file)"
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "(cleared)"
 msgstr "(cleared)"
@@ -249,6 +254,11 @@ msgstr "{0} — current project"
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "{0} — no email sent."
 msgstr "{0} — no email sent."
+
+#. placeholder {0}: a.data.replace(/^data\//, '')
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "{0} — not downloaded (the link expired)"
+msgstr "{0} — not downloaded (the link expired)"
 
 #. placeholder {0}: LABELS[m]
 #: src/components/view-toggle/view-toggle.tsx
@@ -3444,6 +3454,11 @@ msgstr "Can't update right now — showing the last synced list."
 msgid "Cancel"
 msgstr "Cancel"
 
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
+msgid "Cancel reply"
+msgstr "Cancel reply"
+
 #: src/components/ask/AskView.tsx
 msgid "Cancelled."
 msgstr "Cancelled."
@@ -5582,6 +5597,7 @@ msgstr "Could not sign out of FlowPad"
 msgid "Could not sign the sandbox out"
 msgstr "Could not sign the sandbox out"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
@@ -9512,6 +9528,10 @@ msgstr "Go to session"
 #: src/routes/loaders/load-conversation.ts
 msgid "Go to stream inbox"
 msgstr "Go to stream inbox"
+
+#: src/components/conversation/ChannelMessageExtras.tsx
+msgid "Go to the quoted message"
+msgstr "Go to the quoted message"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Go up"
@@ -14110,6 +14130,10 @@ msgstr "Nothing to publish"
 msgid "Nothing to push"
 msgstr "Nothing to push"
 
+#: src/components/conversation/asset-review/StagedAssetViewer.tsx
+msgid "Nothing to review — the attachment has no files."
+msgstr "Nothing to review — the attachment has no files."
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Nothing to save"
@@ -15685,8 +15709,8 @@ msgid "Preview sound"
 msgstr "Preview sound"
 
 #: src/components/conversation/asset-review/StagedAssetViewer.tsx
-msgid "Preview truncated."
-msgstr "Preview truncated."
+#~ msgid "Preview truncated."
+#~ msgstr "Preview truncated."
 
 #: src/components/ui/pagination.tsx
 msgid "Previous"
@@ -16339,6 +16363,11 @@ msgstr "Re-scan"
 msgid "Re-scan now"
 msgstr "Re-scan now"
 
+#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/ChannelMessageExtras.tsx
+msgid "React"
+msgstr "React"
+
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Read"
@@ -16974,6 +17003,10 @@ msgstr "Replies wait as drafts until {hostName} sends them."
 msgid "Replies:"
 msgstr "Replies:"
 
+#: src/components/conversation/ChannelMessageExtras.tsx
+msgid "Reply"
+msgstr "Reply"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Reply awaiting your review"
 msgstr "Reply awaiting your review"
@@ -16983,9 +17016,23 @@ msgstr "Reply awaiting your review"
 msgid "Reply in {0}"
 msgstr "Reply in {0}"
 
+#: src/components/conversation/ChannelMessageExtras.tsx
+msgid "Reply in thread"
+msgstr "Reply in thread"
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Reply to sender…"
 msgstr "Reply to sender…"
+
+#. placeholder {0}: replyTo.sender
+#: src/components/conversation/MessageComposer.tsx
+msgid "Replying in the thread of {0}"
+msgstr "Replying in the thread of {0}"
+
+#. placeholder {0}: replyTo.sender
+#: src/components/conversation/MessageComposer.tsx
+msgid "Replying to {0}"
+msgstr "Replying to {0}"
 
 #: src/components/git/RepoPicker.tsx
 msgid "Repo"
@@ -18298,8 +18345,8 @@ msgid "Select a document"
 msgstr "Select a document"
 
 #: src/components/conversation/asset-review/StagedAssetViewer.tsx
-msgid "Select a file to preview."
-msgstr "Select a file to preview."
+#~ msgid "Select a file to preview."
+#~ msgstr "Select a file to preview."
 
 #: src/components/credentials-view/CredentialsView.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
@@ -19564,6 +19611,11 @@ msgstr "Some deployments are stale or partial"
 msgid "Some deployments have errors"
 msgstr "Some deployments have errors"
 
+#: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/ConversationView.tsx
+msgid "Someone"
+msgstr "Someone"
+
 #: src/lib/publish-state.ts
 msgid "Someone else changed this too. Switch to Advanced view to merge."
 msgstr "Someone else changed this too. Switch to Advanced view to merge."
@@ -19749,6 +19801,7 @@ msgstr "Star"
 msgid "Star chat"
 msgstr "Star chat"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
 msgid "Start"
@@ -23360,6 +23413,7 @@ msgid "Yesterday"
 msgstr "Yesterday"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
+#: src/components/conversation/ChannelMessageExtras.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 msgid "You"

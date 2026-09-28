@@ -123,6 +123,11 @@ msgstr "سيتم حذف \"{0}\". لا يمكن التراجع عن هذا الإ
 msgid "({selectedCount} selected)"
 msgstr "({selectedCount} عنصر محدد)"
 
+#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageComposer.tsx
+msgid "(a file)"
+msgstr ""
+
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "(cleared)"
 msgstr "(تم المسح)"
@@ -248,6 +253,11 @@ msgstr ""
 #. placeholder {0}: outcome.already.join(', ')
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "{0} — no email sent."
+msgstr ""
+
+#. placeholder {0}: a.data.replace(/^data\//, '')
+#: src/components/conversation/FlowMessageBubble.tsx
+msgid "{0} — not downloaded (the link expired)"
 msgstr ""
 
 #. placeholder {0}: LABELS[m]
@@ -3444,6 +3454,11 @@ msgstr ""
 msgid "Cancel"
 msgstr "إلغاء"
 
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
+msgid "Cancel reply"
+msgstr ""
+
 #: src/components/ask/AskView.tsx
 msgid "Cancelled."
 msgstr ""
@@ -5582,6 +5597,7 @@ msgstr ""
 msgid "Could not sign the sandbox out"
 msgstr "تعذّر تسجيل الخروج من Sandbox"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
@@ -9512,6 +9528,10 @@ msgstr "الانتقال إلى الجلسة"
 #: src/routes/loaders/load-conversation.ts
 msgid "Go to stream inbox"
 msgstr "الانتقال إلى صندوق التدفق الوارد"
+
+#: src/components/conversation/ChannelMessageExtras.tsx
+msgid "Go to the quoted message"
+msgstr ""
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Go up"
@@ -14110,6 +14130,10 @@ msgstr "لا يوجد شيء للنشر"
 msgid "Nothing to push"
 msgstr "لا يوجد شيء للإرسال"
 
+#: src/components/conversation/asset-review/StagedAssetViewer.tsx
+msgid "Nothing to review — the attachment has no files."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Nothing to save"
@@ -15685,8 +15709,8 @@ msgid "Preview sound"
 msgstr "معاينة الصوت"
 
 #: src/components/conversation/asset-review/StagedAssetViewer.tsx
-msgid "Preview truncated."
-msgstr "تم اختصار المعاينة."
+#~ msgid "Preview truncated."
+#~ msgstr "تم اختصار المعاينة."
 
 #: src/components/ui/pagination.tsx
 msgid "Previous"
@@ -16339,6 +16363,11 @@ msgstr "إعادة الفحص"
 msgid "Re-scan now"
 msgstr "إعادة الفحص الآن"
 
+#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/ChannelMessageExtras.tsx
+msgid "React"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Read"
@@ -16974,6 +17003,10 @@ msgstr ""
 msgid "Replies:"
 msgstr ""
 
+#: src/components/conversation/ChannelMessageExtras.tsx
+msgid "Reply"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Reply awaiting your review"
 msgstr ""
@@ -16983,9 +17016,23 @@ msgstr ""
 msgid "Reply in {0}"
 msgstr "الرد في {0}"
 
+#: src/components/conversation/ChannelMessageExtras.tsx
+msgid "Reply in thread"
+msgstr ""
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Reply to sender…"
 msgstr "الرد على المرسل…"
+
+#. placeholder {0}: replyTo.sender
+#: src/components/conversation/MessageComposer.tsx
+msgid "Replying in the thread of {0}"
+msgstr ""
+
+#. placeholder {0}: replyTo.sender
+#: src/components/conversation/MessageComposer.tsx
+msgid "Replying to {0}"
+msgstr ""
 
 #: src/components/git/RepoPicker.tsx
 msgid "Repo"
@@ -18298,8 +18345,8 @@ msgid "Select a document"
 msgstr "اختيار مستند"
 
 #: src/components/conversation/asset-review/StagedAssetViewer.tsx
-msgid "Select a file to preview."
-msgstr "يُرجى اختيار ملف لمعاينته."
+#~ msgid "Select a file to preview."
+#~ msgstr "يُرجى اختيار ملف لمعاينته."
 
 #: src/components/credentials-view/CredentialsView.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
@@ -19564,6 +19611,11 @@ msgstr "بعض الإطلاقات قديمة أو جزئية"
 msgid "Some deployments have errors"
 msgstr "بعض الإطلاقات بها أخطاء"
 
+#: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/ConversationView.tsx
+msgid "Someone"
+msgstr ""
+
 #: src/lib/publish-state.ts
 msgid "Someone else changed this too. Switch to Advanced view to merge."
 msgstr "غيّر شخص آخر هذا أيضًا. يمكنك التبديل إلى العرض المتقدم للدمج."
@@ -19749,6 +19801,7 @@ msgstr "إضافة نجمة"
 msgid "Star chat"
 msgstr "إضافة نجمة للمحادثة"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
 msgid "Start"
@@ -23360,6 +23413,7 @@ msgid "Yesterday"
 msgstr "أمس"
 
 #: src/components/assets/editor/task/DelegationBlock.tsx
+#: src/components/conversation/ChannelMessageExtras.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 msgid "You"
