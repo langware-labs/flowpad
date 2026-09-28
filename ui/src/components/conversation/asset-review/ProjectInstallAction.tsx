@@ -105,11 +105,14 @@ export function ProjectInstallAction({
             <Trans>Project unavailable</Trans>
           </span>
         )}
-        {(state === 'install' || state === 'installing') && (
+        {/* Installed ('open'): the install action stays in place, greyed out, and
+            the popup's usual Open button sits beside it — as for any installed
+            shared entity. */}
+        {(state === 'install' || state === 'installing' || state === 'open') && (
           <Button
             size="sm"
             variant="secondary"
-            disabled={state === 'installing'}
+            disabled={state !== 'install'}
             onClick={() => void handleInstall()}
             data-testid="project-install-button"
           >
@@ -129,10 +132,10 @@ export function ProjectInstallAction({
               navigation.openDock(withHomePage(DockPointer.forProject(projectId)));
               onDone?.();
             }}
-            data-testid="project-open-button"
+            data-testid="asset-open-entity"
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            <Trans>Open project</Trans>
+            <Trans>Open</Trans>
           </Button>
         )}
         {state === 'error' && (

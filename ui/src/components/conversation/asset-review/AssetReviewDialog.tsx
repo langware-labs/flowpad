@@ -18,6 +18,7 @@ import { notify } from '@src/notifications';
 import { buildDockPointer, iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
 import { ProjectInstallAction } from './ProjectInstallAction';
+import { ProjectPreview } from './ProjectPreview';
 import { StagedAssetViewer } from './StagedAssetViewer';
 
 /** Where the asset's content actually comes from — the reviewer's trust signal.
@@ -95,6 +96,10 @@ function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment })
   const typeId = attachment.asset_type === 'file' ? null : attachment.targetTypeId;
   const editor = typeId ? editorForType(typeId.type) : undefined;
   const { data } = useEntity<AnyEntity & { asset_ref?: string | null }>(typeId);
+  // A project has no editor and no staged files: it previews from its row.
+  if (attachment.asset_type === Project.type) {
+    return <ProjectPreview project={data as unknown as Project | null | undefined} fallbackName={attachment.name} />;
+  }
   if (typeId && editor && data?.asset_ref) {
     const pointer = AssetDocPointer.forTypeId(editor, typeId).toPointer();
     return (
@@ -167,8 +172,8 @@ interface AssetReviewDialogProps {
 
 /**
  * The popup's project branch: Install project / Open project, and the
- * project's name and type. No content preview: there is no
- * preview surface for a project that is not on this machine yet.
+ * project's name and type, and a {@link ProjectPreview} built from the Project
+ * row — a project invite carries no staged files to preview.
  */
 function ProjectReviewDialog({ open, onClose, project }: AssetReviewDialogProps & { project: ProjectReviewRef }) {
   const { t } = useLingui();
@@ -196,7 +201,7 @@ function ProjectReviewDialog({ open, onClose, project }: AssetReviewDialogProps 
           entityUnavailable={project.entityUnavailable}
           onDone={onClose}
         />
-        <div className="flex flex-col gap-1 border-t border-border pt-3">
+        <div className="flex flex-col gap-3 border-t border-border pt-3">
           <div className="flex items-center gap-2">
             <Icon className="h-4 w-4 shrink-0 text-primary" />
             <span className="truncate font-semibold">{row?.name || project.name || t`Project`}</span>
@@ -204,6 +209,7 @@ function ProjectReviewDialog({ open, onClose, project }: AssetReviewDialogProps 
               {typeWordOf(Project.type)}
             </span>
           </div>
+          <ProjectPreview project={row} fallbackName={project.name} />
         </div>
       </DialogContent>
     </Dialog>

@@ -9285,6 +9285,7 @@ msgstr "Git status of the working directory"
 msgid "Git tooling installed"
 msgstr "Git tooling installed"
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Git URL"
 msgstr "Git URL"
@@ -11426,6 +11427,10 @@ msgstr "Loading projects..."
 msgid "Loading prompts…"
 msgstr "Loading prompts…"
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Loading published assets…"
+#~ msgstr "Loading published assets…"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading records…"
 msgstr "Loading records…"
@@ -12272,6 +12277,7 @@ msgstr "N/A"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -13935,6 +13941,10 @@ msgstr "Nothing published yet — publish an asset below, or from its editor."
 msgid "Nothing published yet by the projects you can see."
 msgstr "Nothing published yet by the projects you can see."
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Nothing published yet."
+#~ msgstr "Nothing published yet."
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Nothing selected — launches an empty sandbox."
 msgstr "Nothing selected — launches an empty sandbox."
@@ -14155,6 +14165,7 @@ msgid "Only people you share with can view this agent."
 msgstr "Only people you share with can view this agent."
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -14498,7 +14509,6 @@ msgstr "Open Plan"
 msgid "Open process"
 msgstr "Open process"
 
-#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project"
@@ -15618,6 +15628,7 @@ msgstr "project"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -15985,6 +15996,14 @@ msgstr "Publish this agent to the cloud and give it a machine that logs in as it
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Published"
 msgstr "Published"
+
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Published assets"
+#~ msgstr "Published assets"
+
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Published assets could not be loaded."
+#~ msgstr "Published assets could not be loaded."
 
 #: src/components/project-home/ProjectPublishedButton.tsx
 msgid "Published assets of this project"

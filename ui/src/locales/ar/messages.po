@@ -9285,6 +9285,7 @@ msgstr "حالة Git لدليل العمل"
 msgid "Git tooling installed"
 msgstr "تم تثبيت أدوات Git"
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Git URL"
 msgstr "عنوان Git URL"
@@ -11426,6 +11427,10 @@ msgstr "جارٍ تحميل المشاريع..."
 msgid "Loading prompts…"
 msgstr "جارٍ تحميل المطالبات…"
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Loading published assets…"
+#~ msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading records…"
 msgstr "جارٍ تحميل السجلات…"
@@ -12272,6 +12277,7 @@ msgstr "غير متاح"
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/editor/mcp/McpViewer.tsx
 #: src/components/assets/editor/wizard/WizardForm.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/data-sources/DataSourceDialog.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hub/AddMachineDialog.tsx
@@ -13935,6 +13941,10 @@ msgstr ""
 msgid "Nothing published yet by the projects you can see."
 msgstr ""
 
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Nothing published yet."
+#~ msgstr ""
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Nothing selected — launches an empty sandbox."
 msgstr "لم يتم تحديد أي شيء — سيتم تشغيل بيئة معزولة فارغة."
@@ -14155,6 +14165,7 @@ msgid "Only people you share with can view this agent."
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -14498,7 +14509,6 @@ msgstr "فتح الخطة"
 msgid "Open process"
 msgstr "فتح العملية"
 
-#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project"
@@ -15618,6 +15628,7 @@ msgstr "مشروع"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -15985,6 +15996,14 @@ msgstr "نشر هذا الوكيل إلى السحابة وإعطاؤه جهاز
 #: src/pages/discover-page/DiscoverRow.tsx
 msgid "Published"
 msgstr "تم النشر"
+
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Published assets"
+#~ msgstr ""
+
+#: src/components/conversation/asset-review/ProjectPreview.tsx
+#~ msgid "Published assets could not be loaded."
+#~ msgstr ""
 
 #: src/components/project-home/ProjectPublishedButton.tsx
 msgid "Published assets of this project"

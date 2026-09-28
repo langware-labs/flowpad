@@ -29,6 +29,7 @@ const h = vi.hoisted(() => ({
   entityByKey: new Map<string, { data: unknown; isLoading: boolean; notFound: boolean; isError: boolean }>(),
   openDock: vi.fn(),
   hubOnly: false,
+  advanced: false,
 }));
 
 vi.mock('@src/hooks/use-projects', () => ({
@@ -64,6 +65,11 @@ vi.mock('@src/navigation/useDockNavigation', async (importOriginal) => {
 });
 
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hubOnly }));
+
+vi.mock('@src/contexts/view-mode-context', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return { ...actual, useIsAdvanced: () => h.advanced };
+});
 
 vi.mock('@src/components/conversation/asset-review/useRunReceivedSkill', () => ({
   useRunSkillWithProjectPrompt: () => ({ start: vi.fn(), picker: null }),
@@ -122,6 +128,7 @@ describe('MessageEntityChip — project reference', () => {
     h.entityByKey.clear();
     h.openDock.mockReset();
     h.hubOnly = false;
+    h.advanced = false;
   });
   afterEach(() => {
     cleanup();
@@ -141,6 +148,22 @@ describe('MessageEntityChip — project reference', () => {
     expect(screen.getByTestId('project-install-button').textContent).toContain('Install project');
     expect(screen.queryByTestId('asset-install-project')).toBeNull();
     expect(screen.queryByTestId('asset-install-global')).toBeNull();
+  });
+
+  it('the popup previews the project: its name and the git URL it clones', () => {
+    const row = new Project({
+      id: PID,
+      name: 'Apollo',
+      fs_storage_mount_path: null,
+      origin: { kind: 'git', provider: 'github', owner: 'acme', name: 'apollo', branch: 'main', rel_path: '' },
+    } as Partial<Project>);
+    h.projects = [row];
+    entityState(PROJECT_TID, { data: row });
+    renderChip();
+    openReview();
+
+    expect(screen.getByTestId('project-preview-name').textContent).toBe('Apollo');
+    expect(screen.getByTestId('project-preview-git-url').textContent).toBe('https://github.com/acme/apollo.git');
   });
 
   it('a git-backed project (it has an origin) labels the install Clone & Open', () => {
@@ -174,12 +197,30 @@ describe('MessageEntityChip — project reference', () => {
     expect(actionState()).toBe('install');
   });
 
-  it('AE5: installed here, the chip is the normal chip and no popup opens', () => {
+  it('AE5 (Advanced): an installed project reopens the popup — preview, greyed install, Open', () => {
+    h.advanced = true;
     h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
     entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
     renderChip();
 
     expect(chipState()).toBe('installed');
+    openReview();
+    expect(actionState()).toBe('open');
+    expect(screen.getByTestId('project-preview')).toBeTruthy();
+    expect((screen.getByTestId('project-install-button') as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByTestId('asset-open-entity'));
+    expect(h.openDock).toHaveBeenCalledTimes(1);
+    expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${PID}`);
+  });
+
+  it('AE5 (Standard): an installed project chip opens no popup, like any installed shared entity', () => {
+    h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
+    entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
+    renderChip();
+
+    expect(chipState()).toBe('installed');
+    fireEvent.click(within(screen.getByTestId('project-chip')).getByRole('button'));
     expect(screen.queryByTestId('asset-review-dialog')).toBeNull();
   });
 
