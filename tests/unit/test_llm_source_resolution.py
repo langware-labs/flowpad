@@ -1171,3 +1171,101 @@ async def test_a_process_pinned_to_a_public_endpoint_spends_it_without_a_login(e
     # ...and only THAT one: a pin to some other hub endpoint is still unsigned-for.
     with pytest.raises(Exception, match="not logged in to the hub"):
         await resolve_llm_endpoint(_process(endpoint=EP2))
+
+
+async def test_the_llm_endpoints_page_runs_in_order(monkeypatch, tmp_path):
+    """``docs/snippets/llm-endpoints.md``, every fence but the long tier's script, verbatim and in order.
+
+    The provider's wire is the only thing doubled: OpenAI's client answers a completion (plain, JSON or
+    streamed) and embeddings; httpx answers the catalog and the key probe; the hub's listing answers as it
+    does logged out. The script fence (§7) is the file the Docker leg runs, character for character."""
+    import json
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    import httpx
+    import openai
+
+    from flow_sdk.instance_settings import llm_endpoint as hub_listing
+    from tests.utils.snippets import doc, fences, run_page
+
+    class _Stream:
+        def __aiter__(self):
+            async def chunks():
+                for piece in ("3", None):
+                    yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=piece))])
+            return chunks()
+
+    class _OpenAI:
+        def __init__(self, **_kw):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._chat))
+            self.embeddings = SimpleNamespace(create=self._embed)
+
+        async def _chat(self, **params):
+            if params.get("stream"):
+                return _Stream()
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"answer": 3}'))])
+
+        async def _embed(self, *, model, input):
+            return SimpleNamespace(data=[SimpleNamespace(embedding=[0.1, 0.2]) for _ in input])
+
+    class _Http:
+        def __init__(self, **_kw):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def request(self, method, url, headers=None, **_kw):
+            body = {"data": [{"id": "openai/text-embedding-3-small"}, {"id": "openai/gpt-4o-mini"}]}
+            return SimpleNamespace(status_code=200, text=json.dumps(body), json=lambda: body)
+
+    async def logged_out(**_kw):
+        return []
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _OpenAI)
+    monkeypatch.setattr(httpx, "AsyncClient", _Http)
+    monkeypatch.setattr(hub_listing, "fetch_hub_llm_endpoints", logged_out)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+    monkeypatch.chdir(tmp_path)
+
+    text = doc("llm-endpoints.md")
+    script = fences(text)[-1]
+    ns = await run_page("llm-endpoints.md", until=script[:40])
+    assert len(ns["vectors"]) == 2 and ns["data"] == {"answer": 3} and ns["endpoint"].secret_name == "lm_api.openrouter"
+
+    live = Path(__file__).resolve().parents[1] / "loginless_e2e" / "agentic_process_snippet.py"
+    assert script.strip("\n") == live.read_text().strip("\n"), "§7's script is the file the Docker leg runs"
+
+
+async def test_call_returns_10_a_model_no_tools_runs_as_written(monkeypatch, tmp_path):
+    """``call-returns.md`` §10, verbatim after the page's setup fence, on a box whose default LLM source is
+    an API key (stored in this test's own instance): the prompt op answers through the provider's wire,
+    which is the one thing doubled. The live leg is ``tests/long_tests/test_call_returns_live.py``."""
+    from types import SimpleNamespace
+
+    import openai
+
+    from flow_sdk.lm_api import set_lm_api
+    from tests.utils.snippets import doc, fences, run_fence
+
+    class _OpenAI:
+        def __init__(self, **_kw):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._chat))
+
+        async def _chat(self, **_params):
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="pong"))])
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", _OpenAI)
+    set_lm_api("sk-or-test", "openrouter")
+    monkeypatch.chdir(tmp_path)
+
+    page = fences(doc("call-returns.md"))
+    setup = next(f for f in page if f.lstrip().startswith("# setup"))
+    tenth = next(f for f in page if "Say the single word: pong" in f)
+    ns = await run_fence(setup, {}, filename="call-returns.md setup")
+    ns = await run_fence(tenth, ns, filename="call-returns.md §10")
+    assert type(ns["answer"]).__name__ == "PromptResult" and "pong" in ns["answer"].text.lower()

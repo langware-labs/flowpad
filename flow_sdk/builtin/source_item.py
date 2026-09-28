@@ -25,6 +25,7 @@ a hand-kept field map.
 from __future__ import annotations
 
 from datetime import datetime
+import os
 from typing import ClassVar, Optional
 
 from pydantic import ConfigDict, model_validator
@@ -33,15 +34,39 @@ from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.builtin import ingest_order
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
-from flow_sdk.schema.data_spec.dataset_spec import FileRef
 from flow_sdk.schema.data_spec.source_item_spec import (  # noqa: F401 — re-exported; the row and its snapshot read as one module
     NonBlank,
     SourceItemSpec,
 )
+from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 from flow_sdk.schema.types import EntityType
 from flow_sdk.sources.values.items import Payload
 from flow_sdk.sources.values.origin import CloudOrigin
+
+
+class MessageFile(DataSpec):
+    """A file to send, as a value: a path on this machine and how it should arrive. ``as_`` is a
+    ``FileKind`` value (``"voice"`` sends a voice note, ``"document"`` an image uncompressed) or
+    ``"auto"`` — the kind its media type says. A plain path string is accepted wherever one is."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    spec_kind: ClassVar[str] = "message.file"
+
+    path: str
+    as_: str = "auto"
+    caption: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _from_path(cls, data):
+        return {"path": str(data)} if isinstance(data, (str, os.PathLike)) else data
+
+    def to_item(self):
+        """The contract's form: a ``local`` file item the runtime checks and the driver reads."""
+        from flow_sdk.sources.files import local_file  # noqa: PLC0415
+
+        return local_file(self.path, as_=self.as_, caption=self.caption or None)
 
 
 class MessageSpec(DataSpec):
@@ -68,9 +93,12 @@ class MessageSpec(DataSpec):
     body: str
     thread_key: str = ""
     reply_to_external_id: str = ""
-    #: Pointers, never bytes — resolved at the send edge. Unsupported channels
-    #: refuse loudly rather than dropping them.
-    attachments: list["FileRef"] = []
+    #: Pointers, never bytes — resolved at the send edge. A channel that cannot
+    #: take one refuses loudly rather than dropping it.
+    files: list[MessageFile] = []
+    #: ``False``: answer without quoting on a channel whose replies quote. A
+    #: channel whose reply only threads keeps its reference either way.
+    quote: bool = True
 
 
 class EmailMessageSpec(MessageSpec):
@@ -83,7 +111,7 @@ class EmailMessageSpec(MessageSpec):
     subject: str = ""
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "EmailMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "EmailMessageSpec":
         """A reply to inbound message ``m`` — a pure constructor, no I/O.
 
         Email replies target the AUTHOR's address. The provider's thread
@@ -99,7 +127,7 @@ class EmailMessageSpec(MessageSpec):
             subject=subject,
             thread_key=str(getattr(m, "thread_key", "") or ""),
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            attachments=list(attachments),
+            files=list(files),
         )
 
 
@@ -111,7 +139,7 @@ class TelegramMessageSpec(MessageSpec):
     """
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "TelegramMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "TelegramMessageSpec":
         """A reply to inbound message ``m`` — a pure constructor, no I/O.
 
         Telegram replies target the CHAT, not the author: ``to`` carries the
@@ -126,7 +154,7 @@ class TelegramMessageSpec(MessageSpec):
             body=body,
             thread_key=thread_key,
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            attachments=list(attachments),
+            files=list(files),
         )
 
 
@@ -144,7 +172,7 @@ class ChannelMessageSpec(MessageSpec):
     container_parts: ClassVar[int] = 1
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "ChannelMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "ChannelMessageSpec":
         """A reply to inbound message ``m`` — a pure constructor, no I/O.
 
         A channel reply targets the CHANNEL, in the message's thread: ``to`` is
@@ -159,7 +187,7 @@ class ChannelMessageSpec(MessageSpec):
             body=body,
             thread_key=str(getattr(m, "thread_key", "") or ""),
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            attachments=list(attachments),
+            files=list(files),
         )
 
 
@@ -184,14 +212,14 @@ class HelpdeskMessageSpec(ChannelMessageSpec):
     in-thread reply target beyond the ticket itself."""
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "HelpdeskMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "HelpdeskMessageSpec":
         ticket = str(getattr(m, "thread_key", "") or "")
         return cls(
             to=[ticket],
             body=body,
             thread_key=ticket,
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            attachments=list(attachments),
+            files=list(files),
         )
 
 
@@ -202,10 +230,10 @@ class VoiceMessageSpec(MessageSpec):
     """
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "VoiceMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "VoiceMessageSpec":
         """A reply to inbound sentence ``m`` — a pure constructor, no I/O: said to whoever said it."""
         thread_key = str(getattr(m, "thread_key", "") or "")
-        return cls(to=[thread_key], body=body, thread_key=thread_key, attachments=list(attachments))
+        return cls(to=[thread_key], body=body, thread_key=thread_key, files=list(files))
 
 
 class WhatsAppMessageSpec(MessageSpec):
@@ -217,7 +245,7 @@ class WhatsAppMessageSpec(MessageSpec):
     """
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "WhatsAppMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "WhatsAppMessageSpec":
         """A reply to inbound message ``m`` — a pure constructor, no I/O.
 
         WhatsApp replies target the PERSON, and the person IS the thread: a
@@ -233,7 +261,7 @@ class WhatsAppMessageSpec(MessageSpec):
             body=body,
             thread_key=thread_key,
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            attachments=list(attachments),
+            files=list(files),
         )
 
 
@@ -299,6 +327,10 @@ class SourceItem(Entity):
     # so the provider's echo of the same message — same natural key — never clears it, and no
     # ingest caller can claim it.
     sent_by_us: bool = APIField(default=False, persist=Persist.TRUE)
+    # Who reacted with what — the channel's reaction reports folded into state
+    # (``stream_inbox.reactions``). Local state like ``read``: a reaction is never a
+    # record of its own, and the provider's redelivery of the message must not clear it.
+    reactions: list[MessageReaction] = APIField(default_factory=list, persist=Persist.TRUE)
 
     _api_visible: ClassVar[bool] = True
 

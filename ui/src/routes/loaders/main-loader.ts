@@ -7,23 +7,17 @@
  */
 
 import {
-  AgenticProcess,
   cloudManager,
   ContextEntitiesEnum,
   dataContext,
   initSdk,
   isBackendUnreachable,
   Project,
-  systemTools,
   toplog,
   TypeId,
 } from '@sdk';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation';
-import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
-import { canonicalWorkspaceDisplayPath } from '@src/navigation/workspace-display-canonicalization';
-import { canonicalCredentialsDockPath } from '@src/navigation/credentials-dock-canonicalization';
-import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
 import { pageRedirectUrl } from '@src/navigation/supported-pages';
 import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
 import { ViewType } from '@src/types/ViewType';
@@ -33,7 +27,9 @@ import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-
 import { ProjectLoadError, loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog, perfTime } from './_perf';
+import { canonicalizeDockUrl } from './canonicalize';
 import { loadDockPointer } from './load-dock-pointer';
+import { processRouteCarry, resolveShellRoute } from './load-shell';
 import { runLoadRedirects } from './load-redirects';
 // Side-effect import: feature-owned redirect resolvers register themselves.
 import '@src/journey/journey-load-redirect';
@@ -204,43 +200,15 @@ async function loadAgentAppBody(args: LoaderArgs) {
   }
 
   const { processId, viewType } = params;
-  const pointer = params['*'] || '';
 
-  // Legacy display-URL canonicalization: a process has ONE URL family
-  // (/dock/shell/<proc>) in both modes — vibe rides the ?viewMode param. Old
-  // /dock|win/display/<proc> links redirect to the shell form here (search
-  // preserved) — see canonicalProcessDockPath.
-  const canonical = canonicalProcessDockPath(requestUrl.pathname, requestUrl.search);
+  // CANONICALIZE (dock-loading step 2): every URL-only rewrite, composed, so a
+  // URL needing several still redirects once — before the pointer is parsed, so
+  // nothing downstream ever sees a retired spelling.
+  const canonical = canonicalizeDockUrl(requestUrl.pathname, requestUrl.search);
   if (canonical) {
     t.done(slowThresholdSeconds);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(canonical);
-  }
-
-  // The workspace host is only meaningful with the display pane on screen: in
-  // standard mode a shown document falls back to its natural asset address.
-  const canonicalDisplay = canonicalWorkspaceDisplayPath(requestUrl.pathname, requestUrl.search);
-  if (canonicalDisplay) {
-    t.done(slowThresholdSeconds);
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(canonicalDisplay);
-  }
-
-  const canonicalWorldView = canonicalWorldViewDockPath(requestUrl.pathname, requestUrl.search);
-  if (canonicalWorldView) {
-    t.done(slowThresholdSeconds);
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(canonicalWorldView);
-  }
-
-  // Same shape, for the three retired credential views (environment /
-  // connections / api-keys → credentials/<subview>). Before the pointer is
-  // parsed, so nothing downstream ever sees a retired viewType.
-  const canonicalCredentials = canonicalCredentialsDockPath(requestUrl.pathname, requestUrl.search);
-  if (canonicalCredentials) {
-    t.done(slowThresholdSeconds);
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(canonicalCredentials);
   }
 
   let dockForSetup: DockPointer | null = null;
@@ -283,44 +251,18 @@ async function loadAgentAppBody(args: LoaderArgs) {
     throw redirect('/');
   }
 
-  // Handle session context — set process in dataContext (no agent required).
-  if (viewType === ViewType.SESSION) {
-    const sessionProcessId = pointer;
-
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProcessTypeId,
-      sessionProcessId ? new TypeId(AgenticProcess.type, sessionProcessId) : null,
-    );
-
-    if (sessionProcessId) {
-      await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
-      const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
-      if (process?.project_id) {
-        await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
-          systemTools.resolveProjectContext(process.workdir ?? undefined, process),
-        );
-      } else {
-        // Global (projectless) session — a workdir match adopts it into a project;
-        // otherwise resolveProjectContext clears the active project to null (the
-        // Global scope).
-        await systemTools.resolveProjectContext(process?.workdir ?? undefined, process ?? undefined);
-      }
-    }
-
-    // Session view doesn't require agent — just ensure compute node and return.
-    await ensureComputeNodeLoaded();
-    if (dockForSetup) await setupTabAndAdopt(dockForSetup);
-    t.time('ensureComputeNode');
-    t.done(slowThresholdSeconds);
-    return;
-  }
-
   if (!processId) {
     // The SDK seeds the compute node; the dock loader resolves its project.
     await ensureComputeNodeLoaded();
     t.time('ensureComputeNode');
     if (dockForSetup) {
       redirectLegacyAssetFsDock(dockForSetup, requestUrl.pathname);
+      // RESOLVE (dock-loading step 3): a shell URL's identity redirects — scope,
+      // a dead process, a shell a process owns — before a tab is minted for a URL
+      // the loader is about to leave (I2).
+      if (dockForSetup.viewType === ViewType.SHELL) {
+        await resolveShellRoute(dockForSetup.pointer, requestUrl.pathname, processRouteCarry(dockForSetup));
+      }
     }
     let setupHandled = false;
 

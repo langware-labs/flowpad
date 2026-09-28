@@ -12,19 +12,30 @@ whole IO model.
 ## 1. Declare a shape
 
 ```python
+from flow_sdk.schema.data_spec import DataSpec
+
 class Endpoint(DataSpec):
     host: str = "localhost"
     port: int
 ```
 
 ```python
+from pydantic import ValidationError
+
 Endpoint(port=8099)                  # host='localhost' port=8099
 Endpoint(port=8099).model_dump()     # {'host': 'localhost', 'port': 8099}
-
-Endpoint(port="nope")                # ValidationError: port — wrong type
-Endpoint(port=1, prot=2)             # ValidationError: prot — a typo is not a field
-Endpoint(port=1).port = 2            # ValidationError — a spec is frozen
 Endpoint(port=1).model_copy(update={"port": 2})   # the way to change one
+
+for wrong in ({"port": "nope"}, {"port": 1, "prot": 2}):
+    try:
+        Endpoint(**wrong)
+    except ValidationError as refused:
+        refused.errors()[0]["loc"]   # ('port',) — wrong type; ('prot',) — a typo is not a field
+
+try:
+    Endpoint(port=1).port = 2
+except ValidationError:
+    pass                             # a spec is frozen
 ```
 
 **`frozen`** — a spec is a value. Nothing edits one in place and hands it on;
@@ -41,6 +52,8 @@ Assets are JSON. A shape a document declares is text, and `parse` compiles it to
 a class.
 
 ```python
+from flow_sdk.schema.data_spec import DataSpec, to_authoring_form
+
 Endpoint = DataSpec.parse({"host": "string", "port": "int"})
 Endpoint(host="h", port=8099).model_dump()   # {'host': 'h', 'port': 8099}
 to_authoring_form(Endpoint)                  # {'host': 'string', 'port': 'int'}
@@ -75,6 +88,10 @@ Such a class is **anonymous** — `Spec_b297da81`, not a name you wrote. To get
 your own class back, give it a kind:
 
 ```python
+from typing import ClassVar
+
+from flow_sdk.schema.data_spec import DataSpec, to_authoring_form
+
 class Endpoint(DataSpec):
     spec_kind: ClassVar[str] = "demo.endpoint"
     host: str = "localhost"
@@ -111,6 +128,8 @@ Each kind of work answers with its own subclass (`CliResult`, `PromptResult`,
 [call-returns](call-returns.md).
 
 ```python
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue
+
 async def bind(port: int) -> ReturnedValue:
     return ReturnedValue(exit_code=ExitCode.OK, value=port, detail=f"bound :{port}")
 
@@ -151,8 +170,25 @@ The caller then reads `answer.value` and it is already that shape — no parsing
 no re-validation. A value that does NOT match is a failure, not a warning:
 
 ```python
+import sys
+import tempfile
+from pathlib import Path
+
+from flow_sdk.core.compute_op import run_op
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+
+class NetEndpoint(DataSpec):
+    spec_kind: ClassVar[str] = "net.endpoint"
+    host: str
+    port: int
+
+pick_port = ComputeOpSpec.model_validate({
+    "name": "pick-port", "subkind": "cli", "output_spec_kind": "net.endpoint",
+    "exe_data": {"commands": {sys.platform: """echo '{"host": "h", "port": "nope"}'"""}},
+})
+answer = await run_op(pick_port, trusted=True, workdir=Path(tempfile.mkdtemp()))
 answer.exit_code   # ExitCode.NOT_YET
-answer.detail      # "… returned a value that is not a net.endpoint — …"
+answer.detail      # "pick-port: returned a value that is not a net.endpoint — …"
 ```
 
 Otherwise a caller binds a broken value into the next call, and the breakage
@@ -192,6 +228,7 @@ chain = Toolchain(
     ops=[Op(name="pick-port", steps=[Step(name="probe", setup="lsof -i",
                                           endpoint=Endpoint(port=9000))])],
 )
+root = Path("dev-toolchain")
 chain.save(root)
 ```
 
@@ -227,6 +264,9 @@ Some values are not fields of a document — they ARE one. That is read off the
 type, never off an annotation.
 
 ```python
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.io import Binary, Text
+
 class Op(DataSpec):
     name: str            # a value    -> op.json
     setup: Text = ""     # a document -> setup.md
@@ -240,9 +280,11 @@ op.setup                 # 'Run `lsof -i` and pick a free one.' — a plain stri
 op.setup.upper()         # works; a Text IS a str
 ```
 
-`Text` is a string wherever you use it. It is not a path, and a reader never
-opens a file to get it — the only difference is where `save` puts it. A shape
-may carry as many as it likes.
+`Text` is a string wherever you use it, and a reader never opens a file to get
+it — the only difference is where `save` puts it. Once it has touched disk it
+knows where: `op.setup.path` is the file `save` wrote it to, or `load` read it
+from (the same `<field>.md` rule both ways); `None` until then. A shape may
+carry as many as it likes.
 
 | the field is | it becomes |
 | --- | --- |
@@ -256,6 +298,8 @@ document and becomes its own file. Everything else is a value and rides inside
 its parent's json.
 
 ```python
+from flow_sdk.schema.data_spec.markdown_spec import MarkdownSpec
+
 class Op(DataSpec):
     endpoint: Endpoint = Endpoint(port=0)   # a value    -> inside op.json
     notes: MarkdownSpec = MarkdownSpec()    # a document -> notes.md
@@ -269,6 +313,11 @@ So `markdown` needed no new type: `MarkdownSpec` was already the carrier, and
 A shape has no `id` field, and never does:
 
 ```python
+from pathlib import Path
+
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.io import Text
+
 class Op(DataSpec):
     name: str
     setup: Text = ""
@@ -279,9 +328,11 @@ written beside it: the `id:` key of a markdown document's frontmatter, or
 `.flow/capsules/identity.json` next to a folder's main document.
 
 ```python
+op = Op(name="pick-port")
+root = Path("pick-port")
 op.save(root)
-# root/op.json                      {"name": "pick-port"}
-# root/.flow/capsules/identity.json {"id": "e3b0c442-…"}
+# pick-port/op.json                      {"name": "pick-port"}
+# pick-port/.flow/capsules/identity.json {"data": {"id": "e3b0c442-…"}, "version": 1}
 
 Op.load(root) == op                 # True — content is equal
 ```
@@ -294,3 +345,42 @@ An id is a **UUID v4**. A file may already carry one — a hand-authored `id:`, 
 clone, an import — and it is adopted only if it validates; anything else is
 ignored and a stable id is derived instead. An id is a name, never a fact about
 the thing: it encodes no type, no path and no account.
+
+## 7. One value, fields and documents
+
+A shape carries structured fields and whole documents side by side; `spec_kind` names it, so a
+document can refer to it by name. Pinned by `tests/unit/test_data_spec_snippets.py`.
+
+```python
+from pathlib import Path
+from typing import ClassVar
+
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.io import Text
+
+class Note(DataSpec):
+    spec_kind: ClassVar[str] = "notes.note"   # flow.kind
+    title: str                                # structured
+    body: Text = ""                           # unstructured
+
+note = Note(title="Q3 plan", body="# Goals\n- ship it")
+folder = Path("q3-plan")
+note.save(folder)                             # note.json + body.md
+Note.load(folder) == note                     # True
+```
+
+## 8. An agent is a DataSpec
+
+An agent's definition is a shape like any other: validated in memory, a folder on disk, the same
+`save` and `load`. Pinned by `tests/unit/test_data_spec_snippets.py`.
+
+```python
+from pathlib import Path
+
+from flow_sdk.schema.data_spec.agent_spec import AgentSpec
+
+spec = AgentSpec(model="haiku", system_prompt="You answer Acme's phone. Be brief.")
+folder = Path("front-desk")
+spec.save(folder)                    # agent.json + system_prompt.md, like any DataSpec
+AgentSpec.load(folder) == spec       # True
+```

@@ -69,6 +69,10 @@ describe('discover-model', () => {
   it('reads provenance off the origin', () => {
     expect(provenanceOf(GIT)).toEqual({ kind: 'git', label: 'acme/tools@main', href: 'https://github.com/acme/tools/tree/main/.claude/skills/rca', provider: 'github' });
     expect(provenanceOf({ kind: 'local', base: '/x', rel_path: 'y' })).toEqual({ kind: 'local' });
+    // The project's hub-hosted repo has no provider page to link to.
+    expect(provenanceOf({ kind: 'hub_repo', repo: 'git_repo-1', rel_path: 'skills/rca', head_commit: 'c', tree: 't' })).toEqual({
+      kind: 'hub_repo',
+    });
     expect(provenanceOf(null)).toBeNull();
   });
 
@@ -76,13 +80,17 @@ describe('discover-model', () => {
     const states: PublishedState[] = ['in_use', 'install', 'stale', 'missing'];
     states.forEach((s) => expect(STATE_STYLE[s].chip).toContain('dark:'));
     const base = fromDirectoryRow(row());
-    expect(bodyCopyKey(base)).toBe('not_on_hub_git');
-    expect(bodyCopyKey({ ...base, origin: { kind: 'local' } })).toBe('not_on_hub_local');
+    // One sentence for "not on the hub", whatever the origin — no GitHub-specific cause any more.
+    expect(bodyCopyKey(base)).toBe('not_on_hub');
+    expect(bodyCopyKey({ ...base, origin: { kind: 'local' } })).toBe('not_on_hub');
     expect(bodyCopyKey(fromDirectoryRow(row({ body_reason: 'type_not_git' })))).toBe('type_not_git');
-    expect(bodyCopyKey(fromDirectoryRow(row({ body_reason: 'not_materialized' })))).toBe('not_materialized');
+    expect(bodyCopyKey(fromDirectoryRow(row({ body_reason: 'not_uploaded' })))).toBe('not_uploaded');
     expect(bodyCopyKey(fromDirectoryRow(row({ body_reason: null, body_ref: { type_id: 'skill-x', path: 'SKILL.md' } })))).toBeNull();
-    const desk = fromPublished({ ...row(), hub_body: { status: 'skipped', code: 'github_not_connected' } }, null);
-    expect(bodyCopyKey(desk)).toBe('github_not_connected');
-    expect(bodyCopyKey({ ...desk, hubBody: { status: 'failed', code: 'branch_ahead' } })).toBe('publish_failed');
+    const desk = fromPublished({ ...row(), hub_body: { status: 'skipped', code: 'project_not_linked' } }, null);
+    expect(bodyCopyKey(desk)).toBe('project_not_linked');
+    expect(bodyCopyKey({ ...desk, hubBody: { status: 'skipped', code: 'no_actor' } })).toBe('no_actor');
+    expect(bodyCopyKey({ ...desk, hubBody: { status: 'failed', code: 'asset_conflict' } })).toBe('asset_conflict');
+    expect(bodyCopyKey({ ...desk, hubBody: { status: 'failed', code: 'hub_publish_failed' } })).toBe('publish_failed');
+    expect(bodyCopyKey({ ...desk, hubBody: { status: 'published', code: null } })).toBeNull();
   });
 });

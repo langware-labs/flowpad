@@ -15,6 +15,7 @@ import {
   registerOsc52ClipboardWrite,
 } from './terminalConfig';
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
+import { fetchPtyStream, replayPtyStream } from './pty-replay';
 
 interface SidecarShellTerminalProps {
   shellId: string;
@@ -139,8 +140,21 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
         await shell.start({ cols: term.cols, rows: term.rows, workdir: shell.workdir ?? undefined });
       }
       if (disposed) return;
+      // What it printed before this view attached — a process's log lines are never repainted, so
+      // without the recorded stream (pty-replay) a terminal opened mid-run shows nothing of its past.
+      const stream = await fetchPtyStream(shell.pty_pid ?? shell.id);
+      const replay = stream ? await replayPtyStream(stream).catch(() => null) : null;
+      if (disposed) return;
       term.reset();
-      for (const chunk of shell.getPtyChunks()) term.write(chunk.data);
+      // The recorded screen's empty rows under the last output are dropped: the stream is recorded at
+      // its own size (a deployment's terminal is 30 rows), and written into a smaller view they scroll
+      // the real lines out and leave it showing blank rows.
+      if (replay) term.write(replay.serialized.replace(/(?:\r\n)+\x1b\[\d+A$/, ''));
+      const decoder = new TextDecoder('utf-8', { fatal: false });
+      for (const chunk of shell.getPtyChunks()) {
+        const text = decoder.decode(chunk.data, { stream: true });
+        if (!replay || chunk.seq > replay.lastSeq) term.write(text);
+      }
       unsubscribe = shell.onOutput((data) => term.write(data));
     })().catch((error) => console.error('[SidecarShellTerminal] Failed to attach shell:', error));
     return () => { disposed = true; unsubscribe?.(); };
@@ -216,3 +230,4 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
     </>
   );
 };
+

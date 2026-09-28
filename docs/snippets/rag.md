@@ -27,8 +27,8 @@ marks needs no setup first. This is exactly what the brain button in the file tr
 ```python
 from flow_sdk.builtin.rag_index import RagIndex
 
-index, covered = await RagIndex.toggle_root("/Users/me/notes")   # covered → True
-index, covered = await RagIndex.toggle_root("/Users/me/notes")   # again → False
+index, covered = await RagIndex.toggle_root(NOTES)   # covered → True
+index, covered = await RagIndex.toggle_root(NOTES)   # again → False
 ```
 
 Everything beneath a root is covered. The marker in the UI goes on the root only, because that
@@ -37,11 +37,14 @@ is where the choice was made.
 To be explicit about which index, or to add without toggling:
 
 ```python
+from flow_sdk.builtin.rag_index import RagIndex
+
 index = await RagIndex.ensure_default()      # find-or-create, answers the OLDEST row
-await index.add_root("/Users/me/notes")
-await index.remove_root("/Users/me/notes")   # also drops that root's chunks from the store
-print(index.roots)
+await index.add_root(NOTES)
+print(index.roots)                           # [NOTES]
 ```
+
+`await index.remove_root(NOTES)` takes it out again, and drops that root's chunks from the store.
 
 ## 2. Run a pass and read what it cost
 
@@ -71,6 +74,8 @@ index that is `pending`, or one with a root the store has no hash for.
 ## 3. Ask it something
 
 ```python
+from flow_sdk.rag import reconcile
+
 embed, model = await reconcile.embedder_for(index)
 vectors = await embed(["how does the gitignore walk decide what to skip"])
 
@@ -96,10 +101,10 @@ ids it already holds.
 from flow_sdk.rag.chunking import chunk_markdown
 from flow_sdk.rag.store import RagStore
 
-chunks = chunk_markdown(open("doc.md").read(), doc_ref="doc.md")
+chunks = chunk_markdown(open(DOC).read(), doc_ref=DOC)
 print(chunks[0].heading_path, chunks[0].text[:60])
 
-with RagStore("/tmp/my-store") as store:
+with RagStore("my-store") as store:
     fresh = store.unknown(chunks)                 # only what it has never seen
     if fresh:
         store.add(fresh, await embed([c.text for c in fresh]), model=model)

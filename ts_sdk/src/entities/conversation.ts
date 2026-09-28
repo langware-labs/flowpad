@@ -139,6 +139,13 @@ export interface IConversation extends IEntity {
   channel_spec?: IChannelSpec | null;
   /** The local DataSource feeding this conversation; never leaves the machine. */
   channel_source_id?: string | null;
+  /** Who a channel conversation is with (a phone number, an email address, a chat id) — set when it
+   *  starts; private to this machine. */
+  address?: string[];
+  /** When the conversation's first message was sent or received. */
+  started_at?: string | Date | null;
+  /** When it ended: a call hung up, or a thread retired by its channel's timeout. */
+  ended_at?: string | Date | null;
   /** Hub role roster — inherited from the Entity base as ``members``. The wire
    *  key on the conversation fanout is ``participants`` (hub contract), adapted
    *  in ``onEntityUpdate``. */
@@ -190,6 +197,9 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   channel?: string | null;
   channel_spec?: IChannelSpec | null;
   channel_source_id?: string | null;
+  address?: string[];
+  started_at?: string | Date | null;
+  ended_at?: string | Date | null;
   // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
   git_sharing_enabled?: boolean;
@@ -211,6 +221,9 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.channel = entity.channel ?? null;
     this.channel_spec = entity.channel_spec ?? null;
     this.channel_source_id = entity.channel_source_id ?? null;
+    this.address = entity.address ?? [];
+    this.started_at = entity.started_at ?? null;
+    this.ended_at = entity.ended_at ?? null;
     this.title = entity.title;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;

@@ -19,6 +19,7 @@ import httpx
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
@@ -240,10 +241,11 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
         system_prompt="You are first-line support. Reply with exactly the word the ticket asks for and nothing else.",
     )
     await agent.save()
-    # `bind_channel` is the one door: the source is born the agent's, with an
-    # EMPTY allowlist — a desk is open to strangers by declaration.
-    source = await agent.bind_channel(provider="helpdesk", channel=desk)
-    assert source.provider == "helpdesk" and not (source.inbound_allowed_senders or [])
+    # The source is born the agent's, with an EMPTY allowlist — a desk is open to strangers by declaration.
+    helpdesk = await DataDriver.get("helpdesk")
+    source = helpdesk.create_source(helpdesk.create_config(desk_project_id=desk), name=f"desk {desk[:8]}", owner=agent)
+    await source.save()
+    assert source.provider == "helpdesk" and not (source.allowed_senders or [])
     assert str(source.owner) == str(TypeId(type=EntityType.AGENT.value, id=agent_id))
 
     # The agent answers where it RUNS: its local deployment's loop (``builtin/agent_loop`` — in the app

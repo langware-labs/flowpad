@@ -9,6 +9,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AgentPlaceCard } from '../AgentPlaceCard';
 import { usePlaceDisplay } from '../use-place-display';
 import { useAgentPlaces } from '../use-agent-places';
+import { DeploymentProcessPanel } from './DeploymentProcessPanel';
 import { DeploymentThreads } from './DeploymentThreads';
 import { ThreadPane, type ThreadView } from './ThreadPane';
 import { useDeploymentThreads } from './use-deployment-threads';
@@ -107,13 +108,17 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
           </div>
         </section>
         <section className="flex min-h-0 flex-col border-t lg:border-s lg:border-t-0" aria-label={t`Thread`}>
-          {deployment && selected ? (
-            <ThreadPane deployment={deployment} thread={selected} view={view} focusAt={focusAt} onView={setView} />
-          ) : (
-            <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-              <Trans>Select a thread to see what happened in it.</Trans>
-            </div>
-          )}
+          <div className="flex min-h-0 flex-1 flex-col">
+            {deployment && selected ? (
+              <ThreadPane deployment={deployment} thread={selected} view={view} focusAt={focusAt} onView={setView} />
+            ) : (
+              <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                <Trans>Select a thread to see what happened in it.</Trans>
+              </div>
+            )}
+          </div>
+          {/* A local deployment IS a process here: its terminal and its file, under the thread. */}
+          {deployment?.target.provider === 'local' && <DeploymentProcessPanel deployment={deployment} />}
         </section>
       </div>
     </div>

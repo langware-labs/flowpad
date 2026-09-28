@@ -7,9 +7,16 @@ from flow_sdk.sources.values.items import (
     FeedItemData,
     FileData,
     FileItem,
+    FileKind,
     MessageData,
+    MessageFileData,
     MessageItem,
     Payload,
+    ReactionData,
+    ReactionItem,
+    ReactionMode,
+    RecordData,
+    RecordItem,
     SourceItemSpec,
     UserProfile,
 )
@@ -18,6 +25,11 @@ from flow_sdk.sources.values.page import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Chang
 from flow_sdk.sources.values.query import DataQuery, MessageQuery, ObjectQuery, RecordQuery
 
 __all__ = [
+    "ReactionMode",
+    "ReactionItem",
+    "ReactionData",
+    "MessageFileData",
+    "FileKind",
     "CallEvent",
     "IncomingCall",
     "VoiceTurnData",
@@ -42,6 +54,8 @@ __all__ = [
     "Move",
     "ObjectQuery",
     "Payload",
+    "RecordData",
+    "RecordItem",
     "RecordQuery",
     "SourceItemSpec",
     "UserProfile",

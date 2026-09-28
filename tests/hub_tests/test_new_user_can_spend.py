@@ -68,25 +68,6 @@ def _signup_a_brand_new_user(hub_base_url: str) -> dict:
     return body["data"]
 
 
-def _numbers(blob: object) -> float:
-    """Every number anywhere in *blob*, summed.
-
-    The usage report's shape is the hub's to choose (totals keyed by cost or by token, a series,
-    a breakdown) and this test has no business pinning it — it needs one question answered: did
-    the recorded amount go UP. Walking the structure answers that under any of those shapes,
-    where indexing a guessed key would raise a KeyError and report nothing about spending.
-    """
-    if isinstance(blob, bool):
-        return 0.0
-    if isinstance(blob, (int, float)):
-        return float(blob)
-    if isinstance(blob, dict):
-        return sum(_numbers(v) for v in blob.values())
-    if isinstance(blob, list):
-        return sum(_numbers(v) for v in blob)
-    return 0.0
-
-
 async def _booked(endpoint_id: str) -> float:
     """What the hub's LEDGER has recorded against this endpoint.
 
@@ -98,8 +79,10 @@ async def _booked(endpoint_id: str) -> float:
     """
     from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
 
-    report = await hub_get("llm_endpoint", {}, endpoint_id, "usage")
-    return _numbers(report)
+    # The report's ``totals`` over its window: the requests booked and what they cost. It includes turns still
+    # in the ledger's buffer, so the call just made shows at once.
+    totals = (await hub_get("llm_endpoint", endpoint_id, "usage") or {}).get("totals") or {}
+    return float(totals.get("requests") or 0) + float(totals.get("cost_micro_usd") or 0) / 1e6
 
 
 @pytest.mark.asyncio
@@ -168,4 +151,4 @@ async def test_a_brand_new_user_can_spend_by_saying_hi(hub_base_url):
         f"spend did not come from this user's plan, or usage is no longer recorded — in both "
         f"cases this test can no longer tell you that a new account can spend."
     )
-    print(f"[booked] {before} -> {after} USD")
+    print(f"[booked] {before} -> {after} (requests + USD)")

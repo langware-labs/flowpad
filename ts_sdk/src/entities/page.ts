@@ -134,7 +134,7 @@ export class Page extends APIEntity<Page> implements IPage {
   /**
    * Get page-level labels (independent from section labels)
    */
-  public getPageLabels(): import('./label').Label[] {
+  public getPageLabels(): import('./label-types').ILabel[] {
     const pageData = this.get_page_data();
     return pageData.page_labels || [];
   }
@@ -142,7 +142,7 @@ export class Page extends APIEntity<Page> implements IPage {
   /**
    * Set page-level labels (independent from section labels)
    */
-  public setPageLabels(labels: import('./label').Label[]): void {
+  public setPageLabels(labels: import('./label-types').ILabel[]): void {
     const pageData = this.get_page_data();
     pageData.page_labels = labels;
     this.set_page_data(pageData);

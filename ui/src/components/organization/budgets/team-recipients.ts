@@ -15,7 +15,7 @@
  */
 import { TypeId, getMembers, type Participant } from '@sdk';
 
-import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-list';
+import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-roles';
 
 export interface TeamRecipients {
   /** De-duped, lower-cased addresses to invite. */

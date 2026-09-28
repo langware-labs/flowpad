@@ -81,6 +81,7 @@ export interface IDeployment extends Omit<IEntity, 'status'> {
   project_id?: string | null;
   /** Credential environment: `development` (this computer) or a named one (`production`, `staging`, …). */
   environment?: string;
+  llm_endpoint_typeid?: string;
 }
 
 // `implements IDeployment` only checks the class; it contributes no members, so every
@@ -129,6 +130,24 @@ export interface DeploymentThread {
   turns: number;
 }
 
+/** A local deployment's process — mirror of `deployment.process`: the file it runs, its terminal. */
+export interface DeploymentProcess {
+  deployment_id: string;
+  /** The Shell whose terminal runs it; empty before its first start. */
+  shell_id: string;
+  file: string;
+  command: string;
+  /** The loop's pid while it runs, else null. */
+  pid: number | null;
+  serving: boolean;
+}
+
+/** The text of the file a local deployment runs — mirror of `deployment.code`. */
+export interface DeploymentCode {
+  file: string;
+  text: string;
+}
+
 /** The tag a deployment's process emits when its timeline moved (relayed to the app). */
 export const DEPLOYMENT_TIMELINE_TAG = 'deployment.timeline';
 
@@ -140,6 +159,26 @@ export const DEPLOYMENT_TIMELINE_TAG = 'deployment.timeline';
  * `gcp`). The row is parented to the deployed element and holds the same id on
  * the hub and here, so a cloud placement is adopted rather than re-minted.
  */
+
+/** One value the hub holds for a cloud placement. Names only; `ts` is epoch seconds. */
+export interface DeploymentSecretRow {
+  name: string;
+  written?: number;
+  placed?: { ts: number; event: 'placed' | 'unplaced' | string; detail?: string };
+}
+
+/** A connection a cloud placement's machine may use (`Deployment.authorize`). */
+export interface DeploymentAuthorizationRow {
+  provider: string;
+  permissions: string[];
+  ts?: number;
+}
+
+export interface DeploymentSecretsInventory {
+  secrets: DeploymentSecretRow[];
+  authorizations: DeploymentAuthorizationRow[];
+}
+
 @registerEntity
 export class Deployment extends APIEntity<Deployment> implements IDeployment {
   static type: string = 'deployment';
@@ -156,6 +195,8 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   source_revision: string | null;
   project_id: string | null;
   environment: string;
+  /** Its own token allocation on the hub (an `llm_endpoint` typeid); '' = its agent spends its owner's default. */
+  llm_endpoint_typeid: string;
 
   constructor(entity: Partial<IDeployment> | IEntity = {}) {
     super(entity);
@@ -189,6 +230,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     this.source_revision = deployment.source_revision ?? null;
     this.project_id = deployment.project_id ?? null;
     this.environment = deployment.environment || DEFAULT_CREDENTIAL_ENVIRONMENT;
+    this.llm_endpoint_typeid = deployment.llm_endpoint_typeid ?? '';
     this.validateStructure();
   }
 
@@ -235,6 +277,24 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     return ((await this.post('update')) ?? {}) as Record<string, unknown>;
   }
 
+  /** What the hub holds for this cloud placement — each value's name, last write and last placement
+   *  on its machine, and the connections its machine may use. Names only. */
+  async secretsInventory(): Promise<DeploymentSecretsInventory> {
+    const data = await this.get<Partial<DeploymentSecretsInventory> | null>('secrets');
+    return { secrets: data?.secrets ?? [], authorizations: data?.authorizations ?? [] };
+  }
+
+  /** Let this placement's machine use your `provider` connection: it asks the hub for a fresh token
+   *  when it needs one; your refresh token never leaves the hub. */
+  async authorize(provider: string, permissions: string[] = []): Promise<void> {
+    await this.post('authorize', { provider, permissions });
+  }
+
+  /** Take `provider` back: the machine's next token ask is refused. */
+  async revoke(provider: string): Promise<void> {
+    await this.post('authorize', { provider, revoke: true });
+  }
+
   /** What this placement serves — for a cloud placement, as the hub has it now (held here at the hub's ids). */
   async endpoints(): Promise<ServiceEndpoint[]> {
     const data = await this.get<{ endpoints?: IServiceEndpoint[] } | null>('endpoints');
@@ -255,6 +315,26 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     const qs = params.toString();
     const data = await this.get<DeploymentTimeline | null>(`timeline${qs ? `?${qs}` : ''}`);
     return data ?? { deployment_id: this.id, events: [], before: null };
+  }
+
+  /** A local deployment's process: its file, its terminal, its pid (`GET deployment/<id>/process`). */
+  async process(): Promise<DeploymentProcess | null> {
+    return this.get<DeploymentProcess | null>('process');
+  }
+
+  /** The Python file a local deployment runs (`GET deployment/<id>/code`). */
+  async code(): Promise<DeploymentCode | null> {
+    return this.get<DeploymentCode | null>('code');
+  }
+
+  /** Write the file; it runs from the next (re)start (`POST deployment/<id>/save_code`). */
+  async saveCode(text: string): Promise<DeploymentCode> {
+    return (await this.post('save_code', { text })) as DeploymentCode;
+  }
+
+  /** Stop the loop; the app runs the file again at once, in the same terminal (`POST deployment/<id>/restart`). */
+  async restart(): Promise<DeploymentProcess> {
+    return (await this.post('restart')) as DeploymentProcess;
   }
 
   /** The conversations it holds, the active ones first (`GET deployment/<id>/threads`). */

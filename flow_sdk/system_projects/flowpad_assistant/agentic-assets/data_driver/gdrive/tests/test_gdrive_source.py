@@ -20,7 +20,7 @@ from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, make_data_source, position
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.errors import SourceError
 from flow_sdk.sources.testing import Subject, checks_for
 
@@ -28,7 +28,7 @@ DriveSource = asset_module("gdrive").DriveSource
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-TOKEN = Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
+TOKEN = ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
 
 
 def _credentials(credentials):
@@ -281,7 +281,7 @@ async def test_the_query_is_the_configured_shared_drive_else_my_drive(driver, tm
 
 
 async def test_verify_says_what_to_do_when_there_is_no_credential(driver, tmp_path, monkeypatch):
-    monkeypatch.setattr(driver, "credentials_for", _credentials(Credentials()))
+    monkeypatch.setattr(driver, "credentials_for", _credentials(ResolvedSecrets()))
     verdict = await driver.verify(_source(tmp_path, ""))
     assert verdict.ready is False and "Connect Google" in verdict.detail
 

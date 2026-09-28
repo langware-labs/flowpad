@@ -22,7 +22,7 @@ from flow_sdk.secrets import (
     StoreAccessDenied,
     StoreNeedsConnection,
 )
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import RecordSource
 from tests.utils.fake_gcp_secret_manager import serving_gcp_store
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -217,7 +217,7 @@ async def test_another_http_failure_is_reported_as_is(gcp, monkeypatch):
 # ── with a DataSource ───────────────────────────────────────────────────────
 
 
-class _GcpKeyedSource(Source):
+class _GcpKeyedSource(RecordSource):
     provider = "gcp-keyed-test"
 
 
@@ -259,3 +259,20 @@ async def test_a_data_source_names_what_gcp_lacks(home, keyed_source, gcp):
     with pytest.raises(MissingSecrets) as missing:
         await (await _store("keyed-prod-")).validate_keys(source.credentials.names())
     assert missing.value.missing == ["KEYED_API_KEY"]
+
+
+async def test_a_per_store_forget_reports_a_gcp_store_and_an_unbound_one_as_unreachable(gcp):
+    from flow_sdk.builtin.credential_store import forget_in
+
+    bound = await _store("app-")
+    await bound.save({"API_KEY": "v"})
+    unbound = await _store("other-", bind=False)
+
+    reports = await forget_in([bound.ref, unbound.ref, bound.ref], ["API_KEY"])
+
+    assert [(r.type, r.deleted, r.kept, bool(r.error)) for r in reports] == [
+        ("gcp_secret_manager", ["API_KEY"], [], False),
+        ("gcp_secret_manager", [], ["API_KEY"], True),
+    ]
+    assert "StoreNeedsConnection" in reports[1].error
+    assert (PROJECT, "app-API_KEY") not in gcp.secrets

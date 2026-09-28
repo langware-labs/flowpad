@@ -8,6 +8,7 @@ from flow_sdk.actions import action
 from flow_sdk.assets.creation import AssetPathCollisionError
 from flow_sdk.builtin.user import User
 from flow_sdk.builtin.visitor import Visitor
+from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.drivers.query import QueryFilter
@@ -176,7 +177,12 @@ async def handle_delete_by_id():
     # create's child-only auto-share; a top-level shared entity (no parent) keeps
     # its explicit ``unshare`` semantics and is not auto-removed from the hub here.
     entity = await entity_model.get_one({"id": target_typeid.id})
-    if entity is not None and getattr(entity, "remote", False) and getattr(entity, "parent_type_id", None):
+    if (
+        entity is not None
+        and not entity_model.owns_hub_delete  # its own delete asks the hub first, and fails loudly
+        and getattr(entity, "remote", False)
+        and getattr(entity, "parent_type_id", None)
+    ):
         try:
             await entity.unshare(recursive=False)
         except Exception as e:  # noqa: BLE001
@@ -189,7 +195,15 @@ async def handle_delete_by_id():
             else:
                 service_log.warn(f"[delete] auto-unshare {target_typeid} failed (non-fatal): {e}")
 
-    is_deleted = await entity_model.delete_by_id(target_typeid.id)
+    try:
+        if entity is not None and entity_model.owns_hub_delete:
+            is_deleted = await entity.delete()  # already loaded: asks the hub first
+        else:
+            is_deleted = await entity_model.delete_by_id(target_typeid.id)
+    except HubError as e:
+        raise HTTPException(
+            status_code=502, detail=f"{e.reason} ({e.status_code}); it is kept here so the delete can be retried"
+        ) from e
     if not is_deleted:
         raise HTTPException(
             status_code=403,

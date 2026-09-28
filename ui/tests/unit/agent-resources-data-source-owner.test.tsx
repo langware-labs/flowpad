@@ -50,6 +50,7 @@ vi.mock('@src/components/data-sources/use-source-specs', async (original) => ({
   useSourceSpecs: () => ({ specFor: (provider: string) => ({ name: provider, sends: provider === 'slack' }) }),
 }));
 
+vi.mock('@src/components/agent-resources/AgentCredentialsSection', () => ({ AgentCredentialsSection: () => null }));
 vi.mock('@src/components/agent-resources/AgentSchedulesSection', () => ({
   AgentSchedulesSection: () => <div data-testid="mock-schedules-section" />,
 }));

@@ -7,6 +7,7 @@ from flow_sdk.schema.data_spec import AssetDocumentSpec
 from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
+from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 #: The launch settings a place may override. Anything else is the definition's.
@@ -85,6 +86,9 @@ class AgentSpec(AssetDocumentSpec):
     email_place: Optional[str] = None
     #: The agent's own phone number (the one its WhatsApp channel answers on). Declaration only.
     phone: Optional[PhoneNumberSpec] = None
+    #: What the agent needs wherever it runs — credentials, permissions, variables — derived from what
+    #: it owns and kept with any authored entries, so it ships with the agent. Never a value.
+    requirements: Optional[list[RequirementSpec]] = None
     input: Optional[ShapeForm] = None
     output: Optional[ShapeForm] = None
     system_prompt: Text = ""

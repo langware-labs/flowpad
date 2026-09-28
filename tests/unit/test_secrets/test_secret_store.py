@@ -60,7 +60,7 @@ async def test_a_ref_round_trips_and_names_no_value(tmp_path):
         SecretStoreRef(type="vault", config={}, value="x")
 
 
-async def test_an_env_file_store_saves_loads_lists_validates_and_keeps_lines(tmp_path):
+async def test_an_env_file_store_saves_loads_lists_validates_and_forgets(tmp_path):
     git_init(tmp_path)
     store = await SecretStore.get("env_file", {"env_file_path": str(tmp_path / ".env.local")})
 
@@ -77,8 +77,19 @@ async def test_an_env_file_store_saves_loads_lists_validates_and_keeps_lines(tmp
         await store.validate_keys(["DATABASE_URL", "SENTRY_DSN"])
     assert missing.value.missing == ["SENTRY_DSN"]
     assert "postgres" not in str(missing.value)
-    assert await store.forget(["DATABASE_URL"]) == ([], ["DATABASE_URL"])
-    assert "DATABASE_URL" in await store.load(["DATABASE_URL"])
+    assert await store.forget(["DATABASE_URL", "NEVER_SET"]) == (["DATABASE_URL"], [])
+    assert await store.names() == []
+
+
+async def test_forgetting_a_line_keeps_every_other_line_byte_for_byte(tmp_path):
+    env = tmp_path / ".env.local"
+    env.write_text('# mine\nKEEP=1\nDROP="multi\nline"\nexport ALSO=2\nDROP=again\n# tail\n')
+    env.chmod(0o600)
+    store = await SecretStore.get("env_file", {"env_file_path": str(env)})
+
+    assert await store.forget(["DROP"]) == (["DROP"], [])
+    assert env.read_text() == "# mine\nKEEP=1\nexport ALSO=2\n# tail\n"
+    assert env.stat().st_mode & 0o777 == 0o600
 
 
 async def test_an_env_file_store_never_writes_a_committable_file(tmp_path):

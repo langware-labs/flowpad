@@ -6,6 +6,7 @@ import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 import { NavigationActions } from './NavigationActions';
 import { detectLayout, ROOT_PATH } from './url-builder';
+import { isHomeSurface } from './dock-layout';
 
 export interface UseDockNavigationReturn {
   /** Navigation actions instance */
@@ -89,8 +90,7 @@ export function useCurrentDock(): DockPointer | null {
  * shouldn't, on home — home stays home, on the new project).
  */
 export function useIsHomeSurface(): boolean {
-  const currentDock = useCurrentDock();
-  return currentDock === null || currentDock.viewType === ViewType.HOME;
+  return isHomeSurface(useCurrentDock());
 }
 
 export function useDockNavigation(): UseDockNavigationReturn {

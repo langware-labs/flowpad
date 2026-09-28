@@ -60,7 +60,7 @@ async def _source(agent_id: str, allowed: list[str] | None = None) -> DataSource
         },
         account_key=MAILBOX,
         status=SourceStatus.ACTIVE.value,
-        inbound_allowed_senders=list(allowed or []),
+        allowed_senders=list(allowed or []),
     )
     await source.save()
     return source
@@ -99,17 +99,17 @@ async def test_listed_sender_is_admitted_case_and_space_insensitively():
     assert _mailbox(allowed=["Alice@Example.com"]).allowed("  alice@example.com ") is True
 
 
-# ── from_source on a bind_channel-bound source (owner, no config.agent_id) ────
+# ── from_source on an agent-owned channel source (owner, no config.agent_id) ────
 
 
 async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agent_id():
-    """A channel `Agent.bind_channel` bound (Slack, Teams, …) carries no
+    """A channel source an Agent owns (Slack, Teams, …) carries no
     `config.agent_id` at all — that key belongs to the cloud-mailbox
     (`allocate_mailbox`) driver only. Its agent is the `owner`.
 
     Before the fix, `from_source` read only `config.get("agent_id")`, got
     `""`, and `TypeId(type="agent", id="")` raised — crashing the inbound
-    answer path for every single bind_channel-bound source, always, silently
+    answer path for every single agent-owned channel source, always, silently
     (swallowed by the handler's catch-all). `agent_id_of` is the
     already-existing reader that falls back to `owner`; `from_source` now
     goes through it instead of re-spelling half the rule.
@@ -122,7 +122,7 @@ async def test_from_source_resolves_the_agent_from_owner_when_config_has_no_agen
         config={"channel": {"id": "C0123456789", "name": "test"}},  # no agent_id key
         owner=TypeId(type="agent", id=agent_id),
         status=SourceStatus.ACTIVE.value,
-        inbound_allowed_senders=["U0BP53L7Z5G"],
+        allowed_senders=["U0BP53L7Z5G"],
     )
 
     mailbox = AgentMailbox.from_source(source)  # must not raise

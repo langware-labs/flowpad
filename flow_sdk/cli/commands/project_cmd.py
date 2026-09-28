@@ -129,7 +129,7 @@ def _requirement_done(req: "SetupRequirementSpec", steps: dict[str, Any]) -> boo
     return any(steps.get(n) is not None and steps[n].ok for n in names)
 
 
-async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: bool) -> int:
+async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: bool, deployment_id: str = "") -> int:
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.builtin.project_setup import collect_requirements, compile_setup  # noqa: PLC0415
     from flow_sdk.core.compute_op import ask  # noqa: PLC0415
@@ -139,7 +139,7 @@ async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: b
     if project is None:
         fail(EXIT_INVALID_ARG, "NO_PROJECT", "no project here: cd into a project folder or pass --project")
 
-    requirements = await collect_requirements(project)
+    requirements = await collect_requirements(project, deployment_id)
     if not as_json:
         typer.echo(f"{project.name or project.id}: {len(requirements)} to set up")
         _print_plan(requirements)
@@ -149,7 +149,7 @@ async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: b
                                                  "requirements": [_describe(r) for r in requirements]}))
         return int(ExitCode.OK)
 
-    wizard, ops = compile_setup(str(project.id), requirements, ai=ai)
+    wizard, ops = compile_setup(str(project.id), requirements, ai=ai, deployment_id=deployment_id)
     steps: dict[str, Any] = {}
     if wizard.steps:
 
@@ -198,8 +198,9 @@ def setup_project(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Only list what is needed, and what already holds.")] = False,
     no_ai: Annotated[bool, typer.Option("--no-ai", help="No AI setup: a value left empty stays missing.")] = False,
     as_json: Annotated[bool, typer.Option("--json", help="One JSON line; no values in it.")] = False,
+    deployment: Annotated[Optional[str], typer.Option("--deployment", help="Set up the values a deployment keeps (default: this computer's).")] = None,
 ) -> None:
     """Set up every connection and credential the project needs, one step at a time."""
-    code = asyncio.run(_run(project, dry_run=dry_run, ai=not no_ai, as_json=as_json))
+    code = asyncio.run(_run(project, dry_run=dry_run, ai=not no_ai, as_json=as_json, deployment_id=deployment or ""))
     if code:
         raise typer.Exit(code)

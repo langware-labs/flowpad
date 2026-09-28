@@ -18,7 +18,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod, isBrowseListPointer, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
 import { resolveWikiWord } from '@src/components/wiki/resolve-wiki';
 import type { WikiAuthority } from '@src/components/wiki/resolve-wiki';
-import { clearWikiResolveResult, setWikiResolveResult } from './wiki-resolve-store';
+import { getWikiResolveResult, setWikiResolveResult } from './wiki-resolve-store';
 
 // The fields the loader derives context from. `project_id` is a backend
 // projection, not a typed field on the base entity, so resolved entities are
@@ -56,6 +56,12 @@ async function setEntityContext(entity: ContextEntity | null): Promise<void> {
   );
 }
 
+/** Machine paths `/assets/entity` answered with nothing, this session. */
+const pathMisses = new Set<string>();
+/** Machine paths `/assets/entity` answered with an entity — the URL's own spelling of the path, which
+ *  need not match the entity's `asset_ref` (a symlinked dir: `/var/…` in the URL, `/private/var/…` stored). */
+const pathHits = new Map<string, TypeId>();
+
 /** Warm the cache by typeid, then push the resolved entity into context. */
 async function ensureInContext(typeId: TypeId): Promise<void> {
   const entity = await dataManager.getByTypeId(typeId).catch(() => null);
@@ -92,11 +98,15 @@ export async function loadAssetRoute(
   try {
     if (ptr.mode === AssetMode.WIKI) {
       const authority = options.wikiAuthority ?? 'local';
-      clearWikiResolveResult(ptr.space, ptr.wikiName, authority);
-      const result = await resolveWikiWord(ptr.space, ptr.wikiName, {
-        allowLocalAlias: options.allowLocalWikiAlias,
-        authority,
-      });
+      // Reuse what this session already resolved (dock-loading I4). The one event
+      // that changes the answer — creating the missing page — clears the result in
+      // the view that creates it, so the next visit resolves afresh.
+      const result =
+        getWikiResolveResult(ptr.space, ptr.wikiName, authority) ??
+        (await resolveWikiWord(ptr.space, ptr.wikiName, {
+          allowLocalAlias: options.allowLocalWikiAlias,
+          authority,
+        }));
       setWikiResolveResult(ptr.space, ptr.wikiName, result, authority);
       if (result.kind === 'resolved') await ensureInContext(result.target_typeid);
       return;
@@ -118,12 +128,26 @@ export async function loadAssetRoute(
     // `machinePath` (not `absVfsPath`) is the form `asset_ref` is stored in.
     // On a miss (not-yet-indexed) the view still self-resolves via
     // `AssetEditorRouter` → `EntityResolutionGate` → `useEntityByPath` (lazy
-    // discover). `getEntityByPath` already caches the hit, so this is the only
-    // network round-trip.
+    // discover).
     const machine = VFSPath.parse(ptr.value).machinePath;
     if (machine) {
-      const e = await dataManager.getEntityByPath(machine).catch(() => null);
-      await setEntityContext(e as ContextEntity | null);
+      // Cache-first (dock-loading I4): a revisit must not wait on a lookup it
+      // already made. A remembered miss (a file nothing indexed) stays a miss
+      // until an entity for the path reaches the cache — the scan above finds it
+      // first — so the negative memo heals itself; the view resolves a miss on
+      // its own either way.
+      const known = pathHits.get(machine);
+      const cached =
+        (known ? (dataManager.getByTypeIdFromCache(known) as unknown as ContextEntity | null) : null) ??
+        (dataManager.findInCache((e) => (e as ContextEntity).asset_ref === machine) as ContextEntity | null);
+      if (cached) {
+        await setEntityContext(cached);
+      } else if (!pathMisses.has(machine)) {
+        const e = (await dataManager.getEntityByPath(machine).catch(() => null)) as ContextEntity | null;
+        if (e) pathHits.set(machine, e.typeId);
+        else pathMisses.add(machine);
+        await setEntityContext(e);
+      }
     }
   } catch (e) {
     console.warn('[load-asset] resolve failed (view will handle):', pointer, e);

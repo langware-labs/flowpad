@@ -54,4 +54,4 @@ export type { ClaudeSessionRecordData } from '../resource_management/fs_records/
 
 // Common function types
 
-export type Callable = (...args: any[]) => void;
+export type { Callable } from './callable';

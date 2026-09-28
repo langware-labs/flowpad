@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { dataManager } from '../../index';
+import { dataManager } from '../../APIEntity';
 import { OAuthEventType, type OAuthFlowCompletePayload } from '../../services/oauth/oauth-service';
 
 /**

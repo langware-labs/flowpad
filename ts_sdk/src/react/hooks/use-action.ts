@@ -1,4 +1,5 @@
-import { ActionInfo, dataManager } from '@sdk';
+import { dataManager } from '../../APIEntity';
+import { ActionInfo } from '../../models/ActionInfo';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 type UseActionOptions = {

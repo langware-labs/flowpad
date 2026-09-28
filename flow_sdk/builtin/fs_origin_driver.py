@@ -75,10 +75,12 @@ class FSOriginDriver(Protocol):
 def _build_default_registry(registry: "KindRegistry[FSOriginDriver]") -> None:
     # Lazy-import concrete drivers so their deps load only with this module.
     from flow_sdk.builtin.drivers.git_driver import GitOriginDriver
+    from flow_sdk.builtin.drivers.hub_repo_driver import HubRepoOriginDriver
     from flow_sdk.builtin.drivers.local_driver import LocalOriginDriver
 
     registry.register(GitOriginDriver())
     registry.register(LocalOriginDriver())
+    registry.register(HubRepoOriginDriver())
 
 ORIGIN_DRIVERS: "KindRegistry[FSOriginDriver]" = KindRegistry(
     "FSOrigin", aliases=ORIGIN_MODELS.aliases, builder=_build_default_registry

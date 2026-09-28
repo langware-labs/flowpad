@@ -40,6 +40,15 @@ if TYPE_CHECKING:  # pragma: no cover
 from flow_sdk.builtin import deployment_process
 
 logger = logging.getLogger(__name__)
+#: The deployment's console — one plain line per thing that happened, printed on the terminal of the
+#: process that runs it (``agent_loop``); in the app, the ordinary log.
+console = logging.getLogger("flow.deployment")
+
+
+def _line(text: str, width: int = 90) -> str:
+    """*text* on one line, cut at *width*."""
+    flat = " ".join(str(text or "").split())
+    return flat if len(flat) <= width else f"{flat[: width - 1]}…"
 
 # ── the turn record, on the process (durable, so a redelivery is answered from it) ──
 
@@ -268,8 +277,10 @@ class TurnEngine:
                 ))
                 return
             if prior and prior.get("status") == STARTED:
-                # Died mid-turn. Did the agent finish? The transcript knows.
-                text = await _capture_assistant_reply(ap)
+                # Died mid-turn. Did the agent finish? The transcript knows -- when there is one. A worker that
+                # never came up (it could not spawn) left none, and waiting for it would wait out the budget on
+                # every redelivery, so the message would never be answered: nothing ran, so it runs now.
+                text = await _capture_assistant_reply(ap) if has_transcript(ap) else ""
                 if text:
                     await stamp_turn(ap, turn.key, done_record(prior, text))
                     yield done(PromptResult.satisfied(
@@ -279,6 +290,7 @@ class TurnEngine:
             start = len(transcript_entries(ap)) if stream else 0
             await stamp_turn(ap, turn.key, started_record())
             _announce(self.deployment, "turn_started", process_id=str(getattr(ap, "id", "") or ""))
+            console.info("▶ turn  %s", turn.name or turn.session)
             taken = await ap.send_turn(turn.body)
             if not taken.ok:
                 # Nothing ran, so nothing is recorded: a STARTED stamp left behind would
@@ -312,16 +324,33 @@ class TurnEngine:
             yield done(answer)
 
 
-def transcript_entries(ap) -> list:
-    """The process's transcript as typed entries, or ``[]`` before it has one."""
-    from flow_sdk.transcript_analyzer import AgentTranscriptFile  # noqa: PLC0415
-
+def _transcript_file(ap):
+    """``(path, descriptor)`` of the process's transcript, or ``(None, None)`` before it has
+    one — including a process with no driver to ask, which is the same answer."""
     try:
         desc = ap.driver.transcript_descriptor(ap)
     except Exception:  # noqa: BLE001 — a driver that cannot say yet has no transcript yet
         desc = None
-    path = desc.path if desc is not None else ap.driver.transcript_path(ap)
-    if path is None or not path.exists():
+    try:
+        path = desc.path if desc is not None else ap.driver.transcript_path(ap)
+    except Exception:  # noqa: BLE001 — same answer: nothing to read
+        return None, desc
+    return (path if path is not None and path.exists() else None), desc
+
+
+def has_transcript(ap) -> bool:
+    """Whether the process has a transcript at all — the half of ``transcript_entries``
+    that asks the filesystem, for a caller that does not want the entries. Reading them
+    to answer a yes/no parses the whole session."""
+    return _transcript_file(ap)[0] is not None
+
+
+def transcript_entries(ap) -> list:
+    """The process's transcript as typed entries, or ``[]`` before it has one."""
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile  # noqa: PLC0415
+
+    path, desc = _transcript_file(ap)
+    if path is None:
         return []
     try:
         transcript = AgentTranscriptFile(
@@ -423,7 +452,7 @@ def admits(source, author: str) -> bool:
 
     if getattr(source, "status", None) != SourceStatus.ACTIVE.value:
         return False
-    allowlist = [a for a in (getattr(source, "inbound_allowed_senders", None) or []) if str(a).strip()]
+    allowlist = [a for a in (getattr(source, "allowed_senders", None) or []) if str(a).strip()]
     if sender_allowed(allowlist, author):
         return True
     driver = DataDriver.loaded(getattr(source, "provider", "") or "")
@@ -632,7 +661,7 @@ def is_history(message, since: Optional[datetime]) -> bool:
 ATTENTION_RENEW_SECONDS = 25.0
 
 
-async def serve(agent, deployment, *, sources=None, poll_every: "float | None" = None) -> None:
+async def serve(agent, deployment, *, sources=None, poll_every: "float | None" = None, loop=None) -> None:
     """Answer every message on the agent's channels that answer on *deployment*, until cancelled.
 
     One durable drain (a named consumer per placement, so a restart resumes after
@@ -647,18 +676,15 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
     a viewer does (:meth:`DataSource.note_attention`), so a driver that allows it
     is polled on its fast lane while an agent serves it, and no other is polled
     any faster than its interval. ``poll_every`` is only how often the drain
-    re-reads the database when no arrival woke it.
+    re-reads the database when no arrival woke it. *loop* is the loop itself —
+    ``(engine, channels, bound, every)``, the deployment file's own; the stock one when None.
     """
-    from flow_sdk.blocks import StreamInbox, workflow  # noqa: PLC0415
     from flow_sdk.blocks.arrivals import stoppable  # noqa: PLC0415
-    from flow_sdk.blocks.merge import pages  # noqa: PLC0415
 
     sources = list(sources) if sources is not None else await answered_sources(agent, deployment)
     if not sources:
         return
-    by_id = {str(s.id): s for s in sources}
     bound = {str(s.id): bound_at(deployment, s) for s in sources}
-    engine = TurnEngine(agent, deployment)
     stop = asyncio.Event()
     task = asyncio.current_task()
     if task is not None:
@@ -666,20 +692,17 @@ async def serve(agent, deployment, *, sources=None, poll_every: "float | None" =
     waiting = asyncio.get_running_loop().create_task(_keep_attention(sources))
     try:
         with stoppable(stop):
-            async with workflow(consumer_of(deployment)):
-                async for page in pages(*(StreamInbox.of(s) for s in sources), poll_every=poll_every, poll=False):
-                    if stop.is_set():
-                        continue  # unacked: the next loop on this placement is handed it again
-                    source = by_id[page.source_id]
-                    for message in page:
-                        if is_history(message, bound[page.source_id]):
-                            await _skip(message)  # the backlog the channel held when it was bound
-                            continue
-                        await answer(engine, message, source=source)
-                    await page.ack()
+            await (loop or _default_loop())(TurnEngine(agent, deployment), sources, bound, poll_every)
     finally:
         waiting.cancel()
         await asyncio.gather(waiting, return_exceptions=True)
+
+
+def _default_loop():
+    """The stock loop — the very function each deployment's file shows (``deployment_loop``)."""
+    from flow_sdk.builtin.deployment_loop import answer_every_message  # noqa: PLC0415
+
+    return answer_every_message
 
 
 async def _keep_attention(sources) -> None:
@@ -717,20 +740,23 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
     body = str(getattr(message, "body", "") or "").strip()
     # The loop guard first: pure string work, and every reply the agent sends comes back.
     if is_own_outgoing(source, author):
-        return await _skip(message)
+        return await skip_message(message)
+    channel = source.channel or source.provider
     if not admits(source, author):
-        logger.info("agent %s: not answering an unlisted sender on %s", agent.name or agent.id, source.id)
+        console.info("✗ %s  %s — not an allowed sender, not answered", channel, author)
         _announce(engine.deployment, "refused", data_source_id=str(source.id))
-        return await _skip(message)
+        return await skip_message(message)
     _announce(engine.deployment, "message_in", data_source_id=str(source.id))
-    if not body:
-        return await _skip(message)
+    console.info("← %s  %s: %s", channel, author, _line(body))
+    files = tuple(getattr(message, "files", ()) or ())
+    if not body and not files:
+        return await skip_message(message)
     # Three facts a source may declare about its messages (the driver class says; nothing here names one):
     # a ``quiet`` message is the log, not a call to act; ``turn_session`` names the session a message is
     # answered in; ``replies_explicitly`` means the turn's text is not sent back by itself.
     driver_cls = _driver_cls(source)
     if getattr(getattr(message, "data", None), "quiet", False):
-        return await _skip(message)
+        return await skip_message(message)
     session = str(session or "")
     hook = getattr(driver_cls, "turn_session", None)
     if not session and callable(hook):
@@ -742,23 +768,63 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
             return False
         session = str(TypeId(type=EntityType.CONVERSATION.value, id=conversation))
     who = display_name_of(getattr(message, "author_display", "") or "", author)
+    outbox = reply_outbox(source, turn_key(message))
     outcome = await engine.run(
         Turn(
             session=session,
             key=turn_key(message),
-            body=body,
+            body=turn_body(message, outbox=outbox if getattr(getattr(driver_cls, "files", None), "kinds", None) else None),
             name=" · ".join(p for p in (agent.name, source.channel or source.provider, who) if p) or None,
         ),
         process=process,
     )
-    if not outcome.ok or not outcome.text:
-        logger.info("agent %s: no reply to %s (%s)", agent.name or agent.id, session, outcome.detail)
+    answer_files = sorted(str(p) for p in outbox.iterdir() if p.is_file()) if outbox.is_dir() else []
+    if not outcome.ok or not (outcome.text or answer_files):
+        console.info("✗ %s  %s — no reply: %s", channel, who, _line(outcome.detail))
         return False
     if getattr(driver_cls, "replies_explicitly", False):
-        await _skip(message)
+        await skip_message(message)
         return True
-    await message.reply(await message.reply_spec(body=outcome.text))
+    # quote=None: the answer quotes the message only when the person wrote again meanwhile.
+    await message.reply(await message.reply_spec(body=outcome.text or "", files=answer_files))
+    console.info("→ %s  %s: %s", channel, who, _line(outcome.text))
     return True
+
+
+def reply_outbox(source, key: str):
+    """The folder a turn saves files into to send them with its answer — one per message, so a
+    redelivered turn finds what it already wrote."""
+    import hashlib  # noqa: PLC0415
+
+    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+    return data_dir_for("data_source", source.id) / "outbox" / hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def turn_body(message, *, outbox=None) -> str:
+    """What the agent reads for one channel message: the message it quotes, its words, the files it
+    carried (local paths it can open) and — when it carried files, on a channel that takes them —
+    where to put files to send back. A plain message is exactly its words."""
+    lines = []
+    quoted = getattr(message, "reply_to", None)
+    if quoted is not None:
+        said = " ".join(str(getattr(quoted, "body", "") or "").split())
+        lines.append(f"(replying to: «{said[:300]}»)")
+    body = str(getattr(message, "body", "") or "").strip()
+    if body:
+        lines.append(body)
+    files = tuple(getattr(message, "files", ()) or ())
+    if files:
+        lines.append("Files that came with this message:")
+        for f in files:
+            where = f.path or f"not downloaded ({f.fetch_error or 'unavailable'})"
+            caption = f" — {f.caption}" if getattr(f, "caption", None) else ""
+            lines.append(f"- {f.name or 'file'} ({f.as_.value}, {f.media_type or 'unknown type'}): {where}{caption}")
+    if outbox is not None and files:
+        # Said where files are already the subject; a plain message stays exactly the person's words
+        # (an agent can always answer with files through `flow conversation reply --file`).
+        lines.append(f"To send files with your answer, save them in {outbox}")
+    return "\n".join(lines)
 
 
 def _announce(deployment, kind: str, **data) -> None:
@@ -770,7 +836,7 @@ def _announce(deployment, kind: str, **data) -> None:
         announce(str(deployment.id), kind, **data)
 
 
-async def _skip(message) -> bool:
+async def skip_message(message) -> bool:
     """Settle a message that gets no reply from here — acked when it came from a listener."""
     ack = getattr(message, "ack", None)
     if callable(ack):
@@ -819,7 +885,7 @@ def serving_key(source) -> tuple:
         str(getattr(source, "provider", "") or ""),
         str(getattr(source, "answer_place", "") or ""),
         str(getattr(source, "status", "") or ""),
-        tuple(sorted(str(a) for a in (getattr(source, "inbound_allowed_senders", None) or []))),
+        tuple(sorted(str(a) for a in (getattr(source, "allowed_senders", None) or []))),
         getattr(source, "thread_timeout_seconds", None),
     )
 
@@ -827,7 +893,7 @@ def serving_key(source) -> tuple:
 class AgentServer:
     """Keeps every running local agent deployment's PROCESS running.
 
-    A running local deployment is a subprocess running the agent loop (``builtin/agent_loop``);
+    A running local deployment is its Python file running in its terminal (``builtin/deployment_process``);
     this app only starts it, adopts it alive after a restart, starts it again when it died, and
     stops it when the deployment stops serving, its agent is switched off there, or it is deleted
     (``builtin/deployment_process``). Reconciled at start, on every ``agent``/``deployment`` write
@@ -948,22 +1014,18 @@ class AgentServer:
             return
         await ensure_chat_channel(agent, deployment)
         if not deployment_process.alive(deployment):
-            deployment.provider_labels = {**(deployment.provider_labels or {}), **deployment_process.start(deployment)}
-            await deployment.save()
-            logger.info("agent %s: deployment %s runs as pid %s", agent.name or agent.id, deployment.id,
-                        deployment_process.recorded(deployment).pid)
+            labels = await deployment_process.start(deployment)
+            if labels != {k: (deployment.provider_labels or {}).get(k) for k in labels}:
+                deployment.provider_labels = {**(deployment.provider_labels or {}), **labels}
+                await deployment.save()
+            logger.info("agent %s: deployment %s started in terminal %s", agent.name or agent.id, deployment.id,
+                        labels.get(deployment_process.SHELL_LABEL))
         self._running[str(deployment.id)] = deployment   # started now, or alive from before a restart: adopted
 
     async def _stop_process(self, deployment) -> None:
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
-
+        """Stop the deployment's loop; its terminal stays, showing how it ended."""
         if not await asyncio.to_thread(deployment_process.stop, deployment):
             logger.warning("deployment %s: its process did not stop", deployment.id)
-            return
-        fresh = await Deployment.get_by_id(str(deployment.id))
-        if fresh is not None:
-            fresh.provider_labels = {**(fresh.provider_labels or {}), **deployment_process.labels_of(None)}
-            await fresh.save()
 
     async def _sync_chiefs_of_staff(self) -> None:
         """A Chief of Staff's Tasks channel follows its checkbox — bound here, so its serve loop picks

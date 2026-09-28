@@ -15,7 +15,7 @@ def _source(provider: str, *, status="active", allowed=()):
     """A desk source carries NO agent_id — the gate must not need one."""
     config = {"agent_id": "agent-1"} if provider == "cloud_email" else {"desk_project_id": "desk-1"}
     return DataSource(name=f"s {uuid.uuid4().hex[:8]}", provider=provider, channel=provider, status=status, config=config,
-                      inbound_allowed_senders=list(allowed))
+                      allowed_senders=list(allowed))
 
 
 def test_a_help_desk_answers_everyone_when_nobody_is_listed():

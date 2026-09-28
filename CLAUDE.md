@@ -141,6 +141,8 @@ That means, on every click handler that changes "what is shown":
 
 If you find yourself writing `dataContext.set*(...)` immediately before `navigation.openDock(...)` in a click path, stop. That is the broken pattern. Delete the writes and make the active-key derivation URL-first.
 
+The full algorithm — seven steps, six invariants (one entry, one redirect decided before any write, no runtime work in loaders, a warm visit asks the backend for nothing, one layout rule, a runtime lives as long as its tab) and the test enforcing each — is **[`docs/navigation/dock-loading.md`](docs/navigation/dock-loading.md)**. A new view type needs a row in `ui/tests/unit/dock-loader/dock-loader-matrix.test.ts`; the coverage guard fails without one.
+
 ## Test timeouts (non-negotiable)
 
 **NEVER raise a test timeout to make a test pass. EVER. No exceptions without explicit user approval, every time.**

@@ -167,7 +167,7 @@ async def run_headless_turn(
                 await process.end_headless_turn(log_prefix)
 
         task = asyncio.create_task(_run_turn(), name=f"{driver.name}-{process.id[:8]}")
-        register_prompt_task(process.id, task)
+        register_prompt_task(process.id, task, on_done=process.notify_updated)
     except BaseException:
         # _run_turn never took ownership of the slot — release it here so the
         # next turn is not permanently rejected with a 409.

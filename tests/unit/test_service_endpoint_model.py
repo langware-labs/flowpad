@@ -225,3 +225,17 @@ async def test_a_saved_endpoint_reads_back_with_its_typed_protocol_and_backend()
     again = await ServiceEndpoint.get_by_id(endpoint.id)
     assert type(again.protocol) is ChatOpenAIProtocol
     assert again.backend.type == "static" and again.backend.root == "/srv/dist"
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("fresh_user_scope")
+async def test_the_documented_endpoint_runs_as_written():
+    """``docs/snippets/service-endpoints.md`` §1, verbatim, on a placed agent."""
+    from flow_sdk.builtin.agent import Agent
+    from tests.utils.snippets import doc, fence_under, run_fence
+
+    agent = Agent(name=f"endpoint-host-{uuid.uuid4().hex[:6]}", system_prompt="Be brief.")
+    await agent.save()
+    ns = await run_fence(fence_under(doc("service-endpoints.md"), "1."), {"AGENT": agent.name}, filename="service-endpoints.md §1")
+    assert ns["endpoint"].protocol.kind == PROTOCOL_API_CHAT_OPENAI and ns["endpoint"].surface == "api"
+    assert ns["endpoint"].parent_type_id == str(ns["deployment"].typeid)

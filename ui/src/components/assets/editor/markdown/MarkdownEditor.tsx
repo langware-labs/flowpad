@@ -13,6 +13,7 @@ import { RevisionsPanel } from '@src/components/assets/editor/revisions/Revision
 import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useAssetReadOnly } from '../read-only';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 import { FSRef, PageId, TypeId, PrefKey, looksBinaryText } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
@@ -300,7 +301,7 @@ function MarkdownEditorContent({
   // power-user affordances (eval/worker buttons, the secondary file toolbar,
   // the project chip, the review/markdown editor modes, the side window).
   const advanced = useIsAdvanced();
-  const readOnly = currentDock?.options?.readOnly === '1' || variant === 'plain';
+  const readOnly = useAssetReadOnly() || variant === 'plain';
 
   // viewMode source of truth: URL `?editorMode=…` if present and valid; else
   // last-used value from the stored preference; else DEFAULT_MODE. Updating
@@ -391,7 +392,8 @@ function MarkdownEditorContent({
   // normal chrome for every authority, while Git/OS actions are enabled only
   // when the ref is actually backed by a local compute node.
   const gitComputeNodeId = fsRef.localComputeNodeId;
-  const revisionsEnabled = variant !== 'plain' && gitComputeNodeId !== null;
+  // Read-only (a plain variant, a staged review copy) has no history to show.
+  const revisionsEnabled = !readOnly && gitComputeNodeId !== null;
   const gitFileDir = fsRef.parent.path;
   const gitFileName = fsRef.path.slice(fsRef.path.lastIndexOf('/') + 1);
   const revisionStatus = useAssetRevisionStatus(
