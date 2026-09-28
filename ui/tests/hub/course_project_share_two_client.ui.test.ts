@@ -2,12 +2,17 @@
  * The COURSE journey, end to end across two instances via the real hub:
  *
  *   Alice mounts a git-backed course project   → git_share_preflight is `available`
- *   Alice shares it to Bob's email             → the hub grants Bob the project row
- *   Bob installs it (`setup-from-git`)         → the checkout lands in his workspace,
+ *   Alice shares it to Bob's email             → the hub grants Bob the project row and
+ *                                                opens a new Alice↔Bob conversation
+ *                                                holding the invite message
+ *   Bob opens that conversation                → the message's dashed project chip opens
+ *                                                the review popup, offering Install project
+ *   Bob clicks Install project (`setup-from-git`) → the checkout lands in his workspace,
  *                                                READ-ONLY indexed (his clone stays clean)
- *   Bob opens /dock/project/<id> in a browser  → the dock loader redirects into the
+ *   …and lands in the project                  → the dock loader redirects into the
  *                                                auto_launch agent's Vibe session, with
  *                                                its intro row and its queued prompt
+ *   Bob reopens the conversation               → the chip is the installed project's chip
  *
  * The origin is a LOCAL bare repo over `file://` — never GitHub. That is the
  * point of the share gate this pins: a `file://` origin needs no GitHub token,
@@ -36,7 +41,14 @@ import {
   postApi,
   type ResolvedInstance,
 } from './_instances';
-import { launchBrowser, openInstancePage, realConsoleErrors, resetConsoleErrors } from './_browser';
+import {
+  launchBrowser,
+  openAssignedConversationInUI,
+  openConversation,
+  openInstancePage,
+  realConsoleErrors,
+  resetConsoleErrors,
+} from './_browser';
 import { seedCourseProject, type SeededCourse } from './_course_fixture';
 import { testEntityName } from '../_cleanup';
 
@@ -60,7 +72,10 @@ let bobMount = '';
 /** Screenshots, when a run asks for evidence (`scripts/course_share_live.sh`).
  *  The journey is defined once; the live demo is this same test, watched. */
 const ARTIFACTS = process.env.COURSE_LIVE_ARTIFACTS || '';
-const shot = async (page: { screenshot: (o: { path: string; fullPage?: boolean }) => Promise<unknown> }, name: string) => {
+const shot = async (
+  page: { screenshot: (o: { path: string; fullPage?: boolean }) => Promise<unknown> },
+  name: string,
+) => {
   if (!ARTIFACTS) return;
   mkdirSync(ARTIFACTS, { recursive: true });
   await page.screenshot({ path: path.join(ARTIFACTS, `${name}.png`) });
@@ -113,7 +128,7 @@ afterAll(async () => {
 });
 
 describe('course project share → install → auto-launch (two instances)', () => {
-  it('Alice shares a file:// course project; Bob installs it and it opens into its agent', async () => {
+  it('Alice shares a file:// course project; Bob installs it from her message and it opens into its agent', async () => {
     // ── Alice: a git-backed project carrying the course ──────────────────
     const fixture = makeGitWorktree('flowpad-course-share-');
     fixtureRoot = fixture.root;
@@ -157,6 +172,14 @@ describe('course project share → install → auto-launch (two instances)', () 
     );
     expect(shared.status, JSON.stringify(shared).slice(0, 300)).toBe('SUCCESS');
 
+    // A project share is an invite: Bob is invited, and Alice's client opened a
+    // new conversation between him and Alice for the invite message.
+    const outcome = shared.data?.share_result;
+    expect(outcome?.failed ?? [], JSON.stringify(outcome).slice(0, 400)).toEqual([]);
+    expect(outcome?.invited ?? [], JSON.stringify(outcome).slice(0, 400)).toHaveLength(1);
+    const inviteConversationId = outcome.invited[0].conversation_id as string;
+    expect(inviteConversationId, JSON.stringify(outcome).slice(0, 400)).toBeTruthy();
+
     // ── Bob: the grant arrives, then he installs ─────────────────────────
     const bobRow = await pollUntil(
       async () => {
@@ -168,21 +191,25 @@ describe('course project share → install → auto-launch (two instances)', () 
     );
     expect(bobRow.id).toBe(projectId);
 
-    // Bob does what a student does: opens Flowpad and clicks Install. The
-    // dialog is raised by the arrival watcher — a shared project is a row with
-    // an origin and no files, and nothing else in the app offers to fix that.
+    // Bob does what a student does: opens Alice's message and clicks Install
+    // project on its chip. The chip is the only offer — no popup raises one.
     browser = await launchBrowser();
     const bobPage = await openInstancePage(browser, INST_2);
     await bobPage.page.evaluate(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
     resetConsoleErrors(bobPage);
     await shot(bobPage.page, '01-bob-before-install');
 
-    const dialog = bobPage.page.getByTestId('incoming-project-dialog');
-    await dialog.waitFor({ state: 'visible', timeout: 30_000 });
-    expect(await dialog.innerText()).toContain('shared a project with you');
+    await openAssignedConversationInUI(bobPage, inviteConversationId);
+    const chip = bobPage.page.getByTestId('project-chip');
+    await chip.waitFor({ state: 'visible', timeout: 30_000 });
+    // The dashed chip opens the review popup; its project branch offers Install project.
+    await chip.getByRole('button').click();
+    const installButton = bobPage.page.getByTestId('asset-review-dialog').getByTestId('project-install-button');
+    await installButton.waitFor({ state: 'visible', timeout: 30_000 });
+    expect(await bobPage.page.getByTestId('incoming-project-dialog').count(), 'no install popup').toBe(0);
     await shot(bobPage.page, '02-bob-install-offer');
 
-    await bobPage.page.getByTestId('incoming-project-install').click();
+    await installButton.click();
 
     // Installing lands him in the project — and opening the project IS entering
     // the session, as a load-time redirect.
@@ -235,5 +262,12 @@ describe('course project share → install → auto-launch (two instances)', () 
     const again = await postApi(bob.apiUrl, '/agents/auto-launch', { project_id: projectId });
     expect(again?.data?.error, 'auto-launch reported an error').toBeUndefined();
     expect(again?.data?.agent_id, 'a second open must not launch again').toBeNull();
+
+    // ── back in the message, the chip is the installed project's chip ────
+    await openConversation(bobPage, inviteConversationId);
+    await bobPage.page
+      .locator('[data-testid="project-chip"][data-state="installed"]')
+      .waitFor({ state: 'visible', timeout: 20_000 });
+    await shot(bobPage.page, '05-bob-chip-open-project');
   }, 120_000); // do not increase timeout without approval
 });

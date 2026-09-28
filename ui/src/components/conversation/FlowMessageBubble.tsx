@@ -12,6 +12,7 @@ import {
   isImagePath,
   launchWizard,
   MessageAttachment,
+  Project,
   Prompt,
   Task,
   TypeId,
@@ -45,6 +46,7 @@ import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
+import { useLocalProject } from './asset-review/ProjectInstallAction';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
 import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
@@ -694,17 +696,16 @@ export function FlowMessageBubble({
     <>
       {attachmentFooter}
       {lostChannelFiles.map((a) => (
-        <p key={a.data} className="mt-1 flex items-center gap-1 text-xs text-muted-foreground" data-testid="channel-file-lost">
+        <p
+          key={a.data}
+          className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
+          data-testid="channel-file-lost"
+        >
           <File className="h-3 w-3" />
           {t`${attachmentFileName(a)} — not downloaded (the link expired)`}
         </p>
       ))}
-      <MessageRunStatus
-        fm={fm}
-        run={run ?? null}
-        runStatus={runStatus}
-        onOpenRun={onOpenRun}
-      />
+      <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
       <MessageContextButton fm={fm} projectId={attachmentProjectId} />
     </>
   );
@@ -718,14 +719,23 @@ export function FlowMessageBubble({
           className="ms-10 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 text-[11px] text-muted-foreground"
           data-testid="email-message-headers"
         >
-          <dt><Trans>From</Trans></dt>
+          <dt>
+            <Trans>From</Trans>
+          </dt>
           <dd className="truncate">{profileLabel(fm.envelope.sender) || fm.sender_name || '—'}</dd>
-          <dt><Trans>To</Trans></dt>
+          <dt>
+            <Trans>To</Trans>
+          </dt>
           <dd className="truncate">
             {(fm.envelope.recipients ?? []).map(profileLabel).join(', ') || fm.receiver_address || '—'}
           </dd>
-          <dt><Trans>Subject</Trans></dt><dd className="truncate">{fm.envelope.subject || '—'}</dd>
-          <dt><Trans>Time</Trans></dt>
+          <dt>
+            <Trans>Subject</Trans>
+          </dt>
+          <dd className="truncate">{fm.envelope.subject || '—'}</dd>
+          <dt>
+            <Trans>Time</Trans>
+          </dt>
           <dd>{new Date(fm.envelope.sent_at || timestamp).toLocaleString()}</dd>
         </dl>
       )}
@@ -884,6 +894,68 @@ function useAttachedParentTaskIds(entities: TypeId[]): Set<string> {
   return parentIds;
 }
 
+/**
+ * A project referenced by a message, on the generic entity chip. Not installed
+ * on this machine: dashed, and clicking opens the review popup, whose project
+ * branch offers Install project. Installed: the normal chip, like any installed
+ * shared entity — Advanced reopens the popup (preview, greyed install, Open),
+ * Standard / Vibe open the project. The popup is hoisted above the branch so installing from it (which
+ * flips the chip) doesn't unmount it mid-install.
+ */
+function ProjectMessageChip({
+  typeId,
+  name,
+  entityRow,
+  entityUnavailable,
+  conversationId,
+  projectId,
+}: {
+  typeId: TypeId;
+  name?: string | null;
+  entityRow?: Project | null;
+  entityUnavailable: boolean;
+  conversationId: string;
+  projectId?: string | null;
+}) {
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const { row, installed } = useLocalProject(typeId, entityRow);
+  return (
+    <span
+      className="inline-flex items-center"
+      data-testid="project-chip"
+      data-state={installed ? 'installed' : 'staged'}
+    >
+      {installed ? (
+        // Reopens the review popup (preview, greyed install, Open) in every view
+        // mode. Other installed shared entities gate their popup to Advanced
+        // because it carries Uninstall; a project's popup has none.
+        <ContextEntityChip
+          typeId={typeId}
+          inside={{ type: 'conversation', id: conversationId }}
+          projectId={projectId}
+          onClick={() => setReviewOpen(true)}
+        />
+      ) : (
+        <EntityChip
+          entity={{ typeId, type: typeId.type, id: typeId.id, name: row?.name || name || t`Project` }}
+          staged
+          onClick={() => setReviewOpen(true)}
+        />
+      )}
+      {reviewOpen && (
+        <AssetReviewDialog
+          open={reviewOpen}
+          onClose={() => setReviewOpen(false)}
+          attachments={[]}
+          initialAttachmentId=""
+          attachmentProjectId={projectId ?? null}
+          project={{ typeId, name, entityRow, entityUnavailable }}
+        />
+      )}
+    </span>
+  );
+}
+
 export function MessageEntityChip({
   typeId,
   conversationId,
@@ -904,7 +976,22 @@ export function MessageEntityChip({
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = useEntity<AnyEntity>(typeId);
+  const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
+  // A project reference (a project invite) is the generic chip too, but
+  // stated from the local Project row's mount path — NOT `chipStateFor`, which
+  // would call a hub-pushed, not-yet-cloned row "installed" (KTD10).
+  if (typeId.type === Project.type) {
+    return (
+      <ProjectMessageChip
+        typeId={typeId}
+        name={attachment?.name}
+        entityRow={data as unknown as Project | null | undefined}
+        entityUnavailable={notFound || isError}
+        conversationId={conversationId}
+        projectId={projectId}
+      />
+    );
+  }
   const state = chipStateFor(!!data, attachment, forceShow);
   if (state === 'hidden') return null;
   // Git-link chip: a git context folder shared through push-notify. The chip
