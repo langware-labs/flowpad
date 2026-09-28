@@ -766,9 +766,10 @@ class FlowMessage(Entity):
         ``na`` and senders call it to decide whether to upload), so it stays
         attachment-only. On a received (``remote``) message, ``na`` reliably
         means body-free: the hub stamps ``uploading`` whenever a client-sent
-        message needs a body, and a hub-authored reference (the share invite's
-        ``project-<id>``) is posted at ``na``. Such a message has no download
-        affordance and is never pulled by catch-up."""
+        message needs a body, while a message it stores directly (a helpdesk
+        ticket's opening message, whose ``type_id`` session reference has no
+        bundle) stays at ``na``. Such a message has no download affordance and
+        is never pulled by catch-up."""
         if not self.has_body():
             return False
         return not (self.remote and self.body_status == BodyStatus.NA)
