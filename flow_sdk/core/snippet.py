@@ -52,7 +52,8 @@ _MARKER = re.compile(r"^\s*(?:#|//|--)\s*%%\s*flowpad:(hidden|init|snippet)\b")
 #: ``{python}`` is the interpreter Flowpad itself runs on — a Flowpad snippet
 #: imports flow_sdk, and the terminal PATH's ``python3`` may be any other install.
 RUNNERS: dict[str, str] = {
-    ".py": "{python} {file}",
+    # the launcher allows top-level `await` — what every SDK snippet is written in
+    ".py": "{python} -m flow_sdk.snippet_launch {file}",
     ".js": "node {file}",
     ".mjs": "node {file}",
     ".cjs": "node {file}",
