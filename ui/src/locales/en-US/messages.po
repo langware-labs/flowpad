@@ -255,7 +255,7 @@ msgstr "{0} — current project"
 msgid "{0} — no email sent."
 msgstr "{0} — no email sent."
 
-#. placeholder {0}: a.data.replace(/^data\//, '')
+#. placeholder {0}: attachmentFileName(a)
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0} — not downloaded (the link expired)"
 msgstr "{0} — not downloaded (the link expired)"
@@ -1152,6 +1152,10 @@ msgstr "A chain draws on another endpoint and can only narrow what passes."
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
 msgstr "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A guided setup asks for everything else this channel needs, step by step."
+msgstr "A guided setup asks for everything else this channel needs, step by step."
+
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a key the hub holds (the chain could not be read from here)"
 msgstr "a key the hub holds (the chain could not be read from here)"
@@ -1440,6 +1444,10 @@ msgstr "Add an agent…"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add an API key"
 msgstr "Add an API key"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add and set up"
+msgstr "Add and set up"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add annotation"
@@ -3377,7 +3385,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
@@ -3463,7 +3471,7 @@ msgstr "Cancel"
 msgid "Cancel reply"
 msgstr "Cancel reply"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 msgid "Cancelled."
 msgstr "Cancelled."
 
@@ -4797,6 +4805,11 @@ msgstr "Continue"
 #: src/journey/JourneyViewer.tsx
 msgid "Continue journey"
 msgstr "Continue journey"
+
+#. placeholder {0}: pending.label
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Continue setup: {0}"
+msgstr "Continue setup: {0}"
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
@@ -7456,6 +7469,10 @@ msgstr "Each reply lands in the session as soon as it is ready."
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
 msgstr "Each selected project's folder is added as a context folder."
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
+msgstr "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #~ msgid "earlier output dropped — this is the tail"
@@ -11639,7 +11656,7 @@ msgstr "Loading..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
@@ -13811,6 +13828,11 @@ msgstr "No web app available"
 msgid "No web page in this view"
 msgstr "No web page in this view"
 
+#. placeholder {0}: stage.wizard
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "No wizard named {0} is installed."
+msgstr "No wizard named {0} is installed."
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
@@ -14152,6 +14174,10 @@ msgstr "Nothing to review — the attachment has no files."
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Nothing to save"
 msgstr "Nothing to save"
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Nothing to set up."
+msgstr "Nothing to set up."
 
 #: src/pages/hub-browse/HubEntityView.tsx
 msgid "Nothing to show."
@@ -17323,6 +17349,7 @@ msgstr "Results"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/events/EventFeed.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Resume"
@@ -18489,7 +18516,7 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -18785,6 +18812,10 @@ msgstr "Set up"
 msgid "Set up (runs an agentic process)"
 msgstr "Set up (runs an agentic process)"
 
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Set up {title}"
+msgstr "Set up {title}"
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
 msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
@@ -18872,6 +18903,11 @@ msgstr "Setting up your project…"
 #: src/types/ViewType.ts
 msgid "Settings"
 msgstr "Settings"
+
+#: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Setup"
+msgstr "Setup"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
@@ -19821,6 +19857,7 @@ msgid "Star chat"
 msgstr "Star chat"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
 msgid "Start"
@@ -20604,7 +20641,7 @@ msgstr "Test passed — this source can fund a run"
 msgid "Test trigger"
 msgstr "Test trigger"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
 msgstr "Thank you — sent."
 
@@ -21483,6 +21520,7 @@ msgstr "this project's own desk"
 msgid "this project's runs"
 msgstr "this project's runs"
 
+#: src/components/ask/AskForm.tsx
 #: src/components/ask/AskView.tsx
 msgid "This question is no longer waiting."
 msgstr "This question is no longer waiting."
@@ -23361,6 +23399,7 @@ msgid "Working Tree"
 msgstr "Working Tree"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/version-popover/diagnose-modal.tsx

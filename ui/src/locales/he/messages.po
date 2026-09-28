@@ -255,7 +255,7 @@ msgstr ""
 msgid "{0} — no email sent."
 msgstr ""
 
-#. placeholder {0}: a.data.replace(/^data\//, '')
+#. placeholder {0}: attachmentFileName(a)
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0} — not downloaded (the link expired)"
 msgstr ""
@@ -1152,6 +1152,10 @@ msgstr ""
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
 msgstr "יש להקצות מעטפת חדשה. (פעולת שרת בדרך — בינתיים \"הפעל מחדש\" ינסה שוב.)"
 
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A guided setup asks for everything else this channel needs, step by step."
+msgstr ""
+
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a key the hub holds (the chain could not be read from here)"
 msgstr ""
@@ -1439,6 +1443,10 @@ msgstr "חיפוש סוכן להוספה…"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add an API key"
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add and set up"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -3377,7 +3385,7 @@ msgstr ""
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
@@ -3463,7 +3471,7 @@ msgstr "ביטול"
 msgid "Cancel reply"
 msgstr ""
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 msgid "Cancelled."
 msgstr ""
 
@@ -4797,6 +4805,11 @@ msgstr "המשך"
 #: src/journey/JourneyViewer.tsx
 msgid "Continue journey"
 msgstr "המשיכו במסע"
+
+#. placeholder {0}: pending.label
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Continue setup: {0}"
+msgstr ""
 
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
@@ -7456,6 +7469,10 @@ msgstr ""
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
 msgstr "תיקיות הפרויקטים הנבחרים מתווספות כתיקיות הקשר"
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #~ msgid "earlier output dropped — this is the tail"
@@ -11639,7 +11656,7 @@ msgstr "טוען..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
@@ -13811,6 +13828,11 @@ msgstr "אין אפליקציה זמינה"
 msgid "No web page in this view"
 msgstr ""
 
+#. placeholder {0}: stage.wizard
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "No wizard named {0} is installed."
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr ""
@@ -14152,6 +14174,10 @@ msgstr ""
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Nothing to save"
 msgstr "אין מה לשמור"
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Nothing to set up."
+msgstr ""
 
 #: src/pages/hub-browse/HubEntityView.tsx
 msgid "Nothing to show."
@@ -17323,6 +17349,7 @@ msgstr "תוצאות"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/events/EventFeed.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Resume"
@@ -18489,7 +18516,7 @@ msgstr "סרגל כלים בחירה"
 msgid "Self-Summary"
 msgstr "סיכום עצמי"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -18785,6 +18812,10 @@ msgstr "הגדר"
 msgid "Set up (runs an agentic process)"
 msgstr "הגדר (מפעיל תהליך אגנטי)"
 
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Set up {title}"
+msgstr ""
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
 msgstr "יש להגדיר את <0>{projectName}</0> בסביבת העבודה הזו. המאגר ישוכפל ויאונדקס כדי שיהיה מוכן לשימוש."
@@ -18872,6 +18903,11 @@ msgstr "הכנת הפרויקט שלך…"
 #: src/types/ViewType.ts
 msgid "Settings"
 msgstr "הגדרות"
+
+#: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Setup"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
@@ -19821,6 +19857,7 @@ msgid "Star chat"
 msgstr "סימון כוכב"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
 msgid "Start"
@@ -20604,7 +20641,7 @@ msgstr "הבדיקה עברה — המקור הזה יכול לממן הרצה"
 msgid "Test trigger"
 msgstr "בדוק טריגר"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
 msgstr ""
 
@@ -21483,6 +21520,7 @@ msgstr "מרכז העזרה של הפרויקט הזה"
 msgid "this project's runs"
 msgstr ""
 
+#: src/components/ask/AskForm.tsx
 #: src/components/ask/AskView.tsx
 msgid "This question is no longer waiting."
 msgstr ""
@@ -23361,6 +23399,7 @@ msgid "Working Tree"
 msgstr "עץ עבודה"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/version-popover/diagnose-modal.tsx
