@@ -300,6 +300,31 @@ def test_it_runs_once_on_the_first_ui_load():
     assert trigger["fire_once"] is True
 
 
+async def test_a_test_backend_can_switch_first_run_setup_off(monkeypatch):
+    """A test backend is a fresh install every run: without the switch the first tab of every
+    suite would be steered to the wizard page while it installs tools on the runner."""
+    from types import SimpleNamespace
+
+    from flow_sdk.server import builtin_triggers
+
+    resolved = []
+
+    async def wizard_for(trigger):
+        resolved.append(trigger)
+        return None
+
+    monkeypatch.setattr(builtin_triggers, "_wizard_for", wizard_for)
+    trigger = SimpleNamespace(uname="llm-setup-on-tab-ready")
+
+    monkeypatch.setenv(builtin_triggers.SKIP_FIRST_RUN_SETUP_ENV, "true")
+    await builtin_triggers._run_llm_setup_trigger(trigger, [])
+    assert resolved == [], "switched off: the wizard is never even looked up"
+
+    monkeypatch.delenv(builtin_triggers.SKIP_FIRST_RUN_SETUP_ENV)
+    await builtin_triggers._run_llm_setup_trigger(trigger, [])
+    assert resolved == [trigger], "unset: the trigger runs as it does on a real install"
+
+
 async def test_a_question_waits_with_no_deadline(monkeypatch):
     for tool in TOOLS:
         assert _op(f"ask-install-{tool}").exe_data.until_answered
