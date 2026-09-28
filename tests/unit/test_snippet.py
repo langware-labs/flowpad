@@ -530,3 +530,67 @@ def test_every_runner_quotes_the_path(tmp_path, py_path):
     r = _run(_snip(folder, "py", "print('quoted')"), py_path)
     assert r.stdout == "quoted\n"
     assert set(RUNNERS) >= {".py", ".js", ".rs"}
+
+
+# ── check ───────────────────────────────────────────────────────────────────
+
+from flow_sdk.core import snippet as snippet_mod  # noqa: E402
+from flow_sdk.core.snippet import check_snippet  # noqa: E402
+from flow_sdk.snippet_launch import diagnose  # noqa: E402
+
+
+def _check(tmp_path: Path, body: str, hidden: str = "", timeout: float = 10.0):
+    return [(d.line, d.kind, d.message) for d in asyncio.run(check_snippet(_snip(tmp_path, "py", body, hidden), timeout_seconds=timeout, env_path=os.environ["PATH"]))]
+
+
+def test_check_a_clean_file_that_awaits_at_its_top_level_has_no_problems(tmp_path):
+    assert _check(tmp_path, "async with asyncio.timeout(1):\n    await asyncio.sleep(0)", hidden="import asyncio") == []
+
+
+def test_check_a_syntax_error_is_the_only_problem(tmp_path):
+    assert _check(tmp_path, "print(NOTES)\ndef f(:\n    pass") == [(5, "syntax", "invalid syntax")]
+
+
+def test_check_names_nothing_binds_are_problems_at_their_use(tmp_path):
+    """Scope-blind on purpose: bound in ANY scope is never reported (no false alarm on a real name)."""
+    body = "def f(a):\n    return a + later\nlater = 1\nprint(f(1), NOTES, len([x for x in (1,)]))"
+    assert _check(tmp_path, body) == [(7, "name", "name 'NOTES' is not defined")]
+
+
+def test_check_imports_this_interpreter_cannot_satisfy(tmp_path):
+    body = "import not_a_module_anywhere\nfrom flow_sdk.blocks import StreamInbox, NotAThing\nfrom flow_sdk import snippet_launch"
+    assert _check(tmp_path, body) == [
+        (4, "import", "No module named 'not_a_module_anywhere'"),
+        (5, "import", "cannot import name 'NotAThing' from 'flow_sdk.blocks'"),
+    ]
+
+
+def test_check_a_star_import_turns_the_name_check_off(tmp_path):
+    assert _check(tmp_path, "from os.path import *\nprint(join('a', 'b'))") == []
+
+
+def test_check_an_import_that_hangs_is_a_warning_not_a_hang(tmp_path, monkeypatch):
+    (tmp_path / "slowmod.py").write_text("import time\ntime.sleep(60)\n")
+    assert _check(tmp_path, "from slowmod import thing", timeout=0.5) == [(1, "check", "the check did not finish in time")]
+
+
+def test_check_is_answered_from_cache_until_the_file_changes(tmp_path, monkeypatch):
+    path = _snip(tmp_path, "py", "print(1)")
+    calls = []
+    real = snippet_mod.run_shell
+
+    async def counting(*a, **kw):
+        calls.append(1)
+        return await real(*a, **kw)
+
+    monkeypatch.setattr(snippet_mod, "run_shell", counting)
+    for _ in range(2):
+        asyncio.run(check_snippet(path, timeout_seconds=10, env_path=os.environ["PATH"]))
+    path.write_text(path.read_text() + "print(2)\n")
+    asyncio.run(check_snippet(path, timeout_seconds=10, env_path=os.environ["PATH"]))
+    assert len(calls) == 2
+
+
+def test_check_columns_are_the_editors_one_based_end_exclusive():
+    (d,) = diagnose("x = 1\nprint(x, NOTES)\n", imports=False)
+    assert (d["line"], d["col"], d["end_col"]) == (2, 10, 15)  # "NOTES" is characters 10..14

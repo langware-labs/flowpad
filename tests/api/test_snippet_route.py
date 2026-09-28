@@ -166,3 +166,16 @@ async def test_a_rejected_body_answers_in_the_standard_envelope(client, tmp_path
     assert body["status"] == "FAIL" and body["data"] is None
     assert body["message"] == "body.bogus: Extra inputs are not permitted"
     assert "detail" not in body, "the raw pydantic issue list must not reach a client"
+
+
+async def test_check_answers_problems_in_file_lines_and_a_clean_file_none(client, tmp_path):
+    ok = tmp_path / "ok.py"
+    ok.write_text(SNIPPET)
+    assert (await _post(client, "check", {"path": str(ok)}))["data"] == {"path": str(ok.resolve()), "diagnostics": []}
+
+    bad = tmp_path / "bad.py"
+    bad.write_text("# %% flowpad:hidden\nimport json\n# %% flowpad:snippet\nprint(json.dumps(NOTES))\n")
+    (d,) = (await _post(client, "check", {"path": str(bad)}))["data"]["diagnostics"]
+    assert (d["line"], d["col"], d["end_col"], d["kind"]) == (4, 18, 23, "name")
+
+    assert _error_code(await _post(client, "check", {"path": str(tmp_path / "nope.py")})) == "NOT_FOUND"
