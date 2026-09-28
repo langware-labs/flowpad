@@ -1,17 +1,16 @@
-"""``Project.share`` sends one flagged person invite per new invitee — teams included.
+"""``Project.share`` invites people and grants teams, and writes every invite conversation itself.
 
-The project share invites each person with ``notify_by_message`` so the hub opens
-a conversation with the sharer (KTD1). A picked team is expanded by the SHARER's
-client through the team's own member list (KTD5): approved user rows become
-invitees by ``user_id``, nested teams are walked with a visited set, pending rows
-are left out, and a team whose list refuses the sharer is skipped and reported —
-never guessed at (KTD6, R17). People and team members merge into one set keyed by
-``user_id`` then email, the sharer and anyone already on the project are dropped
-(KTD8, R4), and each person's outcome is collected rather than one failure
-stopping the rest (KTD7).
+A PERSON gets one project invite whose second target is a fresh 1:1 invite
+conversation the sharer's client opened, then the invite message in it (KTD3,
+R6). A TEAM is granted on the hub as ONE group principal — never expanded into
+its people — and gets one invite conversation granted to the whole team (KTD1,
+R1, R7). The sharer, anyone already on the roster and any team already granted
+are skipped (KTD6, R3), and each recipient's outcome is collected rather than one
+failure stopping the rest (KTD7, R11). The hub's ``notify_by_message`` is never
+sent: the message moved to the client.
 
-Only the single network hop (``FlowpadClient.request``) is stubbed, same as
-``test_project_share_invite_by_user_id.py``.
+Only the network hops are stubbed: ``FlowpadClient.request`` and
+``flow_sdk.utils.hub.hub_post`` (the message body upload).
 """
 from __future__ import annotations
 
@@ -20,17 +19,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 from flow_sdk.builtin.project import Project
+from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 SHARER = "0a0a0a0a-0000-4000-8000-000000000001"
 ISHAY = "1b1b1b1b-0000-4000-8000-000000000002"
 DANA = "2c2c2c2c-0000-4000-8000-000000000003"
-ELI = "3d3d3d3d-0000-4000-8000-000000000004"
 MIA = "4e4e4e4e-0000-4000-8000-000000000005"
 PENDING = "5f5f5f5f-0000-4000-8000-000000000006"
 ZSCHOOL = "6a6a6a6a-0000-4000-8000-000000000007"
-ZKIDS = "7b7b7b7b-0000-4000-8000-000000000008"
 LOCKED = "8c8c8c8c-0000-4000-8000-000000000009"
 
 
@@ -59,12 +56,14 @@ class _Hub(list):
     """Every hub call as ``(method, path, json_body)``, plus the per-test answers.
 
     ``rosters`` maps a members path to its rows (or an int status to refuse);
-    ``answers`` maps a recipient key (user id or email) to the POST reply — a
-    ``dict`` of response data, or an int status for a failure.
+    ``answers`` maps a recipient key (user id, email or team typeid) to an int
+    status for a refused members POST; ``refuse`` maps a path suffix to the
+    status every call ending in it answers with.
     """
 
     rosters: dict
     answers: dict
+    refuse: dict
 
 
 @pytest.fixture()
@@ -72,42 +71,38 @@ def hub(monkeypatch):
     calls = _Hub()
     calls.rosters = {}
     calls.answers = {}
+    calls.refuse = {}
 
     async def fake_request(self, method, path, **kwargs):
         body = kwargs.get("json")
         calls.append((method, path, body))
+        for suffix, status in calls.refuse.items():
+            if path.rstrip("/").endswith(suffix):
+                return _FakeResponse(status, {"detail": "refused"})
         if method == "GET":
             rows = calls.rosters.get(path, [])
             if isinstance(rows, int):
                 return _FakeResponse(rows, {"detail": "Forbidden"})
             return _ok(rows)
-        if path.endswith("/members"):
-            key = body.get("recipient_user_id") or body.get("recipient_email")
-            answer = calls.answers.get(key, {"conversation_id": f"conv-{key}"})
+        if path.endswith("/members") and isinstance(body, dict):
+            key = body.get("recipient_user_id") or body.get("recipient_email") or body.get("principal")
+            answer = calls.answers.get(key)
             if isinstance(answer, int):
                 return _FakeResponse(answer, {"detail": "boom"})
-            return _ok(answer)
-        return _ok({})  # the publish POST
+        return _ok({})
+
+    async def fake_hub_post(entity_type, data, *path_parts, action=None, **_kwargs):
+        calls.append(("HUB_POST", action or "/".join(str(p) for p in path_parts[1:]), data))
+        return {}
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda: SimpleNamespace(api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}),
+        lambda *a, **k: SimpleNamespace(api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}),
     )
     monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
+    monkeypatch.setattr("flow_sdk.utils.hub.hub_post", fake_hub_post)
     return calls
-
-
-def _team_path(team_id: str) -> str:
-    return f"/graph/team/{team_id}/members"
-
-
-def _invites(hub: _Hub, proj: Project) -> list[dict]:
-    return [body for method, path, body in hub if method == "POST" and path == f"/graph/project/{proj.id}/members"]
-
-
-def _invited_keys(hub: _Hub, proj: Project) -> list[str]:
-    return sorted(b.get("recipient_user_id") or b.get("recipient_email") for b in _invites(hub, proj))
 
 
 def _project(hub: _Hub, name: str, roster: list[dict] | None = None) -> Project:
@@ -118,185 +113,230 @@ def _project(hub: _Hub, name: str, roster: list[dict] | None = None) -> Project:
     return proj
 
 
+def _project_posts(hub: _Hub, proj: Project) -> list[dict]:
+    return [body for method, path, body in hub if method == "POST" and path == f"/graph/project/{proj.id}/members"]
+
+
+def _person_invites(hub: _Hub, proj: Project) -> list[dict]:
+    return [b for b in _project_posts(hub, proj) if "principal" not in b]
+
+
+def _group_grants(hub: _Hub, proj: Project) -> list[dict]:
+    return [b for b in _project_posts(hub, proj) if "principal" in b]
+
+
+def _invited_keys(hub: _Hub, proj: Project) -> list[str]:
+    return sorted(b.get("recipient_user_id") or b.get("recipient_email") for b in _person_invites(hub, proj))
+
+
+def _conversation_grants(hub: _Hub) -> list[tuple[str, dict]]:
+    return [
+        (path, body)
+        for method, path, body in hub
+        if method == "POST" and path.startswith("/graph/conversation/") and path.endswith("/members")
+    ]
+
+
+def _conversation_creates(hub: _Hub) -> list[str]:
+    return [path for method, path, _ in hub if method == "POST" and path.rstrip("/").endswith("/graph/conversation")]
+
+
+def _message_headers(hub: _Hub) -> list[dict]:
+    return [body for method, path, body in hub if method == "POST" and path.rstrip("/").endswith("/add_message")]
+
+
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_person_and_team_each_get_one_flagged_invite_with_the_note(hub):
-    """Share with Ishay and team zschool (Dana, Eli) → three person calls, each
-    flagged, each carrying the note, team members addressed by ``user_id``."""
+async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_grant(hub):
+    """R1/R6/R7: a person gets [project, conversation] targets and no hub
+    ``notify_by_message``; a team is ONE group grant plus a conversation granted
+    to it; nobody reads the team's member list."""
     proj = _project(hub, "share-person-and-team")
-    hub.rosters[_team_path(ZSCHOOL)] = [_user(DANA, email="dana@example.com"), _user(ELI)]
 
     await proj.share(invitees=[ShareInvitee(user_id=ISHAY)], teams=[f"team-{ZSCHOOL}"], note="Welcome aboard")
 
-    invites = _invites(hub, proj)
-    assert _invited_keys(hub, proj) == sorted([ISHAY, DANA, ELI])
-    assert all(b["notify_by_message"] is True for b in invites)
-    assert all(b["message"] == "Welcome aboard" for b in invites)
-    # A team member is sent by hub id even when the admin's roster shows an email.
-    assert all("recipient_email" not in b for b in invites)
-    assert all(b["invitation_targets"] == [{"typeid": f"project-{proj.id}", "role": "member"}] for b in invites)
+    (person,) = _person_invites(hub, proj)
+    assert person["recipient_user_id"] == ISHAY
+    assert "notify_by_message" not in person
+    assert person["message"] == "Welcome aboard"
+    project_target, conversation_target = person["invitation_targets"]
+    assert project_target == {"typeid": f"project-{proj.id}", "role": "member"}
+    assert conversation_target["typeid"].startswith("conversation-") and conversation_target["role"] == "member"
+
+    assert _group_grants(hub, proj) == [
+        {"principal": f"team-{ZSCHOOL}", "invitation_targets": [{"typeid": f"project-{proj.id}", "role": "member"}]}
+    ]
+    ((path, team_conv_grant),) = _conversation_grants(hub)
+    assert team_conv_grant["principal"] == f"team-{ZSCHOOL}"
+    assert path == f"/graph/conversation/{team_conv_grant['invitation_targets'][0]['typeid'][len('conversation-'):]}/members"
+
+    assert not [p for m, p, _ in hub if m == "GET" and p.startswith("/graph/team/")]
+    assert len(_conversation_creates(hub)) == 2
+    assert len(_message_headers(hub)) == 2
+
     result = proj.last_share_result
-    assert sorted(r.user_id for r in result.invited) == sorted([ISHAY, DANA, ELI])
-    assert {r.conversation_id for r in result.invited} == {f"conv-{k}" for k in (ISHAY, DANA, ELI)}
-    assert result.skipped == [] and result.failed == [] and result.skipped_teams == []
+    assert [r.user_id for r in result.invited] == [ISHAY]
+    assert result.invited[0].conversation_id == conversation_target["typeid"][len("conversation-"):]
+    assert [(t.team, t.conversation_id is not None) for t in result.granted_teams] == [(f"team-{ZSCHOOL}", True)]
+    assert result.skipped_teams == [] and result.failed_teams == [] and result.failed == []
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_ae1_only_the_new_team_member_is_invited_and_the_sharer_never(hub):
-    """AE1: zschool holds the sharer, Dana (already on P) and Eli → only Eli."""
+async def test_the_invite_message_carries_the_project_reference_and_the_note(hub):
+    proj = _project(hub, "Course Project")
+
+    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)], note="See you there")
+
+    (header,) = _message_headers(hub)
+    assert header["text"] == 'I invited you to project "Course Project".\n\nSee you there'
+    assert f"project-{proj.id}" in [a.get("data") for a in header["attachment"]]
+    assert [p for m, p, _ in hub if m == "HUB_POST"] == ["fs/upload", "set_body_status"]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_team_already_on_the_roster_is_skipped_without_any_call(hub):
+    """R3/KTD6: a team already granted gets no second grant, conversation or message."""
     proj = _project(
         hub,
-        "share-ae1",
-        roster=[_user(SHARER, name="Sharer") | {"role": "owner"}, _user(DANA)],
+        "share-team-already-granted",
+        roster=[_user(SHARER, email="sharer@example.com") | {"role": "owner"}, _team(ZSCHOOL, "zschool")],
     )
-    hub.rosters[_team_path(ZSCHOOL)] = [_user(SHARER), _user(DANA), _user(ELI)]
 
     await proj.share(teams=[f"team-{ZSCHOOL}"])
 
-    assert _invited_keys(hub, proj) == [ELI]
-    skipped = {r.user_id: r.reason for r in proj.last_share_result.skipped}
-    assert skipped == {SHARER: "self", DANA: "already_member"}
+    assert _group_grants(hub, proj) == [] and _conversation_creates(hub) == []
+    result = proj.last_share_result
+    assert [(t.team, t.name, t.reason) for t in result.skipped_teams] == [(f"team-{ZSCHOOL}", "zschool", "already_granted")]
+    assert result.granted_teams == []
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_refused_group_grant_fails_the_team_and_opens_no_conversation(hub):
+    proj = _project(hub, "share-team-refused")
+    hub.answers[f"team-{LOCKED}"] = 403
+
+    await proj.share(teams=[f"team-{LOCKED}"])
+
+    assert _conversation_creates(hub) == []
+    result = proj.last_share_result
+    assert [(t.team, t.status) for t in result.failed_teams] == [(f"team-{LOCKED}", 403)]
+    assert result.granted_teams == []
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_granted_team_whose_conversation_fails_is_granted_without_a_conversation(hub):
+    proj = _project(hub, "share-team-no-conversation")
+    hub.refuse["/graph/conversation"] = 500
+
+    await proj.share(teams=[f"team-{ZSCHOOL}"])
+
+    assert len(_group_grants(hub, proj)) == 1
+    result = proj.last_share_result
+    assert [(t.team, t.conversation_id) for t in result.granted_teams] == [(f"team-{ZSCHOOL}", None)]
+    assert result.failed_teams == []
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_refused_person_invite_is_failed_and_its_conversation_discarded(hub):
+    proj = _project(hub, "share-person-refused")
+    hub.answers[ISHAY] = 403
+
+    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)])
+
+    result = proj.last_share_result
+    assert [(r.user_id, r.status) for r in result.failed] == [(ISHAY, 403)]
+    assert result.invited == []
+    deletes = [p for m, p, _ in hub if m == "DELETE"]
+    assert len(deletes) == 1 and deletes[0].startswith("/graph/conversation/")
+    assert _message_headers(hub) == []
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_person_whose_message_fails_is_still_invited_with_the_conversation(hub):
+    proj = _project(hub, "share-person-message-fails")
+    hub.refuse["/add_message"] = 500
+
+    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)])
+
+    result = proj.last_share_result
+    assert [r.user_id for r in result.invited] == [ISHAY]
+    assert result.invited[0].conversation_id
+    assert result.failed == []
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_sharer_member_pending_and_team_covered_people_are_skipped(hub):
+    """The sharer, a direct member, a pending invitee and a person who reaches
+    the project through a granted team (listed as an ordinary user row) are all
+    skipped; only the new person is invited."""
+    proj = _project(
+        hub,
+        "share-skips",
+        roster=[
+            _user(SHARER, email="sharer@example.com") | {"role": "owner"},
+            _user(DANA),
+            _user(PENDING, status="pending"),
+            _team(ZSCHOOL),
+            _user(MIA),  # reaches the project through zschool
+        ],
+    )
+
+    await proj.share(
+        invitees=[
+            ShareInvitee(user_id=SHARER),
+            ShareInvitee(user_id=DANA),
+            ShareInvitee(user_id=PENDING),
+            ShareInvitee(user_id=MIA),
+            ShareInvitee(user_id=ISHAY),
+        ]
+    )
+
+    assert _invited_keys(hub, proj) == [ISHAY]
+    reasons = {r.user_id: r.reason for r in proj.last_share_result.skipped}
+    assert reasons == {SHARER: "self", DANA: "already_member", PENDING: "already_invited", MIA: "already_member"}
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_sharer_is_dropped_even_when_the_project_roster_is_unreadable(hub):
-    """The roster read degrades to "invite everyone" — but never the sharer."""
-    proj = _project(hub, "share-sharer-no-roster")
+    proj = _project(hub, "share-roster-down")
     hub.rosters[f"/graph/project/{proj.id}/members"] = 503
-    hub.rosters[_team_path(ZSCHOOL)] = [_user(SHARER), _user(ELI)]
 
-    await proj.share(teams=[f"team-{ZSCHOOL}"])
-
-    assert _invited_keys(hub, proj) == [ELI]
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_ae2_a_person_picked_by_name_and_through_a_team_gets_one_invite(hub):
-    """AE2: Eli picked by name and in zschool → one call for Eli."""
-    proj = _project(hub, "share-ae2")
-    hub.rosters[_team_path(ZSCHOOL)] = [_user(ELI, email="eli@example.com")]
-
-    await proj.share(invitees=[ShareInvitee(email="Eli@Example.com")], teams=[f"team-{ZSCHOOL}"])
-
-    invites = _invites(hub, proj)
-    assert len(invites) == 1
-    # The merge keeps the stable key: the team row taught us Eli's id.
-    assert invites[0].get("recipient_user_id") == ELI
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_ae3_everyone_already_on_the_project_means_no_person_calls(hub):
-    """AE3: everyone picked already holds a role (or a pending invitation) on P."""
-    proj = _project(
-        hub,
-        "share-ae3",
-        roster=[
-            _user(SHARER) | {"role": "owner"},
-            _user(DANA),
-            {"type": "user", "user_id": None, "user_email": "noa@example.com", "status": "pending"},
-        ],
-    )
-    hub.rosters[_team_path(ZSCHOOL)] = [_user(DANA)]
-
-    await proj.share(invitees=[ShareInvitee(email="noa@example.com")], teams=[f"team-{ZSCHOOL}"])
-
-    assert _invites(hub, proj) == []
-    result = proj.last_share_result
-    assert result.invited == [] and result.failed == []
-    assert sorted(r.reason for r in result.skipped) == ["already_invited", "already_member"]
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_nested_team_members_are_invited_and_a_cycle_terminates(hub):
-    """zschool contains zkids (Mia approved), and zkids names zschool back."""
-    proj = _project(hub, "share-nested")
-    hub.rosters[_team_path(ZSCHOOL)] = [_user(ELI), _team(ZKIDS, "zkids")]
-    hub.rosters[_team_path(ZKIDS)] = [_user(MIA), _team(ZSCHOOL, "zschool")]
-
-    await proj.share(teams=[f"team-{ZSCHOOL}"])
-
-    assert _invited_keys(hub, proj) == sorted([ELI, MIA])
-    team_reads = [p for m, p, _ in hub if m == "GET" and p.startswith("/graph/team/")]
-    assert sorted(team_reads) == sorted([_team_path(ZSCHOOL), _team_path(ZKIDS)]), "each team read once"
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_a_pending_team_row_is_not_a_team_member(hub):
-    proj = _project(hub, "share-pending-row")
-    hub.rosters[_team_path(ZSCHOOL)] = [
-        _user(ELI),
-        _user(PENDING, status="pending"),
-        {"type": "user", "user_id": None, "user_email": "invited@example.com", "status": "pending"},
-    ]
-
-    await proj.share(teams=[f"team-{ZSCHOOL}"])
-
-    assert _invited_keys(hub, proj) == [ELI]
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_ae9_a_team_the_sharer_may_not_list_is_skipped_and_reported(hub):
-    """AE9: zschool's member list refuses the sharer (403) → nothing is sent for
-    zschool, it is reported as not listable, and picked people still go out."""
-    proj = _project(hub, "share-ae9")
-    hub.rosters[_team_path(ZSCHOOL)] = 403
-
-    await proj.share(invitees=[ShareInvitee(user_id=ISHAY)], teams=[f"team-{ZSCHOOL}"])
+    await proj.share(invitees=[ShareInvitee(user_id=SHARER), ShareInvitee(user_id=ISHAY)])
 
     assert _invited_keys(hub, proj) == [ISHAY]
-    result = proj.last_share_result
-    assert [(t.team, t.reason) for t in result.skipped_teams] == [(f"team-{ZSCHOOL}", "not_listable")]
+    assert [(r.user_id, r.reason) for r in proj.last_share_result.skipped] == [(SHARER, "self")]
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_a_refused_nested_team_is_skipped_while_its_parent_is_expanded(hub):
-    proj = _project(hub, "share-refused-nested")
-    hub.rosters[_team_path(ZSCHOOL)] = [_user(ELI), _team(LOCKED, "locked")]
-    hub.rosters[_team_path(LOCKED)] = 403
+async def test_one_failure_does_not_stop_the_rest(hub):
+    proj = _project(hub, "share-mixed-outcomes")
+    hub.answers[DANA] = 500
 
-    await proj.share(teams=[f"team-{ZSCHOOL}"])
+    await proj.share(invitees=[ShareInvitee(user_id=DANA), ShareInvitee(user_id=ISHAY)], teams=[f"team-{ZSCHOOL}"])
 
-    assert _invited_keys(hub, proj) == [ELI]
-    assert [(t.team, t.name, t.reason) for t in proj.last_share_result.skipped_teams] == [
-        (f"team-{LOCKED}", "locked", "not_listable")
-    ]
-
-
-# do not increase timeout without approval
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)
-async def test_hub_skip_and_failure_are_reported_per_person_and_do_not_stop_the_rest(hub):
-    """One person answered with a skip reason → skipped; one answered 500 →
-    failed; everyone else is still sent."""
-    proj = _project(hub, "share-per-person-outcomes")
-    hub.answers[DANA] = {"skipped": True, "skip_reason": "already_has_access"}
-    hub.answers[ELI] = 500
-
-    await proj.share(invitees=[ShareInvitee(user_id=u) for u in (DANA, ELI, MIA)])
-
-    assert _invited_keys(hub, proj) == sorted([DANA, ELI, MIA])
     result = proj.last_share_result
-    assert [r.user_id for r in result.invited] == [MIA]
-    assert [(r.user_id, r.reason) for r in result.skipped] == [(DANA, "already_has_access")]
-    assert [(r.user_id, r.status) for r in result.failed] == [(ELI, 500)]
-    assert result.failed[0].message
+    assert [r.user_id for r in result.invited] == [ISHAY]
+    assert [(r.user_id, r.status) for r in result.failed] == [(DANA, 500)]
+    assert [t.team for t in result.granted_teams] == [f"team-{ZSCHOOL}"]
 
 
 # do not increase timeout without approval
@@ -307,9 +347,10 @@ async def test_share_without_note_sends_no_message_field(hub):
 
     await proj.share(invitees=[ShareInvitee(user_id=ISHAY)])
 
-    (body,) = _invites(hub, proj)
-    assert body["notify_by_message"] is True
-    assert "message" not in body
+    (body,) = _person_invites(hub, proj)
+    assert "message" not in body and "notify_by_message" not in body
+    (header,) = _message_headers(hub)
+    assert header["text"] == 'I invited you to project "share-no-note".'
 
 
 # do not increase timeout without approval
@@ -329,11 +370,10 @@ async def test_share_with_no_invitees_is_publish_only(hub):
 @pytest.mark.timeout(30)
 async def test_share_action_carries_teams_and_note_and_returns_the_result(hub, monkeypatch):
     """``POST project/<id>/share`` with ``teams`` + ``note`` reaches ``Project.share``
-    and answers with the per-person result beside the entity."""
+    and answers with the per-recipient result beside the entity."""
     from flow_sdk.app.actions import share_action
 
     proj = _project(hub, "share-action-wiring")
-    hub.rosters[_team_path(ZSCHOOL)] = [_user(ELI)]
 
     async def fake_get_one(cls, query):
         return proj
@@ -366,12 +406,12 @@ async def test_share_action_carries_teams_and_note_and_returns_the_result(hub, m
 
     dumped = resp.model_dump()
     assert dumped["status"] == "SUCCESS", dumped
-    assert _invited_keys(hub, proj) == sorted([ISHAY, ELI])
-    assert all(b["message"] == "Hi" for b in _invites(hub, proj))
+    assert _invited_keys(hub, proj) == [ISHAY]
+    assert [b["principal"] for b in _group_grants(hub, proj)] == [f"team-{ZSCHOOL}"]
     data = dumped["data"]
     assert data["id"] == proj.id
-    assert sorted(r["user_id"] for r in data["share_result"]["invited"]) == sorted([ISHAY, ELI])
-
+    assert [r["user_id"] for r in data["share_result"]["invited"]] == [ISHAY]
+    assert [t["team"] for t in data["share_result"]["granted_teams"]] == [f"team-{ZSCHOOL}"]
 
 
 # do not increase timeout without approval

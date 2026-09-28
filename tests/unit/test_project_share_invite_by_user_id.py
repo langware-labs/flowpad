@@ -84,6 +84,7 @@ def _invited_by_id(calls, proj: Project) -> dict[str, str]:
         for method, path, body in calls
         if method == "POST" and path == f"/graph/project/{proj.id}/members" and "recipient_user_id" in body
         for target in body["invitation_targets"]
+        if target["typeid"] == f"project-{proj.id}"
     }
 
 
@@ -144,6 +145,7 @@ async def test_invite_by_user_id_and_by_email_each_keep_their_own_role(hub):
         for method, path, body in hub
         if method == "POST" and path == f"/graph/project/{proj.id}/members" and "recipient_email" in body
         for target in body["invitation_targets"]
+        if target["typeid"] == f"project-{proj.id}"
     ]
     assert email_posts == ["admin"]
 

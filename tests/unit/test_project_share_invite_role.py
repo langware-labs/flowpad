@@ -58,6 +58,7 @@ def _invited_roles(calls, proj: Project) -> dict[str, str]:
         for method, path, body in calls
         if method == "POST" and path == f"/graph/project/{proj.id}/members"
         for target in body["invitation_targets"]
+        if target["typeid"] == f"project-{proj.id}"
     }
 
 
