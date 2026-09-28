@@ -146,5 +146,18 @@ if (!fs.existsSync(OUTPUT_BIN)) {
   process.exit(1);
 }
 
+if (IS_WIN) {
+  // A binary that imports VCRUNTIME140.dll cannot start on a clean Windows (0xC0000135), and a
+  // build machine always has the runtime, so nothing downstream would notice. The static CRT
+  // comes from flow_sdk/rust/.cargo/config.toml; this is what proves it took.
+  const checker = path.resolve(__dirname, '..', '..', 'scripts', 'check_windows_exe_deps.py');
+  try {
+    execFileSync('python', [checker, OUTPUT_BIN], { stdio: 'inherit' });
+  } catch (err) {
+    console.error(`[build-flow-rs] ${OUTPUT_BIN} needs the Visual C++ Redistributable: ${err.message}`);
+    process.exit(1);
+  }
+}
+
 const sizeKB = (fs.statSync(OUTPUT_BIN).size / 1024).toFixed(1);
 console.log(`[build-flow-rs] OK — ${OUTPUT_BIN} (${sizeKB} KB)`);

@@ -1,0 +1,11 @@
+# Link the MSVC C runtime statically into every Windows binary this crate builds.
+#
+# Without it `flow-rs.exe` and `flowpad-install.exe` import VCRUNTIME140.dll from the Microsoft
+# Visual C++ Redistributable, which a clean Windows install does not have. There the process
+# cannot even start (exit 0xC0000135, STATUS_DLL_NOT_FOUND): the desktop app's keychain probe
+# and key minting both fail, `secretApprovalGate` resolves false, and "Sign in" to FlowPad does
+# nothing at all. The UCRT (api-ms-win-crt-*) ships with Windows 10+, so static vcruntime is the
+# whole dependency. Both build paths read this file: electron/scripts/build-flow-rs.js (host
+# `cargo build --release`) and scripts/sign_flow_rs_windows.ps1 (`--target x86_64-pc-windows-msvc`).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
