@@ -348,6 +348,47 @@ async def test_run_setup_clears_the_last_run_before_the_llm_source(monkeypatch):
         await _cleanup(wizard)
 
 
+@async_context
+async def test_run_setup_re_steers_to_the_wizard_after_the_llm_source_settles(monkeypatch):
+    """`_resolve_llm_source` opens its OWN screen (the chooser, `/dock/llm-setup`) whenever the
+    box is not already funded — landing well after the first steer-to-the-wizard and
+    overwriting it. A person sent to the wizard, then past it to the chooser, then presses the
+    chooser's own "Done" with nothing left to send them back to the wizard — they watch it run
+    on a screen they cannot see. So the steer must happen a SECOND time, after the source
+    settles and right before the wizard actually starts, not just once up front."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server import builtin_triggers
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    order: list[str] = []
+
+    async def _navigate(_wizard):
+        order.append("navigate")
+
+    async def _resolve_source():
+        order.append("llm source")
+        return CliResult.satisfied("funded")
+
+    async def _wizard(spec, **kwargs):
+        order.append("wizard")
+        return WizardResult.satisfied("stubbed")
+
+    monkeypatch.setattr(builtin_triggers, "_navigate_to_wizard", _navigate)
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    try:
+        await builtin_triggers.run_llm_setup(wizard, unattended=False)
+        assert order == ["navigate", "llm source", "navigate", "wizard"], (
+            "must steer again AFTER the source settles (the chooser may have navigated away), not just once before it"
+        )
+    finally:
+        await _cleanup(wizard)
+
+
 @pytest.mark.parametrize("funded", [True, False])
 @async_context
 async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monkeypatch, funded):
