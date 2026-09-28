@@ -223,7 +223,7 @@ Flow defines three types of data sources — what a source's items are, and wher
 
 - `flow.ObjectSource` — Files, e.g. Google Drive: Unstructured data in path-driven stores. Its files land on disk and are indexed.
 - `flow.RecordSource` — Records, e.g. Jira: Table-driven data. Its issues are kept as rows, updated in place.
-- `flow.MessageSource` — Messages, e.g. Slack: Message-driven channels. Threaded into the inbox, and answered through the source.
+- `flow.MessageSource` — Messages, e.g. Slack: Message-driven channels. Threaded into the stream inbox, and answered through the source.
 
 ```python
 from flow_sdk.builtin.data_driver import DataDriver
@@ -769,7 +769,7 @@ async with ZenSource(SourceBinding(config={}, account_key="zen")) as zen:   # th
 
 `flow.StreamInbox` — One loop body answers email, Slack, Telegram and WhatsApp.
 
-Chart: Channel (`flow.DataSource`) -> Inbox (`flow.StreamInbox`) -> Agent (`flow.AgenticProcess`) -> Reply (`flow.DataSpec`)
+Chart: Channel (`flow.DataSource`) -> Stream inbox (`flow.StreamInbox`) -> Agent (`flow.AgenticProcess`) -> Reply (`flow.DataSpec`)
 
 ### Let the app answer
 
