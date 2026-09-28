@@ -246,3 +246,46 @@ async def test_export_refuses_a_reference_that_names_nothing():
 async def test_mcp_does_not_ship_the_senders_path():
     body = Mcp(name="m", asset_ref="/sender/home/proj/agentic-assets/mcp/m").to_common_json()
     assert "asset_ref" not in body
+
+
+async def test_a_row_that_lags_its_file_ships_what_the_file_says(tmp_path):
+    """The sender edits ``agent.json`` after its last index, so its row still says
+    the old thing. The package must carry what the FILE says — the receiver's
+    overlay would otherwise put the stale value back over the file it indexed
+    (an agent arrived with ``mcp_servers: []`` beside a file naming its MCP)."""
+    tag = uuid.uuid4().hex[:8]
+    sender_root = tmp_path / "sender"
+    sender = await _project(sender_root, f"lag-{tag}")
+    agent_dir = sender_root / "agentic-assets" / "agent" / f"agent-{tag}"
+    agent_dir.mkdir(parents=True)
+    manifest = agent_dir / "agent.json"
+    manifest.write_text(json.dumps({"type": "agent", "name": f"agent-{tag}", "worker_type": "claude"}), encoding="utf-8")
+    (agent_dir / "system_prompt.md").write_text("hi\n", encoding="utf-8")
+    await _reindex_root(sender_root, RecordType.REAL_PROJECT_CWD, project_id=sender.id)
+    row = await _row_at("agent", sender_root, agent_dir.relative_to(sender_root))
+
+    # Edited on disk after the index: the row still has no skills.
+    wanted = ["skill-11111111-1111-4111-8111-111111111111"]
+    body = json.loads(manifest.read_text(encoding="utf-8"))
+    manifest.write_text(json.dumps({**body, "skills": wanted}), encoding="utf-8")
+    assert not (await type(row).get_one({"id": row.id})).skills
+
+    package = await _export([str(row.typeid)], tmp_path)
+    await row.destroy()
+    shutil.rmtree(sender_root)
+
+    receiver_root = tmp_path / "receiver"
+    receiver = await _project(receiver_root, f"lag-rx-{tag}")
+    up = await handle_upload_flow_message(_Upload(package), overwrite=False)
+    res = await handle_message_install_all(up.data["message_id"], receiver.id)
+    assert isinstance(res, ApiSuccessResponse) and not res.data["failed"], res
+
+    got = await _row_at("agent", receiver_root, agent_dir.relative_to(sender_root))
+    assert [str(s) for s in got.skills] == wanted, f"the stale row won over the file: {got.skills}"
+    import zipfile
+
+    rel = agent_dir.relative_to(sender_root) / "agent.json"
+    shipped = zipfile.ZipFile(package).read(f"attachment/agent-{row.id}/{rel.as_posix()}")
+    assert (receiver_root / rel).read_bytes() == shipped, "install rewrote the file it received"
+    installed = json.loads((receiver_root / agent_dir.relative_to(sender_root) / "agent.json").read_text(encoding="utf-8"))
+    assert installed.get("skills") == wanted, f"the installed file lost its value: {installed}"
