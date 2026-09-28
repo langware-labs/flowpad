@@ -38,9 +38,16 @@ from typing import Optional
 from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parents[2]))  # `tests.` helpers
 from deployment_channels_mix import Channel, Mix, log, watch  # noqa: E402
 
 QUESTION = "What is the serial number?"
+#: ``--image``: the question is a photo with no words (what WhatsApp sends when you share a picture), and
+#: the answer can only come from looking at it.
+IMAGE_PROMPT = (
+    "You are Lens, answering on WhatsApp. When someone sends a photo, open the file you are given and answer "
+    "in one short line naming the photo's dominant colour."
+)
 SYSTEM_PROMPT = (
     "You are Serial, a device support agent answering on WhatsApp. The device's serial number is {serial}. "
     "When someone asks for the serial number, answer in one short line that includes it exactly as written."
@@ -63,10 +70,11 @@ def env_values(names: tuple[str, ...]) -> dict[str, str]:
 
 
 class Demo(Mix):
-    def __init__(self, backend: str, control: Optional[str], answer_budget: float) -> None:
+    def __init__(self, backend: str, control: Optional[str], answer_budget: float, image: bool = False) -> None:
         super().__init__(backend, control or "http://127.0.0.1:9", timeout=0, answer_budget=answer_budget)
         self.backend = backend
         self.real = control is None
+        self.image = image
         self.serial = f"SN-{secrets.token_hex(4).upper()}"
 
     async def setup_agent(self) -> None:
@@ -76,7 +84,8 @@ class Demo(Mix):
         project = await self.graph("post", f"user/{user_id}/project", json={"name": f"{PROJECT_PREFIX}{secrets.token_hex(3)}"})
         self.project_id = project["id"]
         agent = await self.graph("post", f"project/{self.project_id}/agent", json={
-            "name": "Serial", "worker_type": "claude", "system_prompt": SYSTEM_PROMPT.format(serial=self.serial)})
+            "name": "Lens" if self.image else "Serial", "worker_type": "claude",
+            "system_prompt": IMAGE_PROMPT if self.image else SYSTEM_PROMPT.format(serial=self.serial)})
         self.agent_id = agent["id"]
         deployed = await self.graph("post", f"agent/{self.agent_id}/deploy", json={"provider": "local"})
         self.deployment_id = deployed["deployment"]["id"]
@@ -125,9 +134,9 @@ class Demo(Mix):
         log(step="channels", channels={"waha": channel.source_id}, status=row.get("status"), detail=row.get("setup_detail"))
         return channel
 
-    async def ask(self, channel: Channel, text: str) -> str:
+    async def ask(self, channel: Channel, text: str, files: Optional[list] = None) -> str:
         if not self.real:
-            return await super().ask(channel, text)
+            return await super().ask(channel, text, files)
         # A person sends it from WhatsApp; the answer is the deployment's reply on the channel's thread.
         log(step="SEND NOW", text=text, to="the agent's WhatsApp number")
         deadline = time.monotonic() + self.answer_budget
@@ -147,12 +156,30 @@ class Demo(Mix):
         raise TimeoutError(f"no reply on WhatsApp in {self.answer_budget:.0f}s")
 
     async def run(self, channel: Channel) -> None:
+        if self.image:
+            return await self.run_image(channel)
         try:
             answer = await self.step(channel, "serial", QUESTION)
             self.expect(channel, self.serial in answer.upper(), f"the answer {answer!r} does not hold {self.serial}")
             threads = await self.settled(channel, lambda ts: bool(ts) and ts[-1]["messages"] >= 2)
             self.expect(channel, bool(threads) and threads[-1]["messages"] >= 2,
                         f"the page's thread: {threads and threads[-1]}")
+        except Exception as exc:  # noqa: BLE001 — reported as the run's failure
+            self.expect(channel, False, f"{type(exc).__name__}: {exc}")
+
+    async def run_image(self, channel: Channel) -> None:
+        """A photo with no caption: the double sends a red square and the answer must say red; a person
+        sends their own photo and the answer is printed — anything but "I can't see it"."""
+        import base64  # noqa: PLC0415
+
+        from tests.long_tests.test_telegram_send import _png  # noqa: PLC0415 — a real, decodable PNG
+
+        red = {"name": "photo.png", "media_type": "image/png", "as_": "image", "b64": base64.b64encode(_png(96)).decode()}
+        try:
+            answer = await self.ask(channel, "", [red]) if not self.real else await self.ask(channel, "(send a photo, no text)")
+            log(step="image answer", answer=answer)
+            if not self.real:
+                self.expect(channel, "red" in answer.lower(), f"the answer {answer!r} does not name the photo's colour")
         except Exception as exc:  # noqa: BLE001 — reported as the run's failure
             self.expect(channel, False, f"{type(exc).__name__}: {exc}")
 
@@ -176,11 +203,12 @@ async def main() -> int:
     parser.add_argument("--keep", action="store_true", help="leave the project, agent and channel in place")
     parser.add_argument("--watch", help="a frontend URL: record the deployment's page in a browser meanwhile")
     parser.add_argument("--watch-out", default="whatsapp-serial-watch")
+    parser.add_argument("--image", action="store_true", help="ask with a photo (no words) instead of the serial question")
     args = parser.parse_args()
     if args.real and not args.sender:
         parser.error("--real needs --sender")
 
-    demo = Demo(args.backend, args.double, args.answer_budget)
+    demo = Demo(args.backend, args.double, args.answer_budget, image=args.image)
     watcher, channel, report = None, None, {}
     try:
         await demo.setup_agent()

@@ -186,7 +186,7 @@ class Mix:
         raise RuntimeError("the deployment's http_chat source never appeared")
 
     # ── one message, one answer ──────────────────────────────────────────────
-    async def ask(self, channel: Channel, text: str) -> str:
+    async def ask(self, channel: Channel, text: str, files: Optional[list] = None) -> str:
         """Say *text* on the channel and return the agent's answer, as the channel saw it leave."""
         if channel.provider == "http_chat":
             body: dict = {"model": "agent", "messages": [{"role": "user", "content": text}]}
@@ -200,7 +200,8 @@ class Mix:
             return reply["choices"][0]["message"]["content"]
         before = len((await self.control.get("/sent", params={"channel": channel.provider})).json())
         delivered = (await self.control.post("/deliver", json={
-            "channel": channel.provider, "text": text, "thread": channel.thread})).json()
+            "channel": channel.provider, "text": text, "thread": channel.thread,
+            **({"files": files} if files else {})})).json()
         if "error" in delivered or delivered.get("webhook_status", 200) >= 300:
             raise RuntimeError(f"delivery failed: {delivered}")
         channel.thread = channel.thread or delivered.get("thread")
