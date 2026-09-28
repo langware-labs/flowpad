@@ -130,16 +130,20 @@ def _seed(root: Path, tag: str) -> dict[str, Path]:
 
 
 async def _row_at(type_name: str, root: Path, rel: Path):
-    """The indexed row whose asset lives at ``root/rel`` (file or folder form)."""
+    """The indexed row whose asset lives at ``root/rel`` (file or folder form).
+
+    Queried by ``asset_ref`` — never a scan: the DB is session-wide and holds
+    other tests' rows, some deliberately malformed."""
     cls = SchemaRegistry.get_entity_cls(type_name)
-    target = (root / rel).resolve()
-    for row in await cls.get_all({}):
-        ref = str(getattr(row, "asset_ref", "") or "")
-        if not ref:
-            continue
-        p = Path(ref).resolve()
-        if p == target or p.parent == target:
-            return row
+    target = root / rel
+    candidates = [target]
+    if target.is_dir():
+        candidates += [p for p in target.iterdir() if p.is_file()]
+    for path in candidates:
+        for form in {str(path), str(path.resolve())}:
+            row = await cls.get_one({"asset_ref": form})
+            if row is not None:
+                return row
     return None
 
 
