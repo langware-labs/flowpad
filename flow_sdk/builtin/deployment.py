@@ -237,6 +237,10 @@ class Deployment(Entity):
 
     def __init__(self, **data: Any) -> None:
         data["id"] = self.allocate_id(data)
+        if "identity" not in data and str(data.get("parent_type_id") or "").startswith("agent-"):
+            # A row stored before ``identity`` existed: an agent's placement logs in as the agent (the hub
+            # reads legacy rows the same way).
+            data["identity"] = "agent"
         super().__init__(**data)
 
     def with_element(self, element: Optional[Entity]) -> "Deployment":
