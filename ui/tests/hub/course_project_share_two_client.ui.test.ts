@@ -5,14 +5,14 @@
  *   Alice shares it to Bob's email             → the hub grants Bob the project row and
  *                                                opens a new Alice↔Bob conversation
  *                                                holding the invite message
- *   Bob opens that conversation                → the message's chip offers Install
- *                                                project; no popup offers it
+ *   Bob opens that conversation                → the message's dashed project chip opens
+ *                                                the review popup, offering Install project
  *   Bob clicks Install project (`setup-from-git`) → the checkout lands in his workspace,
  *                                                READ-ONLY indexed (his clone stays clean)
  *   …and lands in the project                  → the dock loader redirects into the
  *                                                auto_launch agent's Vibe session, with
  *                                                its intro row and its queued prompt
- *   Bob reopens the conversation               → the chip now reads Open project
+ *   Bob reopens the conversation               → the chip is the installed project's chip
  *
  * The origin is a LOCAL bare repo over `file://` — never GitHub. That is the
  * point of the share gate this pins: a `file://` origin needs no GitHub token,
@@ -72,7 +72,10 @@ let bobMount = '';
 /** Screenshots, when a run asks for evidence (`scripts/course_share_live.sh`).
  *  The journey is defined once; the live demo is this same test, watched. */
 const ARTIFACTS = process.env.COURSE_LIVE_ARTIFACTS || '';
-const shot = async (page: { screenshot: (o: { path: string; fullPage?: boolean }) => Promise<unknown> }, name: string) => {
+const shot = async (
+  page: { screenshot: (o: { path: string; fullPage?: boolean }) => Promise<unknown> },
+  name: string,
+) => {
   if (!ARTIFACTS) return;
   mkdirSync(ARTIFACTS, { recursive: true });
   await page.screenshot({ path: path.join(ARTIFACTS, `${name}.png`) });
@@ -197,9 +200,11 @@ describe('course project share → install → auto-launch (two instances)', () 
     await shot(bobPage.page, '01-bob-before-install');
 
     await openAssignedConversationInUI(bobPage, inviteConversationId);
-    const chip = bobPage.page.getByTestId('project-install-chip');
+    const chip = bobPage.page.getByTestId('project-chip');
     await chip.waitFor({ state: 'visible', timeout: 30_000 });
-    const installButton = chip.getByTestId('project-install-button');
+    // The dashed chip opens the review popup; its project branch offers Install project.
+    await chip.getByRole('button').click();
+    const installButton = bobPage.page.getByTestId('asset-review-dialog').getByTestId('project-install-button');
     await installButton.waitFor({ state: 'visible', timeout: 30_000 });
     expect(await bobPage.page.getByTestId('incoming-project-dialog').count(), 'no install popup').toBe(0);
     await shot(bobPage.page, '02-bob-install-offer');
@@ -258,9 +263,11 @@ describe('course project share → install → auto-launch (two instances)', () 
     expect(again?.data?.error, 'auto-launch reported an error').toBeUndefined();
     expect(again?.data?.agent_id, 'a second open must not launch again').toBeNull();
 
-    // ── back in the message, the chip now opens the installed project ────
+    // ── back in the message, the chip is the installed project's chip ────
     await openConversation(bobPage, inviteConversationId);
-    await bobPage.page.getByTestId('project-open-button').waitFor({ state: 'visible', timeout: 20_000 });
+    await bobPage.page
+      .locator('[data-testid="project-chip"][data-state="installed"]')
+      .waitFor({ state: 'visible', timeout: 20_000 });
     await shot(bobPage.page, '05-bob-chip-open-project');
   }, 120_000); // do not increase timeout without approval
 });

@@ -4052,6 +4052,7 @@ msgstr "Clone"
 msgid "Clone @ {branch}"
 msgstr "Clone @ {branch}"
 
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Clone & Open"
 msgstr "Clone & Open"
@@ -10351,7 +10352,7 @@ msgstr "Install global"
 msgid "Install in project"
 msgstr "Install in project"
 
-#: src/components/conversation/ProjectInstallChip.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "Install project"
 msgstr "Install project"
 
@@ -10394,7 +10395,6 @@ msgstr "Installed Plugins"
 msgid "Installing and restarting Flowpad… this can take up to a minute."
 msgstr "Installing and restarting Flowpad… this can take up to a minute."
 
-#: src/components/conversation/ProjectInstallChip.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Installing…"
 msgstr "Installing…"
@@ -11413,7 +11413,7 @@ msgstr "Loading preview…"
 msgid "Loading project resources..."
 msgstr "Loading project resources..."
 
-#: src/components/conversation/ProjectInstallChip.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "Loading project…"
 msgstr "Loading project…"
 
@@ -14498,7 +14498,7 @@ msgstr "Open Plan"
 msgid "Open process"
 msgstr "Open process"
 
-#: src/components/conversation/ProjectInstallChip.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/terminal/project-list-menu.tsx
 msgid "Open project"
@@ -15617,8 +15617,9 @@ msgstr "project"
 
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/context-folder-sources.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/conversation/ProjectInstallChip.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -15753,7 +15754,7 @@ msgstr "Project tabs cannot load {0}."
 msgid "Project to load"
 msgstr "Project to load"
 
-#: src/components/conversation/ProjectInstallChip.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/routes/loaders/load-project.ts
 msgid "Project unavailable"
 msgstr "Project unavailable"
@@ -16258,6 +16259,10 @@ msgstr "Received attachments — review before installing."
 #: src/components/show-view/ShowView.tsx
 msgid "Received pointer: {0}"
 msgstr "Received pointer: {0}"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received project — review before installing."
+msgstr "Received project — review before installing."
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "Recency Boost"
@@ -17229,6 +17234,10 @@ msgstr "Review each attached asset and choose how to install it."
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Review prompts"
 msgstr "Review prompts"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Review the shared project and install it."
+msgstr "Review the shared project and install it."
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Revision history of this file"
@@ -20213,6 +20222,8 @@ msgid "Tasks"
 msgstr "Tasks"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 #: src/components/token-plan/token-plan-math.ts
 #: src/i18n/type-labels.ts
 msgid "Team"
@@ -20615,7 +20626,7 @@ msgstr "The organization's budget and its stored key are deleted, and every team
 msgid "the other participant"
 msgstr "the other participant"
 
-#: src/components/conversation/ProjectInstallChip.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 msgid "The project could not be installed."
 msgstr "The project could not be installed."
 
@@ -21796,7 +21807,7 @@ msgstr "Trigger"
 msgid "Triggers"
 msgstr "Triggers"
 
-#: src/components/conversation/ProjectInstallChip.tsx
+#: src/components/conversation/asset-review/ProjectInstallAction.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
