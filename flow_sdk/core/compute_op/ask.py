@@ -6,10 +6,10 @@ future; nothing is persisted, because the whole wait is bounded and a restart
 ends it either way.
 
 **The wait is bounded.** A caller holding a ``ReturnedValue`` needs an answer
-or a reason, so the question gets a deadline — the op's, resolved by the role an
-ask plays (``ASK_TIMEOUT_SECONDS`` in ``compute_op_spec``, beside the other four)
-— and the op answers ``NOT_YET`` when it passes. Nothing here parks: there is no
-form of this that waits for as long as a person likes.
+or a reason, so the question gets a deadline — the caller's, else the op's own,
+else ``ASK_TIMEOUT_SECONDS`` (``compute_op_spec``, beside the other four) — and the
+op answers ``NOT_YET`` when it passes. Nothing here parks: a long wait is a long
+deadline, and a question left unanswered is asked again when its wizard resumes.
 
 **The question lives where answers arrive.** The future is held by the process
 that serves the answer routes — the backend. ``run_op`` running there asks
@@ -151,9 +151,9 @@ def cancel(question_id: str) -> bool:
 async def wait_for(question: Question, *, timeout: float) -> Any:
     """The answer, or ``TimeoutError``/``Cancelled``.
 
-    ``timeout`` is required: the deadline is the OP's, resolved by its role and
-    narrowed by its caller, and a default here would be a second opinion about
-    how long a person gets.
+    ``timeout`` is required: the deadline is the caller's or the OP's, resolved
+    before it gets here, and a default here would be a second opinion about how
+    long a person gets.
 
     The question is forgotten on every exit, so a late answer to a question
     nobody is waiting for is refused rather than silently dropped into a future

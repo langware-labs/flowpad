@@ -139,7 +139,8 @@ async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, 
     ]
     assert {s.on_fail for s in wizard.steps} == {"continue"}, "one credential nobody can provide stops nothing"
     ask = ops["ask-telegram-TELEGRAM_BOT_TOKEN"]
-    assert ask.exe_data.secret and ask.completion_check is None
+    assert ask.exe_data.secret
+    assert ask.completion_check == ops["store-telegram"].completion_check, "a resumed run asks nobody once stored"
     assert wizard.steps[1].bind == "telegram__TELEGRAM_BOT_TOKEN"
     store, ai = ops["store-telegram"], ops["ai-telegram"]
     assert store.completion_check == ai.completion_check, "the AI rung skips itself when the key step got there"
