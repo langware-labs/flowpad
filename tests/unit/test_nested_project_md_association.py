@@ -34,18 +34,20 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase t
 MD_ID = "7c1b2a90-5d44-4f0e-9a37-1f2e3d4c5b6a"
 
 
-async def _make_project(root: Path, name: str) -> Project:
+async def _make_project(root: Path, name: str, *, system: bool = False) -> Project:
     root.mkdir(parents=True, exist_ok=True)
     pid = Project.derive_id_for_path(str(root))
-    proj = Project(id=pid, name=name, fs_storage_mount_path=str(root))
+    proj = Project(id=pid, name=name, fs_storage_mount_path=str(root), system=system)
     await proj.save()
     return proj
 
 
 async def test_md_in_nested_project_is_associated_with_inner_project(tmp_path: Path) -> None:
     # 1. Two NESTED folder projects: an umbrella workspace project and a real
-    #    project inside it (the ~/Flowpad workspace / …/sapak shape).
-    outer = await _make_project(tmp_path / "workspace", "workspace-umbrella")
+    #    project inside it (the ~/Flowpad workspace / …/sapak shape). Projects do
+    #    not nest; the umbrella is the one exception — a hidden container, like the
+    #    workspace root — so it is created as one.
+    outer = await _make_project(tmp_path / "workspace", "workspace-umbrella", system=True)
     inner = await _make_project(tmp_path / "workspace" / "sapak", "sapak")
 
     md_path = tmp_path / "workspace" / "sapak" / "SPEC.md"

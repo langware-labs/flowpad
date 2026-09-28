@@ -639,3 +639,27 @@ async def test_a_session_inside_an_existing_project_mints_no_project(project_db,
     assert [p.cwd for p in projects] == [canonical_posix_path(spora)]
     assert await Project.find_by_cwd(canonical_posix_path(user_home)) is None
     assert [p.id for p in await Project.get_all()] == [existing.id]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_projects_do_not_nest(project_db, tmp_path):
+    """No path creates a project inside another project's folder, or around one."""
+    from flow_sdk.builtin.project import NestedProjectError, Project
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    outer = tmp_path / "spora"
+    (outer / "ui" / "sim" / "backend").mkdir(parents=True)
+
+    async def create(path):
+        project = Project(name=path.name, fs_storage_mount_path=canonical_posix_path(path))
+        project.id = Project.allocate_id(project.model_dump())
+        return await project.save()
+
+    await create(outer / "ui" / "sim" / "backend")
+    with pytest.raises(NestedProjectError, match="contains project"):
+        await create(outer)
+    with pytest.raises(NestedProjectError, match="is inside project"):
+        await create(outer / "ui" / "sim" / "backend" / "app")
+    assert [p.fs_storage_mount_path for p in await Project.get_all()] == [
+        canonical_posix_path(outer / "ui" / "sim" / "backend")]
