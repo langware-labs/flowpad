@@ -65,6 +65,24 @@ export interface ConfigSchema {
 /** What a driver's items ARE — the base its source class extends (files, records, messages). */
 export type DataSourceFamily = 'object' | 'record' | 'message';
 
+/** One declared setup stage: its id, what the UI calls it, and the wizard that completes it. */
+export interface SetupStage {
+  stage: string;
+  label?: string;
+  wizard: string;
+}
+
+/** A declared stage as it stands for ONE source — read off its wizard's run for that source. */
+export interface SetupStageState {
+  stage: string;
+  label: string;
+  wizard: string;
+  /** `done` · `pending` · `locked` (an earlier stage is not done). */
+  state: 'done' | 'pending' | 'locked';
+  /** The last run's sentence, when there was one. */
+  detail: string;
+}
+
 export interface IDataDriver extends IEntity {
   /** The definition's folder on this machine. */
   asset_ref?: string;
@@ -74,6 +92,8 @@ export interface IDataDriver extends IEntity {
   /** Per-CHANNEL glyphs for a multi-channel transport (agent: gmail→Mail, slack→Slack). */
   channel_icon_names?: Record<string, string>;
   setup_wiki?: string;
+  /** The wizards a source of this driver is set up with, in order (test, then production…). */
+  setup_wizards?: SetupStage[];
   /** The record kind a source row carries (`datasource.api.slack`). */
   kind?: string;
   /** Always `source`: the folder's own `source.py`. */
@@ -134,6 +154,7 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   icon_name: string = '';
   channel_icon_names: Record<string, string> = {};
   setup_wiki: string = '';
+  setup_wizards: SetupStage[] = [];
   kind: string = '';
   runtime: string = 'source';
   load_error: string = '';
