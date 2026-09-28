@@ -172,6 +172,11 @@ function WizardViewerBody({
   const doc = editor.doc ?? initial;
   const stepIds = (doc?.steps ?? []).map((step) => step.id);
   const { steps: joinedSteps, orphaned } = runView.join(stepIds);
+  // The document's own `label` ("Claude Code", "Python 3") over the bare step
+  // id ("claude-code") — the id is a stable key, not something meant to be
+  // read; falling back to it is only for a step the document does not (or no
+  // longer) declare.
+  const stepLabels = useMemo(() => new Map((doc?.steps ?? []).map((step) => [step.id, step.label])), [doc]);
 
   const refresh = useCallback(async () => {
     await dataManager.refreshByTypeId(new TypeId(Wizard.type, wizard.id)).catch(() => null);
@@ -343,28 +348,28 @@ function WizardViewerBody({
         <section data-testid="wizard-steps">
           <ul className="flex flex-col gap-1">
             {joinedSteps.map(({ step_id, live, outcome }) => {
-              // Live wins while the run is in flight — it is the fresher of the
-              // two — and the durable answer takes over once it settles.
-              const stepIsLive = Boolean(live && runView.live);
-              const status = stepIsLive ? LIVE_STATE[live!.state]?.status : stepStatus(outcome);
+              // The durable OUTCOME wins whenever it exists, whether or not the
+              // wizard as a whole is still running: `on_step` writes a step's
+              // own answer the moment THAT step settles, well before the last
+              // step does, so it is never stale mid-run. `live` only fills in
+              // for the one step actually in flight right now, which has
+              // started but has no outcome yet — every step in the child-node
+              // tree still counts as "live" for as long as the WHOLE run keeps
+              // going, so gating on that (rather than on `outcome` existing)
+              // used to blank out every already-finished step's status, trail
+              // and detail until the entire run ended.
+              const status = outcome ? stepStatus(outcome) : live ? LIVE_STATE[live.state]?.status : undefined;
               const style = STEP_STYLE[status ?? ''] ?? STEP_STYLE.not_reached;
               const { Icon } = style;
               // A step still in flight spins.
               const spin = status === 'running';
-              // Which rungs the goal actually went through, kept around after
-              // the step settles — the live text above already covers the
-              // in-flight case, so this only shows once there's a durable
-              // answer and nothing is actively overriding it.
-              const trail = stepIsLive ? [] : rungTrail(outcome);
+              const trail = outcome ? rungTrail(outcome) : [];
               const agentExecutor = trail.includes('agent') ? agentExecutorOf(outcome) : null;
-              // Read live WHILE the wizard is still mid-run — `runView.live` (via
-              // `on_step`) fills `outcome.detail` for a step that already
-              // finished, long before the wizard's own last step settles. A
-              // tooltip, not an always-visible span: a passing run's steps used
-              // to each print their own "cli check passed" line permanently,
-              // which drowned the one row that actually needs reading (a failure)
-              // in five that do not.
-              const detail = live?.current || outcome?.detail;
+              // A tooltip, not an always-visible span: a passing run's steps
+              // used to each print their own "cli check passed" line
+              // permanently, which drowned the one row that actually needs
+              // reading (a failure) in five that do not.
+              const detail = outcome?.detail || live?.current;
               const icon = (
                 <Icon
                   className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''} ${detail ? 'cursor-help' : ''}`}
@@ -387,7 +392,9 @@ function WizardViewerBody({
                   ) : (
                     icon
                   )}
-                  <span className="mt-0.5 shrink-0 font-mono text-xs text-muted-foreground">{step_id}</span>
+                  <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
+                    {stepLabels.get(step_id) || step_id}
+                  </span>
                   {trail.length > 0 && (
                     <span
                       className="mt-0.5 shrink-0 text-xs text-muted-foreground/60"
@@ -411,12 +418,6 @@ function WizardViewerBody({
           <Trans>This wizard declares no steps.</Trans>
         </p>
       )}
-
-      {/* What the RUN did, which is not a fact about the document's steps. This
-          used to live inside the step list, and re-sourcing that list from the
-          document made a completed run's answer vanish for any wizard whose
-          steps had since changed. */}
-      {state.result?.detail ? <p className="text-xs text-muted-foreground">{state.result.detail}</p> : null}
 
       {/* `reserve={false}`: the default keeps the subtree mounted and its inputs
           focusable in Standard view, which is wrong for a form — you would tab

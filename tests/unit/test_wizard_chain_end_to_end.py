@@ -36,7 +36,7 @@ SHIPPED = ASSETS / "wizard" / "llm-setup"
 #: The wizards its steps call, and the ops THOSE call. A step names one; the row
 #: has to be indexed for the resolver to find it, exactly as it is on a real
 #: machine.
-_WITH_AGENT = ("jq", "ripgrep", "claude-code", "python", "git", "node")
+_WITH_AGENT = ("claude-code", "python", "git", "node")
 SUB_WIZARDS = [ASSETS / "wizard" / f"llm-setup-{tool}" for tool in _WITH_AGENT]
 OPS = [
     ASSETS / "compute_op" / name
@@ -207,13 +207,13 @@ async def test_the_run_reports_through_the_activity_tree():
             resolve_op=_resolve_op,
             resolve_wizard=_resolve_wizard,
         )
-        assert list(result.steps) == ["jq", "ripgrep", "claude-code", "python", "git", "node"]
+        assert list(result.steps) == ["claude-code", "python", "git", "node"]
         assert result.ok, f"the shipped wizard failed here: {result.detail}"
         assert not any(step.ran for step in result.steps.values()), (
             "every check holds on this shell, so nothing may run; got {[(k, v.exit_code, v.ran) for k, v in result.steps.items()]}"
         )
         root = Activity.get("wizard/chain-check", subject_entity=str(wizard.typeid)).spec()
-        assert root.total == 6 and root.skipped == 6 and root.errors_count == 0
+        assert root.total == 4 and root.skipped == 4 and root.errors_count == 0
     finally:
         await _cleanup(wizard)
 
