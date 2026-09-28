@@ -13,9 +13,13 @@ This is the single most common reason a first attempt fails.
 
 On Windows, pass `--source winget` to every `winget install`: a fresh Windows
 ships an old winget whose `msstore` source fails a certificate check, and with
-two sources it refuses to pick one. Windows Installer errors are the machine's
-state, not your task: 1618 means another install is running (it is usually
-waiting on a permission prompt; wait for it, do not retry in a loop), and
+two sources it refuses to pick one. Prefer an install that needs no
+administrator rights (a per-user install, a zip under the user profile put on
+the USER PATH): a machine-wide installer opens a Windows permission prompt, the
+person may never see it, and your turn blocks on it until the step times out.
+Windows Installer errors are the machine's state, not your task: 1618 means
+another install is running (usually one waiting on such a prompt; do not retry
+in a loop, and do not queue behind it — take a per-user route), and
 1603/1322/1324 after a few seconds usually mean a previous install of the same
 product was left half-registered. Do not spend the budget debugging Windows
 Installer — take a route that does not use it (the goal's own hand-install notes
