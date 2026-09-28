@@ -59,7 +59,7 @@ vi.mock('@monaco-editor/react', async () => {
   };
 });
 
-const { SnippetView, regionLine } = await import('@src/components/code-editor/SnippetView');
+const { SnippetView, regionLine, formatElapsed } = await import('@src/components/code-editor/SnippetView');
 
 const PATH = '/tmp/flowpad-snippets/t.py';
 const REGIONS = [
@@ -270,6 +270,41 @@ describe('SnippetView', () => {
     expect((await screen.findByTestId('snippet-status')).textContent).toMatch(/stopped/);
     expect(screen.getByTestId('snippet-stdout').textContent).toContain('started');
     expect(screen.getByTestId('snippet-run')).toBeTruthy();
+  });
+
+  it('Run clears the last run\'s console the moment it is clicked, not when the new run answers', async () => {
+    backend({ '/api/v1/snippet/run': { returncode: 1, stdout: 'old out\n', stderr: 'old err', timed_out: false, duration_s: 0.1 } });
+    view();
+    fireEvent.click(await screen.findByTestId('snippet-run'));
+    expect((await screen.findByTestId('snippet-stdout')).textContent).toContain('old out');
+    await screen.findByTestId('snippet-run');
+    backend({ '/api/v1/snippet/run': new Promise(() => undefined) });
+    fireEvent.click(screen.getByTestId('snippet-run'));
+    await screen.findByTestId('snippet-stop');
+    expect(screen.queryByTestId('snippet-stdout')).toBeNull();
+    expect(screen.queryByTestId('snippet-stderr')).toBeNull();
+    expect(screen.queryByTestId('snippet-status')).toBeNull();
+  });
+
+  it('a clock beside Stop counts the run in flight, and goes when the run ends', async () => {
+    let finishRun: (value: unknown) => void = () => undefined;
+    backend({ '/api/v1/snippet/run': new Promise((resolve) => (finishRun = resolve)) });
+    view();
+    fireEvent.click(await screen.findByTestId('snippet-run'));
+    const clock = await screen.findByTestId('snippet-clock');
+    expect(clock.textContent).toMatch(/^0\.\ds$/);
+    await waitFor(() => expect(clock.textContent).not.toBe('0.0s'), { timeout: 1000 });
+    finishRun({ returncode: 0, stdout: 'done\n', stderr: '', timed_out: false, duration_s: 0.3 });
+    await screen.findByTestId('snippet-run');
+    expect(screen.queryByTestId('snippet-clock')).toBeNull();
+  });
+
+  it('formats elapsed time as tenths under a minute, then m:ss', () => {
+    expect(formatElapsed(0)).toBe('0.0s');
+    expect(formatElapsed(3240)).toBe('3.2s');
+    expect(formatElapsed(59_949)).toBe('59.9s');
+    expect(formatElapsed(65_000)).toBe('1:05');
+    expect(formatElapsed(-5)).toBe('0.0s');
   });
 
   it('clicks before the button turns into Stop start one run, not one each', async () => {
