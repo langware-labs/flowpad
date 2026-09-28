@@ -35,22 +35,22 @@ describe('TerminalBottomRibbon — Shown chip', () => {
     expect(screen.queryByTestId('ribbon-shown')).toBeNull();
   });
 
-  it('opens the newest show, and lists all of them newest-first', async () => {
+  it('one stack button lists every show newest-first; a row opens it', async () => {
     const onOpenShown = vi.fn();
     const older = file('older.md', '2026-09-28T09:00:00Z');
     const newest = file('newest.md', '2026-09-28T12:00:00Z');
     render(<TerminalBottomRibbon {...baseProps} shown={[older, newest]} onOpenShown={onOpenShown} />);
 
-    await userEvent.click(screen.getByTestId('ribbon-shown-latest'));
-    expect(onOpenShown).toHaveBeenLastCalledWith(newest);
+    expect(screen.getByTestId('ribbon-shown').textContent).toContain('2');
+    expect(screen.queryAllByTestId('ribbon-shown-row')).toHaveLength(0);
 
-    await userEvent.click(screen.getByTestId('ribbon-shown-list'));
+    await userEvent.click(screen.getByTestId('ribbon-shown'));
     const rows = screen.getAllByTestId('ribbon-shown-row');
     expect(rows.map((r) => r.textContent)).toEqual([
       expect.stringContaining('newest.md'),
       expect.stringContaining('older.md'),
     ]);
     await userEvent.click(rows[1]);
-    expect(onOpenShown).toHaveBeenLastCalledWith(older);
+    expect(onOpenShown).toHaveBeenCalledWith(older);
   });
 });
