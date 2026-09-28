@@ -1,7 +1,8 @@
 """The message-channel doubles as ONE process a running backend can talk to.
 
-Every shipped message driver ships a ``Double`` in its ``tests/matrix.py`` (a loopback provider with an
-inbound you can inject and the outbound it saw). This hosts them all for a browser test: it enters each
+Every message driver — shipped, or an external connector the backend has indexed (WAHA) — ships a
+``Double`` in its ``tests/matrix.py`` (a loopback provider with an inbound you can inject and the outbound
+it saw). This hosts them all for a browser test: it enters each
 Double, plants the credentials the backend will resolve them with, and serves a small control API::
 
     FLOW_INSTANCE=mx-8 FLOWPAD_HUB_URL=http://localhost:8093 uv run python tests/e2e/channel_doubles.py --backend http://localhost:6009 [--channels whatsapp,slack]
@@ -66,9 +67,22 @@ class Doubles:
         return self.loop.run_until_complete(coroutine)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
+    def folder(self, provider: str) -> Path:
+        """Where the driver ``provider`` lives: shipped, or an external connector the backend indexed
+        (its ``data_driver`` row names the folder) — WAHA is one."""
+        if (SHIPPED_ROOT / provider).is_dir():
+            return SHIPPED_ROOT / provider
+        rows = self.run(self.http.get("/api/v1/graph/data_driver", params={"filter": json.dumps({"name": provider})})).json().get("data") or []
+        ref = next((str(r.get("asset_ref") or "") for r in rows if isinstance(r, dict) and r.get("asset_ref")), "")
+        if not ref:
+            raise SystemExit(f"no driver {provider!r}: not shipped, and the backend indexes no connector by that name")
+        path = Path(ref)
+        return path.parent if path.name == "data_driver.json" else path
+
     def start(self) -> None:
+        self.folders = {provider: self.folder(provider) for provider in self.wanted}
         for provider in self.wanted:
-            module = load_module(SHIPPED_ROOT / provider / "tests", "matrix")
+            module = load_module(self.folders[provider] / "tests", "matrix")
             if getattr(module.Double, "agent_only", False):
                 continue  # opened per agent, through /agent_mailbox
             self.doubles[provider] = module.Double().__enter__()
@@ -90,7 +104,7 @@ class Doubles:
         await asyncio.gather(*(self.plant(provider, double) for provider, double in self.doubles.items()))
 
     async def plant(self, provider: str, double) -> None:
-        auth = read_manifest(SHIPPED_ROOT / provider).auth
+        auth = read_manifest(self.folders[provider]).auth
         secrets = dict(getattr(double, "secrets", {}) or {})
         if auth is None:
             return

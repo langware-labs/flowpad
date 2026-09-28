@@ -54,21 +54,27 @@ def stub(request, monkeypatch):
     request.addfinalizer(lambda: DRIVERS.unregister(name))
 
     kept: dict = {"saves": 0, "credentials": []}
+    #: Where each credential write went, and the project the stubbed owner lives in (a test sets it).
+    written: list = []
+    owner: dict = {"project": None}
 
     async def save(self, *_a, **_kw):
         kept["saves"] += 1
 
     async def set_credential_by_name(cred, values, *, project_id=None, deployment_id=None):
         kept["credentials"].append((cred, values))
+        written.append(project_id)
 
-    async def no_project(self):
-        return None
+    async def owner_project(row):
+        return owner["project"]
 
     from flow_sdk.builtin import credential_service
+    from flow_sdk.ingest import credentials as ingest_credentials
 
     monkeypatch.setattr(DataSource, "save", save)
-    monkeypatch.setattr(DataSource, "_resolve_scope_project", no_project)
+    monkeypatch.setattr(ingest_credentials, "owner_project", owner_project)
     monkeypatch.setattr(credential_service, "set_credential_by_name", set_credential_by_name)
+    request.node.written, request.node.owner = written, owner
     return name, kept
 
 
@@ -82,6 +88,20 @@ async def test_a_step_stores_what_it_learned_and_never_echoes_the_secret(stub):
     assert source.config["app_id"] == "123" and source.allowed_senders == ["972500000000"] and kept["saves"] == 1
     assert kept["credentials"] == [("stubcred", {"STUB_SECRET": "s3cr3t"})], "keyed by the credential's env var"
     assert "s3cr3t" not in str(answer.model_dump()), "a secret goes into the credential and nowhere else"
+
+
+async def test_a_step_keeps_its_secrets_where_the_source_reads_them(stub, request):
+    """The owning agent's project — the one ``resolve_credentials`` reads. Writing by placement put them in
+    the user scope for a saved row, so a step that ran still failed its own check (WAHA, on a receiver)."""
+    from types import SimpleNamespace
+
+    name, _kept = stub
+    request.node.owner["project"] = SimpleNamespace(id="proj-owner")
+    source = DataSource(provider=name, name="bot", config={}, owner=f"agent-{mint_uuid()}")
+
+    answer = await source.step("app", values={"app_id": "1", "me": "972500000000", "secret": "s"})
+
+    assert answer.ok and request.node.written == ["proj-owner"]
 
 
 async def test_check_only_asks_and_keeps_nothing(stub):

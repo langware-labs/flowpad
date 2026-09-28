@@ -5,7 +5,7 @@ it, so this never verifies the source (verifying re-points the webhook). It send
 whose caption is the body quoting the probe and a document, then reacts 👍 on the photo and takes it
 back — the recipient sees all of it in their chat with the WAHA number.
 
-Needs (skips otherwise):
+Needs the WAHA connector installed (it is an external connector — the `waha` project), and (skips otherwise):
 - ``DEEP_TESTING`` on,
 - ``WAHA_BASE_URL`` / ``WAHA_API_KEY`` — the container and its key,
 - ``WAHA_LIVE_TO`` — the recipient's number, digits only, given at run time (never committed; a

@@ -23,7 +23,7 @@ containing it cannot come from the prompt.
              MCP by TypeId, so the reference survives only if the id did);
              ``mcp/<id>/test`` lists the tool
   doc        full-text search on B finds it by its word
-  data_driver + credential   the driver loads on B (no ``load_error``); the
+  data_driver + credential   a renamed copy of a shipped driver loads on B (no ``load_error``); the
              credential is declared
 
 Needs docker and ``OPENROUTER_API_KEY`` (env or ``.env.local``); skips otherwise.
@@ -48,7 +48,10 @@ from tests.long_tests.conftest import _openrouter_key
 
 REPO = Path(__file__).resolve().parents[2]
 IMAGE = os.environ.get("FLOWPAD_DOCKER_IMAGE", "flowpad-backend:offline-share")
-WAHA = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/waha"
+#: A shipped message driver with a named credential, copied and renamed into the sender project: what an
+#: external connector looks like (WAHA itself is one now — it lives in its own project).
+SHIPPED = REPO / "flow_sdk/system_projects/flowpad_assistant/agentic-assets"
+DRIVER = "telegram"
 pytestmark = [pytest.mark.timeout(900)]  # two fresh containers + four model turns; do not increase without approval
 
 SENDER, RECEIVER = "/root/sender", "/root/receiver"
@@ -192,20 +195,20 @@ def _seed(root: Path, tag: str, words: dict[str, str]) -> dict[str, str]:
         "and the tool's word, separated by a space, and nothing else.\n",
         encoding="utf-8",
     )
-    # The real WAHA driver, renamed and given an ontology namespace: what an external connector looks like.
-    drv_name = f"waha{tag}"
+    # A real shipped driver, renamed and given an ontology namespace: what an external connector looks like.
+    drv_name = f"ext{tag}"
     drv = assets / "data_driver" / drv_name
-    shutil.copytree(WAHA, drv, ignore=shutil.ignore_patterns("__pycache__", ".DS_Store", "tests"))
+    shutil.copytree(SHIPPED / "data_driver" / DRIVER, drv, ignore=shutil.ignore_patterns("__pycache__", ".DS_Store", "tests"))
     manifest = json.loads((drv / "data_driver.json").read_text(encoding="utf-8"))
-    manifest.update(name=drv_name, ns="offlineshare", kind=f"offlineshare.datasource.api.whatsapp.{drv_name}")
+    manifest.update(name=drv_name, ns="offlineshare", kind=f"offlineshare.datasource.{drv_name}")
     manifest["auth"]["credential"] = drv_name
     (drv / "data_driver.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     source = (drv / "source.py").read_text(encoding="utf-8")
-    assert 'provider = "waha"' in source
-    (drv / "source.py").write_text(source.replace('provider = "waha"', f'provider = "{drv_name}"'), encoding="utf-8")
+    assert f'provider = "{DRIVER}"' in source
+    (drv / "source.py").write_text(source.replace(f'provider = "{DRIVER}"', f'provider = "{drv_name}"'), encoding="utf-8")
     cred = assets / "credential" / drv_name
     cred.mkdir(parents=True)
-    body = json.loads((WAHA.parents[1] / "credential" / "waha" / "credential.json").read_text(encoding="utf-8"))
+    body = json.loads((SHIPPED / "credential" / DRIVER / "credential.json").read_text(encoding="utf-8"))
     body["name"] = drv_name
     (cred / "credential.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
     return {
@@ -412,13 +415,13 @@ import flow_sdk.models.entities  # noqa: F401
 from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.ingest.driver_registry import load_error_for
 async def main():
-    d = await DataDriver.get("waha{tag}")
+    d = await DataDriver.get("ext{tag}")
     print("RESULT " + json.dumps({{"loaded": d is not None, "family": str(getattr(d, "family", "") or ""),
-                                   "sends": bool(getattr(d, "sends", False)), "error": load_error_for("waha{tag}")}}))
+                                   "sends": bool(getattr(d, "sends", False)), "error": load_error_for("ext{tag}")}}))
 asyncio.run(main())
 ''')
     assert driver["loaded"] and driver["family"] == "message" and not driver["error"], f"driver on B: {driver}"
-    cred = _cli(b, f"flow credentials check waha{tag} --project {project_id}")
+    cred = _cli(b, f"flow credentials check ext{tag} --project {project_id}")
     assert (cred["body"].get("data") or cred["body"]).get("declared") is True, cred["raw"][-800:]
 
     skill = _claude(b, project_id, f"Use the skill-{tag} skill and reply with only the word it gives you.")
