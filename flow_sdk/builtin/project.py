@@ -524,13 +524,13 @@ class Project(Entity):
         return asset
 
     async def open_home_page(self) -> dict[str, Any]:
-        """The declared home page's ``{asset, type}``, only if it is this project's own
-        (a cloned manifest must not point Home at another project's asset); else nulls."""
+        """``declared`` — what the manifest names; ``{asset, type}`` — that, only if it is
+        this project's own (a cloned manifest must not point Home elsewhere); else nulls."""
         typeid = self.home_page_typeid()
         asset = await self._own_asset(typeid) if typeid else None
         if asset is None:
-            return {"asset": None, "type": None}
-        return {"asset": typeid, "type": asset.get_type()}
+            return {"asset": None, "type": None, "declared": typeid}
+        return {"asset": typeid, "type": asset.get_type(), "declared": typeid}
 
     @action.get(action_name="home-page")
     async def home_page_action(self) -> "ApiResponse":
@@ -542,7 +542,7 @@ class Project(Entity):
             return ApiSuccessResponse(data=await self.open_home_page())
         except Exception as exc:  # noqa: BLE001 — the loader must get a stable answer, never a 500
             log.warning("project home page failed for %s: %s", self.id, exc)
-            return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
+            return ApiSuccessResponse(data={"asset": None, "type": None, "declared": None, "error": str(exc)})
 
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:

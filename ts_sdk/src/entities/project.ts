@@ -186,6 +186,8 @@ export interface ProjectHomePage {
   /** The declared asset's TypeId, once it resolves inside this project. */
   asset: string | null;
   type: string | null;
+  /** What the manifest names, resolved or not — what the Customize card shows. */
+  declared?: string | null;
   /** Set when the backend tried and failed; the rest is null alongside it. */
   error?: string;
 }
