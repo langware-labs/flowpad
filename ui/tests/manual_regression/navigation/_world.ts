@@ -73,13 +73,23 @@ export async function createWorld(label: string): Promise<World> {
       // asking it is the whole question — a second fetch downloaded the recording
       // (which the cold-open case grows past 10 MB) once more per poll.
       async () => (await ptyText(opened.shell_id)).includes(MOCK_MARKER),
-      { timeout: 15_000, message: 'the mock worker never printed its marker — is the instance launched with mock_worker_bin on PATH?' },
+      {
+        timeout: 15_000,
+        message: 'the mock worker never printed its marker — is the instance launched with mock_worker_bin on PATH?',
+      },
     )
     .toBe(true);
   const shell = await data<{ id: string }>(
     await post('graph/shell', { name: `${label} plain shell`, project_id: project.id, workdir: root }),
   );
-  return { root, projectId: project.id, processId: proc.id, processShellId: opened.shell_id, shellId: shell.id, reportPath };
+  return {
+    root,
+    projectId: project.id,
+    processId: proc.id,
+    processShellId: opened.shell_id,
+    shellId: shell.id,
+    reportPath,
+  };
 }
 
 /** The recorded PTY output of a shell, decoded. */
@@ -114,10 +124,14 @@ export async function navigateTo(page: Page, address: string, expectPath: string
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: 15_000 }).toContain(expectPath);
   if (committedBefore === null) return; // tab_switch tracing is off on this page: the URL is all there is
   await expect
-    .poll(async () => ((await committedPaths(page)) ?? []).slice(committedBefore.length).some((p) => p.includes(expectPath)), {
-      timeout: 15_000,
-      message: `the router never committed ${expectPath}`,
-    })
+    .poll(
+      async () =>
+        ((await committedPaths(page)) ?? []).slice(committedBefore.length).some((p) => p.includes(expectPath)),
+      {
+        timeout: 15_000,
+        message: `the router never committed ${expectPath}`,
+      },
+    )
     .toBe(true);
 }
 
@@ -145,6 +159,18 @@ export async function installObservers(page: Page): Promise<{ toplog: string[] }
     if (text.startsWith('[toplog:')) toplog.push(text);
   });
   await page.addInitScript(() => {
+    // Opt out of the startup harness-login gate before the app's first script.
+    // `useHarnessLoginGate` probes every assistant's sign-in state and auto-opens
+    // a MODAL when none is signed in — which is exactly CI, where the mock worker
+    // is on PATH but nothing is signed in. Its backdrop then swallows every click
+    // in these specs (a tab chip retried for 60s, reported as a hung click).
+    // `HARNESS_GATE_SEEN_KEY` exists for this: "a user (or test harness) can opt
+    // out of the nag".
+    try {
+      localStorage.setItem('llm-setup-modal-seen', 'true');
+    } catch {
+      /* storage disabled — the gate stays, and the spec will say what covered it */
+    }
     const w = window as unknown as {
       __nothingToDisplay: string[];
       __tabSwitchAt: { t: number; line: string }[];
@@ -164,7 +190,12 @@ export async function installObservers(page: Page): Promise<{ toplog: string[] }
     };
     // eslint-disable-next-line @typescript-eslint/unbound-method -- re-bound with .call below
     const open = XMLHttpRequest.prototype.open;
-    XMLHttpRequest.prototype.open = function (this: XMLHttpRequest, method: string, url: string | URL, ...rest: unknown[]) {
+    XMLHttpRequest.prototype.open = function (
+      this: XMLHttpRequest,
+      method: string,
+      url: string | URL,
+      ...rest: unknown[]
+    ) {
       const path = new URL(String(url), location.href).pathname;
       if (path.startsWith('/api/')) w.__apiRequests.push({ t: performance.now(), method, path });
       return (open as (...a: unknown[]) => void).call(this, method, url, ...rest);
