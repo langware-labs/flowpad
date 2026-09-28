@@ -1673,6 +1673,32 @@ def _normalize_transfer_mode(transfer_mode: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+async def _row_as_its_file_says(entry_type: str, ent):
+    """A file-backed asset's row re-read from its file before it is snapshotted.
+
+    The envelope rides beside the file and the receiver overlays it onto the row
+    it indexed from that file — so the two must agree, and the FILE is the truth.
+    A row can lag its file (an ``agent.json`` edited after the last index shipped
+    ``mcp_servers: []`` beside a file naming the MCP, and the receiver's agent
+    lost its tool). Best-effort: a file that cannot be re-read keeps the row as is.
+    """
+    from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entry_type)
+    ref = str(getattr(ent, "asset_ref", "") or "")
+    eid = getattr(ent, "id", None)
+    if info is None or info.main_subdir is None or not eid or not ref or not Path(ref).exists():
+        return ent
+    try:
+        resolved = await resolve_asset(ref, write=False, type_name=entry_type, owner_id=eid)
+        await index_one(resolved, scope=getattr(ent, "scope", None), project_id=getattr(ent, "project_id", None))
+        return await type(ent).get_one({"id": eid}) or ent
+    except Exception:  # noqa: BLE001
+        logger.warning("[bundle] could not re-read %s-%s from its file; packing the row", entry_type, eid, exc_info=True)
+        return ent
+
+
 async def _collect_attachment_envelopes(entry, entities: dict) -> None:
     """Add ``to_common_json()`` for a TYPE_ID attachment entity + its nested
     repo descendants into ``entities`` (keyed ``<type>-<id>``). Best-effort:
@@ -1701,6 +1727,7 @@ async def _collect_attachment_envelopes(entry, entities: dict) -> None:
     ent = await cls.get_one({"id": entry_id})
     if ent is None:
         return
+    ent = await _row_as_its_file_says(entry_type, ent)
     try:
         entities[f"{entry_type}-{entry_id}"] = ent.to_common_json()
     except Exception:
