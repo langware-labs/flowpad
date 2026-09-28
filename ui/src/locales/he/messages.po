@@ -5777,7 +5777,7 @@ msgstr ""
 msgid "Couldn't finish preparing your workspace"
 msgstr "לא הצלחנו להשלים את הכנת סביבת העבודה"
 
-#. placeholder {0}: f.name || f.email || f.user_id || ''
+#. placeholder {0}: f.email || f.user_id || ''
 #. placeholder {1}: f.message
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Couldn't invite {0}: {1}"
