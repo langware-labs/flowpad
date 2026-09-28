@@ -83,8 +83,11 @@ const AGENT_HARNESS_LABEL: Record<string, string> = {
 /** "(harness: model-slug)" beside the agent rung — the SETTLED answer to "which agent, which
  *  model actually ran", read off the executor process itself rather than re-derived, so it can
  *  never disagree with what the spawn's own env injection used (see
- *  `api_auth.py::binding_for_candidate`, the one place that resolves it). No live watch: this is
- *  a historical rung of a step that has already settled, not a value expected to keep changing. */
+ *  `api_auth.py::binding_for_candidate`, the one place that resolves it). Watched, not a
+ *  one-shot fetch: `resolved_model_slug` is written by `on_turn_finally`, which can land
+ *  AFTER the wizard step's own trail already reads "completed" — a plain fetch made the
+ *  moment the "agent" rung first appeared could win that race and cache the field still
+ *  empty, showing no label at all until the page happened to reload. */
 function AgentRungLabel({ executorTypeId }: { executorTypeId: string }) {
   const typeId = useMemo(() => {
     try {
@@ -93,7 +96,7 @@ function AgentRungLabel({ executorTypeId }: { executorTypeId: string }) {
       return null;
     }
   }, [executorTypeId]);
-  const { data: process } = useEntity<AgenticProcess>(typeId, { enabled: !!typeId });
+  const { data: process } = useEntity<AgenticProcess>(typeId, { enabled: !!typeId, watch: true });
   if (!process?.resolved_model_slug) return null;
   const label = (process.worker_type && AGENT_HARNESS_LABEL[process.worker_type]) || process.worker_type || 'agent';
   return (

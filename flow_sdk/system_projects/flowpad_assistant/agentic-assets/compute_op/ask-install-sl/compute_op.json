@@ -1,0 +1,23 @@
+{
+  "type": "compute_op",
+  "id": "7acc9d46-9ca5-4ae5-9d89-2ec3c69a8e53",
+  "name": "ask-install-sl",
+  "label": "Install sl?",
+  "description": "Asks the person whether to install sl, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "sl is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "command -v sl >/dev/null 2>&1 && echo '{}'",
+      "linux": "command -v sl >/dev/null 2>&1 && echo '{}'"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}
