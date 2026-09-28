@@ -40,7 +40,7 @@ export interface EntityActionsToolbarProps {
  *   <EntityActionsToolbar typeId={process.typeId} favoriteTitle="My session" variant="prominent" />
  *
  * Share opens the ShareToConversationDialog. Favorite is the existing FavoriteStar
- * — persists a Bookmark(bookmark_type=favorite) that the homepage MiniDesktop
+ * — persists a Bookmark(bookmark_type=favorite) that the desktop
  * renders. For export/download, compose <ExportEntityButton> (e.g. via `trailing`).
  */
 export function EntityActionsToolbar({
