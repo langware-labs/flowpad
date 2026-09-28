@@ -371,7 +371,7 @@ async def run_turn(args: argparse.Namespace, prompt: str, emitter: Emitter) -> i
 
             if tried_fallback or rejection is None or not _model_rejected(rejection):
                 break
-            fallback = await _fallback_model(current_model, deepagents_base_url, deepagents_api_key)
+            fallback = await _fallback_model(current_model, deepagents_base_url, deepagents_api_key, emitter)
             if not fallback:
                 break
             tried_fallback = True
@@ -414,24 +414,68 @@ def _chain_url(invoke_base_url: str) -> str | None:
     return f"{m.group(1)}/chain" if m else None
 
 
-async def _fallback_model(rejected_model: str, base_url: str, api_key: str) -> str | None:
+def _hop_allows(model: str, hop: dict) -> bool:
+    """Whether *hop*'s OWN ``models_allow`` lets *model* through — an empty list means this
+    ONE hop imposes no restriction (not "nothing is allowed"), so it passes everything."""
+    import fnmatch
+
+    filters = hop.get("effective_filters") if isinstance(hop, dict) else None
+    allow = filters.get("models_allow") if isinstance(filters, dict) else None
+    if not isinstance(allow, list) or not allow:
+        return True
+    return any(isinstance(p, str) and fnmatch.fnmatch(model, p) for p in allow)
+
+
+def _chain_allowed_literal(hops: list, rejected_model: str) -> str | None:
+    """A model literal every hop in the chain actually allows, or ``None``.
+
+    A call is paid for by EVERY hop from the leaf to the root, and each may narrow it
+    independently (a team pool, then the org root it draws from) — the invoke a spawn makes
+    fails the moment ANY one hop refuses the model, so "allowed" means allowed by all of them,
+    not just the one nearest the leaf. Candidates come from every hop's own ``models_allow``
+    (a parent is where a restriction usually lives; the leaf's own row is often unrestricted
+    and would otherwise look like permission to use anything) — a glob (``anthropic/claude-*``)
+    names a family, not a callable slug, so only literal entries are candidates at all.
+    """
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for hop in hops:
+        filters = hop.get("effective_filters") if isinstance(hop, dict) else None
+        allow = filters.get("models_allow") if isinstance(filters, dict) else None
+        for m in allow or []:
+            if isinstance(m, str) and "*" not in m and m not in seen:
+                seen.add(m)
+                candidates.append(m)
+    return next((m for m in candidates if m != rejected_model and all(_hop_allows(m, hop) for hop in hops)), None)
+
+
+async def _fallback_model(rejected_model: str, base_url: str, api_key: str, emitter: Emitter) -> str | None:
     """A model the endpoint's CHAIN actually allows, or ``None`` when there is nothing to try.
 
     ``base_url``'s own row can show no restriction at all (``filters.models_allow: []``) while
     still drawing from a parent pool (a team, an org) that has one — the hub enforces the whole
     chain at invoke time, but a spawn only ever fetches the leaf row, so the tier default can
     name a model that was never going to work and nothing local could have caught. The hub's
-    ``chain`` action is the one place that already flattens a parent's restriction onto its
-    child (``effective_filters`` — the same field the LLM Sources screen renders as "Effective
-    filters at this endpoint"), so this asks it directly with the same bearer a spawn already
-    uses to invoke, rather than re-deriving something only the hub actually knows.
+    ``chain`` action is the one place that names every hop the call actually travels — this
+    asks it directly with the same bearer a spawn already uses to invoke, rather than
+    re-deriving something only the hub actually knows.
 
     Best-effort: any failure (network, shape, no hub, no literal entry to fall back to) returns
     ``None`` and the caller reports the original rejection — this is a second chance, not a
-    dependency the turn should die on.
+    dependency the turn should die on. Every ``None`` exit is explained through *emitter* first
+    (non-terminal, ``kind="chain"``) — silent here just relocates the same mystery from "the
+    model was rejected" to "and the retry did nothing, for a reason nobody can see".
     """
+
+    def give_up(reason: str) -> None:
+        emitter.emit("error", message=f"could not fall back off a rejected model: {reason}", kind="chain")
+
     url = _chain_url(base_url)
-    if not url or not api_key:
+    if not url:
+        give_up(f"{base_url!r} is not a hub endpoint invoke URL — nothing to ask for a chain")
+        return None
+    if not api_key:
+        give_up("no API key available to ask the hub's chain action")
         return None
     try:
         import httpx
@@ -440,19 +484,19 @@ async def _fallback_model(rejected_model: str, base_url: str, api_key: str) -> s
             resp = await client.get(url, headers={"Authorization": f"Bearer {api_key}"})
         resp.raise_for_status()
         body = resp.json()
-    except Exception:  # noqa: BLE001 — best-effort; see docstring
+    except Exception as exc:  # noqa: BLE001 — best-effort; see docstring
+        give_up(f"GET {url} failed: {type(exc).__name__}: {exc}")
         return None
     data = body.get("data") if isinstance(body, dict) and "data" in body else body
     hops = data.get("hops") if isinstance(data, dict) else None
-    entry = hops[0] if isinstance(hops, list) and hops else None
-    filters = entry.get("effective_filters") if isinstance(entry, dict) else None
-    allow = filters.get("models_allow") if isinstance(filters, dict) else None
-    if not isinstance(allow, list) or not allow:
+    if not isinstance(hops, list) or not hops:
+        give_up(f"chain response carried no hops to check (body={data!r})")
         return None
-    # A glob (``anthropic/claude-*``) names a family, not a callable slug; only a literal entry
-    # is something this runner could actually pass as ``model=``.
-    literal = next((m for m in allow if isinstance(m, str) and "*" not in m), None)
-    return literal if literal and literal != rejected_model else None
+    literal = _chain_allowed_literal(hops, rejected_model)
+    if not literal:
+        give_up(f"no model every hop in the chain allows (hops={hops!r})")
+        return None
+    return literal
 
 
 def _error_kind(exc: Exception) -> str:

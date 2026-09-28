@@ -72,14 +72,17 @@ def _run(
 
 
 @contextmanager
-def _fake_chain_server(models_allow: list[str]) -> Iterator[str]:
+def _fake_chain_server(hops: list[list[str]]) -> Iterator[str]:
     """A minimal stand-in for the hub's own ``.../llm_endpoint/<id>/chain`` — just enough JSON
-    shape (``data.hops[0].effective_filters.models_allow``) for ``_fallback_model`` to read.
+    shape (``data.hops[].effective_filters.models_allow``) for ``_fallback_model`` to read.
+    *hops* is leaf-to-root, each entry that hop's own ``models_allow`` (``[]`` = unrestricted —
+    the real, observed shape: the LEAF is usually unrestricted while a PARENT pool narrows it).
     Yields the id-embedding base URL the runner's ``FLOWPAD_DEEPAGENTS_BASE_URL`` would carry."""
 
     class _Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 — stdlib's own name
-            body = json.dumps({"data": {"hops": [{"effective_filters": {"models_allow": models_allow}}]}}).encode()
+            payload = {"data": {"hops": [{"effective_filters": {"models_allow": allow}} for allow in hops]}}
+            body = json.dumps(payload).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -101,14 +104,15 @@ def _fake_chain_server(models_allow: list[str]) -> Iterator[str]:
 
 @pytest.mark.long  # ~1.8s — two real runner-side model builds plus a real (loopback) chain call
 def test_a_model_the_endpoint_rejects_falls_back_to_one_its_chain_allows(tmp_path):
-    """The exact failure this exists for: the leaf endpoint's own row shows no restriction, but
-    the hub's chain (a parent pool) rejects the tier's default model at invoke time. The runner
-    asks the chain what it actually allows and retries once on a model from that list, rather
-    than ending the turn on a rejection a person can do nothing about."""
+    """The exact failure observed live: the LEAF endpoint's own row shows no restriction at all
+    (``[]``) — reading only ``hops[0]`` finds nothing and gives up — while a PARENT pool two
+    hops up the chain (a team drawing from an org root) restricts it to one real model. The
+    runner has to check every hop, not just the nearest one, and retry once on a model all of
+    them actually allow."""
     script_file = tmp_path / "script.json"
     script_file.write_text(json.dumps([{"text": "done on the fallback model"}]), encoding="utf-8")
 
-    with _fake_chain_server(["good-model", "vendor/family-*"]) as base_url:
+    with _fake_chain_server([[], ["good-model", "vendor/family-*"], ["good-model"]]) as base_url:
         env = {
             **os.environ,
             "DEEPAGENTS_FAKE_SCRIPT": str(script_file),
@@ -311,6 +315,30 @@ def test_an_unsupported_permission_mode_is_an_error_then_a_result(tmp_path):
 
 
 # ── pure helpers (fast) ───────────────────────────────────────────────────────
+
+
+def test_chain_allowed_literal_checks_every_hop_not_just_the_leaf():
+    """The pure logic behind the test above, isolated: a candidate must clear EVERY hop's own
+    filter, and candidates come from anywhere in the chain, not just the leaf — the leaf being
+    unrestricted must not look like "nothing restricts this call"."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import _chain_allowed_literal
+
+    def hop(allow: list[str]) -> dict:
+        return {"effective_filters": {"models_allow": allow}}
+
+    # Real observed shape: leaf unrestricted, a team pool and its org root both narrow it.
+    hops = [hop([]), hop(["good-model", "vendor/family-*"]), hop(["good-model"])]
+    assert _chain_allowed_literal(hops, rejected_model="rejected-model") == "good-model"
+
+    # A candidate only ONE hop allows is not usable — the call still has to clear every hop.
+    disagreeing = [hop([]), hop(["model-a"]), hop(["model-b"])]
+    assert _chain_allowed_literal(disagreeing, rejected_model="rejected-model") is None
+
+    # The chain's only usable model is the one that was just rejected: nothing left to try.
+    assert _chain_allowed_literal([hop(["good-model"])], rejected_model="good-model") is None
+
+    # Every hop unrestricted: nothing in the chain names a candidate at all.
+    assert _chain_allowed_literal([hop([]), hop([])], rejected_model="rejected-model") is None
 
 
 def test_version_answers_from_metadata_without_importing_the_engine():
