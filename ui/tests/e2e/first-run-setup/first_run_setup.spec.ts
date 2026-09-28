@@ -58,7 +58,9 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     const started = Object.values(await stepStatuses(page)).some((s) => s !== 'not_reached');
     expect(started, 'the wizard has started running').toBe(true);
   }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
-  await expect(page.getByTestId('wizard-viewer').getByRole('heading', { name: 'llm-setup' })).toBeVisible();
+  // By test id, not by role: an install question may already be up as a modal,
+  // which hides the page behind it from the accessibility tree.
+  await expect(page.getByTestId('wizard-viewer')).toContainText('llm-setup');
 
   // 3. All six tools are on the page.
   for (const id of STEPS) {
