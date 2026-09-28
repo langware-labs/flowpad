@@ -1,0 +1,32 @@
+{
+  "type": "compute_op",
+  "id": "3da4a74d-1361-477a-ba75-69b984d9b2a4",
+  "name": "sl-on-path",
+  "label": "sl",
+  "description": "sl is on the PATH and runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "brew install sl-deliberately-wrong",
+      "linux": "apt-get update && apt-get install -y sl-deliberately-wrong"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install sl (https://github.com/mtoyoda/sl) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
+  "completion_check": {
+    "commands": {
+      "darwin": "command -v sl >/dev/null 2>&1",
+      "linux": "command -v sl >/dev/null 2>&1"
+    },
+    "timeout_seconds": 30
+  }
+}

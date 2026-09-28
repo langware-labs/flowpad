@@ -328,7 +328,7 @@ async def _app_ready_signal() -> None:
         from flow_sdk._version import __version__
         from flow_sdk.instance_settings import get_instance_settings
         from flow_sdk.server.builtin_triggers import reconcile_wizard_triggers
-        from flow_sdk.server.routes.bootstrap import first_bootstrap_served
+        from flow_sdk.server.routes.bootstrap import first_bootstrap_served, system_content_ready
         from flow_sdk.tags import target_of
         from flow_sdk.tags.bus import make_tag_event, publish_tag
         from flow_sdk.utils.machine_id import local_entity_id
@@ -341,6 +341,7 @@ async def _app_ready_signal() -> None:
             await _asyncio.gather(_system_content_index_task, return_exceptions=True)
 
         await reconcile_wizard_triggers()
+        system_content_ready.set()
 
         # make+publish rather than emit: `emit` returns None when nothing is
         # subscribed, and this line wants a stable event id in the log either

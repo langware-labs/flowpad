@@ -27,6 +27,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/comp
 import { Input } from '@src/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
+import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import {
@@ -592,15 +593,57 @@ function HarnessListRow({
  * `flowpad-connection-row.tsx` documents: `flowpad_cloud` registers no OAuth flow, so
  * `OAUTH_FLOW_COMPLETE` never fires and the hook's only path for clearing its spinner never runs.
  */
-function FlowpadListRow() {
+function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
   const { t } = useLingui();
   const { login, cloudUrl } = useCloudStatus();
+  const { status: funding } = useLlmSources();
   const [busy, setBusy] = useState(false);
   const loggedIn = login.status === 'logged_in';
   const signingIn = busy || login.status === 'logging_in';
+  // Signed in ≠ funding something: a hub account with no bound endpoint is signed in but has
+  // nothing to give out. Both are real, honest states this row's click has to tell apart.
+  //
+  // `active_for` alone under-reports this: it only counts a harness whose resolved source IS
+  // the endpoint the hub explicitly PUSHED to this box (`bind`) — it says nothing about a
+  // harness resolved via the user's own personal default allocation off the global root, which
+  // every signed-in account gets WITHOUT ever being explicitly bound to anything. A box that
+  // has no CLI harness installed at all is exactly the case that only has this: deepagents'
+  // own resolved source is real and spendable, `active_for` is empty (nothing was ever bound),
+  // and the row read "not funding anything" for a person who, in fact, was.
+  const isFunding =
+    (funding?.active_for.length ?? 0) > 0 ||
+    Object.values(funding?.resolved ?? {}).some(
+      (pick) => !!pick && funding?.endpoints[pick.endpoint_typeid]?.kind === 'hub',
+    );
+
+  // The OAuth-style flow this awaits can settle `login.status` a moment after its own promise
+  // resolves, not necessarily within it — watching the FLIP here (never on mount, when a
+  // returning user is already signed in) is what catches it either way, without a second
+  // "did we just do this" flag of its own.
+  const wasLoggedIn = useRef(loggedIn);
+  useEffect(() => {
+    if (loggedIn && !wasLoggedIn.current) onConnected();
+    wasLoggedIn.current = loggedIn;
+  }, [loggedIn, onConnected]);
 
   const connect = async () => {
-    if (loggedIn) return;
+    if (loggedIn) {
+      // Signing in already IS choosing FlowPad — there is no separate "pick" step, and this
+      // row's own button reads "Signed in" either way. Clicking it while it is actually funding
+      // something is a person CONFIRMING that choice, same as a fresh sign-in — so it goes
+      // through the same `onConnected` banner (Close / Keep browsing), not a toast with no
+      // way out. Only the "signed in but funds nothing" case below has nothing to confirm.
+      if (isFunding) {
+        onConnected();
+      } else {
+        notify.warning({
+          title: t`Signed in, but not funding anything`,
+          message: t`This FlowPad account has no LLM source bound to it yet — ask your organization for one, or connect a different assistant below.`,
+          durationMs: 6000,
+        });
+      }
+      return;
+    }
     setBusy(true);
     try {
       await cloudManager.login();
@@ -1507,6 +1550,10 @@ function MappingView({ onBack }: { onBack: () => void }) {
 export function HarnessLoginModalRoot() {
   const { open, payload, setOpen } = useHarnessLoginStore();
   const [selected, setSelected] = useState<string | null>(null);
+  // A row just finished connecting — confirmed IN PLACE rather than by closing, so the person
+  // can see it landed before deciding whether they are done here or have more to connect.
+  // `null` outside the banner's own moment; string is what it says.
+  const [justConnected, setJustConnected] = useState<string | null>(null);
   const [defaultKind, setDefaultKind] = useState<string | null>(
     () => capabilityManager.getSnapshot('harness').resolvedKind ?? null,
   );
@@ -1555,11 +1602,13 @@ export function HarnessLoginModalRoot() {
     if (!open) {
       wasOpen.current = false;
       setSelected(null);
+      setJustConnected(null);
       return;
     }
     if (wasOpen.current) return;
     wasOpen.current = true;
     setSelected(payload?.kind ?? null);
+    setJustConnected(null);
     void refreshKeys();
   }, [open, payload, refreshKeys]);
 
@@ -1619,7 +1668,38 @@ export function HarnessLoginModalRoot() {
                 that asks the user for nothing they do not already have, so reading order hands
                 them that before it asks them to pick a vendor or find a key. */}
             <div className="mt-4 flex flex-col gap-2">
-              <FlowpadListRow />
+              {justConnected ? (
+                <div
+                  data-testid="harness-just-connected"
+                  className="flex items-center justify-between gap-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm"
+                >
+                  <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                    <Check className="h-4 w-4" />
+                    {justConnected}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      data-testid="just-connected-keep-open"
+                      onClick={() => setJustConnected(null)}
+                    >
+                      <Trans>Keep browsing</Trans>
+                    </Button>
+                    <Button
+                      size="sm"
+                      data-testid="just-connected-close"
+                      onClick={() => {
+                        markHarnessGateSeen();
+                        setOpen(false);
+                      }}
+                    >
+                      <Trans>Close</Trans>
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              <FlowpadListRow onConnected={() => setJustConnected(i18n._(msg`Signed in to FlowPad.`))} />
 
               {/* The one label the tick column needs.
                   With the "Default assistant" dropdown gone, which assistant is default is

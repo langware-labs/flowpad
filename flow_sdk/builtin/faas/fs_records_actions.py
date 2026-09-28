@@ -600,9 +600,7 @@ class FsRecordsActionsMixin:
                 entities = apply_tag_filter(entities, tag_list)
                 total = len(entities)
             results = await _rows(entities, with_snippet=False)
-            return ApiSuccessResponse(
-                data={"results": results, "query": "", "total": total, "indexer_ready": True}
-            )
+            return ApiSuccessResponse(data={"results": results, "query": "", "total": total, "indexer_ready": True})
 
         # Parse optional calibration params
         from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration
@@ -1950,37 +1948,25 @@ class FsRecordsActionsMixin:
         ``asset_ref`` left stale by an install relocation (editable ↔ wheel).
         Scoped to the system project only — never the user's workspace.
         Best-effort: never raises into the caller (spawned detached).
+
+        ``queue=True`` on the shared slot: a project-scoped auto-index
+        (``_auto_index_project``, e.g. the user's first-opened project) claims
+        the SAME "index" activity, and its ``roots`` never include this
+        project's own — so losing that race and skipping used to mean these
+        assets (every shipped wizard, compute_op, trigger) went unindexed for
+        the rest of the process's life. Queuing waits for the holder instead.
         """
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
 
         try:
-            from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
-            from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
-                IndexerOptions,
-                IndexProgressTable,
-                get_shared_indexer,
-            )
+            from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer  # noqa: PLC0415
             from flow_sdk.fs_store.indexer.roots import flowpad_assistant_scoped_roots  # noqa: PLC0415
 
             scoped_roots = flowpad_assistant_scoped_roots()
             if not scoped_roots:
                 return
 
-            try:
-                activity = self._start_activity("index", timeout_seconds=600)
-            except RuntimeError:
-                # Another index is already running (e.g. user-triggered); it will
-                # cover the system assets too — skip the duplicate pass.
-                return
-
-            async def emit(table: "IndexProgressTable") -> None:
-                activity.set_table(table)
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(),
-                )
-
-            try:
+            async with self._index_activity("index", timeout_seconds=600, queue=True) as (_activity, emit):
                 result = await get_shared_indexer().index(
                     IndexerOptions(
                         roots=scoped_roots,
@@ -1993,8 +1979,6 @@ class FsRecordsActionsMixin:
                     "[fs-records] system-assets index complete: "
                     f"{result.total_indexed} new, {result.total_errors} errors"
                 )
-            finally:
-                self._complete_activity("index")
         except Exception:
             logging.exception("[fs-records] system-assets index failed (non-fatal)")
 
@@ -2064,8 +2048,7 @@ class FsRecordsActionsMixin:
             await rec.sync_to_db()
         except Exception as exc:
             logging.getLogger(__name__).warning(
-                "[fs-records] %s of %s/%s saved to disk but sync_to_db failed; "
-                "no DB row until the next index: %s",
+                "[fs-records] %s of %s/%s saved to disk but sync_to_db failed; no DB row until the next index: %s",
                 op,
                 record_type,
                 rec.id,
@@ -2278,14 +2261,19 @@ class FsRecordsActionsMixin:
                     logging.getLogger(__name__).warning(
                         "[fs-records] create of %s/%s wrote no main body; the asset "
                         "is not discoverable by a scan until it is rewritten: %s",
-                        record_type, rec.id, exc, exc_info=True,
+                        record_type,
+                        rec.id,
+                        exc,
+                        exc_info=True,
                     )
-                    warnings = (warnings or []) + [{
-                        "error_code": "main_body_missing",
-                        "message": f"{record_type}/{rec.id} has no main body on disk: {exc}",
-                        "type": record_type,
-                        "id": rec.id,
-                    }]
+                    warnings = (warnings or []) + [
+                        {
+                            "error_code": "main_body_missing",
+                            "message": f"{record_type}/{rec.id} has no main body on disk: {exc}",
+                            "type": record_type,
+                            "id": rec.id,
+                        }
+                    ]
                 # scope is stamped from the resolved asset path inside
                 # Entity._prepare_for_storage (the single save chokepoint), so
                 # HTTP-created records are born with a scope just like
@@ -2570,5 +2558,3 @@ class FsRecordsActionsMixin:
             await handle_entity_op(data_op_msg)
         except Exception as e:
             logging.warning(f"[fs-records] Failed to broadcast DataOp: {e}")
-
-

@@ -1,0 +1,30 @@
+{
+  "type": "compute_op",
+  "id": "b4031d92-6ec5-44f6-ba3f-fc19b9ce1fd6",
+  "name": "vcredist-installed",
+  "label": "Visual C++ Runtime",
+  "description": "The Microsoft Visual C++ 2015+ x64 Runtime is installed (MSVCP140.dll and VCRUNTIME140_1.dll in System32).",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; winget install --id Microsoft.VCRedist.2015+.x64 -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install the Microsoft Visual C++ Redistributable for Visual Studio 2015-2022 (x64) on this machine, from https://aka.ms/vs/17/release/vc_redist.x64.exe.",
+        "retries": 1
+      }
+    }
+  ],
+  "completion_check": {
+    "commands": {
+      "win32": "$d = Join-Path $env:SystemRoot 'System32'; if ((Test-Path (Join-Path $d 'msvcp140.dll')) -and (Test-Path (Join-Path $d 'vcruntime140_1.dll'))) { exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  }
+}

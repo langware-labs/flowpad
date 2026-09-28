@@ -1,0 +1,34 @@
+{
+  "type": "compute_op",
+  "id": "4e2bbcb8-dbdb-4182-a261-3486739b90d2",
+  "name": "claude-code-on-path",
+  "label": "Claude Code",
+  "description": "claude (Claude Code) is runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "curl -fsSL https://claude.ai/install-deliberately-wrong.sh | bash",
+      "linux": "curl -fsSL https://claude.ai/install-deliberately-wrong.sh | bash",
+      "win32": "irm https://claude.ai/install-deliberately-wrong.ps1 | iex"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install Claude Code (https://docs.anthropic.com/en/docs/claude-code/getting-started) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
+  "completion_check": {
+    "commands": {
+      "darwin": "PATH=\"$HOME/.local/bin:$PATH\" claude --version >/dev/null 2>&1",
+      "linux": "PATH=\"$HOME/.local/bin:$PATH\" claude --version >/dev/null 2>&1",
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:USERPROFILE + '\\.local\\bin'; claude --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  }
+}

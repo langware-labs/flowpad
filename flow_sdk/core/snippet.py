@@ -63,6 +63,22 @@ RUNNERS: dict[str, str] = {
     ".sh": "sh {file}",
 }
 
+#: What differs on Windows, where ``run_shell`` runs POWERSHELL: the same
+#: interpreter, but PowerShell only RUNS a quoted path behind its call operator
+#: ``&`` (without it, a quoted path is just a string). The script's exit code is
+#: the snippet's, not PowerShell's own verdict.
+WIN32_RUNNERS: dict[str, str] = {
+    ".py": "& {python} -m flow_sdk.snippet_launch {file}; exit $LASTEXITCODE",
+}
+
+
+def runner_for(suffix: str, platform: str = "") -> Optional[str]:
+    """The command template for a file suffix on ``platform``, or ``None``."""
+    if (platform or sys.platform) == "win32" and suffix in WIN32_RUNNERS:
+        return WIN32_RUNNERS[suffix]
+    return RUNNERS.get(suffix)
+
+
 #: Where a snippet with no file of its own is written. The OS temp dir: outside
 #: every project, so it is never indexed and the OS cleans it up.
 TEMP_DIR_NAME = "flowpad-snippets"
@@ -232,9 +248,7 @@ def read_snippet(path: Path) -> Optional[SnippetDoc]:
     return SnippetDoc.parse(Path(path).read_bytes().decode("utf-8"))
 
 
-def edit_region(
-    path: Path, index: int, kind: RegionKind, shown: str, base: Optional[str] = None
-) -> SnippetDoc:
+def edit_region(path: Path, index: int, kind: RegionKind, shown: str, base: Optional[str] = None) -> SnippetDoc:
     """Replace one region's text in the file on disk; returns the file re-read.
 
     Read, edit and write happen under ONE lock: two editors saving different
@@ -294,7 +308,9 @@ _RUNNING: dict[str, tuple[asyncio.Event, Optional[str]]] = {}
 _CHECKED: dict[tuple[str, str], list[SnippetDiagnostic]] = {}
 
 
-async def check_snippet(path: Path, *, timeout_seconds: float, env_path: Optional[str] = None) -> list[SnippetDiagnostic]:
+async def check_snippet(
+    path: Path, *, timeout_seconds: float, env_path: Optional[str] = None
+) -> list[SnippetDiagnostic]:
     """What would stop the file before it does its job — the problems a run would hit first.
 
     Python only (a syntax error, a name nothing binds, an import this interpreter cannot satisfy);
@@ -322,9 +338,17 @@ async def check_snippet(path: Path, *, timeout_seconds: float, env_path: Optiona
             raise ValueError(said.stderr.strip() or said.detail)
         found = [SnippetDiagnostic(**d) for d in json.loads(said.stdout)]
     except (ValueError, TypeError) as exc:
-        reason = "did not finish in time" if said.timed_out else f"failed: {str(exc).splitlines()[-1] if str(exc) else said.detail}"
+        reason = (
+            "did not finish in time"
+            if said.timed_out
+            else f"failed: {str(exc).splitlines()[-1] if str(exc) else said.detail}"
+        )
         # Not cached: a hang or a crash may be passing, and the next save should ask again.
-        return [SnippetDiagnostic(line=1, col=1, end_line=1, end_col=2, severity="warning", kind="check", message=f"the check {reason}")]
+        return [
+            SnippetDiagnostic(
+                line=1, col=1, end_line=1, end_col=2, severity="warning", kind="check", message=f"the check {reason}"
+            )
+        ]
     _CHECKED[key] = found
     return found
 
@@ -376,7 +400,7 @@ async def run_snippet(
         # Nothing by that name — NOT_FOUND, told apart from a run that failed.
         message = f"snippet file not found: {path}"
         return CliResult.not_found(message, command=str(path), stderr=message)
-    template = RUNNERS.get(path.suffix.lower())
+    template = runner_for(path.suffix.lower())
     if template is None:
         # A file this machine has no runner for: not this box's problem to run.
         known = ", ".join(sorted(RUNNERS))
@@ -410,6 +434,7 @@ async def run_snippet(
 
 __all__ = [
     "RUNNERS",
+    "WIN32_RUNNERS",
     "SnippetDoc",
     "SnippetReadRequest",
     "SnippetRunRequest",

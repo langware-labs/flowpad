@@ -32,6 +32,9 @@ export interface NotificationPayload {
   click_target?: NotificationClickTarget;
   /** Default true → dock bounce (macOS) / taskbar flash (Linux/Windows). */
   attention?: boolean;
+  /** Omitted → `info`. `warning` / `error` say something did NOT happen: kept in the footer
+   *  warnings list as well as shown. */
+  level?: 'info' | 'warning' | 'error';
 }
 
 interface NotifyBridge {
@@ -62,11 +65,16 @@ export function renderDesktopNotification(payload: NotificationPayload): void {
 
   const pointer = dockPointerForClickTarget(payload.click_target);
   const href = pointer ? new DockPointer(pointer).toUrl(window.location.pathname) : undefined;
+  const level = payload.level ?? 'info';
   notify({
-    level: 'info',
+    level,
     title,
     message: body,
     icon: payload.icon,
     actions: href ? [{ label: 'Open', href }] : undefined,
+    // A backend that sends an alert through THIS channel is telling the person, on purpose,
+    // that something they are waiting on did not happen — the only word they will get, which
+    // is what `forceToast` is reserved for. Ambient alerts do not come through here.
+    forceToast: level !== 'info',
   });
 }

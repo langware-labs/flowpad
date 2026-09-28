@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.wizard.runner import run_wizard
-from flow_sdk.core.wizard.state import record_result, run_dir, run_key, target_segment
+from flow_sdk.core.wizard.state import record_result, reset_run, run_dir, run_key, target_segment
 from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -49,6 +49,7 @@ async def execute_wizard(
     trusted: bool,
     approved: bool = False,
     subject_entity: Optional[str],
+    check_only: bool = False,
     target: str = "",
     inputs: Optional[dict] = None,
 ) -> WizardResult:
@@ -60,6 +61,11 @@ async def execute_wizard(
     `subject_entity` is routing alone: the wizard's id decides who may run,
     `subject_entity` decides who is told about it.
 
+    `check_only` reports the goal's current state and stamps it into
+    `run_state` the same way a real run does — never asking, never installing,
+    never spawning an agent. It still takes the same run slot: a status refresh
+    racing a real run for the same steps would read a torn picture otherwise.
+
     `target` is the entity this run sets up (a data source, a credential). Each
     target is its own run — own slot, own record, own resume point — so setting up
     one agent's channel never answers "already running" for another's. `inputs`
@@ -68,6 +74,18 @@ async def execute_wizard(
     key = run_key(wizard_id, target)
     workdir: "Path" = run_dir(key)
     workdir.mkdir(parents=True, exist_ok=True)
+
+    # Archive the previous run and start this one's record BLANK, before we
+    # even try to take the slot — so a person watching sees every step go back
+    # to "not reached" first, then fill in one at a time, never the previous
+    # run's leftovers sitting there until the whole new run finishes. This
+    # takes (and releases) the SAME lock `execute_wizard` is about to take
+    # below; `reset_run` already refuses (returns `None`) when another run
+    # holds it, which doubles as this call's own busy check — see its own
+    # docstring for why it must run BEFORE, never from inside, that acquire.
+    if reset_run(key) is None:
+        return WizardResult.held(f"{spec.name or wizard_id} {ALREADY_RUNNING}")
+    await _notify_wizard_watchers(wizard_id)
 
     # TRY-acquire, never wait. `instances.atomic.locked` blocks indefinitely,
     # which is right for a few-filesystem-ops critical section and wrong here: a
@@ -82,6 +100,20 @@ async def execute_wizard(
         lock.acquire(blocking=False)
     except Timeout:
         return WizardResult.held(f"{spec.name or wizard_id} {ALREADY_RUNNING}")
+
+    async def _on_step(partial: WizardResult) -> None:
+        # Every OTHER step's own record too, so this step settling does not
+        # revert what a slower sibling already reported — `run.steps` (what
+        # `partial` is built from) accumulates every step run so far, so this
+        # is never a step behind, only ever a step ahead of the final answer.
+        #
+        # `already_locked=True`: the `lock` above is held for this whole `try`
+        # block, including this callback's own invocation — `record_result`
+        # locking the SAME path again here would not be reentrant (a plain
+        # `FileLock` does not know one is already held) and self-deadlocks.
+        # This lock is what keeps the write safe without re-acquiring it.
+        record_result(key, partial, already_locked=True)
+        await _notify_wizard_watchers(wizard_id)
 
     from flow_sdk.core.compute_op.ask import ASKING_RUN  # noqa: PLC0415
 
@@ -103,6 +135,14 @@ async def execute_wizard(
             approved=approved,
             resolve_op=_resolve_op,
             resolve_wizard=_resolve_wizard,
+            wizard_id=wizard_id,
+            check_only=check_only,
+            # A person watching should see a step's own answer (an agent
+            # fallback that settled minutes ago, say) as soon as THAT step
+            # concludes — not sit looking untouched until every other step
+            # also finishes just because the durable record is otherwise
+            # written once, at the very end.
+            on_step=_on_step,
             inputs=inputs,
         )
     finally:
@@ -114,7 +154,26 @@ async def execute_wizard(
     # outcome of a first-launch setup survives as one log line and the wizard
     # reports "has not run on this machine yet", which is false.
     record_result(key, result)
+    await _notify_wizard_watchers(wizard_id)
     return result
+
+
+async def _notify_wizard_watchers(wizard_id: str) -> None:
+    """Push the current `run_state` to anyone watching this wizard's entity.
+
+    `run_state` lives in `run.json`, not on the row — `record_result` and
+    `reset_run` both write straight to that file, so neither one calling
+    `.save()`/`.update()` would even be honest (no FIELD ON THE ROW changed).
+    `notify_updated()` is the established seam for exactly this shape: re-send
+    the entity as it now reads without writing anything — `AgenticProcess`
+    does the same at its own turn-start/turn-end for `worker_status`, which is
+    computed the same way `run_state` is.
+    """
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+
+    wizard = await Wizard.get_by_id(wizard_id)
+    if wizard is not None:
+        await wizard.notify_updated()
 
 
 def activity_path_for(wizard_id: str, asset_ref: str, target: str = "") -> str:

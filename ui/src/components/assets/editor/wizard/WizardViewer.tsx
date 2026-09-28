@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
-import { ActionInfo, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
+import { ActionInfo, AgenticProcess, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import {
   CheckCircle2,
   Circle,
@@ -22,12 +23,13 @@ import { useIsAdvanced } from '@src/components/view-mode';
 import { useJsonDoc } from '@src/hooks/use-json-doc';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
-import { stepStatus, useWizardRun } from './useWizardRun';
+import { agentExecutorOf, rungTrail, stepStatus, useWizardRun } from './useWizardRun';
 import { LIVE_STATE, type WizardDoc } from './wizard-doc';
 
 /** The document beside `wizard.json` — the file the editor owns. */
@@ -67,9 +69,59 @@ function WizardIcon({ className }: { className?: string }) {
   return <Icon className={className} />;
 }
 
+/** A friendly name for the harness that actually ran the agent rung. Local to this display —
+ *  not `WORKER_LABELS` — because that table's names are chosen for the harness picker, not for
+ *  reading beside a model slug ("Claude" there would read as a partial sentence here). */
+const AGENT_HARNESS_LABEL: Record<string, string> = {
+  claude_code: 'Claude Code',
+  claude: 'Claude Code',
+  codex: 'Codex',
+  copilot: 'Copilot',
+  opencode: 'OpenCode',
+  deepagents: 'Deep agent',
+};
+
+/** "(harness: model-slug)" beside the agent rung — the SETTLED answer to "which agent, which
+ *  model actually ran", read off the executor process itself rather than re-derived, so it can
+ *  never disagree with what the spawn's own env injection used (see
+ *  `api_auth.py::binding_for_candidate`, the one place that resolves it). Watched, not a
+ *  one-shot fetch: `resolved_model_slug` is written by `on_turn_finally`, which can land
+ *  AFTER the wizard step's own trail already reads "completed" — a plain fetch made the
+ *  moment the "agent" rung first appeared could win that race and cache the field still
+ *  empty, showing no label at all until the page happened to reload. */
+function AgentRungLabel({ executorTypeId }: { executorTypeId: string }) {
+  const typeId = useMemo(() => {
+    try {
+      return new TypeId(executorTypeId);
+    } catch {
+      return null;
+    }
+  }, [executorTypeId]);
+  const { data: process } = useEntity<AgenticProcess>(typeId, { enabled: !!typeId, watch: true });
+  if (!process?.resolved_model_slug) return null;
+  const label = (process.worker_type && AGENT_HARNESS_LABEL[process.worker_type]) || process.worker_type || 'agent';
+  return (
+    <span className="mt-0.5 shrink-0 text-xs text-muted-foreground/60" data-testid="wizard-step-agent-model">
+      ({label}: {process.resolved_model_slug})
+    </span>
+  );
+}
+
 export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }) {
   const mainRef = useMemo(() => fsRef.child(MAIN_FILE), [fsRef]);
   const { doc, error } = useJsonDoc<WizardDoc>(mainRef);
+
+  // A run started from ANYWHERE else — Settings' "Run setup again", a trigger,
+  // another tab — writes `run_state` on this same entity, but the prop this
+  // component was handed is a snapshot from whenever the page was opened. The
+  // caller (`AssetEditorRouter`) does not watch it, so without this, this page
+  // would go on showing that stale snapshot even after the run it reports on
+  // has long finished. `watch: true` is what keeps it live regardless of who
+  // started the run; the fallback to the prop is only for the render before
+  // this subscription's first tick lands.
+  const { data: liveWizard } = useEntity<Wizard>(wizard.typeId, { watch: true });
+  const current = liveWizard ?? wizard;
+
   // Keyed on the path so a different wizard remounts with its own draft rather
   // than carrying the previous one's fields into it. The body renders BEFORE
   // the document arrives — the run panel is readable from the entity payload
@@ -80,15 +132,7 @@ export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }
   // remount when the file arrives and discard anything already on screen — an
   // open approval panel, a half-typed answer — because the read resolves a tick
   // or two after the first paint. `useWizardDoc` adopts the document instead.
-  return (
-    <WizardViewerBody
-      key={mainRef.path}
-      wizard={wizard}
-      mainRef={mainRef}
-      initial={doc}
-      docError={error}
-    />
-  );
+  return <WizardViewerBody key={mainRef.path} wizard={current} mainRef={mainRef} initial={doc} docError={error} />;
 }
 
 function WizardViewerBody({
@@ -128,6 +172,11 @@ function WizardViewerBody({
   const doc = editor.doc ?? initial;
   const stepIds = (doc?.steps ?? []).map((step) => step.id);
   const { steps: joinedSteps, orphaned } = runView.join(stepIds);
+  // The document's own `label` ("Claude Code", "Python 3") over the bare step
+  // id ("claude-code") — the id is a stable key, not something meant to be
+  // read; falling back to it is only for a step the document does not (or no
+  // longer) declare.
+  const stepLabels = useMemo(() => new Map((doc?.steps ?? []).map((step) => [step.id, step.label])), [doc]);
 
   const refresh = useCallback(async () => {
     await dataManager.refreshByTypeId(new TypeId(Wizard.type, wizard.id)).catch(() => null);
@@ -226,9 +275,7 @@ function WizardViewerBody({
         <WizardIcon className="h-5 w-5 text-muted-foreground" />
         <div className="flex-1">
           <h2 className="text-base font-medium">{wizard.name}</h2>
-          {wizard.description ? (
-            <p className="text-sm text-muted-foreground">{wizard.description}</p>
-          ) : null}
+          {wizard.description ? <p className="text-sm text-muted-foreground">{wizard.description}</p> : null}
         </div>
         {/* A CONVERSATIONAL wizard has no steps and cannot be run from here: its
             agent needs the caller's prompt and payload, which only the surface
@@ -250,15 +297,11 @@ function WizardViewerBody({
                 title={t`Archive this run and start the record fresh. It stays approved to run.`}
                 data-testid="wizard-reset"
               >
-                {resetting ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                )}
+                {resetting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
                 <Trans>Reset</Trans>
               </Button>
             </AdvancedOnly>
-            <Button onClick={run} disabled={busy} data-testid="wizard-run">
+            <Button onClick={() => void run()} disabled={busy} data-testid="wizard-run">
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               <Trans>Run</Trans>
             </Button>
@@ -273,15 +316,9 @@ function WizardViewerBody({
       )}
 
       {askApproval ? (
-        <section
-          className="rounded-md border border-destructive/40 bg-destructive/5 p-3"
-          data-testid="wizard-approval"
-        >
+        <section className="rounded-md border border-destructive/40 bg-destructive/5 p-3" data-testid="wizard-approval">
           <p className="text-sm">
-            <Trans>
-              "{wizard.name}" is not shipped with Flowpad. Running it executes commands on this
-              machine.
-            </Trans>
+            <Trans>"{wizard.name}" is not shipped with Flowpad. Running it executes commands on this machine.</Trans>
           </p>
           <div className="mt-2 flex gap-2">
             <Button size="sm" onClick={() => void approveAndRun()} data-testid="wizard-approve">
@@ -299,7 +336,10 @@ function WizardViewerBody({
           wizard disappeared" indistinguishable from "there was never a wizard
           here". This is the diagnostic. */}
       {wizard.document_error || docError ? (
-        <p className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive" data-testid="wizard-document-error">
+        <p
+          className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive"
+          data-testid="wizard-document-error"
+        >
           {wizard.document_error || docError}
         </p>
       ) : null}
@@ -308,20 +348,62 @@ function WizardViewerBody({
         <section data-testid="wizard-steps">
           <ul className="flex flex-col gap-1">
             {joinedSteps.map(({ step_id, live, outcome }) => {
-              // Live wins while the run is in flight — it is the fresher of the
-              // two — and the durable answer takes over once it settles.
-              const status = live && runView.live ? LIVE_STATE[live.state]?.status : stepStatus(outcome);
+              // The durable OUTCOME wins whenever it exists, whether or not the
+              // wizard as a whole is still running: `on_step` writes a step's
+              // own answer the moment THAT step settles, well before the last
+              // step does, so it is never stale mid-run. `live` only fills in
+              // for the one step actually in flight right now, which has
+              // started but has no outcome yet — every step in the child-node
+              // tree still counts as "live" for as long as the WHOLE run keeps
+              // going, so gating on that (rather than on `outcome` existing)
+              // used to blank out every already-finished step's status, trail
+              // and detail until the entire run ended.
+              const status = outcome ? stepStatus(outcome) : live ? LIVE_STATE[live.state]?.status : undefined;
               const style = STEP_STYLE[status ?? ''] ?? STEP_STYLE.not_reached;
               const { Icon } = style;
               // A step still in flight spins.
               const spin = status === 'running';
+              const trail = outcome ? rungTrail(outcome) : [];
+              const agentExecutor = trail.includes('agent') ? agentExecutorOf(outcome) : null;
+              // A tooltip, not an always-visible span: a passing run's steps
+              // used to each print their own "cli check passed" line
+              // permanently, which drowned the one row that actually needs
+              // reading (a failure) in five that do not.
+              const detail = outcome?.detail || live?.current;
+              const icon = (
+                <Icon
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''} ${detail ? 'cursor-help' : ''}`}
+                />
+              );
               return (
-                <li key={step_id} className="flex items-center gap-2 text-sm" data-testid={`wizard-step-${step_id}`}>
-                  <Icon className={`h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
-                  <span className="font-mono text-xs text-muted-foreground">{step_id}</span>
-                  {live?.current || outcome?.detail ? (
-                    <span className="text-muted-foreground">— {live?.current || outcome?.detail}</span>
-                  ) : null}
+                <li
+                  key={step_id}
+                  className="flex items-start gap-2 text-sm"
+                  data-testid={`wizard-step-${step_id}`}
+                  data-status={status || 'not_reached'}
+                >
+                  {detail ? (
+                    <Tooltip delayDuration={0}>
+                      <TooltipTrigger asChild>{icon}</TooltipTrigger>
+                      <TooltipContent className="max-w-sm" data-testid={`wizard-step-${step_id}-detail`}>
+                        {detail}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    icon
+                  )}
+                  <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
+                    {stepLabels.get(step_id) || step_id}
+                  </span>
+                  {trail.length > 0 && (
+                    <span
+                      className="mt-0.5 shrink-0 text-xs text-muted-foreground/60"
+                      data-testid={`wizard-step-${step_id}-rungs`}
+                    >
+                      ({trail.join(' → ')})
+                    </span>
+                  )}
+                  {agentExecutor && <AgentRungLabel executorTypeId={agentExecutor} />}
                 </li>
               );
             })}
@@ -329,22 +411,13 @@ function WizardViewerBody({
         </section>
       ) : conversational ? (
         <p className="text-sm text-muted-foreground">
-          <Trans>
-            This wizard runs as a conversation with {wizard.agent}, started from wherever it
-            is offered.
-          </Trans>
+          <Trans>This wizard runs as a conversation with {wizard.agent}, started from wherever it is offered.</Trans>
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
           <Trans>This wizard declares no steps.</Trans>
         </p>
       )}
-
-      {/* What the RUN did, which is not a fact about the document's steps. This
-          used to live inside the step list, and re-sourcing that list from the
-          document made a completed run's answer vanish for any wizard whose
-          steps had since changed. */}
-      {state.result?.detail ? <p className="text-xs text-muted-foreground">{state.result.detail}</p> : null}
 
       {/* `reserve={false}`: the default keeps the subtree mounted and its inputs
           focusable in Standard view, which is wrong for a form — you would tab
@@ -369,17 +442,18 @@ function WizardViewerBody({
   // surface you consult while editing the steps beside it, and the drawer is
   // the app's one place for that (`useSideWindows` — same architecture as the
   // markdown editor's backlinks and the terminal's windows).
-  const railTabs: TabDescriptor[] = conversational || !isAdvanced ? [] : [
-    {
-      id: RUN_DETAIL_WINDOW,
-      label: t`Run detail`,
-      icon: ListTree,
-      description: t`Every command this wizard ran, and what it printed`,
-    },
-  ];
-  const openTabs = railTabs
-    .filter((tab) => windows.includes(tab.id))
-    .map((tab) => ({ ...tab, closable: true }));
+  const railTabs: TabDescriptor[] =
+    conversational || !isAdvanced
+      ? []
+      : [
+          {
+            id: RUN_DETAIL_WINDOW,
+            label: t`Run detail`,
+            icon: ListTree,
+            description: t`Every command this wizard ran, and what it printed`,
+          },
+        ];
+  const openTabs = railTabs.filter((tab) => windows.includes(tab.id)).map((tab) => ({ ...tab, closable: true }));
 
   return (
     <div className="flex h-full w-full" data-testid="wizard-viewer-shell">

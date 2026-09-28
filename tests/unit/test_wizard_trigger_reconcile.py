@@ -16,6 +16,7 @@ about derivation:
 Plus one new thing: the legacy prune, which retires the positional
 `wizard_<slug>_<n>` rows older installs derived.
 """
+
 import json
 
 import pytest
@@ -30,15 +31,20 @@ from flow_sdk.server.builtin_triggers import (
     _upsert_one,
     reconcile_wizard_triggers,
 )
-from tests.pytest_plugin import async_context
 from tests.fixtures.identity import index_path
+from tests.pytest_plugin import async_context
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 DOC = {
     "name": "Developer toolchain",
-    "steps": [{"id": "python3", "precondition": {"commands": {"linux": "have python3"}},
-               "process": {"prompt": "install python"}}],
+    "steps": [
+        {
+            "id": "python3",
+            "precondition": {"commands": {"linux": "have python3"}},
+            "process": {"prompt": "install python"},
+        }
+    ],
 }
 
 
@@ -64,11 +70,13 @@ async def _trigger_for(wizard: Wizard, *, uname: str = "wizard_test_0") -> Trigg
         trigger_type=TriggerType.TAG,
         tag_pattern="app.ready",
         fire_once=True,
-        actions=[TriggerAction(
-            action_type=ActionType.CALLBACK,
-            callback_name="builtin_run_wizard",
-            target_type_id=str(wizard.typeid),
-        )],
+        actions=[
+            TriggerAction(
+                action_type=ActionType.CALLBACK,
+                callback_name="builtin_run_wizard",
+                target_type_id=str(wizard.typeid),
+            )
+        ],
     )
     await trigger.save()
     return trigger
@@ -85,13 +93,16 @@ async def _cleanup(*entities):
 
 # ── arming ───────────────────────────────────────────────────────────────────
 
+
 @async_context
 async def test_a_tag_trigger_created_after_the_boot_sweep_is_armed_immediately(tmp_path):
     """`start_tag_triggers` runs once at boot. Anything created afterwards — an
     indexed asset, a seeded row — has to arm itself, or it waits for an event
     that has already gone past."""
     spec = dict(
-        uname="wizard_armed_0", name="armed", trigger_type=TriggerType.TAG,
+        uname="wizard_armed_0",
+        name="armed",
+        trigger_type=TriggerType.TAG,
         tag_pattern="app.ready",
         actions=[TriggerAction(action_type=ActionType.CALLBACK, callback_name="builtin_run_wizard")],
     )
@@ -106,13 +117,16 @@ async def test_a_tag_trigger_created_after_the_boot_sweep_is_armed_immediately(t
 
 # ── the legacy prune ─────────────────────────────────────────────────────────
 
+
 @async_context
 async def test_the_derived_namespace_is_retired(tmp_path):
     """Older installs hold `wizard_<slug>_<n>` rows this used to derive. They are
     superseded by child assets, and an armed row whose declaration no longer
     exists would fire for a wizard nothing points at."""
     stale = Trigger(
-        uname="wizard_dev_toolchain_0", name="derived", trigger_type=TriggerType.TAG,
+        uname="wizard_dev_toolchain_0",
+        name="derived",
+        trigger_type=TriggerType.TAG,
         tag_pattern="app.ready",
     )
     await stale.save()
@@ -130,7 +144,9 @@ async def test_the_prune_spares_a_user_authored_trigger(tmp_path):
     """The `wizard_` prefix is what makes deleting rows safe: those unames were
     minted by us, so nothing a person wrote can land in the namespace."""
     mine = Trigger(
-        uname="user_app_ready", name="mine", trigger_type=TriggerType.TAG,
+        uname="user_app_ready",
+        name="mine",
+        trigger_type=TriggerType.TAG,
         tag_pattern="app.ready",
     )
     await mine.save()
@@ -142,6 +158,7 @@ async def test_the_prune_spares_a_user_authored_trigger(tmp_path):
 
 
 # ── what a fired trigger does ────────────────────────────────────────────────
+
 
 @async_context
 async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tmp_path, monkeypatch):
@@ -167,10 +184,7 @@ async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tm
 
     # The REAL shipped wizard: the callback refuses an unattended run of anything
     # outside a system project, so a fixture wizard would never reach the runner.
-    shipped = (
-        system_projects_root() / "flowpad_assistant"
-        / "agentic-assets" / "wizard" / "dev-toolchain"
-    )
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
     record = await index_path("wizard", shipped, write=False)
     wizard = await Wizard.get_by_id(record.id)
     trigger = await _trigger_for(wizard)
@@ -185,8 +199,306 @@ async def test_a_trigger_fired_run_reports_at_instance_scope_not_entity_scope(tm
         # ONE SEGMENT: each wizard is its own activity ROOT — the address the
         # entity advertises, which is also its run slot (unique per wizard).
         assert seen.get("activity_path") == wizard.activity_path
-        assert "/" not in wizard.activity_path and "dev-toolchain" in wizard.activity_path
+        assert "/" not in wizard.activity_path and "llm-setup" in wizard.activity_path
         assert seen.get("trusted") is True, "a shipped wizard runs unprompted"
+    finally:
+        await _cleanup(wizard, trigger)
+
+
+@pytest.mark.parametrize("finished", [True, False])
+@async_context
+async def test_a_run_that_did_not_finish_tells_the_person_what_is_missing(monkeypatch, finished):
+    """Nobody watches an unattended run and its activity node is dropped when it ends, so a
+    short run says so — a warning (kept in the footer list, not only toasted) naming each
+    missing step by its label, with a click to the wizard. A run that finished says nothing."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.notifications import desktop
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+
+    async def _ends(spec, **kwargs):
+        if finished:
+            return WizardResult.satisfied("stubbed")
+        return WizardResult.not_yet(
+            "git: the cli call ran, but the check still fails.",
+            steps={"llm": CliResult.satisfied("funded"), "git": CliResult.not_yet("still missing")},
+        )
+
+    told: list[dict] = []
+
+    async def _notify(notify_type, **kwargs):
+        told.append({"notify_type": notify_type, **kwargs})
+
+    monkeypatch.setattr(wizard_execute, "run_wizard", _ends)
+    monkeypatch.setattr(desktop, "notify_desktop", _notify)
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    trigger = await _trigger_for(wizard)
+    try:
+        await _run_wizard_trigger(trigger, [])
+
+        if finished:
+            assert told == []
+            return
+        (note,) = told
+        assert note["level"] == "warning"
+        assert note["body"] == "Not done: Git."
+        assert note["click_target"] == {"view_type": "assets", "pointer": f"editor/wizard/typeid/{wizard.typeid}"}
+    finally:
+        await _cleanup(wizard, trigger)
+
+
+def _row(**over):
+    from flow_sdk.cli.commands.llm_cmd import Row
+
+    fields = dict(
+        n=1,
+        typeid="llm_endpoint-x",
+        name="Claude",
+        kind="device",
+        provider="anthropic",
+        harnesses=["claude"],
+        scope="default",
+        active_for=["claude"],
+    )
+    return Row(**{**fields, **over})
+
+
+def test_the_llm_source_is_settled_in_process_for_the_box(monkeypatch):
+    """No `flow` subprocess: that paid a fresh shell and a cold import (~3s on
+    Windows) before the chooser appeared. It needs no indexed entity either —
+    that race is what once made `run_llm_setup` answer "not installed" on a
+    fresh first boot. The scope is the box, as the old subprocess (run from
+    home) answered: the server's own working directory means nothing here."""
+    import asyncio
+
+    from flow_sdk.cli.commands import llm_cmd
+    from flow_sdk.core.compute import exec as compute_exec
+    from flow_sdk.server.builtin_triggers import _resolve_llm_source
+
+    seen: dict = {}
+
+    def _resolve(**kwargs):
+        seen.update(kwargs)
+        return _row()
+
+    async def _no_shell(*_a, **_k):
+        raise AssertionError("settling the source must not spawn a process")
+
+    monkeypatch.setattr(llm_cmd, "_resolve_or_choose", _resolve)
+    monkeypatch.setattr(compute_exec, "run_shell", _no_shell)
+
+    result = asyncio.run(_resolve_llm_source())
+
+    assert result.ok, result.detail
+    assert seen == {"project_id": ""}
+    assert "Claude" in result.detail
+
+
+def test_nothing_chosen_is_not_ok_and_does_not_raise(monkeypatch):
+    """`_fail` exits the CLI; in-process that is a `typer.Exit` to catch, not a crash."""
+    import asyncio
+
+    import typer
+
+    from flow_sdk.cli.commands import llm_cmd
+    from flow_sdk.server.builtin_triggers import _resolve_llm_source
+
+    def _skipped(**_kwargs):
+        raise typer.Exit(4)
+
+    monkeypatch.setattr(llm_cmd, "_resolve_or_choose", _skipped)
+
+    result = asyncio.run(_resolve_llm_source())
+
+    assert not result.ok
+
+
+@async_context
+async def test_run_setup_clears_the_last_run_before_the_llm_source(monkeypatch):
+    """A person who clicks "Run setup again" sees empty steps at once, not the
+    last run's answers sitting there while the chooser is open."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard.state import read_result, record_result
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server import builtin_triggers
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    record_result(str(wizard.id), WizardResult.not_yet("the last run"))
+    seen_at_source: list = []
+
+    async def _resolve_source():
+        seen_at_source.append(read_result(str(wizard.id)))
+        return CliResult.satisfied("funded")
+
+    async def _wizard(spec, **kwargs):
+        return WizardResult.satisfied("stubbed")
+
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    try:
+        await builtin_triggers.run_llm_setup(wizard, unattended=False)
+        assert seen_at_source == [None], "the last run's answer was still there while the source was settled"
+    finally:
+        await _cleanup(wizard)
+
+
+@async_context
+async def test_a_new_setup_run_stops_the_one_in_flight_and_starts_clean(monkeypatch):
+    """ "Run setup again" while the first-run trigger's setup is still going means start
+    over: the old run is cancelled (and lets go of the wizard's run lock), its progress
+    is cleared before the new run settles its source, and the new run is the one that
+    runs — not a 409 "already running"."""
+    import asyncio
+
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import state
+    from flow_sdk.core.wizard.state import read_result
+    from flow_sdk.instances.atomic import write_json_atomic
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server import builtin_triggers
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    old_started = asyncio.Event()
+    old_cancelled: list[bool] = []
+    seen_at_source: list = []
+    runs = 0
+
+    async def _resolve_source():
+        seen_at_source.append(read_result(str(wizard.id)))
+        return CliResult.satisfied("funded")
+
+    async def _wizard(spec, **kwargs):
+        nonlocal runs
+        runs += 1
+        if runs == 1:
+            # Written straight to the file, not through `record_result`: this stub
+            # runs inside `execute_wizard`'s held run lock, and only the progress
+            # on disk matters here, not how it got there.
+            state._CACHE.pop(str(wizard.id), None)
+            write_json_atomic(
+                state._state_path(str(wizard.id)),
+                {"result": WizardResult.not_yet("old run, halfway").model_dump(mode="json")},
+            )
+            old_started.set()
+            try:
+                await asyncio.Event().wait()  # a step that never settles on its own
+            except asyncio.CancelledError:
+                old_cancelled.append(True)
+                raise
+        return WizardResult.satisfied("new run")
+
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    try:
+        old = asyncio.ensure_future(builtin_triggers.run_llm_setup(wizard, unattended=True))
+        await old_started.wait()
+
+        _source, new_result = await builtin_triggers.run_llm_setup(wizard, unattended=False)
+        _old_source, old_result = await old
+
+        assert old_cancelled == [True], "the old run was not stopped"
+        assert old_result.busy and builtin_triggers.SETUP_REPLACED in old_result.detail
+        assert new_result.ok, new_result.detail
+        assert seen_at_source[-1] is None, "the old run's progress was still there when the new run started"
+        assert read_result(str(wizard.id)).detail == "new run"
+    finally:
+        await _cleanup(wizard)
+
+
+@async_context
+async def test_run_setup_re_steers_to_the_wizard_after_the_llm_source_settles(monkeypatch):
+    """`_resolve_llm_source` opens its OWN screen (the chooser, `/dock/llm-setup`) whenever the
+    box is not already funded — landing well after the first steer-to-the-wizard and
+    overwriting it. A person sent to the wizard, then past it to the chooser, then presses the
+    chooser's own "Done" with nothing left to send them back to the wizard — they watch it run
+    on a screen they cannot see. So the steer must happen a SECOND time, after the source
+    settles and right before the wizard actually starts, not just once up front."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server import builtin_triggers
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    order: list[str] = []
+
+    async def _navigate(_wizard):
+        order.append("navigate")
+
+    async def _resolve_source():
+        order.append("llm source")
+        return CliResult.satisfied("funded")
+
+    async def _wizard(spec, **kwargs):
+        order.append("wizard")
+        return WizardResult.satisfied("stubbed")
+
+    monkeypatch.setattr(builtin_triggers, "_navigate_to_wizard", _navigate)
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    try:
+        await builtin_triggers.run_llm_setup(wizard, unattended=False)
+        assert order == ["navigate", "llm source", "navigate", "wizard"], (
+            "must steer again AFTER the source settles (the chooser may have navigated away), not just once before it"
+        )
+    finally:
+        await _cleanup(wizard)
+
+
+@pytest.mark.parametrize("funded", [True, False])
+@async_context
+async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monkeypatch, funded):
+    """The source comes BEFORE the wizard and outside it; without one the wizard
+    still runs (its plain commands need none), and the notice names the source."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.notifications import desktop
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server import builtin_triggers
+    from flow_sdk.server.builtin_triggers import _run_llm_setup_trigger
+
+    order: list[str] = []
+
+    async def _resolve_source():
+        order.append("llm source")
+        return CliResult.satisfied("funded") if funded else CliResult.not_yet("skipped")
+
+    async def _wizard(spec, **kwargs):
+        order.append("wizard")
+        return WizardResult.satisfied("stubbed")
+
+    told: list[dict] = []
+
+    async def _notify(notify_type, **kwargs):
+        told.append(kwargs)
+
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    monkeypatch.setattr(desktop, "notify_desktop", _notify)
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    trigger = await _trigger_for(wizard)
+    try:
+        await _run_llm_setup_trigger(trigger, [])
+
+        assert order == ["llm source", "wizard"], "the source is settled first, and the wizard runs either way"
+        if funded:
+            assert told == []
+        else:
+            (note,) = told
+            assert note["body"] == "Not done: LLM source."
     finally:
         await _cleanup(wizard, trigger)
 

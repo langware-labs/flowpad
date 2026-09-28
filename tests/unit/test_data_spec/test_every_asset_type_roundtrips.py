@@ -21,6 +21,7 @@ Two tables carry what the generic sampler cannot know:
   "not stored" — a derived field still has to be written for the document to
   exist at all.
 """
+
 from __future__ import annotations
 
 import importlib
@@ -33,6 +34,7 @@ import pytest
 # that already had a hand-written round-trip test, and this file defers to them.
 import tests.unit.test_data_spec.test_asset_roundtrip  # noqa: F401
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.data_spec.compute_op_spec import Rung
 from tests.unit.test_data_spec._roundtrip import (
     NOT_COMPARED,
     NOT_ON_DISK,
@@ -64,9 +66,13 @@ VALID: dict[str, dict] = {
     # a source has ONE credential lifetime, not four at once; `reflect` is closed;
     # a permission's key is a `permission.*` dot path and its mechanism a closed set;
     # a webhook's URL is one of the credential's variables
-    "data_driver": {"auth": {"credential": "hooked", "vars": {"webhook_url": "HOOKED_WEBHOOK_URL"}},
-                    "webhook": {"url_var": "webhook_url"},
-                    "reflect": ["record"], "manifest_schema": 1, "permissions": {}},
+    "data_driver": {
+        "auth": {"credential": "hooked", "vars": {"webhook_url": "HOOKED_WEBHOOK_URL"}},
+        "webhook": {"url_var": "webhook_url"},
+        "reflect": ["record"],
+        "manifest_schema": 1,
+        "permissions": {},
+    },
     # a poll interval below 60s is refused
     "data_source": {"poll_interval_seconds": 300},
     # `location_type` is a closed enum, and entity-only (not in the spec)
@@ -92,7 +98,10 @@ DERIVED: dict[str, dict[str, str]] = {
     "markdown": {"name": "derived from `title`"},
     "spec": {"name": "derived from `title`"},
     "prompt": {"group_id": "DB-side grouping; the .md carries no such key"},
-    "task": {"name": "derived from `title`", "origin": "normalised on read — where an asset came from is not part of the asset"},
+    "task": {
+        "name": "derived from `title`",
+        "origin": "normalised on read — where an asset came from is not part of the asset",
+    },
     # A `flat` manifest merges the header ONTO the free payload, so on read the
     # two are indistinguishable and the payload comes back as payload ∪ header.
     # Lossy BY CONSTRUCTION, and the same before `FreeForm` replaced the marker.
@@ -100,6 +109,12 @@ DERIVED: dict[str, dict[str, str]] = {
     "asset_cleanup_report": {"report": "flat manifest: header and payload share one document"},
     "usage_report": {"report": "flat manifest: header and payload share one document"},
 }
+
+
+# A rung is a nested (non-entity) spec, so it gets no `VALID`-by-name entry — it
+# is tagged exactly like the op's own `subkind`/`exe_data` pair, and the sampler
+# cannot invent that pairing any more than it can for `compute_op` itself.
+OVERRIDES[Rung] = {"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "install"}}
 
 
 def _asset_types() -> list[tuple[str, type]]:
@@ -110,7 +125,7 @@ def _asset_types() -> list[tuple[str, type]]:
         if getattr(info, "asset_spec", None) is None or not getattr(info, "entity_cls", None):
             continue
         if info.entity_cls.__module__.startswith("tests."):
-            continue      # a fixture type another test registered, not a shipped asset
+            continue  # a fixture type another test registered, not a shipped asset
         found.append((name, info.entity_cls))
     return found
 

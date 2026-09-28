@@ -1,4 +1,4 @@
-import { ActionInfo, dataContext, dataManager } from '@sdk';
+import { ActionInfo, dataContext, dataManager, isOk, type ReturnedValue, type WizardResult } from '@sdk';
 import apiClient from '@sdk/client';
 import { SettingsCard, SettingRow } from '@src/components/settings/settings-card';
 import { Button } from '@src/components/ui/button';
@@ -39,6 +39,63 @@ export function SettingsSection() {
     }
   }, [refetchOnboarding, t]);
 
+  // First-run setup, run on demand from the top: an LLM source, then the `llm-setup` wizard.
+  // Its trigger fires once per machine; this is the way to run it again. The backend runs both,
+  // in the same order the trigger does.
+  const [runningSetup, setRunningSetup] = useState(false);
+  const handleRunSetup = useCallback(async () => {
+    setRunningSetup(true);
+    // Close the dialog right away, not once setup finishes: the wizard raises
+    // its own questions and popups as it runs, and this dialog sitting on top
+    // of them is exactly what "run setup again" should get out of the way of.
+    window.dispatchEvent(new Event('close-account-dialog'));
+    try {
+      const answer = await apiClient.post<{ llm_source: ReturnedValue; wizard: WizardResult }>(
+        '/api/v1/onboarding/setup',
+      );
+      const missing = [
+        ...(isOk(answer.llm_source) ? [] : [t`LLM source`]),
+        ...(isOk(answer.wizard) ? [] : [answer.wizard.detail || t`some tools`]),
+      ];
+      if (missing.length === 0) notify.success({ title: t`Setup finished`, message: t`Everything is in place.` });
+      // The person just clicked and is waiting: this is the only word they get (`forceToast`).
+      else
+        notify.error({ title: t`Setup did not finish`, message: t`Not done: ${missing.join('; ')}`, forceToast: true });
+    } catch (err) {
+      notify.error({
+        title: t`Setup did not finish`,
+        message: err instanceof Error ? err.message : String(err),
+        forceToast: true,
+      });
+    } finally {
+      setRunningSetup(false);
+    }
+  }, [t]);
+
+  // TEMPORARY — DEBUG ONLY, for testing the `llm-setup` wizard end to end.
+  // Remove this button and handler once that work ships — see FLOWPAD-2171.
+  const [removingTools, setRemovingTools] = useState(false);
+  const handleRemoveTools = useCallback(async () => {
+    setRemovingTools(true);
+    try {
+      // The route also runs the wizard right after removing — the wizard
+      // page's icons are its LAST COMPLETED run's record, not a live check, so
+      // without that this button would remove tools and leave everything
+      // showing exactly as green as before.
+      const answer = await apiClient.post<{ removed: string[]; not_found: string[]; wizard: WizardResult | null }>(
+        '/api/v1/onboarding/debug/remove-tools',
+      );
+      notify.success({
+        title: t`Tools removed, wizard re-checked`,
+        message: t`removed: ${answer.removed.join(', ') || '–'} · not found: ${answer.not_found.join(', ') || '–'}`,
+      });
+    } catch (err) {
+      notify.error({ title: t`Could not remove tools`, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setRemovingTools(false);
+    }
+  }, [t]);
+
   const computeNode = dataContext.computeNode;
 
   useEffect(() => {
@@ -77,9 +134,7 @@ export function SettingsSection() {
 
       <SettingRow
         label={<Trans>Onboarding</Trans>}
-        description={
-          <Trans>Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}</Trans>
-        }
+        description={<Trans>Welcome bookmark + feed entry, seeded on first run. Status: {onboardingStatus}</Trans>}
         control={
           <Button
             size="sm"
@@ -93,6 +148,30 @@ export function SettingsSection() {
       />
 
       <SettingRow
+        label={<Trans>Setup</Trans>}
+        description={
+          <Trans>Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch.</Trans>
+        }
+        control={
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => void handleRunSetup()} disabled={runningSetup}>
+              {runningSetup ? <Trans>Running…</Trans> : <Trans>Run setup again</Trans>}
+            </Button>
+            {/* TEMPORARY DEBUG BUTTON — remove before shipping, see FLOWPAD-2171. */}
+            <Button
+              size="sm"
+              onClick={() => void handleRemoveTools()}
+              disabled={removingTools}
+              className="border-orange-500 bg-orange-500 text-white hover:bg-orange-600 hover:text-white"
+              title="DEBUG ONLY — actually uninstalls jq/rg/claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
+            >
+              {removingTools ? <Trans>Removing & re-checking…</Trans> : <Trans>DEBUG: remove 6 tools</Trans>}
+            </Button>
+          </div>
+        }
+      />
+
+      <SettingRow
         htmlFor="cli-log-level"
         label={<Trans>CLI Log Level</Trans>}
         description={<Trans>Debug level includes hook invocations.</Trans>}
@@ -102,8 +181,12 @@ export function SettingsSection() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="info"><Trans>Info</Trans></SelectItem>
-              <SelectItem value="debug"><Trans>Debug</Trans></SelectItem>
+              <SelectItem value="info">
+                <Trans>Info</Trans>
+              </SelectItem>
+              <SelectItem value="debug">
+                <Trans>Debug</Trans>
+              </SelectItem>
             </SelectContent>
           </Select>
         }
