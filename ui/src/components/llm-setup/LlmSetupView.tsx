@@ -15,10 +15,15 @@
  *
  * The card behind it is not decoration: it says what the box landed on, so the browser half
  * shows the same answer the terminal half just printed.
+ *
+ * **Skip is an answer too.** First-run setup opens this and waits; a person who does not want
+ * to choose now says so here, which releases the waiting command, and is taken back to where
+ * they were. Nothing is written — the box stays unfunded until someone picks a source.
  */
 import { Trans } from '@lingui/react/macro';
+import { llmSourcesService } from '@sdk';
 import { Check, Sparkles } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { openHarnessLoginModal, useHarnessLoginStore } from '@src/components/harness-login/harness-login-store';
 import {
@@ -27,6 +32,8 @@ import {
   useLlmSources,
 } from '@src/components/llm-sources/use-llm-sources';
 import { Button } from '@src/components/ui/button';
+import { getHistoryPosition } from '@src/navigation/history-position-store';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 export function LlmSetupView() {
   const open = useHarnessLoginStore((s) => s.open);
@@ -65,6 +72,26 @@ export function LlmSetupView() {
     if (funded) setOpen(false);
   }, [funded, setOpen]);
 
+  const { navigation, windowMode } = useDockNavigation();
+  const [skipping, setSkipping] = useState(false);
+  // Return to wherever the person was — same rule as an answered `ask` question:
+  // there is somewhere to go back to only in the dock (`windowMode` never renders this).
+  const leave = useCallback(() => {
+    setOpen(false);
+    if (getHistoryPosition().canGoBack) navigation.goBack();
+    else navigation.goHome();
+  }, [navigation, setOpen]);
+
+  const skip = useCallback(async () => {
+    setSkipping(true);
+    try {
+      await llmSourcesService.skip();
+    } finally {
+      setSkipping(false);
+      leave();
+    }
+  }, [leave]);
+
   return (
     <div className="flex h-full w-full items-center justify-center p-6">
       <div className="flex max-w-sm flex-col items-center gap-3 text-center">
@@ -74,9 +101,24 @@ export function LlmSetupView() {
             <h1 className="text-lg font-semibold" data-testid="llm-setup-done">
               <Trans>You're set up</Trans>
             </h1>
-            <p className="text-sm text-muted-foreground">
-              <Trans>{funded.name} is issuing your LLM calls. You can close this tab.</Trans>
-            </p>
+            {windowMode ? (
+              // A real browser window opened for this one question — script-closing a window
+              // this app did not itself `window.open()` is unreliable, so this says what
+              // actually works (⌘W / the window's own control) rather than a button that may
+              // not do anything.
+              <p className="text-sm text-muted-foreground">
+                <Trans>{funded.name} is issuing your LLM calls. Close this window (⌘W) — you're done here.</Trans>
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  <Trans>{funded.name} is issuing your LLM calls.</Trans>
+                </p>
+                <Button className="mt-1" onClick={leave} data-testid="llm-setup-done-leave">
+                  <Trans>Done</Trans>
+                </Button>
+              </>
+            )}
           </>
         ) : (
           <>
@@ -88,9 +130,14 @@ export function LlmSetupView() {
               <Trans>Pick FlowPad, an assistant you already pay for, or paste an API key.</Trans>
             </p>
             {!open && (
-              <Button className="mt-1" onClick={() => openHarnessLoginModal()} data-testid="llm-setup-reopen">
-                <Trans>Choose a source</Trans>
-              </Button>
+              <div className="mt-1 flex gap-2">
+                <Button onClick={() => openHarnessLoginModal()} data-testid="llm-setup-reopen">
+                  <Trans>Choose a source</Trans>
+                </Button>
+                <Button variant="ghost" disabled={skipping} onClick={() => void skip()} data-testid="llm-setup-skip">
+                  <Trans>Skip for now</Trans>
+                </Button>
+              </div>
             )}
           </>
         )}

@@ -418,8 +418,17 @@ msgstr "{0} is indexed without a valid source path and cannot be opened."
 
 #. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
-msgid "{0} is issuing your LLM calls. You can close this tab."
-msgstr "{0} is issuing your LLM calls. You can close this tab."
+msgid "{0} is issuing your LLM calls."
+msgstr "{0} is issuing your LLM calls."
+
+#. placeholder {0}: funded.name
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "{0} is issuing your LLM calls. Close this window (⌘W) — you're done here."
+msgstr "{0} is issuing your LLM calls. Close this window (⌘W) — you're done here."
+
+#: src/components/llm-setup/LlmSetupView.tsx
+#~ msgid "{0} is issuing your LLM calls. You can close this tab."
+#~ msgstr "{0} is issuing your LLM calls. You can close this tab."
 
 #. placeholder {0}: source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -2986,6 +2995,7 @@ msgstr "AWS Region"
 msgid "AWS region for Bedrock"
 msgstr "AWS region for Bedrock"
 
+#: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -3441,6 +3451,8 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/ask/AskForm.tsx
+#: src/components/ask/AskModal.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
@@ -3527,6 +3539,7 @@ msgid "Cancel reply"
 msgstr "Cancel reply"
 
 #: src/components/ask/AskForm.tsx
+#: src/components/ask/use-ask-question.ts
 msgid "Cancelled."
 msgstr "Cancelled."
 
@@ -4201,6 +4214,7 @@ msgid "Cloning…"
 msgstr "Cloning…"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -4681,6 +4695,10 @@ msgstr "Connect a data source for me and help me define what I want out of each 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "Connect a data source to make it available here"
 msgstr "Connect a data source to make it available here"
+
+#: src/components/account/settings-section.tsx
+msgid "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
+msgstr "Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch."
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -5529,6 +5547,10 @@ msgstr "Could not remove the key"
 msgid "Could not remove the row"
 msgstr "Could not remove the row"
 
+#: src/components/account/settings-section.tsx
+msgid "Could not remove tools"
+msgstr "Could not remove tools"
+
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
 msgstr "Could not rename context"
@@ -6362,6 +6384,10 @@ msgstr "Debug level includes hook invocations."
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Debug logging"
 msgstr "Debug logging"
+
+#: src/components/account/settings-section.tsx
+msgid "DEBUG: remove 6 tools"
+msgstr "DEBUG: remove 6 tools"
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -7367,6 +7393,7 @@ msgstr "done"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/llm-setup/LlmSetupView.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -8221,6 +8248,10 @@ msgstr "Everything in this project is published."
 #: src/lib/publish-state.ts
 msgid "Everything is already up to date."
 msgstr "Everything is already up to date."
+
+#: src/components/account/settings-section.tsx
+msgid "Everything is in place."
+msgstr "Everything is in place."
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
@@ -9701,6 +9732,10 @@ msgstr "Go up"
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 
+#: src/components/ask/use-ask-question.ts
+msgid "Got it — your answer was sent."
+msgstr "Got it — your answer was sent."
+
 #: src/components/assets/editor/PublishedToggle.tsx
 msgid "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
 msgstr "Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>."
@@ -10944,6 +10979,10 @@ msgstr "keep"
 msgid "Keep"
 msgstr "Keep"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Keep browsing"
+msgstr "Keep browsing"
+
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Keep editing"
 msgstr "Keep editing"
@@ -11508,6 +11547,10 @@ msgstr "LLM key"
 msgid "LLM keys"
 msgstr "LLM keys"
 
+#: src/components/account/settings-section.tsx
+msgid "LLM source"
+msgstr "LLM source"
+
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
 #: src/types/ViewType.ts
@@ -11803,6 +11846,7 @@ msgstr "Loading..."
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
 #: src/components/ask/AskForm.tsx
+#: src/components/ask/AskModal.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
@@ -14076,6 +14120,11 @@ msgstr "Not copied into context folder"
 msgid "Not deployed yet — it runs nowhere until you launch it."
 msgstr "Not deployed yet — it runs nowhere until you launch it."
 
+#. placeholder {0}: missing.join('; ')
+#: src/components/account/settings-section.tsx
+msgid "Not done: {0}"
+msgstr "Not done: {0}"
+
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
 msgstr "not fired yet"
@@ -15370,6 +15419,10 @@ msgstr "Parent folder to clone into…"
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
 msgstr "Parked — the scheduler skips a <0>config_error</0> source, so it will not poll again on its own. <1>Pull</1> clears the latch."
+
+#: src/components/ask/AskView.tsx
+msgid "Part of a setup — see its progress"
+msgstr "Part of a setup — see its progress"
 
 #: src/components/webapp-display/messages.tsx
 msgid "Part of your app didn't load."
@@ -17135,9 +17188,19 @@ msgstr "Removed from the project's published assets."
 msgid "Removed vibe agent"
 msgstr "Removed vibe agent"
 
+#. placeholder {0}: answer.removed.join(', ') || '–'
+#. placeholder {1}: answer.not_found.join(', ') || '–'
+#: src/components/account/settings-section.tsx
+msgid "removed: {0} · not found: {1}"
+msgstr "removed: {0} · not found: {1}"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
+
+#: src/components/account/settings-section.tsx
+msgid "Removing & re-checking…"
+msgstr "Removing & re-checking…"
 
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -17891,6 +17954,10 @@ msgstr "Run on {hostName}'s machine"
 msgid "Run script"
 msgstr "Run script"
 
+#: src/components/account/settings-section.tsx
+msgid "Run setup again"
+msgstr "Run setup again"
+
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Run setup failed."
 msgstr "Run setup failed."
@@ -17956,6 +18023,7 @@ msgstr "Running in the background."
 msgid "Running on the host's machine · status: {0}"
 msgstr "Running on the host's machine · status: {0}"
 
+#: src/components/account/settings-section.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Running…"
 msgstr "Running…"
@@ -18562,6 +18630,10 @@ msgstr "See all {0} results →"
 msgid "See all sources"
 msgstr "See all sources"
 
+#: src/components/ask/AskView.tsx
+msgid "See setup progress"
+msgstr "See setup progress"
+
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
 msgstr "Seems like you are trying to clone a private git repo. You should connect to GitHub to complete the operation."
@@ -18719,6 +18791,8 @@ msgid "Self-Summary"
 msgstr "Self-Summary"
 
 #: src/components/ask/AskForm.tsx
+#: src/components/ask/AskModal.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -19106,14 +19180,24 @@ msgstr "Setting up your project…"
 msgid "Settings"
 msgstr "Settings"
 
+#: src/components/account/settings-section.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
 #: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup"
 msgstr "Setup"
 
+#: src/components/account/settings-section.tsx
+#: src/components/account/settings-section.tsx
+msgid "Setup did not finish"
+msgstr "Setup did not finish"
+
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
 msgstr "Setup failed"
+
+#: src/components/account/settings-section.tsx
+msgid "Setup finished"
+msgstr "Setup finished"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
@@ -19671,9 +19755,17 @@ msgstr "Signed in through your browser"
 msgid "Signed in to Flowpad cloud"
 msgstr "Signed in to Flowpad cloud"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Signed in to FlowPad."
+msgstr "Signed in to FlowPad."
+
 #: src/components/project-home/ProjectGitChip.tsx
 msgid "Signed in to the remote"
 msgstr "Signed in to the remote"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Signed in, but not funding anything"
+msgstr "Signed in, but not funding anything"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed out"
@@ -19813,6 +19905,10 @@ msgstr "Skip all permission prompts (--dangerously-skip-permissions)"
 msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 msgstr "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 
+#: src/components/llm-setup/LlmSetupView.tsx
+msgid "Skip for now"
+msgstr "Skip for now"
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 #~ msgid "Skip if"
 #~ msgstr "Skip if"
@@ -19871,6 +19967,10 @@ msgstr "Some deployments are stale or partial"
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Some deployments have errors"
 msgstr "Some deployments have errors"
+
+#: src/components/account/settings-section.tsx
+msgid "some tools"
+msgstr "some tools"
 
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
@@ -21494,6 +21594,10 @@ msgstr "This file is not in a versioned project."
 msgid "This file isn't text"
 msgstr "This file isn't text"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "This FlowPad account has no LLM source bound to it yet — ask your organization for one, or connect a different assistant below."
+msgstr "This FlowPad account has no LLM source bound to it yet — ask your organization for one, or connect a different assistant below."
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "This folder can't be shared yet"
 msgstr "This folder can't be shared yet"
@@ -21738,6 +21842,7 @@ msgstr "this project's runs"
 
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/AskView.tsx
+#: src/components/ask/use-ask-question.ts
 msgid "This question is no longer waiting."
 msgstr "This question is no longer waiting."
 
@@ -22233,6 +22338,10 @@ msgstr "tools"
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
 msgid "Tools"
 msgstr "Tools"
+
+#: src/components/account/settings-section.tsx
+msgid "Tools removed, wizard re-checked"
+msgstr "Tools removed, wizard re-checked"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Tools Used"

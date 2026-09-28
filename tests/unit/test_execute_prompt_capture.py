@@ -28,9 +28,9 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text
+from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text, _last_turn_error_text
 from flow_sdk.transcript_analyzer import AgentTranscriptFile, TranscriptFormat
-from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry, UserMessageEntry
+from flow_sdk.transcript_analyzer.entries import AssistantMessageEntry, SystemEntry, UserMessageEntry
 
 _RESOURCES = Path(__file__).resolve().parent / "resources" / "transcripts"
 
@@ -57,6 +57,10 @@ def _assistant(eid: str, text: str) -> AssistantMessageEntry:
 
 def _user(eid: str, text: str, *, is_meta: bool = False) -> UserMessageEntry:
     return _entry(UserMessageEntry, id=eid, text=text, is_meta=is_meta)
+
+
+def _error(eid: str, message: str) -> SystemEntry:
+    return _entry(SystemEntry, id=eid, subtype="error", payload={"message": message})
 
 
 @pytest.mark.parametrize("worker, filename, fmt, expected", VENDORS, ids=[v[0] for v in VENDORS])
@@ -120,3 +124,42 @@ def test_a_repeated_id_counts_once_with_the_last_write_winning():
 
 def test_no_entries_is_empty_not_an_error():
     assert _last_turn_assistant_text([]) == ""
+
+
+# ── _last_turn_error_text — the sentence "the agent ended error" otherwise throws away ──
+
+
+def test_last_turn_error_text_reads_the_systementrys_own_message():
+    """deepagents and opencode emit their own failures as
+    ``SystemEntry(subtype="error", payload={"message": ...})`` — the exact shape a rate-limit
+    or a chain-rejected model surfaces as. This is the one sentence that turns "the agent
+    ended error" into something a person can act on."""
+    entries = [
+        _user("u1", "install ripgrep"),
+        _error("e1", "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Gadi 72"),
+    ]
+
+    assert _last_turn_error_text(entries) == "OpenAIRateLimitError: limit 'cost_usd_total' exceeded on endpoint Gadi 72"
+
+
+def test_last_turn_error_text_only_the_latest_turn():
+    """A replayed prior turn's error must not leak into this turn's — same rule as
+    ``_last_turn_assistant_text``."""
+    entries = [
+        _user("u1", "first question"),
+        _error("e1", "stale error from an earlier turn"),
+        _user("u2", "second question"),
+        _assistant("a2", "this one actually finished"),
+    ]
+
+    assert _last_turn_error_text(entries) == ""
+
+
+def test_last_turn_error_text_empty_when_the_turn_has_no_error():
+    entries = [_user("u1", "question"), _assistant("a1", "all good")]
+
+    assert _last_turn_error_text(entries) == ""
+
+
+def test_last_turn_error_text_no_entries_is_empty_not_an_error():
+    assert _last_turn_error_text([]) == ""

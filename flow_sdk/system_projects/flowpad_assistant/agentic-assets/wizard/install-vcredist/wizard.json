@@ -1,0 +1,23 @@
+{
+  "name": "install-vcredist",
+  "description": "Windows only: asks whether to install the Microsoft Visual C++ Runtime when it is missing, and installs it only if the person agrees. Search (RAG) needs it — its vector index is native code that links MSVCP140.dll, which Python does not bundle and a clean Windows does not ship. Run by the RAG pass the first time it finds the runtime missing; not part of first-run setup, so a person who never uses search is never asked.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "ask",
+      "label": "Install the Visual C++ Runtime?",
+      "kind": "compute",
+      "ref": "ask-install-vcredist",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install",
+      "label": "Visual C++ Runtime",
+      "kind": "compute",
+      "ref": "vcredist-installed",
+      "on_fail": "abort"
+    }
+  ]
+}

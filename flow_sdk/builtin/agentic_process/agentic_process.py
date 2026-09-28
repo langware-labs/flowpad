@@ -216,7 +216,9 @@ _PROMPT_TASKS: dict[str, asyncio.Task] = {}
 _TRANSCRIPT_SIZE_AT_PROMPT: dict[str, int] = {}
 
 
-def register_prompt_task(process_id: str, task: asyncio.Task, on_done: "Callable[[], Awaitable[Any]] | None" = None) -> None:
+def register_prompt_task(
+    process_id: str, task: asyncio.Task, on_done: "Callable[[], Awaitable[Any]] | None" = None
+) -> None:
     """Retain the turn until its final writes finish, so exit can join it.
 
     ``on_done`` runs once the task no longer counts as active. The turn's own terminal
@@ -542,11 +544,17 @@ def _build_run_result(proc: "AgenticProcess") -> "PromptResult":
     # copy when there is one. (The session record's ``last_assistant_text`` is
     # never filled on the headless path, so reading it answered "".)
     text = ""
+    error_reason = ""
     try:
-        from flow_sdk.app.actions.execute_prompt import _last_turn_assistant_text  # noqa: PLC0415
+        from flow_sdk.app.actions.execute_prompt import (  # noqa: PLC0415
+            _last_turn_assistant_text,
+            _last_turn_error_text,
+        )
 
         transcript = proc._current_transcript()
-        text = _last_turn_assistant_text(transcript.entries if transcript is not None else [])
+        entries = transcript.entries if transcript is not None else []
+        text = _last_turn_assistant_text(entries)
+        error_reason = _last_turn_error_text(entries)
     except Exception:  # noqa: BLE001 — the reply is a courtesy; the verdict does not depend on it
         logger.debug("could not read the agent's reply", exc_info=True)
 
@@ -560,7 +568,13 @@ def _build_run_result(proc: "AgenticProcess") -> "PromptResult":
 
     executor = str(proc.typeid)
     if status_enum in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED):
-        return PromptResult.not_yet(f"The agent ended {status_enum.value}.", text=text, executor=executor)
+        # "The agent ended error." on its own names no cause — error_reason is the one
+        # sentence (a model an endpoint's chain refused, a budget exceeded, an auth
+        # failure) that actually explains why, when the transcript carries one.
+        detail = f"The agent ended {status_enum.value}."
+        if error_reason:
+            detail = f"{detail} {error_reason}"
+        return PromptResult.not_yet(detail, text=text, executor=executor)
     return PromptResult.satisfied("The agent finished.", text=text, executor=executor)
 
 
@@ -848,6 +862,19 @@ class AgenticProcess(Entity):
         description="Process-local worker hook events enabled for this process.",
     )
     worker_type: WorkerType | None = APIField(default=None)
+    resolved_model_slug: str | None = APIField(
+        default=None,
+        description=(
+            "The concrete model slug this process's spawn actually resolved to (e.g. "
+            "'anthropic/claude-haiku-4.5'), as opposed to the tier ('sm'/'md'/'lg') or literal "
+            "slug requested in cli_config.model. Stamped once at spawn, from "
+            "WorkerApiAuth.model_slug -- the SAME value the env injection used, so a display "
+            "surface (a wizard step, a transcript header) never has to re-derive the resolver's "
+            "answer and risk disagreeing with what actually ran. None for a DEVICE source (the "
+            "vendor CLI's own account; there is no per-call slug to report) or when nothing has "
+            "spawned yet."
+        ),
+    )
     plan_path: str | None = APIField(
         default=None,
         description=(
@@ -1049,7 +1076,9 @@ class AgenticProcess(Entity):
             started = await proc.start_pty()
             if isinstance(started, ApiFailResponse):
                 return PromptResult.not_yet(
-                    started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
+                    started.message or "The agent could not start.",
+                    ran=False,
+                    executor=str(proc.typeid),
                 )
             await proc.send(instruction)
             await proc.wait()

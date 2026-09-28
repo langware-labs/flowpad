@@ -19,6 +19,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from flow_sdk.rag import runtime
 from flow_sdk.server.system_heartbeat import register_heartbeat_task
 
 if TYPE_CHECKING:
@@ -41,7 +42,9 @@ class EmbeddingUnavailable(LookupError):
     """Nothing funds this index's embeddings: no endpoint is bound and no local key resolves."""
 
     def __init__(self) -> None:
-        super().__init__(f"{NO_EMBEDDING} — store an embedding API key (Credentials) or bind an LLM endpoint to the index")
+        super().__init__(
+            f"{NO_EMBEDDING} — store an embedding API key (Credentials) or bind an LLM endpoint to the index"
+        )
 
 
 async def embedder_for(index: "RagIndex"):
@@ -84,6 +87,15 @@ async def run_index(index: "RagIndex", *, force: bool = False) -> list["IndexRep
         await index.save(notify=False)
         return []
 
+    # Before a single paid embed: a pass that cannot load the index would pay for every chunk
+    # and store none of them. On Windows this is where the person is asked for the runtime.
+    missing = await runtime.ensure(str(index.id))
+    if missing:
+        if index.last_error != missing:
+            index.last_error = missing
+            await index.save(notify=True)
+        return []
+
     reports: list["IndexReport"] = []
     try:
         async with index.open_store() as store:
@@ -97,6 +109,8 @@ async def run_index(index: "RagIndex", *, force: bool = False) -> list["IndexRep
     except Exception as exc:  # noqa: BLE001 — the reason belongs on the row, not in a traceback
         logger.warning("rag: pass failed for %s", index.id, exc_info=True)
         index.last_error = str(exc)
+        # Saved, or the card never shows why — the reason lived only on this in-memory copy.
+        await index.save(notify=True)
         return reports
 
     from datetime import datetime, timezone  # noqa: PLC0415
@@ -117,6 +131,7 @@ def force_pass(index: "RagIndex") -> None:
     key = str(index.id)
     if key in _inflight:
         return
+    runtime.forget_answer()
     _inflight.add(key)
     asyncio.create_task(_run_guarded(index, force=True), name=f"rag-index-force-{index.id}")
 
@@ -150,6 +165,10 @@ async def dispatch_due_indexes() -> list[str]:
     from flow_sdk.builtin.rag_index import RagIndex, RagStatus  # noqa: PLC0415
 
     dispatched: list[str] = []
+    # The runtime was asked for and is still missing: nothing can load an index, so a pass would
+    # only ask again. A person adding a folder or pressing "index now" lifts this.
+    if runtime.parked():
+        return dispatched
     # SETUP rows are included so an index minted before any key existed is promoted once one
     # does. Only MARKED ones: settling costs an endpoint lookup, and an unmarked index has
     # nothing to do even if it were promoted.

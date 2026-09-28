@@ -34,7 +34,13 @@ from flow_sdk.core import action
 from flow_sdk.core.entity import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.compute_types import CLICommand, SendFileEntry
-from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, MachineStatus, NetworkConnection, ProcessInfo
+from flow_sdk.flowpad_types.machine_status import (
+    MACHINE_STATUS_SCRIPT,
+    MachineStatus,
+    NetworkConnection,
+    ProcessInfo,
+    python_command,
+)
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize, ExecutionEnvironmentStatus, RuntimeEnvironment
 from flow_sdk.fs_store.operations.claude_debug_log import clear_debug_errors
 from flow_sdk.fs_store.type_id import TypeId
@@ -679,10 +685,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             await self.write_files(script_path, MACHINE_STATUS_SCRIPT)
 
             # Run the script
-            cmd = await self.run_command(
-                f"python3 {script_path}",
-                background=False,
-            )
+            os_type = machine_status.node_info.os_type if machine_status.node_info else ""
+            cmd = await self.run_command(python_command(script_path, os_type), background=False)
 
             # Wait for command completion
             await cmd.wait(timeout=3.0)
@@ -1551,6 +1555,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             hub_llm_endpoint_status,
             llm_binding,
             select_llm_source,
+            skip_llm_setup,
             test_hub_llm_endpoint,
             unbind_hub_llm_endpoint,
         )
@@ -1580,6 +1585,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 sub_path = (request_info.sub_path or "").strip("/")
                 if sub_path == "select":
                     return ApiSuccessResponse(data=await select_llm_source(body))
+                # ``skip`` is the chooser's "not now": it releases a `flow llm set auto` that is
+                # waiting for a choice the person has declined to make.
+                if sub_path == "skip":
+                    return ApiSuccessResponse(data=await skip_llm_setup())
                 # ``test`` is a pass-through to the hub's own verdict. It lives here for the
                 # same reason the listing does: the box holds no ``llm_endpoint`` rows, so a
                 # desktop screen has no other way to reach that action.

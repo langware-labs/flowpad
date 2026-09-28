@@ -599,6 +599,15 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     if api_auth is not None:
         for key, value in api_auth.env.items():
             env[key] = value
+        # Stamp what actually resolved — the tier ('sm'/'md'/'lg') or a models_allow fallback
+        # both collapse into one concrete slug here, and this is the one place that slug is
+        # known. Skipped when unchanged so a restart on an unmodified spawn writes nothing.
+        if api_auth.model_slug and getattr(process, "resolved_model_slug", None) != api_auth.model_slug:
+            process.resolved_model_slug = api_auth.model_slug
+            try:
+                await process.save()
+            except Exception:
+                logger.exception("AgenticProcess %s: failed to persist resolved_model_slug", process.id)
     return env
 
 

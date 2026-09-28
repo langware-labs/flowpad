@@ -21,6 +21,7 @@ import {
   type NotificationPayload,
 } from '@src/notifications/renderDesktopNotification';
 import { openInstallRequest } from '@src/components/install/install-request-store';
+import { closeAskModal, openAskModal, useAskModalStore } from '@src/components/ask/ask-modal-store';
 import { deliverClaimedQuestion } from '@src/components/ask/ask-claims';
 
 /** The subset of the Electron preload bridge this hook uses. */
@@ -31,9 +32,7 @@ interface NotifyBridge {
    * SEPARATELY VERSIONED artifacts (an installed shell can be months behind the
    * UI it loads), so the return is optional and every caller must degrade.
    */
-  onNotificationClick?: (
-    cb: (data: { clickTarget?: NotificationClickTarget }) => void,
-  ) => (() => void) | void;
+  onNotificationClick?: (cb: (data: { clickTarget?: NotificationClickTarget }) => void) => (() => void) | void;
 }
 
 /**
@@ -117,7 +116,8 @@ export function useUiCommandListener(): void {
         return;
       }
       // A question from a wizard run a screen is showing is drawn THERE, not by sending the tab away.
-      if (msg.view_type === ViewType.ASK && msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer)) return;
+      if ((msg.view_type as ViewType) === ViewType.ASK && msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer))
+        return;
       navigateTo(
         new DockPointer(
           msg.view_type as ViewType,
@@ -156,6 +156,23 @@ export function useUiCommandListener(): void {
       if (msg.kind === 'install_request') {
         if (msg.request?.typeid) openInstallRequest(msg.request);
         else console.warn('[ui_command] install_request without a typeid', msg);
+        return;
+      }
+      // `open_ask_modal`: a ComputeOp `ask` was raised and this tab is live.
+      // Open it as a dialog over whatever the tab is already showing — never a
+      // navigation, so a wizard's own progress page (or anything else) stays
+      // visible right behind it. See `ask_window.py::_push_to_live_tab`.
+      if (msg.kind === 'open_ask_modal') {
+        // A setup screen showing the run that asked draws it in place instead (`ask-claims`).
+        if (msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer)) return;
+        if (msg.pointer) openAskModal(msg.pointer);
+        else console.warn('[ui_command] open_ask_modal without a pointer', msg);
+        return;
+      }
+      // `close_ask_modal`: the op stopped waiting (its run was replaced). Close
+      // only if this tab still shows THAT question — a newer one stays open.
+      if (msg.kind === 'close_ask_modal') {
+        if (msg.pointer && useAskModalStore.getState().payload === msg.pointer) closeAskModal();
         return;
       }
       // Forward-compat: log unknown kinds but don't crash.

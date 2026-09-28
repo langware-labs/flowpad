@@ -71,7 +71,7 @@ export function AskForm({
       // A question that is gone is the NORMAL end: the op timed out, or someone
       // else answered. Say so rather than showing a form that resolves nothing.
       if (!res) setSettled(_(msg`This question is no longer waiting.`));
-      else setQuestion(res as Question);
+      else setQuestion(res);
     })();
     return () => {
       alive = false;

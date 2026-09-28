@@ -1,0 +1,12 @@
+{
+  "name": "Install the VC++ runtime (rag.runtime.missing)",
+  "description": "Runs this wizard when a search pass finds the Microsoft Visual C++ Runtime missing on Windows (`rag.runtime.missing`). Search announces it at most once until a person acts — adding a folder or \"index now\" — so a \"Not now\" is not asked again every tick. Not fire_once: a person who declined and later asks for search is asked again.",
+  "tag": {
+    "on": "rag.runtime.missing"
+  },
+  "actions": [
+    {
+      "run_wizard": ""
+    }
+  ]
+}

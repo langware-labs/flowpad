@@ -17,6 +17,7 @@ because ``ApiAuthSpec`` references :class:`LMApiProvider`.
 
 from __future__ import annotations
 
+import fnmatch
 import functools
 import json
 import logging
@@ -397,6 +398,28 @@ def endpoint_invoke_url(typeid) -> str | None:
     return f"{hub_origin(str(parsed))}{hub_invoke_path(parsed)}"
 
 
+def _model_allowed(slug: str, allow: list[str]) -> bool:
+    """Whether *slug* matches one of *allow*'s glob patterns (``anthropic/claude-*``)."""
+    return any(fnmatch.fnmatch(slug, pattern) for pattern in allow)
+
+
+def _model_within_allowance(slug: str | None, allow: list[str]) -> str | None:
+    """*slug*, or — when *allow* rules it out — the first LITERAL (non-glob) model *allow*
+    permits instead.
+
+    An endpoint's ``filters.models_allow`` narrows a shared budget to a few models (a team
+    scoped to ``anthropic/claude-haiku-4.5`` only); the tier map's slug is a code default that
+    knows nothing about any one endpoint, so it can name a model that endpoint refuses outright.
+    Rather than let the spawn fail at call time with "model not allowed", fall back to a model
+    the endpoint actually permits. A wildcard entry (``openai/*``) is not a concrete slug to
+    call, so it is skipped; with no literal entry either, *slug* passes through unchanged —
+    exactly today's behaviour.
+    """
+    if not slug or not allow or _model_allowed(slug, allow):
+        return slug
+    return next((m for m in allow if "*" not in m), slug)
+
+
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
     """Materialize the spawn binding for whichever ``LLMSource`` funds *process*.
 
@@ -521,6 +544,16 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     # re-pointed codex at a Claude slug.
     merged = {**spec.tier_models, **overrides}
     slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"
+    allowed_slug = _model_within_allowance(slug, endpoint.filters.models_allow)
+    if allowed_slug != slug:
+        logger.info(
+            "%s: tier slug %r isn't in endpoint %s's models_allow; using %r instead",
+            worker_type,
+            slug,
+            source.endpoint_typeid or "(box binding)",
+            allowed_slug,
+        )
+        slug = allowed_slug
     env = {**binding.base_env, binding.token_env_var: key}
     if slug:
         for var in spec.model_env_vars:

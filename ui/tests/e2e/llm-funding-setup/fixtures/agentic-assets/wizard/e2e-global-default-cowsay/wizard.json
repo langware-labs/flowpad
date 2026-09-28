@@ -1,0 +1,23 @@
+{
+  "name": "e2e-global-default-cowsay",
+  "description": "Asks whether to install cowsay when it is missing. If the person agrees it installs it: the plain install command first, and an agent (with one retry) only when that did not get there.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "ask",
+      "label": "Install cowsay?",
+      "kind": "compute",
+      "ref": "ask-install-cowsay",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install",
+      "label": "cowsay",
+      "kind": "compute",
+      "ref": "cowsay-on-path",
+      "on_fail": "abort"
+    }
+  ]
+}

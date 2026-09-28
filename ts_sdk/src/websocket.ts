@@ -155,6 +155,9 @@ export interface UiCommandMessage extends BaseMessage {
    *  server-side against the dock-address table, so the UI constructs rather
    *  than resolves. */
   view_type?: string;
+  /** For `navigate_dock`: the pointer within that screen. Also `open_ask_modal`'s
+   *  whole payload — the question id — since both are "here is the one thing
+   *  this command is about", and a modal has no screen to construct. */
   pointer?: string | null;
   options?: Record<string, string> | null;
   page?: string;

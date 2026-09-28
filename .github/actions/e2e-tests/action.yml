@@ -1,5 +1,17 @@
 name: 'Live-backend E2E (vitest headless + api, Playwright)'
 description: 'Boot flow_sdk server, satisfy the headless instance contract, run live tiers'
+inputs:
+  only:
+    description: >-
+      Run one tier instead of all of them: vitest, first-run-setup, context-folders or
+      navigation. Empty runs everything. For iterating on one failure — the PR run is
+      always the full set.
+    required: false
+    default: ''
+  grep:
+    description: 'Playwright --grep for the selected scenario (a test title substring or regex).'
+    required: false
+    default: ''
 runs:
   using: 'composite'
   steps:
@@ -84,6 +96,9 @@ runs:
         MINIHUB_RELOAD: 'False'          # single process → stable PID
         FLOWPAD_SKIP_DOTENV: 'true'      # env above is authoritative
         FLOWPAD_SKIP_LOCK: 'true'        # isolated test server
+        # A fresh backend fires first-run setup on the first tab, which steers it to
+        # the wizard page. Only the first-run-setup scenario below wants that.
+        FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
       run: |
         # .venv/bin/python (not `uv run`) so $! IS the server PID —
         # launcher.json's backend_pid liveness check kill-0s this exact pid.
@@ -122,11 +137,13 @@ runs:
       shell: bash
 
     - name: vitest headless (in-process E2E, live backend)
+      if: ${{ inputs.only == '' || inputs.only == 'vitest' }}
       run: npm run test:vitest:headless
       shell: bash
       working-directory: ui
 
     - name: vitest api (live backend)
+      if: ${{ inputs.only == '' || inputs.only == 'vitest' }}
       run: npm run test:vitest:api
       shell: bash
       working-directory: ui
@@ -134,6 +151,7 @@ runs:
     # jsdom but live-SDK (entity writes, host-file actions): requires the same
     # launcher-owned instance contract as headless (tests/react/_instance.ts).
     - name: vitest react (live backend)
+      if: ${{ inputs.only == '' || inputs.only == 'vitest' }}
       run: npm run test:vitest:react
       shell: bash
       working-directory: ui
@@ -144,42 +162,18 @@ runs:
     # the spec navigates to. Mirror the reference CI's between-suite DB
     # cleanup: restart the backend on a fresh database.
     - name: Reset backend state before Playwright
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'context-folders' }}
       env:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
         FLOWPAD_SKIP_LOCK: 'true'
-      run: |
-        kill "$BACKEND_PID" 2>/dev/null || true
-        for i in $(seq 1 30); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; done
-        rm -f "$SQLITE_DATABASE_PATH"
-        rm -rf "$FLOW_HOME/instances/ci-e2e"
-        mkdir -p "$FLOW_HOME/instances/ci-e2e"
-        nohup .venv/bin/python -m flow_sdk.server.run >> backend.log 2>&1 &
-        NEW_PID=$!
-        echo "BACKEND_PID=$NEW_PID" >> "$GITHUB_ENV"
-        cat > "$FLOW_HOME/instances/ci-e2e/launcher.json" <<EOF
-        {
-          "name": "ci-e2e",
-          "backend_port": 6099,
-          "env_file": "$GITHUB_WORKSPACE/.env.ci-e2e.local",
-          "backend_pid": $NEW_PID
-        }
-        EOF
-        timeout=60
-        elapsed=0
-        until curl -fsS http://localhost:6099/api/v1/graph/bootstrap | grep -q '"types"'; do
-          if [ "$elapsed" -ge "$timeout" ]; then
-            echo "Backend did not come back within ${timeout}s."
-            tail -50 backend.log || true
-            exit 1
-          fi
-          sleep 1
-          elapsed=$((elapsed+1))
-        done
-        echo "Backend reset."
+        # No FLOWPAD_SKIP_FIRST_RUN_SETUP: the first Playwright scenario IS first-run
+        # setup, so this backend must be a fresh install whose trigger may fire.
+      run: scripts/ci_e2e_reset_backend.sh
       shell: bash
 
     - name: Start vite dev server
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'context-folders' }}
       run: |
         # --mode ci-e2e → vite loadEnv picks .env.ci-e2e.local (VITE_API_URL :6099)
         nohup npm run dev -- --mode ci-e2e --port 5099 &> ../vite.log &
@@ -188,6 +182,7 @@ runs:
       working-directory: ui
 
     - name: Wait for vite dev server
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'context-folders' }}
       run: |
         timeout=60
         elapsed=0
@@ -204,15 +199,38 @@ runs:
       shell: bash
 
     - name: Install Playwright browsers
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' || inputs.only == 'context-folders' || inputs.only == 'navigation' }}
       run: npx playwright install --with-deps chromium
       shell: bash
       working-directory: ui
 
+    # ---- Playwright scenario: first-run setup (needs the fresh backend above) ----
+    - name: Playwright — first-run setup scenario
+      if: ${{ inputs.only == '' || inputs.only == 'first-run-setup' }}
+      env:
+        SETUP_FE_PORT: '5099'
+      run: npx playwright test --config tests/e2e/first-run-setup/playwright.config.ts --max-failures=1 ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '' }}
+      shell: bash
+      working-directory: ui
+
+    # First-run setup has now fired and left its wizard page as the last-active
+    # view; context folders needs a fresh database again, with setup switched off.
+    - name: Reset backend state before context folders
+      if: ${{ inputs.only == '' || inputs.only == 'context-folders' }}
+      env:
+        MINIHUB_RELOAD: 'False'
+        FLOWPAD_SKIP_DOTENV: 'true'
+        FLOWPAD_SKIP_LOCK: 'true'
+        FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
+      run: scripts/ci_e2e_reset_backend.sh
+      shell: bash
+
     - name: Playwright — context folders scenario
+      if: ${{ inputs.only == '' || inputs.only == 'context-folders' }}
       env:
         CTX_FE_PORT: '5099'
         CTX_BE_PORT: '6099'
-      run: npx playwright test --config tests/e2e/context-folders/playwright.config.ts --max-failures=1
+      run: npx playwright test --config tests/e2e/context-folders/playwright.config.ts --max-failures=1 ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '' }}
       shell: bash
       working-directory: ui
 
@@ -222,10 +240,14 @@ runs:
     # keys. Capability discovery reads a login shell's PATH, so SHELL is the
     # probe-aware wrapper that answers that probe with the PATH given here.
     - name: Restart backend with the mock worker (fresh DB)
+      if: ${{ inputs.only == '' || inputs.only == 'navigation' }}
       env:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
         FLOWPAD_SKIP_LOCK: 'true'
+        # A fresh DB fires first-run setup on the first tab: it steers that tab to
+        # the wizard page and runs tool checks while the speed budgets are measured.
+        FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
       run: |
         kill "$BACKEND_PID" 2>/dev/null || true
         for i in $(seq 1 30); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; done
@@ -262,6 +284,7 @@ runs:
     # The speed budgets are production-build budgets; a dev server is not what
     # users run. `_bundle` keeps the bundle clear of the `/assets` API proxy.
     - name: Build and serve the production UI
+      if: ${{ inputs.only == '' || inputs.only == 'navigation' }}
       run: |
         node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build \
           --mode ci-e2e --outDir "$RUNNER_TEMP/dist-ci-e2e" --emptyOutDir --assetsDir _bundle
@@ -272,10 +295,11 @@ runs:
       working-directory: ui
 
     - name: Playwright — navigation (every place renders, terminal round trips, speed)
+      if: ${{ inputs.only == '' || inputs.only == 'navigation' }}
       env:
         VITE_PORT: '5098'
         FLOWPAD_PERF_GATE: '1'
-      run: npx playwright test --config tests/manual_regression/navigation/playwright.config.ts --max-failures=1
+      run: npx playwright test --config tests/manual_regression/navigation/playwright.config.ts --max-failures=1 ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '' }}
       shell: bash
       working-directory: ui
 

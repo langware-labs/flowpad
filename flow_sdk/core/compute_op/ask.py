@@ -1,15 +1,21 @@
-"""Asking a person for a value, and waiting a bounded time for the answer.
+"""Asking a person for a value, and waiting for the answer.
 
 One pending question at a time per id, held in memory with an
 ``asyncio.Future``. The answer arrives through an HTTP action and resolves the
-future; nothing is persisted, because the whole wait is bounded and a restart
-ends it either way.
+future; nothing is persisted, because a restart ends the wait either way — the
+future, and whatever awaits it, both live in this process and die with it.
 
-**The wait is bounded.** A caller holding a ``ReturnedValue`` needs an answer
-or a reason, so the question gets a deadline — the caller's, else the op's own,
-else ``ASK_TIMEOUT_SECONDS`` (``compute_op_spec``, beside the other four) — and the
-op answers ``NOT_YET`` when it passes. Nothing here parks: a long wait is a long
-deadline, and a question left unanswered is asked again when its wizard resumes.
+**The wait is USUALLY bounded.** A caller holding a ``ReturnedValue`` needs an
+answer or a reason, so the question gets a deadline — the caller's, else the
+op's own, else ``ASK_TIMEOUT_SECONDS`` (``compute_op_spec``, beside the other
+four) — and the op answers ``NOT_YET`` when it passes. A long wait is a long
+deadline, and a question left unanswered is asked again when its wizard
+resumes. The one exception is an op declared ``until_answered`` — install-time
+infrastructure the app cannot proceed without — which waits with NO deadline:
+until answered, cancelled, or the process restarts. It pays for that with one
+rule: a question nobody could be shown (no live tab, no browser — a headless
+sandbox) is dropped after a short presence grace instead, because an unbounded
+wait with nobody to answer never ends.
 
 **The question lives where answers arrive.** The future is held by the process
 that serves the answer routes — the backend. ``run_op`` running there asks
@@ -51,8 +57,20 @@ class Question:
     #: That kind opened one level — what a form draws. Computed once, when the
     #: question is raised: it cannot change while the question is open.
     fields: Any = None
+    #: A plain-language paragraph shown under the prompt (``AskOp.detail``).
+    detail: str = ""
+    #: The button words (``AskOp.submit_label`` / ``cancel_label``). Empty: the
+    #: window's defaults, Send / Cancel.
+    submit_label: str = ""
+    cancel_label: str = ""
     #: The answer is a secret: whoever draws the field masks it, and nothing echoes it.
     secret: bool = False
+    #: The Wizard entity this question is a step of, when it is one — its
+    #: TypeId's uuid half. Empty for an op run outside any wizard. This is the
+    #: one thread back from a settled question to the run that is still going:
+    #: without it, answering felt like the last step, even when five more were
+    #: about to run right after.
+    wizard_id: str = ""
     #: The wizard run that asked (its activity address), when one did. A screen showing that run
     #: claims the question and draws it in place; nobody claiming it, it opens on its own.
     run: str = ""
@@ -63,8 +81,19 @@ class Question:
     def to_payload(self) -> dict:
         """What a UI needs to draw the field. Never the future."""
         return {
-            "id": self.id, "op": self.op_name, "prompt": self.prompt, "fields": self.fields,
-            "secret": self.secret, "run": self.run, "guide": self.guide,
+            "id": self.id,
+            "op": self.op_name,
+            "prompt": self.prompt,
+            "detail": self.detail,
+            "submit_label": self.submit_label,
+            "cancel_label": self.cancel_label,
+            # The declared kind by NAME, when it is one.
+            "kind": self.shape if isinstance(self.shape, str) else None,
+            "fields": self.fields,
+            "secret": self.secret,
+            "wizard_id": self.wizard_id,
+            "run": self.run,
+            "guide": self.guide,
         }
 
 
@@ -107,15 +136,35 @@ def answered_here():
 _PENDING: "dict[str, Question]" = {}
 
 
-def open_question(op_name: str, prompt: str, shape: Any, *, secret: bool = False, guide: str = "") -> Question:
+def open_question(
+    op_name: str,
+    prompt: str,
+    shape: Any,
+    *,
+    detail: str = "",
+    submit_label: str = "",
+    cancel_label: str = "",
+    secret: bool = False,
+    wizard_id: str = "",
+    guide: str = "",
+) -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
 
     question = Question(
-        id=str(uuid.uuid4()), op_name=op_name, prompt=prompt, shape=shape,
+        id=str(uuid.uuid4()),
+        op_name=op_name,
+        prompt=prompt,
+        shape=shape,
         # A kind string alone would render as one unnamed box.
         fields=fields_of_kind(shape) if isinstance(shape, str) else shape,
-        secret=secret, run=ASKING_RUN.get(), guide=guide,
+        detail=detail,
+        submit_label=submit_label,
+        cancel_label=cancel_label,
+        secret=secret,
+        wizard_id=wizard_id,
+        run=ASKING_RUN.get(),
+        guide=guide,
         _future=asyncio.get_event_loop().create_future(),
     )
     _PENDING[question.id] = question
@@ -162,12 +211,17 @@ def cancel(question_id: str) -> bool:
     return _settle(question_id, lambda future: future.set_exception(Cancelled()))
 
 
-async def wait_for(question: Question, *, timeout: float) -> Any:
+def forget(question_id: str) -> None:
+    """Drop a question nobody will wait for — one that was never shown."""
+    _PENDING.pop(question_id, None)
+
+
+async def wait_for(question: Question, *, timeout: Optional[float]) -> Any:
     """The answer, or ``TimeoutError``/``Cancelled``.
 
     ``timeout`` is required: the deadline is the caller's or the OP's, resolved
     before it gets here, and a default here would be a second opinion about how
-    long a person gets.
+    long a person gets. ``None`` is an ``until_answered`` op's: no deadline.
 
     The question is forgotten on every exit, so a late answer to a question
     nobody is waiting for is refused rather than silently dropped into a future
@@ -179,21 +233,79 @@ async def wait_for(question: Question, *, timeout: float) -> Any:
         _PENDING.pop(question.id, None)
 
 
+#: How long an ``until_answered`` ask keeps checking for SOMEONE to show the
+#: question to before it concludes nobody is there at all. This is presence,
+#: not an answer — the boot race it exists for: ``app.ready`` fires once its own
+#: index walk finishes (``_app_ready_signal``), which the app's own tab is racing
+#: to have a live WS connection ready for. A wide-open desktop window usually
+#: wins that race easily; a genuinely headless box (a sandbox, a CI runner)
+#: never will, and gives up here rather than never.
+PRESENCE_GRACE_SECONDS = 15.0
+PRESENCE_POLL_SECONDS = 1.0
+
+
 async def ask_person(
-    op_name: str, prompt: str, shape: Any, *, timeout: float, label: str, secret: bool = False, guide: str = "",
+    op_name: str,
+    prompt: str,
+    shape: Any,
+    *,
+    timeout: Optional[float],
+    label: str,
+    detail: str = "",
+    submit_label: str = "",
+    cancel_label: str = "",
+    secret: bool = False,
+    wizard_id: str = "",
+    guide: str = "",
 ) -> "AskResult":
     """Raise one question here and answer with what the person did.
 
     A cancel and a timeout are both "no value" — ``NOT_YET`` — and differ in
     ``cancelled`` / ``timed_out``, which is what a caller branches on.
+    ``timeout=None`` (an ``until_answered`` op) waits with no deadline, but
+    only for a question someone could actually be shown.
     """
     from flow_sdk.core.compute_op.ask_window import raise_question  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import AskResult  # noqa: PLC0415
 
-    question = open_question(op_name, prompt, shape, secret=secret, guide=guide)
-    await raise_question(question)
+    question = open_question(
+        op_name,
+        prompt,
+        shape,
+        detail=detail,
+        submit_label=submit_label,
+        cancel_label=cancel_label,
+        secret=secret,
+        wizard_id=wizard_id,
+        guide=guide,
+    )
+    shown = await raise_question(question)
+    if timeout is None and not shown:
+        # No deadline: give a live tab the presence grace window before
+        # concluding nobody is there — see `PRESENCE_GRACE_SECONDS`.
+        # `try_window=False`: the one browser-open attempt already happened
+        # above (or was skipped, e.g. `FLOWPAD_NO_BROWSER`); retrying it here
+        # would spam a fresh tab on every poll instead of failing the same way
+        # every time.
+        elapsed = 0.0
+        while not shown and elapsed < PRESENCE_GRACE_SECONDS:
+            await asyncio.sleep(PRESENCE_POLL_SECONDS)
+            elapsed += PRESENCE_POLL_SECONDS
+            shown = await raise_question(question, try_window=False)
+    if timeout is None and not shown:
+        # No deadline and nobody to answer is a run that never ends. Nothing
+        # was asked, so nothing ran; the next attempt asks again.
+        forget(question.id)
+        return AskResult.not_yet(f"{label}: nobody could be shown the question.", ran=False)
     try:
         value = await wait_for(question, timeout=timeout)
+    except asyncio.CancelledError:
+        # The caller gave up on the answer (a replaced setup run): take the
+        # question off the person's screen too. Shielded, so the close is sent.
+        from flow_sdk.core.compute_op.ask_window import withdraw_question  # noqa: PLC0415
+
+        await asyncio.shield(withdraw_question(question))
+        raise
     except Cancelled:
         return AskResult.not_yet(f"{label}: cancelled.", cancelled=True)
     except TimeoutError:
@@ -202,7 +314,18 @@ async def ask_person(
 
 
 async def ask_through_backend(
-    op_name: str, prompt: str, shape: Any, *, timeout: float, label: str, secret: bool = False, guide: str = "",
+    op_name: str,
+    prompt: str,
+    shape: Any,
+    *,
+    timeout: Optional[float],
+    label: str,
+    detail: str = "",
+    submit_label: str = "",
+    cancel_label: str = "",
+    secret: bool = False,
+    wizard_id: str = "",
+    guide: str = "",
 ) -> "AskResult":
     """:func:`ask_person`, run by the backend for a process that is not it.
 
@@ -214,8 +337,19 @@ async def ask_through_backend(
     from flow_sdk.core.connections.service import FlowServiceError, flow_service  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import AskResult  # noqa: PLC0415
 
-    body = {"op": op_name, "prompt": prompt, "shape": shape, "timeout": timeout, "label": label, "secret": secret,
-            "guide": guide}
+    body = {
+        "op": op_name,
+        "prompt": prompt,
+        "shape": shape,
+        "timeout": timeout,
+        "label": label,
+        "detail": detail,
+        "submit_label": submit_label,
+        "cancel_label": cancel_label,
+        "secret": secret,
+        "wizard_id": wizard_id,
+        "guide": guide,
+    }
     try:
         async with flow_service() as lease:
             said = await lease.client.request("POST", "/api/v1/ask", json=body)

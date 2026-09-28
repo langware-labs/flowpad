@@ -14,6 +14,12 @@ inputs:
     description: 'How many shards the unit tier is split across.'
     required: false
     default: '1'
+  k:
+    description: >-
+      pytest -k expression: run only matching tests, in whichever shard(s) carry them. For
+      iterating on one or two failures instead of the whole tier.
+    required: false
+    default: ''
 runs:
   using: 'composite'
   steps:
@@ -74,8 +80,13 @@ runs:
         set -euo pipefail
         SHARD='${{ inputs.shard }}'
         SHARDS='${{ inputs.shards }}'
+        K='${{ inputs.k }}'
         if [ "$SHARDS" -le 1 ]; then
-          uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long
+          if [ -n "$K" ]; then
+            uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long -k "$K" || [ $? -eq 5 ]
+          else
+            uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long
+          fi
           exit $?
         fi
         # Atoms are DIRECTORIES (plus the loose top-level test files), never
@@ -106,7 +117,13 @@ runs:
           exit 1
         fi
         echo "shard $SHARD/$SHARDS: ${#SEL[@]} of $total files"
-        uv run pytest "${SEL[@]}" -q --long
+        if [ -n "$K" ]; then
+          # Exit 5 ("no tests collected") is expected here: a `-k` filter usually
+          # matches nothing in most shards, and that is not this shard's failure.
+          uv run pytest "${SEL[@]}" -q --long -k "$K" || [ $? -eq 5 ]
+        else
+          uv run pytest "${SEL[@]}" -q --long
+        fi
       shell: bash
 
     # tests/api includes files that spawn or probe a real Claude CLI (worker
@@ -118,5 +135,11 @@ runs:
 
     - name: pytest tests/api
       if: ${{ inputs.tier == 'api' }}
-      run: uv run pytest tests/api -q
+      run: |
+        K='${{ inputs.k }}'
+        if [ -n "$K" ]; then
+          uv run pytest tests/api -q -k "$K" || [ $? -eq 5 ]
+        else
+          uv run pytest tests/api -q
+        fi
       shell: bash
