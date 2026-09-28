@@ -272,3 +272,12 @@ async def test_a_question_names_the_run_that_asked_and_carries_the_ops_guide(tmp
     assert "Phone number ID" in payload["guide"]
     cancel(question.id)
     assert not (await run).ok
+
+
+async def test_an_ask_whose_goal_already_holds_asks_nobody_even_when_its_check_prints_no_value(tmp_path):
+    """The resume rule: an ask carries its goal's check (``flow source step … --check`` prints a status, not
+    the value). Holding means nothing to ask — satisfied, no value — never "the document disagrees"."""
+    spec = _spec(tmp_path, completion_check={"commands": {sys.platform: "echo '{\"ok\": true}'"}})
+    said = await _run(spec, tmp_path)
+    assert said.ok is True and said.ran is False and said.value is None
+    assert open_questions() == []

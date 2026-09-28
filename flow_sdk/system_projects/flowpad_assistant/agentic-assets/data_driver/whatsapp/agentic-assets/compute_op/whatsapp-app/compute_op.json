@@ -1,0 +1,23 @@
+{
+  "type": "compute_op",
+  "name": "whatsapp-app",
+  "label": "Meta app",
+  "description": "The App ID and App secret authenticate as the app.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" app",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" app",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE app; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" app --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" app --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE app --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

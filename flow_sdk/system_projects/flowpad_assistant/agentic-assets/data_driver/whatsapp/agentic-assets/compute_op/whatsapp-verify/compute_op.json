@@ -1,0 +1,23 @@
+{
+  "type": "compute_op",
+  "name": "whatsapp-verify",
+  "label": "Ready to send",
+  "description": "The channel is verified and active.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" verify",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" verify",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE verify; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" verify --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" verify --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE verify --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

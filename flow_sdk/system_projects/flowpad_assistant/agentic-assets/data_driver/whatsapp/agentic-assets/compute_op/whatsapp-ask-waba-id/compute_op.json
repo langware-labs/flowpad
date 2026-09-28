@@ -1,0 +1,21 @@
+{
+  "type": "compute_op",
+  "name": "whatsapp-ask-waba-id",
+  "label": "WhatsApp Business Account ID",
+  "description": "WhatsApp Business Account ID, for the number step.",
+  "subkind": "ask",
+  "output_spec_kind": "string",
+  "exe_data": {
+    "prompt": "The WhatsApp Business Account ID",
+    "secret": false,
+    "timeout_seconds": 1800
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE number --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}
