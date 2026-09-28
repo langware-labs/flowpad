@@ -1,4 +1,4 @@
-import { isCompleteGitOrigin, type GitOrigin } from '@sdk';
+import { isCompleteGitOrigin, isInstallableOrigin, type GitOrigin } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -59,7 +59,9 @@ export function IncomingDeepLink() {
     if (gitOriginParam) {
       try {
         const parsed = JSON.parse(gitOriginParam) as GitOrigin;
-        gitOrigin = isCompleteGitOrigin(parsed) ? parsed : null;
+        // A project's origin is its repo root (empty rel_path); the task branch
+        // below still requires an asset position.
+        gitOrigin = isInstallableOrigin(parsed) ? parsed : null;
       } catch {
         gitOrigin = null;
       }
@@ -76,7 +78,7 @@ export function IncomingDeepLink() {
       return;
     }
 
-    if (gitOrigin && taskId) {
+    if (gitOrigin && taskId && isCompleteGitOrigin(gitOrigin)) {
       setPendingTask({ taskId, taskTitle: title, senderName, gitOrigin });
       return;
     }

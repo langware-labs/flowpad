@@ -24,6 +24,7 @@ import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import EntityLanding from '@src/pages/entry/EntityLanding';
 import ProjectShareLanding from '@src/pages/entry/ProjectShareLanding';
+import { HubOnly } from '@src/pages/entry/entry-shell';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
 import { markdownRedirectTarget, skillsRedirectTarget } from '@src/navigation/dead-route-redirects';
@@ -188,16 +189,24 @@ export const router = createBrowserRouter(
       <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
       <Route path="launch" element={<LaunchLanding />} />
       <Route path="install" element={<InstallLanding />} />
-      {/* Every other `<entity type>/<id>`: the generic landing for the hub's
-          post-accept URL when the invitation set no `callback_override`. Static
-          first segments above (and `dock`/`win`/`dev` below) outrank this dynamic
-          one, so it only catches what nothing else routes. Hub only — elsewhere it
-          renders NotFound, as the catch-all did. */}
-      {/* A project share's invitation lands here (`Project.share` sets it as the
-          `callback_override`): the project counterpart of `flow_message/:messageId`,
-          with "Open in FlowPad". Static, so it outranks the generic route below. */}
-      <Route path="project/:projectId" element={<ProjectShareLanding />} />
-      <Route path=":entityType/:entityId" element={<EntityLanding />} />
+      {/* Project share landing: `Project.share` sets it as the invitation's `callback_override`. */}
+      <Route
+        path="project/:projectId"
+        element={
+          <HubOnly>
+            <ProjectShareLanding />
+          </HubOnly>
+        }
+      />
+      {/* Generic landing for the hub's post-accept `/<type>/<id>`; the static routes around it outrank it. */}
+      <Route
+        path=":entityType/:entityId"
+        element={
+          <HubOnly>
+            <EntityLanding />
+          </HubOnly>
+        }
+      />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route
         path="dock"

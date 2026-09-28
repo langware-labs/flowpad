@@ -1,12 +1,14 @@
 import { t } from '@lingui/core/macro';
+import { useCopied } from '@src/components/ui/copy-button';
 import { inboundParams } from '@src/navigation/inbound-link';
-import { ActionInfo, BodyStatus, FlowMessage, navigator as sdkNavigator, TypeId } from '@sdk';
+import { ActionInfo, BodyStatus, FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Bot, Code, Sparkles, Terminal } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import './message-landing.css';
 import { LOCAL_API_PREFIX, useOpenInFlowpad } from './useOpenFlowpad';
+import { bounceToLoginOnce } from './login-bounce';
 import WrongAccountPanel from './WrongAccountPanel';
 
 const CopyIcon = () => (
@@ -39,7 +41,7 @@ type MessageMetadata = {
 const MessageLanding: React.FC = () => {
   const { messageId } = useParams<{ messageId: string }>();
   const [redirecting, setRedirecting] = useState(false);
-  const [planCopied, setPlanCopied] = useState(false);
+  const { copied: planCopied, copy: copyPlan } = useCopied(2000);
   // Set when loading the message 401s after a login attempt (someone opened a
   // message link they have no access to). The invitation email/account mismatch
   // is handled server-side via the dedicated /wrong_account route.
@@ -49,33 +51,16 @@ const MessageLanding: React.FC = () => {
   const hasApiKey = urlParams.has('flowpad-api-key');
 
   const msgLoginAttemptKey = messageId ? `login-attempt-msg-${messageId}` : null;
-  const hasAttemptedMsgLogin = msgLoginAttemptKey ? !!sessionStorage.getItem(msgLoginAttemptKey) : false;
 
   const typeId = !wrongAccount && messageId ? new TypeId(FlowMessage.type, messageId) : null;
   const { data: flowMessage, isLoading, notFound, error } = useEntity<FlowMessage>(typeId);
 
   useEffect(() => {
-    if (error?.response?.status !== 401) return;
     // Already came back from login with an api-key but still 401 → permissions issue, not auth.
-    if (hasApiKey) return;
-    if (hasAttemptedMsgLogin) {
-      setWrongAccount(true);
-      return;
-    }
-    if (msgLoginAttemptKey) sessionStorage.setItem(msgLoginAttemptKey, '1');
-    setRedirecting(true);
-    window.location.assign(sdkNavigator.getLoginWithCallbackUrl(window.location.href));
-  }, [error, hasApiKey, hasAttemptedMsgLogin, msgLoginAttemptKey]);
-
-  const handleCopy = async (text: string, setCopied: (v: boolean) => void) => {
-    try {
-      await window.navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* ignore */
-    }
-  };
+    if (error?.response?.status !== 401 || hasApiKey || !msgLoginAttemptKey) return;
+    if (bounceToLoginOnce(msgLoginAttemptKey) === 'exhausted') setWrongAccount(true);
+    else setRedirecting(true);
+  }, [error, hasApiKey, msgLoginAttemptKey]);
 
   const openAction = useMemo(() => {
     if (!messageId) return null;
@@ -220,7 +205,7 @@ const MessageLanding: React.FC = () => {
           <div className="nl-plan-wrap">
             <div className="nl-plan-header">
               <span className="nl-plan-label">Plan</span>
-              <button className="nl-copy-btn" onClick={() => void handleCopy(specContent, setPlanCopied)}>
+              <button className="nl-copy-btn" onClick={() => void copyPlan(specContent)}>
                 <CopyIcon />
                 <span className="nl-copy-label">{planCopied ? 'Copied!' : 'Copy'}</span>
               </button>

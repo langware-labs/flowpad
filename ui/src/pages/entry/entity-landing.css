@@ -1,5 +1,5 @@
-/* EntityLanding — the generic `/<type>/<id>` landing. Builds on the entry-page
- * look in message-landing.css (nl-*); only what that sheet lacks lives here. */
+/* The entity entry landings (entry-shell.tsx). They build on the entry-page look
+ * in message-landing.css (nl-*), which loads first; only what it lacks is here. */
 
 .el-title {
   display: inline-flex;
@@ -66,8 +66,19 @@
   white-space: nowrap;
 }
 
-.el-code code {
+/* Inside a card, `.nl-option code` would box each <code> a second time. */
+.nl-option .el-code code,
+.nl-option .el-ids code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.nl-option .el-code code {
+  color: inherit;
+  word-break: normal;
 }
 
 .el-code-copy {
@@ -83,12 +94,9 @@
 }
 
 .el-card {
-  background: #fff;
-  border-radius: 10px;
-  padding: 28px;
   max-width: 620px;
   margin: 0 auto;
-  box-shadow: 0 1px 3px rgba(20, 20, 60, 0.06);
+  padding: 28px;
 }
 
 .el-card h2 {
@@ -99,9 +107,7 @@
 
 .el-card p {
   margin: 0 0 18px;
-  font-size: 14px;
   line-height: 1.6;
-  color: #555;
 }
 
 .el-ids {
@@ -121,16 +127,15 @@
   color: #888;
 }
 
-.el-ids code {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+.nl-option .el-ids code {
   color: #1a1a2e;
   word-break: break-all;
 }
 
-.el-who {
-  margin: 16px 0 0 !important;
-  font-size: 12.5px !important;
-  color: #888 !important;
+.el-card .el-who {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  color: #888;
 }
 
 .el-link {

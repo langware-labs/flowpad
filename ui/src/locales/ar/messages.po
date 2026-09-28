@@ -4856,7 +4856,7 @@ msgstr "تم نسخ {0} رابط{1}"
 msgid "Copied to Clipboard"
 msgstr "تم النسخ إلى الحافظة"
 
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Copied!"
 msgstr "تم النسخ!"
 
@@ -4884,7 +4884,7 @@ msgstr "علامة تبويب Copilot"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Copy"
 msgstr "نسخ"
 
@@ -9341,8 +9341,7 @@ msgstr "جاري الإنشاء…"
 msgid "Generic options"
 msgstr "خيارات عامة"
 
-#: src/pages/entry/EntityLanding.tsx
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "احصل على FlowPad من flowpad.ai ←"
 
@@ -9525,7 +9524,7 @@ msgstr "العودة إلى صندوق التدفق الوارد"
 msgid "Go to Console"
 msgstr "الانتقال إلى وحدة التحكم"
 
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Go to Home"
 msgstr "الانتقال إلى الصفحة الرئيسية"
 
@@ -10141,7 +10140,7 @@ msgid "Id"
 msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "ID"
 msgstr "المعرف"
 
@@ -10711,10 +10710,9 @@ msgstr ""
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 msgstr ""
 
-#. placeholder {0}: model.repoPath
 #: src/pages/entry/EntityLanding.tsx
-msgid "It lives in git under {0}. Clone it, and open it in the FlowPad desktop app."
-msgstr "إنه موجود في git ضمن {0}. انسخه وافتحه في تطبيق FlowPad لسطح المكتب."
+msgid "It lives in git under {repoPath}. Clone it, and open it in the FlowPad desktop app."
+msgstr "إنه موجود في git ضمن {repoPath}. انسخه وافتحه في تطبيق FlowPad لسطح المكتب."
 
 #: src/pages/entry/EntityLanding.tsx
 msgid "It lives in git. Clone it, and open it in the FlowPad desktop app."
@@ -10726,7 +10724,7 @@ msgstr "إنه موجود في git. انسخه وافتحه في تطبيق Flow
 msgid "It may be only partly removed."
 msgstr ""
 
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "It may have been deleted, or it wasn't shared with this account."
 msgstr "ربما تم حذفه، أو لم تتم مشاركته مع هذا الحساب."
 
@@ -10741,10 +10739,6 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Italic"
 msgstr "مائل"
-
-#: src/pages/entry/EntityLanding.tsx
-msgid "item"
-msgstr "عنصر"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
@@ -11406,7 +11400,7 @@ msgstr "المحمّل"
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Loading"
 msgstr "جارٍ التحميل"
@@ -12836,7 +12830,7 @@ msgstr "التشغيل التالي: {0}"
 msgid "no"
 msgstr ""
 
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "No {label} with this id was found"
 msgstr "لم يتم العثور على عنصر بهذا المعرّف"
 
@@ -13929,7 +13923,7 @@ msgstr ""
 msgid "not fired yet"
 msgstr ""
 
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "غير موجود"
@@ -14399,8 +14393,7 @@ msgid "Open {label}"
 msgstr "فتح {label}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/pages/entry/EntityLanding.tsx
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
 msgstr "افتح {name}"
 
@@ -14670,8 +14663,7 @@ msgstr "فتح في المحطة الطرفية"
 msgid "Open in Worktree"
 msgstr "فتح في بيئة العمل"
 
-#: src/pages/entry/EntityLanding.tsx
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Open in your browser"
 msgstr "افتح في المتصفح"
 
@@ -14806,13 +14798,11 @@ msgstr "فتح الطرفية في {workdir}"
 msgid "Open the {0} driver"
 msgstr ""
 
-#: src/pages/entry/EntityLanding.tsx
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Open the {label} using one of these options:"
 msgstr "افتحه باستخدام أحد الخيارات التالية:"
 
-#: src/pages/entry/EntityLanding.tsx
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Open the {label}:"
 msgstr "فتح:"
 
@@ -19433,7 +19423,7 @@ msgstr "تسجيل الدخول عبر {account}"
 msgid "Sign in with a provider"
 msgstr ""
 
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Sign in with another account"
 msgstr "تسجيل الدخول بحساب آخر"
 
@@ -19474,7 +19464,7 @@ msgid "Signed in"
 msgstr "تم تسجيل الدخول"
 
 #. placeholder {0}: currentUser.email
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Signed in as {0}."
 msgstr "تم تسجيل الدخول باسم {0}."
 
@@ -19712,7 +19702,7 @@ msgstr "شيء آخر يستخدم هذا المنفذ، وليس تطبيقك."
 msgid "Something went wrong"
 msgstr "حدث خطأ ما"
 
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Something went wrong opening this link. Try again in a moment."
 msgstr "حدث خطأ أثناء فتح هذا الرابط. حاول مرة أخرى بعد قليل."
 
@@ -22222,7 +22212,7 @@ msgstr "خطوتان سريعتان في متصفحك:"
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
-#: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Type"
 msgstr "النوع"
 
@@ -22935,8 +22925,7 @@ msgstr "عرض"
 msgid "View {label} (read-only)"
 msgstr "عرض {label} (للقراءة فقط)"
 
-#: src/pages/entry/EntityLanding.tsx
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "View {name} on FlowPad. Nothing to install."
 msgstr "اعرض {name} على FlowPad. لا حاجة لتثبيت أي شيء."
 
@@ -23561,8 +23550,7 @@ msgstr "لم تتم إضافتك بعد إلى أي منظمة. تُنشأ ال�
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."
 msgstr "لا تتوفر الصلاحية اللازمة لتنفيذ هذا الإجراء. يرجى التواصل مع المسؤول إذا كان هذا يبدو غير صحيح"
 
-#: src/pages/entry/EntityLanding.tsx
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "You have access to this {label}."
 msgstr "لديك حق الوصول إلى هذا العنصر."
 
