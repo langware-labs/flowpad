@@ -150,7 +150,7 @@ def test_an_inbound_media_message_carries_its_file_by_the_path_waha_serves_it_at
     (item,) = _events(_delivery(_media("false_x_M1", mimetype, body="look", filename="f.bin", _data=data)))
     (f,) = item.data.attachments
     probe = WahaSource(_binding())
-    assert item.data.text is None and item.origin == probe.message_origin("false_x_M1", CHAT)
+    assert item.data.text == "look" and item.origin == probe.message_origin("false_x_M1", CHAT)
     assert f.origin == probe.media_origin(f"/api/files/{SESSION}/false_x_M1.bin")  # WAHA's host is gone
     assert (f.data.as_, f.data.media_type, f.data.caption, f.data.name, f.data.fetch_error) == (kind, mimetype, "look", "f.bin", None)
 
@@ -172,6 +172,13 @@ def test_an_inbound_reaction_names_the_message_as_it_is_keyed_and_empty_takes_it
     assert isinstance(added, ReactionItem) and added.data.target == probe.message_origin(target, CHAT)
     assert (added.data.emojis, added.data.mode, added.data.sender.origin.key) == (("👍",), ReactionMode.SET, PHONE)
     assert removed.data.emojis == () and _events(_delivery(mine, event="message.reaction")) == []
+
+
+def test_a_reaction_lands_on_the_chat_the_message_was_keyed_under_whichever_way_it_names_the_person():
+    (message,) = _events(_delivery(_message(f"false_{LID}_M9", "hi", chat=LID)))
+    reaction = {"id": "false_x_R4", "from": CHAT, "fromMe": False, "timestamp": 1789000002, "reaction": {"text": "👍", "messageId": f"false_{LID}_M9"}}
+    (reacted,) = _events(_delivery(reaction, event="message.reaction"))
+    assert reacted.data.target == message.origin
 
 
 def test_a_quote_is_provenance_not_membership():

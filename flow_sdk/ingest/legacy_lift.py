@@ -128,8 +128,7 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
         kind=kind_of(data),
         external_id=item.origin.key,
         name=getattr(data, "subject", None) or getattr(data, "title", None) or "",
-        # A media message's words ride its files as captions (WhatsApp, Telegram): they are its body.
-        body=getattr(data, "text", None) or _captions(data),
+        body=getattr(data, "text", None) or "",
         occurred_at=when.isoformat() if when else None,
         author_external_id=person.origin.key if person else None,
         author_display=(person.name if person else None) or getattr(data, "byline", None),
@@ -145,11 +144,6 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
         origin=item.origin,
         data=data,
     )
-
-
-def _captions(data: Any) -> str:
-    files = getattr(data, "attachments", None) or ()
-    return "\n".join(c for c in (getattr(f.data, "caption", None) for f in files) if c)
 
 
 def _key_of(origin: Optional[CloudOrigin]) -> Optional[str]:

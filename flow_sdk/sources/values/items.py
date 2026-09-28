@@ -17,7 +17,6 @@ from typing import ClassVar, Optional
 from pydantic import AwareDatetime, Field
 
 from flow_sdk._compat import StrEnum
-
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 from flow_sdk.sources.values.origin import CloudOrigin
 

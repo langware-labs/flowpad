@@ -9,7 +9,8 @@ application decides what a failure means; the next scheduled pass is its retry.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Optional
 
 import httpx
 
@@ -69,4 +70,27 @@ async def request_json(http: httpx.AsyncClient, method: str, url: str, **kwargs:
         raise SourceUnavailable(f"{method} {url}: undecodable JSON: {exc}") from exc
 
 
-__all__ = ["REQUEST_TIMEOUT_SECONDS", "client", "error_for_status", "request", "request_json"]
+@asynccontextmanager
+async def stream(
+    http: httpx.AsyncClient,
+    url: str,
+    *,
+    headers: Optional[dict] = None,
+    hint: str = "",
+    origin: Optional[CloudOrigin] = None,
+    chunk_size: int = 65536,
+    redact: str = "",
+) -> AsyncIterator[AsyncIterator[bytes]]:
+    """A GET whose body is streamed — the shape ``Openable.open`` yields. A failure is a contract
+    error like :func:`request`'s; ``redact`` (a token in the URL) never reaches an error's text."""
+    shown = url.replace(redact, "<redacted>") if redact else url
+    try:
+        async with http.stream("GET", url, headers=headers) as response:
+            if response.status_code >= 400:
+                raise error_for_status(response.status_code, hint, origin=origin)
+            yield response.aiter_bytes(chunk_size)
+    except httpx.HTTPError as exc:
+        raise SourceUnavailable(f"GET {shown}: {str(exc).replace(redact, '<redacted>') if redact else exc}", origin=origin) from exc
+
+
+__all__ = ["REQUEST_TIMEOUT_SECONDS", "client", "error_for_status", "request", "request_json", "stream"]

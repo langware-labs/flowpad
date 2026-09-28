@@ -2,7 +2,6 @@
 Slack over a loopback socket, read and posted to with a doubled connector token."""
 from __future__ import annotations
 
-import time
 from contextlib import contextmanager
 from pathlib import Path
 

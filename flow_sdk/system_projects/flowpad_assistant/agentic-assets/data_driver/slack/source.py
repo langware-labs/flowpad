@@ -33,12 +33,12 @@ pass reads, so a reaction added later, and a reaction taken back, are not seen: 
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime, timezone
 from typing import Annotated, Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Union
 
-import httpx
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
@@ -47,7 +47,7 @@ from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
 from flow_sdk.sources.families import MessageSource
-from flow_sdk.sources.files import LOCAL_KIND, FileSupport, kind_of, read_file
+from flow_sdk.sources.files import FileSupport, check_files, kind_of, read_file
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import (
     FileItem,
@@ -299,13 +299,8 @@ class SlackSource(MessageSource):
         url = str(info.get("url_private_download") or info.get("url_private") or "")
         if not url:
             raise NotFound(f"Slack offers no download for file {file_id}", origin=origin)
-        try:
-            async with self._client.stream("GET", url, headers=self._auth()) as response:
-                if response.status_code >= 400:
-                    raise http.error_for_status(response.status_code, origin=origin)
-                yield response.aiter_bytes(chunk_size)
-        except httpx.HTTPError as exc:
-            raise SourceUnavailable(f"GET {url}: {exc}", origin=origin) from exc
+        async with http.stream(self._client, url, headers=self._auth(), origin=origin, chunk_size=chunk_size) as chunks:
+            yield chunks
 
     # ── reactions ───────────────────────────────────────────────────────────
     async def react(self, target: CloudOrigin, emoji: str) -> None:
@@ -438,7 +433,7 @@ class SlackSource(MessageSource):
         """Every file of ``data`` and its text in one message, in Slack's three steps."""
         uploaded = []
         for f in data.attachments:
-            content = read_file(f)
+            content = await asyncio.to_thread(read_file, f)
             name = f.data.name or "file"
             slot = await self._call("files.getUploadURLExternal", filename=name, length=len(content))
             url, file_id = str(slot.get("upload_url") or ""), str(slot.get("file_id") or "")
@@ -526,11 +521,7 @@ def _check_outgoing(data: object) -> None:
         raise ValueError("a Slack message needs text or a file")
     if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
         raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
-    for f in data.attachments:
-        if f.origin.kind != LOCAL_KIND or not isinstance(f.data, MessageFileData) or not f.data.path:
-            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
-        if f.data.as_ not in SlackSource.files.kinds:
-            raise ValueError(f"Slack does not send a {f.data.as_.value}")
+    check_files(data.attachments, SlackSource.files, title="Slack", text=data.text)
 
 
 def _start(query: Optional[MessageQuery], cursor: Optional[str]) -> tuple[Optional[str], Optional[str]]:
