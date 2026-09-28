@@ -60,6 +60,9 @@ cascade or a compute-node sweep), every PTY / explorer / app-host caller breaks 
 | `list_dir(remote_paths)` | async → `dict[str, list[ListDirItem]]` | Directory listing. |
 | `create_folders(remote_paths)` / `delete_files(remote_paths)` | async | Folder / file mutation. |
 | `set_env(name, value)` | async | Set (or clear, when `value=None`) an env var on the node. |
+| `deployments_here()` | async → `list[Deployment]` | Every deployment placed on this machine (`compute_node_id == self.id`) — this computer hosts many, a cloud box one. |
+| `service_endpoints()` | async → `list[ServiceEndpoint]` | Every service the machine answers on: the endpoints of every deployment here. |
+| `health_check()` | async → `NodeHealth` | Every service's `health_check()`, together; a running deployment's declared-but-unserved service (`Deployment.exposes`) is listed as failing. See `snippets/service-endpoints.md` §7. |
 | `get_machine_id()` | async → str | Stable machine identifier. |
 | `get_machine_status()` | async → `MachineStatus` | Processes + network snapshot. |
 | `send(msg_str)` | async | Low-level provider send. |
@@ -140,10 +143,11 @@ Verb legend: `@action.all` registers the handler for every method (GET/POST/PUT/
 | `get-cost-overview` | ALL | `_analytics_cost_overview` | Cost overview across sessions. |
 | `get-claude-context` | ALL | `_analytics_claude_context` | Claude context/usage analytics. |
 
-### core (on `ComputeNode` directly) — 12 decorators / 11 names
+### core (on `ComputeNode` directly) — 13 decorators / 12 names
 
 | Action | Verb | Implementation | Description |
 | --- | --- | --- | --- |
+| `health` | GET | `health_action` → `health_check` | Every service on the machine, checked now → `NodeHealth`. The hub's control plane reads a box's report through this over the box's loopback. |
 | `tabs` | POST | `_terminal_close` | Compat router for `tabs/close` — batch terminal teardown (shell + agentic_process). |
 | `recover-orphaned-project` | POST | `_recover_orphaned_project` | `{dangling_id}` — resurrect a deleted Project from a dependent's `workdir`; rebind `project_id`s. |
 | `create-project-from-git` | POST | `_create_project_from_git` | `{git_origin, target_name?}` — clone into workspace + materialize a Project; 409 with `suggested_name` on collision. |
@@ -205,6 +209,9 @@ Class `ComputeNode extends APIEntity<ComputeNode>` (`static type = 'compute_node
 | `executeCommand(input)` | `async → ShellOutputFlowData` | `ops/command` — run a command, parse the XML flow stream into stdout/stderr/exit-code. |
 | `executeCommandStreaming(input, onCmdProgress?)` | `async → void` | Streaming variant over `ops/command` with `stream:true`. |
 | `getMachineStatus()` | `async → MachineStatus` | `get-machine-status` action. |
+| `healthCheck()` | `async → NodeHealth` | `health` action — every service on the machine, checked now. |
+| `provisionProject(setup)` | `async → ProvisionResult` | Hub `ops/provision-project` — the box's first-launch project setup, run by the hub; `steps` name each step's outcome. The box commands under it are the hub's control plane, never REST verbs. |
+| `signOut()` | `async → unknown` | Hub `sign-out` — end the session inside the box (owner only). |
 | `getArtifactProcess(artifact)` | `async → ProcessInfo \| null` | Find the process serving an artifact's port (via machine status). |
 | `startArtifactProcess` / `stopArtifactProcess` / `restartArtifactProcess` | async → `ProcessInfo` | Service control over an artifact's `start_cmd` / port (poll-until-up; throws `ServiceControlError`). |
 | `getJsonFile<T>(path)` / `saveJsonFile(path, data)` | async | `get-json-file` / `save-json-file`. |
