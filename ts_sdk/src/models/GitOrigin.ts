@@ -141,7 +141,10 @@ export function gitOriginWebUrl(o: GitOrigin, opts?: { isDir?: boolean }): strin
 
   const root = `https://${providerHost(o.provider)}/${encodeURIComponent(o.owner)}/${encodeURIComponent(stripGitSuffix(o.name))}`;
   const ref = (o.branch || o.head_commit || '').trim();
-  const rel = (o.rel_path || '').trim().replace(/\\/g, '/').replace(/^\.\/+/, '');
+  const rel = (o.rel_path || '')
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\.\/+/, '');
   if (!ref || rel === '.' || !isSafeRelPath(rel)) return root;
 
   // Segment-wise, never whole-string: a `feature/x` branch must keep its slash —
@@ -166,6 +169,20 @@ export function isSafeRelPath(relPath: string | null | undefined): boolean {
 /** A GitOrigin is usable for display/placement iff it names a repo + a safe position. */
 export function isCompleteGitOrigin(o: GitOrigin | null | undefined): o is GitOrigin {
   return !!o && !!o.owner && !!o.name && isSafeRelPath(o.rel_path);
+}
+
+/** A GitOrigin a checkout can be made from: a repo, at its root or at a safe path
+ *  inside it. A PROJECT's origin is the repository itself, so its `rel_path` is
+ *  empty — `isCompleteGitOrigin` is the test for an ASSET inside a repo and
+ *  rejects exactly that shape. Only a path pointing outside the checkout
+ *  disqualifies here. */
+export function isInstallableOrigin(o: GitOrigin | null | undefined): o is GitOrigin {
+  return !!o && !!o.owner && !!o.name && (!o.rel_path || isSafeRelPath(o.rel_path));
+}
+
+/** The shell command that checks this origin out: `git clone [-b <branch>] <url>`. */
+export function gitCloneCommand(o: GitOrigin): string {
+  return `git clone ${o.branch ? `-b ${o.branch} ` : ''}${gitOriginCloneUrl(o)}`;
 }
 
 /** Read a (possibly absent) git-kind origin off any entity. `origin` is the

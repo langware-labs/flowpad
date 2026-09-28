@@ -324,6 +324,11 @@ def _invite_message_text(project_name: str, note: Optional[str]) -> str:
     return f"{text}\n\n{note}" if note else text
 
 
+def project_share_landing_path(project_id: str) -> str:
+    """The app path a project invitation lands on — the SPA's ``project/:projectId`` route."""
+    return f"/project/{project_id}"
+
+
 class Project(Entity):
     @classmethod
     async def get_last_active(cls) -> Optional["Project"]:
@@ -1404,6 +1409,9 @@ class Project(Entity):
                 request = {
                     field: recipient_key,
                     "invitation_targets": [{"typeid": project_ref, "role": person.role or PROJECT_DEFAULT_INVITE_ROLE}],
+                    # Set on the invitation rather than left to the hub's
+                    # fallback, so its email lands on the project landing.
+                    "callback_override": project_share_landing_path(self.id),
                 }
                 if note and note.strip():
                     request["message"] = note.strip()
