@@ -40,7 +40,10 @@ def main(argv: list[str] | None = None) -> int:
         url, _, body = rest.partition(" ")
         hooks[op] = (url, json.loads(body or "{}"))
 
-    api = httpx.Client(base_url=f"{args.backend.rstrip('/')}/api/v1", timeout=60)
+    from flow_sdk.instance_settings.cookie_gate import gate_headers  # a gated box (a sandbox) answers 403 without it
+
+    gate = gate_headers(args.backend)
+    api = httpx.Client(base_url=f"{args.backend.rstrip('/')}/api/v1", timeout=60, headers=gate)
     source = api.get(f"graph/data_source/{args.source}").json()["data"]
     stages = api.get(f"graph/data_source/{args.source}/setup_stages").json()["data"]
     stage = next((s for s in stages if s.get("state") != "done"), None)
@@ -57,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
 
     def run() -> None:
         body = {"target": f"data_source-{args.source}", "inputs": {"source": args.source, "owner": source.get("owner") or ""}, "approved": True}
-        reply = httpx.post(f"{args.backend.rstrip('/')}/api/v1/graph/wizard/{wizard['id']}/run", json=body, timeout=args.timeout)
+        reply = httpx.post(f"{args.backend.rstrip('/')}/api/v1/graph/wizard/{wizard['id']}/run", json=body, timeout=args.timeout, headers=gate)
         result.update(reply.json())
 
     worker = threading.Thread(target=run, daemon=True)
