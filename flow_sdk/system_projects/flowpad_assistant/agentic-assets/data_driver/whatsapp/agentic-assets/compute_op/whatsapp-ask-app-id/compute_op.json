@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "24e62e1b-8d61-4fdc-8c80-e7cb437bba50",
   "name": "whatsapp-ask-app-id",
   "label": "App ID",
   "description": "App ID, for the app step.",

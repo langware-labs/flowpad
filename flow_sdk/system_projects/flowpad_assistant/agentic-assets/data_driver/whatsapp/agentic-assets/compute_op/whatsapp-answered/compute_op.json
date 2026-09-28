@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "19617c4d-08c8-4e30-b6a5-fcdf90c0e581",
   "name": "whatsapp-answered",
   "label": "Agent running",
   "description": "The agent answers on this computer.",

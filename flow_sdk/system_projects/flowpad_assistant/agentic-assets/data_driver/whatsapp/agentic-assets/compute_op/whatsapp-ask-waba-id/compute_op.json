@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "ca6d8d27-417d-401d-87c4-63500b27c1e9",
   "name": "whatsapp-ask-waba-id",
   "label": "WhatsApp Business Account ID",
   "description": "WhatsApp Business Account ID, for the number step.",

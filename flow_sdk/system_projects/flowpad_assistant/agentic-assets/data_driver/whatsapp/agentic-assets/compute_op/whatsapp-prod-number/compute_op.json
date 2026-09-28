@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "325ec180-7c30-4d73-9936-ebdf5338112c",
   "name": "whatsapp-prod-number",
   "label": "Real number",
   "description": "The permanent token sends from your real number. (Runs every time: the test mode already satisfies the checks it would share.)",

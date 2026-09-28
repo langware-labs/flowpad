@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "2c9fcaaa-d889-4739-bd36-f56739842b9c",
   "name": "whatsapp-prod-verify",
   "label": "Ready to send",
   "description": "The channel is verified on the real number. (Runs every time: the test mode already satisfies the checks it would share.)",

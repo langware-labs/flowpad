@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "bf28e49a-53d0-4f08-af7a-0a6072e1fbba",
   "name": "whatsapp-subscribe",
   "label": "Meta webhook",
   "description": "Meta sends this number's messages to the public URL.",

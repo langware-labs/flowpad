@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "a3edd6da-97ea-4ada-a1e7-9b108ea6b2e5",
   "name": "whatsapp-me",
   "label": "Your phone",
   "description": "A hello from the test number reaches your phone; only you may drive the agent.",

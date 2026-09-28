@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "ad522347-2c0e-4579-8c15-f2b60ce709be",
   "name": "whatsapp-ask-my-number",
   "label": "Your number",
   "description": "Your number, for the me step.",

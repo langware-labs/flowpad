@@ -1,5 +1,6 @@
 {
   "type": "compute_op",
+  "id": "1bd90dd2-59ab-4cfe-9e5d-e2611b37192e",
   "name": "whatsapp-ask-access-token",
   "label": "Access token",
   "description": "Access token, for the number step.",
