@@ -2,9 +2,9 @@
 Runtime, and install it only on Send. Anywhere else, do nothing at all.
 
 usearch (the RAG vector index) links MSVCP140.dll, which Python does not bundle and a clean Windows
-does not ship. Search runs this wizard the first time it finds the runtime missing
-(``test_rag_runtime``); it is deliberately NOT a step of first-run setup, so a person who never
-uses search is never asked.
+does not ship. Search announces ``rag.runtime.missing`` the first time it finds the runtime missing
+(``test_rag_runtime``) and this wizard's own trigger runs it; it is deliberately NOT a step of
+first-run setup, so a person who never uses search is never asked.
 
 The real documents off disk, the real runner, the real ask waiter. Only the shell is a double — a
 machine that either has the runtime or does not — and the person is played by answering the
@@ -120,6 +120,18 @@ def test_first_run_setup_never_asks_for_it():
     """Only search needs the runtime, so only search asks — not the setup every person sees."""
     setup = read_wizard(ASSETS / "wizard" / "llm-setup")
     assert "install-vcredist" not in [s.ref for s in setup.steps]
+
+
+def test_search_reaches_it_through_its_own_trigger():
+    """Search announces the missing runtime; this wizard's trigger is what runs it, so search
+    never names the wizard. Not fire_once: a person who said "Not now" and later asks for search
+    is asked again — search itself keeps it to once per such request (``test_rag_runtime``)."""
+    from flow_sdk.rag.rag_on_tag import RUNTIME_MISSING_TAG
+
+    trigger = json.loads((WIZARD / "agentic-assets/trigger/on-runtime-missing/trigger.json").read_text())
+    assert trigger["tag"] == {"on": RUNTIME_MISSING_TAG}
+    assert trigger["actions"] == [{"run_wizard": ""}]
+    assert not trigger.get("fire_once")
 
 
 async def test_installed_after_send():

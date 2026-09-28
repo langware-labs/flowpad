@@ -60,12 +60,12 @@ RUNNERS: dict[str, str] = {
     ".sh": "sh {file}",
 }
 
-#: What differs on Windows, where ``run_shell`` runs POWERSHELL. ``python3``
-#: there is the Store alias stub, which fails even with Python installed: use
-#: the ``py`` launcher (what python.org and winget install), else python.exe.
-#: PowerShell's own braces are doubled: these are ``str.format`` templates.
+#: What differs on Windows, where ``run_shell`` runs POWERSHELL: the same
+#: interpreter, but PowerShell only RUNS a quoted path behind its call operator
+#: ``&`` (without it, a quoted path is just a string). The script's exit code is
+#: the snippet's, not PowerShell's own verdict.
 WIN32_RUNNERS: dict[str, str] = {
-    ".py": "if (Get-Command py -ErrorAction SilentlyContinue) {{ py -3 {file} }} else {{ python {file} }}; exit $LASTEXITCODE",
+    ".py": "& {python} {file}; exit $LASTEXITCODE",
 }
 
 

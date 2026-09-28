@@ -8,8 +8,9 @@ the rest of Flowpad never imports it (``test_server_starts_without_usearch``).
 
 **Asked once, when there is work.** The pass calls ``ensure`` right before it would load the
 index, so a person who never turns search on is never asked — it is deliberately not part of
-first-run setup. The question and the install are the ``install-vcredist`` wizard: an ask op, then
-a winget install, with an agent fallback.
+first-run setup. ``ensure`` does not run anything itself: it announces ``rag.runtime.missing``
+(``rag_on_tag``), and the ``install-vcredist`` wizard's own trigger answers it — an ask op, then a
+winget install, with an agent fallback. Once installed, the next pass finds the runtime and runs.
 
 **A "no" parks search until a person acts.** The pass runs on a heartbeat; without the park, a
 declined question would be asked again every tick. ``forget_answer`` lifts it, and is called
@@ -22,9 +23,6 @@ import logging
 import sys
 
 logger = logging.getLogger(__name__)
-
-#: The sub-wizard that asks, then installs. Windows only: off Windows its ops have no commands.
-VCREDIST_WIZARD = "install-vcredist"
 
 MISSING_RUNTIME = "search needs the Microsoft Visual C++ Runtime, which isn't installed on this computer"
 
@@ -48,11 +46,12 @@ def refusal() -> str:
     return ""
 
 
-async def ensure() -> str:
-    """Make search loadable if it is not: ask the person, and install on a yes. Returns ``refusal()``.
+async def ensure(index_id: str) -> str:
+    """Why *index_id*'s pass cannot load its index, or ``""``. On Windows, asks for the runtime.
 
-    Asks at most once until a person acts (``forget_answer``). Never raises: a wizard that is
-    missing or busy leaves the refusal in place, which the caller records on the row.
+    Asks at most once until a person acts (``forget_answer``): the first miss announces
+    ``rag.runtime.missing`` and parks, so the heartbeat does not ask again every tick. Never
+    raises; the caller records the returned reason on the row.
     """
     global _parked
 
@@ -61,16 +60,10 @@ async def ensure() -> str:
         _parked = bool(reason)
         return reason
 
-    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+    from flow_sdk.rag.rag_on_tag import emit_runtime_missing  # noqa: PLC0415
 
-    wizard = await Wizard.get_one({"name": VCREDIST_WIZARD})
-    if wizard is None:
-        logger.warning("rag: %s wizard is not installed; cannot offer the runtime", VCREDIST_WIZARD)
-    else:
-        result = await wizard.run(unattended=True)
-        logger.info("rag: %s — %s", VCREDIST_WIZARD, result.detail or ("ok" if result.ok else "not done"))
-    reason = refusal()
-    _parked = bool(reason)
+    emit_runtime_missing(index_id, reason)
+    _parked = True
     return reason
 
 
