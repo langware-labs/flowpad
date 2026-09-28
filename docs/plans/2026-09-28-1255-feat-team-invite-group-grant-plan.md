@@ -434,8 +434,14 @@ The team → conversation edge relies on KTD2 as well. Messages are graph childr
 - `ui/tests/hub/course_project_share_two_client.ui.test.ts`
 
 **Approach:**
-- Keep the existing person flows. They now read `invited[].conversation_id` from the client-built conversation.
-- Add a team case: a team containing the member instance is shared from the editor instance, and the member sees the team conversation with the Install project chip, installs, and can open an agent under the project.
+- Keep the existing person flows. They now read `invited[].conversation_id` from the client-built conversation, which the client fills in, so the specs need no change.
+- Those specs drive host `instance_ctl` instances with separate homes and assert clones on the host filesystem, so they can't run on the docker dev-users rig (its clones land in container volumes).
+- The team case runs on the rig instead, through each user's own backend API:
+  1. sandbox-1 shares a fresh project, backed by a repo on the shared git volume, with sandbox-team.
+  2. Its members' desks receive the team conversation and the mirrored project.
+  3. A team member installs it.
+  4. The team row is removed.
+- The team member's read of a project child (an agent) is proven at the hub API level by U1.
 
 **Test scenarios:**
 - A person invite: the invitee's invite conversation shows the chip, and install succeeds.
@@ -443,7 +449,14 @@ The team → conversation edge relies on KTD2 as well. Messages are graph childr
 - A team invite by an editor who isn't a team admin succeeds, with no "can't see its member list" message.
 - Removing the team row from the popover revokes the member's access to the project.
 
-**Verification:** both specs pass on the docker dev-users rig against the local hub.
+**Verification:** on the docker dev-users rig against a local hub running U1:
+- the share returns `granted_teams` with a conversation id, and the hub roster shows one `team` row;
+- every team member's desk has the team conversation, a `ready` message with the `project-<id>` reference, and the mirrored project row;
+- a team-only member installs the project;
+- sharing again returns `skipped_teams: already_granted`;
+- after the team row is removed, the hub refuses the member.
+
+Verified 2026-09-28 on project `team-grant-e2e-135055`.
 
 ### U9. Receiver materializes a referenced project it doesn't have (client)
 
