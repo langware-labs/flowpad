@@ -8,7 +8,7 @@ import { ProjectActionsRow } from '@src/components/open-project-component/projec
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
-import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
+import { AdvancedOnly, DevOnly, VibeSwap } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
 import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
@@ -299,10 +299,10 @@ export function HomeLanding() {
                   </div>
 
                   {/* Event Sniffer chip (trace heartbeat), aligned to bottom of side
-              columns — Advanced-only, hidden in Standard to tune down UI. */}
-                  <AdvancedOnly className="mt-auto w-full max-w-3xl shrink-0 self-center">
+              columns — a debugging tool, so Dev-only. */}
+                  <DevOnly className="mt-auto w-full max-w-3xl shrink-0 self-center">
                     <EventSnifferChip />
-                  </AdvancedOnly>
+                  </DevOnly>
                 </div>
 
                 <div className="hidden min-h-0 lg:block">
