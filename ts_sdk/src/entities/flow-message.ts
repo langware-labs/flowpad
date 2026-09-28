@@ -559,7 +559,7 @@ export interface ExportFlowMessageParams {
  *  handed to someone as a file. Returns the zip bytes. */
 export async function exportFlowMessage(params: ExportFlowMessageParams): Promise<Blob> {
   const action = new ActionInfo('flow-message-export', null, null, 'POST', true, false, null, 'blob');
-  action.bodyParameters = params;
+  action.bodyParameters = { ...params };
   return (await dataManager.callAction<ExportFlowMessageParams, Blob>(action))!;
 }
 
