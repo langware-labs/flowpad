@@ -1,5 +1,10 @@
-import { type GitOrigin, ViewType } from '@sdk';
+import { type GitOrigin, PageId, ViewType } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
+
+/** The BROWSER target: this project on the hub page, `/dock/hub/project/<id>`. */
+export function projectHubPath(projectId: string): string {
+  return DockPointer.forProject(projectId).withPage(PageId.HUB).toUrl();
+}
 
 /**
  * The DESKTOP path "Open in FlowPad" hands over (as the deep link's `next`): the

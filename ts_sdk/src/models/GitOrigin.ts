@@ -141,10 +141,7 @@ export function gitOriginWebUrl(o: GitOrigin, opts?: { isDir?: boolean }): strin
 
   const root = `https://${providerHost(o.provider)}/${encodeURIComponent(o.owner)}/${encodeURIComponent(stripGitSuffix(o.name))}`;
   const ref = (o.branch || o.head_commit || '').trim();
-  const rel = (o.rel_path || '')
-    .trim()
-    .replace(/\\/g, '/')
-    .replace(/^\.\/+/, '');
+  const rel = (o.rel_path || '').trim().replace(/\\/g, '/').replace(/^\.\/+/, '');
   if (!ref || rel === '.' || !isSafeRelPath(rel)) return root;
 
   // Segment-wise, never whole-string: a `feature/x` branch must keep its slash —

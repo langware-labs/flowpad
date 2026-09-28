@@ -6,18 +6,14 @@ function trimHubHost(hubHost: string): string {
   return hubHost.replace(/\/+$/, '');
 }
 
-/** The project on the hub page, as an app path: `/dock/hub/project/<id>`. */
-export function hubProjectPath(projectId: string): string {
-  return DockPointer.forProject(projectId).withPage(PageId.HUB).toUrl();
-}
-
 /** Canonical cloud Project Home URL. */
 export function hubProjectUrl(
   hubAppUrl: string | null | undefined,
   projectId: string | null | undefined,
 ): string | null {
   if (!hubAppUrl || !projectId) return null;
-  return `${trimHubHost(hubAppUrl)}${hubProjectPath(projectId)}`;
+  const dockPath = DockPointer.forProject(projectId).withPage(PageId.HUB).toUrl();
+  return `${trimHubHost(hubAppUrl)}${dockPath}`;
 }
 
 /** The hub page's own landing, as an app path. */

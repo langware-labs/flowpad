@@ -5,8 +5,7 @@
  */
 import { type GitOrigin, gitCloneCommand } from '@sdk';
 import { describe, expect, it } from 'vitest';
-import { hubProjectPath } from '@src/lib/hub-page-url';
-import { projectOpenTargetPath } from '@src/pages/entry/project-share-landing';
+import { projectHubPath, projectOpenTargetPath } from '@src/pages/entry/project-share-landing';
 
 const ID = '3b91d0a8-0080-42b4-a4cf-d3ed9967678e';
 const ORIGIN: GitOrigin = {
@@ -18,9 +17,9 @@ const ORIGIN: GitOrigin = {
   rel_path: '.',
 };
 
-describe('hubProjectPath', () => {
+describe('projectHubPath', () => {
   it('is the project on the hub page', () => {
-    expect(hubProjectPath(ID)).toBe(`/dock/hub/project/${ID}`);
+    expect(projectHubPath(ID)).toBe(`/dock/hub/project/${ID}`);
   });
 });
 
