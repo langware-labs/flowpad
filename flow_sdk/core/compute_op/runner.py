@@ -135,9 +135,10 @@ async def run_op(
     #: Run IN this process instead of spawning one — ``answer.executor`` from
     #: an earlier agent op. The op says WHAT; this says WHERE.
     executor: Optional[str] = None,
-    #: How long a person is given. A caller may give LESS than the product
-    #: default; there is no way to give more from here.
-    ask_timeout: float = ASK_TIMEOUT_SECONDS,
+    #: How long a person is given — any span, longer or shorter than the product
+    #: default. ``None`` leaves it to the op (its own ``timeout_seconds``, else
+    #: ``ASK_TIMEOUT_SECONDS``). A wizard is resumable, so a long wait costs nothing.
+    ask_timeout: Optional[float] = None,
     shell: Shell = run_shell,
     launch: Launch = launch_step_process,
     on_status: Optional[Callable[[str], None]] = None,
@@ -277,7 +278,7 @@ async def _cli(spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Option
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
-async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
+async def _ask(spec: ComputeOpSpec, *, ask_timeout: Optional[float], say: Callable[[str], None], **_: Any) -> AskResult:
     """Put the op's declared output to a person and wait a bounded time.
 
     Asked here when this process is the backend the answer reaches; handed to
@@ -285,9 +286,11 @@ async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], 
     """
     from flow_sdk.core.compute_op.ask import ask_person, ask_through_backend, served_here  # noqa: PLC0415
 
-    # The person gets the SHORTEST of: what the op asks for, what the caller
-    # allows, and the product default. Nothing here lengthens it.
-    timeout = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
+    # The caller's span when it gives one, else the op's own, else the product
+    # default. An override may be longer than the default: a person working in
+    # another application (a provider's dashboard) takes minutes, and a wizard
+    # that runs out of time is simply resumed.
+    timeout = ask_timeout if ask_timeout is not None else spec.exe_data.timeout()
     say(f"{spec.display_label}: waiting for you…")
     ask = ask_person if served_here() else ask_through_backend
     return await ask(

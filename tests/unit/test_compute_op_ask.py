@@ -26,7 +26,7 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 #: Short enough that a person who never answers does not hold the suite. This
-#: PASSES a smaller deadline; it never raises ASK_TIMEOUT_SECONDS.
+#: PASSES a smaller deadline as the caller's span.
 BRIEF = 0.25
 
 
@@ -220,3 +220,32 @@ async def test_a_secret_ask_says_so_to_whoever_draws_the_field(tmp_path):
     assert question.secret is True and question.to_payload()["secret"] is True
     answer(question.id, {"token": "sk-live-1"})
     assert (await run).ok
+
+
+@pytest.mark.parametrize(
+    ("op_timeout", "caller_timeout", "expected"),
+    [
+        (None, None, 60.0),     # the product default
+        (900.0, None, 900.0),   # the op's own span, longer than the default
+        (900.0, 7200.0, 7200.0),  # the caller's span wins, longer still
+        (900.0, 5.0, 5.0),      # and may be shorter
+    ],
+)
+async def test_the_wait_is_the_callers_else_the_ops_else_the_default(tmp_path, monkeypatch, op_timeout, caller_timeout, expected):
+    """A step done in another application takes minutes: an author or a caller sets any span, the
+    default only applies when nobody did. The person is not waited on here — the span is read off
+    the ask the runner makes."""
+    from flow_sdk.core.compute_op import ask
+    from flow_sdk.schema.data_spec.returned_value_spec import AskResult
+
+    seen: list[float] = []
+
+    async def fake_ask(*_args, timeout, **_kw):
+        seen.append(timeout)
+        return AskResult.not_yet("nobody", timed_out=True)
+
+    monkeypatch.setattr(ask, "ask_person", fake_ask)
+    exe = {"prompt": "Service X API token"} | ({"timeout_seconds": op_timeout} if op_timeout else {})
+    spec = _spec(tmp_path, exe_data=exe)
+    await run_op(spec, trusted=True, workdir=Path(tmp_path), platform=sys.platform, ask_timeout=caller_timeout)
+    assert seen == [expected]
