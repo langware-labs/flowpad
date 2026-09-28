@@ -37,7 +37,13 @@ import {
 test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
 
 const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
-const ROUNDS = 20;
+// Sample count, not a budget and not a timeout — both of those are unchanged.
+// Each round waits out the ~19 background refreshes a warm switch fires plus a
+// 250ms silence (clickChip -> networkQuiet), so the loop, not the switches, is
+// what the 60s test timeout is spent on: 20 rounds is ~32s on this laptop and
+// overran 60s on CI's slower runner, failing mid-click before it ever measured.
+// 10 rounds still gives p50/p90 and leaves CI room.
+const ROUNDS = 10;
 /**
  * What only a LOADER asks for: tab materialization, an entity's identity, an asset
  * or wiki lookup, a runtime attach or its recording, a chat history. Inside a warm
