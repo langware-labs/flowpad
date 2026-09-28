@@ -430,6 +430,7 @@ export function AssetManagerButton({ process, trigger }: AssetManagerButtonProps
         assets={assets}
         agent={launchingAgent}
         assistantEnabled={assistantEnabled}
+        workerType={activeProcess?.worker_type ?? null}
         additionalDirs={additionalDirs}
         improveBusyKey={busyAssetKey}
         canImprove={canImprove}
