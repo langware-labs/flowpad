@@ -376,7 +376,7 @@ export function MessageBubble({
         {reactions && reactions.length > 0 && (
           <ReactionChips
             reactions={reactions}
-            onToggle={onReact ? (emoji, ours) => onReact(emoji, ours) : undefined}
+            onToggle={onReact}
           />
         )}
       </div>

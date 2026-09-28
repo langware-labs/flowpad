@@ -1,0 +1,21 @@
+{
+  "type": "compute_op",
+  "id": "026e697a-f952-4553-bae3-71acdae52a7e",
+  "name": "whatsapp-ask-say-hi",
+  "label": "Say hi",
+  "description": "Your first message to the agent.",
+  "subkind": "ask",
+  "output_spec_kind": "string",
+  "exe_data": {
+    "prompt": "Send hi to your agent from your phone, then type ok",
+    "timeout_seconds": 1800
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" first-turn --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" first-turn --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE first-turn --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

@@ -20,13 +20,11 @@ The token lives in the request path, so an error message never carries it.
 """
 from __future__ import annotations
 
+import asyncio
 import json
-import mimetypes
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional
-
-import httpx
 
 from flow_sdk.sources import http
 from flow_sdk.sources.base import positive_int
@@ -43,7 +41,7 @@ from flow_sdk.sources.errors import (
     Unsupported,
 )
 from flow_sdk.sources.families import MessageSource
-from flow_sdk.sources.files import LOCAL_KIND, FileSupport, read_file, resolve_files
+from flow_sdk.sources.files import FileSupport, check_files, extension_of, normalize_emoji, read_file
 from flow_sdk.sources.values.items import (
     FileItem,
     FileKind,
@@ -58,7 +56,7 @@ from flow_sdk.sources.values.items import (
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 
-from .reactions import ALLOWED_EMOJI, normalize
+from .reactions import ALLOWED_EMOJI
 
 DEFAULT_BASE_URL = "https://api.telegram.org"
 #: Updates per page; the committed offset does the rest.
@@ -276,7 +274,7 @@ class TelegramSource(MessageSource):
         file_id = str(media["file_id"])
         name = str(media.get("file_name") or "").strip()
         if not name:
-            ext = _EXTENSIONS.get(media_type) or mimetypes.guess_extension(media_type) or ".bin"
+            ext = extension_of(media_type) or ".bin"
             name = f"{field}-{media.get('file_unique_id') or file_id}{ext}"
         size = media.get("file_size")
         data = MessageFileData(
@@ -312,19 +310,14 @@ class TelegramSource(MessageSource):
             raise NotFound("telegram getFile: no file path", origin=file.origin)
         token = self._token()
         url = f"{self.base_url}/file/bot{token}/{path}"
-        try:
-            async with self._client.stream("GET", url) as response:
-                if response.status_code >= 400:
-                    raise http.error_for_status(response.status_code, "telegram file download", origin=file.origin)
-                yield response.aiter_bytes(chunk_size)
-        except httpx.HTTPError as exc:
-            raise SourceUnavailable(f"telegram file download: {str(exc).replace(token, '<token>')}", origin=file.origin) from None
+        async with http.stream(self._client, url, hint="telegram file download", origin=file.origin, chunk_size=chunk_size, redact=token) as chunks:
+            yield chunks
 
     # ── reactions ───────────────────────────────────────────────────────────
     async def react(self, target: CloudOrigin, emoji: str) -> None:
         """Our reaction on ``target``, replacing the one we had: a bot keeps one."""
         self._require_open()
-        wanted = normalize(emoji)
+        wanted = normalize_emoji(emoji).strip()
         if not wanted:
             return await self.unreact(target)
         if wanted not in ALLOWED_EMOJI:
@@ -393,7 +386,7 @@ class TelegramSource(MessageSource):
             if caption:
                 body["caption"] = caption
             form = {k: v if isinstance(v, str) else json.dumps(v) for k, v in body.items()}
-            upload = {field: (fd.name or "file", read_file(sent_file), fd.media_type or "application/octet-stream")}
+            upload = {field: (fd.name or "file", await asyncio.to_thread(read_file, sent_file), fd.media_type or "application/octet-stream")}
             result = await self._call(method, form=form, files=upload)
         item = self._item(result) if isinstance(result, dict) else None
         if item is None:
@@ -473,21 +466,19 @@ def _check_outgoing(data: object, support: FileSupport) -> None:
     if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
         raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
     text = data.text or ""
-    if data.attachments:
-        for f in data.attachments:
-            if f.origin.kind != LOCAL_KIND:
-                raise ValueError(f"an outgoing file must be a local file, got {f.origin!r}")
-        if len(data.attachments) > support.per_message:
-            raise ValueError(f"a Telegram message carries {support.per_message} file; send the rest separately")
-        (f,) = resolve_files(data.attachments, support, title="Telegram")
-        if text.strip():
-            if f.data.caption:
-                raise ValueError("a Telegram file message has one caption: the text or the file's, not both")
-            resolve_files((f.model_copy(update={"data": f.data.model_copy(update={"caption": text})}),), support, title="Telegram")
-        return
-    if not text.strip():
+    files = data.attachments
+    if files and text.strip():
+        # With a file the text IS its caption, so it is checked as one.
+        if any(getattr(f.data, "caption", None) for f in files):
+            raise ValueError("a Telegram file message has one caption: the text or the file's, not both")
+        files = tuple(
+            f.model_copy(update={"data": f.data.model_copy(update={"caption": text})}) if isinstance(f.data, MessageFileData) else f
+            for f in files
+        )
+    if not files and not text.strip():
         raise ValueError("a Telegram message needs text")
-    if len(text) > MAX_TEXT_LEN:
+    check_files(files, support, title="Telegram", text=data.text)
+    if not files and len(text) > MAX_TEXT_LEN:
         # Never truncate someone's words silently; the caller decides how to split.
         raise ValueError(f"telegram caps a message at {MAX_TEXT_LEN} chars, got {len(text)}")
 
@@ -523,8 +514,6 @@ _MEDIA_FIELDS: tuple[tuple[str, FileKind, str], ...] = (
     ("document", FileKind.DOCUMENT, "application/octet-stream"),
     ("sticker", FileKind.STICKER, "image/webp"),
 )
-#: Extensions ``mimetypes`` answers oddly or not at all.
-_EXTENSIONS = {"image/jpeg": ".jpg", "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "image/webp": ".webp", "video/webm": ".webm", "application/x-tgsticker": ".tgs"}
 _TOO_BIG = "Telegram bots can download 20 MB at most"
 
 

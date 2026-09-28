@@ -378,7 +378,7 @@ class DataSource(Entity):
         if len(rows) > 1:
             raise DataSourceAmbiguous(name, [str(row.typeid) for row in rows])
         # An authored source's folder loads on first use; the accessors below read its manifest.
-        await DataDriver.get(rows[0].provider or "")
+        await DataDriver.find(rows[0].provider or "")
         return rows[0]
 
     def _auth(self):
@@ -420,7 +420,7 @@ class DataSource(Entity):
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.ingest.session import SourceSession  # noqa: PLC0415
 
-        stype = await DataDriver.get(self.provider or "")
+        stype = await DataDriver.find(self.provider or "")
         if stype is None:
             raise LookupError(f"no data source type {self.provider!r}")
         return SourceSession(self, await stype.open(self, persona=persona))
@@ -1016,7 +1016,7 @@ class DataSource(Entity):
             # class. The poller's per-tick re-save of an existing row never pays for the lookup.
             from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-            await DataDriver.get(self.provider or "")
+            await DataDriver.find(self.provider or "")
         if self.status == SourceStatus.NEW.value:
             stype = self._driver()
             if stype is not None and stype.has_setup:
@@ -1225,7 +1225,7 @@ class DataSource(Entity):
     async def send_text(self, *, to: str, text: str, thread_key: str = "", subject: str = "", in_reply_to: str = "") -> dict:
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        driver = await DataDriver.get(self.provider or "")
+        driver = await DataDriver.find(self.provider or "")
         if driver is None or not driver.sends:
             raise RuntimeError(f"{self.provider} cannot send")
         if not (text or "").strip():
@@ -1299,6 +1299,206 @@ class DataSource(Entity):
         self.status = SourceStatus.ACTIVE.value if enabled else SourceStatus.DISABLED.value
         await self.save_runtime()
         return ApiSuccessResponse(data={"status": self.status})
+
+    @core_action.get(action_name="setup_stages")
+    async def setup_stages_action(self) -> ApiResponse:
+        """GET /api/v1/graph/data_source/{id}/setup_stages — :meth:`setup_stages`."""
+        return ApiSuccessResponse(data=[s.model_dump(mode="json") for s in await self.setup_stages()])
+
+    async def setup_stages(self) -> list:
+        """The setup wizards this source's driver declares (``setup_wizards``), each as it stands for
+        THIS source: ``done`` / ``pending`` / ``locked``. Read off each wizard's run for the source."""
+        from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
+        from flow_sdk.core.wizard.stages import stage_states  # noqa: PLC0415
+
+        driver = await driver_of(self.provider)  # an authored driver loads on first use
+        return await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
+
+    @core_action.post(action_name="step")
+    async def step_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/step ``{"step", "check"?, "values"?}`` — :meth:`step`. The
+        answer is the ``ReturnedValue`` with a 200 either way: its exit code is the answer."""
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        values = body.get("values") if isinstance(body.get("values"), dict) else {}
+        answer = await self.step(str(body.get("step") or ""), check=bool(body.get("check")), values=values)
+        return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+
+    async def step(self, name: str, *, check: bool = False, values: Optional[dict] = None):
+        """Run the setup step ``name`` this source's driver declares (``flow_sdk/sources/setup_steps.py``),
+        or the generic ``public-webhook``. ``check`` only asks whether it already holds. What the step
+        learned (a ``SourceUpdateSpec``) is stored here — config, allowed senders, credential values — and
+        the answer goes back without the secrets. Never raises for an outcome."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.sources import setup_steps as steps  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import SourceUpdateSpec, setup_steps  # noqa: PLC0415
+
+        driver = await DataDriver.find(self.provider or "")
+        if driver is None:
+            return ReturnedValue.not_found(f"no data driver {self.provider!r}")
+        try:
+            if name == steps.PUBLIC_WEBHOOK:
+                answer = await self._public_webhook(driver, check=check)
+            elif name == steps.VERIFY:
+                answer = await self._verify_step(check=check)
+            elif name == steps.ANSWERED:
+                answer = await self._answered_step(check=check)
+            elif name == steps.FIRST_TURN:
+                answer = await self._first_turn_step(check=check, wait=float((values or {}).get("wait") or 0))
+            else:
+                method = setup_steps(driver.cls).get(name)
+                if method is None:
+                    return ReturnedValue.not_found(f"{self.provider} has no setup step {name!r}")
+                live = await self._open_for_setup(driver)
+                answer = await getattr(live, method)(check=check, values={k: str(v) for k, v in (values or {}).items()})
+        except Exception as exc:  # noqa: BLE001 — a step that raises is a sentence for the person, not a 500
+            logger.warning("setup step %s of %s failed: %s", name, self.id, exc, exc_info=True)
+            return ReturnedValue.not_yet(f"{name}: {exc}")
+        update = answer.value
+        if isinstance(update, dict) and set(update) <= set(SourceUpdateSpec.model_fields):
+            update = SourceUpdateSpec.model_validate(update)
+        if isinstance(update, SourceUpdateSpec):
+            if answer.ok and not check:
+                await self._keep(driver, update)
+            answer = answer.model_copy(update={"value": update.model_copy(update={"secrets": {}}).model_dump()})
+        return answer
+
+    async def _verify_step(self, *, check: bool):
+        """The driver's own verify, as a step: ``check`` reads the status, the call re-runs it (and makes
+        the source active when it passes)."""
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+
+        if check:
+            active = self.status == SourceStatus.ACTIVE.value
+            return ReturnedValue.satisfied("active") if active else ReturnedValue.not_yet(self.setup_detail or "not verified")
+        verdict = await self.verify() or {}
+        detail = str(verdict.get("detail") or "")
+        return ReturnedValue.satisfied(detail or "verified") if verdict.get("ready") else ReturnedValue.not_yet(detail)
+
+    async def _answered_step(self, *, check: bool):
+        """Someone answers what arrives: the owning agent has a local deployment serving on this computer
+        (``Agent.run_locally``, which a call here starts when none is)."""
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
+
+        agent = await owning_agent(self)
+        if agent is None:
+            return ReturnedValue.not_applicable("this source belongs to a person, not an agent")
+        serving = [d for d in await agent.deployments() if d.target.provider == "local" and d.serving]
+        if serving:
+            return ReturnedValue.satisfied(f"{agent.name} answers here", ran=False)
+        if check:
+            return ReturnedValue.not_yet(f"{agent.name} is not running on this computer")
+        await agent.run_locally()
+        return ReturnedValue.satisfied(f"{agent.name} now answers here")
+
+    async def _first_turn_step(self, *, check: bool, wait: float):
+        """The conversation works: a message from an allowed sender (anyone, when none are named) and one
+        after it from someone else — the answer. Without ``check`` it waits up to ``wait`` seconds (the
+        person is sending it from their phone) for that to be true."""
+        import asyncio  # noqa: PLC0415
+        import time  # noqa: PLC0415
+
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+
+        allowed = {"".join(ch for ch in s if ch.isalnum()) for s in (self.allowed_senders or [])}
+
+        async def talked() -> bool:
+            rows = sorted(await SourceItem.get_all({"data_source_id": str(self.id)}) or [], key=lambda r: r.occurred_at or "")
+            mine = lambda r: not allowed or "".join(ch for ch in str(r.author_external_id or "") if ch.isalnum()) in allowed  # noqa: E731
+            first = next((i for i, r in enumerate(rows) if mine(r)), None)
+            return first is not None and any(not mine(r) for r in rows[first + 1:])
+
+        deadline = time.monotonic() + (0 if check else max(0.0, wait))
+        while True:
+            if await talked():
+                return ReturnedValue.satisfied("a message came in and the answer went back", ran=not check)
+            if time.monotonic() >= deadline:
+                return ReturnedValue.not_yet("no conversation yet — send a message from your phone")
+            # A wait on a person, polled at a human pace: the person is typing on their phone.
+            await asyncio.sleep(2.0)
+
+    async def _open_for_setup(self, driver):
+        """This source, opened as far as its setup allows: with its credential when it resolves, else
+        without one — the step that stores the credential runs before there is one to read."""
+        from flow_sdk.sources.credentials import ResolvedSecrets  # noqa: PLC0415
+
+        try:
+            return await driver.open(self)
+        except Exception:  # noqa: BLE001 — no credential yet is the normal first step
+            return await driver.open(self, credentials=ResolvedSecrets())
+
+    async def _keep(self, driver, update) -> None:
+        """Store what a setup step learned: config on the file, senders on the row, secrets in the credential."""
+        if update.config or update.allowed_senders is not None:
+            if update.config:
+                self.config = {**(self.config or {}), **update.config}
+            if update.allowed_senders is not None:
+                self.allowed_senders = list(update.allowed_senders)
+            await self.save()
+        if update.secrets:
+            from flow_sdk.builtin.credential_service import set_credential_by_name  # noqa: PLC0415
+
+            auth = driver.auth
+            if auth is None or not auth.credential:
+                raise ValueError(f"{self.provider} names no credential to keep {sorted(update.secrets)} in")
+            unknown = set(update.secrets) - set(auth.vars)
+            if unknown:
+                raise ValueError(f"{self.provider}'s credential has no {sorted(unknown)}")
+            project = await self._own_project()
+            await set_credential_by_name(
+                auth.credential, {auth.vars[key]: value for key, value in update.secrets.items()},
+                project_id=str(project.id) if project is not None else None,
+            )
+
+    async def _own_project(self):
+        """Where what this source's setup learns is kept: the SAME project its credentials are read from
+        (``owner_project`` — the owning agent's; None, the user scope, for a user-owned row). It used
+        ``_resolve_scope_project``, which answers PLACEMENT and is None for a saved row outside a
+        project-scoped request: a step's secrets were written to the user scope while the source read its
+        owner's project, so a step that ran still failed its own check."""
+        from flow_sdk.ingest.credentials import owner_project  # noqa: PLC0415
+
+        return await owner_project(self)
+
+    async def _public_webhook(self, driver, *, check: bool):
+        """The generic step for a driver that takes pushes (its ``webhook`` block): a stable public URL for
+        THIS desktop, held by the hub (``webhook/create_for_desktop``) and delivered over its socket, stored
+        as the driver's URL variable. A config ``verify_token`` (made here when the driver declares one and it
+        is empty) lets the hub answer the provider's handshake itself."""
+        import secrets  # noqa: PLC0415
+
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webhook_spec import WEBHOOK_ROUTE  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import SourceUpdateSpec  # noqa: PLC0415
+
+        hook = driver.webhook
+        if hook is None:
+            return ReturnedValue.not_applicable(f"{self.provider} takes no pushes")
+        try:
+            held = (await driver.credentials_for(self)).values.get(hook.url_var)
+        except Exception:  # noqa: BLE001 — no credential declared yet: nothing held
+            held = None
+        if check:
+            return ReturnedValue.satisfied("a public URL is set") if held else ReturnedValue.not_yet("no public URL yet")
+        config: dict = {}
+        token = str((self.config or {}).get("verify_token") or "")
+        if not token and "verify_token" in (driver.config or {}):
+            token = config["verify_token"] = secrets.token_urlsafe(24)
+        body = {
+            "name": f"{self.provider}-{self.id}",
+            "default_path": WEBHOOK_ROUTE.format(name=self.provider),
+            "filters": {"methods": list(hook.methods), "required_headers": list(hook.required_headers)},
+            **({"verify_token": token} if token else {}),
+        }
+        data = await hub_post("webhook", body, None, "create_for_desktop")
+        if not data or not data.get("url"):
+            return ReturnedValue.not_yet("sign in to Flowpad cloud first — the public URL is held by the hub")
+        update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
+        return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
 
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
@@ -1418,7 +1618,7 @@ class DataSource(Entity):
         from flow_sdk.sources.base import Source  # noqa: PLC0415
 
         try:
-            driver = await DataDriver.get(self.provider or "")
+            driver = await DataDriver.find(self.provider or "")
             if driver is None or getattr(driver.cls, "teardown", Source.teardown) is Source.teardown:
                 return ""  # nothing to undo: no source is opened for it
             async with await self.open() as live:

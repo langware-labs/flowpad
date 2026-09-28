@@ -107,7 +107,7 @@ def test_the_manifest_reflect_modes_are_the_familys(tmp_path):
 
 
 def test_every_shipped_driver_has_the_family_its_items_are():
-    """The shipped split, pinned: four file sources, two record sources, and every channel a message source."""
+    """The shipped split, pinned: four file sources, three record sources, and every channel a message source."""
     from flow_sdk.ingest.driver_registry import SHIPPED_ROOT
 
     families: dict[str, list[str]] = {}
@@ -115,8 +115,8 @@ def test_every_shipped_driver_has_the_family_its_items_are():
         if (folder / "data_driver.json").is_file():
             families.setdefault(load_driver(folder).cls.family.value, []).append(folder.name)
     assert families["object"] == ["folder", "gcs", "gdrive", "git"]
-    assert families["record"] == ["hackernews", "rss"]
-    assert len(families["message"]) == 15 and "slack" in families["message"]
+    assert families["record"] == ["hackernews", "jira", "rss"]
+    assert len(families["message"]) == 14 and "slack" in families["message"]
 
 
 def test_an_import_error_is_a_load_error_naming_the_file(tmp_path):
@@ -154,6 +154,18 @@ async def test_an_authored_folder_loads_on_first_use(tmp_path, monkeypatch):
         assert driver_registry.load_error_for("wiki-authored") == ""
     finally:
         DRIVERS.unregister("wiki-authored")
+
+
+async def test_a_name_no_driver_answers_is_loud_on_get_and_none_on_find(monkeypatch):
+    """A script that names a driver means that one: ``get`` raises, naming what IS installed, instead
+    of a ``None`` that fails a line later as ``'NoneType' object has no attribute 'family'``."""
+    from flow_sdk.builtin.data_driver import DataDriver, DataDriverNotFound
+    from flow_sdk.ingest import driver_registry
+
+    monkeypatch.setattr(driver_registry, "_authored_folder", lambda name: _async(None))
+    with pytest.raises(DataDriverNotFound, match=r"no data driver named 'no-such-driver' — installed: .*\brss\b"):
+        await DataDriver.get("no-such-driver")
+    assert await DataDriver.find("no-such-driver") is None
 
 
 async def _async(value):

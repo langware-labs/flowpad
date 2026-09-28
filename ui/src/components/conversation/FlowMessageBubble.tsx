@@ -39,6 +39,7 @@ import {
 } from '@sdk/entities/flow-message';
 import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
+import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageContextButton } from './MessageContextButton';
 import { MessageRunStatus } from './MessageRunStatus';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
@@ -701,7 +702,7 @@ export function FlowMessageBubble({
           data-testid="channel-file-lost"
         >
           <File className="h-3 w-3" />
-          {t`${a.data.replace(/^data\//, '')} — not downloaded (the link expired)`}
+          {t`${attachmentFileName(a)} — not downloaded (the link expired)`}
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />

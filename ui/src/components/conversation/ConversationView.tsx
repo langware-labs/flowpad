@@ -28,6 +28,7 @@ import { syncConversationMessages, updateMessage } from '@src/components/stream-
 import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { authoredBy, senderOf } from '@sdk/models/MessageSender';
 import { FlowMessageBubble } from './FlowMessageBubble';
+import { messageSummary } from './ChannelMessageExtras';
 import { SessionEventLine } from './SessionEventLine';
 import { SessionCard } from './SessionCard';
 import { MessageComposer } from './MessageComposer';
@@ -320,9 +321,7 @@ export function ConversationView({
     if (!parent) return null;
     const jump = () =>
       document.querySelector(`[data-testid="message-bubble-${parent.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    // A files-only message is quoted by its files' names.
-    const files = (parent.attachment ?? []).filter((a) => a.attachment_type === 'file').map((a) => a.data.replace(/^data\//, ''));
-    return { sender: parent.sender_name || parent.envelope?.sender?.name || t`Someone`, text: parent.text || files.join(', '), onJump: jump };
+    return { ...messageSummary(parent, t`Someone`), onJump: jump };
   };
 
   // Attention-driven polling: while this source-backed conversation is the
@@ -823,7 +822,7 @@ export function ConversationView({
         agentId={agentId ?? undefined}
         sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
         channelAcceptsFiles={!!channelSpec?.accepts_attachments}
-        replyTo={replyTo ? { id: replyTo.id ?? '', sender: replyTo.sender_name || t`Someone`, text: replyTo.text ?? '', inThread: !channelSpec?.quotes } : null}
+        replyTo={replyTo ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes } : null}
         onClearReply={() => setReplyTo(null)}
       />
     </div>

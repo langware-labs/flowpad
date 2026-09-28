@@ -172,6 +172,7 @@ opens a different screen and reports success.
 | Docs | `docs` | documentation |
 | Events | `events` | rules, event bus, triggers, signals, cron |
 | Files | `explorer` | file tree, folders |
+| Flowpad Assistant | `assistant` | assistant chat, help chat |
 | Graph Workflows | `graph-workflows` | workflows |
 | Home | `home` | landing, start |
 | Hooks | `hooks` | claude hooks |

@@ -1,6 +1,7 @@
 """HTTP actions for FlowMessage file transport.
 
 POST /api/v1/graph/flow-message-upload      — upload .flowmsg (multipart, global action)
+POST /api/v1/graph/flow-message-export      — pack entities into a .flowmsg with no conversation (global action)
 GET  /api/v1/graph/flow_message/{id}/create-and-download-local-flowmsg  — download .flowmsg (entity-scoped)
 GET  /api/v1/graph/flow_message/{id}/open   — deep-link: fetch from hub and open IncomingTaskDialog
 """
@@ -202,14 +203,26 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
         tmp_path.unlink(missing_ok=True)
 
     task_id = next((c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.TASK.value), None)
-    conv_id = next((c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.CONVERSATION.value), None)
+    conv_id = next(
+        (c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.CONVERSATION.value),
+        None,
+    ) or (getattr(fm, "conversation_id", None) or None)
 
+    # What the file staged, so a caller with no conversation to open (an offline
+    # export uploaded from project home) can review and install it directly.
+    from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: PLC0415
+
+    staged = await MessageAttachment.get_all({"flow_message_id": fm.id})
     return ApiSuccessResponse(
         data={
             "message_id": fm.id,
             "task_id": task_id,
             "conversation_id": conv_id,
             "was_new_task": True,
+            "attachments": [
+                {"id": ma.id, "asset_type": ma.asset_type, "asset_id": ma.asset_id, "name": ma.name}
+                for ma in staged
+            ],
         }
     )
 
@@ -234,6 +247,80 @@ async def handle_download_flow_message(fm_id: str) -> ApiResponse:
         filename=filename,
         background=BackgroundTask(lambda: os.unlink(zip_path) if zip_path.exists() else None),
     )
+
+
+async def handle_export_flow_message(body: dict) -> ApiResponse:
+    """Pack ``asset_references`` into one .flowmsg without a conversation or a row.
+
+    The message is built in memory and never saved: an offline export is a file
+    handed to someone, not a message this machine sent. Assets are packed in the
+    canonical ``<main_subdir>/<leaf>`` layout (``mirror_repo_layout=False``) — the
+    receiver has no clone of the sender's repo to mirror. A reference that names
+    nothing is refused rather than silently dropped from the file.
+    """
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.builtin.flow_message_bundle import pack_bundle
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.schema.data_spec.flow_message_export_spec import FlowMessageExportSpec
+
+    try:
+        spec = FlowMessageExportSpec.model_validate(body or {})
+    except Exception as exc:  # noqa: BLE001 — pydantic's message is the reason
+        return ApiFailResponse(message=f"not an export request: {exc}", status_code=400)
+    if not spec.asset_references:
+        return ApiFailResponse(message="nothing to export: asset_references is empty", status_code=400)
+
+    missing: list[str] = []
+    refs: list[str] = []
+    for raw in spec.asset_references:
+        try:
+            tid = TypeId(raw)
+        except Exception:  # noqa: BLE001
+            missing.append(raw)
+            continue
+        cls = SchemaRegistry.get_entity_cls(tid.type) if tid.type else None
+        if cls is None or await cls.get_one({"id": tid.id}) is None:
+            missing.append(raw)
+            continue
+        if str(tid) not in refs:
+            refs.append(str(tid))
+    if missing:
+        return ApiFailResponse(
+            message=f"not found: {', '.join(missing)}", status_code=404, data={"missing": missing}
+        )
+
+    sender = await User.current_sender_participant(None)
+    fm = FlowMessage(
+        id=FlowMessage.allocate_id({}),
+        text=spec.text,
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=ref) for ref in refs],
+        sender_id=sender.get("user_id") or None,
+        sender_name=sender.get("name") or "",
+    )
+    zip_path = await pack_bundle(fm, mirror_repo_layout=False)
+    who = re.sub(r"[^a-z0-9]+", "-", (fm.sender_name or "unknown").lower()).strip("-")[:30] or "unknown"
+    filename = f"{who}-{datetime.now(UTC).strftime('%Y%m%d-%H%M%S')}.flowmsg"
+    return FileResponse(
+        str(zip_path),
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(lambda: os.unlink(zip_path) if zip_path.exists() else None),
+    )
+
+
+@action.post(action_name="flow-message-export", types=None)
+async def export_flow_message() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info found")
+        return await handle_export_flow_message(await request_info.get_post_data() or {})
+    except Exception as e:
+        logger.error(f"[flow_message_action] export error: {e}", exc_info=True)
+        return ApiFailResponse(message=f"Export failed: {str(e)}")
 
 
 @action.post(action_name="flow-message-upload", types=None)

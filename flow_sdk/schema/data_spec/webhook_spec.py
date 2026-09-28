@@ -22,7 +22,7 @@ class DriverWebhookSpec(DataSpec):
 
     model_config = ConfigDict(frozen=True)
 
-    #: The ``auth.vars`` key whose variable holds this machine's public webhook URL (WAHA: ``webhook_url``).
+    #: The ``auth.vars`` key whose variable holds this machine's public webhook URL (WhatsApp: ``webhook_url``).
     url_var: str
     #: The methods a provider uses (a GET challenge, POST deliveries).
     methods: list[str] = Field(default_factory=lambda: ["POST"])
@@ -38,7 +38,7 @@ class DeploymentWebhookSpec(DataSpec):
     spec_kind: ClassVar[str] = "deployment.webhook"
 
     name: str
-    #: The env var the webhook's public URL is stored and placed as (``WAHA_WEBHOOK_URL``).
+    #: The env var the webhook's public URL is stored and placed as (``FLOW_WHATSAPP_WEBHOOK_URL``).
     var: str
     #: The path on the machine (the driver's route).
     path: str

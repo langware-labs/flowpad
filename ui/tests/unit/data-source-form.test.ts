@@ -13,6 +13,7 @@ import {
   choiceOf,
   emptyDraft,
   pickedFrom,
+  setUpByWizard,
   validateDraft,
 } from '@src/components/data-sources/source-form';
 
@@ -64,10 +65,10 @@ const bucket = {
 
 describe('emptyDraft starts from the Config defaults', () => {
   it('prefills a field that declares a default and leaves the rest empty', () => {
-    const waha = {
-      name: 'waha',
+    const gateway = {
+      name: 'gateway',
       config: {
-        base_url: { type: 'text', label: 'WAHA URL' },
+        base_url: { type: 'text', label: 'Gateway URL' },
         session: { type: 'text', label: 'Session' },
         types: { type: 'csv', label: 'Types' },
       },
@@ -76,9 +77,9 @@ describe('emptyDraft starts from the Config defaults', () => {
         properties: { base_url: {}, session: { default: 'default' }, types: { default: ['story', 'job'] } },
       },
     } as never;
-    const draft = emptyDraft(waha);
+    const draft = emptyDraft(gateway);
     // A list default is joined the way an edited source's stored list is shown (csv → ", ").
-    expect([draft.provider, draft.fields]).toEqual(['waha', { session: 'default', types: 'story, job' }]);
+    expect([draft.provider, draft.fields]).toEqual(['gateway', { session: 'default', types: 'story, job' }]);
     expect(emptyDraft().fields).toEqual({});
   });
 });
@@ -221,5 +222,20 @@ describe('the typed fallback', () => {
     const typed = draft('gdrive', { drive: '0ABxyz' }, {});
     const spec = { config: { drive: { type: 'text', choices: true } } } as never;
     expect(buildConfig(typed, spec)).toEqual({ drive: '0ABxyz' });
+  });
+});
+
+describe('a driver that declares setup wizards is added by name, then set up by its wizard', () => {
+  const whatsapp = { ...(rss as object), setup_wizards: [{ stage: 'test', wizard: 'whatsapp-test' }] } as never;
+
+  it('asks the form for a name only when adding; editing keeps the whole form', () => {
+    expect(setUpByWizard(whatsapp, false)).toBe(true);
+    expect(setUpByWizard(whatsapp, true)).toBe(false);
+    expect(setUpByWizard(rss, false)).toBe(false);
+  });
+
+  it('does not hold the Add button on config the wizard will ask for', () => {
+    expect(validateDraft(draft('whatsapp', {}), whatsapp, { config: false })).toEqual([]);
+    expect(validateDraft(draft('whatsapp', {}), whatsapp).join(' ')).toContain('Feed URL is required');
   });
 });

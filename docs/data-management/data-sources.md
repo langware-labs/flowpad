@@ -422,7 +422,8 @@ can overlap (see *Known gaps*).
    not honour is worse than one that omits it.
 5. Pick the family — extend `ObjectSource` (yields `FileItem`s, never a `SourceItem`),
    `RecordSource` (yields `RecordData`) or `MessageSource` (yields `MessageData`, and sends).
-   One provider with two kinds of stream is two drivers (Jira: issues and their comments).
+   One provider with two kinds of stream is two drivers (the shipped `jira` reads issues as records;
+   their comments, as messages, would be a separate driver).
 6. On an `ObjectSource` whose bytes are not yours to write, set `stamps_identity = False` and
    give the class an `origin_id_for` classmethod.
 7. Write the manifest beside it, `data_driver.json` — `kind`, `auth`, `config`,

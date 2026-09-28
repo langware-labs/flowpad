@@ -15,6 +15,9 @@ from tests.utils.snippets import doc, fence_under, run_fence
 
 pytestmark = pytest.mark.timeout(30)
 
+#: The real resolution, kept before the autouse fixtures stand in for it — the no-key test runs it.
+_REAL_EMBEDDER_FOR = reconcile.embedder_for
+
 
 @pytest.fixture
 def notes(tmp_path):
@@ -69,3 +72,24 @@ async def test_the_page_runs_in_order(notes, tmp_path, monkeypatch):
 
     ns = await _fence("4.", {**ns, "DOC": str(notes / "walk.md")})
     assert (tmp_path / "my-store").exists() and ns["chunks"][0].heading_path
+
+
+async def test_at_a_glance_covers_embeds_and_answers(notes, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    ns = await _fence("At a glance", {"NOTES": str(notes)})
+    assert ns["index"].roots == [str(notes)] and ns["index"].status == RagStatus.ACTIVE
+    assert "walk.md" in capsys.readouterr().out, "the fence prints its hits"
+
+
+async def test_with_nothing_funding_embeddings_a_search_says_so_instead_of_answering_nothing(notes, monkeypatch):
+    """Not mocked: the real resolution, on a box where no endpoint is bound and no key resolves."""
+    async def no_endpoint(self):
+        return None
+
+    monkeypatch.setattr(RagIndex, "resolve_endpoint", no_endpoint)
+    monkeypatch.setattr(reconcile, "embedder_for", _REAL_EMBEDDER_FOR)
+    index = await RagIndex.ensure_default()
+    await index.add_root(str(notes))
+    with pytest.raises(reconcile.EmbeddingUnavailable, match="store an embedding API key"):
+        await index.search("anything")
+    assert await reconcile.run_index(index) == []  # a SETUP index refuses before any paid call

@@ -61,9 +61,11 @@ CLI_TIMEOUT = 600.0
 #: A model call with no tools.
 PROMPT_TIMEOUT = 120.0
 AGENT_TIMEOUT = 1800.0
-#: How long a person gets to answer. A PRODUCT decision — the span someone is
-#: given before an op stops waiting — not a budget widened to ride out a flake.
-#: A caller may pass a shorter one; nothing raises it.
+#: How long a person gets to answer by DEFAULT. A product decision — the span
+#: someone is given before an op stops waiting — not a budget widened to ride out
+#: a flake. An ask op's own ``timeout_seconds``, or a caller's ``ask_timeout``,
+#: sets any other span: a step done in another application takes minutes, and a
+#: wizard that runs out of time is resumed, not failed.
 ASK_TIMEOUT_SECONDS = 60.0
 
 
