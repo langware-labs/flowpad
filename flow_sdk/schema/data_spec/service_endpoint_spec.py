@@ -22,6 +22,7 @@ from typing import Annotated, Any, ClassVar, Literal, Optional, Union
 
 from pydantic import BeforeValidator, ConfigDict, Field, PlainSerializer
 
+from flow_sdk.schema.data_spec.health_spec import HealthCheck
 from flow_sdk.schema.data_spec.spec import DataSpec, spec_tag
 from flow_sdk.tags.grammar import NAMESPACE_SEGMENT_PATTERN, normalize_tag
 
@@ -237,7 +238,31 @@ class ChannelBackend(DataSpec):
 Backend = Annotated[Union[StaticBackend, ProxyBackend, ChannelBackend], Field(discriminator="type")]
 
 
+# ── what a deployment declares it exposes ───────────────────────────────────
+
+
+class EndpointDeclaration(DataSpec):
+    """One service a deployment DECLARES it exposes — ``Deployment.exposes``.
+
+    The declaration is the deployment's own: what it serves, what for, what it speaks and how to tell it
+    is alive. ``backend`` is the one part that may be unknown when the deployment is declared (a port is
+    picked when the service starts, a channel is made when the loop is launched); the endpoint row fills
+    it in. A declared endpoint with no row serving it is a failing service in the node's health report.
+    """
+
+    spec_kind: ClassVar[str] = "endpoint.declaration"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    subkind: EndpointSubkind
+    protocol: TaggedProtocol
+    backend: Optional[Backend] = None
+    #: How to tell it is alive; ``None`` = the backend's default (``health_spec``).
+    check: Optional[HealthCheck] = None
+
+
 __all__ = [
+    "EndpointDeclaration",
     "ENDPOINT_SUBKINDS",
     "EndpointSubkind",
     "default_subkind",

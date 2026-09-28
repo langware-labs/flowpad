@@ -623,6 +623,11 @@ class Agent(Entity):
                 "name": f"{self.name or self.id} ({provider})",
                 # The box a placement runs on logs in as the agent itself.
                 "identity": "agent",
+                # What it exposes: its chat — an HTTP message channel its loop answers. The channel is
+                # made when the loop is launched (``ensure_chat_channel``), so the backend is not declared.
+                "exposes": [
+                    {"name": "chat", "subkind": "agent", "protocol": {"spec_kind": "api.chat.openai"}},
+                ],
                 "target": {
                     "provider": provider,
                     "scope": self.project_id or "machine",
