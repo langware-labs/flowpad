@@ -192,10 +192,10 @@ the source.
 container answers or how a provider reaches this instance is different on each. Such a value is
 one more `vars` entry (a non-secret one declares `secret: false` in the credential), resolved at
 the deployment that answers the row — so a deploy is gated on it, "use mine" copies it, and the
-hub places the deployment's own value on its machine. WAHA's `base_url` / `webhook_url` are
-`WAHA_BASE_URL` / `WAHA_WEBHOOK_URL`; a row that still carries them in its config is moved at
-boot (`migration_2026_09_place_settings`: the value into the credential at this computer, the key
-out of the file).
+hub places the deployment's own value on its machine. The WhatsApp Cloud API's `webhook_url` is
+`FLOW_WHATSAPP_WEBHOOK_URL`; a row that still carries such a key in its config is moved at boot
+(`migration_2026_09_place_settings`: the value into the credential at this computer, the key out
+of the file).
 
 One resolver reads all four (`flow_sdk/ingest/credentials.py`) and hands the result to
 the source as `self.credentials` — a source never reads the environment, the secret
@@ -218,7 +218,7 @@ A driver that takes provider pushes names the `auth.vars` key holding its public
 requests a provider sends it:
 
 ```yaml
-webhook: { url_var: webhook_url, methods: [POST], required_headers: [x-webhook-hmac] }   # WAHA
+webhook: { url_var: webhook_url, methods: [GET, POST], required_headers: [] }   # WhatsApp Cloud API
 ```
 
 `url_var` must be an `auth.vars` key (the manifest refuses one that is not): the URL is a
@@ -227,9 +227,9 @@ per such driver among the agent's sources (`Agent.webhook_specs()` → `Deployme
 `flow_sdk/schema/data_spec/webhook_spec.py`); the hub keeps it for the deployment, stores its
 stable public URL as that variable and relays deliveries to
 `/api/v1/data_source/webhook/<driver>` on whatever machine the deployment has (hub
-`docs/webhooks.md`). Nobody sets `WAHA_WEBHOOK_URL` for a cloud deployment, and "use mine"
-never copies this computer's. A driver whose callback URL lives in the provider's dashboard
-(WhatsApp Cloud API, voice_phone) declares none; its owner sets the hub URL there by hand.
+`docs/webhooks.md`). Nobody sets `FLOW_WHATSAPP_WEBHOOK_URL` for a cloud deployment, and "use
+mine" never copies this computer's. A driver whose callback URL lives in the provider's dashboard
+(voice_phone) declares none; its owner sets the hub URL there by hand.
 
 ### `reflect`
 

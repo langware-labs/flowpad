@@ -79,7 +79,7 @@ async def test_another_project_does_not_see_it(
 
     write_doc(watched)
     source, _proj = await make_source(mode)
-    other = Project(name="unrelated", fs_storage_mount_path=str(project / "elsewhere"))
+    other = Project(name="unrelated", fs_storage_mount_path=str(project.parent / "elsewhere"))
     await other.save()
 
     await poll(source)

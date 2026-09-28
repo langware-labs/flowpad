@@ -96,12 +96,14 @@ class Endpoint(DataSpec):
     spec_kind: ClassVar[str] = "demo.endpoint"
     host: str = "localhost"
     port: int
-```
 
-```python
 DataSpec.parse("demo.endpoint")   # <class 'Endpoint'> — your class
 to_authoring_form(Endpoint)       # 'demo.endpoint'
 ```
+
+Running the cell again — a notebook re-run, a REPL paste — re-binds the kind to the new
+`Endpoint`: the same module and name is the same definition. A *different* class claiming
+`demo.endpoint` raises, because a kind names exactly one shape.
 
 A registered **asset** type needs no declaration at all: its kind IS its type
 name, derived ([`docs/ontology.md`](../ontology.md) rule 4), which is why
@@ -310,7 +312,10 @@ So `markdown` needed no new type: `MarkdownSpec` was already the carrier, and
 
 ## 6. Identity
 
-A shape has no `id` field, and never does:
+A shape has no `id` field, and never does. A spec is **pure content** — what the
+file says. Identity is a **carrier** written beside it: the `id:` key of a markdown
+document's frontmatter, or `.flow/capsules/identity.json` next to a folder's main
+document.
 
 ```python
 from pathlib import Path
@@ -321,18 +326,12 @@ from flow_sdk.schema.data_spec.io import Text
 class Op(DataSpec):
     name: str
     setup: Text = ""
-```
 
-A spec is **pure content** — what the file says. Identity is a **carrier**
-written beside it: the `id:` key of a markdown document's frontmatter, or
-`.flow/capsules/identity.json` next to a folder's main document.
-
-```python
 op = Op(name="pick-port")
 root = Path("pick-port")
 op.save(root)
 # pick-port/op.json                      {"name": "pick-port"}
-# pick-port/.flow/capsules/identity.json {"data": {"id": "e3b0c442-…"}, "version": 1}
+# pick-port/.flow/capsules/identity.json {"data": {"id": "7c9e6679-…"}, "version": 1}
 
 Op.load(root) == op                 # True — content is equal
 ```

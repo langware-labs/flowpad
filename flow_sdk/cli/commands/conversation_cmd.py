@@ -337,7 +337,7 @@ def reply_on_channel(
     missing = [p for p in paths if not os.path.isfile(p)]
     if missing:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"no such file: {missing[0]}")
-    payload = {"text": text, "files": paths, **({"reply_to": reply_to.strip()} if reply_to else {})}
+    payload = {"text": text, "files": paths, **({"reply_to_id": reply_to.strip()} if reply_to else {})}
     url = f"http://127.0.0.1:{_discover_port()}/api/v1/conversations/{cid}/reply"
     body = local_request("POST", url, json=payload, timeout=30).json()
     if body.get("status") != "SUCCESS":

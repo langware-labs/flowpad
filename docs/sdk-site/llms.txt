@@ -1,0 +1,28 @@
+# Flow SDK
+
+> Agentic orchestration SDK. Git-native agents you own. Flow is a git- and file-system-native library for managing and processing data with agents. Build agents and harnesses in a few lines of Python that run on any vendor's models, on your own machines or on-prem, and grow into enterprise-grade agents that keep learning from your data. Package `flowpad`, import `flow_sdk`, CLI `flow`.
+
+The whole guide as one Markdown file: flow-sdk.md
+
+## Chapters
+
+- Chapter 1: Shapes you can trust (flow.DataSpec; page anchor #shapes): Every value is typed, frozen and file-friendly.
+- Chapter 2: Files are the database (flow.SourceItem; page anchor #files): Disk is the truth; the index rebuilds from it.
+- Chapter 3: Agents (flow.Agent, flow.AgenticProcess; page anchor #agents): A folder defines it; a process runs it, on any harness.
+- Chapter 4: Orchestration is Python (flow.ComputeOp, flow.ReturnedValue; page anchor #orchestration): Your loop is the engine. Every call answers the same way.
+- Chapter 5: Data in (flow.DataDriver, flow.DataSource; page anchor #sources): A driver talks to a system; a source is one stream on it.
+- Chapter 6: Every channel (flow.StreamInbox; page anchor #channels): One loop body answers email, Slack, Telegram and WhatsApp.
+- Chapter 7: Accounts, not tokens (flow.Connection; page anchor #connections): Sign in once; code asks for the account by name.
+- Chapter 8: Secrets, declared (flow.SecretPack, flow.SecretStore; page anchor #credentials): Declarations hold names; values live in a store git never sees.
+- Chapter 9: Place it anywhere (flow.Deployment; page anchor #ship): Same verbs on this computer or a machine of its own.
+
+## Rules
+
+You are building on the Flow SDK (Python package `flowpad`, import `flow_sdk`, CLI `flow`).
+Read the Flow SDK guide in flow-sdk.md before writing code. Follow its rules:
+- Every value you pass or return is a DataSpec subclass (frozen, extra="forbid"); never a bare dict.
+- Integrations are data driver folders: agentic-assets/data_driver/<name>/ with data_driver.json and one Source subclass in source.py.
+- Never put a secret in config. Declare it in a credential (secret_pack.json with a `setup` text) and read it from a SecretStore; accounts come from connections.
+- In a listen() loop, give every item exactly one ack() or reply().
+- Read ReturnedValue.exit_code instead of catching exceptions for outcomes.
+- Run `flow project setup --dry-run` to see what the project still needs.

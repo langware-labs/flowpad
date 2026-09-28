@@ -18,6 +18,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Button } from '@src/components/ui/button';
 
 import { AgentPlacesColumn } from './AgentPlacesColumn';
+import { AgentRequestLine } from './AgentRequestLine';
 import { AgentListField, AgentPhoneField, AgentSelectField } from './AgentProfileFields';
 import { useAgentMcpSync } from './use-agent-mcp-sync';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
@@ -473,6 +474,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
           <AgentPlacesColumn agent={agent} onMachineSize={(size) => save({ machine_size: size })} />
         </aside>
       </div>
+      {!hub && <AgentRequestLine agent={agent} displayName={title || (agent.name ?? '')} />}
     </div>
   );
 }

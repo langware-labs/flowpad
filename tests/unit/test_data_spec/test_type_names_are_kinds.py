@@ -77,6 +77,35 @@ def test_a_kind_names_exactly_one_shape() -> None:
         SchemaRegistry.register_kind("compute_op", other)
 
 
+def _define_endpoint():
+    """One definition, run as often as a notebook cell is: each call makes a NEW class object."""
+    from typing import ClassVar
+
+    class Endpoint(DataSpec):
+        spec_kind: ClassVar[str] = "demo.endpoint.rerun"
+        port: int
+
+    return Endpoint
+
+
+def test_the_same_class_defined_again_takes_its_kind_over(isolated_kinds) -> None:
+    """A re-run cell or a REPL paste used to raise "already bound to Endpoint" on the second run of a
+    documented snippet. The same module and qualified name is the same definition: it re-binds."""
+    first, second = _define_endpoint(), _define_endpoint()
+    assert first is not second
+    assert DataSpec.parse("demo.endpoint.rerun") is second
+
+
+def test_a_different_class_still_cannot_take_a_bound_kind(isolated_kinds) -> None:
+    from typing import ClassVar
+
+    _define_endpoint()
+    with pytest.raises(ValueError, match="already bound"):
+        class Impostor(DataSpec):
+            spec_kind: ClassVar[str] = "demo.endpoint.rerun"
+            host: str
+
+
 def test_the_only_kind_that_is_not_a_DataSpec_is_fs_ref() -> None:
     """A kind names a shape. In practice that means a ``DataSpec``, and the one
     SDK-registered exception is ``fs_ref`` → ``FSRef``, a plain value class

@@ -249,6 +249,8 @@ def compile_setup(
                     "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
                     "subkind": "ask", "output_spec_kind": "string",
                     "exe_data": {"prompt": _ask_prompt(req, var, ai=with_ai), "secret": var.secret},
+                    # The goal's own check: a re-run (resume) asks nobody once the values are stored.
+                    "completion_check": check,
                 }, bind=input_name(req.name, var.env_var))
             add({
                 "name": f"store-{req.name}", "label": f"Store {req.title or req.name}",

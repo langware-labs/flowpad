@@ -6,6 +6,7 @@ import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDi
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
 import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
+import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
 import { launchWizard } from '@sdk';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
@@ -217,6 +218,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
                 <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
                 {project && <ProjectCloudLinkButton project={project} />}
                 <ProjectPublishedButton projectId={projectTypeId.id} />
+                <ProjectUploadMessageButton projectId={projectTypeId.id} />
               </>
             )}
           </div>

@@ -22,7 +22,6 @@ import hashlib
 import json
 import logging
 import os
-import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,9 +34,8 @@ from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.credentials import ResolvedSecrets
-from flow_sdk.sources.errors import Rejected, SourceError
-from flow_sdk.sources.errors import Unsupported
-from flow_sdk.sources.files import LOCAL_KIND, plan_parts, resolve_files
+from flow_sdk.sources.errors import Rejected, SourceError, Unsupported
+from flow_sdk.sources.files import LOCAL_KIND, extension_of, plan_parts, resolve_files, safe_name
 from flow_sdk.sources.protocols import (
     Choosing,
     Identified,
@@ -142,6 +140,45 @@ class Pass:
     unchanged: bool = False
     #: Reaction reports the pass found — applied to the messages they name, never stored as records.
     reactions: list = field(default_factory=list)
+
+
+#: Inbound files copied at once per message — enough to beat a provider's short-lived link.
+STAGE_CONCURRENCY = 4
+
+
+def split_reactions(items: list) -> tuple[list, list]:
+    """``(messages, reactions)``: a reaction report is applied to its message, never stored as a record."""
+    reactions = [item for item in items if isinstance(item.data, ReactionData)]
+    return [item for item in items if not isinstance(item.data, ReactionData)], reactions
+
+
+async def _write_stream(home: Path, opening: Any) -> None:
+    """Write an ``Openable.open`` stream to ``home`` atomically (``.part`` then rename), every disk
+    touch off the loop — a 100 MB document is a thousand writes."""
+    await asyncio.to_thread(home.parent.mkdir, parents=True, exist_ok=True)
+    part = home.with_name(home.name + ".part")
+    fh = await asyncio.to_thread(part.open, "wb")
+    try:
+        async with opening as chunks:
+            async for chunk in chunks:
+                await asyncio.to_thread(fh.write, chunk)
+    finally:
+        await asyncio.to_thread(fh.close)
+    await asyncio.to_thread(os.replace, part, home)
+
+
+def link_or_copy(src: Path, dest: Path) -> None:
+    """``dest`` holds ``src``'s bytes: a hard link where the filesystem allows one, else a copy.
+    A no-op when ``dest`` exists — a file under a given name never changes."""
+    import shutil  # noqa: PLC0415
+
+    if dest.exists():
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.link(src, dest)
+    except OSError:  # another device, or a filesystem without hard links
+        shutil.copyfile(src, dest)
 
 
 # ── identity and provenance ────────────────────────────────────────────────────
@@ -521,14 +558,14 @@ class DriverRuntime:
             if self.is_object:
                 return await self._files(row, source, items, removed, moved, carried, dict(position.manifest), complete=complete)
             kept = [item for item in items if floor is None or (_when(item) or floor) >= floor]
-            # Inside the session: a provider's media link rarely outlives it (WAHA deletes the file in
-            # minutes, a WhatsApp URL dies in five).
+            # Inside the session: a provider's media link rarely outlives it (a WhatsApp URL dies in
+            # five minutes; a self-hosted gateway may delete the file sooner).
             kept = await self._stage(row, source, kept)
             return self._records(row, kept, carried, moved_on=carried != started_at)
 
     def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool) -> Pass:
-        reactions = [item for item in items if isinstance(item.data, ReactionData)]
-        kept = sorted((item for item in items if not isinstance(item.data, ReactionData)), key=lambda item: _when(item) or _EPOCH)
+        messages, reactions = split_reactions(items)
+        kept = sorted(messages, key=lambda item: _when(item) or _EPOCH)
         envelopes = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in kept]
         stamps = [when for when in map(_when, kept) if when is not None]
         return Pass(
@@ -549,20 +586,26 @@ class DriverRuntime:
 
     def _file_home(self, row: Any, origin: CloudOrigin, name: str) -> Path:
         digest = hashlib.sha256(f"{origin.kind}|{origin.namespace}|{origin.key}".encode()).hexdigest()[:32]
-        safe = re.sub(r"[^\w.\- ]+", "_", name or "file").strip(" .") or "file"
-        return self.files_root(row) / digest / safe[:120]
+        return self.files_root(row) / digest / safe_name(name)
 
     async def _stage(self, row: Any, source: Source, items: list) -> list:
         """Copy every inbound file's bytes to this machine while ``source`` is open; the items come back
         with each file's local ``path`` (or its ``fetch_error``). Idempotent: a file already here is
-        not fetched again."""
+        not fetched again. A few at a time — a burst of media must still beat a provider that
+        deletes its copy in minutes."""
+        gate = asyncio.Semaphore(STAGE_CONCURRENCY)
+
+        async def one(f: FileItem) -> FileItem:
+            async with gate:
+                return await self._stage_file(row, source, f)
+
         out = []
         for item in items:
             data = item.data
             if not isinstance(data, MessageData) or not data.attachments:
                 out.append(item)
                 continue
-            files = tuple([await self._stage_file(row, source, f) for f in data.attachments])
+            files = tuple(await asyncio.gather(*(one(f) for f in data.attachments)))
             out.append(item.model_copy(update={"data": data.model_copy(update={"attachments": files})}))
         return out
 
@@ -572,45 +615,35 @@ class DriverRuntime:
             return f
         if not data.name:
             # A provider that names no file (a WhatsApp photo): its handle, with the extension its type says.
-            import mimetypes  # noqa: PLC0415
-
             stem = f.origin.key.rstrip("/").rsplit("/", 1)[-1] or "file"
-            ext = mimetypes.guess_extension(data.media_type or "") or ""
+            ext = extension_of(data.media_type)
             data = data.model_copy(update={"name": stem if stem.endswith(ext) else f"{stem}{ext}"})
         home = self._file_home(row, f.origin, data.name)
         if not home.is_file():
             if not isinstance(source, Openable):
                 return f
             try:
-                home.parent.mkdir(parents=True, exist_ok=True)
-                part = home.with_name(home.name + ".part")
-                with part.open("wb") as fh:
-                    async with source.open(f) as chunks:
-                        async for chunk in chunks:
-                            fh.write(chunk)
-                os.replace(part, home)
+                await _write_stream(home, source.open(f))
             except Exception as exc:  # noqa: BLE001 — a lost file keeps its metadata and says why
                 logger.info("[ingest] %s %s: could not copy %s: %s", self.provider, row.id, f.origin.key, exc)
                 return f.model_copy(update={"data": data.model_copy(update={"fetch_error": str(exc) or type(exc).__name__})})
         size = data.size if data.size is not None else home.stat().st_size
         return f.model_copy(update={"data": data.model_copy(update={"path": str(home), "size": size})})
 
-    def _keep_sent(self, row: Any, sent: Any) -> Any:
+    async def _keep_sent(self, row: Any, sent: Any) -> Any:
         """Our sent copy points at a durable copy of each file it carried, never the caller's path —
-        an agent's outbox or a temp upload may be gone by the time anyone looks."""
-        import shutil  # noqa: PLC0415
-
+        an agent's outbox or a temp upload may be gone by the time anyone looks. A hard link where the
+        filesystem allows one, a copy where it does not; off the loop either way."""
         data = sent.data
         if not isinstance(data, MessageData) or not data.attachments:
             return sent
         kept = []
-        for f in data.attachments:
+        for i, f in enumerate(data.attachments):
             fd = f.data
             if isinstance(fd, MessageFileData) and fd.path and Path(fd.path).is_file():
-                home = self._file_home(row, CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=f"{sent.origin.key}#{len(kept)}"), fd.name or "file")
-                home.parent.mkdir(parents=True, exist_ok=True)
-                if not home.is_file():
-                    shutil.copyfile(fd.path, home)
+                origin = CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=f"{sent.origin.key}#{i}")
+                home = self._file_home(row, origin, fd.name)
+                await asyncio.to_thread(link_or_copy, Path(fd.path), home)
                 f = f.model_copy(update={"data": fd.model_copy(update={"path": str(home)})})
             kept.append(f)
         return sent.model_copy(update={"data": data.model_copy(update={"attachments": tuple(kept)})})
@@ -761,7 +794,7 @@ class DriverRuntime:
         drafted = self.cls.sends_may_draft and sent.data.sent_at is None
         recorded = bool(getattr(sent.data, "recorded", False))
         if not drafted and not recorded:
-            recorded = await self._record(row, source, self._keep_sent(row, sent))
+            recorded = await self._record(row, source, await self._keep_sent(row, sent))
         return SendOutcome(
             external_id=sent.origin.key,
             status=SendStatus.DRAFTED if drafted else SendStatus.SENT,
@@ -818,19 +851,15 @@ class DriverRuntime:
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
         from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
 
-        found = [event.item for event in events if event.item is not None]
-        reactions = [item for item in found if isinstance(item.data, ReactionData)]
-        items = [
-            envelope_of(item, data_source_id=str(row.id), provider=self.provider)
-            for item in found
-            if not isinstance(item.data, ReactionData)
-        ]
+        messages, reactions = split_reactions([event.item for event in events if event.item is not None])
+        items = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in messages]
         report = await ingest_items(items) if items else None
         if reactions:
             await apply_reactions(row, reactions)
         if not items:
             return {"ingested": 0, "reactions": len(reactions)}
         return {
+            "reactions": len(reactions),
             "ingested": len(items),
             "created": getattr(report, "created", 0),
             "ids": [o.entity_id for o in getattr(report, "outcomes", [])],

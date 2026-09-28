@@ -191,8 +191,8 @@ class Conversation(ProjectedFields, Entity):
     # is PRIVATE.
     channel: str = APIField(default=HOME_CHANNEL, sharing=Sharing.HUB_WRITE)
     channel_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
-    # The driver behind the channel — two drivers can speak one channel (WhatsApp's Cloud API and
-    # WAHA are both ``whatsapp``), and what the channel can do (files, quotes, reactions) is the
+    # The driver behind the channel — two drivers can speak one channel (WhatsApp's Cloud API and an
+    # external WhatsApp connector are both ``whatsapp``), and what the channel can do (files, quotes, reactions) is the
     # driver's. Stamped with ``channel_source_id``.
     channel_provider: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
     # ── the conversation on its channel: an email topic, a chat, a phone call, a Slack thread ──
@@ -311,7 +311,12 @@ class Conversation(ProjectedFields, Entity):
         ``reply_to`` (one of ``messages()``, or its id) quotes that message — on a channel whose
         replies only thread, the reply lands in its thread. ``files`` are paths or ``MessageFile``s;
         one the channel cannot take is refused before anything is sent."""
-        from flow_sdk.stream_inbox.outbound import outgoing_files, quoting, resolve_reply_target, send_to  # noqa: PLC0415
+        from flow_sdk.stream_inbox.outbound import (  # noqa: PLC0415
+            outgoing_files,
+            quoting,
+            resolve_reply_target,
+            send_to,
+        )
 
         target = await resolve_reply_target(str(self.id))
         if reply_to is not None:
@@ -322,7 +327,7 @@ class Conversation(ProjectedFields, Entity):
         """This conversation's messages, oldest first."""
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
-        rows = await FlowMessage.get_all({"match": {"conversation_id": str(self.id)}, "order_by": {"created_date": "asc"}})
+        rows = await FlowMessage.get_all({"match": {"conversation_id": str(self.id)}})
         # Event time first (a backfill lands in message time), then arrival.
         return sorted(rows, key=lambda m: str(m.sent_at or m.created_date or ""))
 

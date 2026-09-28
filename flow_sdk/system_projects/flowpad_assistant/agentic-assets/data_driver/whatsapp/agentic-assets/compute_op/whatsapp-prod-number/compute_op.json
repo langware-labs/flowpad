@@ -1,0 +1,16 @@
+{
+  "type": "compute_op",
+  "id": "325ec180-7c30-4d73-9936-ebdf5338112c",
+  "name": "whatsapp-prod-number",
+  "label": "Real number",
+  "description": "The permanent token sends from your real number. (Runs every time: the test mode already satisfies the checks it would share.)",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE number; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300
+  }
+}

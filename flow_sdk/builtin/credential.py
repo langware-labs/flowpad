@@ -25,6 +25,7 @@ from flow_sdk.core import Entity
 from flow_sdk.core.named_lookup import NameAmbiguous, NameNotFound
 from flow_sdk.schema.data_spec.credential_contract import SCOPE_PROJECT, SCOPE_SYSTEM, SCOPE_USER
 from flow_sdk.schema.data_spec.credential_spec import CURRENT_SCHEMA, CredentialVarSpec
+from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.secrets.requirements import SecretRequirements
 
@@ -61,6 +62,7 @@ class Credential(Entity):
     manifest_schema: int = APIField(default=CURRENT_SCHEMA)
     help_url: str = APIField(default="")
     setup_wiki: str = APIField(default="")
+    setup_wizards: list[SetupStageSpec] = APIField(default_factory=list)
     #: How an agent obtains and stores the values (``CredentialSpec.setup``).
     setup: str = APIField(default="")
     lm_provider: str = APIField(default="")

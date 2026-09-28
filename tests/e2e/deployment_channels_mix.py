@@ -186,7 +186,7 @@ class Mix:
         raise RuntimeError("the deployment's http_chat source never appeared")
 
     # ── one message, one answer ──────────────────────────────────────────────
-    async def ask(self, channel: Channel, text: str) -> str:
+    async def ask(self, channel: Channel, text: str, files: Optional[list] = None) -> str:
         """Say *text* on the channel and return the agent's answer, as the channel saw it leave."""
         if channel.provider == "http_chat":
             body: dict = {"model": "agent", "messages": [{"role": "user", "content": text}]}
@@ -200,7 +200,8 @@ class Mix:
             return reply["choices"][0]["message"]["content"]
         before = len((await self.control.get("/sent", params={"channel": channel.provider})).json())
         delivered = (await self.control.post("/deliver", json={
-            "channel": channel.provider, "text": text, "thread": channel.thread})).json()
+            "channel": channel.provider, "text": text, "thread": channel.thread,
+            **({"files": files} if files else {})})).json()
         if "error" in delivered or delivered.get("webhook_status", 200) >= 300:
             raise RuntimeError(f"delivery failed: {delivered}")
         channel.thread = channel.thread or delivered.get("thread")
@@ -339,7 +340,8 @@ async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", required=True)
     parser.add_argument("--control", required=True)
-    parser.add_argument("--channels", default="gmail,slack,whatsapp,waha,telegram,teams,agentmail,cloud_email")
+    # An external connector's channel joins with --channels ...,<name> once it is installed on the backend.
+    parser.add_argument("--channels", default="gmail,slack,whatsapp,telegram,teams,agentmail,cloud_email")
     parser.add_argument("--timeout", type=int, default=90, help="each source's thread_timeout_seconds")
     parser.add_argument("--answer-budget", type=float, default=240, help="how long one real turn may take to answer")
     parser.add_argument("--stagger", type=float, default=4, help="seconds between channels' starts")

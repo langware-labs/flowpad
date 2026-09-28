@@ -49,7 +49,7 @@ overwritten. What a channel IS — chip, transport, attachments, quotes, reactio
 read those traits and never test the channel's name or treat a missing channel as "ours". A
 source channel's `accepts_attachments`, `quotes` and `reacts` are read off the class of the driver
 behind it — `Conversation.channel_provider` (PRIVATE, stamped with `channel_source_id`), because two
-drivers can speak one channel (WhatsApp's Cloud API and WAHA are both `whatsapp`).
+drivers can speak one channel (WhatsApp's Cloud API and an external WhatsApp connector are both `whatsapp`).
 
 **A conversation knows who it is with and when it ran.** `stamp_conversation` stamps each placed
 message onto its `Conversation`: `started_at` is the earliest message's event time; `address` gains

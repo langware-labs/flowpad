@@ -8,7 +8,6 @@ supplied through the namespace, the way a reader would have them in scope.
 
 from __future__ import annotations
 
-import ast
 import asyncio
 import inspect
 import json
@@ -16,6 +15,8 @@ import os
 import re
 from pathlib import Path
 from typing import Optional
+
+from flow_sdk.snippet_launch import compile_snippet
 
 SHELF = Path(__file__).resolve().parents[2] / "docs" / "snippets"
 
@@ -67,7 +68,8 @@ def fence_under(markdown: str, heading: str, *, lang: str = "python", nth: int =
 
 
 def compile_fence(source: str, filename: str = "<snippet>"):
-    return compile(source, filename, "exec", flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+    """The snippet viewer's own compile (``flow_sdk.snippet_launch``): a fence that passes here runs there."""
+    return compile_snippet(source, filename)
 
 
 async def run_fence(

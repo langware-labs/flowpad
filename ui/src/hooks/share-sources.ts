@@ -68,6 +68,10 @@ export interface ShareSource {
    *  pushed Git worktree with a usable origin; the toggle enables only when it
    *  does, and packing revalidates (never silently falls back to copy). */
   gitPreflightRef?: TypeId;
+  /** The entity the popup's Download button packs into an offline `.flowmsg`.
+   *  Set by sources that share one real entity; absent for sessions, forwards,
+   *  ask-help and raw files, which have nothing standalone to hand over. */
+  exportRef?: TypeId;
   /** The entity whose MEMBERSHIP the recipients must be granted for this share
    *  to mean anything. A Project is the case: the conversation is only the
    *  delivery channel, and without a project role edge the hub never pushes the
@@ -108,6 +112,7 @@ export function genericEntityShareSource(
     // File-backed assets may be shared by their Git origin — the dialog's Git
     // toggle preflights this ref; eligibility is decided backend-side.
     gitPreflightRef: typeId,
+    exportRef: typeId,
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],
@@ -139,6 +144,7 @@ export function projectShareSource(
     defaultTitle: opts.label,
     bookmarkable: true,
     gitPreflightRef: typeId,
+    exportRef: typeId,
     accessGrantRef: typeId,
     prepare: resolveOnce(() =>
       Promise.resolve({
@@ -198,6 +204,7 @@ export function artifactShareSource(
     // Eligibility (clean + pushed worktree with a usable origin) is resolved by
     // the backend preflight against this ref, not the artifact's cached origin.
     gitPreflightRef: artifact.typeId,
+    exportRef: artifact.typeId,
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],

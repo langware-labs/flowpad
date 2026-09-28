@@ -67,6 +67,8 @@ async def _push_to_live_tab(question) -> bool:
             layout=WIN_LAYOUT,
             view_type=ASK_VIEW,
             pointer=question.id,
+            # A screen showing this run claims the question instead of the tab being sent away.
+            run=question.run,
         )
         return True
     except Exception:  # noqa: BLE001 — no socket, no server: both are "not shown"
