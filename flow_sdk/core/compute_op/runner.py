@@ -191,8 +191,18 @@ async def run_op(
         return _with_value(spec, done, said=after)
     return call.model_copy(update={
         "exit_code": ExitCode.NOT_YET, "value": None, "check": after,
-        "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
+        "detail": f"{spec.display_label}: {_reason(call) or f'the {spec.subkind} call ran, but the check still fails.'}",
     })
+
+
+def _reason(call: ReturnedValue) -> str:
+    """A call that FAILED says why on its last stderr line ("Meta refused that App ID …"): that sentence is
+    the person's next step, and the generic "the check still fails" would bury it. A call that succeeded
+    but did not reach the goal has no reason of its own to give."""
+    if call.exit_code is ExitCode.OK:
+        return ""
+    lines = [line.strip() for line in str(getattr(call, "stderr", "") or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
 
 
 def refused_for(spec: ComputeOpSpec) -> ReturnedValue:
