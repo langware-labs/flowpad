@@ -37,16 +37,16 @@ export function filterTeams(teams: TeamSuggestion[], query: string): TeamSuggest
 }
 
 /**
- * The role a picked team's people are invited with. A team carries no role of its
- * own on the wire (`teams` is ids only); the backend invites each expanded member
- * at `PROJECT_DEFAULT_INVITE_ROLE` (`flow_sdk/builtin/project.py`), which this mirrors.
+ * The role a picked team is shown with. A team carries no role of its own on the
+ * wire (`teams` is ids only); the backend grants the team as one principal at
+ * `PROJECT_DEFAULT_INVITE_ROLE` (`flow_sdk/builtin/project.py`), which this mirrors.
  */
 export const TEAM_INVITE_ROLE = 'member';
 
 /**
  * A picked team as a participant: ONE entry keyed `team-<id>`, never its
- * members. Its `role` is `TEAM_INVITE_ROLE`, fixed. The team is expanded to its people at send time, through its member
- * list (`Project.invite` posts it to the `share` action, whose backend expands it).
+ * members. Its `role` is `TEAM_INVITE_ROLE`, fixed. `Project.invite` posts it to the
+ * `share` action, which grants the team on the hub as ONE principal — never expanded.
  */
 export function teamParticipant(team: TeamSuggestion): ConversationParticipant {
   return {
