@@ -14851,6 +14851,10 @@ msgstr "Open the {0} driver"
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
 msgstr "Open the {PRIVACY_WIKI_PAGE} page"
 
+#: src/components/floating-chat/FloatingChatWindow.tsx
+msgid "Open the assistant in its own window, beside Flowpad"
+msgstr "Open the assistant in its own window, beside Flowpad"
+
 #: src/components/footer.tsx
 msgid "Open the help desk"
 msgstr "Open the help desk"

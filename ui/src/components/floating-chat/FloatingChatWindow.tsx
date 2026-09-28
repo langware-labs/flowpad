@@ -289,17 +289,20 @@ function FloatingChatWindowInner() {
             </span>
           )}
         </span>
+        {/* The floating window covers the page; this is the way out to a window of
+            its own beside Flowpad — so it is a labelled button, not a glyph. */}
         <Button
           type="button"
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
+          variant="default"
+          size="sm"
+          className="h-7 gap-1.5 px-2.5 text-xs font-medium"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => popOut(boundUrlRef.current)}
-          title={t`Open in new window`}
+          title={t`Open the assistant in its own window, beside Flowpad`}
           data-testid="floating-chat-popout"
         >
           <ExternalLink className="h-3.5 w-3.5" />
+          <Trans>Open in new window</Trans>
         </Button>
         <Button
           type="button"
