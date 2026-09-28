@@ -21,11 +21,11 @@ typed reply → delivery verified at the counterpart inbox, 17–18s end to end)
 
 ```python
 from flow_sdk.blocks import EmailMessageSpec, StreamInbox, workflow
-from flow_sdk.builtin.agent_registry import get_agent
+from flow_sdk.builtin.agent import Agent
 
 async with workflow("mail-concierge"):
     stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
-    agent = await get_agent("email-summarizer")
+    agent = await Agent.by_name("email-summarizer")
 
     async with agent.process_messages():
         async for m in stream_inbox.listen():         # m: Delivered[SourceItemSpec]
@@ -68,9 +68,9 @@ Control flow is Python, not configuration:
 
 ```python
 from flow_sdk.blocks import EmailMessageSpec, StreamInbox
-from flow_sdk.builtin.agent_registry import get_agent
+from flow_sdk.builtin.agent import Agent
 
-agent = await get_agent("email-summarizer")
+agent = await Agent.by_name("email-summarizer")
 stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY, senders=["boss@corp.com"])
 
 async with agent.process_messages():
@@ -93,11 +93,11 @@ live by `tests/long_tests/test_telegram_send.py`.
 
 ```python
 from flow_sdk.blocks import StreamInbox, TelegramMessageSpec, workflow
-from flow_sdk.builtin.agent_registry import get_agent
+from flow_sdk.builtin.agent import Agent
 
 async with workflow("support-bot"):
     stream_inbox = StreamInbox("@my_support_bot", provider="telegram", bot_token=TOKEN)
-    agent = await get_agent("support-agent")
+    agent = await Agent.by_name("support-agent")
 
     async with agent.process_messages():
         async for m in stream_inbox.listen():
@@ -110,9 +110,9 @@ Telegram replies to the chat. Each `MessageSpec` subclass owns its `reply_to`,
 so the loop body does not change between them.
 
 Name the class only when the loop already knows its channel, as these do. Code
-that handles whichever source it is given should ask instead —
-`await m.reply_spec(body=out.text)` (or `await stream_inbox.reply_spec(m, body=...)`),
-which routes to the driver's own rule. Naming `EmailMessageSpec` on a Slack
+that handles whichever source it is given should ask instead — `await m.reply(out.text)`
+builds the reply with the driver's own rule (`await m.reply_spec(body=…)` is that
+spec, for when you want to add files or a subject before sending). Naming `EmailMessageSpec` on a Slack
 source is not a type error: it sends a DM to the person instead of posting where
 everyone is reading.
 
@@ -126,11 +126,11 @@ against a loopback Slack.
 
 ```python
 from flow_sdk.blocks import StreamInbox, SlackMessageSpec, workflow
-from flow_sdk.builtin.agent_registry import get_agent
+from flow_sdk.builtin.agent import Agent
 
 async with workflow("channel-helper"):
     stream_inbox = StreamInbox("C0123456789", provider="slack")   # the channel id, not its name
-    agent = await get_agent("slack-summarizer")
+    agent = await Agent.by_name("slack-summarizer")
 
     async with agent.process_messages():
         async for m in stream_inbox.listen():
@@ -156,22 +156,22 @@ async with workflow("channel-helper"):
 
 One body serves every channel and both owners. `OWNER` is `None` — the local user's stream
 inbox — or an `Agent`, whose stream inbox is its own (`/dock/agent/<id>/stream_inbox`) and whose
-replies go out as the agent. `m.reply_spec(body=…)` asks the channel who a reply is addressed to,
+replies go out as the agent. `m.reply(text)` asks the channel who a reply is addressed to,
 so nothing here names a channel. Pinned by `tests/unit/test_workflows_snippets.py` over
 gmail, slack, whatsapp, telegram and agent email, for both owners.
 
 ```python
 from flow_sdk.blocks import StreamInbox, workflow
-from flow_sdk.builtin.agent_registry import get_agent
+from flow_sdk.builtin.agent import Agent
 
 async with workflow("any-channel"):
     stream_inbox = StreamInbox(ADDRESS, provider=CHANNEL, owner=OWNER)   # the channel's own id: a mailbox, a channel, a chat
-    agent = await get_agent("channel-helper")
+    agent = await Agent.by_name("channel-helper")
 
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)
-            await m.reply(await m.reply_spec(body=out.text))          # addressed the way THIS channel replies
+            await m.reply(out.text)          # addressed the way THIS channel replies
 ```
 
 An agent email address (`cloud_email`) is an agent's by definition: there is no user-owned cell
@@ -229,18 +229,18 @@ The SDK site opens with this program: §4's loop with the channel written in. Pi
 
 ```python
 from flow_sdk.blocks import StreamInbox, workflow
-from flow_sdk.builtin.agent_registry import get_agent
+from flow_sdk.builtin.agent import Agent
 
 async with workflow("any-channel"):
     # one word = one channel: gmail, slack, telegram, whatsapp
     stream_inbox = StreamInbox("support@acme.com", provider="gmail")
-    agent = await get_agent("channel-helper")
+    agent = await Agent.by_name("channel-helper")
 
     async with agent.process_messages():
         async for m in stream_inbox.listen():
             out = await agent.process_message(m)
             # the reply is addressed the way this channel replies
-            await m.reply(await m.reply_spec(body=out.text))
+            await m.reply(out.text)
 ```
 
 On another channel it is the same program with this one line changed:

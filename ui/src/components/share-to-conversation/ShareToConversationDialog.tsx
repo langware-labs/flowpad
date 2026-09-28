@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, GitBranch, Loader2, MessageSquarePlus, Send } from 'lucide-react';
+import { Check, Download, GitBranch, Loader2, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Conversation,
@@ -25,6 +25,7 @@ import { guardCloudAction } from '@src/services/privacy-guard';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import type { ShareSource } from '@src/hooks/share-sources';
+import { DownloadMessageDialog } from '@src/components/share-to-conversation/DownloadMessageForm';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
@@ -145,6 +146,7 @@ export function ShareToConversationDialog({
   const { send, busy: sendBusy, error, resetDraft } = useSendToConversation();
   // Busy state for custom commits — useSendToConversation only tracks its own.
   const [commitBusy, setCommitBusy] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const busy = sendBusy || commitBusy;
 
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
@@ -417,8 +419,30 @@ export function ShareToConversationDialog({
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-primary rtl:-scale-x-100" />
             {heading ?? <Trans>Share</Trans>}
+            {source.exportRef && !shared && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="ms-auto me-6 h-7 gap-1.5 text-xs"
+                onClick={() => setDownloadOpen(true)}
+                disabled={busy}
+                data-testid="share-download"
+                title={t`Download as a file instead of sending`}
+              >
+                <Download className="h-3.5 w-3.5" />
+                <Trans>Download</Trans>
+              </Button>
+            )}
           </DialogTitle>
         </DialogHeader>
+        {source.exportRef && (
+          <DownloadMessageDialog
+            open={downloadOpen}
+            onClose={() => setDownloadOpen(false)}
+            initial={[{ typeid: source.exportRef.toString(), label: source.label }]}
+          />
+        )}
 
         {shared ? (
           <div className="flex flex-col items-center gap-4 py-6 text-sm" data-testid="share-status">

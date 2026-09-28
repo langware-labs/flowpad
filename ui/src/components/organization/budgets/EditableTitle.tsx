@@ -41,7 +41,7 @@ export interface EditableTitleProps {
 }
 
 const RENAME_INPUT_CLASS =
-  'rounded-md border border-border bg-background px-1.5 py-0.5 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-ring';
+  'rounded-md border border-border bg-background px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring';
 
 export function EditableTitle({
   name,

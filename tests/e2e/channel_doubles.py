@@ -1,7 +1,8 @@
 """The message-channel doubles as ONE process a running backend can talk to.
 
-Every shipped message driver ships a ``Double`` in its ``tests/matrix.py`` (a loopback provider with an
-inbound you can inject and the outbound it saw). This hosts them all for a browser test: it enters each
+Every message driver — shipped, or an external connector the backend has indexed — ships a
+``Double`` in its ``tests/matrix.py`` (a loopback provider with an inbound you can inject and the outbound
+it saw). This hosts them all for a browser test: it enters each
 Double, plants the credentials the backend will resolve them with, and serves a small control API::
 
     FLOW_INSTANCE=mx-8 FLOWPAD_HUB_URL=http://localhost:8093 uv run python tests/e2e/channel_doubles.py --backend http://localhost:6009 [--channels whatsapp,slack]
@@ -60,15 +61,30 @@ class Doubles:
         #: ``(kind, key)`` to undo at shutdown: a credential's typeid, a connector's name.
         self.planted: list[tuple[str, str]] = []
         self.loop = asyncio.new_event_loop()
-        self.http = httpx.AsyncClient(base_url=self.backend, timeout=30)
+        from flow_sdk.instance_settings.cookie_gate import gate_headers  # noqa: PLC0415 — a gated box answers 403 without it
+
+        self.http = httpx.AsyncClient(base_url=self.backend, timeout=30, headers=gate_headers(self.backend))
 
     def run(self, coroutine):
         return self.loop.run_until_complete(coroutine)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
+    def folder(self, provider: str) -> Path:
+        """Where the driver ``provider`` lives: shipped, or an external connector the backend indexed
+        (its ``data_driver`` row names the folder)."""
+        if (SHIPPED_ROOT / provider).is_dir():
+            return SHIPPED_ROOT / provider
+        rows = self.run(self.http.get("/api/v1/graph/data_driver", params={"filter": json.dumps({"name": provider})})).json().get("data") or []
+        ref = next((str(r.get("asset_ref") or "") for r in rows if isinstance(r, dict) and r.get("asset_ref")), "")
+        if not ref:
+            raise SystemExit(f"no driver {provider!r}: not shipped, and the backend indexes no connector by that name")
+        path = Path(ref)
+        return path.parent if path.name == "data_driver.json" else path
+
     def start(self) -> None:
+        self.folders = {provider: self.folder(provider) for provider in self.wanted}
         for provider in self.wanted:
-            module = load_module(SHIPPED_ROOT / provider / "tests", "matrix")
+            module = load_module(self.folders[provider] / "tests", "matrix")
             if getattr(module.Double, "agent_only", False):
                 continue  # opened per agent, through /agent_mailbox
             self.doubles[provider] = module.Double().__enter__()
@@ -90,7 +106,7 @@ class Doubles:
         await asyncio.gather(*(self.plant(provider, double) for provider, double in self.doubles.items()))
 
     async def plant(self, provider: str, double) -> None:
-        auth = read_manifest(SHIPPED_ROOT / provider).auth
+        auth = read_manifest(self.folders[provider]).auth
         secrets = dict(getattr(double, "secrets", {}) or {})
         if auth is None:
             return
@@ -187,7 +203,7 @@ class Doubles:
 
     def reactions(self, channel: str) -> list:
         double = self.doubles[channel]
-        return _jsonable(self.run(self.call(double.reactions))) if hasattr(double, "reactions") else []
+        return self.run(self.call(double.reactions)) if hasattr(double, "reactions") else []
 
     def _post_webhook(self, delivered: dict) -> dict:
         """A push channel's delivery reaches the backend here; a polled one waits for its next poll."""
@@ -205,7 +221,7 @@ class Doubles:
         return {"paired": True}
 
     def sent(self, channel: str) -> list[dict]:
-        return _jsonable(self.run(self.call(self.doubles[channel].sent)))
+        return self.run(self.call(self.doubles[channel].sent))
 
     def agent_mailbox(self, agent_id: str, address: str) -> dict:
         """Agent email: the outsider mailbox that writes to ``address``, opened through the instance."""
@@ -216,15 +232,11 @@ class Doubles:
         return {"outsider_address": double.outsider_address}
 
 
-def _jsonable(value: Any) -> Any:
-    """A Double's record as JSON: a file's bytes become their size — what a check compares."""
+def _bytes_as_size(value: Any) -> Any:
+    """How a Double's record carries a file over JSON: its size — what a check compares."""
     if isinstance(value, (bytes, bytearray)):
         return {"bytes": len(value)}
-    if isinstance(value, dict):
-        return {k: _jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonable(v) for v in value]
-    return value
+    raise TypeError(f"{type(value).__name__} is not JSON serializable")
 
 
 def serve(doubles: Doubles) -> None:
@@ -233,7 +245,7 @@ def serve(doubles: Doubles) -> None:
     stop = threading.Event()
 
     def reply(status: int, payload: Any):
-        return status, json.dumps(payload).encode(), {"Content-Type": "application/json"}
+        return status, json.dumps(payload, default=_bytes_as_size).encode(), {"Content-Type": "application/json"}
 
     def respond(path: str, headers) -> tuple:
         url = urlparse(path)

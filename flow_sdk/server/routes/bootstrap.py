@@ -1110,9 +1110,22 @@ async def _seed_project_namespaces() -> None:
     is what a synchronous kind loader reads.
     """
     from flow_sdk.builtin.project_manifest import ensure_project_namespace  # noqa: PLC0415
-    from flow_sdk.fs_store.operations.all_projects import get_cached_projects  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import get_cached_projects, is_inside_any  # noqa: PLC0415
+    from flow_sdk.assets.project_manifest import manifest_path  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
     projects = await get_cached_projects()
+    # A project inside another project is never GIVEN a manifest here: rows the
+    # picker once minted per session folder would otherwise write one into the outer
+    # project on every boot, and a deleted one would come back. One that already
+    # declares its namespace is still read, so a deliberate nested project keeps it.
+    mounts = {canonical_posix_path(p.fs_storage_mount_path) for p in projects if p.fs_storage_mount_path}
+    projects = [
+        p for p in projects
+        if not (p.fs_storage_mount_path
+                and is_inside_any(canonical_posix_path(p.fs_storage_mount_path), mounts)
+                and not manifest_path(Path(p.fs_storage_mount_path)).exists())
+    ]
 
     def _sweep() -> None:
         for project in projects:

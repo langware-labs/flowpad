@@ -3,7 +3,7 @@
 A value that differs by where a source runs — where a container answers, how a provider reaches this
 instance — is a credential variable the driver maps in its manifest's ``auth.vars``, resolved per
 deployment; ``data_source.json`` travels with the repo and carries only what is true everywhere. A driver
-that moves a config field into ``auth.vars`` (WAHA's ``base_url`` / ``webhook_url`` in 0.2.178) leaves rows
+that moves a config field into ``auth.vars`` (a per-machine URL, in 0.2.178) leaves rows
 still holding the old key. For each such row this pass:
 
 * declares the variables on the driver's credential as the row's project sees it (a declared credential

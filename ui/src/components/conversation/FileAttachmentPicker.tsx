@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useState } from 'react';
 import { Paperclip, Plus, X, File } from 'lucide-react';
 import { cn } from '@src/lib/utils';
-import { isImageFile } from '@src/utils/clipboard-image';
+import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 
 interface FileAttachmentPickerProps {
@@ -153,6 +154,31 @@ export function usePickedFiles({ enabled, disabled }: { enabled: boolean; disabl
       : undefined;
 
   return { inputId, files: picked.files, rejected: picked.rejected, dragging, addFiles, removeAt, clear, dragProps };
+}
+
+/**
+ * The one image-paste path for composers that hold files until send: pasted
+ * images go through the annotator (a cancelled image is dropped) and the
+ * survivors become picked-file chips. Returns a paste handler that claims the
+ * event only when the clipboard carries images; text pastes fall through.
+ */
+export function useAnnotatedImagePaste(
+  addFiles: (files: File[]) => void,
+  { enabled }: { enabled: boolean },
+): (e: React.ClipboardEvent) => boolean {
+  return useCallback(
+    (e: React.ClipboardEvent) => {
+      if (!enabled) return false;
+      const images = imageFilesFromClipboardData(e.clipboardData, new Date(), { prefix: 'screenshot' });
+      if (!images.length) return false;
+      e.preventDefault();
+      void annotateImageFiles(images).then((annotated) => {
+        if (annotated.length) addFiles(annotated);
+      });
+      return true;
+    },
+    [addFiles, enabled],
+  );
 }
 
 /**

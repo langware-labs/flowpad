@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlsplit
 
+from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 logger = logging.getLogger(__name__)
@@ -175,9 +176,9 @@ class BrowserProfileError(Exception):
 
 
 def current_os() -> OsName:
-    if sys.platform == "darwin":
+    if sys.platform == PLATFORM_DARWIN:
         return "mac"
-    if sys.platform == "win32":
+    if sys.platform == PLATFORM_WIN32:
         return "windows"
     return "linux"
 
@@ -288,7 +289,9 @@ def find_executable(browser: BrowserDef, os_name: OsName) -> Optional[str]:
                 return found
         for env in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
             base = os.environ.get(env)
-            for rel in browser.win_exes if base else ():
+            if not base:
+                continue
+            for rel in browser.win_exes:
                 exe = Path(base) / rel
                 if exe.is_file():
                     return str(exe)
@@ -314,9 +317,9 @@ def list_browser_profiles() -> BrowserProfiles:
     return BrowserProfiles(browsers=browsers)
 
 
-def launch_argv(browser: BrowserDef, target: str, profile_id: str, url: str, os_name: OsName) -> list[str]:
+def launch_argv(kind: BrowserKind, target: str, profile_id: str, url: str, os_name: OsName) -> list[str]:
     """The command line, as a list — never a shell string, so a URL is one argument whatever it contains."""
-    if browser.kind == "firefox":
+    if kind == "firefox":
         args = ["-P", profile_id, "-new-tab", url]
     else:
         args = [f"--profile-directory={profile_id}", url]
@@ -333,8 +336,8 @@ def _check_url(url: str) -> None:
         raise BrowserProfileError("BAD_URL", f"only http(s) links open in a browser profile: {url!r}")
 
 
-def open_in_profile(req: OpenInProfileRequest) -> list[str]:
-    """Open ``req.url`` in that browser's profile; returns the argv it ran.
+def open_in_profile(req: OpenInProfileRequest) -> None:
+    """Open ``req.url`` in that browser's profile.
 
     Everything the request names is checked against what is on disk NOW: the
     browser must be in the catalog and installed, the profile in its current list.
@@ -351,7 +354,5 @@ def open_in_profile(req: OpenInProfileRequest) -> list[str]:
         raise BrowserProfileError("NOT_INSTALLED", f"{browser.name} is not installed")
     if req.profile not in {p.id for p in _read_profiles(browser, os_name)}:
         raise BrowserProfileError("UNKNOWN_PROFILE", f"{browser.name} has no profile {req.profile!r}")
-    argv = launch_argv(browser, target, req.profile, req.url, os_name)
     logger.info("browser_profiles: open %s profile=%s", browser.id, req.profile)
-    start_detached_process(argv)
-    return argv
+    start_detached_process(launch_argv(browser.kind, target, req.profile, req.url, os_name))

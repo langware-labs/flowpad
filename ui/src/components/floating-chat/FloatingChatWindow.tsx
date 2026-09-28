@@ -1,14 +1,15 @@
 import { Button } from '@src/components/ui/button';
-import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
-import { ProcessKind } from '@sdk';
-import { X } from 'lucide-react';
+import { ExternalLink, X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { cn } from '@src/lib/utils';
 import { topmost } from '@src/lib/topmost';
 import { useFloatingChat } from './FloatingChatContext';
-import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
+import type { DockPointer } from '@src/navigation/DockPointer';
+import { AssistantChat, loadPtyChatExperiment } from './AssistantChat';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface Bounds {
@@ -78,25 +79,31 @@ function clampToViewport(b: Bounds): Bounds {
  * back into the button. The transform-origin / starting transform are derived
  * from the `triggerRect` captured at click time.
  */
-// EXPERIMENT: PTY-transcript chat transport. Set
-// `localStorage.setItem('flowpad.experiment.ptyChat', '1')` (and reload) to
-// drive the assistant through a PTY worker whose FlowData is derived by
-// polling the session transcript, with the stream closing on inactivity.
-const PTY_CHAT_EXPERIMENT_KEY = 'flowpad.experiment.ptyChat';
-
-function loadPtyChatExperiment(): boolean {
-  try {
-    return localStorage.getItem(PTY_CHAT_EXPERIMENT_KEY) === '1';
-  } catch {
-    return false;
-  }
+export function FloatingChatWindow() {
+  const { currentDock } = useDockNavigation();
+  // The popped-out assistant IS the chat in its window; it never floats a second one.
+  if (currentDock?.viewType === ViewType.ASSISTANT) return null;
+  return <FloatingChatWindowInner />;
 }
 
-export function FloatingChatWindow() {
+function FloatingChatWindowInner() {
   const { t } = useLingui();
-  const { open, closeChat, triggerRect, restoredFromStorage } = useFloatingChat();
-  const { project: flowpadAssistantProject, target, isLoading } = useFlowpadAssistantProject();
+  const { open, closeChat, triggerRect, restoredFromStorage, pendingAsk, consumeAsk, popOut, publishDock } =
+    useFloatingChat();
+  const { currentDock, windowMode } = useDockNavigation();
   const [ptyExperiment] = useState<boolean>(() => loadPtyChatExperiment());
+  // The page whose chat is showing — a popout opens on that same chat.
+  const boundUrlRef = useRef<string | null>(null);
+  const onBoundChange = useCallback((dock: DockPointer | null) => {
+    boundUrlRef.current = dock ? dock.toUrl() : null;
+  }, []);
+
+  // A popped-out assistant follows the main window: report where we are. Other
+  // `win/` windows are not "where the user is".
+  const dockUrl = currentDock ? currentDock.toUrl() : '/';
+  useEffect(() => {
+    if (!windowMode) publishDock(dockUrl);
+  }, [dockUrl, windowMode, publishDock]);
 
   const [bounds, setBounds] = useState<Bounds>(() => clampToViewport(loadBounds() ?? defaultBounds()));
 
@@ -288,6 +295,18 @@ export function FloatingChatWindow() {
           size="icon"
           className="h-6 w-6"
           onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => popOut(boundUrlRef.current)}
+          title={t`Open in new window`}
+          data-testid="floating-chat-popout"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={closeChat}
           title={t`Close`}
           data-testid="floating-chat-close"
@@ -296,37 +315,13 @@ export function FloatingChatWindow() {
         </Button>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        {target ? (
-          <EntityExecutionPanel
-            target={target}
-            processType={ProcessKind.Chat}
-            className="h-full"
-            emptyStateText={t`Ask the Flowpad Assistant anything.`}
-            newSessionLabel={t`New chat`}
-            historyLabel={t`Chat history`}
-            pastSessionsLabel={t`Past chats`}
-            noPastSessionsLabel={t`No past chats`}
-            placeholder={t`What can flowpad do for you ?`}
-            dense
-            // Pin newly-spawned chat processes to the Flowpad Assistant
-            // project so the asset manager and workdir are sourced from
-            // the assistant — not whatever project the user happens to
-            // have active in the dock (e.g. flowpad-oss).
-            defaultProjectId={flowpadAssistantProject?.id ?? null}
-            defaultWorkdir={flowpadAssistantProject?.fs_storage_mount_path ?? null}
-            transport={ptyExperiment ? 'pty-poll' : 'print'}
-          />
-        ) : (
-          <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">
-            {isLoading ? (
-              <Trans>Loading Flowpad Assistant…</Trans>
-            ) : (
-              <Trans>Flowpad Assistant project not available.</Trans>
-            )}
-          </div>
-        )}
-      </div>
+      <AssistantChat
+        followedDock={currentDock}
+        visible={!isClosed && open}
+        pendingAsk={pendingAsk}
+        onAskConsumed={consumeAsk}
+        onBoundChange={onBoundChange}
+      />
     </div>,
     document.body,
   );

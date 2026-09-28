@@ -41,7 +41,7 @@ test.describe('Project doc creation — entity API', () => {
     await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
     // The project route owns identity; ProjectHome projects it through the
     // pressed scope control rather than a content-header ProjectChip.
-    await expect(page.getByText('Project assets').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('assets-page-header')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('button', { name: /^Current project/ }).first()).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
 

@@ -109,7 +109,7 @@ def instance_config(monkeypatch):
 
 @pytest.fixture
 def catalogue(monkeypatch):
-    """``catalogue("waha", ...)``: the shipped credential templates this test's catalogue holds, as the index
+    """``catalogue("whatsapp", ...)``: the shipped credential templates this test's catalogue holds, as the index
     holds them (``system``-scope rows read from the shipped folders)."""
     import json
     from pathlib import Path

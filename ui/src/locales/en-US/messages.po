@@ -255,7 +255,7 @@ msgstr "{0} — current project"
 msgid "{0} — no email sent."
 msgstr "{0} — no email sent."
 
-#. placeholder {0}: a.data.replace(/^data\//, '')
+#. placeholder {0}: attachmentFileName(a)
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0} — not downloaded (the link expired)"
 msgstr "{0} — not downloaded (the link expired)"
@@ -532,6 +532,11 @@ msgstr "{0} of {1}"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "orphan_count"
 msgstr "{0} orphan{1}"
+
+#. placeholder {0}: problems.length
+#: src/components/code-editor/SnippetView.tsx
+msgid "{0} problems"
+msgstr "{0} problems"
 
 #. js-lingui-explicit-id
 #. placeholder {0}: grandTotal.toLocaleString()
@@ -1075,6 +1080,10 @@ msgstr "1 hour"
 msgid "1 message"
 msgstr "1 message"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "1 problem"
+msgstr "1 problem"
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "1 week"
 msgstr "1 week"
@@ -1151,6 +1160,10 @@ msgstr "A chain draws on another endpoint and can only narrow what passes."
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
 msgstr "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A guided setup asks for everything else this channel needs, step by step."
+msgstr "A guided setup asks for everything else this channel needs, step by step."
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a key the hub holds (the chain could not be read from here)"
@@ -1422,8 +1435,8 @@ msgid "Add a note to the running session about this message"
 msgstr "Add a note to the running session about this message"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Add a personal note..."
-msgstr "Add a personal note..."
+#~ msgid "Add a personal note..."
+#~ msgstr "Add a personal note..."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a personal note…"
@@ -1440,6 +1453,10 @@ msgstr "Add an agent…"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add an API key"
 msgstr "Add an API key"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add and set up"
+msgstr "Add and set up"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add annotation"
@@ -1669,6 +1686,10 @@ msgstr "Add Trigger"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Add variable"
 msgstr "Add variable"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Add…"
+msgstr "Add…"
 
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: source.name
@@ -2569,9 +2590,13 @@ msgstr "Ask someone for help"
 msgid "Ask the agent to connect one"
 msgstr "Ask the agent to connect one"
 
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "Ask the Flowpad Assistant anything about this page."
+msgstr "Ask the Flowpad Assistant anything about this page."
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
-msgid "Ask the Flowpad Assistant anything."
-msgstr "Ask the Flowpad Assistant anything."
+#~ msgid "Ask the Flowpad Assistant anything."
+#~ msgstr "Ask the Flowpad Assistant anything."
 
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
@@ -3237,8 +3262,8 @@ msgid "Bullet list"
 msgstr "Bullet list"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Bundle ready — download started."
-msgstr "Bundle ready — download started."
+#~ msgid "Bundle ready — download started."
+#~ msgstr "Bundle ready — download started."
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "By"
@@ -3373,7 +3398,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
 #: src/components/assets/delete-asset-modal.tsx
@@ -3459,7 +3484,7 @@ msgstr "Cancel"
 msgid "Cancel reply"
 msgstr "Cancel reply"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 msgid "Cancelled."
 msgstr "Cancelled."
 
@@ -3524,6 +3549,10 @@ msgstr "Capabilities unavailable. Retry"
 #: src/i18n/type-labels.ts
 msgid "Capability"
 msgstr "Capability"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Carries"
+msgstr "Carries"
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/SourcePicker.tsx
@@ -3598,7 +3627,11 @@ msgstr "Channels"
 msgid "Chat"
 msgstr "Chat"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantContextChips.tsx
+msgid "Chat context"
+msgstr "Chat context"
+
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Chat history"
 msgstr "Chat history"
 
@@ -3695,6 +3728,10 @@ msgstr "Checking…"
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Checkpoint:"
 msgstr "Checkpoint:"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "checks pass"
+msgstr "checks pass"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -4790,6 +4827,11 @@ msgstr "Continue"
 msgid "Continue journey"
 msgstr "Continue journey"
 
+#. placeholder {0}: pending.label
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Continue setup: {0}"
+msgstr "Continue setup: {0}"
+
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
 msgstr "Continue this conversation"
@@ -5231,6 +5273,10 @@ msgstr "Could not disconnect from {0}."
 msgid "Could not download"
 msgstr "Could not download"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Could not download this message."
+msgstr "Could not download this message."
+
 #: src/components/account/secrets-section.tsx
 msgid "Could not enable secrets"
 msgstr "Could not enable secrets"
@@ -5443,6 +5489,10 @@ msgstr "Could not remove the row"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
 msgstr "Could not rename context"
+
+#: src/components/project-home/ProjectNameTitle.tsx
+msgid "Could not rename project"
+msgstr "Could not rename project"
 
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Could not repair the model redirect"
@@ -5690,6 +5740,10 @@ msgstr "Could not upgrade the sandbox"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not upload avatar"
 msgstr "Could not upload avatar"
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Could not upload this message."
+msgstr "Could not upload this message."
 
 #. placeholder {0}: agent.displayName
 #: src/components/agents/use-agent-launcher.ts
@@ -7267,12 +7321,13 @@ msgstr "Done!"
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Download"
 msgstr "Download"
 
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download .flowmsg"
 msgstr "Download .flowmsg"
 
@@ -7281,6 +7336,10 @@ msgstr "Download .flowmsg"
 msgid "Download {count} {0}"
 msgstr "Download {count} {0}"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Download a <0>.flowmsg</0> file. The recipient uploads it on their project home, reviews what it carries, and installs it."
+msgstr "Download a <0>.flowmsg</0> file. The recipient uploads it on their project home, reviews what it carries, and installs it."
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Download again"
 msgstr "Download again"
@@ -7288,6 +7347,10 @@ msgstr "Download again"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download all attachments"
 msgstr "Download all attachments"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Download as a file instead of sending"
+msgstr "Download as a file instead of sending"
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download attachments"
@@ -7308,6 +7371,7 @@ msgid "Download file"
 msgstr "Download file"
 
 #: src/components/conversation/chips/MessageChips.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "Download message"
 
@@ -7448,6 +7512,10 @@ msgstr "Each reply lands in the session as soon as it is ready."
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
 msgstr "Each selected project's folder is added as a context folder."
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
+msgstr "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #~ msgid "earlier output dropped — this is the tail"
@@ -8081,6 +8149,11 @@ msgstr "Everything this budget can be tuned with beyond its total and its allowe
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Everything this budget is tuned with beyond its total and its allowed models. These are set by the organization's owner."
 msgstr "Everything this budget is tuned with beyond its total and its allowed models. These are set by the organization's owner."
+
+#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+msgid "Everything this run has shown"
+msgstr "Everything this run has shown"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
@@ -8969,10 +9042,12 @@ msgstr "Flowpad"
 msgid "FlowPad API Key"
 msgstr "FlowPad API Key"
 
+#: src/components/floating-chat/AssistantPopoutView.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
+#: src/types/ViewType.ts
 msgid "Flowpad Assistant"
 msgstr "Flowpad Assistant"
 
@@ -8992,7 +9067,7 @@ msgstr "Flowpad Assistant directory is enabled. Asset availability depends on th
 #~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 #~ msgstr "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Flowpad Assistant project not available."
 msgstr "Flowpad Assistant project not available."
 
@@ -11472,7 +11547,7 @@ msgstr "Loading errors..."
 msgid "Loading feed item"
 msgstr "Loading feed item"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Loading Flowpad Assistant…"
 msgstr "Loading Flowpad Assistant…"
 
@@ -11629,7 +11704,7 @@ msgstr "Loading..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
@@ -12111,16 +12186,21 @@ msgstr "Merge conflicts"
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message"
 msgstr "Message"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Message (optional)"
-msgstr "Message (optional)"
+#~ msgid "Message (optional)"
+#~ msgstr "Message (optional)"
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
 msgstr "Message Attachment"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Message downloaded"
+msgstr "Message downloaded"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Message not queued"
@@ -12586,9 +12666,13 @@ msgid "New build"
 msgstr "New build"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "New chat"
+
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "New chat for this page"
+msgstr "New chat for this page"
 
 #: src/components/organization/org-node-management.tsx
 msgid "New class"
@@ -13375,7 +13459,7 @@ msgstr "No page exists with this name yet."
 msgid "No past builds"
 msgstr "No past builds"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "No past chats"
 msgstr "No past chats"
 
@@ -13797,6 +13881,11 @@ msgstr "No web app available"
 msgid "No web page in this view"
 msgstr "No web page in this view"
 
+#. placeholder {0}: stage.wizard
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "No wizard named {0} is installed."
+msgstr "No wizard named {0} is installed."
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr "Nobody has a budget in this team yet."
@@ -14122,6 +14211,10 @@ msgstr "Nothing to improve"
 msgid "Nothing to index"
 msgstr "Nothing to index"
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Nothing to install"
+msgstr "Nothing to install"
+
 #: src/lib/publish-state.ts
 msgid "Nothing to publish"
 msgstr "Nothing to publish"
@@ -14138,6 +14231,10 @@ msgstr "Nothing to review — the attachment has no files."
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Nothing to save"
 msgstr "Nothing to save"
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Nothing to set up."
+msgstr "Nothing to set up."
 
 #: src/pages/hub-browse/HubEntityView.tsx
 msgid "Nothing to show."
@@ -14596,6 +14693,7 @@ msgstr "Open in Flowpad"
 msgid "Open in new tab"
 msgstr "Open in new tab"
 
+#: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/top-nav-bar/OpenInWindowButton.tsx
 msgid "Open in new window"
 msgstr "Open in new window"
@@ -15126,8 +15224,8 @@ msgid "Pack keys into credentials"
 msgstr "Pack keys into credentials"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
-msgstr "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+#~ msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+#~ msgstr "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
@@ -15178,7 +15276,7 @@ msgstr "Past analyses"
 msgid "Past builds"
 msgstr "Past builds"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Past chats"
 msgstr "Past chats"
 
@@ -16736,8 +16834,10 @@ msgstr "Remote Worker Session"
 msgid "Remove"
 msgstr "Remove"
 
+#. placeholder {0}: c.label
 #. placeholder {0}: source.name
 #. placeholder {0}: source.name || source.provider
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
@@ -16933,6 +17033,7 @@ msgid "Rename failed"
 msgstr "Rename failed"
 
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/components/project-home/ProjectNameTitle.tsx
 msgid "Rename failed."
 msgstr "Rename failed."
 
@@ -16943,6 +17044,10 @@ msgstr "Rename favorite"
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 msgid "Rename folder"
 msgstr "Rename folder"
+
+#: src/components/project-home/ProjectNameTitle.tsx
+#~ msgid "Rename project"
+#~ msgstr "Rename project"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Rename this budget"
@@ -17308,6 +17413,7 @@ msgstr "Results"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/events/EventFeed.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Resume"
@@ -18117,6 +18223,7 @@ msgstr "Search any entity. Selecting one inserts a [[wikilink]] at the cursor."
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Search assets…"
 msgstr "Search assets…"
 
@@ -18474,7 +18581,7 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 #: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -18770,6 +18877,10 @@ msgstr "Set up"
 msgid "Set up (runs an agentic process)"
 msgstr "Set up (runs an agentic process)"
 
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Set up {title}"
+msgstr "Set up {title}"
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
 msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
@@ -18857,6 +18968,11 @@ msgstr "Setting up your project…"
 #: src/types/ViewType.ts
 msgid "Settings"
 msgstr "Settings"
+
+#: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Setup"
+msgstr "Setup"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
@@ -19806,6 +19922,7 @@ msgid "Star chat"
 msgstr "Star chat"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
 msgid "Start"
@@ -20589,7 +20706,7 @@ msgstr "Test passed — this source can fund a run"
 msgid "Test trigger"
 msgstr "Test trigger"
 
-#: src/components/ask/AskView.tsx
+#: src/components/ask/AskForm.tsx
 msgid "Thank you — sent."
 msgstr "Thank you — sent."
 
@@ -21318,6 +21435,10 @@ msgstr "This live-session URL is malformed or unavailable."
 msgid "this machine"
 msgstr "this machine"
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "This message carries no assets."
+msgstr "This message carries no assets."
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this minute"
 msgstr "this minute"
@@ -21468,6 +21589,7 @@ msgstr "this project's own desk"
 msgid "this project's runs"
 msgstr "this project's runs"
 
+#: src/components/ask/AskForm.tsx
 #: src/components/ask/AskView.tsx
 msgid "This question is no longer waiting."
 msgstr "This question is no longer waiting."
@@ -21772,8 +21894,6 @@ msgstr "Tip: connect GitHub to clone private repos."
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Title"
 msgstr "Title"
 
@@ -22441,9 +22561,17 @@ msgstr "Upgrading…"
 msgid "Upload"
 msgstr "Upload"
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Upload a .flowmsg and install what it carries into this project"
+msgstr "Upload a .flowmsg and install what it carries into this project"
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Upload CSV"
 msgstr "Upload CSV"
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Upload failed"
+msgstr "Upload failed"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Upload failed."
@@ -22458,6 +22586,7 @@ msgid "Upload image"
 msgstr "Upload image"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "Upload message"
 msgstr "Upload message"
 
@@ -23049,7 +23178,7 @@ msgstr "Welcome! Tell the user what this agent can do and how to start…"
 msgid "What"
 msgstr "What"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "What can flowpad do for you ?"
 msgstr "What can flowpad do for you ?"
 
@@ -23140,6 +23269,10 @@ msgstr "What should the agent do each time it runs?"
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "What should they know?"
+msgstr "What should they know?"
+
 #. placeholder {0}: readiness.environment
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "What the {0} machine still needs"
@@ -23168,6 +23301,10 @@ msgstr "What to look at"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "What went wrong? (leave empty for a full sweep)"
+
+#: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
+msgid "What would you like the agent {displayName} to do?"
+msgstr "What would you like the agent {displayName} to do?"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -23342,6 +23479,7 @@ msgid "Working Tree"
 msgstr "Working Tree"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/version-popover/diagnose-modal.tsx

@@ -68,3 +68,24 @@ export function chipStateFor(
   if (!forceShow) return 'hidden';
   return 'unavailable';
 }
+
+const NO_ATTACHMENTS: MessageAttachment[] = [];
+
+/**
+ * Staged MessageAttachment rows of ONE message — the review list for a message
+ * that has no conversation (an offline `.flowmsg` uploaded from project home).
+ * Live like the conversation query: install/uninstall UPDATEs re-emit it.
+ */
+export function useFlowMessageAttachments(flowMessageId: string | null | undefined): MessageAttachment[] {
+  const request = useMemo(
+    () =>
+      new QueryRequest({
+        type: MessageAttachment.type,
+        query: flowMessageId ? { flow_message_id: flowMessageId } : null,
+        name: 'message attachments',
+      }),
+    [flowMessageId],
+  );
+  const { data } = useEntitiesQuery<MessageAttachment>(request, { enabled: !!flowMessageId });
+  return data ?? NO_ATTACHMENTS;
+}

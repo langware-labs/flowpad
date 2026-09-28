@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 from flow_sdk.schema.types import EntityType
@@ -113,7 +113,7 @@ class Mcp(Entity):
         default="",
         description="Bundled server: path to the code file, relative to this asset's folder.",
     )
-    asset_ref: str = APIField(default="")
+    asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
 
     def to_spec(self) -> McpSpec:
         """The launch payload this asset describes.

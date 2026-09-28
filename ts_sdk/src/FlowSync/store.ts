@@ -2131,18 +2131,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (cachedSource) {
       source.expand = this.mergeExpansions(cachedSource.expand, source.expand);
 
-      // Collision occurrences are a complete backend projection. They must
-      // replace the cached array: deepAssign merges arrays by index and would
-      // otherwise retain deleted trailing paths after a 3 -> 2 -> 1 update.
-      let assignSource = source;
-      if (Array.isArray(source.asset_occurrences)) {
-        cachedSource.asset_occurrences = source.asset_occurrences.map((occurrence: AssetOccurrence) =>
-          occurrence && typeof occurrence === 'object' ? { ...occurrence } : occurrence,
-        );
-        const { asset_occurrences: _assetOccurrences, ...rest } = source;
-        assignSource = rest;
-      }
-
       const maybeOnEntityUpdate = (cachedSource as any).onEntityUpdate;
       const hasEntityUpdateHook = typeof maybeOnEntityUpdate === 'function';
       if (hasEntityUpdateHook) {
@@ -2155,11 +2143,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
       // When entities provide their own update hook, avoid clobbering normalized
       // state fields with raw snake_case payloads.
-      if (hasEntityUpdateHook && assignSource && typeof assignSource === 'object' && 'state' in assignSource) {
-        const { state: _ignoredState, ...rest } = assignSource;
+      if (hasEntityUpdateHook && source && typeof source === 'object' && 'state' in source) {
+        const { state: _ignoredState, ...rest } = source;
         this.deepAssign(cachedSource, rest);
       } else {
-        this.deepAssign(cachedSource, assignSource);
+        this.deepAssign(cachedSource, source);
       }
       // ``deepAssign`` re-adds the raw ``shared_context_entities`` /
       // ``private_context_entities`` string arrays without the constructor's
@@ -2212,9 +2200,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   public deepAssign(target: any, source: any) {
     for (const key in source) {
-      if (typeof source[key] === 'object' && source[key] !== null) {
+      if (Array.isArray(source[key])) {
+        // An array in a payload is the complete list, never a partial update.
+        // Merging it by index kept the cached tail whenever it shrank — a
+        // message's pre-download `body_missing_attachments: [x]` survived the
+        // post-download `[]`, so a fully downloaded message read as "arrived short".
+        target[key] = this.deepAssign([], source[key]);
+      } else if (typeof source[key] === 'object' && source[key] !== null) {
         if (!target[key]) {
-          target[key] = Array.isArray(source[key]) ? [] : {};
+          target[key] = {};
         }
         target[key] = this.deepAssign(target[key], source[key]);
       } else {
