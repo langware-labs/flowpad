@@ -45,6 +45,7 @@ SHAPE_PACKAGES = (
     "flow_sdk.builtin",
     "flow_sdk.core",
     "flow_sdk.db",
+    "flow_sdk.fs_store",
     "flow_sdk.schema",
     "flow_sdk.secrets",
     "flow_sdk.sources",
@@ -122,8 +123,8 @@ EXPECTED_PAIRS = {
     ("SCALAR", "DIR_LIST"),          # a list of shapes: JSON-able, but io explodes it
     ("SCALAR", "DIR_DICT"),          # a dict of shapes: same
     ("ROWS", "DIR_LIST"),            # `Dataset.examples` — the single ROWS field
-    ("FILE_REF", "DIR_LIST"),        # a `list[FileRef]`: one path to the entity
-                                     # serializer, a directory to the io walker
+    # (`FILE_REF`/`DIR_LIST` went with `MessageSpec.attachments: list[FileRef]` — an outgoing
+    # message's files are `MessageFile` values now, which land as SCALAR/DIR_LIST.)
 }
 
 
@@ -148,7 +149,7 @@ def test_neither_table_determines_the_other():
         by_placement[placement].add(kind)
 
     assert by_kind["SCALAR"] == {"INLINE", "DIR_LIST", "DIR_DICT"}
-    assert by_placement["DIR_LIST"] == {"SCALAR", "ROWS", "FILE_REF"}
+    assert by_placement["DIR_LIST"] == {"SCALAR", "ROWS"}
 
 
 def test_a_list_or_dict_of_shapes_is_where_the_two_walkers_part():

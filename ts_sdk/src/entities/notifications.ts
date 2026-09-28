@@ -119,11 +119,38 @@ export async function refreshNotifications(projectPath?: string): Promise<void> 
  * seconds; the reply appears in the conversation by the ordinary ingest route
  * when the worker records it.
  */
-export async function sendToChannel(conversationId: string, text: string, agentId?: string): Promise<void> {
+export interface ChannelSendExtras {
+  /** The message this reply quotes (a FlowMessage id); on a thread-only channel it answers in its thread. */
+  replyToId?: string | null;
+  /** Files to send — the channel refuses what it cannot take, with the reason. */
+  files?: File[];
+}
+
+export async function sendToChannel(
+  conversationId: string,
+  text: string,
+  agentId?: string,
+  extras: ChannelSendExtras = {},
+): Promise<void> {
   if (!conversationId) {
     throw new Error('sendToChannel requires a conversationId');
   }
   const action = new ActionInfo('send_external', 'conversation', conversationId, 'POST');
-  action.bodyParameters = { text, ...(agentId ? { agent_id: agentId } : {}) };
+  const files = extras.files ?? [];
+  if (files.length > 0) {
+    // Multipart: binary bodies only travel over REST.
+    const form = new FormData();
+    form.append('text', text);
+    if (agentId) form.append('agent_id', agentId);
+    if (extras.replyToId) form.append('reply_to_id', extras.replyToId);
+    for (const file of files) form.append('files', file, file.name);
+    action.bodyParameters = form;
+  } else {
+    action.bodyParameters = {
+      text,
+      ...(agentId ? { agent_id: agentId } : {}),
+      ...(extras.replyToId ? { reply_to_id: extras.replyToId } : {}),
+    };
+  }
   await dataManager.callAction(action);
 }

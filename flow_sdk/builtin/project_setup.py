@@ -26,7 +26,6 @@ import sys
 from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
-from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
 from flow_sdk.schema.data_spec.project_setup_spec import (
     REQUIREMENT_GAP,
     REQUIREMENT_OAUTH,
@@ -38,9 +37,9 @@ from flow_sdk.schema.data_spec.project_setup_spec import (
 from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.credential import Credential
     from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.project import Project
-    from flow_sdk.builtin.secret_pack import SecretPack
     from flow_sdk.schema.data_spec.credential_status_spec import CredentialStatusRowSpec
 
 #: The agent every AI rung runs — "reaches one ComputeOp goal after the cheap attempt failed".
@@ -82,8 +81,8 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequir
     )
 
 
-def _from_template(template: "SecretPack", environment: str, used_by: list[str]) -> SetupRequirementSpec:
-    required = set(template.required_var_names(environment))
+def _from_template(template: "Credential", used_by: list[str]) -> SetupRequirementSpec:
+    required = set(template.required_var_names())
     setup = str(getattr(template, "setup", "") or "")
     return SetupRequirementSpec(
         kind=REQUIREMENT_PACK, name=str(template.name), title=template.title or str(template.name),
@@ -97,25 +96,24 @@ def _from_template(template: "SecretPack", environment: str, used_by: list[str])
     )
 
 
-async def _auth_of(source: "DataSource") -> Any:
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
-
-    try:
-        await DataDriver.get(source.provider or "")  # an authored driver's folder loads on first use
-    except Exception:  # noqa: BLE001 — a driver that cannot load needs nothing we can name
-        return None
-    return source._auth()
-
-
-async def collect_requirements(
-    project: "Project", environment: str = DEFAULT_ENVIRONMENT
-) -> list[SetupRequirementSpec]:
+async def collect_requirements(project: "Project", deployment_id: str = "") -> list[SetupRequirementSpec]:
     """Everything ``project`` needs a person (or an agent) to provide, in the order to do it:
     connections first, then credentials, then what cannot be set up here. Read-only."""
     from flow_sdk.builtin import credential_service  # noqa: PLC0415
+    from flow_sdk.builtin.agent import Agent  # noqa: PLC0415
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+    from flow_sdk.builtin.readiness import (
+        connection_of,  # noqa: PLC0415
+        requirements_of_source,  # noqa: PLC0415
+    )
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.requirement_spec import (  # noqa: PLC0415
+        REQUIREMENT_CREDENTIAL,
+        REQUIREMENT_VARIABLE,
+        RequirementSpec,
+    )
 
-    status = await credentials_status(project, environment)
+    status = await credentials_status(project, deployment_id)
     rows: dict[str, "CredentialStatusRowSpec"] = {}
     for row in status.credentials:  # user first, then project: the project's own wins
         rows[row.name] = row
@@ -125,39 +123,37 @@ async def collect_requirements(
     packs: dict[str, list[str]] = {row.name: [PROJECT] for row in status.credentials if row.scope == "project"}
     gaps: list[SetupRequirementSpec] = []
 
-    def pack_for(env_var: str) -> Optional[str]:
-        """The credential that declares ``env_var``: one in scope, else a shipped template."""
-        for row in rows.values():
-            if env_var in {v.env_var for v in row.vars}:
-                return row.name
-        return next((str(t.name) for t in templates if env_var in t.var_names()), None)
+    def need(req: "RequirementSpec", who: str) -> Optional[str]:
+        """Fold one requirement into the plan; the variable name when nothing declares it."""
+        if grant := connection_of(req):
+            provider, scopes = grant
+            entry = oauth.setdefault(provider, {"scopes": [], "used_by": []})
+            entry["scopes"] += [s for s in scopes if s not in entry["scopes"]]
+            if who not in entry["used_by"]:
+                entry["used_by"].append(who)
+        elif req.kind == REQUIREMENT_CREDENTIAL:
+            if who not in packs.setdefault(req.name, []):
+                packs[req.name].append(who)
+        elif req.kind == REQUIREMENT_VARIABLE:
+            return req.name
+        return None  # an API key is the credential's to provide; IAM is a deployment's grant
 
+    # The same derivation an agent's requirements come from (``builtin/readiness.py``), per source;
+    # then what each of the project's agents authored.
     for source in await project_sources(project):
-        auth = await _auth_of(source)
-        if auth is None:
-            continue
         who = str(source.name or source.provider)
-        if auth.connector:
-            entry = oauth.setdefault(auth.connector, {"scopes": [], "used_by": []})
-            entry["scopes"] += [s for s in auth.scopes if s not in entry["scopes"]]
-            entry["used_by"].append(who)
-            continue
-        if auth.credential:
-            packs.setdefault(auth.credential, []).append(who)
-            continue
-        # env / secrets: each name from whichever credential declares it (one source may span several).
-        unclaimed = []
-        for env_var in list(auth.env) or list(auth.secrets):
-            name = pack_for(env_var)
-            if name is None:
-                unclaimed.append(env_var)
-            elif who not in packs.setdefault(name, []):
-                packs[name].append(who)
+        unclaimed = [name for req in await requirements_of_source(source, project) if (name := need(req, who))]
         if unclaimed:
             gaps.append(SetupRequirementSpec(
                 kind=REQUIREMENT_GAP, name=who, used_by=[who],
                 note=f"needs {', '.join(unclaimed)}, and no credential declares it — add one with `setup` instructions",
             ))
+    for agent in await Agent.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)]))):
+        who = str(agent.name or agent.id)
+        for req in agent.requirements or []:
+            if not req.derived and (name := need(req, who)):
+                gaps.append(SetupRequirementSpec(kind=REQUIREMENT_GAP, name=name, used_by=[who],
+                                                 note=f"{who} needs {name}, and no credential declares it"))
 
     out = [
         SetupRequirementSpec(kind=REQUIREMENT_OAUTH, name=provider, title=provider,
@@ -169,7 +165,7 @@ async def collect_requirements(
         if name in rows:
             out.append(_from_row(rows[name], used_by))
         elif name in by_template:
-            out.append(_from_template(by_template[name], environment, used_by))
+            out.append(_from_template(by_template[name], used_by))
         else:
             out.append(SetupRequirementSpec(
                 kind=REQUIREMENT_GAP, name=name, used_by=used_by,
@@ -201,23 +197,33 @@ def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec, *, ai: bool) -> st
     return "\n".join(lines)
 
 
-def _ai_prompt(req: SetupRequirementSpec, project_id: str) -> str:
-    """The contract around the credential's own ``setup`` (which rides the op's ``setup``)."""
-    store = f"flow credentials set {req.name} --project {project_id} VAR=<value>"
+def _ai_prompt(req: SetupRequirementSpec, project_id: str, target: tuple[str, ...] = ()) -> str:
+    """The contract around the credential's own ``setup`` (which rides the op's ``setup``).
+
+    The store command is the one the checks run — this interpreter's ``flow``, so it reaches the same
+    install and instance — and it reads ``VAR=VALUE`` lines on stdin: a value on the command line is
+    visible to every process on the box and lands in the agent's own transcript."""
+    store = _flow("credentials", "set", req.name, "--project", project_id, *target, "--stdin", platform=sys.platform)
     return (
-        f"Set up the credential {req.title or req.name!r} ({req.name}) for this project, in development, "
-        "following the instructions below.\n"
-        f"Store every value with `{store}` — that command is the only place a value goes. Never print, "
-        "echo or repeat a value: not in your reply, not in a file, not in a log.\n"
+        f"Set up the credential {req.title or req.name!r} ({req.name}) for this project, "
+        f"{'in development' if not target else 'for deployment ' + target[-1]}, "
+        "following the instructions below. Where they say `flow credentials set …`, use the command below.\n"
+        f"Store the values by piping `VAR=VALUE` lines into:\n\n    {store}\n\n"
+        "That command is the only place a value goes. Produce each value inside the pipe that feeds it "
+        "(a generator, a file, a command's output) so it never passes through you: never print, echo or "
+        "repeat a value — not in a command line, your reply, a file or a log.\n"
         "If a value needs the person (their account, a code sent to them), say exactly what they must do, and stop."
     )
 
 
 def compile_setup(
-    project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True
+    project_id: str, requirements: list[SetupRequirementSpec], *, ai: bool = True, deployment_id: str = ""
 ) -> tuple[WizardSpec, dict[str, ComputeOpSpec]]:
     """The wizard for ``requirements``, and the ops it calls by name. Every step continues on failure:
-    one credential nobody can provide must not stop the next one."""
+    one credential nobody can provide must not stop the next one. ``deployment_id``: store and check
+    each value where that deployment keeps it (default: this computer)."""
+    target = ("--deployment", deployment_id) if deployment_id else ()
+    where = f"deployment {deployment_id}" if deployment_id else "development"
     ops: dict[str, ComputeOpSpec] = {}
     steps: list[dict[str, Any]] = []
 
@@ -237,7 +243,7 @@ def compile_setup(
             })
         elif req.kind == REQUIREMENT_PACK:
             with_ai = ai and bool(req.setup.strip())
-            check = _cli("credentials", "check", req.name, "--project", project_id)
+            check = _cli("credentials", "check", req.name, "--project", project_id, *target)
             for var in req.missing:
                 add({
                     "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
@@ -246,15 +252,15 @@ def compile_setup(
                 }, bind=input_name(req.name, var.env_var))
             add({
                 "name": f"store-{req.name}", "label": f"Store {req.title or req.name}",
-                "description": f"{req.name} has every value it needs in development.",
-                "subkind": "cli", "exe_data": _cli("credentials", "set", req.name, "--project", project_id, "--from-inputs"),
+                "description": f"{req.name} has every value it needs in {where}.",
+                "subkind": "cli", "exe_data": _cli("credentials", "set", req.name, "--project", project_id, *target, "--from-inputs"),
                 "completion_check": check,
             })
             if with_ai:
                 add({
                     "name": f"ai-{req.name}", "label": f"AI setup: {req.title or req.name}",
-                    "description": f"{req.name} has every value it needs in development.",
-                    "subkind": "agent", "exe_data": {"agent": AI_AGENT, "prompt": _ai_prompt(req, project_id)},
+                    "description": f"{req.name} has every value it needs in {where}.",
+                    "subkind": "agent", "exe_data": {"agent": AI_AGENT, "prompt": _ai_prompt(req, project_id, target)},
                     "setup": req.setup,
                     "completion_check": check,
                 })

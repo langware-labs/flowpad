@@ -52,6 +52,12 @@ interface MessageComposerProps {
   draft?: FlowMessage | null;
   /** Draft mode only — fires after a successful discard. */
   onAfterDiscard?: () => void;
+  /** A channel send can carry files (`ChannelSpec.accepts_attachments`): the paperclip is live. */
+  channelAcceptsFiles?: boolean;
+  /** The message the next channel send answers; `inThread` when the channel's replies only thread. */
+  replyTo?: { id: string; sender: string; text: string; inThread?: boolean } | null;
+  /** Dismiss the reply banner (and fires after a send that answered it). */
+  onClearReply?: () => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -139,6 +145,9 @@ export function MessageComposer({
   onSent,
   draft,
   onAfterDiscard,
+  channelAcceptsFiles = false,
+  replyTo = null,
+  onClearReply,
 }: MessageComposerProps) {
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
@@ -166,9 +175,10 @@ export function MessageComposer({
   const startsSession = canStartSession && promptMode;
   const isBusy = sending || discarding;
   const isDisabled = disabled || isBusy;
-  // A channel send carries text only, so offering the paperclip would
-  // invite an attachment the send silently drops.
-  const attachmentsDisabled = isDisabled || !!channel;
+  // A channel carries files only when its spec says so — offering the paperclip anywhere else would
+  // invite an attachment the channel refuses. Assets are Flowpad's own: never through a channel.
+  const attachmentsDisabled = isDisabled || (!!channel && !channelAcceptsFiles);
+  const assetsDisabled = isDisabled || !!channel;
 
   // Auto-grow the composer to fit what's been typed so far — wrapped lines
   // count, not just explicit newlines — up to MAX_COMPOSER_HEIGHT_PX, after
@@ -295,8 +305,12 @@ export function MessageComposer({
         // through a Flowpad-Cloud login to send an email. Branch on the CALL
         // only — an early return here would have to restate the cleanup below,
         // and the first version of it restated one quarter of it.
-        await sendToChannel(effectiveConversationId, messageBody, agentId);
-        onChannelSent?.(messageBody);
+        await sendToChannel(effectiveConversationId, messageBody, agentId, {
+          replyToId: replyTo?.id || null,
+          files: files.length > 0 ? files : undefined,
+        });
+        onChannelSent?.(messageBody || files.map((f) => f.name).join(', '));
+        onClearReply?.();
       } else {
         // Cloud reply needs an authenticated hub token; otherwise the hub POST
         // 401s and the send fails silently. Route through OAuth first.
@@ -441,7 +455,7 @@ export function MessageComposer({
         trigger={
           <button
             type="button"
-            disabled={attachmentsDisabled}
+            disabled={assetsDisabled}
             title={t`Attach an asset (skill, agent, doc, spec)`}
             data-testid="attach-asset-button"
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
@@ -646,6 +660,28 @@ export function MessageComposer({
 
   return (
     <div className="space-y-1.5">
+      {replyTo && (
+        <div
+          className="flex items-start gap-2 rounded border-s-2 border-primary/60 bg-muted/40 px-2 py-1 text-xs"
+          data-testid="composer-reply-banner"
+        >
+          <div className="min-w-0 flex-1">
+            <span className="font-semibold text-primary/80">
+              {replyTo.inThread ? t`Replying in the thread of ${replyTo.sender}` : t`Replying to ${replyTo.sender}`}
+            </span>
+            <span className="line-clamp-1 break-words text-muted-foreground">{replyTo.text || t`(a file)`}</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClearReply}
+            title={t`Cancel reply`}
+            aria-label={t`Cancel reply`}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       <div
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}

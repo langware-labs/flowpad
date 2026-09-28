@@ -595,6 +595,12 @@ class Entity(DBEntity):
     # keeps "working" while the value it meant to set exists nowhere.
     _strict_init: ClassVar[bool] = False
 
+    #: A ``remote`` row whose hub counterpart owns live resources (a machine, a mailbox, stored
+    #: secrets): deleting it removes the hub row FIRST, and the local delete fails — the row kept
+    #: as the handle to retry — when the hub cannot. Every other remote row's hub mirror is
+    #: best-effort (``handle_delete_by_id``).
+    owns_hub_delete: ClassVar[bool] = False
+
     def __init__(self, **kwargs):
         if type(self)._strict_init and not lenient_load_active():
             unknown = sorted(kwargs.keys() - _declared_fields(type(self)))
@@ -1991,6 +1997,10 @@ class Entity(DBEntity):
     @classmethod
     async def delete_by_id(cls, eid: str):
         """Override delete_by_id to invalidate cache when entity is deleted."""
+        if cls.owns_hub_delete:
+            # Through the instance, so the hub is asked first (see ``delete``).
+            row = await cls.get_by_id(eid)
+            return await row.delete() if row is not None else False
         # Invalidate cache before deletion
         from ..cache.entity_cache import entity_cache
 
@@ -2354,6 +2364,7 @@ class Entity(DBEntity):
         Pure inverse of ``share``: ``recursive`` first unshares each child so
         the subtree is detached/deleted bottom-up, then deletes this entity on
         the hub and flips ``remote=False`` locally. Owner-gated server-side.
+        A hub refusal raises ``HubError``; a 404 means it is already gone.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
@@ -2371,7 +2382,11 @@ class Entity(DBEntity):
                 raise RuntimeError("Cloud login required before unshare()")
             path = build_hub_url(self)
             async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-                await client.request("DELETE", path)
+                response = await client.request("DELETE", path)
+            if response.status_code >= 400 and response.status_code != 404:  # 404: already gone
+                from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+
+                raise HubError(response.status_code, f"the hub did not delete {self.typeid}")
             if "remote" in type(self).model_fields:
                 self.remote = False
         return self
@@ -2935,6 +2950,10 @@ class Entity(DBEntity):
 
     async def delete(self):
         """Override delete to invalidate cache when entity is deleted."""
+        if type(self).owns_hub_delete and self.remote:
+            # Before any local side effect: a hub refusal (HubError) keeps the row whole.
+            await self.unshare(recursive=False)
+
         # Invalidate cache before deletion
         from ..auth.auth_cache import get_auth_cache
         from ..cache.entity_cache import entity_cache, uname_cache

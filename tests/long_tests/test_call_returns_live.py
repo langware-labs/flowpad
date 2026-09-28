@@ -18,6 +18,7 @@ import pytest
 from flow_sdk.core.compute_op import runner
 from tests.test_settings import test_service_config
 from tests.unit.test_call_returns_snippets import LONG_TIER, _scope, fences, with_assertions
+from tests.utils.snippets import record_run
 
 pytestmark = [
     pytest.mark.skipif(not test_service_config.deep_testing, reason="Skipping long tests when DEEP_TESTING is disabled"),
@@ -50,6 +51,7 @@ async def test_every_live_fence_runs_as_written(index, tmp_path, bootstrapped_cl
     scope = _scope(tmp_path)
     exec("async def __fence():\n" + textwrap.indent(body, "    "), scope)
     await scope["__fence"]()
+    record_run(LIVE[index])
 
 
 @pytest.mark.asyncio

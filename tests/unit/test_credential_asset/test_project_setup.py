@@ -21,34 +21,14 @@ from typer.testing import CliRunner
 from flow_sdk.builtin import credential_service, project_setup
 from flow_sdk.builtin.credential_service import CredentialError, save_credential
 from flow_sdk.builtin.data_source import DataSource
-from flow_sdk.builtin.secret_pack import SecretPack
 from flow_sdk.cli.commands import credentials_cmd, project_cmd
-from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_OAUTH, REQUIREMENT_PACK
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, PromptResult
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-SHIPPED = Path(project_setup.__file__).parents[1] / "system_projects/flowpad_assistant/agentic-assets/secret_pack"
+SHIPPED = Path(project_setup.__file__).parents[1] / "system_projects/flowpad_assistant/agentic-assets/credential"
 TOKEN = "123456:telegram-token-never-printed"
-
-
-def _template(name: str) -> SecretPack:
-    """A shipped catalogue entry as the index holds it: a ``system``-scope row."""
-    spec = CredentialSpec.model_validate(json.loads((SHIPPED / name / "secret_pack.json").read_text()))
-    fields = {f: getattr(spec, f) for f in credential_service._MANIFEST_FIELDS}
-    return SecretPack(name=spec.name, scope="system", manifest_schema=spec.manifest_schema, **fields)
-
-
-@pytest.fixture
-def templates(monkeypatch):
-    shipped = [_template(n) for n in ("gmail", "openai", "telegram", "twilio")]
-
-    async def catalogue():
-        return shipped
-
-    monkeypatch.setattr(credential_service, "shipped_templates", catalogue)
-    return shipped
 
 
 def _sources(monkeypatch, *providers: str) -> None:
@@ -65,14 +45,16 @@ def _sources(monkeypatch, *providers: str) -> None:
 
 
 async def test_every_shipped_credential_carries_setup_instructions():
-    repo_packs = Path(__file__).parents[3] / "agentic-assets/secret_pack"
+    repo_packs = Path(__file__).parents[3] / "agentic-assets/credential"
     folders = [*SHIPPED.iterdir(), *(repo_packs.iterdir() if repo_packs.is_dir() else [])]
-    manifests = [json.loads((f / "secret_pack.json").read_text()) for f in folders if (f / "secret_pack.json").is_file()]
+    manifests = [json.loads((f / "credential.json").read_text()) for f in folders if (f / "credential.json").is_file()]
     assert manifests
     bare = [m["name"] for m in manifests if not str(m.get("setup") or "").strip()]
     assert bare == [], "a credential Flowpad ships must say how to obtain and store its values"
     for manifest in manifests:
-        assert f"flow credentials set {manifest['name']}" in manifest["setup"], manifest["name"]
+        assert f"flow credentials set {manifest['name']} --stdin" in manifest["setup"], (
+            f"{manifest['name']}: a value is piped in, never an argument (argv and the agent's transcript both keep it)"
+        )
 
 
 async def test_a_credential_without_setup_instructions_is_refused(project):
@@ -170,6 +152,18 @@ async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, 
     assert "ai-telegram" not in [s.id for s in no_ai.steps]
 
 
+async def test_a_deployment_setup_stores_and_checks_where_that_deployment_keeps_values(project, templates, monkeypatch):
+    _sources(monkeypatch, "telegram")
+    reqs = await project_setup.collect_requirements(project, "d-1")
+
+    _wizard, ops = project_setup.compile_setup(project.id, reqs, deployment_id="d-1")
+
+    for name in ("store-telegram", "ai-telegram"):
+        assert "--deployment d-1" in ops[name].completion_check.command_for("linux")
+    assert "--deployment d-1" in ops["store-telegram"].exe_data.command_for("linux")
+    assert "--deployment d-1 --stdin" in ops["ai-telegram"].exe_data.prompt
+
+
 # ── run: `flow project setup`, its shell bridged into the real CLI ───────────
 
 
@@ -183,9 +177,9 @@ async def cli(monkeypatch, project):
     monkeypatch.setattr(credentials_cmd, "_here", lambda coro: asyncio.run_coroutine_threadsafe(coro, loop).result())
     ran: list[list[str]] = []
 
-    def invoke(argv: list[str], env: dict) -> CliResult:
+    def invoke(argv: list[str], env: dict, stdin: str = "") -> CliResult:
         ran.append(argv)
-        said = CliRunner().invoke(flow_cli.app, argv, env=env)
+        said = CliRunner().invoke(flow_cli.app, argv, env=env, input=stdin)
         return CliResult(exit_code=0 if said.exit_code == 0 else 1, returncode=said.exit_code,
                          stdout=said.stdout, stderr=getattr(said, "stderr", ""))
 
@@ -236,10 +230,10 @@ async def test_an_empty_answer_hands_the_credential_to_the_ai_setup(project, tem
     prompts: list[dict] = []
 
     async def agent(**call):
-        """The provisioner, doing what its instructions say: store the value through the CLI."""
+        """The provisioner, doing what its instructions say: pipe the value into the store command."""
         prompts.append(call)
         stored = await asyncio.to_thread(cli["invoke"], ["credentials", "set", "telegram", "--project", project.id,
-                                                          f"TELEGRAM_BOT_TOKEN={TOKEN}"], {})
+                                                          "--stdin"], {}, f"TELEGRAM_BOT_TOKEN={TOKEN}\n")
         assert stored.ok, stored.stdout
         return PromptResult.satisfied("stored it", text="Stored the bot token.")
 
@@ -252,7 +246,9 @@ async def test_an_empty_answer_hands_the_credential_to_the_ai_setup(project, tem
     (call,) = prompts
     assert call["agent"] == "provisioner"
     assert "@BotFather" in call["prompt"], "the credential's own setup instructions"
-    assert "never print" in call["prompt"].lower() and f"--project {project.id}" in call["prompt"]
+    assert "never print" in call["prompt"].lower() and f"--project {project.id} --stdin" in call["prompt"]
+    assert "VAR=<value>" not in call["prompt"], "the store command never takes a value as an argument"
+    assert all(TOKEN not in " ".join(argv) for argv in cli["ran"]), "the agent's value never reached an argv"
     assert "left empty" in out and "✗  Store Telegram bot: the cli call ran" in out
     assert "✓  AI setup: Telegram bot: done" in out
     assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN
@@ -294,7 +290,64 @@ async def test_the_documented_commands_are_real():
 
     lines = [ln.split("#")[0].split() for ln in fence_under(doc("secret-stores.md"), "7. Set up a project", lang="bash").splitlines()]
     commands = [ln for ln in lines if ln and ln[0] == "flow"]
-    assert len(commands) == 6
+    assert len(commands) == 8
     for argv in commands:
         said = CliRunner().invoke(flow_cli.app, [*argv[1:], "--help"])
         assert said.exit_code == 0, (argv, said.output)
+
+
+# ── declare / set --stdin: the public surface a project and an agent use ─────
+
+DEMO = {
+    "name": "demo-service", "title": "Demo service",
+    "vars": {"DEMO_API_KEY": {"label": "API key", "pattern": "^demo_[0-9a-f]{32}$"},
+             "DEMO_ENDPOINT": {"label": "Endpoint", "pattern": "^https?://", "secret": False}},
+    "setup": "Generate DEMO_API_KEY, read DEMO_ENDPOINT from service.url; pipe both into "
+             "`flow credentials set demo-service --stdin`.",
+}
+DEMO_KEY = "demo_" + "0123456789abcdef" * 2
+
+
+def _manifest(tmp_path, body: dict) -> str:
+    path = tmp_path / f"{body.get('name', 'x')}.json"
+    path.write_text(json.dumps(body))
+    return str(path)
+
+
+async def test_declare_puts_the_credential_in_the_project_and_twice_is_once(project, cli, tmp_path):
+    first = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {})
+    assert first.ok, first.stdout
+    folder = Path(project.fs_storage_mount_path) / "agentic-assets/credential/demo-service"
+    assert json.loads((folder / "credential.json").read_text())["vars"].keys() == DEMO["vars"].keys()
+
+    again = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, {**DEMO, "title": "Demo 2"}),
+                                                    "--project", project.id], {})
+    assert again.ok, again.stdout
+    assert json.loads(again.stdout)["typeid"] == json.loads(first.stdout)["typeid"], "updated in place, not a twin"
+    assert json.loads((folder / "credential.json").read_text())["title"] == "Demo 2"
+
+
+async def test_declare_refuses_a_credential_that_does_not_say_how_it_is_set_up(project, cli, tmp_path):
+    bare = {k: v for k, v in DEMO.items() if k != "setup"}
+    said = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, bare), "--project", project.id], {})
+    assert not said.ok and "setup instructions" in said.stdout + said.stderr
+    assert not (Path(project.fs_storage_mount_path) / "agentic-assets/credential/demo-service").exists()
+
+
+async def test_set_stdin_stores_checks_the_pattern_and_prints_no_value(project, cli, tmp_path):
+    assert (await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {})).ok
+
+    wrong = await asyncio.to_thread(cli["invoke"], ["credentials", "set", "demo-service", "--project", project.id, "--stdin"],
+                                    {}, "DEMO_API_KEY=not-a-demo-key\n")
+    assert not wrong.ok, "a value off its pattern is refused at the write"
+    assert "DEMO_API_KEY" not in _env_file(project)
+
+    stored = await asyncio.to_thread(cli["invoke"], ["credentials", "set", "demo-service", "--project", project.id, "--stdin"],
+                                     {}, f"# the key\nDEMO_API_KEY={DEMO_KEY}\n\nDEMO_ENDPOINT=https://demo.test/api\n")
+    assert stored.ok, stored.stdout
+    assert json.loads(stored.stdout)["stored"] == ["DEMO_API_KEY", "DEMO_ENDPOINT"]
+    assert DEMO_KEY not in stored.stdout
+    assert _env_file(project) == {"DEMO_API_KEY": DEMO_KEY, "DEMO_ENDPOINT": "https://demo.test/api"}
+
+    check = await asyncio.to_thread(cli["invoke"], ["credentials", "check", "demo-service", "--project", project.id], {})
+    assert check.ok and json.loads(check.stdout)["ready"], check.stdout

@@ -626,7 +626,7 @@ POST /api/v1/graph/compute_node/<id>/upsertSessionProcess
 | `get-history`            | `GET`      | Load transcript history as `FlowData`.                                                                           |
 | `status`                 | `GET/POST` | Return stored `status`, computed `worker_status`, and `ready_for_input`.                                         |
 | `add-dir`                | `POST`     | Append a directory to `additional_dirs`.                                                                         |
-| `input-dir`              | `GET`      | Return/create the process input directory.                                                                       |
+| `input-dir`              | `GET`      | Return/create the process input directory (`execution/input/`, mounted for the worker).                         |
 
 ### Shell Actions Used By PTY Mode
 

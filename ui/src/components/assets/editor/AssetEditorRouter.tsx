@@ -51,6 +51,7 @@ import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
 import { AgentChildView } from './agent-profile/AgentChildView';
 import { useNestedHost } from './nested-host';
+import { useAssetReadOnly, useHostReadOnlyOccurrence, useReadOnlyOccurrenceType } from './read-only';
 import { SubAgentAssetEditor } from './subagent/SubAgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
@@ -96,6 +97,16 @@ function machinePathOf(value: string): string {
   return vfs.typeId ? vfs.machinePath : value;
 }
 
+/** Viewers that render a read-only occurrence (a path with no record behind it)
+ *  themselves; every other editor gets the registry main file projected read-only. */
+const READ_ONLY_OCCURRENCE_EDITORS: ReadonlySet<AssetEditor> = new Set([
+  AssetEditor.SKILL,
+  AssetEditor.SUBAGENT,
+  AssetEditor.MARKDOWN,
+  AssetEditor.MCP,
+  AssetEditor.DECK,
+]);
+
 function useIsNested(): boolean {
   return useNestedHost() !== null;
 }
@@ -120,8 +131,9 @@ function ConnectingFallback() {
  */
 export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiLinkTarget }: AssetEditorRouterProps) {
   const { currentDock } = useDockNavigation();
-  const readOnly = currentDock?.options?.readOnly === '1';
-  const occurrenceType = currentDock?.options?.assetType;
+  const readOnly = useAssetReadOnly();
+  const occurrenceType = useReadOnlyOccurrenceType();
+  const hostOccurrence = useHostReadOnlyOccurrence();
   // The view nested in THIS editor — only the page's own editor has one; a router rendering the
   // child itself (AgentChildView) must not see it again.
   const nestedChild = useIsNested() ? null : currentDock?.child ?? null;
@@ -189,7 +201,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pointer, readOnly]);
   const { resolvedType: vfsResolvedType } = useEntityByPath<AnyEntity>(
-    null, readOnly && occurrenceType ? null : vfsResolveRef,
+    null, hostOccurrence || (readOnly && occurrenceType) ? null : vfsResolveRef,
   );
 
   const derived = useMemo<{ fsRef: FSRef; assetType: string; mainFileRef: FSRef } | null>(() => {
@@ -225,9 +237,9 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
 
   // Custom domain forms may save a row or launch work. Read-only occurrence
   // routes instead project the registry-declared file, without an Entity gate.
-  // The four specialized asset viewers below already honor this contract.
+  // The viewers in READ_ONLY_OCCURRENCE_EDITORS render the occurrence themselves.
   if (readOnly && vfsResolveRef && ptr.method === AssetRoutingMethod.VFS &&
-      ![AssetEditor.SKILL, AssetEditor.SUBAGENT, AssetEditor.MARKDOWN, AssetEditor.MCP].includes(ptr.editor) &&
+      !READ_ONLY_OCCURRENCE_EDITORS.has(ptr.editor) &&
       (!isFileOnlyEditor(ptr.editor) || ptr.editor === AssetEditor.CODE)) {
     const type = occurrenceType ?? vfsResolvedType ?? primaryTypeForEditor(ptr.editor);
     const shape = type ? dataManager.getTypeInfo(type)?.shape : undefined;
@@ -406,6 +418,9 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
         />
       );
     case AssetEditor.DECK:
+      // The presenter only reads the folder, so a read-only occurrence (a received
+      // deck under review) renders with no record, like McpViewer by path.
+      if (readOnly && ptr.method === AssetRoutingMethod.VFS) return <DeckViewer fsRef={fsRef} />;
       return (
         <EntityResolutionGate<Deck>
           type={Deck.type}

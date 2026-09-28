@@ -17,6 +17,18 @@
       "TWILIO_AUTH_TOKEN"
     ]
   },
+  "permissions": {
+    "permission.openai.realtime": {
+      "mechanism": "api_key",
+      "api_key": "OPENAI_API_KEY",
+      "why": "Speak with the caller through the Realtime API."
+    },
+    "permission.twilio.voice": {
+      "mechanism": "api_key",
+      "api_key": "TWILIO_AUTH_TOKEN",
+      "why": "Answer and place calls on the Twilio number."
+    }
+  },
   "setup_wiki": "Voice phone line",
   "config": {
     "number": {

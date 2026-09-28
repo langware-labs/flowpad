@@ -1,7 +1,10 @@
 import { lazyAssets } from '../lazy/registry';
 import { AxiosError, AxiosResponse } from 'axios';
 import { EventEmitter } from 'events';
-import { config, dataManager } from '..';
+import config from '../config';
+import { getUtmParams } from '../utils/utm';
+export { getUtmParams };
+import { dataManager } from '../APIEntity';
 import apiClient, { invalidRefreshTokenMessage, invalidTokenMessage } from '../client';
 import { LocalLoginStatus, LoginSlot, makeLoginSlot } from '../services/cloud_status';
 import { defineGlobal } from '../utils/globals';
@@ -57,22 +60,6 @@ export interface VisitorData {
 export interface LogoutData {
   success: boolean;
   message?: string;
-}
-
-/**
- * Extract all UTM parameters from the current URL.
- * Returns an object with all query params starting with 'utm_'.
- */
-export function getUtmParams(): Record<string, string> {
-  if (typeof window === 'undefined') return {};
-  const params = new URLSearchParams(window.location.search);
-  const utm: Record<string, string> = {};
-  params.forEach((value, key) => {
-    if (key.startsWith('utm_')) {
-      utm[key] = value;
-    }
-  });
-  return utm;
 }
 
 export class AuthManager extends EventEmitter {
@@ -285,9 +272,7 @@ export class AuthManager extends EventEmitter {
       // Typed as the two shapes the line below actually reads: the id itself,
       // or a `{data}` wrapper. `/visit` is a hub-side route (no local backend
       // handler), so the wrapper branch is kept rather than narrowed away.
-      const response = await apiClient.get<string | { data?: string }>(
-        `/visit${queryString ? '?' + queryString : ''}`,
-      );
+      const response = await apiClient.get<string | { data?: string }>(`/visit${queryString ? '?' + queryString : ''}`);
 
       const visitorId = typeof response === 'string' ? response : response.data;
 

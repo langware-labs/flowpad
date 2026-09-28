@@ -26,6 +26,7 @@ import type { ChildSection } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useStagedAssets } from './useStagedAssets';
 import { Empty, IconButton, ResourceRow } from './parts';
+import { AgentCredentialsSection } from './AgentCredentialsSection';
 import { AgentSchedulesSection } from './AgentSchedulesSection';
 import { useQuickCreatePick } from '@src/components/quick-create';
 
@@ -125,7 +126,7 @@ export function AgentResourcesBody() {
     currentDock && navigation.openDock(currentDock.withChild(section, typeid));
   const isOpen = (typeid: string) => currentDock?.child?.typeId === typeid;
 
-  // Scoped to the agent this panel is open for — the same field `bind_channel`
+  // Scoped to the agent this panel is open for — the same field `create_source(owner=agent)`
   // and this panel's own `owner={editingAgentId}` (above) stamp. Without an
   // agent open there is no owner to match, so the list is empty rather than
   // every source on the instance: an unscoped list here contradicted the
@@ -269,6 +270,8 @@ export function AgentResourcesBody() {
       </NavigatorSection>
 
       {editingAgentId && <AgentSchedulesSection agentTypeId={editingAgentId} />}
+
+      {editingAgentId && <AgentCredentialsSection />}
 
       {/* The project's own add-source form, reused verbatim — `editing` unset
           is its create mode. Mounted here rather than behind a navigation so

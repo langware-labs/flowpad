@@ -64,10 +64,8 @@ function buildAgentPrompt(
   if (context) {
     parts.push('', 'Latest ui/update-model-context payload:', compactJson(context));
   }
-  parts.push(
-    '',
-    'Reply with the exact marker MCP_UI_RECEIVED and echo every submitted field, including uploaded file name and preview text.',
-  );
+  // How to answer is the agent's own instructions' call. A fixed reply line here
+  // made every agent open its answer to a customer with a test marker.
   return parts.join('\n');
 }
 

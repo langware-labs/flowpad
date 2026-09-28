@@ -177,13 +177,13 @@ class MergedSession:
                 return session.row
         raise LookupError(f"no source in this merge owns {getattr(item, 'origin', item)!r}")
 
-    async def reply(self, item: Any, *, body: str, attachments=()):
+    async def reply(self, item: Any, *, body: str, files=()):
         """Answer ``item`` through the source it came from, in that channel's own shape."""
         from flow_sdk.ingest.legacy_lift import envelope_of  # noqa: PLC0415
 
         source = self.source_of(item)
         envelope = envelope_of(item, data_source_id=str(source.id), provider=str(source.provider))
-        return await source.send(source.reply_spec(envelope, body=body, attachments=attachments))
+        return await source.send(source.reply_spec(envelope, body=body, files=files))
 
 
 def _when(item: Any):

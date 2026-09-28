@@ -186,18 +186,18 @@ async def timeline(
 
 
 def _status(
-    conversation_id: str, channel: str, process, events: list[TimelineEvent], live: set[str], timeout: Optional[int] = None
+    conversation_id: str, process, events: list[TimelineEvent], live: set[str], timeout: Optional[int] = None,
+    ended_at: Optional[datetime] = None,
 ) -> str:
-    from flow_sdk.builtin.agent_calls import CALL_ENDED  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy  # noqa: PLC0415
 
     if conversation_id in live:
         return "live"
     if process is not None and is_turn_busy(process):
         return "working"
-    newest_message = next((e for e in events if e.kind in ("message_in", "reply_sent")), None)
-    if channel == "voice" and newest_message is not None and newest_message.text == CALL_ENDED:
+    if ended_at is not None:  # the conversation says so: a call hung up, a chat the timeout retired
         return "ended"
+    newest_message = next((e for e in events if e.kind in ("message_in", "reply_sent")), None)
     # Quiet past its source's thread timeout: the next message starts a new thread.
     from flow_sdk.stream_inbox.projection import quiet_past  # noqa: PLC0415
 
@@ -224,7 +224,8 @@ async def threads(deployment, *, limit: int = 50) -> DeploymentThreads:
         channel = str(getattr(row, "channel", "") or "")
         source_id = str(getattr(row, "channel_source_id", "") or "")
         source = scan.sources.get(source_id)
-        other = next((e.who for e in reversed(events) if e.kind in ("message_in", "refused") and e.who), "")
+        address = list(getattr(row, "address", None) or [])
+        other = address[0] if address else next((e.who for e in reversed(events) if e.kind in ("message_in", "refused") and e.who), "")
         latest = next((e for e in events if e.kind in ("message_in", "reply_sent", "refused")), None)
         out.append(
             DeploymentThread(
@@ -234,8 +235,9 @@ async def threads(deployment, *, limit: int = 50) -> DeploymentThreads:
                 channel=channel,
                 data_source_id=source_id,
                 process_id=str(process.id) if process is not None else "",
-                status=_status(conversation_id, channel, process, events, live, getattr(source, "thread_timeout_seconds", None)),
-                started_at=events[-1].at if events else _utc(getattr(row, "created_date", None)),
+                status=_status(conversation_id, process, events, live, getattr(source, "thread_timeout_seconds", None),
+                               _utc(getattr(row, "ended_at", None))),
+                started_at=_utc(getattr(row, "started_at", None)) or (events[-1].at if events else _utc(getattr(row, "created_date", None))),
                 last_at=events[0].at if events else _utc(getattr(row, "updated_date", None)),
                 last_text=latest.text if latest is not None else "",
                 messages=sum(1 for e in events if e.kind in ("message_in", "reply_sent", "refused")),

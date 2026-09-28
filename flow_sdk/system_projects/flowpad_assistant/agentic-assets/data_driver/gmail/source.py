@@ -12,25 +12,41 @@ only the stable fallback for mail without one.
 **Replies route from the answered message.** Its sender, subject and thread come from All Mail —
 where our own sent mail also lives, so a reply to a message we sent routes too. A conversation
 send continues the thread's latest message, because email continues a thread by replying.
+
+**Files ride the message.** Outgoing files are MIME attachments of the one message (up to Gmail's
+25 MB); inbound attachments are named ``<message key>#<n>`` in the order the message lists them.
+The traversal already holds the whole RFC822, so ``open`` serves this session's copy, and re-fetches
+the message from All Mail by its key when handed an attachment the session never read.
 """
 from __future__ import annotations
 
 import imaplib
 import re
 import smtplib
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email import policy
 from email.message import EmailMessage, Message
 from email.parser import BytesParser
 from email.utils import formatdate, getaddresses, make_msgid, parseaddr, parsedate_to_datetime
-from typing import Any, AsyncGenerator, ClassVar, Mapping, Optional
+from typing import Any, AsyncGenerator, AsyncIterator, ClassVar, Mapping, Optional, Sequence
 
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.email import EmailAddressing
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, NotFound, Rejected, SourceUnavailable, Unsupported
-from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem, UserProfile
+from flow_sdk.sources.families import MessageSource
+from flow_sdk.sources.files import LOCAL_KIND, FileSupport, kind_of, read_file
+from flow_sdk.sources.values.items import (
+    EmailMessageData,
+    FileItem,
+    FileKind,
+    MessageData,
+    MessageFileData,
+    MessageItem,
+    UserProfile,
+)
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
 from flow_sdk.sources.values.query import MessageQuery
@@ -87,7 +103,7 @@ class GmailConfig(SourceConfig):
     smtp_host: str = ""
 
 
-class GmailSource(EmailAddressing, Source):
+class GmailSource(EmailAddressing, MessageSource):
 
     Config = GmailConfig
     provider = "gmail"
@@ -95,6 +111,17 @@ class GmailSource(EmailAddressing, Source):
     page_size = PAGE_LIMIT
     pages_per_pass = 1
     identity_config_key = "address"
+    #: Gmail's own ceiling is 25 MB a message, attachments together.
+    files = FileSupport(kinds=frozenset(FileKind), per_message=50, max_message_bytes=25_000_000)
+
+    async def _open(self) -> None:
+        await super()._open()
+        #: Attachment bytes of the messages this session read — ``open`` serves them without a round trip.
+        self._blobs: dict[CloudOrigin, bytes] = {}
+
+    async def _close(self) -> None:
+        self._blobs = {}
+        await super()._close()
 
     @classmethod
     def resume_at(cls, uid_validity: str, last_uid: int) -> str:
@@ -171,22 +198,57 @@ class GmailSource(EmailAddressing, Source):
         message_id = str(message.get("Message-ID") or "").strip()
         replied = str(message.get("In-Reply-To") or "").strip()
         thread = fetched.thread_id.strip()
+        key = message_id or f"imap:{uid_validity}:{fetched.uid}"
+        attachments, blobs = [], getattr(self, "_blobs", None)
+        for index, (name, media_type, payload) in enumerate(message_attachments(message)):
+            origin = self.origin(f"{key}#{index}")
+            if blobs is not None:
+                blobs[origin] = payload
+            file = MessageFileData(name=name, media_type=media_type, size=len(payload), as_=kind_of(media_type))
+            attachments.append(FileItem(origin=origin, data=file))
         pairs = getaddresses([str(message.get("To") or ""), str(message.get("Cc") or "")])
         data = GmailMessageData(
             subject=str(message.get("Subject") or "") or None,
-            text=message_body(message) or None,
+            text=body if (body := message_body(message)).strip() else None,
             conversation=self.thread_origin(thread) if thread else None,
             sender=UserProfile(origin=self.origin(sender), name=name or sender or None, address=sender) if sender else None,
             sent_at=message_date(message),
             in_reply_to=self.origin(replied) if replied else None,
             recipients=tuple(UserProfile(origin=self.origin(addr), name=n or None, address=addr) for n, addr in pairs if addr),
+            attachments=tuple(attachments),
             raw={
                 "imap_uid": fetched.uid, "uid_validity": uid_validity, "gmail_thread_id": thread, "message_id": message_id,
                 "in_reply_to": replied, "from": str(message.get("From") or ""), "to": str(message.get("To") or ""),
                 "subject": str(message.get("Subject") or ""),
             },
         )
-        return MessageItem(origin=self.origin(message_id or f"imap:{uid_validity}:{fetched.uid}"), data=data)
+        return MessageItem(origin=self.origin(key), data=data)
+
+    # ── files ───────────────────────────────────────────────────────────────
+    def open(self, file: FileItem, *, chunk_size: int = 65536):
+        self._require_open()
+        return self._stream(file, chunk_size)
+
+    @asynccontextmanager
+    async def _stream(self, file: FileItem, chunk_size: int) -> AsyncIterator[AsyncIterator[bytes]]:
+        blob = self._blobs.get(file.origin)
+        if blob is None:
+            message_key, _, index = self._key_of(file.origin).rpartition("#")
+            if not message_key or not index.isdigit():
+                raise NotFound("not a Gmail attachment", origin=file.origin)
+            fetched = await self._imap(fetch_full, self._mailbox(), message_key)
+            if fetched is None:
+                raise NotFound(f"no message {message_key} in this mailbox", origin=file.origin)
+            self._item(fetched[0], fetched[1])
+            blob = self._blobs.get(file.origin)
+            if blob is None:
+                raise NotFound(f"message {message_key} has no attachment {index}", origin=file.origin)
+
+        async def chunks() -> AsyncIterator[bytes]:
+            for i in range(0, len(blob), chunk_size):
+                yield blob[i : i + chunk_size]
+
+        yield chunks()
 
     # ── send ────────────────────────────────────────────────────────────────
     async def send(self, data: MessageData) -> MessageItem:
@@ -231,7 +293,9 @@ class GmailSource(EmailAddressing, Source):
         return MessageItem(origin=sent.origin, data=sent.data.model_copy(update=update))
 
     async def _smtp(self, recipient: str, data: MessageData, *, subject: str, in_reply_to: str) -> MessageItem:
-        message = smtp_message(sender=self.address, recipient=recipient, text=data.text or "", subject=subject, in_reply_to=in_reply_to)
+        message = smtp_message(
+            sender=self.address, recipient=recipient, text=data.text or "", subject=subject, in_reply_to=in_reply_to, files=data.attachments
+        )
         try:
             await self._blocking(send_smtp, self.address, self._password(), message, str(self.config.get("smtp_host") or ""))
         except smtplib.SMTPAuthenticationError as exc:
@@ -240,7 +304,7 @@ class GmailSource(EmailAddressing, Source):
             raise Rejected(f"Gmail refused the recipient: {exc}") from exc
         except smtplib.SMTPException as exc:
             raise SourceUnavailable(f"SMTP: {exc}") from exc
-        sent = EmailMessageData(text=data.text, subject=subject or None, sent_at=datetime.now(timezone.utc))
+        sent = EmailMessageData(text=data.text, subject=subject or None, sent_at=datetime.now(timezone.utc), attachments=data.attachments)
         return MessageItem(origin=self.origin(str(message["Message-ID"])), data=sent)
 
     # ── transport ───────────────────────────────────────────────────────────
@@ -368,6 +432,27 @@ def latest_in_thread(mailbox: Mailbox, thread_id: str) -> Optional[FetchedMessag
         close_inbox(client)
 
 
+def fetch_full(mailbox: Mailbox, message_key: str) -> Optional[tuple[str, FetchedMessage]]:
+    """One whole message by the key ``_item`` gave it: an ``imap:<validity>:<uid>`` key is an INBOX
+    UID (gone if the mailbox's UIDVALIDITY moved on), anything else a Message-ID searched in All Mail."""
+    if message_key.startswith("imap:"):
+        validity, _, uid = message_key[len("imap:"):].rpartition(":")
+        client, current = open_inbox(mailbox)
+        try:
+            found = _fetch_messages(client, [int(uid)]) if validity == current and uid.isdigit() else ()
+            return (current, found[-1]) if found else None
+        finally:
+            close_inbox(client)
+    client, current = open_inbox(mailbox, ALL_MAIL)
+    try:
+        status, data = client.uid("SEARCH", None, "HEADER", "Message-ID", message_key)
+        _require_ok(status, "search Message-ID")
+        found = _fetch_messages(client, _uids(data)[-1:])
+        return (current, found[-1]) if found else None
+    finally:
+        close_inbox(client)
+
+
 def mailbox_arg(name: str) -> str:
     """A mailbox name as an IMAP quoted string (RFC 3501): `[Gmail]/All Mail` unquoted is "Could not
     parse command", and a quote or backslash inside a name must be escaped."""
@@ -443,8 +528,10 @@ def send_smtp(address: str, password: str, message: EmailMessage, host: str = ""
         client.send_message(message)
 
 
-def smtp_message(*, sender: str, recipient: str, text: str, subject: str, in_reply_to: str) -> EmailMessage:
-    """An outbound message carrying the cross-transport reply headers."""
+def smtp_message(
+    *, sender: str, recipient: str, text: str, subject: str, in_reply_to: str, files: Sequence[FileItem] = ()
+) -> EmailMessage:
+    """An outbound message carrying the cross-transport reply headers, ``files`` as its attachments."""
     if not str(recipient or "").strip():
         raise ValueError("a Gmail send needs one recipient")
     message = EmailMessage(policy=policy.default)
@@ -457,7 +544,21 @@ def smtp_message(*, sender: str, recipient: str, text: str, subject: str, in_rep
         message["In-Reply-To"] = in_reply_to
         message["References"] = in_reply_to
     message.set_content(text)
+    for file in files:
+        maintype, _, subtype = (file.data.media_type or "application/octet-stream").partition("/")
+        message.add_attachment(read_file(file), maintype=maintype, subtype=subtype or "octet-stream", filename=file.data.name or "file")
     return message
+
+
+def message_attachments(message: Message) -> list[tuple[str, str, bytes]]:
+    """``(name, media type, bytes)`` of each attachment, in the order the message lists them."""
+    if not isinstance(message, EmailMessage) or not message.is_multipart():
+        return []
+    out = []
+    for index, part in enumerate(message.iter_attachments()):
+        payload = part.get_payload(decode=True)
+        out.append((part.get_filename() or f"attachment-{index}", part.get_content_type(), payload if isinstance(payload, bytes) else b""))
+    return out
 
 
 def message_body(message: Message) -> str:
@@ -527,10 +628,15 @@ def _decode(cursor: object) -> tuple[str, int]:
 def _check_outgoing(data: object) -> None:
     if not isinstance(data, MessageData):
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
-    if not (data.text or "").strip():
-        raise ValueError("a Gmail message needs text")
-    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None or data.attachments:
-        raise ValueError("sender, in_reply_to, sent_at and attachments are assigned by the provider")
+    if not (data.text or "").strip() and not data.attachments:
+        raise ValueError("a Gmail message needs text or a file")
+    if data.sender is not None or data.in_reply_to is not None or data.sent_at is not None:
+        raise ValueError("sender, in_reply_to and sent_at are assigned by the provider")
+    for f in data.attachments:
+        if f.origin.kind != LOCAL_KIND or not isinstance(f.data, MessageFileData) or not f.data.path:
+            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
+        if f.data.as_ not in GmailSource.files.kinds:
+            raise ValueError(f"Gmail does not send a {f.data.as_.value}")
 
 
-__all__ = ["ALL_MAIL", "INBOX", "PAGE_LIMIT", "GmailMessageData", "GmailSource", "Mailbox", "endpoint", "message_body", "message_date", "smtp_message"]
+__all__ = ["ALL_MAIL", "INBOX", "PAGE_LIMIT", "GmailMessageData", "GmailSource", "Mailbox", "endpoint", "message_attachments", "message_body", "message_date", "smtp_message"]

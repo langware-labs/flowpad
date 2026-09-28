@@ -3,7 +3,6 @@
   POST /api/v1/graph/message_attachment/{id}/install
   POST /api/v1/graph/message_attachment/{id}/uninstall
   GET  /api/v1/graph/message_attachment/{id}/staged-files
-  GET  /api/v1/graph/message_attachment/{id}/staged-file-content?path=<rel>
 
 A received bundle's file-backed assets stay STAGED under the owning
 FlowMessage's record-data dir (never indexed, never visible to agents) until
@@ -37,9 +36,6 @@ from flow_sdk.responses.response import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Read cap for staged-file-content — the review modal renders docs, not blobs.
-_STAGED_READ_CAP = 512 * 1024
 
 
 
@@ -745,6 +741,23 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
 # ---------------------------------------------------------------------------
 
 
+def _locate_staged_asset(entry_dir: Path, paths: list[str], info) -> tuple[str | None, str | None]:
+    """Where the asset sits in a staged copy: ``(asset_root, main_file)``, both
+    relative to ``entry_dir`` (``""`` = the staged dir itself). Located with the type's own shape classifier
+    (``TypeInfo.layout_of``, the indexer's), so a bundle's wrapper dirs
+    (``agentic-assets/deck/<name>/``) and ``.flow/`` capsules never decide it.
+    Unlocated → ``(None, <first file outside a dot-dir>)``."""
+    visible = [p for p in paths if not any(seg.startswith(".") for seg in p.split("/")[:-1])]
+    if info is not None:
+        for rel in visible + [p for p in paths if p not in visible]:
+            layout = info.layout_of(entry_dir / rel, verify=True)
+            if layout.root is not None:
+                root = layout.root.relative_to(entry_dir).as_posix()
+                main = (layout.body or layout.root).relative_to(entry_dir).as_posix()
+                return ("" if root == "." else root), main
+    return None, (visible or paths or [None])[0]
+
+
 async def handle_staged_files(attachment_id: str) -> ApiResponse:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -754,57 +767,28 @@ async def handle_staged_files(attachment_id: str) -> ApiResponse:
     entry_dir = _entry_dir_for(ma)
     if entry_dir is None or not entry_dir.exists():
         return _staging_gone()
-    info = SchemaRegistry.get(ma.asset_type)
-    main_file = getattr(info, "main_file", None) if info else None
-    files = []
-    main_rel: str | None = None
-    for p in sorted(entry_dir.rglob("*")):
-        if not p.is_file():
-            continue
-        rel = p.relative_to(entry_dir).as_posix()
-        is_main = bool(main_file) and p.name == main_file
-        if is_main and main_rel is None:
-            main_rel = rel
-        files.append({"path": rel, "size": p.stat().st_size, "is_main": is_main})
-    if main_rel is None:
-        main_rel = next((f["path"] for f in files if f["path"].endswith(".md")), None)
+    files = [
+        {"path": p.relative_to(entry_dir).as_posix(), "size": p.stat().st_size}
+        for p in sorted(entry_dir.rglob("*"))
+        if p.is_file()
+    ]
+    asset_root, main_rel = _locate_staged_asset(entry_dir, [f["path"] for f in files], SchemaRegistry.get(ma.asset_type))
+    for f in files:
+        f["is_main"] = f["path"] == main_rel
     return ApiSuccessResponse(
         data={
             "files": files,
             "main_file": main_rel,
+            # The asset inside the staged copy, located by its type's shape (the
+            # folder of a folder type, the file of a file type); None when the copy
+            # does not hold that shape (a header-only row). Review opens it here.
+            "asset_root": asset_root,
             "root": ma.unpacked_path,
             # Absolute staged dir — "Test it" references the skill by path when it
             # isn't installed yet (a local-disk path handed to a local process).
             "abs_root": str(entry_dir),
         }
     )
-
-
-async def handle_staged_file_content(attachment_id: str, rel_path: str) -> ApiResponse:
-    from flow_sdk.fs_store.origin.git_origin import is_safe_rel_path  # noqa: PLC0415
-
-    ma = await _load_ma(attachment_id)
-    if ma is None:
-        return _not_found(attachment_id)
-    if not rel_path or not is_safe_rel_path(rel_path):
-        return ApiFailResponse(message="invalid path", status_code=400)
-    entry_dir = _entry_dir_for(ma)
-    if entry_dir is None or not entry_dir.exists():
-        return _staging_gone()
-    target = (entry_dir / rel_path).resolve()
-    try:
-        target.relative_to(entry_dir.resolve())
-    except ValueError:
-        return ApiFailResponse(message="invalid path", status_code=400)
-    if not target.is_file():
-        return ApiFailResponse(message=f"no such staged file: {rel_path}", status_code=404)
-    with target.open("rb") as fh:
-        raw = fh.read(_STAGED_READ_CAP + 1)  # cap+1: never slurp a large staged blob
-    if b"\x00" in raw[:8192]:
-        return ApiFailResponse(message="binary file — not renderable", status_code=415)
-    truncated = len(raw) > _STAGED_READ_CAP
-    content = raw[:_STAGED_READ_CAP].decode("utf-8", errors="replace")
-    return ApiSuccessResponse(data={"path": rel_path, "content": content, "truncated": truncated})
 
 
 async def handle_conversation_install_all(
@@ -961,19 +945,3 @@ async def staged_files_action() -> ApiResponse:
     except Exception as e:
         logger.error("[message_attachment] staged-files error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"staged-files failed: {e}")
-
-
-@action.get(action_name="staged-file-content", types=["message_attachment"])
-async def staged_file_content_action() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found", status_code=400)
-        rel_path = str(request_info.request.query_params.get("path") or "")
-        return await handle_staged_file_content(
-            str(request_info.target_entity_typeid.id),
-            rel_path,
-        )
-    except Exception as e:
-        logger.error("[message_attachment] staged-file-content error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"staged-file-content failed: {e}")

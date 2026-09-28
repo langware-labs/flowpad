@@ -34,12 +34,24 @@ declare module '@xterm/addon-serialize' {
   }
 }
 
+/** A stored replay result: the terminal as it stood before the stream's `base` frame, at cols x rows. */
+export interface PtyReplayCheckpoint {
+  cols: number;
+  rows: number;
+  last_seq: number;
+  serialized: string;
+}
+
 /** Framed stream as served by GET /api/v1/shell/{shell_id}/pty-stream. */
 export interface FramedPtyStream {
   v: number;
   cols: number | null;
   rows: number | null;
+  /** Absolute number of `events[0]` (frames dropped by truncation, or the checkpoint's frame). */
+  base?: number;
   events: Array<[string, ...unknown[]]>;
+  /** `?since=checkpoint`: the state `events` continue from. */
+  checkpoint?: PtyReplayCheckpoint;
 }
 
 export interface ReplayResult {
@@ -52,10 +64,16 @@ export interface ReplayResult {
   rows: number;
 }
 
-/** Fetch the framed stream for a shell; null when none recorded (404). */
+/**
+ * Fetch the framed stream for a shell; null when none recorded (404). Asks for the
+ * stored checkpoint plus only the frames after it (docs/navigation/dock-loading.md,
+ * step 7) — the server answers with the whole recording when it has no usable one.
+ */
 export async function fetchPtyStream(shellId: string): Promise<FramedPtyStream | null> {
   try {
-    const data = await apiClient.get<FramedPtyStream>(`/shell/${shellId}/pty-stream`);
+    const data = await apiClient.get<FramedPtyStream>(`/shell/${shellId}/pty-stream`, {
+      params: { since: 'checkpoint' },
+    });
     if (!data || !Array.isArray(data.events)) return null;
     return data;
   } catch {
@@ -71,13 +89,20 @@ const REPLAY_SCROLLBACK = 50000; // matches the visible terminal's scrollback
  * where faithful replay is impossible (v0 legacy files have unknown size).
  */
 export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayResult | null> {
+  const checkpoint = stream.checkpoint;
+  // Nothing happened since the checkpoint: it IS the terminal — no replay at all.
+  if (checkpoint && !stream.events.length) {
+    return { serialized: checkpoint.serialized, lastSeq: checkpoint.last_seq, cols: checkpoint.cols, rows: checkpoint.rows };
+  }
   if (!stream.events.length) return null;
   // Legacy (v0) raw recordings have no recorded size — replaying them at a
   // guessed width is exactly the garble this design eliminates. Skip.
-  if (stream.cols == null || stream.rows == null) return null;
+  if (!checkpoint && (stream.cols == null || stream.rows == null)) return null;
 
-  let cols = stream.cols;
-  let rows = stream.rows;
+  // From a checkpoint, the tail continues at the checkpoint's size; otherwise the
+  // recording starts at the header's.
+  let cols = checkpoint?.cols ?? (stream.cols as number);
+  let rows = checkpoint?.rows ?? (stream.rows as number);
   const term = new HeadlessTerminal({
     cols,
     rows,
@@ -126,6 +151,12 @@ export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayRe
   };
 
   try {
+    if (checkpoint) {
+      // The checkpoint's own trailing mouse-encoding suffix passes through the
+      // parser hooks above, so `mouseEncoding` resumes where it left off.
+      void write(checkpoint.serialized);
+      lastSeq = checkpoint.last_seq;
+    }
     for (const ev of stream.events) {
       if (ev[0] === 'o' && typeof ev[1] === 'string') {
         pendingOutput.push(decoder.decode(base64ToBytes(ev[1]), { stream: true }));
@@ -146,4 +177,30 @@ export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayRe
   } finally {
     term.dispose();
   }
+}
+
+/**
+ * Frames a replay must cover before its result is worth storing as a checkpoint:
+ * below this the tail replays in a few ms, and the upload (the serialized screen,
+ * up to megabytes) would cost more than it saves.
+ */
+export const CHECKPOINT_MIN_FRAMES = 500;
+
+/**
+ * Store a replay result as the recording's checkpoint, so the next cold open
+ * replays only what comes after it. Fire-and-forget: a failed store only means
+ * the next open replays more.
+ */
+export function saveReplayCheckpoint(shellId: string, stream: FramedPtyStream, result: ReplayResult): void {
+  if (stream.events.length < CHECKPOINT_MIN_FRAMES) return;
+  const frame = (stream.base ?? 0) + stream.events.length;
+  void apiClient
+    .post(`/shell/${shellId}/pty-stream/checkpoint`, {
+      frame,
+      cols: result.cols,
+      rows: result.rows,
+      last_seq: result.lastSeq,
+      serialized: result.serialized,
+    })
+    .catch(() => {});
 }

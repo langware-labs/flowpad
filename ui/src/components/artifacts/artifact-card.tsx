@@ -1,4 +1,4 @@
-import { Artifact, formatGitOrigin, isGitOrigin, type FSOriginField } from '@sdk';
+import { Artifact, formatFSOrigin, type FSOriginField } from '@sdk';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -19,9 +19,7 @@ interface ArtifactCardProps {
 
 function originLabel(origin: FSOriginField | null | undefined): string | null {
   if (!origin) return null;
-  if (isGitOrigin(origin)) return formatGitOrigin(origin);
-  const base = origin.base.replace(/\/$/, '');
-  return !origin.rel_path || origin.rel_path === '.' ? base : `${base}/${origin.rel_path}`;
+  return formatFSOrigin(origin);
 }
 
 export const ArtifactCard: React.FC<ArtifactCardProps> = ({

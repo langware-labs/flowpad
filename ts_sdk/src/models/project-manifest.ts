@@ -29,7 +29,7 @@ export interface PublishedRowBase {
   description: string;
   rel_path: string;
   published_at: string;
-  /** WHERE the bytes can be fetched (a GitOrigin or LocalOrigin document); null for a row published without one. */
+  /** WHERE the bytes can be fetched (a HubRepoOrigin once uploaded, else a GitOrigin or LocalOrigin document); null for a row published without one. */
   origin?: Record<string, unknown> | null;
 }
 
@@ -42,19 +42,24 @@ export interface PublishedRow extends PublishedRowBase {
   posix_path?: string | null;
   /** Whether a local entity row exists; desk only. */
   indexed?: boolean;
-  /** What the desk did about putting the document on the hub after the last publish; desk only. */
+  /**
+   * What the desk did about putting the document on the hub after the last publish; desk only.
+   * `skipped` codes: `type_not_git` | `project_not_linked` | `no_actor`. `failed` carries the
+   * publish code, e.g. `asset_conflict` (the hub and this desk both changed the asset),
+   * `hub_publish_failed`, `not_git_backed`, `project_not_published`.
+   */
   hub_body?: { status: 'published' | 'skipped' | 'failed'; code: string | null } | null;
 }
 
 /**
  * Why a row's document cannot be read on the hub.
  * - `type_not_git`: the type is not git-publishable, so the hub never stores its document
- * - `not_on_hub`: nothing registered the asset on the hub (project not linked, GitHub not connected, …)
- * - `not_materialized`: registered, but its tree was never snapshotted (`gitops/materialize`)
+ * - `not_on_hub`: nothing registered the asset on the hub (e.g. the project is not linked)
+ * - `not_uploaded`: registered, but its document never reached the project's hub repo
  */
-export type BodyReason = 'type_not_git' | 'not_on_hub' | 'not_materialized';
+export type BodyReason = 'type_not_git' | 'not_on_hub' | 'not_uploaded';
 
-/** The main document of a materialized asset, as the hub's `fs` action serves it. */
+/** The main document of an uploaded asset, as the hub's `fs` action serves it. */
 export interface BodyRef {
   type_id: string;
   path: string;

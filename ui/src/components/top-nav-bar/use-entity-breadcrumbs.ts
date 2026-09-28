@@ -2,7 +2,7 @@ import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useEffect, useMemo, useState } from 'react';
 import { LayoutGrid, type LucideIcon } from 'lucide-react';
-import { AgenticProcess, Agent, dataManager, Organization, PageId, Project, tabManager, TypeId, ViewType, Wiki, WikiEntry, WorldViewProjection, type AnyEntity } from '@sdk';
+import { AgenticProcess, Agent, DataDriver, dataManager, Organization, PageId, Project, tabManager, TypeId, ViewType, Wiki, WikiEntry, WorldViewProjection, type AnyEntity } from '@sdk';
 import { VIEWER_REGISTRY } from '@src/types/ViewType';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
@@ -16,6 +16,8 @@ import { useContext } from '@src/hooks/useContext';
 import { useProjectLocation } from '@src/hooks/use-project-location';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
+import { parseDataSourcesPointer } from '@src/components/data-sources/data-sources-pointer';
+import { useSourceSpecs } from '@src/components/data-sources/use-source-specs';
 
 /**
  * The address bar's contents: `Project / …ancestors… / current`.
@@ -136,6 +138,7 @@ const PROJECT_HOME_CRUMB_LABEL = msg`Home`;
 const ORGANIZATION_CRUMB_LABEL = msg`Organization`;
 const GRAPH_CRUMB_LABEL = msg`Graph`;
 const STREAM_INBOX_CRUMB_LABEL = msg`Stream Inbox`;
+const DRIVERS_CRUMB_LABEL = msg`Drivers`;
 /** The agent-editor section a nested child was opened from — the middle segment of its address. */
 const CHILD_SECTION_CRUMB_LABELS = {
   channel: msg`Channels`,
@@ -145,6 +148,7 @@ const CHILD_SECTION_CRUMB_LABELS = {
   skill: msg`Skills`,
   doc: msg`Docs`,
   deployment: msg`Deployments`,
+  credential: msg`Credentials`,
 } as const;
 
 /** Basename of an `asset_ref`, trailing separators ignored. */
@@ -207,6 +211,15 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     entity: null,
   });
   const [ancestors, setAncestors] = useState<AncestorNode[]>([]);
+  // The drivers nest UNDER the data sources screen (data-sources-pointer.ts), so the address reads
+  // `Data sources › Drivers › <driver>`. The driver list is fetched only on a driver's own page.
+  const dataSourcesRoute = useMemo(
+    () => (dock?.viewType === ViewType.DATA_SOURCES ? parseDataSourcesPointer(dock.pointer) : null),
+    [dockKey], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const driverName = dataSourcesRoute?.section === 'drivers' ? dataSourcesRoute.driver : null;
+  const { specFor: driverFor } = useSourceSpecs({ enabled: !!driverName });
+  const driver = driverName ? driverFor(driverName) : undefined;
   const agentRoute = useMemo(
     () => (dock?.viewType === ViewType.AGENT ? DockPointer.parseAgentPointer(dock.pointer) : null),
     [dockKey], // eslint-disable-line react-hooks/exhaustive-deps
@@ -471,6 +484,37 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     const filename = dock?.resourceVfsPath?.filename || basename(assetRef) || null;
     const directory = isExplorer;
 
+    if (dataSourcesRoute?.section === 'drivers' && dock) {
+      out.push({
+        key: 'data-sources',
+        label: viewLabel(dock),
+        Icon: viewIcon(dock),
+        pointer: DockPointer.forDataSources(),
+        kind: 'ancestor',
+      });
+      out.push({
+        key: 'data-drivers',
+        label: i18n._(DRIVERS_CRUMB_LABEL),
+        Icon: iconForType(DataDriver.type),
+        pointer: driverName ? DockPointer.forDataSources({ section: 'drivers', driver: null }) : null,
+        kind: driverName ? 'ancestor' : 'current',
+      });
+      if (driverName) {
+        const folder = driver?.asset_ref ?? null;
+        out.push({
+          key: `data-driver-${driverName}`,
+          label: driver?.title || driverName,
+          Icon: iconForType(DataDriver.type),
+          pointer: null,
+          kind: 'current',
+          path: folder,
+          filename: basename(folder),
+          directory: true,
+        });
+      }
+      return out;
+    }
+
     out.push(
       targetTypeId
         ? {
@@ -528,6 +572,9 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
 
     return out;
   }, [
+    dataSourcesRoute,
+    driverName,
+    driver,
     nestedChild,
     childTypeId,
     childEntity,

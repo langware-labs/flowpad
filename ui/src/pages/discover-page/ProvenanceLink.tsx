@@ -1,10 +1,11 @@
 import { useLingui } from '@lingui/react/macro';
-import { GitBranch, Github, Monitor } from 'lucide-react';
+import { Cloud, GitBranch, Github, Monitor } from 'lucide-react';
 import { provenanceOf } from './discover-model';
 
 /**
  * Where a row's bytes come from: `owner/name@branch` linking to the repository
- * page for a git origin, "this machine" for a local one. The provider glyph is
+ * page for a git origin, "hub repository" (no link — there is no provider page)
+ * for the project's hub-hosted repo, "this machine" for a local one. The provider glyph is
  * the one exception to the type-icon rule — a git host is not an entity type.
  */
 export function ProvenanceLink({ origin, className = '' }: { origin: Record<string, unknown> | null | undefined; className?: string }) {
@@ -19,6 +20,18 @@ export function ProvenanceLink({ origin, className = '' }: { origin: Record<stri
       <span className={`${base} text-muted-foreground`} title={t`Published from a folder on the publisher's machine`}>
         <Monitor className="h-3 w-3 shrink-0" />
         <span className="truncate">{t`this machine`}</span>
+      </span>
+    );
+  }
+  if (p.kind === 'hub_repo') {
+    return (
+      <span
+        className={`${base} text-muted-foreground`}
+        title={t`Stored in the project's repository on the hub`}
+        data-testid="discover-provenance"
+      >
+        <Cloud className="h-3 w-3 shrink-0" />
+        <span className="truncate">{t`hub repository`}</span>
       </span>
     );
   }

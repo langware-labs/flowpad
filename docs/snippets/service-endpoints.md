@@ -28,7 +28,10 @@ Pinned by `tests/unit/test_service_endpoint_model.py` (the model and its wire fo
 ## 1. What an endpoint is
 
 ```python
+from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+
+deployment = await (await Agent.by_name(AGENT)).deploy("local")   # the placement it serves from
 
 endpoint = ServiceEndpoint(
     parent_type_id=str(deployment.typeid),          # the placement

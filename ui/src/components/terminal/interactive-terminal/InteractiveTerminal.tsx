@@ -15,6 +15,7 @@ import {
   isProcessRunning,
   PrefKey,
   Shell,
+  shellQuote,
   toplog,
   type AgenticProcess,
 } from '@sdk';
@@ -32,7 +33,7 @@ import { useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
-import { fetchPtyStream, replayPtyStream } from './pty-replay';
+import { fetchPtyStream, replayPtyStream, saveReplayCheckpoint } from './pty-replay';
 import { SearchAddon } from '@xterm/addon-search';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
@@ -44,6 +45,7 @@ import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
+import { type CompactExecutionInputHandle } from '@src/components/entity-execution-panel/CompactExecutionInput';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
 
@@ -577,7 +579,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
     enterRefetchTimerRef.current = setTimeout(() => {
       enterRefetchTimerRef.current = null;
-      refreshPromptsRef.current?.();
+      refreshPromptsRef.current?.({ force: true });
     }, 1000);
   }, []);
   useEffect(
@@ -1161,11 +1163,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             const replay = await replayPtyStream(stream);
             toplog.log(
               ['process_load', 'pty', 'agentic_process.load'],
-              `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0}`,
+              `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0} checkpoint=${stream.checkpoint ? 'yes' : 'no'} tail=${stream.events.length}`,
             );
             if (replay) {
               historySerialized = replay.serialized;
               historyLastSeq = replay.lastSeq;
+              // The next cold open of this recording replays only what comes after this.
+              saveReplayCheckpoint(ptyId, stream, replay);
             }
           }
         } catch (e) {
@@ -1645,6 +1649,19 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
+  // "Paste path" from the Files tab: into the chat composer at its caret when
+  // chat mode is on (the composer is mounted only then, and the chat layer
+  // covers the PTY), else into the PTY.
+  const composerRef = useRef<CompactExecutionInputHandle>(null);
+  const handleInsertInputPath = useCallback((path: string) => {
+    if (composerRef.current) {
+      composerRef.current.insertAtCaret(path);
+      return;
+    }
+    void shellRef.current?.sendInput(shellQuote(path));
+    requestAnimationFrame(() => terminalRef.current?.focus());
+  }, []);
+
   // Simple-chat composer image paste — same upload + Files-tab-open behaviour as
   // the PTY paste/drop handlers, but returns the reference line(s) so the chat
   // composer can splice them into the next prompt (instead of sending to a PTY).
@@ -1699,7 +1716,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     }
     if (inputDirInfo) {
       panels[SideTabId.Files] = (
-        <InputFilesPanel computeNodeTypeId={inputDirInfo.computeNodeTypeId} inputDirAbsPath={inputDirInfo.absPath} />
+        <InputFilesPanel
+          computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+          inputDirAbsPath={inputDirInfo.absPath}
+          onInsertPath={handleInsertInputPath}
+        />
       );
       if (process?.workdir || shellRef.current?.workdir) {
         panels[SideTabId.Dir] = (
@@ -1711,7 +1732,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     }
     return panels;
-  }, [process, inputDirInfo, sidecarShellId, mergedPrompts, scrollAnnotationToLine, dataContext.computeNode?.id]);
+  }, [
+    process,
+    inputDirInfo,
+    sidecarShellId,
+    mergedPrompts,
+    scrollAnnotationToLine,
+    dataContext.computeNode?.id,
+    handleInsertInputPath,
+  ]);
 
   const sideTabs = useMemo<TabDescriptor<SideTabId>[]>(
     () =>
@@ -1956,7 +1985,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             onOpenArtifact={handleOpenArtifact}
             composer={
               showSimpleChat && process ? (
-                <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
+                <ChatComposerBar
+                  process={process}
+                  onPasteImages={handleChatPasteImages}
+                  composerRef={composerRef}
+                />
               ) : undefined
             }
           />

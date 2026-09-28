@@ -130,6 +130,15 @@ async def _reflect_surviving_occurrences(entity, resolved) -> None:
         await fresh.reflect_asset_occurrences(decision.occurrences, notify=True)
 
 
+def _under_records_root(path: str) -> bool:
+    from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
+
+    try:
+        return Path(path).resolve().is_relative_to(get_default_records_root().resolve())
+    except OSError:
+        return False
+
+
 async def reindex_paths(
     paths: Iterable[str],
     deleted_paths: Iterable[str] = (),
@@ -186,8 +195,10 @@ async def reindex_paths(
                 (result.reindexed if found is not None else result.skipped).append(path)
                 continue
 
-            # No owning entity — attempt a type-inferred mint (new file).
-            if not mint:
+            # No owning entity — attempt a type-inferred mint (new file). Never inside the records
+            # root: a process's execution/input|output is run I/O, not project content, and minting
+            # stamps an ``id:`` into bytes a caller then reads back (``run(output_spec=…)``).
+            if not mint or _under_records_root(path):
                 result.skipped.append(path)
                 continue
             (result.minted if await _mint(path) else result.skipped).append(path)

@@ -10,6 +10,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from pathlib import Path
 
 import flow_sdk.blocks as blocks
 from flow_sdk.blocks import _AgentRunner
@@ -32,6 +33,27 @@ class _Process:
         self.busy = ""
         #: How the worker ends its turn (None: it idles, the way a good turn ends).
         self.worker = None
+        #: Where a reply would have been written. A turn that answered left a transcript
+        #: behind; a worker that never came up left none, and the runner reads that as
+        #: "nothing ran" instead of waiting for a reply that cannot arrive.
+        self.transcript_path: Path | None = None
+
+    @property
+    def driver(self):
+        process = self
+
+        class _Driver:
+            name = "stub"
+
+            @staticmethod
+            def transcript_descriptor(_ap):
+                return None
+
+            @staticmethod
+            def transcript_path(_ap):
+                return process.transcript_path
+
+        return _Driver()
 
     async def send_turn(self, text: str) -> PromptResult:
         if self.busy:
@@ -96,10 +118,14 @@ async def test_the_record_is_on_the_process_and_persisted(runner):
     assert process.saves >= 2, "stamped before the prompt, recorded after"
 
 
-async def test_a_turn_that_died_mid_way_but_finished_is_answered_from_the_transcript(runner):
+async def test_a_turn_that_died_mid_way_but_finished_is_answered_from_the_transcript(runner, tmp_path):
     r, process = runner
     process.context_data = {"turns": {"src:mail:s:<m1>": {"status": "started"}}}
     process.transcript_text = "the agent did finish"
+    # A turn that answered wrote a transcript; without one the runner reads the crash as
+    # "the worker never came up" and takes the turn again (the test below).
+    process.transcript_path = tmp_path / "transcript.jsonl"
+    process.transcript_path.write_text("{}\n")
     out = await r.run(_message())
     assert out.text == "the agent did finish" and process.prompts == []
 

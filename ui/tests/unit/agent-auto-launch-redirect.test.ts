@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AGENT_AUTO_LAUNCH_ENDPOINT,
   agentAutoLaunchRedirect,
+  resetAgentAutoLaunchForTests,
 } from '@src/agents/agent-auto-launch-redirect';
 import { AGENT_AUTO_LAUNCH_WARNING_KEY, takeAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
 
@@ -44,6 +45,7 @@ function launched(cancelled: { agent_id: string; title: string }[] = []) {
 }
 
 beforeEach(() => {
+  resetAgentAutoLaunchForTests();
   sessionStorage.clear();
   mocks.post.mockReset();
   mocks.getById.mockReset();
@@ -61,6 +63,12 @@ describe('project agent auto-launch redirect', () => {
     ['a Hub-only build', `http://flowpad.local/dock/project/${PROJECT_ID}`, () => mocks.hubOnly.mockReturnValue(true)],
     ['a deep link (?action=open)', `http://flowpad.local/dock/project/${PROJECT_ID}?action=open`, () => {}],
     ['a route already inside a session', `http://flowpad.local/dock/shell/agentic_process-${PROCESS_ID}`, () => {}],
+    // A terminal link to a report lands here — the user asked for the report.
+    [
+      'an asset opened inside the project',
+      `http://flowpad.local/dock/project/${PROJECT_ID}/editor/markdown/vfs/compute_node-%40local/w/report.md`,
+      () => {},
+    ],
   ])('never calls the API for %s', async (_label, url, setup) => {
     setup();
     const response = await agentAutoLaunchRedirect(new Request(url));
@@ -110,6 +118,27 @@ describe('project agent auto-launch redirect', () => {
     const response = await agentAutoLaunchRedirect(new Request(`http://flowpad.local/dock/project/${PROJECT_ID}`));
     expect(response).toBeNull();
     expect(mocks.getById).not.toHaveBeenCalled();
+  });
+
+  it('asks once per project: "nothing to launch" is not asked again on the next landing', async () => {
+    mocks.post.mockResolvedValue({ agent_id: null, process_id: null, process_typeid: null, cancelled: [] });
+    const landing = `http://flowpad.local/dock/project/${PROJECT_ID}`;
+    await agentAutoLaunchRedirect(new Request(landing));
+    await agentAutoLaunchRedirect(new Request(landing));
+    expect(mocks.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks again after a failed call — a failure is not an answer', async () => {
+    mocks.post.mockRejectedValueOnce(new Error('boom')).mockResolvedValue({
+      agent_id: null,
+      process_id: null,
+      process_typeid: null,
+      cancelled: [],
+    });
+    const landing = `http://flowpad.local/dock/project/${PROJECT_ID}`;
+    await agentAutoLaunchRedirect(new Request(landing));
+    await agentAutoLaunchRedirect(new Request(landing));
+    expect(mocks.post).toHaveBeenCalledTimes(2);
   });
 
   it('never blocks the load when the backend call fails', async () => {

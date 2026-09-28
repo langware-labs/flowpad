@@ -7,6 +7,8 @@ import '@testing-library/jest-dom/vitest';
 import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { TerminalPool } from '@src/components/terminal/TerminalPool';
+import { terminalPool } from '@src/components/terminal/terminal-pool';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import {
   AgenticProcess,
@@ -85,6 +87,8 @@ function TerminalWorkspace() {
         <div style={{ height: 320 }}>
           <TabbedTerminal className="h-full" scope="all" />
         </div>
+        {/* RootLayout mounts the pool that owns terminal runtimes; the body is a slot. */}
+        <TerminalPool />
       </TooltipProvider>
     </QueryClientProvider>
   );
@@ -295,6 +299,7 @@ describe('PTY title observations are backend-owned', () => {
   });
 
   afterEach(async () => {
+    terminalPool.resetForTests();
     vi.restoreAllMocks();
     tabManager.adoptGlobal([]);
     resetTabContentLifecycleForTests();

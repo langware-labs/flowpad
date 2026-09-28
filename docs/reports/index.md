@@ -1,12 +1,12 @@
 ---
 type: markdown_index
 id: markdown_index-9c3569a1-3e91-5616-8025-d0b68c0a610d
-inputs_hash: 57c1bfe5440a0dd0a4c18213c5a98ad3488128d6728d7e41c4ea50a59e002297
+inputs_hash: b9f50096468010f11a676e565982cfdd7372d6f4f302fb731793678735a9c6a2
 template_version: 1
 prompt_version: 1
 parent_ref: markdown_index-6136dbba-27ed-59c3-a192-fe2894f3ec30
 vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
-generated_at: '2026-09-19T23:43:15.588810+00:00'
+generated_at: '2026-09-25T12:04:30Z'
 latest_process_ref: ''
 file_count: 3
 subfolder_count: 0
@@ -18,6 +18,6 @@ subfolder_count: 0
 > Validation records for completed refactors: what was run, what passed, and the gates each change had to clear. Evidence that a migration landed, not instructions for doing one.
 
 ## Files
-- [Filesystem asset refactor validation](asset-filesystem-refactor.md) — Validation record for the filesystem asset refactor: test-suite results, asset gates, UI gates, and the fixture problems the first full run exposed.
-- [Filesystem asset library consolidation — 2026-09-13](filesystem-asset-library-validation.md) — Validation report for the flow_sdk/assets consolidation: Asset identity, the application/library boundary, and the isolation and filesystem checks proving it.
-- [Worker asset availability validation](worker-asset-availability.md) — Validation report on whether a selected worker actually discovers skills and agents: 32 native probes across four CLIs, and the corrections made.
+- [Filesystem asset refactor validation](asset-filesystem-refactor.md) — 2026-09-11 validation report for the filesystem asset refactor: library boundary, automated suite results and live checks.
+- [Filesystem asset library consolidation — 2026-09-13](filesystem-asset-library-validation.md) — 2026-09-13 report on consolidating the flow_sdk/assets filesystem library: identity, occurrences, import boundaries and implementation checks.
+- [Worker asset availability validation](worker-asset-availability.md) — 2026-09-10 validation of which skills and agents each worker harness actually discovers across launch modes; parity still in progress.

@@ -1,10 +1,15 @@
-import { Project, User, Visitor, Workspace } from '../entities';
+// The bootstrap payload is wire JSON — its callers hydrate it (`new Project(...)`
+// in main.ts). So it names the wire SHAPES, not the entity classes: a class lives
+// above this layer and cannot be loaded from it (see entities/*-types.ts).
+import { IProject } from '../entities/project-types';
 import { JSONSchemaProperty, TypeInfo } from '../FlowSync/schema';
-import { ComputeNode } from '../entities/compute_node';
-import { ComputeProviderType } from '../entities/compute-node/compute-node-types';
-import { AgentHook } from '../entities/agent-hook';
-import { WebDomain } from '../entities/web-domain';
-import { CapabilitiesSummary } from '../capabilities/CapabilityManager';
+import { IUser } from '../entities/user-types';
+import { IVisitor } from '../entities/visitor-types';
+import { IWorkspace } from '../entities/workspace-types';
+import { IWebDomain } from '../entities/web-domain-types';
+import { IAgentHook } from '../entities/agent-hook-types';
+import { ComputeProviderType, IComputeNode } from '../entities/compute-node/compute-node-types';
+import { CapabilitiesSummary } from '../capabilities/summary';
 import { RuntimeInfo } from '../utils/runtime';
 
 /**
@@ -119,12 +124,12 @@ export interface BootstrapInfo {
   types?: TypeInfo[];
   /** Compatibility payload emitted by older Hub backends before TypeInfo. */
   schemas?: JSONSchemaProperty[];
-  user?: User;
-  domain?: WebDomain;
-  visitor?: Visitor;
-  default_project?: Project;
-  default_workspace?: Workspace;
-  default_compute_node?: ComputeNode;
+  user?: IUser;
+  domain?: IWebDomain;
+  visitor?: IVisitor;
+  default_project?: IProject;
+  default_workspace?: IWorkspace;
+  default_compute_node?: IComputeNode;
   /**
    * The provider a hub mints new compute nodes on, from its own
    * `FLOWPAD_DEFAULT_COMPUTE_PROVIDER`.
@@ -138,7 +143,7 @@ export interface BootstrapInfo {
   /** True iff the backend has E2B configured and the @sandbox compute node is available. */
   sandbox_available?: boolean;
   /** Raw ComputeNode payload for the @sandbox node (E2B-backed). Hydrate via dataContext.sandboxComputeNode. */
-  sandbox_compute_node?: ComputeNode;
+  sandbox_compute_node?: IComputeNode;
   /** Hub only: whether the hub can provision cloud desktops (e2b workspaces).
    *  False when the hub has no e2b API key; "New Desktop" is disabled on it. */
   /** Whether this hub can provision cloud sandboxes (needs an e2b key).
@@ -156,7 +161,7 @@ export interface BootstrapInfo {
   harness_state?: HarnessBootstrapState;
   /** All capabilities + how to access each, grouped by intent (see CapabilityManager). */
   capabilities_summary?: CapabilitiesSummary;
-  sniffer_hook?: AgentHook;
+  sniffer_hook?: IAgentHook;
   /** Harness settings file actually carries sniffer hooks — true even when
    *  another instance on this machine installed them (no local entity). */
   sniffer_installed?: boolean;
@@ -195,8 +200,8 @@ export interface DeferredInfo {
   harness_state?: HarnessBootstrapState | null;
   capabilities_summary?: CapabilitiesSummary | null;
   sandbox_available?: boolean | null;
-  sandbox_compute_node?: ComputeNode | null;
-  sniffer_hook?: AgentHook | null;
+  sandbox_compute_node?: IComputeNode | null;
+  sniffer_hook?: IAgentHook | null;
   sniffer_installed?: boolean | null;
   notice?: BootstrapNotice | null;
 }

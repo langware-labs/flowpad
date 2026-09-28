@@ -1,12 +1,10 @@
 import { makeObservable, observable, reaction, runInAction } from 'mobx';
 import { dataManager } from '../APIEntity';
 import { ApiResponse } from '../ApiResponse';
-import { Workspace } from '../entities';
+import { EntityTypes } from '../schema/types';
 import { dataContext, TypeId } from '../FlowSync';
-import { ActionInfo, IMembershipRequest, Membership, MentionSendInfo } from '../models';
+import { ActionInfo, IMembershipRequest, Membership, MentionSendInfo, UserRole } from '../models';
 import { navigator } from './navigationService';
-
-export type UserRole = 'owner' | 'admin' | 'editor' | 'guest' | 'reader' | 'anonymous_viewer';
 
 /**
  * Direct member selector — one of these keys identifies the member to act on.
@@ -136,7 +134,7 @@ class MembershipService {
   }
 
   async fetchMemberships(entity_typeId: TypeId): Promise<Membership[]> {
-    if (entity_typeId.type == Workspace.type) {
+    if (entity_typeId.type == EntityTypes.Workspace) {
       const workspace = dataManager.getByTypeIdFromCache(entity_typeId);
       const roles = workspace?.expand?.roles;
       if (!roles || (roles.length === 1 && roles[0] === 'guest')) {

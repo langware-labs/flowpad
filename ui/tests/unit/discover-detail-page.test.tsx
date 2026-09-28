@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { dataManager } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import DiscoverDetailPage from '@src/pages/discover-page/DiscoverDetailPage';
+import DiscoverDetailPage, { BodyReason } from '@src/pages/discover-page/DiscoverDetailPage';
 
 const mocks = vi.hoisted(() => ({
   typeid: 'skill-bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
@@ -97,12 +97,41 @@ describe('DiscoverDetailPage (hub)', () => {
   it('explains why the document is not on the hub', async () => {
     directoryFor([mocks.row({ state: 'install', body_reason: 'not_on_hub', body_ref: null })]);
     render(<DiscoverDetailPage />);
-    expect(await screen.findByTestId('discover-body-reason')).toHaveTextContent('Connect GitHub on the publishing desk');
+    const reason = await screen.findByTestId('discover-body-reason');
+    expect(reason).toHaveTextContent("the publishing project isn't linked to the cloud yet");
+    expect(reason).not.toHaveTextContent('GitHub');
+  });
+
+  it('says a registered document has not been uploaded to the hub repo yet', async () => {
+    directoryFor([mocks.row({ body_reason: 'not_uploaded', body_ref: null })]);
+    render(<DiscoverDetailPage />);
+    expect(await screen.findByTestId('discover-body-reason')).toHaveTextContent(
+      "hasn't been uploaded to the project's repository",
+    );
+  });
+
+  it('labels a hub-repo origin as the hub repository, with no provider link', async () => {
+    directoryFor([
+      mocks.row({ origin: { kind: 'hub_repo', repo: 'git_repo-x', rel_path: '.claude/skills/rca', head_commit: 'c', tree: 't' } }),
+    ]);
+    render(<DiscoverDetailPage />);
+    const provenance = (await screen.findAllByTestId('discover-provenance'))[0];
+    expect(provenance).toHaveTextContent('hub repository');
+    expect(provenance.tagName).not.toBe('A');
   });
 
   it('says so when nothing visible matches the id', async () => {
     directoryFor([]);
     render(<DiscoverDetailPage />);
     expect(await screen.findByTestId('discover-not-found')).toBeInTheDocument();
+  });
+});
+
+describe('BodyReason (desk published view)', () => {
+  it('tells the user to keep one version when the hub and this desk both changed the asset', () => {
+    render(<BodyReason reason="asset_conflict" />);
+    const reason = screen.getByTestId('discover-body-reason');
+    expect(reason).toHaveTextContent('changed both on the hub and on this desk');
+    expect(reason).toHaveTextContent('Keep one version');
   });
 });

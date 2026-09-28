@@ -318,16 +318,49 @@ def attach_message(
 )
 def reply_on_channel(
     conversation_id: Annotated[str, typer.Argument(help="Conversation id (bare uuid).")],
-    text: Annotated[str, typer.Argument(help="What to say.")],
+    text: Annotated[str, typer.Argument(help="What to say (may be empty when sending files).")] = "",
+    reply_to: Annotated[
+        Optional[str],
+        typer.Option("--reply-to", help="Message id to quote (on email/Slack: to answer in its thread)."),
+    ] = None,
+    file: Annotated[
+        Optional[list[str]],
+        typer.Option("--file", help="A file to send; repeat for several. The channel refuses what it cannot take."),
+    ] = None,
 ) -> None:
     from flow_sdk.cli.commands._common import local_request  # noqa: PLC0415
 
     cid = (conversation_id or "").strip()
-    if not cid or not (text or "").strip():
-        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "conversation_id and text are required")
+    paths = [os.path.abspath(os.path.expanduser(p)) for p in (file or [])]
+    if not cid or not ((text or "").strip() or paths):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "conversation_id and text (or --file) are required")
+    missing = [p for p in paths if not os.path.isfile(p)]
+    if missing:
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"no such file: {missing[0]}")
+    payload = {"text": text, "files": paths, **({"reply_to": reply_to.strip()} if reply_to else {})}
     url = f"http://127.0.0.1:{_discover_port()}/api/v1/conversations/{cid}/reply"
-    body = local_request("POST", url, json={"text": text}, timeout=30).json()
+    body = local_request("POST", url, json=payload, timeout=30).json()
     if body.get("status") != "SUCCESS":
         _fail(7, "REFUSED", str(body.get("message") or body))
     _ok({"conversation_id": cid, **(body.get("data") or {})})
 
+
+@conversation_app.command(
+    "react",
+    help="Put an emoji on a channel message (WhatsApp, Telegram, Slack …); --remove takes it back.",
+)
+def react_to_message(
+    message_id: Annotated[str, typer.Argument(help="The message's id (bare uuid).")],
+    emoji: Annotated[str, typer.Argument(help="The emoji, e.g. 👍 (empty with --remove: all of ours).")] = "",
+    remove: Annotated[bool, typer.Option("--remove", help="Take the reaction back.")] = False,
+) -> None:
+    from flow_sdk.cli.commands._common import local_request  # noqa: PLC0415
+
+    mid = (message_id or "").strip()
+    if not mid or not (emoji.strip() or remove):
+        _fail(EXIT_INVALID_ARG, "INVALID_ARG", "message_id and an emoji are required")
+    url = f"http://127.0.0.1:{_discover_port()}/api/v1/graph/flow_message/{mid}/react"
+    body = local_request("POST", url, json={"emoji": emoji.strip(), "remove": remove}, timeout=30).json()
+    if body.get("status") != "SUCCESS":
+        _fail(7, "REFUSED", str(body.get("message") or body))
+    _ok({"message_id": mid, **(body.get("data") or {})})

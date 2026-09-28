@@ -124,3 +124,33 @@ async def test_a_wrong_shape_is_refused_and_the_question_stays_open(client, key)
     answer = await run
     assert answer.exit_code is ExitCode.OK
     assert answer.value.token == "fixed"
+
+
+async def test_compute_ops_1_runs_as_written(client, key):
+    """``compute-ops.md`` §1, run verbatim: the op is found by name and a person's answer comes back."""
+    from tests.utils.snippets import doc, fence_under, run_fence
+
+    person = asyncio.create_task(_person(client, answer={"token": "sk-live-1"}))
+    ns = await run_fence(fence_under(doc("compute-ops.md"), "1."), {}, filename="compute-ops.md §1")
+    await person
+    assert ns["answer"].exit_code is ExitCode.OK and ns["answer"].value.token == "sk-live-1"
+
+
+async def test_compute_ops_2_runs_as_written(key):
+    """``compute-ops.md`` §2, run verbatim: once the completion check holds, nobody is asked again and the
+    value is read off what the check printed."""
+    import sys
+
+    from flow_sdk.schema.data_spec.compute_op_spec import CliOp
+    from tests.utils.snippets import doc, fence_under, run_fence
+
+    key.completion_check = CliOp(commands={sys.platform: 'echo \'{"token": "sk-live-2"}\''})
+    await key.save()
+    try:
+        ns = await run_fence(fence_under(doc("compute-ops.md"), "2."), {}, filename="compute-ops.md §2")
+        assert ns["answer"].ok and ns["answer"].ran is False
+        assert ns["answer"].value.token == "sk-live-2"
+        assert open_questions() == [], "nobody was asked"
+    finally:
+        key.completion_check = None
+        await key.save()

@@ -15,7 +15,6 @@ from flow_sdk.builtin.agent import Agent
 channel = MessageBlock.get("simple")
 agent = Agent(
     name="pirate",
-    worker_type="claude",
     system_prompt="Answer like a pirate.",
 )
 await agent.save()

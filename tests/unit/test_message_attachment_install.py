@@ -19,12 +19,10 @@ from pathlib import Path
 import pytest
 
 import flow_sdk.models.entities  # noqa: F401 — full registry (skill/spec resolve)
-
 from flow_sdk.app.actions import message_attachment_action as ma_action
 from flow_sdk.app.actions.message_attachment_action import (
     handle_attachment_install,
     handle_attachment_uninstall,
-    handle_staged_file_content,
     handle_staged_files,
 )
 from flow_sdk.builtin.flow_message_bundle import unpack_bundle
@@ -308,7 +306,7 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
     assert again.scope == "user" and again.installed_root == str(user_root)
 
 
-async def test_staged_read_surface_lists_and_reads(tmp_path, ids):
+async def test_staged_listing_locates_the_asset_by_its_shape(tmp_path, ids):
     ma = await _stage(tmp_path, ids)
 
     res = await handle_staged_files(ma.id)
@@ -316,13 +314,46 @@ async def test_staged_read_surface_lists_and_reads(tmp_path, ids):
     paths = {f["path"] for f in res.data["files"]}
     assert f".claude/skills/{ids.leaf}/SKILL.md" in paths
     assert f".claude/skills/{ids.leaf}/helper.py" in paths
+    # The skill's folder, found by its shape's main document — review opens it there.
+    assert res.data["asset_root"] == f".claude/skills/{ids.leaf}"
     assert res.data["main_file"] == f".claude/skills/{ids.leaf}/SKILL.md"
+    assert [f["path"] for f in res.data["files"] if f["is_main"]] == [res.data["main_file"]]
     assert Path(res.data["abs_root"]).is_dir()
 
-    content = await handle_staged_file_content(ma.id, f".claude/skills/{ids.leaf}/SKILL.md")
-    assert isinstance(content, ApiSuccessResponse)
-    assert SENTINEL in content.data["content"] and content.data["truncated"] is False
 
-    # Path traversal is refused.
-    bad = await handle_staged_file_content(ma.id, "../../../etc/passwd")
-    assert isinstance(bad, ApiFailResponse) and bad.status_code == 400
+def _staged_tree(root: Path, files: list[str]) -> list[str]:
+    for rel in files:
+        (root / rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / rel).write_text("x")
+    return sorted(files)
+
+
+@pytest.mark.parametrize(
+    ("asset_type", "files", "asset_root", "main"),
+    [
+        # A deck bundle: the folder sits under the bundle's wrapper dirs, and its
+        # .flow capsule sorts first — the shape's main (deck.json) decides.
+        (
+            "deck",
+            ["agentic-assets/deck/arch/.flow/capsules/identity.json", "agentic-assets/deck/arch/arch.html", "agentic-assets/deck/arch/deck.json"],
+            "agentic-assets/deck/arch",
+            "agentic-assets/deck/arch/deck.json",
+        ),
+        # A header-only task row: no task.md, so no task layout to open.
+        ("task", ["header.json"], None, "header.json"),
+        # A raw file: the file type's shape does not claim a PDF.
+        ("file", ["report.pdf"], None, "report.pdf"),
+    ],
+)
+def test_staged_asset_is_located_by_its_type_shape(tmp_path, asset_type, files, asset_root, main):
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    paths = _staged_tree(tmp_path, files)
+    assert ma_action._locate_staged_asset(tmp_path, paths, SchemaRegistry.get(asset_type)) == (asset_root, main)
+
+
+def test_staged_asset_at_the_staged_dir_itself_is_the_empty_root(tmp_path):
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    paths = _staged_tree(tmp_path, ["spec.md"])
+    assert ma_action._locate_staged_asset(tmp_path, paths, SchemaRegistry.get("spec")) == ("", "spec.md")

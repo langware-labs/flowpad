@@ -190,7 +190,7 @@ class _AgentRunner:
         process before the prompt and its text after — a redelivery is answered
         from the record, never by a second turn.
         """
-        from flow_sdk.builtin.agent_serve import Turn, TurnEngine, turn_key  # noqa: PLC0415
+        from flow_sdk.builtin.agent_serve import Turn, TurnEngine, reply_outbox, turn_body, turn_key  # noqa: PLC0415
         from flow_sdk.builtin.deployment import AgentUnavailable  # noqa: PLC0415
 
         try:
@@ -201,13 +201,20 @@ class _AgentRunner:
         except AgentUnavailable as gone:
             return gone.answer()
         executor = str(ap.typeid)
-        turn = Turn(session=str(ap.typeid), key=turn_key(m), body=m.body or m.name or "")
+        # A channel message: the agent reads its quote and files, and saves files to answer with in
+        # its outbox — ``files`` on the answer, absolute paths, ready for ``reply_spec(files=…)``.
+        outbox = None
+        if callable(getattr(m, "_source", None)):
+            outbox = reply_outbox(await m._source(), turn_key(m))
+        body = turn_body(m, outbox=outbox) if outbox is not None else (m.body or m.name or "")
+        turn = Turn(session=str(ap.typeid), key=turn_key(m), body=body or m.name or "")
         outcome = await TurnEngine(self.agent, None).run(turn, process=ap)
         if not outcome.ok:
             # Not taken, busy, errored or out of time — the engine's own answer,
             # with ``busy``, ``timed_out`` and ``executor`` intact.
             return outcome
-        return self._output(outcome.text, executor).model_copy(update={"ran": outcome.ran})
+        files = sorted(str(p) for p in outbox.iterdir() if p.is_file()) if outbox is not None and outbox.is_dir() else []
+        return self._output(outcome.text, executor).model_copy(update={"ran": outcome.ran, "files": files})
 
     def _output(self, text: str, executor: str) -> PromptResult:
         """The turn's reply as a value, held to the persona's declared shape.
@@ -427,10 +434,8 @@ class StreamInbox:
 
     async def ensure_source(self):
         """The ``DataSource`` behind this block — adopted if one already watches
-        the address, else created. Public because binding a channel to an agent
-        (``Agent.bind_channel``) needs exactly this adoption rule, gate included;
-        a second copy of it is a second place for the connection check to be
-        forgotten.
+        the address, else created — ``DataSource.save`` adopts the same way, and
+        this adds the connection check before any row exists.
         """
         if self._source is not None:
             return self._source
@@ -562,8 +567,13 @@ class StreamInbox:
                                 await position.commit()
                             continue
                         spec = SourceItemSpec.model_validate({k: getattr(item, k) for k in SourceItemSpec.model_fields})
+                        quoted = None
+                        if item.reply_to_external_id:
+                            quoted = await SourceItem.get_one(
+                                {"data_source_id": str(source.id), "external_id": item.reply_to_external_id}
+                            )
                         handed.append(Delivered(
-                            spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered
+                            spec, position=position, row=item, source_id=str(source.id), redelivered=redelivered, quoted=quoted
                         ))
                     page = DeliveredPage(handed, position=position, source_id=str(source.id), last=rows[-1])
                     if not handed:
@@ -593,11 +603,11 @@ class StreamInbox:
 
         return DataDriver.loaded(self.provider)
 
-    async def reply_spec(self, item, *, body: str, attachments=()) -> MessageSpec:
+    async def reply_spec(self, item, *, body: str, files=(), quote: bool = True) -> MessageSpec:
         """The reply to ``item``, in this stream inbox's own channel shape — the rule
         and the reason are ``DataSource.reply_spec``'s."""
         source = await self.ensure_source()
-        return source.reply_spec(item, body=body, attachments=attachments)
+        return source.reply_spec(item, body=body, files=files, quote=quote)
 
     async def send(self, spec: MessageSpec) -> str:
         """Deliver an outbound spec through the source's messaging seam.
