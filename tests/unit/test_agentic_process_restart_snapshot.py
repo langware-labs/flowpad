@@ -228,3 +228,29 @@ def test_llm_endpoint_moves_the_restart_hash():
         worker_type="claude_code", llm_endpoint_typeid="llm_endpoint-22222222-2222-4333-8444-555555555555"
     )
     assert bound._restart_snapshot() != other._restart_snapshot()
+
+
+@pytest.mark.asyncio
+async def test_adding_a_folder_to_a_running_pty_worker_asks_for_a_restart(tmp_path, monkeypatch):
+    """The Assets board's "+ Folder…" goes through the ``add-dir`` action. A live PTY
+    worker was launched with its ``--add-dir`` set, so a new folder only reaches it
+    after a restart — the action must light ``restart_required`` (the toolbar's
+    Restart glow), and removing the folder again must put it out."""
+    import flow_sdk.builtin.agentic_process.agentic_process as module
+
+    async def no_index(_path):  # the one-shot indexer scan is not under test
+        return None
+
+    monkeypatch.setattr(module, "_index_additional_dir", no_index)
+    extra = str(tmp_path / "extra")
+    p = AgenticProcess(worker_type="claude_code", pty_mode=True, status=ProcessStatus.RUNNING.value, workdir=str(tmp_path))
+    p.last_started_hash = p._restart_snapshot()
+    await p.save()
+    assert p.restart_required is False
+
+    await p.add_dir(extra)
+    assert p.additional_dirs == [extra]
+    assert p.restart_required is True
+
+    await p.remove_dir(extra)
+    assert p.restart_required is False
