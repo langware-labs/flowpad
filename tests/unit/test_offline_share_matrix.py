@@ -293,3 +293,35 @@ async def test_a_row_that_lags_its_file_ships_what_the_file_says(tmp_path):
     assert (receiver_root / rel).read_bytes() == shipped, "install rewrote the file it received"
     installed = json.loads((receiver_root / agent_dir.relative_to(sender_root) / "agent.json").read_text(encoding="utf-8"))
     assert installed.get("skills") == wanted, f"the installed file lost its value: {installed}"
+
+
+async def test_a_session_downloads_with_its_transcript(tmp_path):
+    """A session share's Download carries what the share would send: the transcript
+    (``claude_session-<id>``). It installs into a project like any other attachment."""
+    from flow_sdk.builtin.claude_session import ClaudeSession
+
+    # As Claude writes one: named after its session id, which every line carries — that id IS the entity id.
+    sid, marker = str(uuid.uuid4()), uuid.uuid4().hex
+    transcript = tmp_path / f"{sid}.jsonl"
+    transcript.write_text(
+        f'{{"type":"user","sessionId":"{sid}","message":{{"role":"user","content":"{marker}"}}}}\n', encoding="utf-8"
+    )
+    session = ClaudeSession.model_validate(
+        {"id": sid, "name": f"session {marker[:6]}", "slug": f"s-{marker[:6]}", "asset_ref": str(transcript)}
+    )
+    await session.save(None)
+
+    package = await _export([str(session.typeid)], tmp_path)
+    await session.delete()
+
+    receiver_root = tmp_path / "receiver"
+    receiver = await _project(receiver_root, f"session-rx-{marker[:6]}")
+    up = await handle_upload_flow_message(_Upload(package), overwrite=False)
+    assert [(a["asset_type"], a["asset_id"]) for a in up.data["attachments"]] == [("claude_session", session.id)]
+    res = await handle_message_install_all(up.data["message_id"], receiver.id)
+    assert isinstance(res, ApiSuccessResponse) and not res.data["failed"], res
+
+    got = await ClaudeSession.get_one({"id": session.id})
+    placed = sorted(str(p.relative_to(receiver_root)) for p in receiver_root.rglob("*") if p.is_file())
+    assert got is not None, f"the session did not install; placed: {placed}; result {res.data}"
+    assert marker in Path(got.asset_ref).read_text(encoding="utf-8"), "the transcript did not travel"
