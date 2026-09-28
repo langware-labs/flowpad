@@ -1,4 +1,4 @@
-import { dataManager, Project, TypeId, type ShareResult } from '@sdk';
+import { dataManager, inviteFailure, Project, TypeId, type ShareResult } from '@sdk';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const PROJECT_ID = '91c340cb-a2cc-4f67-9fe1-f2a0e481a0e3';
@@ -65,7 +65,9 @@ describe('Project.invite — one share action; the backend orchestrates the invi
     invited: [{ user_id: THEM, email: null, name: 'Them', conversation_id: 'conv-1' }],
     skipped: [{ user_id: null, email: 'owner@example.com', reason: 'self' }],
     failed: [],
-    skipped_teams: [{ team: `team-${ZSCHOOL}`, name: 'zschool', reason: 'not_listable', message: 'Forbidden' }],
+    granted_teams: [{ team: `team-${ZSCHOOL}`, name: 'zschool', conversation_id: 'conv-team' }],
+    skipped_teams: [],
+    failed_teams: [],
   };
   const project = () =>
     new Project({ type: Project.type, id: PROJECT_ID, name: 'p', remote: true } as Partial<Project>);
@@ -109,7 +111,14 @@ describe('Project.invite — one share action; the backend orchestrates the invi
     const result = await project().invite(['a@example.com']);
 
     expect(call.mock.calls[0][0].bodyParameters).toEqual({ recipients: ['a@example.com'] });
-    expect(result).toEqual({ invited: [], skipped: [], failed: [], skipped_teams: [] });
+    expect(result).toEqual({
+      invited: [],
+      skipped: [],
+      failed: [],
+      granted_teams: [],
+      skipped_teams: [],
+      failed_teams: [],
+    });
   });
 });
 
@@ -122,7 +131,9 @@ describe('Project.share(users) — the invite, or with nobody to invite the publ
         invited: [],
         skipped: [],
         failed: [{ user_id: null, email: 'eli@example.com', status: 500, message: 'boom' }],
+        granted_teams: [],
         skipped_teams: [],
+        failed_teams: [],
       },
     });
     const project = new Project({ type: Project.type, id: PROJECT_ID, name: 'p', remote: true } as Partial<Project>);
@@ -142,5 +153,51 @@ describe('Project.share(users) — the invite, or with nobody to invite the publ
 
     expect(call.mock.calls[0][0].name).toBe('share');
     expect(call.mock.calls[0][0].bodyParameters).toEqual({});
+  });
+});
+
+describe('inviteFailure — an error only when nothing landed', () => {
+  const EMPTY: ShareResult = {
+    invited: [],
+    skipped: [],
+    failed: [],
+    granted_teams: [],
+    skipped_teams: [],
+    failed_teams: [],
+  };
+  const TEAM = 'team-6a6a6a6a-0000-4000-8000-000000000007';
+  const failedPerson = { user_id: null, email: 'eli@example.com', status: 403, message: 'nope' };
+
+  it('is null when a team was granted and every person failed', () => {
+    expect(
+      inviteFailure({
+        ...EMPTY,
+        failed: [failedPerson],
+        granted_teams: [{ team: TEAM, name: 'sandbox-team', conversation_id: 'c' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('is null when one person was invited and another failed', () => {
+    expect(
+      inviteFailure({
+        ...EMPTY,
+        invited: [{ user_id: 'u', email: null, name: 'U', conversation_id: 'c' }],
+        failed: [failedPerson],
+      }),
+    ).toBeNull();
+  });
+
+  it('is an error naming every failed person and team when nothing succeeded', () => {
+    const error = inviteFailure({
+      ...EMPTY,
+      failed: [failedPerson],
+      failed_teams: [{ team: TEAM, name: 'locked', status: 403, message: 'Forbidden' }],
+    });
+    expect(error?.message).toBe('Could not invite eli@example.com, locked: nope');
+  });
+
+  it('is null when nothing was sent and nothing failed', () => {
+    expect(inviteFailure({ ...EMPTY, skipped_teams: [{ team: TEAM, name: 't', reason: 'already_granted' }] })).toBeNull();
   });
 });

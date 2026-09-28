@@ -39,22 +39,31 @@ import type { ShareResult } from './members';
 
 /** Who a Project share invites beyond the bare people list. */
 export interface ProjectInviteOptions {
-  /** Teams (``team-<uuid>``) the backend expands to their current people. */
+  /** Teams (``team-<uuid>``) the backend grants on the hub as one group principal each. */
   teams?: TypeId[];
   /** The sharer's personal note, carried in every invite and its message. */
   note?: string;
 }
 
 /**
- * The error a project share throws when the backend could not invite someone —
- * the backend's own sentence for the first failure — or null when nobody failed.
+ * The error a project share throws when NOTHING landed — no person invited and
+ * no team granted — while at least one recipient failed: the backend's own
+ * sentence for the first failure. Null otherwise, including a partial failure,
+ * which the caller reads per recipient from the result.
  * `Project.share` throws it; a caller of `Project.invite` can throw the same one.
  */
 export function inviteFailure(result: ShareResult): Error | null {
-  const { failed } = result;
-  if (!failed.length) return null;
-  const who = failed.map((r) => r.email ?? r.name ?? r.user_id ?? '?').join(', ');
-  return new Error(`Could not invite ${who}: ${failed[0].message}`);
+  const { invited, failed, granted_teams: granted = [], failed_teams: failedTeams = [] } = result;
+  // Only a share where NOTHING landed is an error. A partial failure is
+  // reported per recipient in the result (the members popover renders it).
+  if (invited.length || granted.length) return null;
+  if (!failed.length && !failedTeams.length) return null;
+  const who = [
+    ...failed.map((r) => r.email ?? r.name ?? r.user_id ?? '?'),
+    ...failedTeams.map((t) => t.name ?? t.team),
+  ].join(', ');
+  const message = failed[0]?.message ?? failedTeams[0]?.message;
+  return new Error(`Could not invite ${who}: ${message}`);
 }
 
 export interface ProjectMember {
@@ -434,9 +443,10 @@ export class Project extends APIEntity<Project> {
    * One ``POST project/<id>/share`` carrying ONLY the share keys
    * (``ShareRequestSpec``: ``recipients``, ``teams``, ``note``). The backend's
    * ``Project.share`` (``flow_sdk/builtin/project.py``) owns the whole
-   * orchestration — team expansion through each team's member list, de-duping,
-   * skipping the sharer and anyone already on the roster, one message-flagged
-   * membership invite per new person — and answers the canonical Project plus
+   * orchestration — one hub group grant plus one team conversation per new team,
+   * de-duping, skipping the sharer and anyone (or any team) already on the
+   * roster, one membership invite plus a 1:1 invite conversation per new
+   * person — and answers the canonical Project plus
    * its ``share_result``. ``users`` are emails or hub user ids (bare or
    * ``user-<uuid>``), optionally with a role; the backend decides which by shape.
    *
@@ -455,7 +465,7 @@ export class Project extends APIEntity<Project> {
     const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
     const { share_result: shareResult, ...entity } = response ?? {};
     this.adoptShareResponse(entity);
-    return (shareResult as ShareResult | undefined) ?? { invited: [], skipped: [], failed: [], skipped_teams: [] };
+    return (shareResult as ShareResult | undefined) ?? { invited: [], skipped: [], failed: [], granted_teams: [], skipped_teams: [], failed_teams: [] };
   }
 
   /**

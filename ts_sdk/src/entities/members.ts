@@ -50,30 +50,41 @@ export interface ShareRecipient {
   name?: string | null;
 }
 
-/** A team the share did not expand. Nothing was sent for it. */
-export interface SkippedTeam {
+/** One team a share addressed. */
+export interface ShareTeam {
   /** The team's typeid string (``team-<uuid>``). */
   team: string;
   name: string | null;
-  /**
-   * ``not_listable`` — the team's member list refused the sharer (the hub's
-   * member-list policy: team admin and above). ``no_members`` — the list came
-   * back empty; the local server degrades a refused hub read to its (empty)
-   * cached roster, so a refusal can arrive looking exactly like this.
-   */
-  reason: 'not_listable' | 'no_members' | (string & {});
-  message?: string | null;
 }
 
-/** The per-person outcome of a share with people and teams. */
+/** A team granted on the hub as ONE group principal. */
+export interface GrantedTeam extends ShareTeam {
+  /** The team invite conversation; null when the grant landed but the message was not sent. */
+  conversation_id: string | null;
+}
+
+/** A team that already holds a role on the entity: no second grant, conversation or message. */
+export interface SkippedTeam extends ShareTeam {
+  reason: 'already_granted';
+}
+
+/** A team whose group grant the hub refused; ``status`` is null when no response came back. */
+export interface FailedTeam extends ShareTeam {
+  status: number | null;
+  message: string;
+}
+
+/** The per-person and per-team outcome of a share with people and teams. */
 export interface ShareResult {
-  /** Invited; ``conversation_id`` is the conversation the hub opened with the sharer. */
+  /** Invited; ``conversation_id`` is the 1:1 invite conversation the sharer's client opened. */
   invited: (ShareRecipient & { conversation_id: string | null })[];
-  /** ``self`` | ``already_member`` | ``already_invited`` | the hub's own reason. */
+  /** ``self`` | ``already_member`` | ``already_invited``. */
   skipped: (ShareRecipient & { reason: string })[];
   /** The hub refused or failed this one; ``status`` is null when no response came back. */
   failed: (ShareRecipient & { status: number | null; message: string })[];
+  granted_teams: GrantedTeam[];
   skipped_teams: SkippedTeam[];
+  failed_teams: FailedTeam[];
 }
 
 /** A freshly minted invite link. ``url`` is returned EXACTLY ONCE — the hub
