@@ -280,6 +280,13 @@ async def ask_person(
         return AskResult.not_yet(f"{label}: nobody could be shown the question.", ran=False)
     try:
         value = await wait_for(question, timeout=timeout)
+    except asyncio.CancelledError:
+        # The caller gave up on the answer (a replaced setup run): take the
+        # question off the person's screen too. Shielded, so the close is sent.
+        from flow_sdk.core.compute_op.ask_window import withdraw_question  # noqa: PLC0415
+
+        await asyncio.shield(withdraw_question(question))
+        raise
     except Cancelled:
         return AskResult.not_yet(f"{label}: cancelled.", cancelled=True)
     except TimeoutError:

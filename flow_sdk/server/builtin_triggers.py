@@ -402,7 +402,50 @@ async def _navigate_to_wizard(wizard: "Wizard") -> None:
         _log.debug("llm setup: no live tab to show the wizard page on", exc_info=True)
 
 
+#: The setup run in flight, if any — the one a newer `run_llm_setup` replaces.
+_SETUP_RUN: "Optional[asyncio.Task]" = None
+
+#: What a replaced run's activity node and its caller are told.
+SETUP_REPLACED = "replaced by a newer setup run"
+
+
 async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[ReturnedValue, WizardResult]":
+    """Run first-run setup, stopping any setup run already in flight first.
+
+    The newest run wins, for this wizard only: the first-run trigger and Settings →
+    "Run setup again" both land here, and a person who clicks the button while the
+    trigger's run is still going means "start over", not "already running". The old
+    run is cancelled — its shell commands' process groups killed (`run_shell`), its
+    agent closed (`_prompt_and_wait`), its open question withdrawn (`ask_person`) —
+    and awaited until it has let go of the wizard's run lock, so `_run_llm_setup`'s
+    `reset_run` always clears the old run's progress before the new one shows.
+
+    A replaced caller answers ``busy`` with `SETUP_REPLACED` rather than raising:
+    the HTTP edge maps that to 409, and the trigger logs it.
+    """
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult  # noqa: PLC0415
+
+    global _SETUP_RUN
+    previous = _SETUP_RUN
+    run = asyncio.ensure_future(_run_llm_setup(wizard, unattended=unattended, previous=previous))
+    _SETUP_RUN = run
+    try:
+        return await run
+    except asyncio.CancelledError:
+        current = asyncio.current_task()
+        if current is not None and current.cancelling():
+            raise  # the caller itself is being cancelled — not a replacement
+        return CliResult.not_yet(SETUP_REPLACED, ran=False), WizardResult.held(
+            f"{wizard.name or LLM_SETUP_WIZARD} was {SETUP_REPLACED}."
+        )
+    finally:
+        if _SETUP_RUN is run:
+            _SETUP_RUN = None
+
+
+async def _run_llm_setup(
+    wizard: "Wizard", *, unattended: bool, previous: "Optional[asyncio.Task]"
+) -> "tuple[ReturnedValue, WizardResult]":
     """First-run setup: an LLM source, then the wizard that installs the tools.
 
     The source is settled BEFORE the wizard and outside it (`_resolve_llm_source`).
@@ -431,11 +474,19 @@ async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[Returne
     after the LLM source, which can mean minutes in the chooser — so the page
     opened onto the last run's leftovers and only emptied later. A run already
     in progress keeps its record (`reset_run` refuses); `wizard.run` then
-    answers "already running", as it always did.
+    answers "already running", as it always did. A previous SETUP run is never
+    that case: it is stopped first (see `run_llm_setup`), so only a run started
+    some other way — the wizard page's own Run button — still refuses here.
     """
     from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
     from flow_sdk.core.wizard.state import reset_run  # noqa: PLC0415
 
+    if previous is not None and not previous.done():
+        _log.info("llm setup: stopping the setup run already in flight")
+        previous.cancel(SETUP_REPLACED)
+        # Until it has unwound: its `execute_wizard` releases the run lock on the
+        # way out, and `reset_run` below refuses while that lock is held.
+        await asyncio.wait({previous})
     if reset_run(str(wizard.id)) is not None:
         await _notify_wizard_watchers(str(wizard.id))
     await _navigate_to_wizard(wizard)
@@ -466,6 +517,11 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
         _log.warning("llm setup trigger %r names no wizard it can resolve; nothing to run", trigger.uname)
         return
     source, result = await run_llm_setup(wizard, unattended=True)
+    if result.busy:
+        # Replaced by a newer run (or held by one started from the wizard page):
+        # that run reports for itself, so this one has nothing to tell the person.
+        _log.info("llm setup trigger %r: %s", trigger.uname, result.detail)
+        return
     if result.exit_code is ExitCode.REFUSED:
         _log.warning("llm setup trigger %r: %s", trigger.uname, result.detail)
         return

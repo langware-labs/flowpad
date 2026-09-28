@@ -89,6 +89,27 @@ async def _push_to_live_tab(question) -> bool:
         return False
 
 
+async def withdraw_question(question) -> None:
+    """Close *question*'s modal on the active tab — nobody is waiting for its answer.
+
+    For an ask whose caller was cancelled (a setup run replaced by a newer one):
+    left open, the modal offers a form whose answer resolves nothing. The tab
+    closes it only when it is still showing THIS question, so a newer question
+    that already replaced it stays. Never raises, same as the push that opened it.
+    """
+    try:
+        from flow_sdk.notifications.ui_command import send_ui_command  # noqa: PLC0415
+        from flow_sdk.server.routes.websocket import get_active_connection  # noqa: PLC0415
+
+        target = get_active_connection()
+        if target is None:
+            return
+        _connection_id, socket = target
+        await send_ui_command(socket, "close_ask_modal", pointer=question.id)
+    except Exception:  # noqa: BLE001 — no socket, no server: nothing to close
+        _log.debug("ask: no live tab to withdraw the question from", exc_info=True)
+
+
 async def _open_a_window(question) -> bool:
     """Open a browser at the question on this backend's own port."""
     if os.environ.get("FLOWPAD_NO_BROWSER"):
