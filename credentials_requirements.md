@@ -366,7 +366,7 @@ recipient, `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` + a second number, `OPENAI_W
 - **Order.** D1 first (it makes step 4 provable), then D2, then D3 one channel at a time: agentmail → Telegram
   → WAHA → Slack → Cloud API → phone. The first two need no hand-made provider config.
 
-**Accounts still needed from you** (names only are read): the second agentmail inbox, `TELEGRAM_TEST_CHAT_ID`, a
+**Accounts still needed from you** (names only are read): the second AgentMail inbox, `TELEGRAM_TEST_CHAT_ID`, a
 second Slack identity, the WAHA test number, Cloud API phone number id + test recipient, Twilio SID/token + second
 number, the OpenAI SIP project. Channels without an account stay out of D3 and are reported.
 
@@ -407,7 +407,7 @@ deployment), or gets a rule now.
 - (D) Done and proven: D-F1 (kill by id), D-F2 (authorization rows go; nothing to revoke at the provider — the box
   only held short-lived tokens from the owner's connection), D-F3 teardown seam + WAHA (unit; no live WAHA on a box
   yet), D-F4 sweep sees paused sandboxes + `deployment_leftovers`, D-F5 rig (local template, tunnel, test hub).
-- (D) Open: the real-channel legs (D-F6..F10) — each needs its account from you (second agentmail inbox, Telegram
+- (D) Open: the real-channel legs (D-F6..F10) — each needs its account from you (second AgentMail inbox, Telegram
   test chat, second Slack identity, WAHA test number, Cloud API recipient, Twilio second number, SIP project). The
   AgentMailbox address is still NOT released when an agent is deleted (a deliberate explicit verb today) — decide.
 - (D) Found by the cycle and fixed: the exec-env image was python:3.10 under a 3.11 floor (no release template since
