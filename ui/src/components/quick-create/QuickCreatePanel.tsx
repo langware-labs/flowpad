@@ -85,7 +85,7 @@ export type DesktopTileProps = {
 
 /**
  * The square icon-over-label tile every "New …" affordance on project home
- * uses — sized to match the home MiniDesktop / favorites grid. Exported so
+ * uses — sized to match the favorites desktop grid. Exported so
  * sibling surfaces (hub home's projects and desktops) present the same shape
  * rather than inventing a second look for the same kind of act.
  *

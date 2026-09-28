@@ -3,7 +3,7 @@ import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchB
 import { NotificationFeed } from '@src/notifications';
 import { RecentConversationsStrip } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
-import { MiniDesktop } from '@src/components/quick-create';
+import { QuickCreateTile } from '@src/components/quick-create';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { ProjectAgentsStrip } from '@src/components/agents/ProjectAgentsStrip';
 import { SessionInput } from '@src/components/session-input/session-input';
@@ -241,16 +241,12 @@ export function HomeLanding() {
                       {/* Same four project starting points as the Vibe hero —
                           one shared row, so the modes can't drift apart. */}
                       <ProjectActionsRow className="w-full self-start" />
+                      <QuickCreateTile className="self-start" />
                       <ProjectAgentsStrip className="w-full self-start" />
                     </div>
                   </div>
 
-                  {/* Quick Access — fixed below the hero */}
                   <div className="flex shrink-0 flex-col items-center gap-6 text-center">
-                    <div className="w-full max-w-3xl">
-                      <MiniDesktop />
-                    </div>
-
                     <ActivityIndicator
                       variant="strip"
                       className="flex w-full max-w-3xl items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-start text-xs transition-colors hover:bg-muted/60"
