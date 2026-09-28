@@ -416,6 +416,16 @@ async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[Returne
     caller is "the person is already looking at the wizard", so without this
     the whole run is invisible behind whatever screen was already open.
 
+    Steered TWICE, not once. `_resolve_llm_source` itself navigates to the
+    chooser (`/dock/llm-setup`) whenever the box is not already funded — a
+    second navigation, landing well after the first, that overwrites it. A
+    person who was just sent to the wizard page is then sent past it to the
+    chooser, and once they press its own "Done" nothing sends them back: they
+    are left on whatever the chooser's own close-target is (its caller's
+    "home"), watching a wizard run they cannot see. So this steers again right
+    before the wizard actually starts — a wasted no-op when the box was
+    already funded and the chooser never opened, and the fix when it did.
+
     The previous run's answers are cleared FIRST, before the page is shown.
     `execute_wizard` clears them too, but only once the wizard itself starts —
     after the LLM source, which can mean minutes in the chooser — so the page
@@ -431,6 +441,7 @@ async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[Returne
     await _navigate_to_wizard(wizard)
     source = await _resolve_llm_source()
     _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
+    await _navigate_to_wizard(wizard)
     return source, await wizard.run(unattended=unattended)
 
 
