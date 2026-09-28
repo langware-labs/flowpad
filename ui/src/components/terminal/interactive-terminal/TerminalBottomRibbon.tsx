@@ -7,8 +7,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import { BookMarked, ChevronDown, FileText, Layers } from 'lucide-react';
-import { EntryIcon, entryLabel } from '@src/pages/flow-page/display-history-button';
-import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { DisplayHistoryList } from '@src/pages/flow-page/display-history-button';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
@@ -281,6 +280,8 @@ const ArtifactsChip: React.FC<{
  * stack rides on the process entity (backend-capped at 50), so this costs no
  * fetch, and the rows mount only while the popover is open.
  */
+const SHOWN_CHIP_CLASSES = 'h-6 text-sky-400 border-sky-400/40 hover:border-sky-400 hover:text-sky-300';
+
 const ShownChip: React.FC<{
   shown: readonly DisplayEntry[];
   onOpen: (entry: DisplayEntry) => void;
@@ -296,15 +297,15 @@ const ShownChip: React.FC<{
           data-testid="ribbon-shown"
           aria-label={t`Everything this run has shown`}
           title={t`Everything this run has shown`}
-          className="h-6 gap-1.5 border-sky-400/40 px-2 text-[11px] text-sky-400 hover:border-sky-400 hover:text-sky-300"
+          className={cn(SHOWN_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]')}
         >
           <Layers className="h-3.5 w-3.5" />
           <span className="tabular-nums">{shown.length}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="w-72 p-1">
-        <ShownRows
-          shown={shown}
+        <DisplayHistoryList
+          stack={shown}
           onOpen={(entry) => {
             setOpen(false);
             onOpen(entry);
@@ -314,28 +315,3 @@ const ShownChip: React.FC<{
     </Popover>
   );
 };
-
-const ShownRows: React.FC<{
-  shown: readonly DisplayEntry[];
-  onOpen: (entry: DisplayEntry) => void;
-}> = ({ shown, onOpen }) => (
-  // Stored oldest-first; list newest-first.
-  <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
-    {[...shown].reverse().map((entry, i) => {
-      const ago = formatTimeAgo(entry.shown_at);
-      return (
-        <button
-          key={`${entry.shown_at ?? ''}:${i}`}
-          type="button"
-          onClick={() => onOpen(entry)}
-          data-testid="ribbon-shown-row"
-          className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start hover:bg-accent"
-        >
-          <EntryIcon entry={entry} />
-          <span className="min-w-0 flex-1 truncate text-xs text-foreground">{entryLabel(entry)}</span>
-          {ago && <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{ago}</span>}
-        </button>
-      );
-    })}
-  </div>
-);

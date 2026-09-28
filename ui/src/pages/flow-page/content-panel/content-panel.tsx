@@ -45,6 +45,11 @@ import { useTerminalTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { appDockAddress } from '@src/navigation/app-dock';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
+import {
+  DEFAULT_NAVIGATOR_POLICY,
+  NavigatorCollapsePolicyContext,
+  POPOUT_NAVIGATOR_POLICY,
+} from '@src/components/navigator-panel/NavigatorPanel';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
@@ -586,7 +591,14 @@ function ContentPanelBody({
           opens its bottom over this line, so the menu + body read as one panel
           hanging from the current tab (the folder-tab continuum). */}
       <div className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip ? 'border-t border-border' : ''}`}>
-        {!suppressChrome && <NavigatorSlot />}
+        {/* A win/ popout starts its navigator collapsed and keeps toggles local. */}
+        {!suppressChrome && (
+          <NavigatorCollapsePolicyContext.Provider
+            value={windowMode ? POPOUT_NAVIGATOR_POLICY : DEFAULT_NAVIGATOR_POLICY}
+          >
+            <NavigatorSlot />
+          </NavigatorCollapsePolicyContext.Provider>
+        )}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)
