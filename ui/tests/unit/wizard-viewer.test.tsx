@@ -159,9 +159,9 @@ describe('a settled run', () => {
   });
   const fsRefTwo = () => refWith(() => Promise.resolve(DOC_TWO));
 
-  it('says what the run answered, in its own sentence', () => {
+  it('does not repeat the run′s own detail at the bottom — each step already has it, on hover', () => {
     renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(settled)} />);
-    expect(screen.getByText(settled.result.detail)).toBeTruthy();
+    expect(screen.queryByText(settled.result.detail)).toBeNull();
   });
 
   it('says nothing inline — a row′s own answer is read on hover, not printed permanently', async () => {

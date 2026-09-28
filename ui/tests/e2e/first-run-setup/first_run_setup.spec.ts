@@ -7,7 +7,7 @@
  *   2. A box with no LLM source lands on the chooser (`/dock/llm-setup`);
  *      "Skip for now" is an answer, and setup steers on to the wizard's page.
  *      A box that is already funded never sees the chooser.
- *   3. The page lists all six tools and shows the run live.
+ *   3. The page lists all four tools and shows the run live.
  *   4. The run settles: every step reaches an answer, a tool already on the
  *      machine (Git) reads as done, and the Run button is usable again.
  *
@@ -17,7 +17,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-const STEPS = ['jq', 'ripgrep', 'claude-code', 'python', 'git', 'node'];
+const STEPS = ['claude-code', 'python', 'git', 'node'];
 // `stepStatus` / `LIVE_STATE` words that mean "this step has not answered yet".
 const UNSETTLED = new Set(['not_reached', 'running']);
 
@@ -62,7 +62,7 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   // which hides the page behind it from the accessibility tree.
   await expect(page.getByTestId('wizard-viewer')).toContainText('llm-setup');
 
-  // 3. All six tools are on the page.
+  // 3. All four tools are on the page.
   for (const id of STEPS) {
     await expect(page.getByTestId(`wizard-step-${id}`)).toBeVisible();
   }
