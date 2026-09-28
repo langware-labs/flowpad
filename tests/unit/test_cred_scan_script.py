@@ -92,6 +92,13 @@ def project(tmp_path: Path) -> Path:
         '  default = "us-east-1"',
         "}",
     ]))
+    _write(tmp_path, "config/admin.ts", "\n".join([
+        "export default ({ env }) => ({",
+        "  secret: env('ADMIN_JWT_SECRET'),",
+        "  port: env.int('ADMIN_PORT', 1337),",
+        "  key: env('SSL_KEY', undefined),",
+        "});",
+    ]))
     _write(tmp_path, "requirements.txt", "openai>=1.0\nrequests\n")
     _write(tmp_path, "node_modules/lib/index.js", "process.env.VENDORED_KEY")
     return tmp_path
@@ -134,6 +141,9 @@ def test_no_value_ever_reaches_the_output(inventory: dict):
         ("TF_VAR_db_password", "infra-hard"),
         ("TF_VAR_region", "infra-default"),
         ("OPENAI_API_KEY", "sdk"),
+        ("ADMIN_JWT_SECRET", "read"),
+        ("ADMIN_PORT", "default"),
+        ("SSL_KEY", "read"),
     ],
 )
 def test_each_source_yields_its_signal(inventory: dict, name: str, signal: str):

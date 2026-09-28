@@ -146,6 +146,8 @@ RUST_READ = re.compile(r"env::var\(\s*\"" + NAME + r"\"\s*\)(\s*\.\s*(unwrap_or\
 RUBY_FETCH = re.compile(r"ENV\.fetch\(\s*['\"]" + NAME + r"['\"]\s*(,|\)\s*\{)?")
 RUBY_INDEX = re.compile(r"ENV\[\s*['\"]" + NAME + r"['\"]\s*\]")
 PHP_READ = re.compile(r"(?:getenv\(\s*|\$_ENV\[\s*|\$_SERVER\[\s*|env\(\s*)['\"]" + NAME + r"['\"]\s*(,)?")
+#: Config-helper reads: Strapi / AdonisJS / Laravel-style `env('X')`, `env.int('X', 3)`.
+JS_ENV_HELPER = re.compile(r"(?<![\w.])env(?:\.\w+)?\(\s*['\"]" + NAME + r"['\"]\s*(?:,\s*([^)\s][^)]*))?\)")
 CSHARP_READ = re.compile(r"Environment\.GetEnvironmentVariable\(\s*\"" + NAME + r"\"")
 PRISMA_ENV = re.compile(r"env\(\s*\"" + NAME + r"\"\s*\)")
 
@@ -295,6 +297,10 @@ def scan_code(inv: Inventory, path: Path, lines: list[str], test: bool) -> None:
             hits.append((m.group(1), "default" if m.group(2) else "hard"))
         for m in RUBY_INDEX.finditer(line):
             hits.append((m.group(1), "read"))
+        if path.suffix in {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"}:
+            for m in JS_ENV_HELPER.finditer(line):
+                fallback = (m.group(2) or "").strip()
+                hits.append((m.group(1), "default" if fallback and fallback != "undefined" else "read"))
         if path.suffix == ".php":
             for m in PHP_READ.finditer(line):
                 hits.append((m.group(1), "default" if m.group(2) else "read"))
