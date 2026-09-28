@@ -21,6 +21,7 @@ import MessageLanding from '@src/pages/entry/MessageLanding';
 import LaunchLanding from '@src/pages/entry/LaunchLanding';
 import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
+import EntityLanding from '@src/pages/entry/EntityLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
 import { markdownRedirectTarget, skillsRedirectTarget } from '@src/navigation/dead-route-redirects';
@@ -181,6 +182,12 @@ export const router = createBrowserRouter(
       <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
       <Route path="launch" element={<LaunchLanding />} />
       <Route path="install" element={<InstallLanding />} />
+      {/* Every other `<entity type>/<id>`: the generic landing for the hub's
+          post-accept URL when the invitation set no `callback_override`. Static
+          first segments above (and `dock`/`win`/`dev` below) outrank this dynamic
+          one, so it only catches what nothing else routes. Hub only — elsewhere it
+          renders NotFound, as the catch-all did. */}
+      <Route path=":entityType/:entityId" element={<EntityLanding />} />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route
         path="dock"

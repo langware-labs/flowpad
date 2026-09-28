@@ -4768,6 +4768,10 @@ msgstr "Copied {0} link{1}"
 msgid "Copied to Clipboard"
 msgstr "Copied to Clipboard"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "Copied!"
+msgstr "Copied!"
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Copilot"
@@ -4791,6 +4795,7 @@ msgstr "Copilot tab"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
+#: src/pages/entry/EntityLanding.tsx
 msgid "Copy"
 msgstr "Copy"
 
@@ -9163,6 +9168,10 @@ msgstr "Generating…"
 msgid "Generic options"
 msgstr "Generic options"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "Get FlowPad at flowpad.ai →"
+msgstr "Get FlowPad at flowpad.ai →"
+
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
 msgstr "Getting started — {stepsLeft} steps left"
@@ -9345,6 +9354,10 @@ msgstr "Go back to stream inbox"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
 msgstr "Go to Console"
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "Go to Home"
+msgstr "Go to Home"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
@@ -9946,6 +9959,7 @@ msgid "Id"
 msgstr "Id"
 
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/pages/entry/EntityLanding.tsx
 msgid "ID"
 msgstr "ID"
 
@@ -10510,9 +10524,22 @@ msgstr "Issue diagnoses recorded by the assistant. Click a row to view the full 
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 msgstr "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 
+#. placeholder {0}: model.repoPath
+#: src/pages/entry/EntityLanding.tsx
+msgid "It lives in git under {0}. Clone it, and open it in the FlowPad desktop app."
+msgstr "It lives in git under {0}. Clone it, and open it in the FlowPad desktop app."
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "It lives in git. Clone it, and open it in the FlowPad desktop app."
+msgstr "It lives in git. Clone it, and open it in the FlowPad desktop app."
+
 #: src/components/connections-manager.tsx
 msgid "It may be only partly removed."
 msgstr "It may be only partly removed."
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "It may have been deleted, or it wasn't shared with this account."
+msgstr "It may have been deleted, or it wasn't shared with this account."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "It runs again the next time the project opens."
@@ -10525,6 +10552,10 @@ msgstr "It was added as an ordinary context folder instead, so agents can still 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Italic"
 msgstr "Italic"
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "item"
+msgstr "item"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
@@ -11172,6 +11203,7 @@ msgstr "Loaded"
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
+#: src/pages/entry/EntityLanding.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Loading"
 msgstr "Loading"
@@ -12580,6 +12612,10 @@ msgstr "Next scheduled poll"
 msgid "next: {0}"
 msgstr "next: {0}"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "No {label} with this id was found"
+msgstr "No {label} with this id was found"
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
 msgstr "No access to this repository. Connect GitHub if it's private, or check the URL."
@@ -13656,6 +13692,7 @@ msgstr "Not deployed yet — it runs nowhere until you launch it."
 msgid "not fired yet"
 msgstr "not fired yet"
 
+#: src/pages/entry/EntityLanding.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "Not found"
@@ -14104,6 +14141,7 @@ msgid "Open {label}"
 msgstr "Open {label}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/pages/entry/EntityLanding.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
 
@@ -14352,6 +14390,10 @@ msgstr "Open in terminal"
 msgid "Open in Worktree"
 msgstr "Open in Worktree"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "Open in your browser"
+msgstr "Open in your browser"
+
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Open it now"
 msgstr "Open it now"
@@ -14477,6 +14519,14 @@ msgstr "Open terminal ({modLabel}+T)"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open terminal in {workdir}"
 msgstr "Open terminal in {workdir}"
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "Open the {label} using one of these options:"
+msgstr "Open the {label} using one of these options:"
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "Open the {label}:"
+msgstr "Open the {label}:"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
@@ -18990,6 +19040,10 @@ msgstr "Sign in with {account}"
 msgid "Sign in with a provider"
 msgstr "Sign in with a provider"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "Sign in with another account"
+msgstr "Sign in with another account"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
@@ -19025,6 +19079,11 @@ msgstr "Sign-in not confirmed"
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "Signed in"
+
+#. placeholder {0}: currentUser.email
+#: src/pages/entry/EntityLanding.tsx
+msgid "Signed in as {0}."
+msgstr "Signed in as {0}."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed in as {loggedInUser}"
@@ -19254,6 +19313,10 @@ msgstr "Something is using this port, but it isn't your app."
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
 msgstr "Something went wrong"
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "Something went wrong opening this link. Try again in a moment."
+msgstr "Something went wrong opening this link. Try again in a moment."
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Something went wrong while loading this page."
@@ -21698,6 +21761,7 @@ msgstr "Two quick steps in your browser:"
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
+#: src/pages/entry/EntityLanding.tsx
 msgid "Type"
 msgstr "Type"
 
@@ -22388,6 +22452,10 @@ msgstr "View"
 msgid "View {label} (read-only)"
 msgstr "View {label} (read-only)"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "View {name} on FlowPad. Nothing to install."
+msgstr "View {name} on FlowPad. Nothing to install."
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "View callback source"
 msgstr "View callback source"
@@ -22811,6 +22879,14 @@ msgstr "Wizard"
 msgid "Wizard close failed"
 msgstr "Wizard close failed"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "Work on it in the FlowPad desktop app with your coding agents."
+msgstr "Work on it in the FlowPad desktop app with your coding agents."
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "Work on it on your machine"
+msgstr "Work on it on your machine"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/workers/WorkerTypeSelect.tsx
@@ -22973,6 +23049,10 @@ msgstr "You don’t belong to an organization yet. Organizations are set up in F
 #: src/notifications/ingest.ts
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."
 msgstr "You don't have permission for this action. Contact your admin if this seems wrong."
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "You have access to this {label}."
+msgstr "You have access to this {label}."
 
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
