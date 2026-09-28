@@ -64,7 +64,7 @@ export function ProjectUploadMessageButton({ projectId }: ProjectUploadMessageBu
       }
       setReview({ messageId: result.message_id, firstAttachmentId: staged[0].id });
     } catch (err: unknown) {
-      notify.error({ title: t`Upload failed`, message: errorMessage(err) });
+      notify.error({ title: t`Upload failed`, message: errorMessage(err, t`Could not upload this message.`) });
     } finally {
       setBusy(false);
     }

@@ -84,7 +84,7 @@ export function DownloadMessageForm({ initial, active, onDone }: DownloadMessage
       notify.success({ title: t`Message downloaded` });
       onDone?.();
     } catch (err: unknown) {
-      setError(errorMessage(err));
+      setError(errorMessage(err, t`Could not download this message.`));
     } finally {
       setBusy(false);
     }
