@@ -1,6 +1,5 @@
 import { useLingui } from '@lingui/react/macro';
 import { type GitOrigin, Project } from '@sdk';
-import { hubProjectPath } from '@src/lib/hub-page-url';
 import { Bot, Code, Sparkles, Terminal } from 'lucide-react';
 import React from 'react';
 import { useParams } from 'react-router';
@@ -13,7 +12,7 @@ import {
   GetFlowpadLink,
   LandingCard,
 } from './entry-shell';
-import { projectOpenTargetPath } from './project-share-landing';
+import { projectHubPath, projectOpenTargetPath } from './project-share-landing';
 import { useOpenInFlowpad } from './useOpenFlowpad';
 
 /**
@@ -30,7 +29,7 @@ const ProjectShareLanding: React.FC = () => {
   return (
     <EntityLandingGate key={typeId.toString()} typeId={typeId}>
       {(project) => {
-        const model = { ...entityLandingModel(typeId, project), hubUrl: hubProjectPath(typeId.id) };
+        const model = { ...entityLandingModel(typeId, project), hubUrl: projectHubPath(typeId.id) };
         return (
           <EntityLandingView
             typeId={typeId}
