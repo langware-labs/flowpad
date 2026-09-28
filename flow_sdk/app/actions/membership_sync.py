@@ -157,6 +157,56 @@ async def materialize_remote_organization(
     return await materialize_remote_membership_entity(Organization, data, someone_typeid, notify=notify)
 
 
+async def mirror_referenced_projects(attachments: Any, someone_typeid: str | None = None) -> None:
+    """Mirror each ``project-<id>`` a received message references but this box lacks.
+
+    A project shared with a TEAM reaches its members through a hub group grant:
+    no invitation (whose upsert mirrors the target) and no websocket frame. The
+    invite message is then the first thing the member's client hears about the
+    project, and the message's Install chip needs a local Project row to install
+    from. So the message's arrival fetches ``/graph/project/<id>`` and mirrors it,
+    the same adoption ``compute_node`` does for a sandbox handover.
+
+    Best-effort and idempotent: a project already present locally is left
+    untouched, and a hub refusal (not a member, gone) leaves no row, so the chip
+    shows unavailable.
+    """
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+    project_ids: list[str] = []
+    for att in attachments or []:
+        kind = getattr(att, "attachment_type", None) or (att.get("attachment_type") if isinstance(att, dict) else None)
+        data = getattr(att, "data", None) or (att.get("data") if isinstance(att, dict) else None)
+        if kind != AttachmentType.TYPE_ID or not isinstance(data, str):
+            continue
+        try:
+            tid = TypeId(data)
+        except (ValueError, TypeError):
+            continue
+        if tid.type == BuiltinEntityType.PROJECT.value and tid.id and tid.id not in project_ids:
+            project_ids.append(tid.id)
+    missing = [pid for pid in project_ids if await Project.get_one({"id": pid}) is None]
+    if not missing:
+        return
+
+    from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+    creds = load_credentials()
+    if not creds or not creds.api_key:
+        return
+    async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+        for pid in missing:
+            try:
+                hub_project = await client.get(f"/graph/project/{pid}")
+            except Exception as e:  # noqa: BLE001 — not a member, or gone: no row
+                logger.info("[membership-sync] referenced project %s not mirrored: %s", pid, e)
+                continue
+            if isinstance(hub_project, dict) and hub_project.get("id"):
+                await materialize_remote_membership_entity(Project, hub_project, someone_typeid)
+
+
 async def materialize_project_context_folders(
     project: Entity,
     data: dict[str, Any],
