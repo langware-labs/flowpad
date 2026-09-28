@@ -375,6 +375,11 @@ def _why(call: Any) -> str:
     code = getattr(call, "returncode", None)
     output = (getattr(call, "stderr", "") or "").strip() or (getattr(call, "stdout", "") or "").strip()
     last = output.splitlines()[-1].strip() if output else ""
+    if code == 0 and not last:
+        # The call itself succeeded and said nothing — its own exit code is not
+        # informative (of course it was 0), so there is nothing here that explains
+        # why the goal is still unmet.
+        return ""
     if code is None and not last:
         detail = (getattr(call, "detail", "") or "").strip()
         return f" ({detail})" if detail and detail not in _AGENT_BOILERPLATE else ""
