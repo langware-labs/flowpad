@@ -533,6 +533,11 @@ msgstr ""
 msgid "orphan_count"
 msgstr "ספירת יתומים"
 
+#. placeholder {0}: problems.length
+#: src/components/code-editor/SnippetView.tsx
+msgid "{0} problems"
+msgstr ""
+
 #. js-lingui-explicit-id
 #. placeholder {0}: grandTotal.toLocaleString()
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -1074,6 +1079,10 @@ msgstr "שעה אחת"
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "1 message"
 msgstr "הודעה אחת"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "1 problem"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "1 week"
@@ -3719,6 +3728,10 @@ msgstr "בבדיקה…"
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Checkpoint:"
 msgstr "נקודת בדיקה:"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "checks pass"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
