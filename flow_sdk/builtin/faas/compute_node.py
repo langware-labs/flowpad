@@ -786,26 +786,47 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     # ── health ────────────────────────────────────────────────────────────
 
+    async def deployments_here(self) -> list:
+        """Every deployment placed on this machine."""
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+        return [d for d in await Deployment.get_all() if d.compute_node_id == self.id]
+
     async def service_endpoints(self) -> list:
         """Every service this machine answers on: the endpoints of every deployment placed on it."""
-        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
         endpoints = []
-        for deployment in await Deployment.get_all():
-            if deployment.compute_node_id == self.id:
-                endpoints.extend(e for e in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if not e.remote)
+        for deployment in await self.deployments_here():
+            endpoints.extend(e for e in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if not e.remote)
         return endpoints
 
     async def health_check(self) -> "NodeHealth":
-        """Check every service on this machine, together. Each endpoint records its own change."""
+        """Check every service on this machine, together. Each endpoint records its own change.
+
+        A service a running deployment DECLARES (``Deployment.exposes``) but no endpoint serves is in the
+        report too, as failing — "it should be running" is the declaration's promise. An agent placement
+        that is not serving (paused, or only a place processes are spawned through) promises nothing.
+        """
         import asyncio  # noqa: PLC0415
 
-        from flow_sdk.schema.data_spec.health_spec import NodeHealth  # noqa: PLC0415
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.health_spec import EndpointHealth, NodeHealth  # noqa: PLC0415
 
-        endpoints = await self.service_endpoints()
+        endpoints, missing = [], []
+        for deployment in await self.deployments_here():
+            rows = [e for e in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if not e.remote]
+            endpoints.extend(rows)
+            if deployment.places_agent and not deployment.serving:
+                continue
+            served = {e.name for e in rows}
+            missing.extend(
+                EndpointHealth(endpoint_id="", name=d.name, state="failing", detail=f"declared by {deployment.name}, not served")
+                for d in deployment.exposes
+                if d.name not in served
+            )
         results = await asyncio.gather(*(e.health_check() for e in endpoints))
-        return NodeHealth(node_id=self.id, endpoints=list(results))
+        return NodeHealth(node_id=self.id, endpoints=[*results, *missing])
 
     @action.get(action_name="health")
     async def health_action(self) -> "ApiResponse":

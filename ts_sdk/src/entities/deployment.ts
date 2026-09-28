@@ -6,7 +6,16 @@ import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
 import { DEFAULT_CREDENTIAL_ENVIRONMENT } from '../services/credentials-service';
-import { type HealthState, ServiceEndpoint, type IServiceEndpoint, worstHealth } from './service-endpoint';
+import {
+  type EndpointSubkind,
+  type HealthCheck,
+  type HealthState,
+  type IServiceEndpoint,
+  ServiceEndpoint,
+  type ServiceBackend,
+  type ServiceProtocol,
+  worstHealth,
+} from './service-endpoint';
 
 export type ArtifactLinkSource = 'manual' | 'gcp_label';
 export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
@@ -72,8 +81,19 @@ export interface DeploymentStatus {
   message?: string | null;
 }
 
+/** One service a deployment declares it exposes. Twin of `EndpointDeclaration`. */
+export interface EndpointDeclaration {
+  name: string;
+  subkind: EndpointSubkind;
+  protocol: ServiceProtocol;
+  backend?: ServiceBackend | null;
+  check?: HealthCheck | null;
+}
+
 export interface IDeployment extends Omit<IEntity, 'status'> {
   name: string;
+  /** Every service this deployment declares it exposes; its endpoint rows serve the declaration. */
+  exposes?: EndpointDeclaration[];
   /** Who the box logs in as for this placement. What it places is its PARENT (`elementType`). */
   identity?: DeploymentIdentity;
   artifact_id?: string | null;
@@ -191,6 +211,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
 
   name: string;
   identity: DeploymentIdentity;
+  exposes: EndpointDeclaration[];
   artifact_id: string | null;
   artifact_link_source: ArtifactLinkSource | null;
   target: DeploymentTarget;
@@ -209,6 +230,7 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     const deployment = entity as Partial<IDeployment>;
     this.name = deployment.name ?? '';
     this.identity = deployment.identity ?? 'user';
+    this.exposes = deployment.exposes ?? [];
     this.artifact_id = deployment.artifact_id ?? null;
     this.artifact_link_source = deployment.artifact_link_source ?? null;
     this.target = {

@@ -22,8 +22,8 @@ function endpoint(name: string, recorded: EndpointHealth | null, next?: Endpoint
   } as unknown as ServiceEndpoint & { healthCheck: ReturnType<typeof vi.fn> };
 }
 
-function deployment(endpoints: ServiceEndpoint[]) {
-  return { id: 'd1', endpoints: vi.fn().mockResolvedValue(endpoints) } as unknown as Deployment;
+function deployment(endpoints: ServiceEndpoint[], exposes: Array<{ name: string }> = []) {
+  return { id: 'd1', exposes, endpoints: vi.fn().mockResolvedValue(endpoints) } as unknown as Deployment;
 }
 
 async function renderHealth(d: Deployment) {
@@ -75,5 +75,13 @@ describe('deployment health', () => {
     });
 
     expect(screen.getByTestId('deployment-health-d1')).toHaveTextContent('hub unreachable');
+  });
+
+  it('shows a declared service nothing serves as failing', async () => {
+    await renderHealth(deployment([endpoint('app', health('app', 'alive'))], [{ name: 'app' }, { name: 'chat' }]));
+
+    expect(screen.getByTestId('endpoint-health-app')).toHaveAttribute('data-state', 'alive');
+    expect(screen.getByTestId('endpoint-health-chat')).toHaveAttribute('data-state', 'failing');
+    expect(screen.getByTestId('deployment-health-check-d1')).toHaveAttribute('data-state', 'failing');
   });
 });

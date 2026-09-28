@@ -47,6 +47,7 @@ from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
 from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec, hub_store
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
+from flow_sdk.schema.data_spec.service_endpoint_spec import EndpointDeclaration
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
@@ -217,6 +218,12 @@ class Deployment(Entity):
         description="Where credential values live here: a store, per-variable exceptions, extra required variables",
     )
 
+    #: What this deployment DECLARES it exposes — every service it runs, what for, what it speaks and how
+    #: to tell it is alive. Its ``ServiceEndpoint`` rows serve the declaration (:meth:`sync_endpoints`);
+    #: a declared service no row serves is failing in the node's health report.
+    exposes: list[EndpointDeclaration] = APIField(
+        default_factory=list, description="The services this deployment declares it exposes"
+    )
     #: A local agent deployment that RUNS: a subprocess on this machine running its loop
     #: (``builtin/agent_loop``). A placement processes are only spawned through does not.
     serving: bool = APIField(default=False, description="A local deployment that runs its own agent loop process")
@@ -520,6 +527,45 @@ class Deployment(Entity):
         from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
 
         return await ServiceEndpoint.of_deployment(str(self.typeid))
+
+    def declare(self, *declarations: EndpointDeclaration) -> bool:
+        """Add *declarations* to what this deployment exposes, by name (a re-declared name replaces its
+        entry). Returns whether anything changed — the caller saves."""
+        by_name = {d.name: d for d in self.exposes}
+        before = dict(by_name)
+        by_name.update({d.name: d for d in declarations})
+        if by_name == before:
+            return False
+        self.exposes = list(by_name.values())
+        return True
+
+    async def sync_endpoints(self) -> list:
+        """Make its ``ServiceEndpoint`` rows serve the declaration: each declared service gets its row
+        (found by name — never a derived id), carrying the declared subkind, protocol and check. A
+        declaration whose backend is not known yet (a port not picked, a channel not made) keeps the
+        row's backend, or waits for whoever places it. Rows it does not declare are left alone — a dev
+        server shown by port is registered as it runs."""
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+        from flow_sdk.builtin.webapp_placement import upsert_endpoint  # noqa: PLC0415
+
+        rows = []
+        for declared in self.exposes:
+            existing = await ServiceEndpoint.find_existing(str(self.typeid), declared.name)
+            backend = declared.backend or (existing.backend if existing is not None else None)
+            if backend is None:
+                continue
+            row, _saved = await upsert_endpoint(
+                self,
+                name=declared.name,
+                subkind=declared.subkind,
+                protocol=declared.model_dump(mode="json")["protocol"],
+                backend=backend.model_dump(mode="json") if hasattr(backend, "model_dump") else backend,
+                check=declared.check.model_dump(mode="json") if declared.check is not None else None,
+                project_id=self.project_id,
+                existing=existing,
+            )
+            rows.append(row)
+        return rows
 
     async def health(self) -> str:
         """As healthy as its least healthy service, by each endpoint's last check. Derived, never stored."""

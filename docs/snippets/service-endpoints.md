@@ -26,6 +26,11 @@ it is FOR) and a protocol (what it SPEAKS):
 use), `agent` (talks to an agent: chat, MCP-UI), `service` (anything else: a REST API, a database
 port). The endpoint's kind, `service_endpoint.<subkind>`, is derived; the protocol's kind is open.
 
+A deployment DECLARES what it exposes (`Deployment.exposes`: name, subkind, protocol, check, and
+the backend when it is known); its endpoint rows serve the declaration (`sync_endpoints()`, rows
+found by name). An agent's deployment declares its `chat`. A declared service no row serves is
+failing in the node's health report (§7) — "it should be running" is what the declaration promises.
+
 Hub → box commands (clone, index, place secrets, run a check) are the **control plane**:
 `ComputeNode.run_command` / `http` and the hub's `compute_node_tools`, hub-internal — never an
 endpoint and never a REST verb.

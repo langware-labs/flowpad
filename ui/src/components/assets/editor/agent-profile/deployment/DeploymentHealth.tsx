@@ -57,7 +57,13 @@ export function DeploymentHealth({ deployment }: { deployment: Deployment }) {
   }, [endpoints, t]);
 
   if (endpoints === null && !error) return null;
-  const states = (endpoints ?? []).map((e) => healthOf(e, fresh)?.state ?? 'unknown');
+  // Declared by the deployment, served by no endpoint: "it should be running" is the declaration's promise.
+  const served = new Set((endpoints ?? []).map((e) => e.name));
+  const missing = (deployment.exposes ?? []).filter((d) => !served.has(d.name));
+  const states: HealthState[] = [
+    ...(endpoints ?? []).map((e) => healthOf(e, fresh)?.state ?? 'unknown'),
+    ...missing.map((): HealthState => 'failing'),
+  ];
 
   return (
     <div
@@ -83,7 +89,19 @@ export function DeploymentHealth({ deployment }: { deployment: Deployment }) {
           </span>
         );
       })}
-      {endpoints?.length === 0 && (
+      {missing.map((declared) => (
+        <span
+          key={`declared-${declared.name}`}
+          className="inline-flex items-center gap-1 rounded border border-dashed px-1.5 py-0.5 text-xs"
+          title={t`Declared by this deployment, but nothing serves it`}
+          data-testid={`endpoint-health-${declared.name}`}
+          data-state="failing"
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${HEALTH_COLOR.failing}`} />
+          {declared.name}
+        </span>
+      ))}
+      {endpoints?.length === 0 && missing.length === 0 && (
         <span className="text-xs text-muted-foreground">
           <Trans>none</Trans>
         </span>
