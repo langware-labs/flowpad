@@ -1193,6 +1193,10 @@ msgstr "A public desk needs no connection. Connect GitHub to browse your own rep
 msgid "A request just failed because {name} isn't signed in on this machine."
 msgstr "A request just failed because {name} isn't signed in on this machine."
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "A restart of the worker is required."
+msgstr "A restart of the worker is required."
+
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "A root talks to a provider with its own key."
 msgstr "A root talks to a provider with its own key."
@@ -2680,6 +2684,14 @@ msgstr "asset_ref is unset — has this MarkdownIndex ever been built?"
 msgid "Assets"
 msgstr "Assets"
 
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Assets in folders added to this run"
+msgstr "Assets in folders added to this run"
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Assets the worker brings with it (plugins, bundled extras)"
+msgstr "Assets the worker brings with it (plugins, bundled extras)"
+
 #: src/components/assets/AssetsNavigator.tsx
 msgid "Assets unavailable. Retry"
 msgstr "Assets unavailable. Retry"
@@ -2696,14 +2708,14 @@ msgstr "Assigning…"
 msgid "Assistance"
 msgstr "Assistance"
 
-#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Assistant"
 msgstr "Assistant"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Assistant assets"
-msgstr "Assistant assets"
+#~ msgid "Assistant assets"
+#~ msgstr "Assistant assets"
 
 #: src/components/entity-execution-panel/execution-message/execution-message.tsx
 msgid "Assistant is responding"
@@ -6023,7 +6035,7 @@ msgstr "Create New"
 msgid "Create New Project"
 msgstr "Create New Project"
 
-#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreateTile.tsx
 msgid "Create new…"
 msgstr "Create new…"
 
@@ -7055,6 +7067,10 @@ msgstr "Directories"
 #: src/components/settings-view/settings-utils.ts
 msgid "Directory for saving plan files"
 msgstr "Directory for saving plan files"
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Dirs"
+msgstr "Dirs"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Disable all"
@@ -9064,16 +9080,16 @@ msgid "Flowpad Assistant"
 msgstr "Flowpad Assistant"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant — click to browse the assets available to this worker."
-msgstr "Flowpad Assistant — click to browse the assets available to this worker."
+#~ msgid "Flowpad Assistant — click to browse the assets available to this worker."
+#~ msgstr "Flowpad Assistant — click to browse the assets available to this worker."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
 #~ msgstr "Flowpad Assistant — its skills & agents are mounted into this process via --add-dir. Click to browse them."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
-msgstr "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+#~ msgid "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
+#~ msgstr "Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
@@ -12455,12 +12471,16 @@ msgid "More…"
 msgstr "More…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required."
-msgstr "Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required."
+msgid "Mount Flowpad Assistant"
+msgstr "Mount Flowpad Assistant"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "mounted"
-msgstr "mounted"
+#~ msgid "Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required."
+#~ msgstr "Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "mounted"
+#~ msgstr "mounted"
 
 #: src/components/assets/useAssetsModel.tsx
 msgid "Moved"
@@ -12631,7 +12651,7 @@ msgstr "Never synced to cloud"
 #: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreateTile.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
@@ -14632,8 +14652,8 @@ msgstr "Open from history"
 
 #: src/components/quick-create/MiniDesktop.tsx
 #: src/components/quick-create/MiniDesktop.tsx
-msgid "Open full desktop"
-msgstr "Open full desktop"
+#~ msgid "Open full desktop"
+#~ msgstr "Open full desktop"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "Open full page"
@@ -15937,6 +15957,7 @@ msgid "project"
 msgstr "project"
 
 #: src/components/asset-counters/agent-counters.tsx
+#: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -16435,7 +16456,7 @@ msgstr "Queue message"
 msgid "Queued messages"
 msgstr "Queued messages"
 
-#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreateTile.tsx
 msgid "Quick create"
 msgstr "Quick create"
 
@@ -20925,6 +20946,10 @@ msgstr "The file changed outside the editor — reloaded it."
 msgid "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
 msgstr "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
 
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "The Flowpad Assistant's assets"
+msgstr "The Flowpad Assistant's assets"
+
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "The FlowPad backend server is not responding."
 msgstr "The FlowPad backend server is not responding."
@@ -21038,6 +21063,10 @@ msgstr "The project declares the same variables; its values are the ones its run
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #~ msgid "The project was not linked to the cloud."
 #~ msgstr "The project was not linked to the cloud."
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "The project's own assets"
+msgstr "The project's own assets"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "The prompt text…"
@@ -22286,6 +22315,10 @@ msgstr "turn duration"
 msgid "Turn failed"
 msgstr "Turn failed"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Turn on a scope above to see its assets."
+msgstr "Turn on a scope above to see its assets."
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Two quick steps in your browser:"
 msgstr "Two quick steps in your browser:"
@@ -22443,6 +22476,10 @@ msgstr "unlimited"
 #: src/components/token-plan/token-plan-math.ts
 msgid "Unlimited here — {parent} caps you at {limit} {windowText}"
 msgstr "Unlimited here — {parent} caps you at {limit} {windowText}"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Unmount Flowpad Assistant"
+msgstr "Unmount Flowpad Assistant"
 
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 msgid "Unpin"
@@ -22769,6 +22806,7 @@ msgstr "Used in transcript"
 msgid "user"
 msgstr "user"
 
+#: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -23465,6 +23503,7 @@ msgstr "Wizard"
 msgid "Wizard close failed"
 msgstr "Wizard close failed"
 
+#: src/components/asset-manager/AssetScopeToggles.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/workers/WorkerTypeSelect.tsx
@@ -23775,6 +23814,10 @@ msgstr "Your new API key has been created. Please save it securely."
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
 msgstr "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we'll copy it to your clipboard and open the GitHub activation page so you can paste it there."
+
+#: src/components/asset-manager/AssetScopeToggles.tsx
+msgid "Your own assets, shared by every project"
+msgstr "Your own assets, shared by every project"
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
