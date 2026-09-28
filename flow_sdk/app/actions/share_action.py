@@ -12,19 +12,9 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 from json import JSONDecodeError
-from typing import Annotated, Optional, Union
 
 from fastapi import HTTPException
-from pydantic import (
-    AfterValidator,
-    BaseModel,
-    ConfigDict,
-    Field,
-    StringConstraints,
-    TypeAdapter,
-    ValidationError,
-    model_validator,
-)
+from pydantic import ValidationError
 
 from flow_sdk.actions import action
 from flow_sdk.builtin.conversation import Conversation
@@ -34,75 +24,15 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
+# ``ShareInvitee`` is re-exported: callers import it from here.
+from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee as ShareInvitee
+from flow_sdk.schema.data_spec.share_request_spec import ShareRequestSpec
+
 logger = logging.getLogger(__name__)
 
 # Standardized copy for the privacy-mode block — kept in sync with the
 # frontend guard (``ts_sdk/src/services/privacy-guard.ts``).
 LOCAL_MODE_SHARE_MESSAGE = "Sharing disabled in Local mode"
-
-
-NonEmptyStr = Annotated[str, StringConstraints(min_length=1)]
-
-
-class ShareInvitee(BaseModel):
-    """One resolved recipient of a ``share`` invite: the internal
-    email/user_id split ``Project.share`` / ``Conversation.share`` take.
-    Build it from wire input via ``WireInvitee`` / ``ShareInvitee.from_wire``.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    email: Optional[str] = None
-    user_id: Optional[str] = None
-    role: Optional[str] = None
-
-    @model_validator(mode="after")
-    def _exactly_one_identifier(self) -> "ShareInvitee":
-        if bool(self.email) == bool(self.user_id):
-            raise ValueError("each invitee needs exactly one of 'email' or 'user_id'")
-        return self
-
-    @classmethod
-    def from_wire(cls, item: object) -> "ShareInvitee":
-        return _wire_adapter.validate_python(item)
-
-
-class _InviteeWireObject(BaseModel):
-    """The ``{idOrEmail, role?}`` wire shape, used when a role is needed."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    id_or_email: NonEmptyStr = Field(alias="idOrEmail")
-    role: Optional[str] = None
-
-
-def _resolve(item: Union[str, _InviteeWireObject]) -> ShareInvitee:
-    """Resolve ``idOrEmail`` as a hub id FIRST, falling back to email.
-    ``recipient_user_id`` only matches a real UUID; ``normalize_email`` has
-    no ``@`` check, so testing email first would misfile every bare UUID.
-    """
-    from flow_sdk.builtin.user import normalize_email, recipient_user_id  # noqa: PLC0415
-
-    if isinstance(item, str):
-        id_or_email, role = item, None
-    else:
-        id_or_email, role = item.id_or_email, item.role
-
-    if user_id := recipient_user_id(id_or_email):
-        return ShareInvitee(user_id=user_id, role=role)
-    return ShareInvitee(email=normalize_email(id_or_email), role=role)
-
-
-# A ``recipients`` entry on the wire: either a bare "email-or-id" string (the
-# original flat shape, kept so existing callers don't break) or
-# ``{idOrEmail, role?}``. Validates straight to a resolved ``ShareInvitee``.
-WireInvitee = Annotated[
-    Union[NonEmptyStr, _InviteeWireObject],
-    Field(union_mode="left_to_right"),
-    AfterValidator(_resolve),
-]
-
-_wire_adapter = TypeAdapter(WireInvitee)
 
 
 def _local_mode_share_blocked() -> bool:
@@ -115,6 +45,16 @@ def _local_mode_share_blocked() -> bool:
     from flow_sdk.instance_settings.privacy_mode import is_local_mode  # noqa: PLC0415
 
     return is_local_mode()
+
+
+# The roles a share invite may grant — one global list, served by ``share-roles``.
+SHARE_ROLES: tuple[str, ...] = ("editor", "member", "admin")
+
+
+@action.get(action_name="share-roles", types=None)
+async def share_roles() -> ApiResponse:
+    """``GET /api/v1/graph/share-roles`` — the roles a share invite may grant."""
+    return ApiSuccessResponse(data=list(SHARE_ROLES))
 
 
 @action.post(action_name="share", types="all")
@@ -142,19 +82,20 @@ async def share_entity() -> ApiResponse:
     except JSONDecodeError:
         body = {}
 
-    # Optional ``recipients``: [idOrEmail | {idOrEmail, role?}, ...]. A bare
-    # string is the original flat shape (still accepted, so no existing
-    # caller of this endpoint breaks); the object form adds a role. The
-    # entity's ``share`` implementation forwards each to
-    # ``POST /graph/<type>/<id>/members`` as a standard ``MembershipRequest``
-    # — see ``Conversation.share``.
-    raw_invitees = body.get("recipients")
-    if raw_invitees is not None and not isinstance(raw_invitees, list):
-        raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
+    # The share keys of the body (``ShareRequestSpec``). Each entity's ``share``
+    # forwards ``recipients`` to ``POST /graph/<type>/<id>/members`` as a
+    # standard ``MembershipRequest`` — see ``Conversation.share``.
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="share: body must be a JSON object")
     try:
-        invitees = [ShareInvitee.from_wire(item) for item in (raw_invitees or [])]
-    except (ValueError, ValidationError) as e:
-        raise HTTPException(status_code=400, detail=f"share: invalid 'recipients': {e}")
+        share_request = ShareRequestSpec.from_body(body)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=f"share: invalid request body: {e}")
+    invitees = list(share_request.recipients)
+    teams = list(share_request.teams)
+    note = share_request.note
+    if (teams or note) and not issubclass(entity_model, Project):
+        raise HTTPException(status_code=400, detail="share: 'teams' and 'note' apply to a project share only")
 
     # By-email and by-id invitees split back into the two addressing forms
     # ``Conversation.share`` takes; ``Project.share`` takes ``invitees`` as-is
@@ -185,8 +126,14 @@ async def share_entity() -> ApiResponse:
             data={"code": "entity_not_found"},
         )
 
+    # Inviting into a Project that already has its hub row is a membership grant,
+    # not a publish: it runs no publish gate (a dirty tree still invites) and
+    # does not re-push or re-stamp the row. Publishing stays the job of a share
+    # with nobody to invite — or of the first share, which publishes, then invites.
+    project_invite_only = isinstance(entity, Project) and bool(invitees or teams) and entity.remote is True
+
     project_git_origin = None
-    if isinstance(entity, Project):
+    if isinstance(entity, Project) and not project_invite_only:
         # One owner for "what it takes to link a Project" — the Project Home
         # button and `flow record share --link-project` both come through here,
         # so they cannot enforce different preconditions.
@@ -240,8 +187,10 @@ async def share_entity() -> ApiResponse:
     try:
         if isinstance(entity, Conversation):
             await entity.share(recipients=recipients, recipient_user_ids=recipient_user_ids)
+        elif project_invite_only:
+            await entity.invite(invitees=invitees or None, teams=teams or None, note=note)
         elif isinstance(entity, Project):
-            await entity.share(invitees=invitees or None)
+            await entity.share(invitees=invitees or None, teams=teams or None, note=note)
         else:
             await entity.share()
     except ProjectInviteRoleError as exc:
@@ -251,6 +200,13 @@ async def share_entity() -> ApiResponse:
             data={"code": "invalid_role"},
         )
     except Exception as exc:  # noqa: BLE001 — keep Project publish failures typed
+        if project_invite_only:
+            logger.warning("[share] inviting to Project %s failed: %s", entity.id, exc)
+            return ApiFailResponse(
+                status_code=502,
+                message="The Hub could not invite to this Project",
+                data={"code": "hub_invite_failed"},
+            )
         if isinstance(entity, Project):
             logger.warning("[share] publishing Project %s failed: %s", entity.id, exc)
             return ApiFailResponse(
@@ -288,8 +244,9 @@ async def share_entity() -> ApiResponse:
     # A Project publication is not complete until all three canonical markers
     # survive a reload. Project.share() mutates them before returning, so this
     # save is deliberately unconditional (checking remote first was the bug:
-    # remote was already true and the write was skipped).
-    if isinstance(entity, Project):
+    # remote was already true and the write was skipped). An invite published
+    # nothing, so there is nothing to persist.
+    if isinstance(entity, Project) and not project_invite_only:
         entity.origin = project_git_origin
         try:
             await entity.save(request_info.someone_typeid)
@@ -299,6 +256,19 @@ async def share_entity() -> ApiResponse:
                 status_code=500,
                 message="Project was published, but its local publication state could not be saved",
                 data={"code": "local_persist_failed"},
+            )
+
+    # Each person invite has its own outcome (invited / skipped / failed); a
+    # failure for one does not fail the share, so the caller reads them here.
+    if isinstance(entity, Project):
+        if entity.last_share_result is not None:
+            from fastapi.encoders import jsonable_encoder  # noqa: PLC0415
+
+            return ApiSuccessResponse(
+                data={
+                    **jsonable_encoder(entity),
+                    "share_result": entity.last_share_result.model_dump(mode="json"),
+                }
             )
 
     # Persist ``remote=True`` on other local rows so downstream consumers
