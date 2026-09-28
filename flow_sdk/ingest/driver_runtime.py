@@ -558,8 +558,8 @@ class DriverRuntime:
             if self.is_object:
                 return await self._files(row, source, items, removed, moved, carried, dict(position.manifest), complete=complete)
             kept = [item for item in items if floor is None or (_when(item) or floor) >= floor]
-            # Inside the session: a provider's media link rarely outlives it (WAHA deletes the file in
-            # minutes, a WhatsApp URL dies in five).
+            # Inside the session: a provider's media link rarely outlives it (a WhatsApp URL dies in
+            # five minutes; a self-hosted gateway may delete the file sooner).
             kept = await self._stage(row, source, kept)
             return self._records(row, kept, carried, moved_on=carried != started_at)
 

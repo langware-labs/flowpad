@@ -92,7 +92,7 @@ async def test_a_step_stores_what_it_learned_and_never_echoes_the_secret(stub):
 
 async def test_a_step_keeps_its_secrets_where_the_source_reads_them(stub, request):
     """The owning agent's project — the one ``resolve_credentials`` reads. Writing by placement put them in
-    the user scope for a saved row, so a step that ran still failed its own check (WAHA, on a receiver)."""
+    the user scope for a saved row, so a step that ran still failed its own check."""
     from types import SimpleNamespace
 
     name, _kept = stub

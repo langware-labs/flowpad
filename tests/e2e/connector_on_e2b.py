@@ -1,21 +1,24 @@
-"""An external connector, handed over as a .flowmsg, installed on a plain e2b box and set up there (WAHA).
+"""An external connector, handed over as a .flowmsg, installed on a plain e2b box and set up there.
 
-Proven 2026-09-28: the WAHA connector exported from the local `waha` project (`flow-message-export`),
-on a box of a template built from this branch (`ops/e2b/flowpad-exec-env/build.sh --local`), its hub
-local and reachable from the box through ngrok. Host side; run from the hub checkout with its venv
-(it has the e2b SDK and the hub's E2B key), the hub's env stripped of the desk's:
+The connector's own project exports it (``flow-message-export``); the box runs a template built from the
+checkout under test (``ops/e2b/flowpad-exec-env/build.sh --local``), its hub reachable from the box (a
+local hub behind ngrok). Host side; run from the hub checkout with its venv (it has the e2b SDK and the
+hub's E2B key), the hub's env stripped of the desk's:
 
-    cd ../test_flowpad/FlowPad && env -u DEPLOY_ENV -u SOD_ENC_KEY PYTHONPATH=. \
-        FLOWMSG=<the .flowmsg> HUB=http://localhost:8093 EMAIL=<hub user> PASSWORD=... [NODE=<compute_node id>] \
+    cd ../test_flowpad/FlowPad && env -u DEPLOY_ENV -u SOD_ENC_KEY PYTHONPATH=. \\
+        FLOWMSG=<the .flowmsg> PROVIDER=<driver name> SOURCE_CONFIG='{...}' \\
+        ANSWERS='{"<op>": "<value, or @VAR from the Double's credential>", ...}' [PAIR_OP=<op>] \\
+        HUB=http://localhost:8093 EMAIL=<hub user> PASSWORD=... [NODE=<compute_node id>] \\
         .venv/bin/python <flowpad-oss>/tests/e2e/connector_on_e2b.py
 
-Leaves the box running (NODE= reuses it); delete the compute_node through the hub when done.
-
-1. as a hub user: a workspace compute node, `ops/setup`, `ops/workspace-ready` (a plain box, nothing on it)
+1. as a hub user: a workspace compute node, ``ops/setup``, ``ops/workspace-ready`` (a plain box)
 2. into the box: the .flowmsg + the rig (channel_doubles.py, source_setup_wizard.py)
-3. in the box: a project, upload the file, install-all into it, an agent, a WAHA source it owns
-4. in the box: the WAHA Double (found through the backend: the installed connector's own tests/matrix.py)
-5. in the box: the WAHA setup wizard, headless — asks answered, the Double's /pair standing in for the QR
+3. in the box: a project, upload the file, install-all into it, an agent, a source of PROVIDER it owns
+4. in the box: the connector's Double (found through the backend: its own installed tests/matrix.py)
+5. in the box: the connector's setup wizard, headless — ANSWERS by op name, the Double's ``/pair``
+   standing in for the person's step before PAIR_OP is answered
+
+Leaves the box running (NODE= reuses it); delete the compute_node through the hub when done.
 """
 from __future__ import annotations
 
@@ -31,6 +34,10 @@ import httpx
 OSS = Path(__file__).resolve().parents[2]
 HUB = os.environ.get("HUB", "http://localhost:8093").rstrip("/")
 FLOWMSG = Path(os.environ["FLOWMSG"])
+PROVIDER = os.environ["PROVIDER"]
+SOURCE_CONFIG = json.loads(os.environ.get("SOURCE_CONFIG") or "{}")
+ANSWERS = json.loads(os.environ.get("ANSWERS") or "{}")
+PAIR_OP = os.environ.get("PAIR_OP", "")
 RIG = ["tests/__init__.py", "tests/unit/__init__.py", "tests/unit/_stream_inbox_matrix.py",
        "tests/e2e/channel_doubles.py", "tests/e2e/source_setup_wizard.py"]
 
@@ -57,7 +64,7 @@ def box(client: httpx.Client) -> dict:
     node_id = os.environ.get("NODE")
     if not node_id:
         node = ok(client.post("graph/compute_node", json={
-            "type": "compute_node", "name": f"waha-e2b-{int(time.time())}", "node_provider": "e2b", "node_config": {"flavor": "workspace"},
+            "type": "compute_node", "name": f"{PROVIDER}-e2b-{int(time.time())}", "node_provider": "e2b", "node_config": {"flavor": "workspace"},
         }))
         node_id = node["id"]
         log("node", node_id)
@@ -104,7 +111,7 @@ def main() -> int:
     rig = f"{home}/rig"
     for rel in RIG:
         sbx.files.write(f"{rig}/{rel}", (OSS / rel).read_text(encoding="utf-8"))
-    sbx.files.write(f"{home}/waha-connector.flowmsg", FLOWMSG.read_bytes())
+    sbx.files.write(f"{home}/connector.flowmsg", FLOWMSG.read_bytes())
 
     def api(method: str, route: str, body: dict | None = None) -> dict:
         data = f"-d {shlex.quote(json.dumps(body))}" if body is not None else ""
@@ -114,11 +121,11 @@ def main() -> int:
             raise SystemExit(f"box {method} {route}: {out[:1500]}")
         return parsed.get("data")
 
-    project_dir = f"{home}/waha-rx"
+    project_dir = f"{home}/{PROVIDER}-rx"
     sh(f"mkdir -p {project_dir}")
-    project = api("POST", "graph/project", {"type": "project", "name": "waha-rx", "fs_storage_mount_path": project_dir})
+    project = api("POST", "graph/project", {"type": "project", "name": f"{PROVIDER}-rx", "fs_storage_mount_path": project_dir})
     log("project", project["id"])
-    up = json.loads(sh(f"curl -s -X POST '{base}/api/v1/graph/flow-message-upload?overwrite=true' {hdr} -F file=@{home}/waha-connector.flowmsg"))
+    up = json.loads(sh(f"curl -s -X POST '{base}/api/v1/graph/flow-message-upload?overwrite=true' {hdr} -F file=@{home}/connector.flowmsg"))
     staged = up["data"]["attachments"]
     log("staged", [(a["asset_type"], a["name"], a["asset_id"]) for a in staged])
     installed = api("POST", f"graph/flow_message/{up['data']['message_id']}/install-attachments", {"project_id": project["id"]})
@@ -129,16 +136,16 @@ def main() -> int:
 
     run_tag = f"{int(time.time()) % 100000}"
     agent = api("POST", f"graph/project/{project['id']}/agent",
-                {"type": "agent", "name": f"wa-bot-{run_tag}", "description": "Answers on WhatsApp", "worker_type": "claude"})
+                {"type": "agent", "name": f"{PROVIDER}-bot-{run_tag}", "description": "Answers on the channel", "worker_type": "claude"})
     source = api("POST", f"graph/project/{project['id']}/data_source",
-                 {"provider": "waha", "name": f"WAHA wa-bot {run_tag}", "config": {"session": "default"}, "owner": f"agent-{agent['id']}"})
+                 {"provider": PROVIDER, "name": f"{PROVIDER} {run_tag}", "config": SOURCE_CONFIG, "owner": f"agent-{agent['id']}"})
     log("agent", agent["id"], "source", source["id"])
     log("stages", api("GET", f"graph/data_source/{source['id']}/setup_stages"))
 
     # The Double is the connector's own test double: its module imports pytest, which a plain box lacks.
     sh(f"{py} -c 'import pytest' 2>/dev/null || {py} -m pip install -q pytest", timeout=300)
     env = f"FLOW_INSTANCE={instance}"
-    sbx.commands.run(f"cd {rig} && {env} nohup {py} tests/e2e/channel_doubles.py --backend {base} --channels waha --own-credentials > {rig}/doubles.log 2>&1 &",
+    sbx.commands.run(f"cd {rig} && {env} nohup {py} tests/e2e/channel_doubles.py --backend {base} --channels {PROVIDER} --own-credentials > {rig}/doubles.log 2>&1 &",
                      background=True)
     control = ""
     for _ in range(60):
@@ -150,11 +157,14 @@ def main() -> int:
     if not control:
         log("doubles did not start:\n", sh(f"tail -40 {rig}/doubles.log", check=False))
         return 1
-    creds = json.loads(sh(f"curl -s {control}/channels"))["waha"]["credential"]["values"]
-    answers = {"waha-ask-base-url": creds["WAHA_BASE_URL"], "waha-ask-api-key": creds["WAHA_API_KEY"], "waha-ask-pair": "ok"}
+    creds = (json.loads(sh(f"curl -s {control}/channels"))[PROVIDER].get("credential") or {}).get("values") or {}
+    # "@VAR": that value of the Double's credential (where it answers, its key) — never typed here.
+    answers = {op: creds[v[1:]] if isinstance(v, str) and v.startswith("@") else v for op, v in ANSWERS.items()}
     run = sh(
         f"cd {rig} && {env} {py} tests/e2e/source_setup_wizard.py --backend {base} --source {source['id']} "
-        f"--answers {shlex.quote(json.dumps(answers))} --before {shlex.quote(f'waha-ask-pair={control}/pair ' + json.dumps({'channel': 'waha'}))} --timeout 300",
+        f"--answers {shlex.quote(json.dumps(answers))} "
+        + (f"--before {shlex.quote(f'{PAIR_OP}={control}/pair ' + json.dumps({'channel': PROVIDER}))} " if PAIR_OP else "")
+        + "--timeout 300",
         timeout=420, check=False,
     )
     result = json.loads(run.strip().splitlines()[-1])
