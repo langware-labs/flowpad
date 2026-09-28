@@ -3802,6 +3802,7 @@ msgstr "Claude"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -4332,6 +4333,7 @@ msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -4860,6 +4862,7 @@ msgstr "تم النسخ!"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -6126,6 +6129,7 @@ msgid "cursor"
 msgstr "المؤشر"
 
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Cursor"
 msgstr "المؤشر"
 
@@ -9025,6 +9029,10 @@ msgstr "تشخيصات Flowpad"
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
 
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
+msgstr "FlowPad تطبيق سطح مكتب مجاني ومفتوح المصدر للعمل على المشاريع مع وكلاء البرمجة لديك. افتح هذا المشروع وسيجهّزه FlowPad على جهازك."
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr ""
@@ -9334,6 +9342,7 @@ msgid "Generic options"
 msgstr "خيارات عامة"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "احصل على FlowPad من flowpad.ai ←"
 
@@ -14391,6 +14400,7 @@ msgstr "فتح {label}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open {name}"
 msgstr "افتح {name}"
 
@@ -14630,6 +14640,10 @@ msgstr ""
 msgid "Open in Flowpad"
 msgstr ""
 
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "Open in FlowPad"
+msgstr "افتح في FlowPad"
+
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Open in new tab"
 msgstr "فتح في تبويب جديد"
@@ -14657,6 +14671,7 @@ msgid "Open in Worktree"
 msgstr "فتح في بيئة العمل"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open in your browser"
 msgstr "افتح في المتصفح"
 
@@ -14792,10 +14807,12 @@ msgid "Open the {0} driver"
 msgstr ""
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open the {label} using one of these options:"
 msgstr "افتحه باستخدام أحد الخيارات التالية:"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open the {label}:"
 msgstr "فتح:"
 
@@ -14903,6 +14920,10 @@ msgstr "فتح السجل النصي"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Open trigger"
 msgstr ""
+
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "Open with your favorite coding agent"
+msgstr "افتح باستخدام وكيل البرمجة المفضل لديك"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Open with:"
@@ -19115,7 +19136,7 @@ msgstr "علامة تبويب Shell"
 msgid "Shell unavailable"
 msgstr "القشرة غير متاحة"
 
-#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/useOpenFlowpad.ts
 msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr "مفتاح قصير الأجل لرابط Open-in-FlowPad العميق"
 
@@ -22915,6 +22936,7 @@ msgid "View {label} (read-only)"
 msgstr "عرض {label} (للقراءة فقط)"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "View {name} on FlowPad. Nothing to install."
 msgstr "اعرض {name} على FlowPad. لا حاجة لتثبيت أي شيء."
 
@@ -23540,6 +23562,7 @@ msgid "You don't have permission for this action. Contact your admin if this see
 msgstr "لا تتوفر الصلاحية اللازمة لتنفيذ هذا الإجراء. يرجى التواصل مع المسؤول إذا كان هذا يبدو غير صحيح"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "You have access to this {label}."
 msgstr "لديك حق الوصول إلى هذا العنصر."
 

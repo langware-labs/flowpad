@@ -23,6 +23,7 @@ import LaunchLanding from '@src/pages/entry/LaunchLanding';
 import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
 import EntityLanding from '@src/pages/entry/EntityLanding';
+import ProjectShareLanding from '@src/pages/entry/ProjectShareLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
 import { markdownRedirectTarget, skillsRedirectTarget } from '@src/navigation/dead-route-redirects';
@@ -192,6 +193,10 @@ export const router = createBrowserRouter(
           first segments above (and `dock`/`win`/`dev` below) outrank this dynamic
           one, so it only catches what nothing else routes. Hub only — elsewhere it
           renders NotFound, as the catch-all did. */}
+      {/* A project share's invitation lands here (`Project.share` sets it as the
+          `callback_override`): the project counterpart of `flow_message/:messageId`,
+          with "Open in FlowPad". Static, so it outranks the generic route below. */}
+      <Route path="project/:projectId" element={<ProjectShareLanding />} />
       <Route path=":entityType/:entityId" element={<EntityLanding />} />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route

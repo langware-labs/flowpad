@@ -202,3 +202,20 @@ async def test_share_with_only_user_id_invitees_invites_them(hub):
         if method == "POST" and path == f"/graph/project/{proj.id}/members"
     ]
     assert len(member_posts) == 1
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_every_invite_lands_on_the_project_landing(hub):
+    """FLOWPAD-2177: without a ``callback_override`` the hub lands an accepted
+    project invite on its bare ``/project/<id>`` fallback — which the SPA did
+    not route (404). Each invite names the landing itself, whichever way the
+    recipient is addressed."""
+    proj = Project(name="invite-lands-on-landing")
+
+    await proj.share(invitees=[ShareInvitee(email="noa@langware.ai"), ShareInvitee(user_id=GADI)])
+
+    invites = [body for method, path, body in hub if method == "POST" and path == f"/graph/project/{proj.id}/members"]
+    assert len(invites) == 2
+    assert {body["callback_override"] for body in invites} == {f"/project/{proj.id}"}

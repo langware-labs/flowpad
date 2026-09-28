@@ -208,6 +208,15 @@ class ProjectInviteRoleError(ValueError):
     """
 
 
+def project_share_landing_path(project_id: str) -> str:
+    """The app path a project invitation lands on: ``/project/<id>``.
+
+    Twin of the SPA's ``projectShareLandingPath`` (``ui/src/pages/entry/
+    project-share-landing.ts``), which routes it to ``ProjectShareLanding``.
+    """
+    return f"/project/{project_id}"
+
+
 class Project(Entity):
     @classmethod
     async def get_last_active(cls) -> Optional["Project"]:
@@ -1187,6 +1196,11 @@ class Project(Entity):
                         "invitation_targets": [
                             {"typeid": f"project-{self.id}", "role": role},
                         ],
+                        # Where the invite email lands: the project landing, with
+                        # "Open in FlowPad" (the SPA's ``project/:projectId``). Set
+                        # on the invitation rather than left to the hub's
+                        # fallback, so it holds whichever target the hub picks.
+                        "callback_override": project_share_landing_path(self.id),
                     },
                 )
         return self

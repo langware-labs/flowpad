@@ -1,12 +1,12 @@
 import { t } from '@lingui/core/macro';
 import { inboundParams } from '@src/navigation/inbound-link';
-import { ActionInfo, BodyStatus, dataManager, FlowMessage, navigator as sdkNavigator, TypeId } from '@sdk';
+import { ActionInfo, BodyStatus, FlowMessage, navigator as sdkNavigator, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Bot, Code, Sparkles, Terminal } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import './message-landing.css';
-import { LOCAL_API_PREFIX, LOCAL_PORT, OPEN_IN_ELECTRON, useOpenFlowpad } from './useOpenFlowpad';
+import { LOCAL_API_PREFIX, useOpenInFlowpad } from './useOpenFlowpad';
 import WrongAccountPanel from './WrongAccountPanel';
 
 const CopyIcon = () => (
@@ -83,38 +83,7 @@ const MessageLanding: React.FC = () => {
   }, [messageId]);
   const openTargetPath = openAction ? `${LOCAL_API_PREFIX}${openAction.actionUrl}` : '';
 
-  const openFlowpad = useOpenFlowpad({
-    port: LOCAL_PORT,
-    openTargetPath,
-    openInElectron: OPEN_IN_ELECTRON,
-    protocolTimeoutMs: 1500,
-  });
-
-  // Mint a fresh short-lived api-key, then hand off to the opener hook.
-  const handleOpenInFlowpad = async () => {
-    try {
-      const me = await dataManager.getCurrentUser();
-      const userId = me?.id;
-      if (!userId) {
-        openFlowpad(null);
-        return;
-      }
-      const userTypeId = new TypeId('user', userId);
-      const createKeyAction = new ActionInfo('api-keys', userTypeId.type, userTypeId.id, 'POST');
-      createKeyAction.bodyParameters = {
-        name: `flowpad-deeplink-${Date.now()}`,
-        description: t`Short-lived key for Open-in-FlowPad deep link`,
-        expires_in_days: 1,
-      };
-      const result = await dataManager.callAction<unknown, { api_key?: string; data?: { api_key?: string } }>(
-        createKeyAction,
-      );
-      const apiKey = result?.api_key || result?.data?.api_key;
-      openFlowpad(apiKey ?? null);
-    } catch {
-      openFlowpad(null);
-    }
-  };
+  const handleOpenInFlowpad = useOpenInFlowpad(openTargetPath);
 
   // Show spinner until we have a definitive outcome (accepted + loaded, wrong account, or error).
   if (isLoading || redirecting || (!wrongAccount && !flowMessage && !notFound && !error)) {

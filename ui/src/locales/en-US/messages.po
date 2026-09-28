@@ -3802,6 +3802,7 @@ msgstr "Claude"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -4332,6 +4333,7 @@ msgstr "Code expires"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -4860,6 +4862,7 @@ msgstr "Copied!"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -6126,6 +6129,7 @@ msgid "cursor"
 msgstr "cursor"
 
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Cursor"
 msgstr "Cursor"
 
@@ -9025,6 +9029,10 @@ msgstr "Flowpad diagnostics"
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
 
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
+msgstr "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
@@ -9334,6 +9342,7 @@ msgid "Generic options"
 msgstr "Generic options"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "Get FlowPad at flowpad.ai →"
 
@@ -14391,6 +14400,7 @@ msgstr "Open {label}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open {name}"
 msgstr "Open {name}"
 
@@ -14630,6 +14640,10 @@ msgstr "Open in Finder/Explorer"
 msgid "Open in Flowpad"
 msgstr "Open in Flowpad"
 
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "Open in FlowPad"
+msgstr "Open in FlowPad"
+
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Open in new tab"
 msgstr "Open in new tab"
@@ -14657,6 +14671,7 @@ msgid "Open in Worktree"
 msgstr "Open in Worktree"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open in your browser"
 msgstr "Open in your browser"
 
@@ -14792,10 +14807,12 @@ msgid "Open the {0} driver"
 msgstr "Open the {0} driver"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open the {label} using one of these options:"
 msgstr "Open the {label} using one of these options:"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open the {label}:"
 msgstr "Open the {label}:"
 
@@ -14903,6 +14920,10 @@ msgstr "Open transcript"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Open trigger"
 msgstr "Open trigger"
+
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "Open with your favorite coding agent"
+msgstr "Open with your favorite coding agent"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Open with:"
@@ -19115,7 +19136,7 @@ msgstr "Shell tab"
 msgid "Shell unavailable"
 msgstr "Shell unavailable"
 
-#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/useOpenFlowpad.ts
 msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr "Short-lived key for Open-in-FlowPad deep link"
 
@@ -22915,6 +22936,7 @@ msgid "View {label} (read-only)"
 msgstr "View {label} (read-only)"
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "View {name} on FlowPad. Nothing to install."
 msgstr "View {name} on FlowPad. Nothing to install."
 
@@ -23540,6 +23562,7 @@ msgid "You don't have permission for this action. Contact your admin if this see
 msgstr "You don't have permission for this action. Contact your admin if this seems wrong."
 
 #: src/pages/entry/EntityLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "You have access to this {label}."
 msgstr "You have access to this {label}."
 
