@@ -56,13 +56,11 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => {
   };
 });
 
-vi.mock('@src/navigation/useDockNavigation', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>();
-  return {
-    ...actual,
-    useDockNavigation: () => ({ navigation: { openDock: h.openDock }, currentDock: null }),
-  };
-});
+// No importOriginal: loading the real module pulls the asset-review components
+// back in mid-factory, and they would bind the real hook instead of this one.
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openDock: h.openDock }, currentDock: null }),
+}));
 
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hubOnly }));
 
