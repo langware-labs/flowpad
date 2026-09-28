@@ -3245,6 +3245,10 @@ msgstr "אגירת עדכוני סנכרון בטרמינל"
 msgid "Build a landing page"
 msgstr "בנו דף נחיתה"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Build AI"
+msgstr ""
+
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "היסטוריית בנייה"
@@ -3635,6 +3639,7 @@ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/i18n/pref-labels.ts
 msgid "Chat"
 msgstr "צ'אט"
@@ -4639,6 +4644,7 @@ msgstr "אישור"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "התחבר"
@@ -12686,8 +12692,8 @@ msgid "New analysis"
 msgstr "ניתוח חדש"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "New asset"
-msgstr "נכס חדש"
+#~ msgid "New asset"
+#~ msgstr "נכס חדש"
 
 #: src/components/quick-create/DesktopSurface.tsx
 msgid "New bookmark folder"
@@ -12786,8 +12792,8 @@ msgid "New MCP server"
 msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "New message"
-msgstr "הודעה חדשה"
+#~ msgid "New message"
+#~ msgstr "הודעה חדשה"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
@@ -12804,7 +12810,6 @@ msgstr ""
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New project"
 msgstr "פרויקט חדש"
 
@@ -12842,8 +12847,8 @@ msgid "New Schedule Trigger"
 msgstr "טריגר לוח זמנים חדש"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "New session"
-msgstr "סשן חדש"
+#~ msgid "New session"
+#~ msgstr "סשן חדש"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "New skill"
@@ -15964,6 +15969,7 @@ msgstr "פרויקט"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
@@ -23582,6 +23588,10 @@ msgstr "תצוגת עולם"
 #: src/pages/entry/LaunchLanding.tsx
 #~ msgid "Would you like to launch a sandbox for this repository?"
 #~ msgstr "האם להפעיל ארגז חול עבור המאגר הזה?"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Write & plan"
+msgstr ""
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"

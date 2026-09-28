@@ -3245,6 +3245,10 @@ msgstr "Buffer terminal sync updates"
 msgid "Build a landing page"
 msgstr "Build a landing page"
 
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Build AI"
+msgstr "Build AI"
+
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Build history"
 msgstr "Build history"
@@ -3635,6 +3639,7 @@ msgstr "Channels"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 #: src/components/lens-viewer/shared/ViewModeToggle.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/i18n/pref-labels.ts
 msgid "Chat"
 msgstr "Chat"
@@ -4639,6 +4644,7 @@ msgstr "Confirm"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/oauth/OAuthCodeFlowModal.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Connect"
 msgstr "Connect"
@@ -12686,8 +12692,8 @@ msgid "New analysis"
 msgstr "New analysis"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "New asset"
-msgstr "New asset"
+#~ msgid "New asset"
+#~ msgstr "New asset"
 
 #: src/components/quick-create/DesktopSurface.tsx
 msgid "New bookmark folder"
@@ -12786,8 +12792,8 @@ msgid "New MCP server"
 msgstr "New MCP server"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "New message"
-msgstr "New message"
+#~ msgid "New message"
+#~ msgstr "New message"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
@@ -12804,7 +12810,6 @@ msgstr "New organization"
 #: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
-#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New project"
 msgstr "New project"
 
@@ -12842,8 +12847,8 @@ msgid "New Schedule Trigger"
 msgstr "New Schedule Trigger"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
-msgid "New session"
-msgstr "New session"
+#~ msgid "New session"
+#~ msgstr "New session"
 
 #: src/components/agent-resources/AgentResourcesBody.tsx
 msgid "New skill"
@@ -15964,6 +15969,7 @@ msgstr "project"
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
@@ -23582,6 +23588,10 @@ msgstr "WorldView"
 #: src/pages/entry/LaunchLanding.tsx
 #~ msgid "Would you like to launch a sandbox for this repository?"
 #~ msgstr "Would you like to launch a sandbox for this repository?"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "Write & plan"
+msgstr "Write & plan"
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Write it here"
