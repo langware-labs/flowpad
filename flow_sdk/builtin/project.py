@@ -1387,11 +1387,11 @@ class Project(Entity):
                     field, recipient_key = "recipient_user_id", person.user_id
                 else:
                     field, recipient_key = "recipient_email", person.email
-                # Two invitations, one target each: the project invite is the one
-                # the hub emails, so its link lands on the project; the conversation
-                # invite sends no email. One invitation carrying both would land the
-                # email on the conversation, and removing a pending member from the
-                # project would leave its invitation linked (hub remove_member).
+                # Two invitations, one target each, each with its own email: the
+                # project invite's link lands on the project, the conversation's on
+                # the invite message. One invitation carrying both would land its
+                # one email on the conversation, and removing a pending member from
+                # the project would leave its invitation linked (hub remove_member).
                 request = {
                     field: recipient_key,
                     "invitation_targets": [{"typeid": project_ref, "role": person.role or PROJECT_DEFAULT_INVITE_ROLE}],
@@ -1410,7 +1410,6 @@ class Project(Entity):
                         {
                             field: recipient_key,
                             "invitation_targets": [{"typeid": conversation_ref, "role": "member"}],
-                            "notify_by_email": False,
                         },
                     )
                 except ValueError as exc:  # the project invite landed; only the message can't reach them
