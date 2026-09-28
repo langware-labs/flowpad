@@ -42,10 +42,10 @@ describe('TerminalBottomRibbon — Shown chip', () => {
     render(<TerminalBottomRibbon {...baseProps} shown={[older, newest]} onOpenShown={onOpenShown} />);
 
     expect(screen.getByTestId('ribbon-shown').textContent).toContain('2');
-    expect(screen.queryAllByTestId('ribbon-shown-row')).toHaveLength(0);
+    expect(screen.queryAllByTestId('display-history-row')).toHaveLength(0);
 
     await userEvent.click(screen.getByTestId('ribbon-shown'));
-    const rows = screen.getAllByTestId('ribbon-shown-row');
+    const rows = screen.getAllByTestId('display-history-row');
     expect(rows.map((r) => r.textContent)).toEqual([
       expect.stringContaining('newest.md'),
       expect.stringContaining('older.md'),

@@ -10,7 +10,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Human label for a display target — an app's name, a file's basename, or the
  *  entity's type/id. */
-export function entryLabel(entry: DisplayEntry): string {
+function entryLabel(entry: DisplayEntry): string {
   if (entry.kind === 'app' && entry.name) return entry.name;
   if (entry.path) return entry.path.split('/').pop() || entry.path;
   if (entry.type && entry.id) return `${entry.type} · ${entry.id.slice(0, 8)}`;
@@ -19,13 +19,45 @@ export function entryLabel(entry: DisplayEntry): string {
 
 /** Per-entry glyph: the backend TypeInfo icon for a shown entity, else a
  *  kind-based fallback (file / globe). */
-export function EntryIcon({ entry }: { entry: DisplayEntry }) {
+function EntryIcon({ entry }: { entry: DisplayEntry }) {
   if (entry.kind === 'app') return <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
   if (entry.type) {
     const Icon = iconForType(entry.type);
     return <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
   }
   return <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />;
+}
+
+/**
+ * The rows of a process's `flow show` history — newest first, each with an
+ * "ago" stamp; clicking one calls `onOpen`. Shared by the display toolbar's
+ * history popover and the terminal ribbon's Shown stack, which differ only in
+ * their trigger.
+ */
+export function DisplayHistoryList({ stack, onOpen }: DisplayHistoryButtonProps) {
+  // Stored oldest-first; show newest-first.
+  const rows = [...stack].reverse();
+  return (
+    <ul className="flex max-h-80 flex-col overflow-y-auto">
+      {rows.map((entry, i) => {
+        const ago = formatTimeAgo(entry.shown_at);
+        return (
+          <li key={`${entry.shown_at ?? ''}:${i}`}>
+            <button
+              type="button"
+              onClick={() => onOpen(entry)}
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted"
+              data-testid="display-history-row"
+            >
+              <EntryIcon entry={entry} />
+              <span className="min-w-0 flex-1 truncate">{entryLabel(entry)}</span>
+              {ago ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{ago}</span> : null}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 interface DisplayHistoryButtonProps {
@@ -45,9 +77,7 @@ interface DisplayHistoryButtonProps {
 export function DisplayHistoryButton({ stack, onOpen }: DisplayHistoryButtonProps) {
   const { t } = useLingui();
   const [open, setOpen] = useState(false);
-  // Stored oldest-first; show newest-first.
-  const rows = [...stack].reverse();
-  if (rows.length === 0) return null;
+  if (stack.length === 0) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -81,28 +111,13 @@ export function DisplayHistoryButton({ stack, onOpen }: DisplayHistoryButtonProp
         className="w-72 p-1"
         data-testid="display-history-popover"
       >
-        <ul className="flex max-h-80 flex-col overflow-y-auto">
-          {rows.map((entry, i) => {
-            const ago = formatTimeAgo(entry.shown_at);
-            return (
-              <li key={`${entry.shown_at ?? ''}:${i}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpen(false);
-                    onOpen(entry);
-                  }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-sm hover:bg-muted"
-                  data-testid="display-history-row"
-                >
-                  <EntryIcon entry={entry} />
-                  <span className="min-w-0 flex-1 truncate">{entryLabel(entry)}</span>
-                  {ago ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{ago}</span> : null}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <DisplayHistoryList
+          stack={stack}
+          onOpen={(entry) => {
+            setOpen(false);
+            onOpen(entry);
+          }}
+        />
       </PopoverContent>
     </Popover>
   );
