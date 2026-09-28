@@ -107,7 +107,7 @@ def test_the_manifest_reflect_modes_are_the_familys(tmp_path):
 
 
 def test_every_shipped_driver_has_the_family_its_items_are():
-    """The shipped split, pinned: four file sources, two record sources, and every channel a message source."""
+    """The shipped split, pinned: four file sources, three record sources, and every channel a message source."""
     from flow_sdk.ingest.driver_registry import SHIPPED_ROOT
 
     families: dict[str, list[str]] = {}
@@ -115,7 +115,7 @@ def test_every_shipped_driver_has_the_family_its_items_are():
         if (folder / "data_driver.json").is_file():
             families.setdefault(load_driver(folder).cls.family.value, []).append(folder.name)
     assert families["object"] == ["folder", "gcs", "gdrive", "git"]
-    assert families["record"] == ["hackernews", "rss"]
+    assert families["record"] == ["hackernews", "jira", "rss"]
     assert len(families["message"]) == 15 and "slack" in families["message"]
 
 

@@ -386,15 +386,31 @@ source (§8). The row says which as `family`; only a message source `sends`.
 from flow_sdk.builtin.data_driver import DataDriver
 
 drive = await DataDriver.get("gdrive")
-rss = await DataDriver.get("rss")
+jira = await DataDriver.get("jira")
 slack = await DataDriver.get("slack")
 
-families = (drive.family, rss.family, slack.family)    # ("object", "record", "message")
-answers = (drive.sends, rss.sends, slack.sends)        # (False, False, True)
+families = (drive.family, jira.family, slack.family)   # ("object", "record", "message")
+answers = (drive.sends, jira.sends, slack.sends)       # (False, False, True)
 ```
 
-A provider with two kinds of stream is two drivers: a Jira issue tracker is a `RecordSource`
-of issues, and each issue's comments a `MessageSource`.
+A provider with two kinds of stream is two drivers: the shipped `jira` driver is a `RecordSource`
+of issues; each issue's comments, as messages, would be a `MessageSource` of their own.
+
+A record source is a table: a page is a slice of it, and a record's fields are its columns — one
+line to a DataFrame. `PROJ issues` is a `jira` source (`site` + `jql` in its config, the `jira`
+credential for the API token):
+
+```python
+import pandas as pd
+from flow_sdk.builtin.data_source import DataSource
+
+issues = await DataSource.get("PROJ issues")           # jira: a RecordSource
+async with await issues.open() as live:
+    async for page in live.pages(page_size=100):       # a page is a slice of the table
+        df = pd.DataFrame([row.data.model_dump() for row in page.items])   # columns = the record's fields
+        print(df[["key", "status", "assignee"]])
+        await page.ack()
+```
 
 ## 14. Write your own driver
 
