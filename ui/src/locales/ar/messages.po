@@ -15947,7 +15947,6 @@ msgid "Project Members"
 msgstr "أعضاء المشروع"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-home/ProjectNameTitle.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 msgid "Project name"
 msgstr "اسم المشروع"
@@ -16997,8 +16996,8 @@ msgid "Rename folder"
 msgstr "إعادة تسمية المجلد"
 
 #: src/components/project-home/ProjectNameTitle.tsx
-msgid "Rename project"
-msgstr ""
+#~ msgid "Rename project"
+#~ msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Rename this budget"

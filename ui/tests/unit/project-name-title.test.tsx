@@ -29,7 +29,7 @@ vi.mock('@src/notifications', () => ({
 }));
 
 function makeProject(save: () => Promise<unknown>) {
-  const project = {
+  return {
     typeId: { type: 'project', id: 'p1', toString: () => 'project:p1' },
     name: 'marketing',
     get displayName() {
@@ -37,12 +37,11 @@ function makeProject(save: () => Promise<unknown>) {
     },
     save: vi.fn(save),
   };
-  return project;
 }
 
 async function rename(to: string) {
   await userEvent.click(screen.getByTestId('project-name'));
-  const input = screen.getByTestId('project-name-input');
+  const input = screen.getByTestId('project-rename-input');
   await userEvent.clear(input);
   await userEvent.type(input, `${to}{Enter}`);
 }
