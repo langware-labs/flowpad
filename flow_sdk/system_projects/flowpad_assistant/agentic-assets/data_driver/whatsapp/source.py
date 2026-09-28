@@ -54,6 +54,7 @@ from flow_sdk.sources.errors import (
 from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.files import FileSupport, check_files, read_file
 from flow_sdk.sources.protocols import Verdict
+from flow_sdk.sources.setup_steps import ReturnedValue, SourceUpdateSpec, setup_step
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import (
     FileItem,
@@ -109,11 +110,22 @@ class WhatsAppMessageData(MessageData):
 
 
 class WhatsAppConfig(SourceConfig):
-    """What a whatsapp source is configured with. Its secrets are the credential in auth, never here."""
+    """What a whatsapp source is configured with. Its secrets are the credential in auth, never here.
 
-    phone_number_id: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-    #: Any string you choose, pasted into Meta's webhook setup — it proves the callback URL is yours.
-    verify_token: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+    Every field may start empty: a source is created first and set up by its wizard, step by step
+    (setup_wizards) — verify says which value is still missing."""
+
+    phone_number_id: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
+    #: Proves the callback URL is yours: made by the setup, held by the hub, which answers Meta's handshake.
+    verify_token: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
+    #: The Meta app the number belongs to — what the webhook is subscribed on.
+    app_id: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
+    #: The WhatsApp Business Account the number is in — what the app is subscribed to.
+    waba_id: Annotated[str, StringConstraints(strip_whitespace=True)] = ""
+    #: The person's own number the test mode was proven on (a Meta test recipient).
+    test_recipient: str = ""
+    #: Who may drive the owning agent from this number (wa_ids); the row keeps it as allowed_senders.
+    allowed_senders: list[Annotated[str, StringConstraints(pattern=r"^[0-9]+$")]] = []
     #: Where Graph is. Empty means Meta's own host; a test names a loopback double. Never a secret.
     base_url: str = ""
 
@@ -362,6 +374,122 @@ class WhatsAppSource(MessageSource):
         body = await self._graph("GET", self.phone_number_id, params={"fields": "display_phone_number"})
         return str(body.get("display_phone_number") or "").strip()
 
+    # ── setup steps (what the whatsapp-test wizard calls: flow source step) ─
+    @setup_step("app")
+    async def _app_step(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
+        """The Meta app: its App ID and App secret authenticate as the app. Kept: the id in config, the
+        secret in the credential (it also verifies every delivery's signature)."""
+        app_id = str(values.get("app_id") or self.config.get("app_id") or "").strip()
+        secret = str(values.get("app_secret") or self._secret("app_secret") or "").strip()
+        if not (app_id and secret):
+            return ReturnedValue.not_yet("Paste the App ID and App secret (App settings → Basic).")
+        try:
+            app = await self._graph("GET", app_id, token=f"{app_id}|{secret}", params={"fields": "id,name"})
+        except SourceError as exc:
+            return ReturnedValue.not_yet(f"Meta refused that App ID and secret: {exc}")
+        named = f"App {app.get('name') or app_id}"
+        if check:
+            return ReturnedValue.satisfied(named, ran=False)
+        return ReturnedValue.satisfied(named, value=SourceUpdateSpec(config={"app_id": app_id}, secrets={"app_secret": secret}))
+
+    @setup_step("number")
+    async def _number_step(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
+        """The business number and a token that can send from it. The 24-hour token API Setup shows is
+        traded for a long-lived one when the app's secret is known; either way it is proven by reading
+        the number it sends as."""
+        phone = str(values.get("phone_number_id") or self.phone_number_id).strip()
+        waba = str(values.get("waba_id") or self.config.get("waba_id") or "").strip()
+        token = str(values.get("access_token") or self._token() or "").strip()
+        missing = [label for label, v in (("Phone number ID", phone), ("WhatsApp Business Account ID", waba), ("access token", token)) if not v]
+        if missing:
+            return ReturnedValue.not_yet(f"Paste the {', '.join(missing)} (WhatsApp → API Setup).")
+        try:
+            body = await self._graph("GET", phone, token=token, params={"fields": "display_phone_number"})
+        except AccessDenied:
+            return ReturnedValue.not_yet("Meta refused the token — copy a fresh one from WhatsApp → API Setup.")
+        except SourceError as exc:
+            return ReturnedValue.not_yet(f"Meta refused the Phone number ID: {exc}")
+        number = str(body.get("display_phone_number") or phone)
+        if check:
+            return ReturnedValue.satisfied(f"Sending as {number}", ran=False)
+        kept, lasting = token, ""
+        app_id, secret = str(self.config.get("app_id") or ""), self._secret("app_secret")
+        if app_id and secret:
+            try:
+                traded = await self._graph("GET", "oauth/access_token", token=token, params={
+                    "grant_type": "fb_exchange_token", "client_id": app_id, "client_secret": secret, "fb_exchange_token": token,
+                })
+                kept, lasting = str(traded.get("access_token") or token), " (token extended)"
+            except SourceError:
+                lasting = " (a 24-hour token — the production setup makes a permanent one)"
+        update = SourceUpdateSpec(config={"phone_number_id": phone, "waba_id": waba}, secrets={"access_token": kept})
+        return ReturnedValue.satisfied(f"Sending as {number}{lasting}", value=update)
+
+    @setup_step("me")
+    async def _me_step(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
+        """The person's own phone, proven by a message reaching it: Meta's hello_world template (the one
+        a test number may always send). Refused with 131030 until the number is one of the app's test
+        recipients. The number becomes the source's one allowed sender."""
+        number = digits(values.get("my_number") or self.config.get("test_recipient"))
+        if not number:
+            return ReturnedValue.not_yet("Enter your own WhatsApp number, with its country code.")
+        if check:
+            done = digits(self.config.get("test_recipient")) == number
+            return ReturnedValue.satisfied(f"+{number} gets messages", ran=False) if done else ReturnedValue.not_yet("not sent yet")
+        template = {"name": "hello_world", "language": {"code": "en_US"}}
+        try:
+            await self._graph("POST", f"{self.phone_number_id}/messages", json={
+                "messaging_product": "whatsapp", "to": number, "type": "template", "template": template,
+            })
+        except SourceError as exc:
+            if "131030" in str(exc):
+                return ReturnedValue.not_yet(
+                    f"Meta will not message +{number} yet: add it under WhatsApp → API Setup → To, enter the code "
+                    "Meta sends to your phone, then continue."
+                )
+            return ReturnedValue.not_yet(f"Meta refused the message: {exc}")
+        update = SourceUpdateSpec(config={"test_recipient": number}, allowed_senders=[number])
+        return ReturnedValue.satisfied(f"Sent a hello to +{number} — check your phone", value=update)
+
+    @setup_step("subscribe")
+    async def _subscribe_step(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue:
+        """Meta sends this number's messages to our public URL: the app's messages webhook points at
+        it (Meta checks it right away — the hub answers with the verify token) and the business account
+        is subscribed to the app."""
+        app_id, secret = str(self.config.get("app_id") or ""), self._secret("app_secret")
+        waba, verify_token = str(self.config.get("waba_id") or ""), str(self.config.get("verify_token") or "")
+        callback = self._secret("webhook_url")
+        if not (app_id and secret and waba and verify_token and callback):
+            return ReturnedValue.not_yet("The app, the number and the public URL come first.")
+        app_token = f"{app_id}|{secret}"
+
+        async def subscribed() -> bool:
+            hooks = await self._graph("GET", f"{app_id}/subscriptions", token=app_token)
+            ours = any(
+                h.get("object") == "whatsapp_business_account" and h.get("callback_url") == callback
+                and any(f.get("name") == "messages" for f in _list(h.get("fields")))
+                for h in _list(hooks.get("data"))
+            )
+            apps = await self._graph("GET", f"{waba}/subscribed_apps")
+            return ours and bool(_list(apps.get("data")))
+
+        try:
+            if await subscribed():
+                return ReturnedValue.satisfied("Meta sends this number's messages here", ran=False)
+            if check:
+                return ReturnedValue.not_yet("Meta's webhook is not pointed here yet")
+            await self._graph("POST", f"{app_id}/subscriptions", token=app_token, params={
+                "object": "whatsapp_business_account", "callback_url": callback,
+                "verify_token": verify_token, "fields": "messages",
+            })
+            await self._graph("POST", f"{waba}/subscribed_apps")
+            ok = await subscribed()
+        except SourceError as exc:
+            return ReturnedValue.not_yet(f"Meta refused the webhook: {exc}")
+        return ReturnedValue.satisfied("Meta sends this number's messages here") if ok else ReturnedValue.not_yet(
+            "Meta took the webhook but does not list it yet — continue again in a moment"
+        )
+
     # ── send ────────────────────────────────────────────────────────────────
     async def send(self, data: MessageData) -> MessageItem:
         self._require_open()
@@ -482,12 +610,16 @@ class WhatsAppSource(MessageSource):
         return digits(origin.key)
 
     def _token(self) -> Optional[str]:
-        secret = self.credentials.values.get("access_token")
+        return self._secret("access_token")
+
+    def _secret(self, key: str) -> Optional[str]:
+        secret = self.credentials.values.get(key)
         return secret.get_secret_value() if secret is not None and secret.get_secret_value() else None
 
-    async def _graph(self, verb: str, path: str, **kwargs: Any) -> dict:
-        """One Graph call; Meta's refusal message rides the error."""
-        token = self._token()
+    async def _graph(self, verb: str, path: str, *, token: Optional[str] = None, **kwargs: Any) -> dict:
+        """One Graph call; Meta's refusal message rides the error. token overrides the source's own —
+        the app's token (<app id>|<app secret>) for app-level calls, a pasted one during setup."""
+        token = token or self._token()
         if token is None:
             raise AccessDenied("This WhatsApp source has no access token.")
         url, headers = f"{self.base_url}/{GRAPH_VERSION}/{path}", {"Authorization": f"Bearer {token}"}
