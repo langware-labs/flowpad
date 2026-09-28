@@ -192,6 +192,8 @@ application reads, so the engine asks the type rather than probing.
 | `connection` | `None` | The machine connection it reads with (`google`, `slack`), checked before a row exists |
 | `open_inbound` | `False` | `MessageSource` only: strangers are the point (a help desk): an empty allowlist admits everyone |
 | `echoes_sends` / `sends_may_draft` | `True` / `False` | `MessageSource` only: a send comes back as its own record; a send may land as a draft |
+| `files` | `FileSupport()` (none) | `MessageSource` only: the file kinds `send` takes, per-kind and per-message byte caps, files per provider message, which kinds carry a caption |
+| `quotes` / `reactions_per_actor` | `False` / `0` | `MessageSource` only: a reply quotes the message it answers (else it only threads); how many reactions one person keeps on a message (1 = a new one replaces) |
 
 Setup (`Verifiable.verify`), a picker (`Choosing.choices`), identity (`Identified.whoami`)
 and a targeted reply lookup (`find_reply`, Gmail's In-Reply-To scan) come from the
@@ -200,7 +202,11 @@ miss answers `None`, and `sync_source` records that as the `unknown_provider` co
 error rather than crashing the poller.
 
 Callers send through `DataSource.send(MessageSpec)`, which validates the common
-message shape before delegating to the driver's `send()` hook. A sent message is
+message shape before delegating to the driver's `send()` hook. Its files are checked
+against the class's `files` before any provider I/O (a refusal names the file, the limit
+and the fix) and fanned out one per provider message where the channel carries fewer,
+the body riding as the first file's caption when it fits; only the first part quotes, and
+`SendOutcome.parts` lists every provider id. A sent message is
 recorded at once as a `SourceItem` marked `sent_by_us`, so the conversation shows
 it without waiting for the next poll. When the provider echoes it back, the echo
 has the same natural key, so it updates that row and the mark stays. Every "did we
