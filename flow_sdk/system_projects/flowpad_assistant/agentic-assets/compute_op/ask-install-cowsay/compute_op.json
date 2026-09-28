@@ -1,0 +1,23 @@
+{
+  "type": "compute_op",
+  "id": "e442962c-7162-4ead-a33b-133310baa8e8",
+  "name": "ask-install-cowsay",
+  "label": "Install cowsay?",
+  "description": "Asks the person whether to install cowsay, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "cowsay is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "command -v cowsay >/dev/null 2>&1 && echo '{}'",
+      "linux": "command -v cowsay >/dev/null 2>&1 && echo '{}'"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

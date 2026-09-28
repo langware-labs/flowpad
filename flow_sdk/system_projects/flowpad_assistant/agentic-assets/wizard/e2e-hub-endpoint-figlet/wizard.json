@@ -1,0 +1,23 @@
+{
+  "name": "e2e-hub-endpoint-figlet",
+  "description": "Asks whether to install figlet when it is missing. If the person agrees it installs it: the plain install command first, and an agent (with one retry) only when that did not get there.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "ask",
+      "label": "Install figlet?",
+      "kind": "compute",
+      "ref": "ask-install-figlet",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install",
+      "label": "figlet",
+      "kind": "compute",
+      "ref": "figlet-on-path",
+      "on_fail": "abort"
+    }
+  ]
+}
