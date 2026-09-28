@@ -47,7 +47,6 @@ export async function getMembers(typeId: TypeId): Promise<Participant[]> {
 export interface ShareRecipient {
   user_id: string | null;
   email: string | null;
-  name?: string | null;
 }
 
 /** One team a share addressed. */

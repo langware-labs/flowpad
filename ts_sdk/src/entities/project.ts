@@ -61,7 +61,7 @@ export function inviteFailure(result: ShareResult): Error | null {
   if (invited.length || granted.length) return null;
   if (!failed.length && !failedTeams.length) return null;
   const who = [
-    ...failed.map((r) => r.email ?? r.name ?? r.user_id ?? '?'),
+    ...failed.map((r) => r.email ?? r.user_id ?? '?'),
     ...failedTeams.map((t) => t.name ?? t.team),
   ].join(', ');
   const message = failed[0]?.message ?? failedTeams[0]?.message;

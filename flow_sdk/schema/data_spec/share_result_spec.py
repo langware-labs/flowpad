@@ -28,7 +28,6 @@ class ShareRecipientSpec(DataSpec):
 
     user_id: Optional[str] = None
     email: Optional[str] = None
-    name: Optional[str] = None
 
 
 class ShareInvitedSpec(ShareRecipientSpec):

@@ -62,7 +62,7 @@ describe('Project.invite — one share action; the backend orchestrates the invi
   const THEM = '7c6d5e4f-3a2b-4c1d-9e8f-0a1b2c3d4e5f';
   const ZSCHOOL = '6a6a6a6a-0000-4000-8000-000000000007';
   const outcome: ShareResult = {
-    invited: [{ user_id: THEM, email: null, name: 'Them', conversation_id: 'conv-1' }],
+    invited: [{ user_id: THEM, email: null, conversation_id: 'conv-1' }],
     skipped: [{ user_id: null, email: 'owner@example.com', reason: 'self' }],
     failed: [],
     granted_teams: [{ team: `team-${ZSCHOOL}`, name: 'zschool', conversation_id: 'conv-team' }],

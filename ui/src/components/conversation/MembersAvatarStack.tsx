@@ -889,7 +889,7 @@ export function MembersAvatarStack({
                         role="alert"
                         data-testid="members-invite-failed-person"
                       >
-                        {t`Couldn't invite ${f.name || f.email || f.user_id || ''}: ${f.message}`}
+                        {t`Couldn't invite ${f.email || f.user_id || ''}: ${f.message}`}
                       </div>
                     ))}
                     {/* The list Apply sends — one row per recipient with the
