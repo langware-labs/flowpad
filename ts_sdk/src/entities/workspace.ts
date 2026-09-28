@@ -1,10 +1,8 @@
 import { APIEntity, registerEntity } from '../APIEntity';
-import { IEntity, EntityMerge } from '../IEntity';
-
-export interface IWorkspace extends IEntity {
-  name?: string;
-  namespace?: string;
-}
+import { EntityTypes } from '../schema/types';
+import { EntityMerge } from '../IEntity';
+import { IWorkspace } from './workspace-types';
+export type * from './workspace-types';
 
 // `implements IWorkspace` only checks the class; it contributes no members, so every
 // field declared solely on IWorkspace read as "does not exist". deepAssign populates
@@ -14,7 +12,7 @@ export interface Workspace extends EntityMerge<IWorkspace> {}
 
 @registerEntity
 export class Workspace extends APIEntity<Workspace> implements IWorkspace {
-  static type: string = 'workspace';
+  static type: string = EntityTypes.Workspace;
   name?: string;
   namespace?: string;
 

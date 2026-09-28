@@ -1549,13 +1549,25 @@ class FsRecordsActionsMixin:
         # that does not claim the file, and refuses a FRAGMENT type outright
         # (``?type=mcp_server`` on a settings.json), which is the case a
         # caller-named type could otherwise mint a bogus row for.
-        if _p is not None and filter_type and _p.is_file() and not rebuild and not force:
+        # A FOLDER asset (an agent, a skill) named by its own folder takes the same
+        # direct branch: the subtree walk below looks inside the folder and never
+        # at the folder itself, so it answered `indexed: 0` for every such asset.
+        # A folder that is not an asset of this type still falls through to the walk.
+        direct_folder = None
+        if _p is not None and filter_type and _p.is_dir() and not rebuild and not force:
+            from flow_sdk.fs_store.resolve import NotAnAsset, resolve_asset  # noqa: PLC0415
+
+            try:
+                direct_folder = await resolve_asset(_p, write=True, type_name=filter_type)
+            except NotAnAsset:
+                direct_folder = None
+        if _p is not None and filter_type and (_p.is_file() or direct_folder) and not rebuild and not force:
             from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
 
             _t_direct = time.perf_counter()
             try:
                 try:
-                    resolved = await resolve_asset(_p, write=True, type_name=filter_type)
+                    resolved = direct_folder or await resolve_asset(_p, write=True, type_name=filter_type)
                     found = await index_one(resolved)
                 except NotAnAsset as reason:
                     logging.debug("[fs-records] index %s: %s", filter_type, reason)

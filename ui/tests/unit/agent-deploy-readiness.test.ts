@@ -1,12 +1,11 @@
 /**
  * The deploy-readiness state machine — `deploy-readiness.ts`.
  *
- * What is pinned here is the MAPPING, not the rendering: which backend answer
- * makes which row done, which row is the one actionable blocker, and when the
- * host may disable Deploy. The git half deliberately goes through
- * `gitShareGateState`, whose own code table is pinned by
- * `tests/unit/git-share-gate-state.test.ts` — the two together are the contract
- * with `flow_sdk/app/actions/git_share_preflight_action.py`.
+ * What is pinned here is the MAPPING, not the rendering: which answer makes
+ * which row done, which row is the one actionable blocker, and when the host
+ * may disable Deploy. A deploy publishes the agent into its project's
+ * hub-hosted repository, so the only gates are a cloud login and a linked
+ * project; the published-version row is advice and never disables Deploy.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -18,18 +17,19 @@ import {
   type DeployReadinessInput,
 } from '@src/components/assets/editor/agent-profile/deploy-readiness';
 
-/** Everything satisfied — the only input for which Deploy is enabled. */
+/** Everything satisfied. */
 const ALL_GOOD: DeployReadinessInput = {
   cloudAuthed: true,
-  githubConnected: true,
   projectPublished: true,
-  preflight: { answered: true, loading: false, code: null },
+  version: { published: true, pending_changes: 0 },
 };
 
-const answered = (code: string | null) => ({ answered: true, loading: false, code });
-
 describe('deployReadiness', () => {
-  it('marks every step done when all five gates are satisfied', () => {
+  it('has exactly the cloud-login, project and version rows — no git or GitHub gates', () => {
+    expect([...DEPLOY_STEP_IDS]).toEqual(['cloud-login', 'project', 'version']);
+  });
+
+  it('marks every step done when all gates are satisfied', () => {
     const states = deployReadiness(ALL_GOOD);
 
     for (const id of DEPLOY_STEP_IDS) expect(states[id]).toBe('done');
@@ -37,108 +37,51 @@ describe('deployReadiness', () => {
     expect(deployReadyState(states)).toBe(true);
   });
 
-  it('reports an unmet gate as todo', () => {
-    expect(deployReadiness({ ...ALL_GOOD, cloudAuthed: false })['cloud-login']).toBe('todo');
-    expect(deployReadiness({ ...ALL_GOOD, githubConnected: false }).github).toBe('todo');
-    expect(deployReadiness({ ...ALL_GOOD, projectPublished: false }).project).toBe('todo');
+  it('reports an unmet gate as todo, and a known unmet gate disables Deploy', () => {
+    const noLogin = deployReadiness({ ...ALL_GOOD, cloudAuthed: false });
+    const notLinked = deployReadiness({ ...ALL_GOOD, projectPublished: false });
+
+    expect(noLogin['cloud-login']).toBe('todo');
+    expect(notLinked.project).toBe('todo');
+    expect(deployReadyState(noLogin)).toBe(false);
+    expect(deployReadyState(notLinked)).toBe(false);
   });
 
-  it('treats an unanswered probe as checking, and never as ready', () => {
-    const states = deployReadiness({ ...ALL_GOOD, githubConnected: null });
+  it('treats a project that has not loaded as checking, and never as ready or not-ready', () => {
+    const states = deployReadiness({ ...ALL_GOOD, projectPublished: null });
 
-    expect(states.github).toBe('checking');
-    // Not `false`: an unanswerable probe is not evidence of a missing grant, so
-    // it must not take away a Deploy button that works.
+    expect(states.project).toBe('checking');
     expect(deployReadyState(states)).toBeNull();
   });
 
-  it('is checking on both git rows until the preflight answers', () => {
-    const idle = deployReadiness({ ...ALL_GOOD, preflight: { answered: false, loading: false, code: null } });
-    const inFlight = deployReadiness({ ...ALL_GOOD, preflight: { answered: true, loading: true, code: null } });
+  it('offers only the first unmet gate, in gate order', () => {
+    const states = deployReadiness({ cloudAuthed: false, projectPublished: false, version: null });
 
-    // IDLE and "available" both carry `code: null` — `answered` is what separates them.
-    expect(idle.repo).toBe('checking');
-    expect(idle.pushed).toBe('checking');
-    expect(inFlight.repo).toBe('checking');
-    expect(deployReadyState(idle)).toBeNull();
+    expect(deployBlocker(states)).toBe('cloud-login');
+    expect(deployBlocker(deployReadiness({ ...ALL_GOOD, projectPublished: false }))).toBe('project');
   });
-
-  it.each([
-    ['not-in-repo', 'todo', 'pending'],
-    ['missing-remote', 'todo', 'pending'],
-    ['unsupported-origin', 'todo', 'pending'],
-  ])('maps %s to a repo the user must set up, with the push question unanswered', (code, repo, pushed) => {
-    const states = deployReadiness({ ...ALL_GOOD, preflight: answered(code) });
-
-    expect(states.repo).toBe(repo);
-    // `pending`, not `todo`: there is no "is it pushed" answer for a directory
-    // that is not a repository yet, and a second red row would be an invention.
-    expect(states.pushed).toBe(pushed);
-  });
-
-  it.each(['dirty', 'no-commit', 'unpushed'])(
-    'maps %s to a repo that exists with content that has not travelled',
-    (code) => {
-      const states = deployReadiness({ ...ALL_GOOD, preflight: answered(code) });
-
-      // Reaching a commit state proves the repository and its origin exist.
-      expect(states.repo).toBe('done');
-      expect(states.pushed).toBe('todo');
-      expect(deployBlocker(states)).toBe('pushed');
-    },
-  );
-
-  it('marks both git rows done when the preflight is available', () => {
-    const states = deployReadiness({ ...ALL_GOOD, preflight: answered(null) });
-
-    expect(states.repo).toBe('done');
-    expect(states.pushed).toBe('done');
-  });
-
-  it.each(['detached-head', 'status-failure', 'not-file-backed', 'some-future-code'])(
-    'fails closed to blocked on %s',
-    (code) => {
-      const states = deployReadiness({ ...ALL_GOOD, preflight: answered(code) });
-
-      expect(states.repo).toBe('blocked');
-      expect(states.pushed).toBe('blocked');
-      // Blocked is a known-bad state, so Deploy is positively not ready.
-      expect(deployReadyState(states)).toBe(false);
-    },
-  );
 });
 
-describe('deployBlocker', () => {
-  it('returns the first unmet step in gate order, not the first it finds', () => {
-    const states = deployReadiness({
-      cloudAuthed: false,
-      githubConnected: false,
-      projectPublished: false,
-      preflight: answered('not-in-repo'),
-    });
+describe('the published-version row', () => {
+  it('is todo when the published version lacks this computer’s edits — but Deploy stays enabled', () => {
+    const states = deployReadiness({ ...ALL_GOOD, version: { published: true, pending_changes: 2 } });
 
-    // Four rows are unmet; only the earliest gate is offered, because fixing a
-    // later one first cannot help.
-    expect(deployBlocker(states)).toBe('cloud-login');
-    expect(DEPLOY_STEP_IDS[0]).toBe('cloud-login');
+    expect(states.version).toBe('todo');
+    expect(deployBlocker(states)).toBe('version');
+    // Advice, not a gate: a stale published version still deploys.
+    expect(deployReadyState(states)).toBe(true);
   });
 
-  it('walks past done steps', () => {
-    const states = deployReadiness({ ...ALL_GOOD, githubConnected: false, projectPublished: false });
+  it('is done for an agent that was never published — the deploy publishes this version', () => {
+    const states = deployReadiness({ ...ALL_GOOD, version: { published: false, pending_changes: 3 } });
 
-    expect(deployBlocker(states)).toBe('github');
+    expect(states.version).toBe('done');
   });
 
-  it('offers the git rows only once the account gates are done', () => {
-    const states = deployReadiness({ ...ALL_GOOD, preflight: answered('not-in-repo') });
+  it('is checking while the version is unknown, without holding Deploy back', () => {
+    const states = deployReadiness({ ...ALL_GOOD, version: null });
 
-    expect(deployBlocker(states)).toBe('repo');
-  });
-
-  it('offers repo setup before the project link, which needs a repository to link', () => {
-    const states = deployReadiness({ ...ALL_GOOD, projectPublished: false, preflight: answered('not-in-repo') });
-
-    expect(deployBlocker(states)).toBe('repo');
-    expect(DEPLOY_STEP_IDS.indexOf('repo')).toBeLessThan(DEPLOY_STEP_IDS.indexOf('project'));
+    expect(states.version).toBe('checking');
+    expect(deployReadyState(states)).toBe(true);
   });
 });

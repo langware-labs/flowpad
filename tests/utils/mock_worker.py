@@ -12,6 +12,11 @@ Two ways to say what the worker does on a turn:
   the loaded skills, the native ``--agents`` roster) and can act the way a real worker acts: run
   the real ``flow`` CLI (``turn.flow(...)``) and call a native subagent (``turn.native_subagent``).
   Both actions are recorded in the transcript as real-shaped tool calls.
+* File actions — ``turn.read/write/edit/rename/delete/listdir`` on ``turn.input_dir``,
+  ``turn.output_dir`` or any path — act on disk and are recorded as the tool call a real worker
+  makes (``Read``, ``Write``, ``Edit``, ``Bash mv``, ``Bash rm``, ``Bash ls``). Each one runs through
+  ``handlers[name]``: the default does the real disk operation, and a test may pass its own
+  (``MockDriver(handlers={"write": ...})``) to fail it, corrupt it or do something else instead.
 
 **Any vendor.** :func:`mock_driver_for` builds the mock on top of a real vendor driver class
 (claude, codex, copilot, opencode, deepagents), so the vendor's own instruction projection and
@@ -52,6 +57,55 @@ logger = logging.getLogger(__name__)
 #: ``flow(process, args) -> result`` — how a turn runs the real ``flow`` CLI as this process.
 FlowRunner = Callable[[Any, list[str]], Awaitable[dict]]
 Behavior = Callable[["MockTurn"], Union[str, Awaitable[str]]]
+#: ``handler(turn, *args)`` — one file action; the default does the real disk operation.
+FileHandler = Callable[..., Any]
+
+
+def _default_read(turn: "MockTurn", path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _default_write(turn: "MockTurn", path: Path, content: "str | bytes") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(content, bytes):
+        path.write_bytes(content)
+    else:
+        path.write_text(content, encoding="utf-8")
+
+
+def _default_edit(turn: "MockTurn", path: Path, old: str, new: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    if old not in text:
+        raise MockUsageError(f"edit: {old!r} is not in {path}")
+    path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+
+def _default_rename(turn: "MockTurn", src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    src.rename(dst)
+
+
+def _default_delete(turn: "MockTurn", path: Path) -> None:
+    if path.is_dir():
+        import shutil  # noqa: PLC0415
+
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _default_listdir(turn: "MockTurn", path: Path) -> list[str]:
+    return sorted(str(p.relative_to(path)) for p in path.rglob("*") if p.is_file()) if path.is_dir() else []
+
+
+DEFAULT_HANDLERS: dict[str, FileHandler] = {
+    "read": _default_read,
+    "write": _default_write,
+    "edit": _default_edit,
+    "rename": _default_rename,
+    "delete": _default_delete,
+    "listdir": _default_listdir,
+}
 
 
 class MockUsageError(AssertionError):
@@ -74,6 +128,8 @@ class MockTurn:
     agents: dict = field(default_factory=dict)
     spawns_subagents: bool = False
     _flow: Optional[FlowRunner] = None
+    #: File-action handlers by name; missing names fall back to :data:`DEFAULT_HANDLERS`.
+    handlers: dict = field(default_factory=dict)
     #: Tool calls made this turn, as transcript entries (assistant tool_use + user tool_result).
     entries: list[dict] = field(default_factory=list)
     flow_calls: list[list[str]] = field(default_factory=list)
@@ -107,6 +163,82 @@ class MockTurn:
             raise MockUsageError(f"{name!r} is not in this worker's --agents roster {sorted(self.agents)}")
         self._tool("Agent", {"subagent_type": name, "prompt": prompt}, result)
         return result
+
+    # ── the process's folders ─────────────────────────────────────────────────────
+
+    @property
+    def input_dir(self) -> Path:
+        from flow_sdk.builtin.agentic_process.process_io import input_dir  # noqa: PLC0415
+
+        return input_dir(self.process)
+
+    @property
+    def output_dir(self) -> Path:
+        from flow_sdk.builtin.agentic_process.process_io import output_dir  # noqa: PLC0415
+
+        return output_dir(self.process)
+
+    @property
+    def main_document(self) -> str:
+        """The output's main document name, as the agent was told it (``cvspec.json``)."""
+        for line in self.instructions.splitlines():
+            if "JSON with the fields" in line:
+                return line.split("`")[1]
+        raise MockUsageError("this turn was not told an output layout")
+
+    @property
+    def workdir(self) -> Optional[Path]:
+        workdir = getattr(self.process, "workdir", None)
+        return Path(workdir) if workdir else None
+
+    def _path(self, path: "str | Path") -> Path:
+        """An absolute path, or one relative to the process's workdir (the worker's cwd)."""
+        path = Path(path)
+        if path.is_absolute():
+            return path
+        base = self.workdir or self.output_dir.parent
+        return base / path
+
+    def _handle(self, name: str, *args: Any) -> Any:
+        return self.handlers.get(name, DEFAULT_HANDLERS[name])(self, *args)
+
+    # ── file actions: a disk operation + the tool call a real worker would record ─
+
+    def read(self, path: "str | Path") -> str:
+        target = self._path(path)
+        text = self._handle("read", target)
+        self._tool("Read", {"file_path": str(target)}, str(text))
+        return text
+
+    def write(self, path: "str | Path", content: "str | bytes") -> Path:
+        target = self._path(path)
+        self._handle("write", target, content)
+        shown = content if isinstance(content, str) else f"<{len(content)} bytes>"
+        self._tool("Write", {"file_path": str(target), "content": shown}, f"File written: {target}")
+        return target
+
+    def edit(self, path: "str | Path", old: str, new: str) -> Path:
+        target = self._path(path)
+        self._handle("edit", target, old, new)
+        self._tool("Edit", {"file_path": str(target), "old_string": old, "new_string": new}, f"File edited: {target}")
+        return target
+
+    def rename(self, src: "str | Path", dst: "str | Path") -> Path:
+        source, target = self._path(src), self._path(dst)
+        self._handle("rename", source, target)
+        self._tool("Bash", {"command": f"mv '{source}' '{target}'"}, "")
+        return target
+
+    def delete(self, path: "str | Path") -> None:
+        target = self._path(path)
+        self._handle("delete", target)
+        self._tool("Bash", {"command": f"rm -rf '{target}'"}, "")
+
+    def listdir(self, path: "str | Path") -> list[str]:
+        target = self._path(path)
+        names = list(self._handle("listdir", target))
+        self._tool("Bash", {"command": f"ls -R '{target}'"}, "\n".join(names))
+        return names
 
     def _tool(self, name: str, tool_input: dict, output: str) -> None:
         tool_id = f"toolu_{mint_uuid().replace('-', '')[:20]}"
@@ -198,11 +330,13 @@ class _MockDriverMixin:
     transcript_settle_seconds = 0.0
     transcript_poll_seconds = 0.01
 
-    def _init_mock(self, transcript_root: Path, *, response_for=None, behavior=None, flow=None) -> None:
+    def _init_mock(self, transcript_root: Path, *, response_for=None, behavior=None, flow=None, handlers=None) -> None:
         self.transcript_root = transcript_root
         self.response_for = response_for or (lambda prompt: f"Mock reply: {prompt}")
         self.behavior = behavior
         self.flow = flow
+        #: File-action overrides for every turn this driver takes (see :class:`MockTurn`).
+        self.handlers: dict = dict(handlers or {})
         self.received_prompts: list[str] = []
         #: Every behavior turn taken, in order (what it saw and what it did).
         self.turns: list[MockTurn] = []
@@ -232,6 +366,7 @@ class _MockDriverMixin:
         return MockTurn(
             prompt="", process=process, vendor=str(getattr(self, "vendor_key", "claude")), instructions=instructions,
             skills=skills, agents=dict(agents), spawns_subagents=spawns, _flow=self.flow,
+            handlers=dict(self.handlers),
         )
 
     async def headless_prompt(self, process, instruction: str):
@@ -278,6 +413,19 @@ class _MockDriverMixin:
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         return _tail_status(transcript_path)
 
+    def load_history(self, process) -> list:
+        """The turn's history, read from the transcript this mock wrote — the claude format, parsed by the
+        claude driver's own reader, so a caller reads a mock turn exactly as it reads a real one."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
+            entry_to_flowdata,  # noqa: PLC0415
+        )
+        from flow_sdk.transcript_analyzer import AgentTranscriptFile  # noqa: PLC0415
+
+        path = self.transcript_path(process)
+        if path is None or not path.exists():
+            return []
+        return [fd for entry in AgentTranscriptFile("claude", path).entries for fd in entry_to_flowdata(entry)]
+
     def has_resumable_session(self, process) -> bool:
         path = self._transcripts.get(process.id)
         return path is not None and path.exists()
@@ -296,8 +444,9 @@ class MockDriver(_MockDriverMixin, ClaudeDriver):
         response_for: Callable[[str], str] | None = None,
         behavior: Behavior | None = None,
         flow: FlowRunner | None = None,
+        handlers: dict[str, FileHandler] | None = None,
     ) -> None:
-        self._init_mock(transcript_root, response_for=response_for, behavior=behavior, flow=flow)
+        self._init_mock(transcript_root, response_for=response_for, behavior=behavior, flow=flow, handlers=handlers)
 
 
 #: The vendors a mock can stand in for — every registered worker vendor.
@@ -311,6 +460,7 @@ def mock_driver_for(
     response_for: Callable[[str], str] | None = None,
     behavior: Behavior | None = None,
     flow: FlowRunner | None = None,
+    handlers: dict[str, FileHandler] | None = None,
 ):
     """A mock worker on top of ``vendor``'s real driver: its instruction projection and its traits
     (``spawns_subagents`` …) are the vendor's own; only the model is the mock."""
@@ -323,7 +473,7 @@ def mock_driver_for(
         real.__init__(driver)
     except TypeError:
         pass
-    driver._init_mock(transcript_root, response_for=response_for, behavior=behavior, flow=flow)
+    driver._init_mock(transcript_root, response_for=response_for, behavior=behavior, flow=flow, handlers=handlers)
     return driver
 
 

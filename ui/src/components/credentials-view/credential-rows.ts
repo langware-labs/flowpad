@@ -12,7 +12,7 @@ export interface CredentialRowVar {
   envVar: string;
   required: boolean;
   present: boolean;
-  warning: 'missing' | 'wrong-store' | null;
+  warning: 'missing' | 'wrong-store' | 'unreachable' | null;
 }
 
 export interface CredentialRow {

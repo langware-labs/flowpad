@@ -173,3 +173,24 @@ def test_attach_missing_file_fails_invalid_arg(conv_cli):
 def test_send_requires_nonempty_message(conv_cli):
     result = conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "   "])
     assert result.exit_code == 2  # EXIT_INVALID_ARG
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_reply_with_a_missing_file_fails_before_sending(conv_cli):
+    result = conv_cli.invoke(["conversation", "reply", conv_cli.conv_id, "see this", "--file", "/no/such/shot.png"])
+    assert result.exit_code == 2 and "no such file" in result.output  # EXIT_INVALID_ARG
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_reply_with_only_a_file_reaches_the_channel_check(conv_cli, tmp_path):
+    shot = tmp_path / "shot.png"
+    shot.write_bytes(b"\x89PNG")
+    result = conv_cli.invoke(["conversation", "reply", conv_cli.conv_id, "--file", str(shot), "--reply-to", "m-1"])
+    # A native conversation has no channel to send a file through: refused by the server, not the CLI.
+    assert result.exit_code == 7 and "channel" in result.output
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_react_on_an_unknown_message_is_refused(conv_cli):
+    result = conv_cli.invoke(["conversation", "react", "00000000-0000-4000-8000-000000000000", "👍"])
+    assert result.exit_code == 7 and "not found" in result.output.lower()

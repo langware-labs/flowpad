@@ -3,16 +3,13 @@
  *
  * Locked here, in order of what would hurt most if it regressed:
  *
- *  - **A private repository is warned about, and does not block.** The share
- *    itself works perfectly on a private repo — the recipients get the project
- *    and its language — so refusing it would be wrong. What they cannot do is
- *    OPEN it without their own GitHub access, and Flowpad cannot grant that, so
- *    the admin is told before the invitations go out rather than after.
  *  - **One share call carries the whole team**, addressed by email, which is the
  *    only thing a `MembershipRequest` accepts.
- *  - **A project that cannot be linked to the cloud cannot be shared**, and says
- *    the backend's own reason — the publish rules are the server's, and this
- *    dialog only asks them early.
+ *  - **Linking needs no git.** The project's published assets live in its
+ *    hub-hosted repository, so a folder with no repo, a dirty tree or a private
+ *    GitHub remote shares just the same — no preflight refusal, no private-repo
+ *    warning, no Connect GitHub retry.
+ *  - **A backend refusal is shown in the backend's own words.**
  */
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -22,41 +19,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   share: vi.fn(),
   recipients: vi.fn(),
-  preflight: {
-    loading: false,
-    available: true,
-    reason: null as string | null,
-    code: null as string | null,
-    origin: null,
-    answered: true,
-    refetch: vi.fn(),
-  },
-  access: {
-    loading: false,
-    public: null as boolean | null,
-    repo: null as string | null,
-    code: null as string | null,
-    answered: true,
-  },
+  notifyError: vi.fn(),
   project: { remote: true } as Record<string, unknown>,
   hubOnly: false,
 }));
 
-vi.mock('@src/hooks/use-git-share-preflight', () => ({ useGitSharePreflight: () => h.preflight }));
-vi.mock('@src/hooks/use-git-anonymous-access', () => ({ useGitAnonymousAccess: () => h.access }));
+// A git check that would refuse, were it still consulted: linking must not ask it.
+const preflight = vi.hoisted(() => vi.fn(() => ({ available: false, answered: true, code: 'dirty', reason: 'dirty' })));
+vi.mock('@src/hooks/use-git-share-preflight', () => ({ useGitSharePreflight: preflight }));
 vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: h.project }) }));
 vi.mock('@src/components/organization/budgets/team-recipients', () => ({
   collectTeamRecipients: (...args: unknown[]) => h.recipients(...args),
 }));
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hubOnly }));
 vi.mock('@src/hooks/use-claude-projects', () => ({ getProjectDisplayName: (p: { name: string }) => p.name }));
-vi.mock('@sdk/react/hooks', () => ({ useOAuthFlowComplete: () => undefined }));
-vi.mock('@sdk', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  oauthService: { connect: vi.fn() },
-}));
 vi.mock('@src/notifications', () => ({
-  notify: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
+  notify: { success: vi.fn(), error: h.notifyError, info: vi.fn() },
 }));
 // The picker is its own component with its own project list; here it only has to
 // hand back a choice so the dialog under test can open.
@@ -83,8 +61,6 @@ const PROJECT_ID = UUID(2);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  h.preflight = { ...h.preflight, available: true, reason: null, code: null, answered: true };
-  h.access = { loading: false, public: true, repo: 'acme/atlas', code: null, answered: true };
   h.project = { remote: true, share: h.share };
   h.hubOnly = false;
   h.share.mockResolvedValue(undefined);
@@ -115,51 +91,34 @@ describe('sharing a project with a team', () => {
     expect(h.share).toHaveBeenCalledWith(['ada@example.com', 'grace@example.com']);
   });
 
-  it('warns about a private repository without blocking the share', async () => {
-    h.access = { ...h.access, public: false, repo: 'acme/atlas' };
+  it('shares without consulting any git state — no preflight, no private-repo warning', async () => {
     const user = await openDialog();
 
-    const warning = await screen.findByTestId('team-share-project-private-repo');
-    expect(warning).toHaveTextContent('acme/atlas');
-    expect(warning.textContent).toMatch(/private/i);
-    // (b) is a warning, not a refusal — the project still shares.
     await waitFor(() => expect(screen.getByTestId('team-share-project-confirm')).toBeEnabled());
+    expect(preflight).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('team-share-project-blocked')).toBeNull();
+    expect(screen.queryByTestId('team-share-project-private-repo')).toBeNull();
+
     await user.click(screen.getByTestId('team-share-project-confirm'));
     await waitFor(() => expect(h.share).toHaveBeenCalledTimes(1));
   });
 
-  it('says nothing about the repository when anyone can clone it', async () => {
-    await openDialog();
-
-    await screen.findByTestId('team-share-project-recipients');
-    expect(screen.queryByTestId('team-share-project-private-repo')).toBeNull();
-  });
-
-  it('refuses, with the backend’s reason, when the project cannot be linked to the cloud', async () => {
-    h.preflight = {
-      ...h.preflight,
-      available: false,
-      reason: 'The repository has uncommitted changes — commit them so they travel.',
-      code: 'dirty',
-    };
-    await openDialog();
-
-    expect(await screen.findByTestId('team-share-project-blocked')).toHaveTextContent('uncommitted changes');
-    expect(screen.getByTestId('team-share-project-confirm')).toBeDisabled();
-    expect(h.share).not.toHaveBeenCalled();
-  });
-
-  it('offers GitHub when that is the only thing missing', async () => {
-    h.share.mockRejectedValue({ response: { data: { data: { code: 'github_not_connected' } } } });
+  it('shows a refusal in the backend’s own words, with no Connect GitHub retry', async () => {
+    h.share.mockRejectedValue(new Error('Cloud login required before linking a Project to the cloud'));
     const user = await openDialog();
 
     await waitFor(() => expect(screen.getByTestId('team-share-project-confirm')).toBeEnabled());
     await user.click(screen.getByTestId('team-share-project-confirm'));
 
-    expect(await screen.findByTestId('team-share-project-connect-github')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(h.notifyError).toHaveBeenCalledWith(
+        expect.objectContaining({ message: 'Cloud login required before linking a Project to the cloud' }),
+      ),
+    );
+    expect(screen.queryByTestId('team-share-project-connect-github')).toBeNull();
   });
 
-  it('is not offered on the hub, which has neither the projects nor the checkouts', () => {
+  it('is not offered on the hub, which has none of the local projects', () => {
     h.hubOnly = true;
     render(<ShareProjectButton teamId={TEAM_ID} teamName="Physics" />);
 

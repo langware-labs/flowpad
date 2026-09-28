@@ -57,7 +57,7 @@ import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { OrganizationPage } from '@src/components/organization/organization-page';
 import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
 import { lazyWebglView } from '@src/components/graph-view/webglSupport';
 
 // Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
@@ -149,9 +149,6 @@ const VIBE_CREATOR_SURFACES: ReadonlySet<ViewType> = new Set([
  *  inside a host layout that owns its own chrome (the vibe workspace mounts it as
  *  the display for a child tab). Generalizes the vibe-creator-surface suppression
  *  to any embedded host (future: the win/ layout). */
-/** `renderBody`'s answer when the terminal is the body; the persistent host renders it. */
-const TERMINAL_BODY = <></>;
-
 export function ContentPanel(props: { minimalChrome?: boolean; contentEpoch?: number } = {}) {
   return (
     <PrimaryContentRegion>
@@ -331,7 +328,9 @@ function ContentPanelBody({
 
     switch (vt) {
       case ViewType.SHELL:
-        return TERMINAL_BODY;
+        // A slot of the terminal pool: unmounting it (any view change) moves the
+        // terminal back to the pool, it never tears the runtime down.
+        return <TabbedTerminal className="h-full" />;
       case ViewType.EDITOR:
         return <CodeEditor activePath={editorActivePath} />;
       case ViewType.WEB_APP:
@@ -555,15 +554,7 @@ function ContentPanelBody({
     }
   };
 
-  // The terminal is NOT one of the per-view bodies: those unmount when the view
-  // changes, and an unmounted terminal comes back as a new `/open`, a full
-  // pty-stream download and a replay. `renderBody` names it (so every guard above
-  // the switch still wins over it); the host below mounts it on first show and
-  // afterwards only hides it, so every terminal the user opened stays live.
   const body = renderBody(bodyViewType);
-  const showsTerminal = body === TERMINAL_BODY;
-  const terminalHostOpened = useRef(false);
-  terminalHostOpened.current ||= showsTerminal;
 
   return (
     <div data-testid="content-panel" className="flex h-full w-full flex-col bg-background">
@@ -606,16 +597,6 @@ function ContentPanelBody({
           <div key={contentEpoch} className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
             {body}
           </div>
-          {terminalHostOpened.current && (
-            <div
-              className="absolute inset-0 mt-0 h-full"
-              data-testid="terminal-host"
-              aria-hidden={!showsTerminal}
-              style={showsTerminal ? undefined : { visibility: 'hidden', pointerEvents: 'none' }}
-            >
-              <TabbedTerminal className="h-full" visible={showsTerminal} />
-            </div>
-          )}
         </div>
       </div>
     </div>

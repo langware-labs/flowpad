@@ -31,6 +31,7 @@ ALLOWED: dict[str, str] = {
     "flow_sdk/server/app.py": "claude transcript jsonl under ~/.claude",
     "flow_sdk/server/routes/bootstrap.py": "bundled docs under the package",
     "flow_sdk/graph_workflow_manager/manager.py": "one workflow run's output dir",
+    "flow_sdk/fs_store/operations/record_retention.py": "one record's execution/output dir, for its newest mtime",
     "flow_sdk/llm_index/indexer.py": "sidecars under the index's own baseline dir",
     "flow_sdk/template_engine/engine.py": "template folder shipped with the package",
     "flow_sdk/transcript_analyzer/synthesizers/agent_trace.py": "one trace output dir",

@@ -17,6 +17,7 @@ import { sdkConfig } from '../config/index';
 import { API_PREFIX } from '../config/SDKConfig';
 import { isHubOnly } from '../utils/hub-runtime';
 import { User } from '../entities/user';
+import { IUser } from '../entities/user-types';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
 import { resolveLoginCallbackUrl } from './login_callback';
 import type { CloudConnectionStatusMessage, CloudLoginStatusMessage, OAuthMessage } from '../websocket';
@@ -101,7 +102,7 @@ interface DesktopInfoSeed {
 
 /** The cloud-relevant slice of the graph bootstrap response. */
 export interface CloudBootstrapSeed {
-  user?: User | Record<string, unknown> | null;
+  user?: IUser | Record<string, unknown> | null;
   desktop_info?: DesktopInfoSeed | null;
 }
 
@@ -250,7 +251,7 @@ class CloudManager extends EventEmitter {
 
   /** Register live listeners before the SDK proactively connects its socket. */
   startSubscriptions(): Promise<void> {
-    return this._subscriptions ??= this._startSubscriptions();
+    return (this._subscriptions ??= this._startSubscriptions());
   }
 
   private async _startSubscriptions(): Promise<void> {

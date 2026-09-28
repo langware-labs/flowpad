@@ -2,7 +2,7 @@ import { TypeId } from '@sdk';
 import { useMemo } from 'react';
 
 import { useMembers } from '@src/hooks/use-members';
-import { isGroupMember } from '@src/components/organization/member-list';
+import { isGroupMember } from '@src/components/organization/member-roles';
 
 /**
  * The teams nested inside an organization or team.

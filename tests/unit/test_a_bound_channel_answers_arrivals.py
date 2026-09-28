@@ -38,7 +38,7 @@ async def test_the_backlog_a_new_channel_first_reads_is_history_not_a_question(m
         monkeypatch.setattr(DataDriver.loaded("telegram"), "credentials_for", double.credentials)
         source = make_data_source(
             "telegram", name=f"bound telegram {uuid.uuid4().hex[:6]}", config=dict(double.config), owner=agent.typeid,
-            status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[double.sender], **dict(double.fields),
+            status=SourceStatus.ACTIVE.value, allowed_senders=[double.sender], **dict(double.fields),
         )
         await source.save()  # bound now
         await sync_source(source)  # its first read: the backlog lands after the binding

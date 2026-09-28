@@ -2,6 +2,8 @@
 
 CRUD on Flowpad records (entities backed by on-disk files: tasks, skills, agents, workflows, …). Use this whenever the user asks to **create**, **make**, or **add** a Flowpad record.
 
+For an **agent** the user wants to actually work — a persona, a prompt, a page it watches, typed input and output, a deployment — hand off to the **agent-builder** skill; this file only creates the bare record.
+
 The pipeline is the same for every record type:
 
 1. **Discover** the type with `flow schema info <type>`.

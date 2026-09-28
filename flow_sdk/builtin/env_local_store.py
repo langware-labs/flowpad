@@ -20,18 +20,21 @@ Two read surfaces, deliberately split by side effect:
 * :func:`list_env_file` and :func:`env_file_status` are **read-only**.
 * :func:`list_env_file` returns **key names and line numbers only, never values**.
 
-There is deliberately **no delete helper**. Flowpad never removes an entry from a
-user's env file — other tools load that file, and keeping it tidy is the
-user's business.
+One delete helper, :func:`remove_env_file_keys`, and one caller: deleting a
+credential removes its own variables from every env file it wrote — a deleted
+credential must leave no value behind. Every other line (comments, other keys,
+order) is kept byte for byte.
 """
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
-from typing import Any, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from dotenv import dotenv_values, set_key
+from dotenv.parser import parse_stream
 
 from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
@@ -232,6 +235,33 @@ def write_env_file(path: Path | str | None, values: Mapping[str, str]) -> None:
     for key, value in values.items():
         # quote_mode="always" keeps values with spaces/specials intact.
         set_key(str(p), key, value, quote_mode="always")
+
+
+def remove_env_file_keys(path: Path | str | None, names: Iterable[str]) -> list[str]:
+    """Remove every assignment of ``names`` from the env file at ``path``: the names removed.
+
+    Parsed with dotenv's own parser, so a quoted multi-line value goes whole; every
+    other line is written back unchanged, atomically, with the file's mode kept.
+    """
+    p, _, _ = _file(path)
+    wanted = set(names)
+    if p is None or not p.exists() or not wanted:
+        return []
+    kept: list[str] = []
+    removed: list[str] = []
+    with p.open(encoding="utf-8") as stream:
+        for binding in parse_stream(stream):
+            if binding.key in wanted:
+                removed.append(binding.key)
+            else:
+                kept.append(binding.original.string)
+    if not removed:
+        return []
+    tmp = p.with_name(f".{p.name}.tmp")
+    tmp.write_text("".join(kept), encoding="utf-8")
+    tmp.chmod(p.stat().st_mode & 0o777)
+    os.replace(tmp, p)
+    return list(dict.fromkeys(removed))
 
 
 def read_env_file_values(path: Path | str | None) -> dict[str, str]:

@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useAuth } from '@sdk/react/hooks';
 import { useLaunchTracker, useSetupStepTracking } from './launch-analytics';
-import { useLaunchTarget } from './launch-target';
+import { launchOriginName, useLaunchTarget } from './launch-target';
 
 /**
  * `/launch?agent=<agent id>` — straight into a sandbox running the agent.
@@ -48,7 +48,7 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
   const percent = steps.length ? Math.round((100 * done) / steps.length) : 0;
 
   const agentName = agent ? agent.getDisplayName() || agent.name || '' : '';
-  const name = (params.get('name') || gitOrigin?.name || '').trim();
+  const name = (params.get('name') || launchOriginName(gitOrigin) || '').trim();
 
   // Once per page. A ref, not state: the launch must not re-run when the agent row
   // refreshes in place or StrictMode replays the effect, and nothing renders off it.
@@ -139,7 +139,7 @@ export default function AgentLaunchLanding({ params }: { params: URLSearchParams
 
         {signedIn && agent && !gitOrigin && (
           <p className={errorClass} data-testid="launch-agent-no-repo">
-            <Trans>This agent isn't published from a git repository, so there's nothing to launch.</Trans>
+            <Trans>This agent isn't published to the cloud, so there's nothing to launch.</Trans>
           </p>
         )}
 

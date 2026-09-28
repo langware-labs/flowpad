@@ -1,6 +1,7 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { TypeId } from '../models/TypeId';
 import type { GitOrigin } from '../models/GitOrigin';
+import type { HubRepoOrigin } from '../models/FSOrigin';
 import type { PromptResult } from '../models/ReturnedValue';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
@@ -38,6 +39,58 @@ export interface AgentAutoLaunchState {
  * capsules. The backend refreshes this projection after a document write.
  * `system_prompt` is the Markdown body; profile controls submit typed field patches.
  */
+/** One thing an agent needs (`agent.requirement`). Never a value. */
+export interface AgentRequirement {
+  kind: 'credential' | 'permission' | 'connection' | 'variable' | 'funding';
+  name: string;
+  vars: string[];
+  scopes: string[];
+  on: string;
+  why: string;
+  derived: boolean;
+  used_by: string[];
+}
+
+/** One requirement at one deployment: `verified` (checked), `declared` (present, unverifiable) or `missing`. */
+/**
+ * A cloud deployment's own token budget: a hub LLM endpoint drawn from `source` (one the caller administers),
+ * capped at `cost_usd_per_day`, allowing only `model` — which the deployed agent then runs.
+ */
+export interface AgentTokenAllocation {
+  source: string;
+  cost_usd_per_day?: number | null;
+  model: string;
+}
+
+export interface AgentReadinessItem {
+  requirement: AgentRequirement;
+  status: 'verified' | 'declared' | 'missing';
+  where: string;
+  /** The variables a store must hold for it — empty for what a grant satisfies. */
+  vars: string[];
+  /** Which of `vars` the store lacks — what "use mine" copies. */
+  missing: string[];
+  /** The connection that grants it — what a cloud deployment's owner authorizes for its machine. */
+  connection: string;
+  fix: string;
+  /** The fix as a verb: `use_mine` (copy this computer's value), `authorize` (grant `connection`), or empty. */
+  remedy: '' | 'use_mine' | 'authorize';
+}
+
+export interface AgentReadiness {
+  agent_id: string;
+  deployment_id: string;
+  environment: string;
+  ready: boolean;
+  items: AgentReadinessItem[];
+}
+
+/** A planned cloud placement and its readiness (`POST agent/<id>/plan_deployment`). */
+export interface AgentPlannedDeployment {
+  deployment: IDeployment;
+  readiness: AgentReadiness;
+}
+
 @registerEntity
 export class Agent extends APIEntity<Agent> {
   static type: string = 'agent';
@@ -90,11 +143,12 @@ export class Agent extends APIEntity<Agent> {
   enabled: boolean;
   /** Absolute on-disk path to the agent's folder (`agent.json` sits inside). */
   asset_ref?: string;
-  /** Where the hub published this agent from: the repo, the branch it was pushed to
-   *  (`flow-cloud`) and the agent's folder as `rel_path`. Hub-written provenance —
-   *  absent on desktop rows and on agents never published from git. `/launch?agent=`
+  /** Where the hub keeps this agent's files. A published agent lives in its project's
+   *  hub-hosted repository (`kind: 'hub_repo'`, the agent's folder as `rel_path`); an
+   *  agent published before that carries a GitHub `kind: 'git'` origin. Hub-written
+   *  provenance — absent on desktop rows and on agents never published. `/launch?agent=`
    *  reads it to know which repository to launch. */
-  git_origin?: GitOrigin | null;
+  git_origin?: GitOrigin | HubRepoOrigin | null;
 
   // ── presentation + project auto-launch ─────────────────────────────────
   /** Welcome text rendered as the agent's first message in Vibe/Standard chat.
@@ -296,9 +350,38 @@ export class Agent extends APIEntity<Agent> {
    * when omitted. One cloud machine per environment.
    */
   /** Deploy to a cloud machine (the default), or `provider: 'local'` — this computer. */
-  async deploy(environment?: string, provider?: 'local'): Promise<AgentDeployResult> {
-    const body = { ...(environment ? { environment } : {}), ...(provider ? { provider } : {}) };
+  /**
+   * `tokenAllocation`: the cloud placement's own budget (see {@link AgentTokenAllocation}); `null` releases it
+   * back to the owner's capped default; omitted leaves it as it is.
+   */
+  async deploy(
+    environment?: string,
+    provider?: 'local',
+    tokenAllocation?: AgentTokenAllocation | null,
+  ): Promise<AgentDeployResult> {
+    const body = {
+      ...(environment ? { environment } : {}),
+      ...(provider ? { provider } : {}),
+      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+    };
     return (await this.post('deploy', Object.keys(body).length ? body : undefined)) as AgentDeployResult;
+  }
+
+  /**
+   * The cloud placement this agent will have in `environment` (default `production`), before it
+   * has a machine, and whether it is ready: each missing value can be filled ("use mine",
+   * `credentialsService.useMine`) or a connection authorized (`Deployment.authorize`) before
+   * `deploy`, which is refused (409 `not_ready`) until it is.
+   */
+  async planDeployment(
+    environment?: string,
+    tokenAllocation?: AgentTokenAllocation | null,
+  ): Promise<AgentPlannedDeployment> {
+    const body = {
+      ...(environment ? { environment } : {}),
+      ...(tokenAllocation !== undefined ? { token_allocation: tokenAllocation } : {}),
+    };
+    return (await this.post('plan_deployment', Object.keys(body).length ? body : undefined)) as AgentPlannedDeployment;
   }
 
   /** Every place this agent runs on — this computer first — with what each owns. */
@@ -356,6 +439,17 @@ export class Agent extends APIEntity<Agent> {
    * Agent's mail surface — everything else about a mailbox (its allowlist, its
    * lifecycle) belongs to `AgentMailbox`, which this hydrates.
    */
+  /** What this agent needs to run anywhere — credentials, permissions, variables. Names only. */
+  async requirements(): Promise<AgentRequirement[]> {
+    return (await this.get<AgentRequirement[] | null>('requirements')) ?? [];
+  }
+
+  /** Does that deployment (default: this computer) satisfy each requirement? Names only. */
+  async readiness(deploymentId?: string): Promise<AgentReadiness | null> {
+    const qs = deploymentId ? `?deployment_id=${encodeURIComponent(deploymentId)}` : '';
+    return this.get<AgentReadiness | null>(`readiness${qs}`);
+  }
+
   async mailboxState(): Promise<AgentMailboxState> {
     return normalizeAgentMailboxState(await this.get<AgentMailboxStateWire>('mailbox_state'));
   }

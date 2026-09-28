@@ -462,6 +462,9 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Antenna',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    // The pointer is the drivers list / one driver nested under the sources
+    // (data-sources-pointer.ts), so every level folds into one chip.
+    foldsPointer: true,
   },
   [ViewType.ASSET_LIST]: {
     title: msg`Assets`,

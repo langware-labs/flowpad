@@ -1,7 +1,7 @@
 """``env_file`` — a dotenv file, one ``NAME=value`` line per variable.
 
 Every rule of ``builtin/env_local_store`` applies: inside a git work tree a value lands only once git
-excludes the file, and a line is never deleted — other tools load that file, and it is the user's.
+excludes the file. ``forget`` removes only the named lines; every other line stays as it was.
 """
 from __future__ import annotations
 
@@ -34,6 +34,10 @@ class EnvFileStore(SecretStore):
     def path(self) -> Optional[Path]:
         return Path(self.config.env_file_path).expanduser() if self.config.env_file_path else None
 
+    @property
+    def where(self) -> str:
+        return self.config.env_file_path
+
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
         from flow_sdk.builtin.env_local_store import read_env_file_values  # noqa: PLC0415
 
@@ -56,8 +60,10 @@ class EnvFileStore(SecretStore):
         return [row["key"] for row in await asyncio.to_thread(list_env_file, self.path)]
 
     async def forget(self, names: Iterable[str]) -> tuple[list[str], list[str]]:
-        """Lines are the user's: every name is kept."""
-        return [], list(names)
+        """Remove the named lines. A name with no line is neither."""
+        from flow_sdk.builtin.env_local_store import remove_env_file_keys  # noqa: PLC0415
+
+        return await asyncio.to_thread(remove_env_file_keys, self.path, list(names)), []
 
 
 __all__ = ["EnvFileConfig", "EnvFileStore"]

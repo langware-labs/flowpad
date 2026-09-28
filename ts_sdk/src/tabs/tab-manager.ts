@@ -249,6 +249,11 @@ export class TabManager {
     return this.gateway.listAll();
   }
 
+  /** A list has been adopted — an empty snapshot now means "no tabs", not "not loaded yet". */
+  isHydrated(): boolean {
+    return this.hydrated;
+  }
+
   /**
    * The global tab list for a navigation decision: the in-memory snapshot once
    * it has been adopted at least once, a `list_all` round trip only before that.
@@ -339,7 +344,10 @@ export class TabManager {
   }
 
   async getTerminalTabsSnapshot(scope: TabScope = 'all', projectId: string | null = null): Promise<Tab[]> {
-    const tabs = await this.refresh();
+    // The loaded list, like every switch-path read (`snapshotOrRefresh`): writes
+    // and the `tabs_changed` broadcast keep it current, so re-listing here only
+    // made the default-shell / fallback routes wait on a round trip every visit.
+    const tabs = await this.snapshotOrRefresh();
     return terminalTabsForScope(tabs, scope, projectId);
   }
 

@@ -1,4 +1,6 @@
-import { QueryRequest, TypeId, WebDomain } from '@sdk';
+import { QueryRequest } from '../../FlowSync/query';
+import { WebDomain } from '../../entities/web-domain';
+import { TypeId } from '../../models/TypeId';
 import { useMemo } from 'react';
 import { useEntitiesQuery } from './entity-hooks';
 

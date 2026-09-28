@@ -198,3 +198,40 @@ async def test_nothing_at_all_still_prepares_nothing(no_save, records_root):
     """The other early return stays: a process with no assets and no text has
     nothing to mount."""
     assert await _proc(WorkerType.CLAUDE_CODE).asset_workspace._prepare_system_instruction_assets() is None
+
+
+def _mounted_project(tmp_path: Path) -> Path:
+    """A mounted folder that ships its skills the Claude way, as the Flowpad
+    Assistant project does: ``<dir>/.claude/skills/<name>/SKILL.md``."""
+    root = tmp_path / "assistant"
+    skill = root / ".claude" / "skills" / "probe-mounted-skill"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: probe-mounted-skill\ndescription: A probe.\n---\n")
+    return root
+
+
+async def test_copilot_sees_the_skills_a_mounted_folder_ships_the_claude_way(no_save, records_root, tmp_path):
+    """Copilot loads a mounted folder's ``.github/skills`` only, so every skill the
+    Flowpad Assistant ships under ``.claude/skills`` was invisible to a copilot
+    worker — the persona told it to use `building-deliverables` and it had no
+    such skill. The launch links them into the process's own ``.github/skills``."""
+    proc = _proc(WorkerType.COPILOT)
+    mounted = _mounted_project(tmp_path)
+    proc.additional_dirs = [str(mounted)]
+    proc.instructions = "# persona"
+
+    prepared = await proc.asset_workspace.prepare_process_assets()
+
+    link = prepared.instruction_assets.assets_dir / ".github" / "skills" / "probe-mounted-skill"
+    assert link.is_symlink() and (link / "SKILL.md").exists()
+    assert link.resolve() == (mounted / ".claude" / "skills" / "probe-mounted-skill").resolve()
+
+
+async def test_claude_reads_a_mounted_folder_natively_so_nothing_is_linked(no_save, records_root, tmp_path):
+    proc = _proc(WorkerType.CLAUDE_CODE)
+    proc.additional_dirs = [str(_mounted_project(tmp_path))]
+    proc.instructions = "# persona"
+
+    prepared = await proc.asset_workspace.prepare_process_assets()
+
+    assert not (prepared.instruction_assets.assets_dir / ".claude" / "skills" / "probe-mounted-skill").exists()

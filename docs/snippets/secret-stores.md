@@ -44,10 +44,10 @@ connection's token as one of its secrets.
 | `await store.save(values)`                     | writes `{ENV_VAR_NAME: str or SecretStr}`; an empty value is skipped     |
 | `await store.names()`                          | the names the store holds — never values                                 |
 | `await store.validate_keys(names)`             | nothing; raises `MissingSecrets` naming what the store lacks             |
-| `await store.forget(names)`                    | `(deleted, kept)` — vault entries go, env file lines stay                |
+| `await store.forget(names)`                    | `(deleted, kept)` — vault entries and env file lines go; others stay     |
 | `store.ref`                                    | the store as a value (`{type, config}`) — what a binding saves           |
-| `await SecretPack.get(name, project=None)` | the credential with that name                                            |
-| `await spec.secret_store(environment)`         | the store `secret_pack.json` names for that environment                   |
+| `await Credential.get(name, project=None)` | the credential with that name                                            |
+| `await spec.secret_store(environment)`         | the store `credential.json` names for that environment                   |
 | `await DataSource.get(name)`                   | the one data source instance with that name                              |
 | `consumer.credentials.names()`                 | the names a data source or credential needs                              |
 | `await source.set_secret_store(store)`         | binds the store the source loads from, and saves it                      |
@@ -126,45 +126,49 @@ prod = await SecretStore.get("env_file", {"env_file_path": str(project.env_file_
 once git excludes that file (a tracked file is refused); a vault write needs the
 vault enabled; empty values are skipped, never cleared.
 
-## 2. A credential uses its store as is
+## 2. A credential's store is the deployment's
 
 ```python
-from flow_sdk.builtin.secret_pack import SecretPack
+from flow_sdk.builtin.credential import Credential
+from flow_sdk.builtin.deployment import Deployment
+from flow_sdk.schema.data_spec.deployment_secrets_spec import VAULT
 
-spec = await SecretPack.get("database")  # the current project's, else the user scope's
+spec = await Credential.get("database")  # the current project's, else the user scope's
 names = spec.credentials.names()             # ["DATABASE_URL"]
 
-prod = await spec.secret_store("production")  # the store secret_pack.json names for production
+production = await Deployment.get_by_id(production_id)  # a deployment in the production environment
+await production.keep_in(names, VAULT)                  # it keeps these values in the vault
+prod = await spec.secret_store(production)              # that store, for this credential's scope
 await prod.save({"DATABASE_URL": "postgres://pooler.hosted.example/prod"})
 await prod.validate_keys(names)
 ```
 
-A credential is the one consumer that already knows its store:
-`spec.secret_store(environment)` builds it from `secret_pack.json`, so there is
-nothing to bind.
+A credential says WHAT is needed, never where its values live — a deployment
+does. `spec.secret_store(deployment)` (default: this computer) builds the store
+that deployment keeps this credential's values in, so there is nothing to bind.
 
 ### How `get` resolves a name
 
-`SecretPack.get(name, project=None)`:
+`Credential.get(name, project=None)`:
 
 1. **`project`** **given** — that project's credential named `name`; if it has
    none, the user scope's (step 3).
 2. **`project`** **omitted** — the current project, `await context.current_project()`,
    and the same lookup as step 1.
-3. **User scope** — `~/agentic-assets/secret_pack/`, which every project on this
+3. **User scope** — `~/agentic-assets/credential/`, which every project on this
    machine sees.
 
 A project credential wins over a user one of the same name. Shipped templates
 are never returned. Two failures, both raised rather than guessed:
 
 ```python
-from flow_sdk.builtin.secret_pack import CredentialAmbiguous, CredentialNotFound, SecretPack
+from flow_sdk.builtin.credential import CredentialAmbiguous, CredentialNotFound, Credential
 
-spec = await SecretPack.get("database", project=other_project)  # a specific project instead of the working directory
+spec = await Credential.get("database", project=other_project)  # a specific project instead of the working directory
 try:
-    spec = await SecretPack.get("stripe")
+    spec = await Credential.get("stripe")
 except CredentialAmbiguous as e:  # more than one credential named "stripe" in the scope that answered
-    e.candidates                  # their typeids — pick one with SecretPack.get_by_id(...)
+    e.candidates                  # their typeids — pick one with Credential.get_by_id(...)
 except CredentialNotFound:        # neither the project nor the user scope declares it
     ...
 ```
@@ -177,26 +181,29 @@ it, `DataSourceAmbiguous` (with `candidates`) when several do.
 
 ### Where a credential's store points
 
-`spec.secret_store(environment)` is the only place a credential's scope and
-environment become a config:
+Each Deployment carries its binding (`Deployment.secrets`, a `DeploymentSecretsSpec`):
+a `store`, per-variable `exceptions`, extra `require`d variables and `protected`.
+An agent's local deployment with none reads **this computer**'s
+(`Deployment.this_computer()`), which every process without a deployment of its
+own reads too. `credential_store.secret_store_ref` is the only place a scope, a
+variable and a deployment become a config:
 
-| `value_store`           | config it passes to `SecretStore.get`                                                                                 |
+| store (no config)       | config it passes to `SecretStore.get`                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `env` / `env_file`      | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`                                  |
+| `env_file`              | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`                                  |
 | `vault`                 | `prefix`: `credential.project.<pid>.` / `credential.user.`, with `<env>.` after `credential.` for a named environment |
-| `vault` + `lm_provider` | `entries`: the one `lm_api.<provider>` entry, whatever the variable is called                                         |
+| any, + `lm_provider`    | `entries`: the one `lm_api.<provider>` entry, whatever the variable is called                                         |
 
-`value_store` names a store type, and `environments.<env>.value_store` overrides
-it for one environment:
+A store with a config of its own (a GCP Secret Manager project) is used as is.
+This computer keeping `DATABASE_URL` in the vault, everything else in env files:
 
 ```json
-{ "name": "database", "schema": 2, "value_store": "env",
-  "vars": { "DATABASE_URL": {} },
-  "environments": { "production": { "value_store": "vault" } } }
+{ "store": { "type": "env_file" }, "exceptions": { "DATABASE_URL": { "type": "vault" } } }
 ```
 
-Files spell the env file store `env`; `env_file` is accepted as the same store,
-so no existing `secret_pack.json` changes.
+A `credential.json` written before 0.2.178 said this itself (`value_store`,
+`environments`); it still loads, and the first boot moves those keys onto the
+deployments (`migration_2026_09_credential_stores`).
 
 ## 3. Env vars — what a process receives
 
@@ -204,11 +211,12 @@ so no existing `secret_pack.json` changes.
 import os
 
 from flow_sdk import context
-from flow_sdk.builtin.credential_resolver import resolve_attached_secrets
+from flow_sdk.builtin.credential_resolver import placement_for_deployment, resolve_attached_secrets
 
 project = await context.current_project()
 env = dict(os.environ)
-secrets = await resolve_attached_secrets(project, environment="production")  # each credential → its store → load
+placement = await placement_for_deployment(production_id)          # where that deployment keeps values
+secrets = await resolve_attached_secrets(project, placement=placement)  # each credential → its store → load
 for name, value in secrets.items():
     env.setdefault(name, value.get_secret_value())  # an explicitly set variable still wins
 ```
@@ -222,11 +230,11 @@ terminal, node command). Inside it is the same pattern per credential:
 
 ```python
 from flow_sdk import context
-from flow_sdk.builtin.secret_pack import SecretPack
+from flow_sdk.builtin.credential import Credential
 from flow_sdk.secrets import SecretStore
 
 project = await context.current_project()
-spec = await SecretPack.get("database")
+spec = await Credential.get("database")
 names = spec.credentials.names()
 
 dev_file = await SecretStore.get()  # current project's .env.local
@@ -274,8 +282,12 @@ What a source reads, per manifest `auth` shape (`ingest/credentials.resolve_cred
   environment for any name still missing.
 
 * **`secrets`** — `{value key: machine secret name}`: the value key from the
-  bound (or default) store, else the named machine secret, else the row's own
-  `config[value key]`.
+  bound (or default) store, else the named machine secret. Never the row's
+  config — a config is value-free.
+
+* **`credential`** + **`vars`** — `{value key: env var}` of a named credential,
+  resolved where the deployment that answers the row keeps it. A setting that
+  differs per machine (WAHA's URLs) is one of these, not config.
 
 * **`connector`** — the bound connection's provider, else the manifest's
   ([§6](#6-connections--the-same-pattern-for-accounts)).
@@ -360,13 +372,22 @@ Everything above is one credential or one connection at a time. `flow project se
 from the command line, for the project in the working directory:
 
 ```bash
+flow credentials declare credential.json  # declare one in this folder's project (created if none)
 flow project setup --dry-run    # what the project needs, and what already holds
 flow project setup              # walk it: sign in, type keys, or leave one empty for the AI
 flow project setup --no-ai      # never hand a value to the AI setup
 flow credentials check telegram # exit 0 when every development value is present
 flow credentials set telegram TELEGRAM_BOT_TOKEN=123456:abc  # store one (declares it from its template)
+flow credentials set telegram --stdin  # the same, VAR=VALUE lines on stdin: how an agent stores one
 flow connections test google --scope https://www.googleapis.com/auth/drive.readonly
 ```
+
+A credential the project needs is declared with `flow credentials declare` (the manifest is a
+`credential.json`: `name`, `vars`, `setup`, never a value; declaring it again updates it in place),
+or `credentialsService.save({scope: 'project', project_id, manifest})` from the TS SDK. After setup,
+its status — `credentials_status(project)` in Python, `credentialsService.status(projectId)` in TS,
+`GET compute_node/@local/credentials/status?project_id=` over REST — says `state: "connected"` and
+each var `present`, `found_in: "env"`; it never carries a value.
 
 It **collects** the credentials the project declares and the auth of every data source it holds —
 a driver's `auth.connector` is a connection, `auth.credential` a credential, and `auth.env` /
@@ -381,11 +402,16 @@ memory and never written, and runs it with the stock runner:
 |             | **AI setup**: the `provisioner` agent following the credential's own `setup` instructions         | the same check — so it skips itself when the key step got there |
 
 Every `CredentialSpec` carries `setup`: how to obtain its values and store them, written for an
-agent to follow and ending in `flow credentials set`. Authoring refuses a credential without it; a
+agent to follow and ending in `flow credentials set <name> --stdin`. The AI rung is told the same:
+pipe `VAR=VALUE` lines into the store command, producing each value inside the pipe — a value on a
+command line is visible to every process on the box and lands in the agent's own transcript. Authoring refuses a credential without it; a
 pack written before it existed still loads, and setup reports it as having no AI setup. Leaving a
 question empty is how a person hands that credential to the AI. Values travel ask → the run →
 the environment of `flow credentials set`; nothing prints them, and the CLI log keeps names only.
 Running it again is the resume: whatever holds is skipped. The environment is `development`.
+`flow credentials delete <name>` removes a credential and its values from every store, and
+`flow credentials audit` checks that nothing deleted is still stored anywhere
+([secret_share](../secret_share.md#deleting--nothing-left-behind)).
 
 ## What each call replaced
 
@@ -393,8 +419,8 @@ Running it again is the resume: whatever holds is skipped. The environment is `d
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | `SecretStore.get("env_file", …)`                      | `env_local_store.read_env_local_values`, `write_env_local`, `list_env_local` (gitignore guard kept)      |
 | `SecretStore.get("vault", …)`                         | `credential_store._load_vault`, `cli.auth.secrets.write_secret`, `get_secrets`                           |
-| `SecretPack.get(name, project=None)`              | `credential_resolver.credentials_in_scope(project)` filtered by hand                                     |
-| `spec.secret_store(environment)`                      | `credential_store.location_name` + `SecretPack.store_for(env)` spread over read, write and forget    |
+| `Credential.get(name, project=None)`              | `credential_resolver.credentials_in_scope(project)` filtered by hand                                     |
+| `spec.secret_store(environment)`                      | `credential_store.location_name` + `Credential.store_for(env)` spread over read, write and forget    |
 | `DataSource.get(name)`                                | `DataSource.get_all({"name": ...})`                                                                      |
 | `source.set_secret_store` / `set_connection` + `open` | `resolve_credentials` reading `os.environ`, a named vault entry and `token_for(auth.connector)` directly |
 | `Connection.get(provider)`                            | `flow_sdk.connections.require(provider)` (kept)                                                          |

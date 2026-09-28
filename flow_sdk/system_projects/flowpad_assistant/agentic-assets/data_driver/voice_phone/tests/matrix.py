@@ -5,14 +5,14 @@ from __future__ import annotations
 import base64
 import json
 from contextlib import contextmanager
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, unquote
 from xml.sax.saxutils import unescape
 
 from pydantic import SecretStr
 
 from flow_sdk.external_apis.voice.testing import FakeRealtime, incoming_call, sign
 from flow_sdk.ingest.testing import local_http_server
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 NUMBER = "+14155550100"
 SECRET = "whsec_" + base64.b64encode(b"voice-matrix-webhook-secret").decode()
@@ -45,7 +45,7 @@ class Double:
         await self.fake.__aexit__(*exc)
 
     async def credentials(self, _row):
-        return Credentials(shape=AuthShape.ENV, values={
+        return ResolvedSecrets(shape=AuthShape.ENV, values={
             "OPENAI_API_KEY": SecretStr("sk-test"), "OPENAI_WEBHOOK_SECRET": SecretStr(SECRET),
             "TWILIO_ACCOUNT_SID": SecretStr("AC" + "0" * 32), "TWILIO_AUTH_TOKEN": SecretStr("twilio-token"),
         })
@@ -54,8 +54,10 @@ class Double:
         return {"to": self.sender, "brief": "Confirm tomorrow's delivery window."}
 
     def _carrier(self, path: str, headers: dict):
-        from urllib.parse import parse_qsl  # noqa: PLC0415
-
+        """Twilio: a number lookup (``verify``) lists the line's number; anything else is a dial, recorded."""
+        if "/IncomingPhoneNumbers.json" in path:
+            listed = [{"phone_number": NUMBER, "sid": "PN" + "0" * 32}] if NUMBER in unquote(path) else []
+            return 200, json.dumps({"incoming_phone_numbers": listed}).encode(), {"Content-Type": "application/json"}
         self.dials.append({"path": path, **dict(parse_qsl(str(headers.get("_body", ""))))})
         return 201, json.dumps({"sid": f"CA{len(self.dials):032d}", "status": "queued"}).encode(), {"Content-Type": "application/json"}
 
@@ -77,10 +79,21 @@ class Double:
         async with source:
             placed, call = await source.start_call(self.offer())
         assert call is None and placed["call_sid"], placed
-        delivery = self.rings_back()
+        return await self.ring_back(driver, row)
+
+    async def ring_back(self, driver, row, delivery: "dict | None" = None):
+        """OpenAI's signed ring (the dialled call's, unless *delivery* names another) through the webhook's
+        chokepoint: the call it carries."""
+        delivery = delivery or self.rings_back()
         result = await driver.ingest_pushed(row, json.loads(delivery["body"]), headers=delivery["headers"], raw=delivery["body"])
         (call,) = result["calls"]
         return call
+
+    def calls_in(self, caller: str, call_id: str = "rtc_in1") -> dict:
+        """OpenAI's signed ring for a call *caller* places to our number."""
+        raw = json.dumps(incoming_call(call_id, caller=caller, dialled="proj_matrix",
+                                       number_header=f"sip:{NUMBER}@pstn.twilio.com")).encode()
+        return {"body": raw, "headers": sign(raw, SECRET)}
 
 
 @contextmanager
@@ -95,7 +108,7 @@ def case(monkeypatch, tmp_path):
         return 201, json.dumps({"sid": f"CA{len(dials):032d}", "status": "queued"}).encode(), {"Content-Type": "application/json"}
 
     async def credentials(_row):
-        return Credentials(shape=AuthShape.ENV, values={
+        return ResolvedSecrets(shape=AuthShape.ENV, values={
             "OPENAI_API_KEY": SecretStr("sk-test"), "OPENAI_WEBHOOK_SECRET": SecretStr(SECRET),
             "TWILIO_ACCOUNT_SID": SecretStr("AC" + "0" * 32), "TWILIO_AUTH_TOKEN": SecretStr("twilio-token"),
         })

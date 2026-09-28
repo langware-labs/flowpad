@@ -1,4 +1,5 @@
-import { fsManager, type TypeId } from '../..';
+import { fsManager } from '../../services/fsService';
+import type { TypeId } from '../../models/TypeId';
 import { useEffect, useRef } from 'react';
 
 /**
@@ -8,7 +9,11 @@ import { useEffect, useRef } from 'react';
  * `fsManager.watchFile` → the entity `fs/watch` action → `file_changed_msg`.
  * The latest `onChange` is always the one called, so it need not be stable.
  */
-export function useFileWatch(typeid: TypeId | null | undefined, path: string | null | undefined, onChange: () => void): void {
+export function useFileWatch(
+  typeid: TypeId | null | undefined,
+  path: string | null | undefined,
+  onChange: () => void,
+): void {
   const latest = useRef(onChange);
   latest.current = onChange;
   const key = typeid ? typeid.toString() : '';

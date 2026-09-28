@@ -29,11 +29,16 @@ agentic-assets/data_source/work_gmail/
 ```
 
 The file (`DataSourceSpec`) is what a person authors and nothing the engine writes: status,
-health, the cursor, the next poll and discovered identities are row-only (`Persist.FALSE`), and the
-engine saves them with `save_runtime()`, which never touches the file. The config is value-free —
+health, the cursor, the next poll, discovered identities and the allowlist (`allowed_senders`,
+PRIVATE: who may drive the source is this machine's business) are row-only (`Persist.FALSE`), and the
+engine saves them with `save_runtime()`, which never touches the file — a re-read of the file leaves
+them as they are. The config is value-free —
 a secret is a credential the driver declares. A folder that arrives by copy, clone or share
 indexes in `setup` ("Received — connect your own account, then press Verify."), and one owner
-watches one account once. Deleting the source removes its folder with the items it ingested; a
+watches one account once: `save()` of a new source for an account its owner already watches adopts
+that row (`find_for_account` on the driver's `identity_config_key`) — the authored fields and the
+config merged onto it, its cursor kept — instead of minting a twin. `owner=` takes the entity itself
+(an `Agent`) or its `TypeId`; a source an Agent owns is that agent's channel, the one way to give it one. Deleting the source removes its folder with the items it ingested; a
 row with no folder (one written before sources were files) is removed at boot.
 
 `agentic-assets/<family>/` is where a native asset lives (glossary), and the main
@@ -69,9 +74,9 @@ call, recorded with its date and reason in `EXCEPTIONS` in
 **Declare the minimum, discover the rest.** Every manifest key below is something the
 runtime cannot work out for itself. Two rules keep it that way:
 
-* **The class is authoritative for what it is.** Traits (`durable_cursor`,
-  `reflects`, `stamps_identity`, `open_inbound`, …) are ClassVars on the source
-  class; a manifest copy would be "authoritative-looking, owned by nobody, and
+* **The class is authoritative for what it is.** Its family is the base it extends
+  (`ObjectSource` / `RecordSource` / `MessageSource`), and traits (`durable_cursor`,
+  `stamps_identity`, `open_inbound`, …) are ClassVars on the source class or its family; a manifest copy would be "authoritative-looking, owned by nobody, and
   silently corrected later". A `traits` key in a manifest is a **load error**.
 * **Presence beats declaration.** A capability is a protocol the class implements,
   discovered by `isinstance` — `DataSource.save()` decides SETUP vs ACTIVE from
@@ -135,7 +140,7 @@ and its `source.py` declares the rules for that field:
 class RssConfig(SourceConfig):
     feed_url: Annotated[str, StringConstraints(pattern=r"^https?://")]
 
-class RssSource(CollectionSource):
+class RssSource(RecordSource, CollectionSource):
     Config = RssConfig
 ```
 
@@ -174,13 +179,23 @@ auth: { secrets: { api_key: ingest_api.agentmail } }
 auth: { credential: whatsapp, vars: { access_token: FLOW_WHATSAPP_TOKEN, app_secret: FLOW_WHATSAPP_SECRET } }
 ```
 
-`credential` names a SecretPack and `vars` maps each value key to one of its variables. It
+`credential` names a Credential and `vars` maps each value key to one of its variables. It
 is resolved for the row's OWNER the way a worker process resolves its secrets — the owning
 agent's project scope over the user scope, read from that scope's `.env.local` or vault — so
 an agent's channel is configured by declaring the credential in the agent's project, never by
-pasting a token into the source. The SecretPack itself is declared in the project
-(`credentials/save`) or shipped as a template (`agentic-assets/secret_pack/telegram/`), not beside
+pasting a token into the source. The Credential itself is declared in the project
+(`credentials/save`) or shipped as a template (`agentic-assets/credential/telegram/`), not beside
 the source.
+
+**A value that differs by where the source runs is a credential variable, never config.**
+`data_source.json` travels with the repo to every machine that runs the project; where a
+container answers or how a provider reaches this instance is different on each. Such a value is
+one more `vars` entry (a non-secret one declares `secret: false` in the credential), resolved at
+the deployment that answers the row — so a deploy is gated on it, "use mine" copies it, and the
+hub places the deployment's own value on its machine. WAHA's `base_url` / `webhook_url` are
+`WAHA_BASE_URL` / `WAHA_WEBHOOK_URL`; a row that still carries them in its config is moved at
+boot (`migration_2026_09_place_settings`: the value into the credential at this computer, the key
+out of the file).
 
 One resolver reads all four (`flow_sdk/ingest/credentials.py`) and hands the result to
 the source as `self.credentials` — a source never reads the environment, the secret
@@ -197,6 +212,25 @@ and the second gets 403s at fetch while verification reports ready.
 
 None of the shapes ever contains a value.
 
+### `webhook`
+
+A driver that takes provider pushes names the `auth.vars` key holding its public URL, and the
+requests a provider sends it:
+
+```yaml
+webhook: { url_var: webhook_url, methods: [POST], required_headers: [x-webhook-hmac] }   # WAHA
+```
+
+`url_var` must be an `auth.vars` key (the manifest refuses one that is not): the URL is a
+per-machine credential variable, like any other. A cloud deploy asks the hub for one webhook
+per such driver among the agent's sources (`Agent.webhook_specs()` → `DeploymentWebhookSpec`,
+`flow_sdk/schema/data_spec/webhook_spec.py`); the hub keeps it for the deployment, stores its
+stable public URL as that variable and relays deliveries to
+`/api/v1/data_source/webhook/<driver>` on whatever machine the deployment has (hub
+`docs/webhooks.md`). Nobody sets `WAHA_WEBHOOK_URL` for a cloud deployment, and "use mine"
+never copies this computer's. A driver whose callback URL lives in the provider's dashboard
+(WhatsApp Cloud API, voice_phone) declares none; its owner sets the hub URL there by hand.
+
 ### `reflect`
 
 Supported modes, head first as the default. The values are `ReflectMode`: `record`
@@ -208,7 +242,9 @@ directories. Folder supports three modes (`none, copy, symlink`) and git and gdr
 two (`none, copy`).
 
 **`record` may not appear in a multi-element list.** A source lands its payload in
-the graph as a record or on disk as an asset; asking for both gets neither.
+the graph as a record or on disk as an asset; asking for both gets neither. The modes are the
+family's: an `ObjectSource` lists filesystem modes, a `RecordSource` / `MessageSource` has
+`[record]` — `load_driver` refuses any other pairing.
 
 ### `config` — form hints; the rules are the driver's `Config`
 
@@ -257,8 +293,8 @@ never a frontend table.
 | `provider` | `name` is the registry key |
 | `runtime` | the folder answers it (below) |
 | `traits` | ClassVars on the source class |
-| `payload` | `reflect: record` means record; anything else means bytes |
-| `sends` | the class implements `Messaging` and `message_for`; the row computes it |
+| `payload` / `family` | the base the class extends (`ObjectSource` / `RecordSource` / `MessageSource`); the row computes `family` |
+| `sends` | the class is a `MessageSource` implementing `Messaging` and `message_for`; the row computes it |
 | `needs_setup` | the class is `Verifiable` |
 | `account_key` VALUE | lives on the `DataSource` row; the manifest only marks WHICH form field supplies it |
 | `id` | carried by the asset's identity carrier, never written into the manifest |

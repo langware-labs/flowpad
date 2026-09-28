@@ -112,7 +112,7 @@ def is_turn_busy(
 ) -> bool:
     """True when a turn is in flight — the single ``busy`` boolean.
 
-    ``busy`` is a function of process state, resolved from five signals (any
+    ``busy`` is a function of process state, resolved from six signals (any
     one → busy):
 
       1. the per-process prompt lock is held (headless / chat-over-PTY turn), OR
@@ -123,7 +123,9 @@ def is_turn_busy(
       4. the raw ``worker_status`` is a mid-turn activity state
          (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**, OR
       5. another live OS process is running a turn on it
-         (:func:`turn_owned_elsewhere` — a local deployment's loop).
+         (:func:`turn_owned_elsewhere` — a local deployment's loop), OR
+      6. its headless turn task is still running its tail (slot release, turn-end
+         bookkeeping) — the worker can read terminal a moment before that ends.
 
     A native-xterm turn holds no lock and sets no ``_turn_in_flight`` flag, so
     (3) is the only signal that keeps it ``busy`` — that is why the ``switch-mode``
@@ -146,14 +148,18 @@ def is_turn_busy(
     try:
         from flow_sdk.builtin.agentic_process.agentic_process import (
             prompt_lock_locked,
+            prompt_task_active,
             prompt_worker_active,
         )
     except Exception:
         prompt_lock_locked = None
+        prompt_task_active = None
         prompt_worker_active = None
     if prompt_lock_locked is not None and prompt_lock_locked(process.id):
         return True
     if prompt_worker_active is not None and prompt_worker_active(process.id):
+        return True
+    if prompt_task_active is not None and prompt_task_active(process.id):
         return True
     if getattr(process, "_turn_in_flight", False):
         return True

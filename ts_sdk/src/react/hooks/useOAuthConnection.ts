@@ -1,21 +1,23 @@
+import { dataManager } from '../../APIEntity';
+import { dataContext } from '../../FlowSync/context';
+import { TypeId } from '../../models/TypeId';
 import {
-  ConnectionStatus,
   EnvStatusEnum,
   EnvVarType,
-  OAuthEventType,
-  OAuthStatus,
-  TypeId,
-  dataContext,
-  dataManager,
-  oauthService,
   oauthProviderDisplayName,
   type EntityEnvVars,
   type EnvVarStatus,
+} from '../../models/env_var';
+import {
+  ConnectionStatus,
+  OAuthEventType,
+  OAuthStatus,
+  oauthService,
   type OAuthDetachResult,
   type OAuthFlowCompletePayload,
   type OAuthProvider,
   type OAuthTestResult,
-} from '@sdk';
+} from '../../services/oauth/oauth-service';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { iconAssetUrl, isIconPath } from '../../utils/icon-asset';

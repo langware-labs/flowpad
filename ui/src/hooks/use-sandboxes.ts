@@ -8,6 +8,7 @@ import {
   ExecutionEnvironmentStatus,
   type GitOrigin,
   gitOriginFromUrl,
+  type HubRepoOrigin,
   type NodeStatus,
   QueryRequest,
   SANDBOX_PROVIDERS,
@@ -288,13 +289,14 @@ export function nextSandboxName(sandboxes: ComputeNode[]): string {
  * user is working on.
  *
  * With a `gitOrigin` the hub clones it (authed when private, which is the only
- * way a private repo is reachable) and copies it into the box. Without one
+ * way a private repo is reachable) and copies it into the box — a GitHub-style
+ * repo, or the project's hub-hosted repo (`hub_repo`). Without one
  * there is nothing to fetch, so the box mounts it empty: a project that was
  * never cloned from anywhere still gets its directory and its identity.
  */
 export interface SandboxSetup {
   /** Absent for a project with no repository behind it. */
-  gitOrigin?: GitOrigin;
+  gitOrigin?: GitOrigin | HubRepoOrigin;
   /** Folder/display name for the set-up project. */
   name: string;
   /** Adopted by the box, so one project id spans hub and sandbox. */

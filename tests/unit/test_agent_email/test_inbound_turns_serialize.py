@@ -56,7 +56,7 @@ class _Message:
         self.author_external_id, self.author_display, self.body = "972500000000", "Dana", f"burst {n}"
         self._sent = sent
 
-    async def reply_spec(self, *, body):
+    async def reply_spec(self, *, body, files=()):
         return body
 
     async def reply(self, spec):

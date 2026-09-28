@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from pydantic import SecretStr
 
 from flow_sdk.external_apis.voice.testing import FakeRealtime
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 
 class Double:
@@ -32,7 +32,7 @@ class Double:
         await self.fake.__aexit__(*exc)
 
     async def credentials(self, _row):
-        return Credentials(shape=AuthShape.ENV, values={"OPENAI_API_KEY": SecretStr("sk-test")})
+        return ResolvedSecrets(shape=AuthShape.ENV, values={"OPENAI_API_KEY": SecretStr("sk-test")})
 
     def offer(self) -> dict:
         """What the browser posts to start a call."""
@@ -53,7 +53,7 @@ def case(monkeypatch, tmp_path):
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     async def credentials(_row):
-        return Credentials(shape=AuthShape.ENV, values={"OPENAI_API_KEY": SecretStr("sk-test")})
+        return ResolvedSecrets(shape=AuthShape.ENV, values={"OPENAI_API_KEY": SecretStr("sk-test")})
 
     monkeypatch.setattr(DataDriver.loaded("voice_browser"), "credentials_for", credentials)
     yield {"config": {"room": "matrix-desk"}, "fields": {}, "min_items": 0, "send": {"to": "ada@local.test", "text": "matrix send"}}

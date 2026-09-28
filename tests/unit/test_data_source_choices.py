@@ -35,8 +35,8 @@ def provider(request):
     from pydantic import create_model
 
     from flow_sdk.ingest.driver_runtime import DRIVERS
-    from flow_sdk.sources.base import Source
     from flow_sdk.sources.config import SourceConfig
+    from flow_sdk.sources.families import RecordSource
 
     async def _make(hook=None, **config) -> str:
         name = f"stub-{mint_uuid()[:8]}"
@@ -45,7 +45,7 @@ def provider(request):
         attrs: dict = {"provider": name, "Config": create_model(f"_StubConfig_{name}", __base__=SourceConfig, **fields)}
         if hook is not None:
             attrs["choices_for"] = classmethod(lambda cls, row, field: hook(None, row, field))
-        stub = type("_Stub", (Source,), attrs)
+        stub = type("_Stub", (RecordSource,), attrs)
         DRIVERS.register(DataDriver.for_class(stub, kind="datasource.test.stub"))
         request.addfinalizer(lambda: DRIVERS.unregister(name))
         await DataDriver(name=name, title=name, config=config).save()

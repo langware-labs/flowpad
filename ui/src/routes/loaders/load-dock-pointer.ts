@@ -1,15 +1,15 @@
 import { t } from '@lingui/core/macro';
 import {
   AgenticProcess,
+  ContextEntitiesEnum,
   dataContext,
   isValidTag,
   isHubOnly,
   PageId,
   Plan,
   Project,
-  QueryRequest,
   RemoteWorkerSession,
-  Trigger,
+  systemTools,
   TypeId,
   VFSPath,
 } from '@sdk';
@@ -24,8 +24,8 @@ import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadLensRoute } from './load-lens';
 import { loadProject, loadProjectRoute } from './load-project';
-import { loadProcess, ProcessLoadError } from './load-process';
-import { loadShellRoute } from './load-shell';
+import { loadProcess, loadProcessProject, ProcessLoadError } from './load-process';
+import { loadShellRoute, processRouteCarry } from './load-shell';
 import { loadTasksRoute } from './load-tasks';
 import { processLoadErrorToDockError } from './process-load-error-resolution';
 import { loadAgentStreamInboxRoute } from './load-agent-stream-inbox';
@@ -122,6 +122,27 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
     }
     throw error;
   }
+}
+
+/**
+ * `/dock/session/<processId>` — the session view: the process into context and
+ * its project, like any process-owned dock. Cache-first identity; no runtime work.
+ */
+async function loadSessionRoute(pointer: string | undefined): Promise<void> {
+  const processTypeId = pointer ? new TypeId(AgenticProcess.type, pointer) : null;
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, processTypeId);
+  if (!processTypeId || !pointer) return;
+  await dataContext.setActiveEntityTypeId(processTypeId);
+  const process =
+    AgenticProcess.getByIdFromCache<AgenticProcess>(pointer) ??
+    (await AgenticProcess.getById<AgenticProcess>(pointer).catch(() => null));
+  if (!process) {
+    await systemTools.resolveProjectContext(undefined, undefined);
+    return;
+  }
+  // The same project phase as any process route; a session URL stays loadable
+  // when the project cannot be recovered — its workdir decides, else Global.
+  await loadProcessProject(process).catch(() => systemTools.resolveProjectContext(process.workdir ?? undefined, process));
 }
 
 /** Resolve the portal project so context is written URL-first, exactly as a
@@ -255,11 +276,8 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
-        await loadShellRoute(dock.pointer, context.requestPath, {
-          scope: dock.scopeFilter,
-          viewMode: dock.viewMode,
-          options: dock.options,
-        });
+        // Step 3 ran in the dispatcher, before the tab was minted.
+        await loadShellRoute(dock.pointer, context.requestPath, processRouteCarry(dock, { resolved: true }));
         break;
       case ViewType.PROJECT:
         await loadProjectRoute(dock.pointer, { viewMode: dock.viewMode });
@@ -290,20 +308,23 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
       case ViewType.AGENTIC_PROCESS:
         await loadAgenticProcessRoute(dock.pointer);
         break;
+      case ViewType.SESSION:
+        await loadSessionRoute(dock.pointer);
+        break;
       case ViewType.HELPDESK:
         await loadHelpdeskRoute(dock.pointer);
         break;
       case ViewType.LIVE_SESSION:
         loadLiveSessionRoute(dock.pointer);
         break;
-      // The merged Events screen and its three URL aliases share one loader:
-      // the rules list is the navigator's data on all four.
+      // The merged Events screen and its three URL aliases: context only. The
+      // rules list is the navigator's own data (`useTriggers`), fetched by the
+      // mounted view — a query here repeated on every visit (dock-loading I3).
       case ViewType.EVENTS:
       case ViewType.TRIGGERS:
       case ViewType.SIGNALS:
       case ViewType.CRON:
         await adoptScopeProject(dock);
-        await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
         break;
       case ViewType.PLAN:
         await loadPlanRoute(dock.pointer);

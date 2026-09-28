@@ -18,6 +18,7 @@ from pydantic import Discriminator, Tag, TypeAdapter, ValidationError, WrapValid
 
 import flow_sdk.fs_store.origin.cloud_origin  # noqa: F401 — registers the cloud arm
 import flow_sdk.fs_store.origin.git_origin  # noqa: F401 — registers the git arm
+import flow_sdk.fs_store.origin.hub_repo_origin  # noqa: F401 — registers the hub-repo arm
 import flow_sdk.fs_store.origin.local_origin  # noqa: F401 — registers the local arm
 from flow_sdk.fs_store.origin.fs_origin import CLOUD_ORIGIN_KIND, ORIGIN_MODELS, resolve_origin_kind
 
@@ -34,7 +35,7 @@ def origin_tag(value: Any) -> str:
 
 
 # The arms ARE the registry: every model registered itself where it is defined
-# (the three modules above import eagerly, so the table is complete here).
+# (the modules above import eagerly, so the table is complete here).
 _ORIGIN_UNION = Annotated[
     Union[tuple(Annotated[model, Tag(kind)] for kind, model in ORIGIN_MODELS.items())],
     Discriminator(origin_tag),

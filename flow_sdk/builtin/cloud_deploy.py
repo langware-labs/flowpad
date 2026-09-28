@@ -26,14 +26,17 @@ if TYPE_CHECKING:  # pragma: no cover
 DEFAULT_CLOUD_ENVIRONMENT = "production"
 
 
-async def deploy_entity_to_cloud(entity: "Entity", environment: str | None = None) -> dict[str, Any]:
+async def deploy_entity_to_cloud(
+    entity: "Entity", environment: str | None = None, *, require: list[str] | None = None
+) -> dict[str, Any]:
     """POST ``<entity>/deploy`` on the hub and adopt the placement it returns.
 
     Deliberately takes no node and no principal. Were either passable from here
     they would be passable from anywhere, which is the exact hole the hub's
     pentest guards exist to keep shut. This call says only *which entity*, and
     which credential ``environment`` the placement reads (``production`` by
-    default) — a name, never a value.
+    default) — a name, never a value. ``require`` names the variables the hub must already hold for
+    the placement; it refuses (``not_ready``) before paying for a machine otherwise.
     """
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
@@ -50,7 +53,7 @@ async def deploy_entity_to_cloud(entity: "Entity", environment: str | None = Non
     async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
         # `post` already unwraps the envelope, and raises on a non-success one —
         # so a hub-side refusal surfaces here rather than returning {}.
-        data = await client.post(path, {"environment": environment})
+        data = await client.post(path, {"environment": environment, **({"require": require} if require else {})})
     data = data if isinstance(data, dict) else {}
     await Deployment.adopt_from_hub(data.get("deployment"), element=entity)
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415

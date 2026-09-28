@@ -8,13 +8,14 @@ import {
   CapabilityActionName,
   CapabilityCheck,
   CapabilityResult,
-  CapabilityState,
   ICapability,
 } from '../entities/capability';
 import { normalizeKind } from '../models/Kind';
 import { EventBus } from '../tags/EventBus';
 import { defineGlobal } from '../utils/globals';
 import { isHubOnly } from '../utils/hub-runtime';
+import { CapabilitiesSummary } from './summary';
+export type * from './summary';
 
 export interface CapabilitySnapshot {
   queryKind: string;
@@ -34,54 +35,6 @@ export interface CapabilitySnapshot {
   resolvedKind: string | null;
   /** Canonical process worker behind `resolvedKind`, from the backend summary. */
   resolvedWorkerType: string | null;
-}
-
-/** One dependency edge in a CapabilityAccess (mirror of backend summary.py). */
-export interface CapabilityDependency {
-  kind: string;
-  available: boolean;
-}
-
-/**
- * One capability + everything the UI needs to show/use it. 1:1 with the
- * backend `CapabilityAccess` pydantic model (core/capabilities/summary.py).
- */
-export interface CapabilityAccess {
-  kind: string;
-  intent: string;
-  name: string;
-  description: string;
-  icon: string;
-  available: boolean;
-  checked: boolean;
-  /** Persisted four-state readiness (mirror of CapabilityState). */
-  state: CapabilityState;
-  runnable: boolean;
-  installable: boolean;
-  worker_type: string | null;
-  homepage_url: string | null;
-  /** Install one-liner for this machine, or null. See `Capability.install_command`. */
-  install_command: string | null;
-  reference_kind: string | null;
-  dependencies: CapabilityDependency[];
-  value: unknown | null;
-  value_type: string | null;
-  last_process_id: string | null;
-  message: string;
-}
-
-/** All capabilities answering one intent (segment-1 handle). */
-export interface CapabilityIntent {
-  intent: string;
-  label: string;
-  available: boolean;
-  capabilities: CapabilityAccess[];
-}
-
-export interface CapabilitiesSummary {
-  intents: CapabilityIntent[];
-  capabilities: CapabilityAccess[];
-  generated_at: string;
 }
 
 /**
@@ -134,9 +87,11 @@ export class CapabilityManager extends EventEmitter {
 
   /** Registry loader; the manager remains the canonical live capability projection. */
   async fetchSnapshot(isCurrent: () => boolean): Promise<Capability[]> {
-    const rows = isHubOnly() ? [] : await apiClient.get<unknown[]>('/graph/capability', { params: { include_system: true } });
+    const rows = isHubOnly()
+      ? []
+      : await apiClient.get<unknown[]>('/graph/capability', { params: { include_system: true } });
     if (!isCurrent()) throw new Error('SDK scope changed');
-    this.capabilities = (rows ?? []).map(row => dataManager.updateEntityFromJson<Capability>(row));
+    this.capabilities = (rows ?? []).map((row) => dataManager.updateEntityFromJson<Capability>(row));
     this.emit('change');
     return this.capabilities;
   }
@@ -160,7 +115,8 @@ export class CapabilityManager extends EventEmitter {
 
   /** Discovery is only an initial seed; a live or requested refresh takes precedence. */
   seedSummary(summary: CapabilitiesSummary | null | undefined): void {
-    if (this.summary || lazyAssets.client.isFetching({ queryKey: lazyAssets.prefix(LazyAsset.CapabilitySummary) })) return;
+    if (this.summary || lazyAssets.client.isFetching({ queryKey: lazyAssets.prefix(LazyAsset.CapabilitySummary) }))
+      return;
     this.setSummary(summary);
   }
 
@@ -217,12 +173,8 @@ export class CapabilityManager extends EventEmitter {
       ? ((result?.details?.reference_kind as string | undefined) ?? capability.reference_kind ?? capability.kind)
       : null;
     const resolvedWorkerType =
-      (resolvedKind
-        ? this.summary?.capabilities.find((access) => access.kind === resolvedKind)?.worker_type
-        : null) ??
-      (capability
-        ? this.summary?.capabilities.find((access) => access.kind === capability.kind)?.worker_type
-        : null) ??
+      (resolvedKind ? this.summary?.capabilities.find((access) => access.kind === resolvedKind)?.worker_type : null) ??
+      (capability ? this.summary?.capabilities.find((access) => access.kind === capability.kind)?.worker_type : null) ??
       null;
 
     return {
@@ -371,11 +323,7 @@ export class CapabilityManager extends EventEmitter {
    * reference row), this writes the concrete LEAF capability, e.g.
    * `harness.claude.cli`. Persists via entity save() then re-checks.
    */
-  async setAuthMode(
-    queryKind: string,
-    mode: 'device' | 'api',
-    provider?: string | null,
-  ): Promise<CapabilitySnapshot> {
+  async setAuthMode(queryKind: string, mode: 'device' | 'api', provider?: string | null): Promise<CapabilitySnapshot> {
     return this.mutateAndRecheck(queryKind, (capability) => {
       capability.auth_mode = mode;
       capability.api_provider = mode === 'api' ? (provider ?? null) : null;
@@ -384,10 +332,7 @@ export class CapabilityManager extends EventEmitter {
 
   /** Persist a harness's tier→model override map ({provider: {name: slug}}),
    *  layered over the driver defaults at spawn. Written on the leaf capability. */
-  async setModelMap(
-    queryKind: string,
-    map: Record<string, Record<string, string>>,
-  ): Promise<CapabilitySnapshot> {
+  async setModelMap(queryKind: string, map: Record<string, Record<string, string>>): Promise<CapabilitySnapshot> {
     return this.mutateAndRecheck(queryKind, (capability) => {
       capability.model_map = map;
     });

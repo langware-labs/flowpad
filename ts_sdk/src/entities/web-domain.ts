@@ -1,14 +1,9 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
-import { IEntity, EntityMerge } from '../IEntity';
+import { EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
-
-export interface IWebDomain extends IEntity {
-  domain: string;
-  verified?: boolean;
-  /** The endpoint this host name serves. */
-  service_endpoint_id?: string | null;
-}
+import { IWebDomain } from './web-domain-types';
+export type * from './web-domain-types';
 
 // `implements IWebDomain` only checks the class; it contributes no members, so every
 // field declared solely on IWebDomain read as "does not exist". deepAssign populates

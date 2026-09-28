@@ -23,6 +23,8 @@ export type LoadRedirectResolver = (request: Request) => Promise<Response | null
  *    (a launched sandbox once came up with no project that way).
  *  - Hub Project routes reuse the pointer grammar, but the Hub runs nothing.
  *  - A shell route is already inside a session.
+ *  - A project route naming something inside the project (`<id>/editor/…`,
+ *    a room, a conversation) was asked for; only the bare project landing is.
  *
  * `null` means "allowed, but no project in the URL" — `/` and non-dock routes,
  * where the caller decides on a fallback (the adopted default project, or an
@@ -35,12 +37,21 @@ export function ambientLoadProjectId(request: Request): string | null | undefine
     const dock = DockPointer.fromUrl(url.toString());
     if (dock.page === PageId.HUB || dock.viewType === ViewType.SHELL) return undefined;
     if (dock.viewType === ViewType.PROJECT) {
+      // Only the project LANDING is ambient. A URL naming something inside the
+      // project (an asset, a room, a conversation) is where the user asked to
+      // go — a terminal link to a report must open the report, not an agent.
+      if (projectSubPath(dock.pointer)) return undefined;
       return DockPointer.parseProjectPointer(dock.pointer).projectTypeId?.id ?? null;
     }
   } catch {
     // Not a dock URL: fall through to the caller's fallback.
   }
   return null;
+}
+
+/** Whatever a project pointer names after its project segment ('' for the landing). */
+function projectSubPath(pointer: string | null | undefined): string {
+  return (pointer ?? '').split('/').filter(Boolean).slice(1).join('/');
 }
 
 const resolvers: LoadRedirectResolver[] = [];

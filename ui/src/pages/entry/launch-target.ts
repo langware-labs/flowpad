@@ -1,4 +1,4 @@
-import { Agent, type GitOrigin, gitOriginFromUrl, TypeId } from '@sdk';
+import { Agent, type GitOrigin, gitOriginFromUrl, type HubRepoOrigin, isHubRepoOrigin, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
 import { gitOriginOf, isCompleteGitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
@@ -36,16 +36,24 @@ export function parseLaunchParams(params: URLSearchParams): LaunchTarget {
 }
 
 /**
- * The repository a published agent launches from, addressed at the repo ROOT.
+ * What a published agent launches from.
  *
- * The hub stores an agent's `git_origin` as the repo, the branch it was published to
- * (`flow-cloud`) and — as `rel_path` — the agent's own folder (`agentic-assets/agent/<name>`).
- * The sandbox clones the whole repository, so the folder is dropped: kept, it would only relabel
- * the repo card with a path the clone never uses. The branch is kept, because that is where the
- * published agent actually lives. `head_commit` is dropped too: the launch clones the branch tip.
+ * A `hub_repo` origin (the agent lives in its project's hub-hosted repository) is passed
+ * through UNCHANGED: the hub clones hub repos itself and needs `repo` + `rel_path` to find the
+ * agent, so nothing here may rewrite it.
+ *
+ * A legacy GitHub (`kind: 'git'`) origin is addressed at the repo ROOT: the hub stored it as the
+ * repo, the branch it was published to and — as `rel_path` — the agent's own folder. The sandbox
+ * clones the whole repository, so the folder is dropped (kept, it would only relabel the repo
+ * card with a path the clone never uses). The branch is kept, because that is where the published
+ * agent actually lives. `head_commit` is dropped too: the launch clones the branch tip.
  */
-export function launchOriginFromAgent(agent: Pick<Agent, 'git_origin'> | null | undefined): GitOrigin | null {
-  const origin = gitOriginOf(agent);
+export function launchOriginFromAgent(
+  agent: Pick<Agent, 'git_origin'> | null | undefined,
+): GitOrigin | HubRepoOrigin | null {
+  const raw = agent?.git_origin ?? null;
+  if (isHubRepoOrigin(raw)) return raw.repo ? raw : null;
+  const origin = gitOriginOf({ git_origin: raw });
   if (!isCompleteGitOrigin(origin)) return null;
   return {
     kind: 'git',
@@ -56,6 +64,16 @@ export function launchOriginFromAgent(agent: Pick<Agent, 'git_origin'> | null | 
     head_commit: null,
     rel_path: '.',
   };
+}
+
+/**
+ * The default project name for a launch origin: a git repo's name, or — for a hub-hosted repo,
+ * whose `git_repo-<uuid>` id means nothing to a reader — the last segment of the asset's folder.
+ */
+export function launchOriginName(origin: GitOrigin | HubRepoOrigin | null | undefined): string {
+  if (!origin) return '';
+  if (isHubRepoOrigin(origin)) return (origin.rel_path || '').split('/').filter(Boolean).pop() ?? '';
+  return origin.name || '';
 }
 
 export type AgentLoadProblem = 'unavailable' | 'session-expired' | 'failed';
@@ -130,8 +148,9 @@ function useAnonymousAgent(agentId: string | null): AnonymousAgentRead {
 
 export interface LaunchTargetState {
   target: LaunchTarget;
-  /** What would be cloned. Known up front for a repo link; for an agent link only once it loads. */
-  gitOrigin: GitOrigin | null;
+  /** What would be cloned. Known up front for a repo link; for an agent link only once it loads.
+   *  A `hub_repo` origin means the agent lives in its project's hub repo (the hub clones it). */
+  gitOrigin: GitOrigin | HubRepoOrigin | null;
   agent: Agent | null;
   agentLoading: boolean;
   agentProblem: AgentLoadProblem | null;

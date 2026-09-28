@@ -21,7 +21,7 @@ from flow_sdk.ingest.driver_runtime import Pass
 from flow_sdk.ingest.health import SourceError, SourceHealth
 from flow_sdk.ingest.sync import sync_source
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.families import RecordSource
 
 NOW = datetime(2026, 7, 31, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -43,7 +43,7 @@ def test_cursor_state_is_opaque_to_the_subsystem():
     assert not offenders, "provider-private cursor state leaked into the engine:\n  " + "\n  ".join(offenders)
 
 
-class _FakeSource(Source):
+class _FakeSource(RecordSource):
     provider = "faketest"
 
 
@@ -53,16 +53,16 @@ class _FakeType(DataDriver):
     _abstract: ClassVar[bool] = True  # a test double, not a second registered type
     positions: list = []
     _outcomes: Any = PrivateAttr(None)
-    _reflects: bool = PrivateAttr(False)
+    _is_object: bool = PrivateAttr(False)
 
-    def __init__(self, *outcomes, reflects: bool = False):
+    def __init__(self, *outcomes, is_object: bool = False):
         super().__init__(name=_FakeSource.provider, kind="datasource.feed.faketest", positions=[])
         self._cls = _FakeSource
-        self._outcomes, self._reflects = list(outcomes), reflects
+        self._outcomes, self._is_object = list(outcomes), is_object
 
     @property
-    def reflects(self) -> bool:
-        return self._reflects
+    def is_object(self) -> bool:
+        return self._is_object
 
     async def traverse(self, row, position=None):
         self.positions.append(position)
@@ -210,7 +210,7 @@ async def test_refs_under_record_mode_are_a_config_error_not_a_silent_drop():
     """A reflecting source has no record destination; refused BEFORE traversing, because `reflect` is a
     property of the source."""
     src = await _source(reflect="record")
-    fake = _FakeType(Pass(refs=["a.md"], manifest={"a.md": ["1", ""]}, high_water="1"), reflects=True)
+    fake = _FakeType(Pass(refs=["a.md"], manifest={"a.md": ["1", ""]}, high_water="1"), is_object=True)
     DataDriver.register(fake)
 
     report = await sync_source(src, now=NOW)
