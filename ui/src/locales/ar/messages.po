@@ -278,6 +278,11 @@ msgstr ""
 msgid "{0} already has a cloud machine"
 msgstr ""
 
+#. placeholder {0}: teamLabel(s)
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{0} already has access."
+msgstr ""
+
 #. placeholder {0}: group.length
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "{0} annotations on this row"
@@ -478,6 +483,11 @@ msgstr "{0} لم يُختبر"
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "{0} now has \"{1}\"."
 msgstr "لدى {0} الآن \"{1}\"."
+
+#. placeholder {0}: teamLabel(g)
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "{0} now has access, but the invite message wasn't sent."
+msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/components/assets/editor/agent-profile/NewDeploymentDialog.tsx
@@ -5651,6 +5661,10 @@ msgstr "تعذر التحقق من {0}"
 msgid "Could not verify available assets."
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't change this member's role."
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Couldn't check for updates: {error}"
 msgstr "تعذر التحقق من التحديثات: {error}"
@@ -5674,6 +5688,12 @@ msgstr ""
 #: src/pages/entry/InstallLanding.tsx
 msgid "Couldn't finish preparing your workspace"
 msgstr "تعذّر إكمال تحضير مساحة العمل"
+
+#. placeholder {0}: f.name || f.email || f.user_id || ''
+#. placeholder {1}: f.message
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't invite {0}: {1}"
+msgstr ""
 
 #. placeholder {0}: shellId.slice(0, 8)
 #. placeholder {1}: directCleanup.title
@@ -5737,6 +5757,10 @@ msgstr "تعذرت قراءة حالة Git لهذا المشروع."
 #~ msgid "Couldn't read this team's people."
 #~ msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't remove this member."
+msgstr ""
+
 #: src/components/terminal/project-launch-bar.tsx
 msgid "Couldn't resolve the launch commands for this folder"
 msgstr ""
@@ -5754,6 +5778,12 @@ msgstr "تعذر إعداد المشروع"
 #: src/pages/entry/AgentLaunchLanding.tsx
 #: src/pages/entry/AgentLaunchLanding.tsx
 msgid "Couldn't set up the sandbox."
+msgstr ""
+
+#. placeholder {0}: teamLabel(f)
+#. placeholder {1}: f.message
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Couldn't share with {0}: {1}"
 msgstr ""
 
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -13835,8 +13865,8 @@ msgid "Not runnable here"
 msgstr "لا يمكن تشغيله هنا"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-msgid "Not sent to {skippedTeamNames} — you can't see its member list."
-msgstr ""
+#~ msgid "Not sent to {skippedTeamNames} — you can't see its member list."
+#~ msgstr ""
 
 #: src/components/connections-manager/credential-rows-view.tsx
 #~ msgid "Not set"
