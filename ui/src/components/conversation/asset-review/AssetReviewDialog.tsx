@@ -129,9 +129,8 @@ function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment })
  *
  * A project is the exception: it is not installed INTO a scope, it is cloned as
  * itself, so its branch offers one **Install project** ({@link ProjectInstallAction}).
- * A project reference with no MessageAttachment row (the hub-authored invite
- * message is body-free) opens the popup through `project` instead of
- * `attachments`.
+ * A project reference with no MessageAttachment row opens the popup through
+ * `project` instead of `attachments`.
  *
  * All state flips live off the per-attachment MessageAttachment UPDATE via the
  * `AttachmentLiveSubscriber`s below — no optimistic writes anywhere.

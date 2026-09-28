@@ -128,8 +128,8 @@ async function invite(page: Page, projectId: string, email: string, role: string
   await page.getByTestId('members-invite-submit').click();
   const response = await posted;
   expect(response.ok(), `invite ${email} as ${role}`).toBe(true);
-  // A project invite carries `notify_by_message`: the share answers with each
-  // person's outcome, the new conversation included.
+  // The share answers with each person's outcome, including the invite
+  // conversation the client opened for the message.
   const body = (await response.json()) as {
     data?: { share_result?: { invited?: { conversation_id?: string | null }[]; skipped?: unknown[] } };
   };

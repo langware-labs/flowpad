@@ -172,8 +172,8 @@ describe('course project share → install → auto-launch (two instances)', () 
     );
     expect(shared.status, JSON.stringify(shared).slice(0, 300)).toBe('SUCCESS');
 
-    // A project share is an invite with `notify_by_message`: Bob is invited, and
-    // the hub opened a new conversation between him and Alice for the message.
+    // A project share is an invite: Bob is invited, and Alice's client opened a
+    // new conversation between him and Alice for the invite message.
     const outcome = shared.data?.share_result;
     expect(outcome?.failed ?? [], JSON.stringify(outcome).slice(0, 400)).toEqual([]);
     expect(outcome?.invited ?? [], JSON.stringify(outcome).slice(0, 400)).toHaveLength(1);

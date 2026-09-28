@@ -737,7 +737,7 @@ export function MembersAvatarStack({
                                 </span>
                               </button>
                             ))}
-                            {/* Teams — one chip each, expanded to their people only when sent. */}
+                            {/* Teams — one chip each, granted as one principal when sent. */}
                             {suggestedTeams.map((team) => (
                               <button
                                 key={team.id}

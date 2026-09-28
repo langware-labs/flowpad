@@ -5,8 +5,8 @@ import { Trans, useLingui } from '@lingui/react/macro';
 /**
  * Read-only preview of a shared project in the review popup — the project's
  * counterpart of `StagedTranscriptPreview`. A transcript previews from the bytes
- * that rode in the message; a project invite is a body-free reference with no
- * staged files, so this previews from the Project row itself: its name and the
+ * that rode in the message; a project invite is a reference with no staged
+ * files, so this previews from the Project row itself: its name and the
  * git URL that Clone & Open clones. Meant to grow.
  */
 export function ProjectPreview({ project, fallbackName }: { project?: Project | null; fallbackName?: string | null }) {
