@@ -105,3 +105,17 @@ async def test_indexer_does_not_make_a_project_of_a_folder_with_a_taken_name(
     names = sorted(p.name for p in await Project.get_all())
     assert names == ["fresh", "sales-desk"]
     assert any("sales_desk" in r.getMessage() and r.levelno == logging.ERROR for r in caplog.records)
+
+
+@pytest.mark.parametrize(
+    ("name", "folder", "expected"),
+    [
+        ("sales-desk", "marketing", "marketing"),  # renamed: the folder kept its name
+        ("sales desk", "sales-desk", None),  # same name as the key sees it
+        ("Sales_desk", "sales-desk", None),
+    ],
+)
+def test_folder_name_mismatch_names_a_folder_the_rename_left_behind(tmp_path, name, folder, expected):
+    project = Project(name=name, fs_storage_mount_path=str(tmp_path / folder))
+    assert project.folder_name_mismatch == expected
+    assert project.model_dump().get("folder_name_mismatch") == expected

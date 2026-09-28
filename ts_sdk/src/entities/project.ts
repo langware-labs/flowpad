@@ -292,6 +292,10 @@ export class Project extends APIEntity<Project> {
    *  or from the uname: the portal is recognised by where it LIVES, and
    *  `system` means the narrower "SDK-shipped". See `isHiddenProject`. */
   hidden: boolean = false;
+  /** The folder's own name when it is not the project's name (a rename changes the
+   *  name, never the folder), else null. Mirror of the backend computed
+   *  `Project.folder_name_mismatch`, compared the way project names are; read-only. */
+  folderNameMismatch: string | null = null;
 
   constructor(entity: Partial<IProject> = {}) {
     super(entity);
@@ -310,6 +314,7 @@ export class Project extends APIEntity<Project> {
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};
     this.hidden = (entity.hidden as boolean | undefined) ?? false;
+    this.folderNameMismatch = (entity.folder_name_mismatch as string | null | undefined) ?? null;
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
