@@ -5465,6 +5465,10 @@ msgstr ""
 msgid "Could not rename context"
 msgstr "לא ניתן היה לשנות את שם ההקשר"
 
+#: src/components/project-home/ProjectNameTitle.tsx
+msgid "Could not rename project"
+msgstr ""
+
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Could not repair the model redirect"
 msgstr ""
@@ -8105,6 +8109,11 @@ msgstr ""
 
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Everything this budget is tuned with beyond its total and its allowed models. These are set by the organization's owner."
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+msgid "Everything this run has shown"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
@@ -15938,6 +15947,7 @@ msgid "Project Members"
 msgstr "חברי הפרויקט"
 
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/project-home/ProjectNameTitle.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 msgid "Project name"
 msgstr "שם הפרויקט"
@@ -16974,6 +16984,7 @@ msgid "Rename failed"
 msgstr "שינוי השם נכשל"
 
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/components/project-home/ProjectNameTitle.tsx
 msgid "Rename failed."
 msgstr "שינוי השם נכשל."
 
@@ -16984,6 +16995,10 @@ msgstr "שינוי שם מועדף"
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 msgid "Rename folder"
 msgstr "שינוי שם תיקייה"
+
+#: src/components/project-home/ProjectNameTitle.tsx
+msgid "Rename project"
+msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Rename this budget"

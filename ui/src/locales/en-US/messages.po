@@ -5465,6 +5465,10 @@ msgstr "Could not remove the row"
 msgid "Could not rename context"
 msgstr "Could not rename context"
 
+#: src/components/project-home/ProjectNameTitle.tsx
+msgid "Could not rename project"
+msgstr "Could not rename project"
+
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Could not repair the model redirect"
 msgstr "Could not repair the model redirect"
@@ -8106,6 +8110,11 @@ msgstr "Everything this budget can be tuned with beyond its total and its allowe
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Everything this budget is tuned with beyond its total and its allowed models. These are set by the organization's owner."
 msgstr "Everything this budget is tuned with beyond its total and its allowed models. These are set by the organization's owner."
+
+#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+msgid "Everything this run has shown"
+msgstr "Everything this run has shown"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Everything you can reach, as a live graph."
@@ -15938,6 +15947,7 @@ msgid "Project Members"
 msgstr "Project Members"
 
 #: src/components/open-project-component/open-project-component.tsx
+#: src/components/project-home/ProjectNameTitle.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 msgid "Project name"
 msgstr "Project name"
@@ -16974,6 +16984,7 @@ msgid "Rename failed"
 msgstr "Rename failed"
 
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/components/project-home/ProjectNameTitle.tsx
 msgid "Rename failed."
 msgstr "Rename failed."
 
@@ -16984,6 +16995,10 @@ msgstr "Rename favorite"
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 msgid "Rename folder"
 msgstr "Rename folder"
+
+#: src/components/project-home/ProjectNameTitle.tsx
+msgid "Rename project"
+msgstr "Rename project"
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Rename this budget"

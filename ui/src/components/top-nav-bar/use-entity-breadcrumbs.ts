@@ -579,6 +579,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     childTypeId,
     childEntity,
     project,
+    // A rename mutates the cached Project in place: same object, new name.
+    project?.displayName,
     agentRoute,
     scopedAgentId,
     scopedAgentTypeId,
