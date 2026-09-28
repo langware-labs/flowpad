@@ -7,6 +7,7 @@ TUI) — see ``worker_spec/AgenticWorkerSpec.md`` §0 "Declaring a capability un
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
 from pathlib import Path
@@ -67,6 +68,41 @@ if TYPE_CHECKING:
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
 
 logger = logging.getLogger(__name__)
+
+
+async def _sync_resolved_model_slug(process: "AgenticProcess") -> None:
+    """``process.resolved_model_slug`` from the transcript's own LAST ``init`` event, not the
+    stamp taken before spawn.
+
+    The runner may retry once, in-process, on a different model when the endpoint's chain
+    rejects the first (``runner.py``'s ``_fallback_model``) — that retry is invisible to
+    anything upstream of the transcript itself, so a display reading only the pre-spawn stamp
+    would go on naming the ORIGINAL, rejected model even after a successful fallback. The
+    transcript's last ``init`` is always the one whose outcome (the ``result`` right after it)
+    is the turn's actual, final answer — the runner never retries past one fallback.
+    """
+    try:
+        lines = deepagents_transcript_path_for_process(process.id).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    model: str | None = None
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") == "init" and event.get("model"):
+            model = str(event["model"])
+            break
+    if model and model != process.resolved_model_slug:
+        process.resolved_model_slug = model
+        try:
+            await process.save()
+        except Exception:
+            logger.exception("DeepAgentsDriver: failed to sync resolved_model_slug for %s", process.id)
 
 
 class DeepAgentsDriver:
@@ -184,8 +220,19 @@ class DeepAgentsDriver:
         await api_auth.stamp_api_model(context, process)
 
         full_prompt = self.compose_prompt(instruction, process.get_agents_json())
+        # `run_headless_turn` SCHEDULES the turn (`asyncio.create_task`) and returns almost
+        # immediately — "started", not "finished". Syncing right after that await would read
+        # the transcript before the subprocess has even launched. `on_turn_finally` is the
+        # seam that actually runs once the turn's stream is fully drained (success, failure,
+        # or an in-process model-fallback retry alike), so THAT is where this belongs.
         return await run_headless_turn(
-            self, process, self.stream_worker(process), prompt=full_prompt, context=context, logger=logger
+            self,
+            process,
+            self.stream_worker(process),
+            prompt=full_prompt,
+            context=context,
+            logger=logger,
+            on_turn_finally=lambda: _sync_resolved_model_slug(process),
         )
 
     def stream_worker(self, process: "AgenticProcess") -> DeepAgentsCLIStreamWorker:
@@ -197,7 +244,9 @@ class DeepAgentsDriver:
 
     async def auth_probe(self) -> WorkerAuthResult:
         if worker_bin_folder(self.name) is None:
-            return WorkerAuthResult(status=WorkerAuthStatus.NOT_INSTALLED, message="the deepagents package is not installed")
+            return WorkerAuthResult(
+                status=WorkerAuthStatus.NOT_INSTALLED, message="the deepagents package is not installed"
+            )
         return WorkerAuthResult(
             status=WorkerAuthStatus.UNKNOWN,
             message="Deep Agents has no account of its own: it is funded by an LLM endpoint or a stored provider key.",

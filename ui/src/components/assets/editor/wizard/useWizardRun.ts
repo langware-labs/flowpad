@@ -60,7 +60,7 @@ export function rungTrail(outcome: WizardStepAnswer | null | undefined): string[
   const asShape = outcome as unknown as OpAnswerShape | null | undefined;
   const install = asShape?.steps?.install ?? asShape ?? null;
   if (!install) return [];
-  const trail = ['validated'];
+  const trail = ['validation'];
   if (install.ran) trail.push('cli');
   if (install.executor) trail.push('agent');
   return trail;
