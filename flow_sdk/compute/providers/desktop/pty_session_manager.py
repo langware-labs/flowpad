@@ -53,6 +53,9 @@ class PtyState(BaseModel):
     last_attached_at: float = Field(default_factory=time.time)
     last_detached_at: Optional[float] = None
     shell_id: Optional[str] = None
+    #: Kept alive whoever watches: a process that must outlive its viewers (a deployment's loop) is
+    #: never reaped as an orphan or evicted at the cap (``pin``).
+    pinned: bool = False
     name: Optional[str] = None  # Display name for the session
     terminal_id: Optional[str] = None
     last_seq_received: Optional[int] = None
@@ -345,6 +348,14 @@ class PtyRegistry:
                     f"(attached={len(state.attached_connections)})"
                 )
 
+    def pin(self, shell_id: str) -> bool:
+        """Keep *shell_id*'s PTY alive whoever watches it; whether one is live to pin."""
+        found = False
+        for key, state in self.states.items():
+            if key[2] == shell_id:
+                state.pinned = found = True
+        return found
+
     async def close_session(self, pty_key: PtyKey) -> None:
         """Close and remove PTY session.
 
@@ -430,8 +441,8 @@ class PtyRegistry:
         Returns:
             True if session is expired, False otherwise
         """
-        if session.last_detached_at is None:
-            return False  # Currently attached
+        if session.pinned or session.last_detached_at is None:
+            return False  # Pinned, or currently attached
 
         elapsed = time.time() - session.last_detached_at
         return elapsed > ttl_seconds

@@ -586,6 +586,7 @@ async def hub_put(
     entity_id: str,
     payload: dict[str, Any],
     action: str | None = None,
+    sub_path: str | None = None,
     *,
     scope: list[tuple[str, str]] | None = None,
 ) -> Optional[dict[str, Any]]:
@@ -596,7 +597,7 @@ async def hub_put(
     Returns None only when FLOWPAD_HUB_URL is not configured (offline mode).
     Raises HubError on transport failure or non-200 response.
     """
-    url = hub_graph_url(entity_type, entity_id, action, scope=scope)
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
         return None

@@ -19,11 +19,12 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 import { AgentPlaceActivity } from './AgentPlaceActivity';
 import { AgentPlaceConfig } from './AgentPlaceConfig';
+import { AgentPlaceSecrets } from './AgentPlaceSecrets';
 import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
 import { usePlaceDisplay } from './use-place-display';
 
 // Channels and schedules live in the agent-resources menu on the left.
-const PLACE_TABS = ['activity', 'config'] as const;
+const PLACE_TABS = ['activity', 'config', 'secrets'] as const;
 type PlaceTab = (typeof PLACE_TABS)[number];
 
 /** Dock option holding the selected environment's tab. */
@@ -207,6 +208,11 @@ export function AgentPlaceCard({ agent, place, pendingChanges = 0, onChanged }: 
               </span>
             )}
           </TabsTrigger>
+          {!place.is_local && (
+            <TabsTrigger value="secrets" data-testid="agent-place-tab-secrets">
+              <Trans>Secrets</Trans>
+            </TabsTrigger>
+          )}
         </TabsList>
         <div className="px-3.5 py-3">
           <TabsContent value="activity" className="mt-0">
@@ -220,6 +226,11 @@ export function AgentPlaceCard({ agent, place, pendingChanges = 0, onChanged }: 
               onChanged={onChanged}
             />
           </TabsContent>
+          {!place.is_local && (
+            <TabsContent value="secrets" className="mt-0">
+              <AgentPlaceSecrets agent={agent} deployment={deployment} />
+            </TabsContent>
+          )}
         </div>
       </Tabs>
     </article>

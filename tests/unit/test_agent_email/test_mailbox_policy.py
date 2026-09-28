@@ -132,7 +132,7 @@ async def test_the_local_copy_is_a_cache_the_gate_reads_without_a_network_call(
     await mailbox.configure(allowed_senders=["boss@corp.com"])
 
     source = await DataSource.find_for_account("cloud_email", "agent_id", agent.id)
-    assert source.inbound_allowed_senders == ["boss@corp.com"], "the cache follows the Hub"
+    assert source.allowed_senders == ["boss@corp.com"], "the cache follows the Hub"
     # And the gate reads it back with no agent and no network.
     assert AgentMailbox.from_source(source).allowed("boss@corp.com") is True
 

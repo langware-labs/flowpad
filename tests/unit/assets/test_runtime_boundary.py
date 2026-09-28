@@ -24,7 +24,6 @@ def test_filesystem_operations_never_import_application_or_resolve_settings():
         from flow_sdk.assets import Asset, AssetFolder
         from flow_sdk.assets.serialization import read_asset_data
         from flow_sdk.assets.projection import read_asset_tree
-        from flow_sdk.assets.git_origin import PortableGitOrigin
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         assert {'skill', 'markdown', 'task', 'mcp', 'graph_workflow', 'journey'} <= set(SchemaRegistry.get_all_types())
         from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
@@ -49,8 +48,8 @@ def test_filesystem_operations_never_import_application_or_resolve_settings():
             from flow_sdk.fs_store.fs_ref import FSRef
             assert copy.info.from_disk_fn(FSRef(copy.path), copy.typeid.id)[0].body == 'Hello'
             (root / '.git').mkdir()
-            origin = PortableGitOrigin(provider='github', owner='owner', name='repo', branch='main',
-                                       head_commit='a'*40, rel_path='.agents/skills/copy')
+            from types import SimpleNamespace
+            origin = SimpleNamespace(rel_path='.agents/skills/copy')
             assert read_asset_tree(entity_type='skill', expected_id=copy.typeid.id,
                                    checkout_root=root, origin=origin).id == copy.typeid.id
             copy.remove()

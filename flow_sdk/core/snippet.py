@@ -27,6 +27,7 @@ import logging
 import re
 import secrets
 import shlex
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -48,8 +49,10 @@ _MARKER = re.compile(r"^\s*(?:#|//|--)\s*%%\s*flowpad:(hidden|init|snippet)\b")
 #: Suffix → command. ``{file}`` and ``{out}`` arrive shell-quoted. A compiled
 #: language builds into ``{out}`` (a throwaway directory) and runs it, so a
 #: compile error and a runtime error both come back as the one result.
+#: ``{python}`` is the interpreter Flowpad itself runs on — a Flowpad snippet
+#: imports flow_sdk, and the terminal PATH's ``python3`` may be any other install.
 RUNNERS: dict[str, str] = {
-    ".py": "python3 {file}",
+    ".py": "{python} {file}",
     ".js": "node {file}",
     ".mjs": "node {file}",
     ".cjs": "node {file}",
@@ -316,7 +319,11 @@ async def run_snippet(
     _RUNNING[key] = (stop, connection_id)
     try:
         with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
-            command = template.format(file=shlex.quote(str(path)), out=shlex.quote(str(Path(build) / "snippet")))
+            command = template.format(
+                file=shlex.quote(str(path)),
+                out=shlex.quote(str(Path(build) / "snippet")),
+                python=shlex.quote(sys.executable),
+            )
             said = await run_shell(
                 command,
                 timeout_seconds=timeout_seconds,

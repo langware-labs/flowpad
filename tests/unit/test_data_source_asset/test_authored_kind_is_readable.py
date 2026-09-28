@@ -30,6 +30,7 @@ SOURCE = '''
 from typing import ClassVar, Optional
 
 from flow_sdk.sources.base import CollectionSource
+from flow_sdk.sources.families import RecordSource
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.values.items import FeedItemData, SourceItemSpec
 
@@ -43,7 +44,7 @@ class QuakeConfig(SourceConfig):
     feed: str = "all_day"
 
 
-class QuakeSource(CollectionSource):
+class QuakeSource(RecordSource, CollectionSource):
     Config = QuakeConfig
     provider = "quakes"
 

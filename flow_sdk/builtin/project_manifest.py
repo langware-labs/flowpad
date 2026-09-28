@@ -126,6 +126,16 @@ def ensure_project_namespace(project) -> None:
         namespace_roots.remember(spec.ns, mount)
 
 
+def _hub_origin_of(entity: Entity):
+    """The asset's hub-repo origin once it has been published into its project's repo, else None."""
+    from flow_sdk.assets.hub_repo_sync import hub_origin_of  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entity.get_type())
+    ref = getattr(entity, "asset_ref", None)
+    return hub_origin_of(entity, info.storage_root_for(Path(str(ref))) if info is not None and ref else None)
+
+
 async def origin_for_asset(asset_ref: str):
     """WHERE a reader can fetch this asset: its repo's ``GitOrigin`` (repo,
     branch, commit, rel_path) when the checkout has a usable remote, else the
@@ -188,9 +198,7 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
             )
         # The row reflects the stamped carrier before the manifest names it.
         resolved = await resolve_asset(asset_ref, write=False, type_name=type_name, owner_id=str(entity.id))
-        await index_one(
-            resolved, notify=True, scope=getattr(entity, "scope", None), project_id=str(project.id)
-        )
+        await index_one(resolved, notify=True, scope=getattr(entity, "scope", None), project_id=str(project.id))
         publish(
             mount,
             make_entry(
@@ -198,7 +206,7 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
                 rel_path=rel_path,
                 name=str(getattr(entity, "name", "") or ""),
                 description=str(getattr(entity, "description", "") or ""),
-                origin=await origin_for_asset(asset_ref),
+                origin=_hub_origin_of(entity) or await origin_for_asset(asset_ref),
             ),
         )
         await ensure_manifest_indexed(project)
@@ -279,7 +287,11 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     request = request if isinstance(request, dict) else {}
     try:
         entry = PublishedAssetSpec.model_validate(
-            {k: request.get(k) for k in ("typeid", "rel_path", "name", "description", "published_at", "origin") if request.get(k) is not None}
+            {
+                k: request.get(k)
+                for k in ("typeid", "rel_path", "name", "description", "published_at", "origin")
+                if request.get(k) is not None
+            }
         )
     except Exception as exc:  # noqa: BLE001 — pydantic's message is the reason
         raise PublishRefused("bad_request", f"not a published row: {exc}") from exc
@@ -302,17 +314,21 @@ async def install_published(project, request: dict, *, overwrite: bool = False) 
     if asset.typeid != TypeId(entry.typeid):
         raise PublishRefused("identity_mismatch", "the published files do not carry the requested asset identity")
     info = SchemaRegistry.get(asset.typeid.type)
-    family = resolve_destination(asset.typeid.type, Scope.PROJECT,
-                                 default_worker=await resolve_default_harness(), project_mount=mount)
+    family = resolve_destination(
+        asset.typeid.type, Scope.PROJECT, default_worker=await resolve_default_harness(), project_mount=mount
+    )
     if family is None:
         raise PublishRefused("unsupported", "this asset cannot be installed in a project")
     destination = family if info.singleton else family / asset.path.name
     try:
         import asyncio
+
         installed = await asyncio.to_thread(asset.install, destination, overwrite=overwrite)
         await index_installed_asset(asset, installed, scope=Scope.PROJECT, project_id=str(project.id))
     except FileExistsError as exc:
-        raise PublishRefused("exists", f"{src.name} is already in this project — install with overwrite to replace it") from exc
+        raise PublishRefused(
+            "exists", f"{src.name} is already in this project — install with overwrite to replace it"
+        ) from exc
     dest = installed.path
     cls = SchemaRegistry.get_entity_cls(entry.type)
     ent = await cls.get_one({"id": installed.typeid.id}) if cls is not None else None
@@ -376,11 +392,10 @@ def reflect_manifest_to_hub_soon(project) -> None:
 # ── the document itself, on the hub ──────────────────────────────────────────
 #
 # The manifest row says WHAT was published and WHERE its bytes are; the hub can
-# only render the document when it holds the tree. That is the git share path
-# (``publish_git_asset``: commit the asset to the project's ``flow-cloud``
-# branch, register it under the hub project) plus the hub's own snapshot
-# (``gitops/materialize``). Both are best-effort here: a publish is a manifest
-# fact and never waits on GitHub.
+# only render the document when it holds the tree. That is ``publish_git_asset``:
+# push the asset into the project's hub-hosted repo and register it, after which
+# the hub serves its own snapshot. Best-effort here: a publish is a manifest fact
+# and never waits on the network.
 
 _BODY_TASKS: set[asyncio.Task] = set()
 #: What the last publish did about the hub body, per typeid — read by the desk's
@@ -401,14 +416,11 @@ async def publish_body_to_hub(entity: Entity, project, actor) -> dict:
     ``{status: published|skipped|failed, code}`` — the row's ``hub_body``.
 
     Gates in order — the first that fails is the answer (``skipped``): the
-    type must be git-publishable, the project linked to the cloud, and the
-    actor connected to GitHub. Then the share path pushes ``flow-cloud`` and
-    registers the asset; then the hub snapshots the tree (either refusal is
-    ``failed``)."""
+    type must be publishable and the project linked to the cloud. Then the
+    asset is pushed into the project's hub repo and registered (a refusal is
+    ``failed`` with its publish code)."""
     from flow_sdk.assets.git_publish import AssetPublishError
     from flow_sdk.builtin.asset_publishing import publish_git_asset  # noqa: PLC0415
-    from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
-    from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     info = SchemaRegistry.get(entity.get_type())
@@ -416,18 +428,42 @@ async def publish_body_to_hub(entity: Entity, project, actor) -> dict:
         return _skipped("type_not_git")
     if getattr(project, "remote", False) is not True:
         return _skipped("project_not_linked")
-    if actor is None or not await get_github_token(actor):
-        return _skipped("github_not_connected")
+    if actor is None:
+        return _skipped("no_actor")
     try:
         await publish_git_asset(entity, actor)
     except AssetPublishError as exc:
         return _failed(str(getattr(exc.code, "value", exc.code)))
-    try:
-        await hub_post(entity.get_type(), {}, str(entity.id), action="gitops", sub_path="materialize")
-    except Exception as exc:  # noqa: BLE001 — logged below; the row still says what happened
-        logger.info("[project_manifest] hub materialize skipped for %s: %s", entity.typeid, exc)
-        return _failed("materialize_failed")
+    await _point_row_at_hub_repo(entity, project)
     return {"status": "published", "code": None}
+
+
+async def _point_row_at_hub_repo(entity: Entity, project) -> None:
+    """Rewrite the asset's manifest row so its origin is the hub repo it now lives in.
+
+    The row was written before the upload finished, with whatever origin the
+    folder could offer; a reader installs from the row's origin, so it must name
+    the place every member can actually reach.
+    """
+    from flow_sdk.assets.project_manifest import make_entry, publish, rel_path_for  # noqa: PLC0415
+
+    origin = _hub_origin_of(entity)
+    mount = _mount_of(project)
+    rel_path = rel_path_for(mount, Path(str(entity.asset_ref))) if mount is not None and origin else None
+    if rel_path is None:
+        return
+    publish(
+        mount,
+        make_entry(
+            typeid=str(entity.typeid),
+            rel_path=rel_path,
+            name=str(getattr(entity, "name", "") or ""),
+            description=str(getattr(entity, "description", "") or ""),
+            origin=origin,
+        ),
+    )
+    await ensure_manifest_indexed(project)
+    await reflect_manifest_to_hub(project)
 
 
 def publish_body_to_hub_soon(entity: Entity, project, actor) -> None:
@@ -557,7 +593,9 @@ async def published_view(project) -> dict:
                 "state": state,
                 "origin": entry.origin.model_dump(mode="json") if entry.origin is not None else None,
                 "posix_path": str(mount / entry.rel_path) if on_disk else None,
-                "body_ref": asset_body_ref(mount / entry.rel_path, authority=project.typeid, root=mount) if on_disk else None,
+                "body_ref": asset_body_ref(mount / entry.rel_path, authority=project.typeid, root=mount)
+                if on_disk
+                else None,
                 "indexed": ent is not None,
                 "hub_body": _HUB_BODY.get(entry.typeid),
             }
@@ -571,9 +609,11 @@ async def published_view(project) -> dict:
         listed = spec.typeids if spec is not None else frozenset()
         descriptors = [
             d
-            for d in (await scan_path_asset_descriptors(
-                sources, own_project_id=str(project.id), types=list(PUBLISHABLE_TYPES), limit=2000
-            )).assets
+            for d in (
+                await scan_path_asset_descriptors(
+                    sources, own_project_id=str(project.id), types=list(PUBLISHABLE_TYPES), limit=2000
+                )
+            ).assets
             if d.source is AssetSource.PROJECT_DIR and d.typeid not in listed
         ]
         wanted: dict[str, list[str]] = {}

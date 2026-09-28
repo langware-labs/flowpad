@@ -3,8 +3,7 @@ import {
   ConnectionKind,
   ConnectionState,
   ConnectionStatus,
-  type SecretPack,
-  DEFAULT_CREDENTIAL_ENVIRONMENT,
+  type Credential,
   FSRef,
   TypeId,
   type OAuthConnection,
@@ -67,8 +66,8 @@ import { Plus } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
-/** The URL option naming the credential environment the table shows; absent means development. */
-const CREDENTIAL_ENVIRONMENT_OPTION = 'env';
+/** The URL option naming the deployment whose values the table shows; absent means this computer. */
+const CREDENTIAL_DEPLOYMENT_OPTION = 'deployment';
 
 export interface ConnectionsManagerProps {
   /**
@@ -344,21 +343,19 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // selected project's when there is one. Status is value-free.
   const selectedProject = project ?? null;
   const { navigation, currentDock } = useDockNavigation();
-  // URL-first: the environment rides in the dock's options, so a reload or a
-  // shared link lands on the same values. Development is the absent option.
-  const credentialEnvironment =
-    currentDock?.options?.[CREDENTIAL_ENVIRONMENT_OPTION] || DEFAULT_CREDENTIAL_ENVIRONMENT;
-  const showCredentialEnvironment = (next: string) => {
-    if (!currentDock) return;
-    navigation.openDock(
-      currentDock.withOption(CREDENTIAL_ENVIRONMENT_OPTION, next === DEFAULT_CREDENTIAL_ENVIRONMENT ? null : next),
-    );
-  };
+  // URL-first: the deployment rides in the dock's options, so a reload or a
+  // shared link lands on the same values. This computer is the absent option.
+  const credentialDeployment = currentDock?.options?.[CREDENTIAL_DEPLOYMENT_OPTION] || null;
   const {
     status: credentialStatus,
     templates: credentialTemplates,
     refresh: refreshCredentials,
-  } = useCredentials(selectedProject?.id ?? null, credentialEnvironment);
+  } = useCredentials(selectedProject?.id ?? null, credentialDeployment);
+  const showCredentialDeployment = (next: string) => {
+    if (!currentDock) return;
+    const row = (credentialStatus.deployments ?? []).find((candidate) => candidate.id === next);
+    navigation.openDock(currentDock.withOption(CREDENTIAL_DEPLOYMENT_OPTION, row?.this_computer ? null : next));
+  };
   const credentialRows = React.useMemo(() => buildCredentialRows(credentialStatus), [credentialStatus]);
   const detectedGroups = React.useMemo(() => buildDetectedGroups(credentialStatus), [credentialStatus]);
   const defaultScope = selectedProject ? 'project' : 'user';
@@ -374,8 +371,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   };
   const [pendingDeleteCredential, setPendingDeleteCredential] = React.useState<CredentialRow | null>(null);
 
-  /** What Delete will actually do, said before it happens: vault values go,
-   *  `.env.local` lines stay. */
+  /** What Delete will actually do, said before it happens: its values go from
+   *  every store they were saved to — the vault and every `.env*` file. */
   const credentialDeleteDescription = React.useMemo(() => {
     const row = pendingDeleteCredential;
     if (!row) return '';
@@ -384,7 +381,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       return t`${row.title} is removed from ${where}, and its values are deleted from the vault.`;
     }
     const names = row.vars.map((v) => v.envVar).join(', ');
-    return t`${row.title} is removed from ${where}. ${names} stay in .env.local — Flowpad never removes lines from that file.`;
+    return t`${row.title} is removed from ${where}, and ${names} are deleted from every .env file they were saved to.`;
   }, [pendingDeleteCredential, t]);
 
   const [usageForced, setUsageForced] = React.useState(false);
@@ -584,7 +581,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
     void handleConnect(providerName.toLowerCase());
   };
 
-  const pickCredential = (spec: SecretPack) => {
+  const pickCredential = (spec: Credential) => {
     setAddOpen(false);
     openDraft(templateDraft(spec, defaultScope));
   };
@@ -635,7 +632,6 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           draft={credentialDraft.draft}
           projectId={selectedProject?.id ?? null}
           status={credentialStatus}
-          environment={credentialEnvironment}
           onRefresh={refreshCredentials}
           onClose={() => setCredentialDraft(null)}
           onSaved={async (saved) => {
@@ -647,22 +643,22 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
       )}
 
       <div className="flex-1 overflow-auto">
-        {/* Which environment the credential rows show and write: development is
-            this computer, every other one is a deployment's. Hidden until a
-            deployment names one. */}
-        {((credentialStatus.environments ?? []).length > 1 || credentialEnvironment !== DEFAULT_CREDENTIAL_ENVIRONMENT) && (
-          <div className="mb-3 flex max-w-5xl items-center gap-2" data-testid="credential-environment">
+        {/* Which deployment the credential rows show and write: this computer, or a
+            deployment (each keeps its own values, in its environment). Hidden until
+            there is another deployment. */}
+        {((credentialStatus.deployments ?? []).length > 1 || !!credentialDeployment) && (
+          <div className="mb-3 flex max-w-5xl items-center gap-2" data-testid="credential-deployment">
             <span className="text-xs text-muted-foreground">
-              <Trans>Credential environment</Trans>
+              <Trans>Values for</Trans>
             </span>
-            <Select value={credentialEnvironment} onValueChange={showCredentialEnvironment}>
-              <SelectTrigger className="h-8 w-48 font-mono text-xs" data-testid="credential-environment-select">
+            <Select value={credentialStatus.deployment_id} onValueChange={showCredentialDeployment}>
+              <SelectTrigger className="h-8 w-64 text-xs" data-testid="credential-deployment-select">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {Array.from(new Set([...(credentialStatus.environments ?? []), credentialEnvironment])).map((env) => (
-                  <SelectItem key={env} value={env} className="font-mono text-xs" data-testid={`credential-environment-${env}`}>
-                    {env === DEFAULT_CREDENTIAL_ENVIRONMENT ? t`development · this computer` : env}
+                {(credentialStatus.deployments ?? []).map((row) => (
+                  <SelectItem key={row.id} value={row.id} className="text-xs" data-testid={`credential-deployment-${row.id}`}>
+                    {row.this_computer ? t`This computer · ${row.environment}` : `${row.name} · ${row.environment}`}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -948,10 +944,8 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
         <DetectedKeys groups={detectedGroups} onPack={packDetected} />
       </div>
 
-      {/* Delete says what will actually happen, BEFORE it happens: the one case
-          where Delete is not total — lines in the user's own `.env.local`,
-          which Flowpad never removes — is named here rather than discovered
-          afterwards. */}
+      {/* Delete says what will actually happen, BEFORE it happens: every value
+          goes, from the vault and from each `.env*` file it was saved to. */}
       <ConfirmDialog
         open={!!pendingDeleteCredential}
         onOpenChange={(open) => {
@@ -967,19 +961,23 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
           if (!row) return;
           void (async () => {
             try {
-              const { kept } = await credentialsService.remove(row.typeid);
+              const result = await credentialsService.remove(row.typeid);
               await refreshCredentials();
-              // Report what the BACKEND did, not what the dialog predicted: the
-              // driver decides, and a value could have moved stores since the
-              // table was painted.
-              notify.success({
-                title: t`${row.title} deleted`,
-                // No singular/plural split here, unlike the dialog: "stayed"
-                // reads the same for one name or several.
-                ...(kept.length
-                  ? { message: t`${kept.join(', ')} stayed in .env.local.` }
-                  : {}),
-              });
+              // Report what the BACKEND did, not what the dialog predicted: a
+              // store that kept a value keeps the credential too, as the handle
+              // to retry.
+              if (!result.removed) {
+                const stuck = result.stores
+                  .filter((s) => s.error || s.kept.length)
+                  .map((s) => s.where)
+                  .join(', ');
+                notify.error({
+                  title: t`${row.title} was not fully deleted`,
+                  message: t`${result.kept.join(', ')} could not be removed from ${stuck}.`,
+                });
+                return;
+              }
+              notify.success({ title: t`${row.title} deleted` });
             } catch (error) {
               notify.error({
                 title: t`Could not delete ${row.title}`,

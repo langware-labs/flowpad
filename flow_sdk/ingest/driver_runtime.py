@@ -18,9 +18,11 @@ file source's changed bytes are pulled through ``open`` into the row's cache fir
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,20 +31,25 @@ from typing import TYPE_CHECKING, Any, Optional
 from flow_sdk._compat import StrEnum
 from flow_sdk.capsules.atomic import atomic_write
 from flow_sdk.ingest.legacy_lift import envelope_of
-from flow_sdk.sources.base import Source
+from flow_sdk.sources.base import Family, Source
 from flow_sdk.sources.binding import Persona, SourceBinding
 from flow_sdk.sources.config import SourceConfig
-from flow_sdk.sources.credentials import Credentials
+from flow_sdk.sources.credentials import ResolvedSecrets
 from flow_sdk.sources.errors import Rejected, SourceError
+from flow_sdk.sources.errors import Unsupported
+from flow_sdk.sources.files import LOCAL_KIND, plan_parts, resolve_files
 from flow_sdk.sources.protocols import (
     Choosing,
     Identified,
     Listable,
-    Messaging,
+    Openable,
+    Reacting,
     StableHandle,
     Verdict,
     Verifiable,
 )
+from flow_sdk.sources.values.items import FileItem, MessageData, MessageFileData, ReactionData, UserProfile
+from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import ChangePage
 from flow_sdk.sources.values.query import MessageQuery
 from flow_sdk.utils.kind_registry import KindRegistry
@@ -88,6 +95,9 @@ class SendOutcome:
     status: SendStatus = SendStatus.SENT
     recorded: bool = False
     artifact_id: str = ""
+    #: Every provider message the send became, in order — files fan out on a channel that carries
+    #: one per message. ``external_id`` is the first.
+    parts: tuple[str, ...] = ()
 
     @property
     def drafted(self) -> bool:
@@ -130,6 +140,8 @@ class Pass:
     #: Greatest ordinal covered — observability only, never read back as a floor.
     high_water: Optional[str] = None
     unchanged: bool = False
+    #: Reaction reports the pass found — applied to the messages they name, never stored as records.
+    reactions: list = field(default_factory=list)
 
 
 # ── identity and provenance ────────────────────────────────────────────────────
@@ -251,8 +263,8 @@ async def _pull(source: Source, wanted: list) -> None:
 # ── binding a row ──────────────────────────────────────────────────────────────
 
 
-def binding_of(row: Any, *, credentials: Optional[Credentials] = None, persona: Optional[Persona] = None) -> SourceBinding:
-    credentials = credentials or Credentials()
+def binding_of(row: Any, *, credentials: Optional[ResolvedSecrets] = None, persona: Optional[Persona] = None) -> SourceBinding:
+    credentials = credentials or ResolvedSecrets()
     # A secret the resolver lifted out of the row never also rides in ``config``.
     driver = DRIVERS.get_or_none(str(getattr(row, "provider", "") or ""))
     # A stored config, read as well as it still validates.
@@ -298,6 +310,11 @@ class DriverRuntime:
         return self._cls
 
     @property
+    def display_title(self) -> str:
+        """What a person calls this channel in an error: the manifest title, else the provider key."""
+        return str(getattr(self, "title", "") or "") or self.provider
+
+    @property
     def provider(self) -> str:
         return self.name
 
@@ -321,9 +338,18 @@ class DriverRuntime:
         return self._shipped
 
     # ── traits the application reads ───────────────────────────────────────
+    # The family is read off the class (``self.cls.family``): ``DataDriver`` serializes it as a field of
+    # the same name, so the runtime never shadows it with a property.
+    @property
+    def is_object(self) -> bool:
+        """A file source: its items are reflected onto disk, never kept as records."""
+        return self.cls.family is Family.OBJECT
+
     @property
     def can_send(self) -> bool:
-        return issubclass(self.cls, Messaging) and callable(getattr(self.cls, "message_for", None))
+        """A channel that answers. A message source is ``Messaging`` with ``message_for`` — ``load_driver``
+        refuses one that is not — so the family is the answer."""
+        return self.cls.family is Family.MESSAGE
 
     @property
     def has_setup(self) -> bool:
@@ -340,7 +366,7 @@ class DriverRuntime:
 
     @property
     def open_inbound(self) -> bool:
-        return self.cls.open_inbound
+        return self.can_send and self.cls.open_inbound
 
     @property
     def identity_config_key(self) -> str:
@@ -356,26 +382,27 @@ class DriverRuntime:
 
     @property
     def stamps_identity(self) -> bool:
+        """May reflection write our identity into this source's files (a file source's question)."""
         return self.cls.stamps_identity
-
-    @property
-    def reflects(self) -> bool:
-        return self.cls.reflects
 
     def channel_for(self, row: Any) -> str:
         """The user-facing channel a row reaches; a file source has none."""
-        if self.cls.reflects:
+        if self.is_object:
             return ""
         return str(self.cls.origin_kind_for(getattr(row, "config", None) or {}) or "")
 
     def outbound_spec(self, row: Any) -> type["MessageSpec"]:
         """The spec class that knows WHO a reply on this channel is addressed to."""
-        declared = self.cls.outbound_spec()
+        declared = self.cls.outbound_spec() if self.can_send else None
         if declared is not None:
             return declared
         from flow_sdk.builtin.source_item import EmailMessageSpec  # noqa: PLC0415
 
         return EmailMessageSpec
+
+    def permalink(self, external_id: str, thread_key: str = "") -> str:
+        """The channel's own link for a record its provider gave no URL; ``""`` for a non-channel."""
+        return self.cls.permalink(external_id, thread_key) if self.can_send else ""
 
     # ── instances ───────────────────────────────────────────────────────────
     def create_source(self, config: "SourceConfig | dict | None" = None, *, name: str, **authored: Any) -> "DataSource":
@@ -392,13 +419,13 @@ class DriverRuntime:
         return DataSource(provider=self.provider, name=name, kind=self.kind, config=dict(config or {}), **authored)
 
     # ── binding ─────────────────────────────────────────────────────────────
-    async def credentials_for(self, row: Any) -> Credentials:
+    async def credentials_for(self, row: Any) -> ResolvedSecrets:
         """What the row reads with, resolved from the manifest's ``auth``."""
         from flow_sdk.ingest.credentials import resolve_credentials  # noqa: PLC0415
 
         return await resolve_credentials(self.manifest.auth if self.manifest is not None else None, row)
 
-    async def open(self, row: Any, *, persona: bool = False, credentials: Optional[Credentials] = None) -> Source:
+    async def open(self, row: Any, *, persona: bool = False, credentials: Optional[ResolvedSecrets] = None) -> Source:
         """The configured source (not yet in a session). A configuration the class refuses is a
         person's to fix. ``credentials`` already resolved for this row skip the second resolve."""
         credentials = credentials if credentials is not None else await self.credentials_for(row)
@@ -416,7 +443,7 @@ class DriverRuntime:
         """Where a REMOTE file source's bytes land: under this instance, not a project, so deleting
         the source can take its cache without touching anything a person wrote. ``None`` for a
         source with no remote bytes."""
-        if not self.cls.reflects or self.cls.local_tree_key:
+        if not self.is_object or self.cls.local_tree_key:
             return None
         override = (getattr(row, "config", None) or {}).get("cache_root")
         if override:
@@ -428,6 +455,8 @@ class DriverRuntime:
     def tree_root(self, row: Any) -> Optional[Path]:
         """The tree every ref of a reflecting source is relative to: the local tree the source reads
         in place, else its cache. ``None`` when the row does not name one yet."""
+        if not self.is_object:
+            return None
         key = self.cls.local_tree_key
         if not key:
             return self.cache_root(row)
@@ -437,8 +466,6 @@ class DriverRuntime:
     def origin_for(self, row: Any) -> Any:
         """The tree, as the origin a reflecting row is stamped with on save; ``None`` for a record
         source or a row that names no tree yet."""
-        if not self.cls.reflects:
-            return None
         root = self.tree_root(row)
         if root is None:
             return None
@@ -491,15 +518,17 @@ class DriverRuntime:
                     break
             # An idle traversal hands back no new resume point: the position it started from stands.
             carried = (resume or started_at) if cls.durable_cursor else None
-            if cls.reflects:
+            if self.is_object:
                 return await self._files(row, source, items, removed, moved, carried, dict(position.manifest), complete=complete)
-            return self._records(row, items, carried, floor, moved_on=carried != started_at)
+            kept = [item for item in items if floor is None or (_when(item) or floor) >= floor]
+            # Inside the session: a provider's media link rarely outlives it (WAHA deletes the file in
+            # minutes, a WhatsApp URL dies in five).
+            kept = await self._stage(row, source, kept)
+            return self._records(row, kept, carried, moved_on=carried != started_at)
 
-    def _records(self, row: Any, items, cursor: Optional[str], floor, *, moved_on: bool) -> Pass:
-        kept = sorted(
-            (item for item in items if floor is None or (_when(item) or floor) >= floor),
-            key=lambda item: _when(item) or _EPOCH,
-        )
+    def _records(self, row: Any, items, cursor: Optional[str], *, moved_on: bool) -> Pass:
+        reactions = [item for item in items if isinstance(item.data, ReactionData)]
+        kept = sorted((item for item in items if not isinstance(item.data, ReactionData)), key=lambda item: _when(item) or _EPOCH)
         envelopes = [envelope_of(item, data_source_id=str(row.id), provider=self.provider) for item in kept]
         stamps = [when for when in map(_when, kept) if when is not None]
         return Pass(
@@ -508,7 +537,83 @@ class DriverRuntime:
             high_water=max(stamps).isoformat() if stamps else None,
             # Nothing arrived and the position did not move: the free no-op a 304 or an empty page is.
             unchanged=not items and not moved_on,
+            reactions=reactions,
         )
+
+    # ── files on messages ───────────────────────────────────────────────────
+    def files_root(self, row: Any) -> Path:
+        """Where this source's message files live on this machine — durable, purged with the source."""
+        from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+        return data_dir_for("data_source", row.id) / "files"
+
+    def _file_home(self, row: Any, origin: CloudOrigin, name: str) -> Path:
+        digest = hashlib.sha256(f"{origin.kind}|{origin.namespace}|{origin.key}".encode()).hexdigest()[:32]
+        safe = re.sub(r"[^\w.\- ]+", "_", name or "file").strip(" .") or "file"
+        return self.files_root(row) / digest / safe[:120]
+
+    async def _stage(self, row: Any, source: Source, items: list) -> list:
+        """Copy every inbound file's bytes to this machine while ``source`` is open; the items come back
+        with each file's local ``path`` (or its ``fetch_error``). Idempotent: a file already here is
+        not fetched again."""
+        out = []
+        for item in items:
+            data = item.data
+            if not isinstance(data, MessageData) or not data.attachments:
+                out.append(item)
+                continue
+            files = tuple([await self._stage_file(row, source, f) for f in data.attachments])
+            out.append(item.model_copy(update={"data": data.model_copy(update={"attachments": files})}))
+        return out
+
+    async def _stage_file(self, row: Any, source: Source, f: FileItem) -> FileItem:
+        data = f.data
+        if f.origin.kind == LOCAL_KIND or not isinstance(data, MessageFileData) or data.fetch_error:
+            return f
+        if not data.name:
+            # A provider that names no file (a WhatsApp photo): its handle, with the extension its type says.
+            import mimetypes  # noqa: PLC0415
+
+            stem = f.origin.key.rstrip("/").rsplit("/", 1)[-1] or "file"
+            ext = mimetypes.guess_extension(data.media_type or "") or ""
+            data = data.model_copy(update={"name": stem if stem.endswith(ext) else f"{stem}{ext}"})
+        home = self._file_home(row, f.origin, data.name)
+        if not home.is_file():
+            if not isinstance(source, Openable):
+                return f
+            try:
+                home.parent.mkdir(parents=True, exist_ok=True)
+                part = home.with_name(home.name + ".part")
+                with part.open("wb") as fh:
+                    async with source.open(f) as chunks:
+                        async for chunk in chunks:
+                            fh.write(chunk)
+                os.replace(part, home)
+            except Exception as exc:  # noqa: BLE001 — a lost file keeps its metadata and says why
+                logger.info("[ingest] %s %s: could not copy %s: %s", self.provider, row.id, f.origin.key, exc)
+                return f.model_copy(update={"data": data.model_copy(update={"fetch_error": str(exc) or type(exc).__name__})})
+        size = data.size if data.size is not None else home.stat().st_size
+        return f.model_copy(update={"data": data.model_copy(update={"path": str(home), "size": size})})
+
+    def _keep_sent(self, row: Any, sent: Any) -> Any:
+        """Our sent copy points at a durable copy of each file it carried, never the caller's path —
+        an agent's outbox or a temp upload may be gone by the time anyone looks."""
+        import shutil  # noqa: PLC0415
+
+        data = sent.data
+        if not isinstance(data, MessageData) or not data.attachments:
+            return sent
+        kept = []
+        for f in data.attachments:
+            fd = f.data
+            if isinstance(fd, MessageFileData) and fd.path and Path(fd.path).is_file():
+                home = self._file_home(row, CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=f"{sent.origin.key}#{len(kept)}"), fd.name or "file")
+                home.parent.mkdir(parents=True, exist_ok=True)
+                if not home.is_file():
+                    shutil.copyfile(fd.path, home)
+                f = f.model_copy(update={"data": fd.model_copy(update={"path": str(home)})})
+            kept.append(f)
+        return sent.model_copy(update={"data": data.model_copy(update={"attachments": tuple(kept)})})
 
     async def _files(self, row: Any, source: Source, items, removed, moved, cursor: Optional[str], previous: dict, *, complete: bool) -> Pass:
         """A reflecting source's files as refs, diffed against the manifest.
@@ -596,28 +701,67 @@ class DriverRuntime:
         subject: str = "",
         conversation_id: str = "",
         in_reply_to: str = "",
+        files: tuple[FileItem, ...] = (),
+        quote: bool = True,
     ) -> SendOutcome:
         """One message into the channel, recorded. A refused message is a ``ValueError`` — one failed
-        reply must never become source health."""
+        reply must never become source health.
+
+        ``files`` are local files (``sources.files.local_file``), checked against the channel's
+        ``files`` before any provider I/O and fanned out when it carries fewer per message. ``quote``
+        ``False`` answers without quoting on a channel whose replies quote (``cls.quotes``); a channel
+        whose reply only threads (email, Slack) keeps ``in_reply_to`` — dropping it would break the thread."""
         if not self.can_send:
             raise NotImplementedError(f"{self.provider} cannot send")
+        files = resolve_files(files, self.cls.files, title=self.display_title) if files else ()
+        answering = in_reply_to if (quote or not getattr(self.cls, "quotes", False)) else ""
+        parts = plan_parts(self.cls.files, text, files, quote=bool(answering))
         source = await self.open(row, persona=True)
-        data, answered = source.message_for(  # type: ignore[attr-defined]
-            thread_key=thread_key, to=to, text=text, subject=subject, in_reply_to=in_reply_to, conversation_id=conversation_id
-        )
+        sents = []
         try:
             async with source:
-                sent = await (source.reply(answered, data) if answered is not None else source.send(data))  # type: ignore[attr-defined]
+                for i, part in enumerate(parts):
+                    data, answered = source.message_for(  # type: ignore[attr-defined]
+                        thread_key=thread_key,
+                        to=to,
+                        text=part.text or "",
+                        subject=subject,
+                        in_reply_to=answering if part.quotes else "",
+                        conversation_id=conversation_id,
+                    )
+                    if part.files or part.text is None:
+                        data = data.model_copy(update={"text": part.text, "attachments": part.files})
+                    sents.append(await (source.reply(answered, data) if answered is not None else source.send(data)))  # type: ignore[attr-defined]
         except SourceError as exc:
-            raise ValueError(f"{self.provider} refused the message: {exc}") from exc
+            if not sents:
+                raise ValueError(f"{self.provider} refused the message: {exc}") from exc
+            # Some parts are out: the recipient has them, so record those and say the rest failed.
+            logger.warning("[ingest] %s: part %d of %d refused: %s", self.provider, len(sents) + 1, len(parts), exc)
         if isinstance(source, Identified):
             await self._stamp(row, source)
+        outcomes = [await self._settle(row, source, sent, to) for sent in sents]
+        first = outcomes[0]
+        return SendOutcome(
+            external_id=first.external_id,
+            status=first.status,
+            recorded=all(o.recorded for o in outcomes),
+            artifact_id=first.artifact_id,
+            parts=tuple(o.external_id for o in outcomes),
+        )
+
+    async def _settle(self, row: Any, source: Source, sent: Any, to: str) -> SendOutcome:
+        """One sent provider message: addressed, recorded, reported."""
         # A transport whose connector may only DRAFT reports the draft with no `sent_at`; one that
         # records its own copy says so on the payload.
-        drafted = bool(getattr(type(source), "sends_may_draft", False)) and sent.data.sent_at is None
+        if to and not getattr(sent.data, "recipients", None):
+            # Whom we sent it to is known here even when the provider's answer does not say — a
+            # conversation we open is addressed by it.
+            to_whom = UserProfile(origin=CloudOrigin(kind=sent.origin.kind, namespace=sent.origin.namespace, key=to), address=to)
+            sent = sent.model_copy(update={"data": sent.data.model_copy(update={"recipients": (to_whom,)})})
+        drafted = self.cls.sends_may_draft and sent.data.sent_at is None
         recorded = bool(getattr(sent.data, "recorded", False))
         if not drafted and not recorded:
-            recorded = await self._record(row, source, sent)
+            recorded = await self._record(row, source, self._keep_sent(row, sent))
         return SendOutcome(
             external_id=sent.origin.key,
             status=SendStatus.DRAFTED if drafted else SendStatus.SENT,
@@ -653,7 +797,8 @@ class DriverRuntime:
             raise Rejected("the delivery's signature did not verify")
         source = await self.open(row, credentials=credentials)
         async with source:
-            events = source.events_from_webhook(payload)  # type: ignore[attr-defined]
+            events = list(source.events_from_webhook(payload))  # type: ignore[attr-defined]
+            events = await self._stage_events(row, source, events)
             # A source people talk to live rings its calls here too; the caller hands them to whoever answers.
             calls = list(source.calls_from_webhook(payload)) if hasattr(source, "calls_from_webhook") else []
         result = await self.ingest_events(row, events)
@@ -661,24 +806,47 @@ class DriverRuntime:
             result["calls"] = calls
         return result
 
+    async def _stage_events(self, row: Any, source: Source, events: list) -> list:
+        items = [event.item for event in events if event.item is not None]
+        staged = iter(await self._stage(row, source, items))
+        return [event.model_copy(update={"item": next(staged)}) if event.item is not None else event for event in events]
+
     async def ingest_events(self, row: Any, events: Any) -> dict:
         """Events a source produced outside a traversal (a webhook, a live call) through the one ingestion
-        chokepoint: ``{"ingested", "created", "ids"}`` — ``ids`` the stored rows, in event order."""
+        chokepoint: ``{"ingested", "created", "ids"}`` — ``ids`` the stored rows, in event order. A
+        reaction report is applied to the message it names, after the messages it came with."""
         from flow_sdk.ingest.ingestor import ingest_items  # noqa: PLC0415
+        from flow_sdk.stream_inbox.reactions import apply_reactions  # noqa: PLC0415
 
+        found = [event.item for event in events if event.item is not None]
+        reactions = [item for item in found if isinstance(item.data, ReactionData)]
         items = [
-            envelope_of(event.item, data_source_id=str(row.id), provider=self.provider)
-            for event in events
-            if event.item is not None
+            envelope_of(item, data_source_id=str(row.id), provider=self.provider)
+            for item in found
+            if not isinstance(item.data, ReactionData)
         ]
+        report = await ingest_items(items) if items else None
+        if reactions:
+            await apply_reactions(row, reactions)
         if not items:
-            return {"ingested": 0}
-        report = await ingest_items(items)
+            return {"ingested": 0, "reactions": len(reactions)}
         return {
             "ingested": len(items),
             "created": getattr(report, "created", 0),
             "ids": [o.entity_id for o in getattr(report, "outcomes", [])],
         }
+
+    async def react(self, row: Any, target: CloudOrigin, emoji: str, *, remove: bool = False) -> None:
+        """Put (or, with ``remove``, take back) our emoji on ``target``. A channel that cannot react raises
+        ``Unsupported``; one that cannot show this emoji raises its ``Rejected`` — never a substitute."""
+        if not issubclass(self.cls, Reacting):
+            raise Unsupported(f"{self.display_title} has no reactions")
+        source = await self.open(row, persona=True)
+        async with source:
+            if remove:
+                await source.unreact(target, emoji)  # type: ignore[attr-defined]
+            else:
+                await source.react(target, emoji)  # type: ignore[attr-defined]
 
     async def find_reply(self, row: Any, external_id: str) -> Any:
         """The reply to ``external_id`` as an envelope, or ``None`` — one look."""

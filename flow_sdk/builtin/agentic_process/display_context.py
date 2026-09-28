@@ -50,6 +50,8 @@ DISPLAY_TARGET_KEYS = (
     "pointer",
     "page",
     "options",
+    # A shown web page is its URL; without it every page reads as the same target.
+    "url",
 )
 
 

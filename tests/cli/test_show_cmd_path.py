@@ -117,3 +117,13 @@ def test_an_empty_path_still_exits_2(sent_body) -> None:
     """Control — the pre-existing argument contract is unchanged."""
     assert _show("   ").exit_code == show_cmd.EXIT_INVALID_ARG
     assert "path" not in sent_body, "a rejected argument must not reach the wire"
+
+
+def test_show_url_sends_the_address_and_refuses_what_is_not_a_web_page(sent_body):
+    ok = runner.invoke(app, ["show", "url", "https://cert-manager.io/docs/installation/", _PROC])
+    assert ok.exit_code == 0, ok.output
+    assert sent_body == {"url": "https://cert-manager.io/docs/installation/"}
+
+    sent_body.clear()
+    bad = runner.invoke(app, ["show", "url", "cert-manager.io", _PROC])
+    assert bad.exit_code != 0 and sent_body == {}, bad.output

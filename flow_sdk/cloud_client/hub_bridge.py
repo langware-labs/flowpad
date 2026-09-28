@@ -1169,6 +1169,7 @@ class HubWsBridge:
         existing = await Deployment.get_one({"id": deployment_id})
         if op == "delete":
             if existing is not None:
+                existing.remote = False  # the hub already deleted it: nothing to ask the hub
                 await existing.delete()
             return
 

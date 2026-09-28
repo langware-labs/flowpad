@@ -1,4 +1,5 @@
-import { instancePreferences, InstancePreferencesEvent, PrefKey } from '@sdk';
+import { PrefKey } from '../../preferences/prefRegistry';
+import { InstancePreferencesEvent, instancePreferences } from '../../services/InstancePreferences';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 
 /**

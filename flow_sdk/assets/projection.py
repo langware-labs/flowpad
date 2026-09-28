@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from pydantic import JsonValue, field_validator
 
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
-from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.assets.layout import File, Folder
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.origin.fs_origin import is_safe_rel_path
 from flow_sdk.fs_store.schema_registry import LayoutKind, SchemaRegistry, TypeInfo
 from flow_sdk.schema.data_spec import DataSpec
 
@@ -18,6 +18,13 @@ if TYPE_CHECKING:
     from flow_sdk.fs_store.fs_record import FSRecord
 
 PORTABLE_ASSET_CONTRACT_VERSION = 1
+
+
+class AssetPlacement(Protocol):
+    """Where an asset sits inside its checkout — all a projection needs of an origin."""
+
+    @property
+    def rel_path(self) -> str: ...
 
 
 class PortableAssetLayout(DataSpec):
@@ -40,7 +47,7 @@ class PortableAssetProjection(DataSpec):
         return value
 
 
-def layout_for_origin(info: TypeInfo, origin: PortableGitOrigin) -> PortableAssetLayout:
+def layout_for_origin(info: TypeInfo, origin: AssetPlacement) -> PortableAssetLayout:
     """Map the registered local shape to the one portable VFS layout."""
     rel = PurePosixPath(origin.rel_path)
     if rel.as_posix() == ".":
@@ -111,7 +118,7 @@ def read_asset_tree(
     entity_type: str,
     expected_id: str,
     checkout_root: Path,
-    origin: PortableGitOrigin,
+    origin: AssetPlacement,
 ) -> FSRecord:
     """Parse one asset from Git without writing, indexing, or touching the DB."""
     if not is_valid_entity_id(expected_id):
@@ -122,7 +129,10 @@ def read_asset_tree(
     root = Path(checkout_root).resolve(strict=True)
     if not root.is_dir() or not (root / ".git").exists() or (root / ".git").is_symlink():
         raise ValueError("checkout_root must be a concrete Git checkout directory")
-    asset_root = root.joinpath(*PurePosixPath(origin.rel_path).parts)
+    rel = PurePosixPath(origin.rel_path or "")
+    if not is_safe_rel_path(origin.rel_path or "") or "\\" in origin.rel_path or ".git" in rel.parts:
+        raise ValueError("asset origin must be a checkout-relative path outside .git")
+    asset_root = root.joinpath(*rel.parts)
     resolved_asset = asset_root.resolve(strict=True)
     if not resolved_asset.is_relative_to(root):
         raise ValueError("asset path escapes the checkout")

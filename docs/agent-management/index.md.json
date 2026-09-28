@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "agent-management",
   "folder_name": "agent-management",
-  "inputs_hash": "ee9034286475990565951ddad74dc00252bdb6ecdfd06bdad402237b642e8f43",
+  "inputs_hash": "298a429971422f43d1fb16297192adc15c0848d185dbd1a27b1d2b1ff11cc849",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
@@ -14,17 +14,17 @@
       "name": "agent-records.md",
       "rel_path": "agent-records.md",
       "title": "Agent Records",
-      "summary": "Which agent state survives a restart: FSRecord shadow folders and entity rows versus live PTY handles, plus Claude JSONL transcripts and record-entity sync.",
-      "content_hash": "4386504064fdb339831e2e8988ad41ef1e9726adb86b63a10d31850de1a97710",
-      "size_bytes": 37985
+      "summary": "Filesystem records and runtime state for agent management: shadow folders, execution input/output/assets layout, prompt queue, retention and what survives restarts.",
+      "content_hash": "cb8b6c5b201fbe42acccb5e6fa3b49d8d5ab95ce410ce15f87b5be6666407dfb",
+      "size_bytes": 38757
     },
     {
       "name": "agentic-process.md",
       "rel_path": "agentic-process.md",
       "title": "AgenticProcess",
-      "summary": "AgenticProcess entity reference: orthogonal pty_mode transport and visible axes, WorkerDriver delegation, wizard runtime with WizardResult close, statuses, config, backend and TypeScript APIs.",
-      "content_hash": "93757271d476b7cabd9e2f2db903b0fe5338c66609145ce6fe51dcd74d735a38",
-      "size_bytes": 64603
+      "summary": "AgenticProcess entity model: transport (pty_mode) versus visibility axes, lifecycle, drivers, HTTP actions and frontend methods.",
+      "content_hash": "9147204f87dd90221917ac59eae1bdebdb53814c9e5f3b36bdace4de6d309294",
+      "size_bytes": 64602
     },
     {
       "name": "claude-session-manager.md",
@@ -37,7 +37,7 @@
     {
       "name": "mode-switching.md",
       "rel_path": "mode-switching.md",
-      "title": "Mode Switching (Chat/Headless \u21c4 Interactive PTY)",
+      "title": "Mode Switching (Chat/Headless ⇄ Interactive PTY)",
       "summary": "Switching an AgenticProcess between headless CLI and interactive PTY transports: pty_mode versus visible, the single switch-mode seam, and the mid-turn guard.",
       "content_hash": "9da4ebef13595b78ff506b096855e5bf6e4fc49aba8ea2cfb1d054ee55d0b033",
       "size_bytes": 17165
@@ -68,6 +68,6 @@
     }
   ],
   "subfolders": [],
-  "generated_at": "2026-09-23T19:02:04Z",
+  "generated_at": "2026-09-25T12:04:30Z",
   "latest_process_ref": ""
 }

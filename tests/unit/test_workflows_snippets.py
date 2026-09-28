@@ -1,4 +1,4 @@
-"""``docs/snippets/workflows.md`` §1–3, run as written.
+"""``docs/snippets/workflows.md`` §1–4 and §6, run as written.
 
 The provider is a ``ScriptedSource`` registered under the snippet's own provider name and the
 worker is ``MockDriver``, so each program runs verbatim with no network: one inbound message,
@@ -15,7 +15,7 @@ from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.data_source import DataSource
 from tests.utils.fake_source import scripted_provider
 from tests.utils.mock_worker import MockDriver
-from tests.utils.snippets import doc, fence_under, run_fence_until
+from tests.utils.snippets import doc, fence_under, opening_programs, run_fence_until
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
@@ -63,13 +63,7 @@ async def test_1_control_flow_acks_what_it_ignores(worker):
             {"name": "newsletter", "body": "ignore me", "author": "boss@corp.com", "thread_key": "t1"},
             {"name": "URGENT: prod", "body": "help", "author": "boss@corp.com", "thread_key": "t2"},
         )
-        # The variant assumes §1's imports and agent are in scope.
-        from flow_sdk.blocks import EmailMessageSpec, StreamInbox, workflow
-        from flow_sdk.builtin.agent_registry import get_agent
-
-        ns = {"KEY": "k", "EmailMessageSpec": EmailMessageSpec, "StreamInbox": StreamInbox, "workflow": workflow,
-              "agent": await get_agent("email-summarizer")}
-        await _run("1.", "agentmail", ns, mail, nth=1)
+        await _run("1.", "agentmail", {"KEY": "k"}, mail, nth=1)
     assert worker.received_prompts == ["help"], "the newsletter never reached the agent"
     assert len(mail.sent) == 1 and mail.sent[0]["thread_key"] == "t2"
     # The ignored item was acked, not skipped: the loop variable is the LAST item and it is
@@ -144,3 +138,35 @@ async def test_4_the_same_loop_on_every_channel_for_a_user_or_an_agent(worker, o
     expected = owner.typeid if owner is not None else await local_user_typeid()
     assert str(await owner_of(sources[-1])) == str(expected)
     assert helper.id != (owner.id if owner else None)
+
+
+OPENING = opening_programs()
+
+
+@pytest.mark.parametrize("channel", list(OPENING))
+async def test_6_the_opening_program_runs_as_shown_on_every_channel(worker, channel):
+    from tests.unit._stream_inbox_matrix import double_for
+
+    await _agent("channel-helper")
+    sender = double_for(channel).sender
+    with scripted_provider(channel) as script:
+        script.push({"body": f"hello on {channel}", "author": sender, "thread_key": "t1"})
+        await run_fence_until(OPENING[channel], {}, script.settled, filename=f"{DOC} § 6 ({channel})")
+    assert worker.received_prompts[-1] == f"hello on {channel}"
+    assert len(script.sent) == 1 and script.sent[0]["text"].startswith("Mock reply")
+
+
+async def test_5_values_only_runs_as_written():
+    """§5, verbatim: three messages, three answers to "who does a reply go to"."""
+    from tests.utils.snippets import run_fence
+
+    ns = await run_fence(fence_under(doc(DOC), "5."), {}, filename=f"{DOC} §5")
+    assert ns["reply"].to == ["alice@example.com"] and ns["reply"].subject == "Re: Probe coffee?"
+
+
+async def test_6_every_channel_line_constructs():
+    """§6's second fence — the one line each channel changes — runs as written."""
+    from tests.utils.snippets import run_fence
+
+    ns = await run_fence(fence_under(doc(DOC), "6.", nth=1), {}, filename=f"{DOC} §6b")
+    assert ns["stream_inbox"].provider == "whatsapp"

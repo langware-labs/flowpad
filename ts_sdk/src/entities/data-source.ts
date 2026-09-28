@@ -1,5 +1,5 @@
 /**
- * DataSource — a configured remote system of record we sync from
+ * DataSource — a configured source we sync from: files, records or messages
  * (flow_sdk/builtin/data_source.py).
  *
  * NOT to be confused with `FlowDataSource` in `ts_sdk/src/flow_processing/` —
@@ -38,6 +38,8 @@ export interface DataSourceSendOutcome {
 }
 
 export interface IDataSource extends IEntity {
+  /** The source's asset folder on this machine (`agentic-assets/data_source/<name>/`). */
+  asset_ref?: string | null;
   owner?: string | null;
   name: string;
   kind?: string;
@@ -45,7 +47,7 @@ export interface IDataSource extends IEntity {
   channel?: string;
   account_key?: string;
   account_identities?: string[];
-  inbound_allowed_senders?: string[];
+  allowed_senders?: string[];
   required_capabilities?: string[];
   config?: Record<string, unknown>;
   status?: SourceStatus;
@@ -111,7 +113,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    *  (a Slack member id, an email address), one per provider's own namespace.
    *  Empty admits nobody: see `AgentMailbox.allowed`, the gate this backs for
    *  every channel-bound agent, not only an allocated mailbox. */
-  inbound_allowed_senders: string[] = [];
+  allowed_senders: string[] = [];
   required_capabilities: string[] = [];
   config: Record<string, unknown> = {};
   status: SourceStatus = 'new';
@@ -150,7 +152,7 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
     this.account_key = entity.account_key ?? this.account_key;
     this.owner = entity.owner ?? this.owner;
     this.account_identities = entity.account_identities ?? this.account_identities;
-    this.inbound_allowed_senders = entity.inbound_allowed_senders ?? this.inbound_allowed_senders;
+    this.allowed_senders = entity.allowed_senders ?? this.allowed_senders;
     this.required_capabilities = entity.required_capabilities ?? this.required_capabilities;
     this.config = entity.config ?? this.config;
     this.status = entity.status ?? this.status;

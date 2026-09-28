@@ -8,12 +8,8 @@ import { Button } from '@src/components/ui/button';
 import { canInviteMembers } from '@src/components/conversation/participant-display';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
-import {
-  MemberRow,
-  isGroupMember,
-  memberPrincipalId,
-  type MemberActions,
-} from '@src/components/organization/member-list';
+import { MemberRow, type MemberActions } from '@src/components/organization/member-list';
+import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-roles';
 import { InviteRow } from '@src/components/organization/invite-row';
 import { useCreateChildTeamForm } from '@src/components/organization/use-create-child-team';
 import { notify } from '@src/notifications';

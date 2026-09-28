@@ -398,6 +398,12 @@ class ProcessAssets:
         are harmless while no process hook is configured.
         """
         instructions = await self._prepare_system_instruction_assets()
+        # A worker that reads skills from its own dot-dir under a mount cannot
+        # see a mounted folder that ships them the Claude way; the driver links
+        # them into the process's mounted assets dir, where it does look.
+        link_skills = getattr(self.process.driver, "link_mounted_skills", None)
+        if link_skills is not None and instructions is not None:
+            link_skills(instructions.assets_dir, self.process.resolved_add_dirs)
         hook_runtime = ProcessHookRuntime()
         supports_hooks = bool(getattr(self.process.driver, "supports_process_hooks", False))
         if self.process.process_hook_events or supports_hooks:

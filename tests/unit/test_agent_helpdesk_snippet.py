@@ -1,7 +1,7 @@
 """``docs/snippets/agent-helpdesk.md``, run as written with the hub legs stubbed.
 
-The snippet's one verb is ``Agent.bind_channel`` — the same seam ``blocks.StreamInbox``
-uses — so what is pinned is that the program compiles and that the bound source
+The snippet gives the Agent the desk the one way — ``create_source(owner=agent)`` and
+``save()`` — so what is pinned is that the program compiles and that the source
 is what the prose promises: provider ``helpdesk``, the desk in its config, owned
 by the Agent.
 """
@@ -31,4 +31,4 @@ async def test_the_agent_helpdesk_program_runs_verbatim(monkeypatch):
     desk: DataSource = ns["desk"]
     assert desk.provider == "helpdesk" and desk.channel == "helpdesk"
     assert str(desk.owner) == str(ns["support"].typeid)
-    assert desk.inbound_allowed_senders in ([], None), "a desk is open unless someone is listed"
+    assert desk.allowed_senders in ([], None), "a desk is open unless someone is listed"

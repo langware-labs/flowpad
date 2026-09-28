@@ -63,9 +63,13 @@ interface SnippetViewProps {
   onNotSnippet: () => void;
   /** The file was read or written; `text` is the whole file now on disk, for the host's raw copy. */
   onSynced: (text: string) => void;
+  /** Who runs this file, when not this view: a long-lived process the host owns (a deployment's
+   *  loop). Its button replaces Run/Stop — the edit is saved first, then `run` — and there is no
+   *  console here: the host shows the process's own. */
+  runner?: { label: string; run: () => Promise<void> };
 }
 
-export function SnippetView({ path, watch, language, revision, readOnly, onNotSnippet, onSynced }: SnippetViewProps) {
+export function SnippetView({ path, watch, language, revision, readOnly, onNotSnippet, onSynced, runner }: SnippetViewProps) {
   const { t } = useLingui();
   const { resolvedTheme } = useTheme();
   const [showInit, setShowInit] = usePreference<boolean>(PrefKey.SNIPPET_SHOW_INIT);
@@ -252,6 +256,24 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
     }
   }, [path, regions, save, timeoutSeconds, t]);
 
+  /** The host's runner: what is on screen is saved first, then the host runs it. */
+  const runByHost = useCallback(async () => {
+    if (!runner) return;
+    setRunning(true);
+    try {
+      const flushing = [...pendingRef.current.keys()].map((index) => {
+        const region = regions?.find((r) => r.index === index);
+        return region ? save(region) : null;
+      });
+      await Promise.all([...flushing, ...inflightRef.current]);
+      await runner.run();
+    } catch (reason) {
+      setNotice(errorMessage(reason, t`Could not run the snippet`));
+    } finally {
+      setRunning(false);
+    }
+  }, [runner, regions, save, t]);
+
   /** Kill the run in flight; it then answers with what it printed so far. */
   const stop = useCallback(async () => {
     const runId = runIdRef.current;
@@ -289,7 +311,12 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="snippet-view">
       <div className="flex items-center gap-1 border-b px-2 py-1">
-        {running ? (
+        {runner ? (
+          <Button size="sm" onClick={() => void runByHost()} disabled={running} data-testid="snippet-run">
+            <Play className="mr-1 h-3.5 w-3.5" />
+            {runner.label}
+          </Button>
+        ) : running ? (
           <Button size="sm" variant="destructive" onClick={() => void stop()} data-testid="snippet-stop">
             <Square className="mr-1 h-3.5 w-3.5" />
             {t`Stop`}

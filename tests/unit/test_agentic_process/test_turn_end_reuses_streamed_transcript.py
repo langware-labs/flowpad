@@ -1,4 +1,4 @@
-"""The turn-end seam must not re-parse a transcript the streamer already holds.
+"""The turn-end seam and ``transcript/prompts`` must not re-parse a transcript the streamer already holds.
 
 ``_collect_touched_from_transcript_tail`` called ``_load_transcript()``, whose
 construction eagerly parses the WHOLE JSONL — on the event loop, at every turn
@@ -33,6 +33,11 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.request_context.execution_context import (
+    ExecutionContext,
+    get_execution_context,
+    set_execution_context,
+)
 from flow_sdk.transcript_streamer.registry import transcript_streamer_registry
 
 # do not increase timeout without approval
@@ -106,3 +111,40 @@ async def test_a_process_with_no_streamer_falls_back_to_the_parse(
     # files are silently skipped while the streamer is still warming up.
     assert fresh._current_transcript() is not None
     assert fresh._current_transcript() is not fresh._current_transcript()
+
+
+@pytest.mark.asyncio
+async def test_transcript_prompts_reuses_the_streamers_parsed_transcript(
+    initialize_test_db,
+) -> None:
+    """The terminal asks ``transcript/prompts`` ~1s after every Enter. A fresh
+    parse per ask held the loop 0.8-1.6s on a live 135MB prod session (traced
+    2026-09-27). A prompt appended after the streamer's last delta is visible
+    only to a whole-file re-read, so seeing it means the action re-parsed."""
+    session_id = str(uuid.uuid4())
+    path = _write_session(session_id)
+    ap = await _running_ap(session_id)
+    await transcript_streamer_registry.notify_change(path)
+    assert transcript_streamer_registry.get_streamer(session_id) is not None
+    try:
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "sessionId": session_id, "cwd": _CWD, "type": "user",
+                "uuid": str(uuid.uuid4()), "timestamp": "2026-09-27T00:00:00.000Z",
+                "message": {"role": "user", "content": "unseen-by-streamer"},
+            }) + "\n")
+
+        fresh = await AgenticProcess.get_by_id(str(ap.id))
+        previous = get_execution_context()
+        try:
+            # The request context the router populates for ``…/transcript/prompts``.
+            async with ExecutionContext.create() as context:
+                context.request_info.sub_path = "prompts"
+                result = await fresh.transcript_action()
+        finally:
+            set_execution_context(previous)
+
+        prompts = [p["text"] for p in result.data["prompts"]]
+        assert prompts == ["go"], prompts
+    finally:
+        transcript_streamer_registry.remove(session_id)

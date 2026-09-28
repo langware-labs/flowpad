@@ -14,7 +14,7 @@ _EXPORTS = {
     "PORTABLE_ASSET_CONTRACT_VERSION": "projection",
     "PortableAssetLayout": "projection",
     "PortableAssetProjection": "projection",
-    "PortableGitOrigin": "git_origin",
+    "AssetPlacement": "projection",
     "layout_for_origin": "projection",
     "read_asset_tree": "projection",
 }

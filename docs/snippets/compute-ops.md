@@ -22,6 +22,8 @@ it.
 ## 1. An op that gets a value from a person
 
 ```python
+from flow_sdk.builtin.compute_op import ComputeOp
+
 key = await ComputeOp.by_name("get-api-key")
 answer = await key.run(approved=True)     # an AskResult
 answer.exit_code         # ExitCode.OK once a person answers
@@ -62,6 +64,9 @@ with `ran=False` and says so.
 ## 2. Asked once, never again
 
 ```python
+from flow_sdk.builtin.compute_op import ComputeOp
+
+key = await ComputeOp.by_name("get-api-key")
 answer = await key.run(approved=True)     # the completion check now passes
 answer.ok                  # True
 answer.ran                 # False — nobody was asked a second time

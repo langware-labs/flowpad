@@ -35,6 +35,7 @@ import { dockForDisplayTarget } from './display-target-pointer';
 import { isProjectHomePage, withHomePage } from '@src/project-home-page/home-page-state';
 import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
+import { openInBrowserProfile } from '@src/lib/browser-profiles';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications/notify';
 import { t } from '@lingui/core/macro';
@@ -828,15 +829,24 @@ export class NavigationActions {
   /** The system browser: a web URL as itself, anything else as the Flowpad view that presents it. */
   async openLinkInBrowser(link: string, source: Shell | null): Promise<void> {
     try {
-      if (isWebUrl(link)) {
-        openExternal(link);
-        return;
-      }
-      const dock = placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id);
-      openExternal(this.getDockUrl(dock));
+      openExternal(await this.browserUrlFor(link, source));
     } catch (error) {
       notifyLinkError(error);
     }
+  }
+
+  /** `openLinkInBrowser`, in one browser profile of this machine (`loadBrowserProfiles`). */
+  async openLinkInBrowserProfile(link: string, source: Shell | null, browser: string, profile: string): Promise<void> {
+    try {
+      await openInBrowserProfile(await this.browserUrlFor(link, source), browser, profile);
+    } catch (error) {
+      notifyLinkError(error);
+    }
+  }
+
+  private async browserUrlFor(link: string, source: Shell | null): Promise<string> {
+    if (isWebUrl(link)) return link;
+    return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
   }
 
   /**

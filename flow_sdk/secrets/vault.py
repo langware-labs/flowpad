@@ -44,6 +44,10 @@ class VaultStore(SecretStore):
     def entry(self, name: str) -> str:
         return self.config.entries.get(name) or f"{self.config.prefix}{name}"
 
+    @property
+    def where(self) -> str:
+        return ", ".join(sorted(self.config.entries.values())) or self.config.prefix
+
     async def load(self, names: Iterable[str]) -> dict[str, SecretStr]:
         return (await self.load_group([(self, list(names))]))[0]
 
@@ -83,15 +87,12 @@ class VaultStore(SecretStore):
         return out
 
     async def forget(self, names: Iterable[str]) -> tuple[list[str], list[str]]:
-        """Delete this store's entries for ``names``. A name with no entry is neither."""
+        """Delete this store's entries for ``names``. A name with no entry is neither.
+        A vault that cannot be read raises: nothing can be said about what it still holds."""
         from flow_sdk.cli.auth.secrets import delete_secret  # noqa: PLC0415
 
         names = list(names)
-        try:
-            stored = set(await asyncio.to_thread(_read_vault))
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[secrets] could not read the vault to forget values: %s", type(e).__name__)
-            return [], names
+        stored = set(await asyncio.to_thread(_read_vault))
         deleted: list[str] = []
         kept: list[str] = []
         for name in names:

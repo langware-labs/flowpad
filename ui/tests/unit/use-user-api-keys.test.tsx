@@ -27,6 +27,11 @@ const h = vi.hoisted(() => ({
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ApiKey: { generateSelfKey: h.generateSelfKey, deleteByName: h.deleteByName },
+}));
+// `useAction` reaches dataManager through its owning module, not the barrel — nothing
+// inside the SDK imports the barrel (ui/tests/unit/sdk-module-layering.test.ts).
+vi.mock('@sdk/APIEntity', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   dataManager: { callAction: h.callAction },
 }));
 vi.mock('@sdk/react/hooks', () => ({ useAuth: () => ({ user: h.user }) }));
