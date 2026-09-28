@@ -224,8 +224,18 @@ async def build_asset_menu(
     flatten(root)
     by_dir = {n.path: n for n in nodes}
 
+    # The same gate the background index applies: a folder it will not walk
+    # (a protected ~/Documents mount without consent) is not read here either.
+    # Counting it anyway advertised rows the index — and so every list — never
+    # holds, and the read itself is the one the consent exists to prevent.
+    from flow_sdk.fs_store.indexer.consent_notify import surface_pending_consent  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.special_folders import IndexDecision, gate_root  # noqa: PLC0415
+
+    walkable = [node for node in nodes if gate_root(node.path, foreground=False) is IndexDecision.WALK]
+    surface_pending_consent()
+
     catalog = await scan_path_asset_descriptors(
-        [(node.path, node.source) for node in nodes], own_project_id=str(project.id),
+        [(node.path, node.source) for node in walkable], own_project_id=str(project.id),
         types=count_types, limit=MENU_SCAN_CAP,
     )
     descriptors = catalog.assets
