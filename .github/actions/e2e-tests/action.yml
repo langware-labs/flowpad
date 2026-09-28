@@ -84,6 +84,9 @@ runs:
         MINIHUB_RELOAD: 'False'          # single process → stable PID
         FLOWPAD_SKIP_DOTENV: 'true'      # env above is authoritative
         FLOWPAD_SKIP_LOCK: 'true'        # isolated test server
+        # A fresh backend fires first-run setup on the first tab, which steers it to
+        # the wizard page. Only the first-run-setup scenario below wants that.
+        FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
       run: |
         # .venv/bin/python (not `uv run`) so $! IS the server PID —
         # launcher.json's backend_pid liveness check kill-0s this exact pid.
@@ -148,35 +151,9 @@ runs:
         MINIHUB_RELOAD: 'False'
         FLOWPAD_SKIP_DOTENV: 'true'
         FLOWPAD_SKIP_LOCK: 'true'
-      run: |
-        kill "$BACKEND_PID" 2>/dev/null || true
-        for i in $(seq 1 30); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; done
-        rm -f "$SQLITE_DATABASE_PATH"
-        rm -rf "$FLOW_HOME/instances/ci-e2e"
-        mkdir -p "$FLOW_HOME/instances/ci-e2e"
-        nohup .venv/bin/python -m flow_sdk.server.run >> backend.log 2>&1 &
-        NEW_PID=$!
-        echo "BACKEND_PID=$NEW_PID" >> "$GITHUB_ENV"
-        cat > "$FLOW_HOME/instances/ci-e2e/launcher.json" <<EOF
-        {
-          "name": "ci-e2e",
-          "backend_port": 6099,
-          "env_file": "$GITHUB_WORKSPACE/.env.ci-e2e.local",
-          "backend_pid": $NEW_PID
-        }
-        EOF
-        timeout=60
-        elapsed=0
-        until curl -fsS http://localhost:6099/api/v1/graph/bootstrap | grep -q '"types"'; do
-          if [ "$elapsed" -ge "$timeout" ]; then
-            echo "Backend did not come back within ${timeout}s."
-            tail -50 backend.log || true
-            exit 1
-          fi
-          sleep 1
-          elapsed=$((elapsed+1))
-        done
-        echo "Backend reset."
+        # No FLOWPAD_SKIP_FIRST_RUN_SETUP: the first Playwright scenario IS first-run
+        # setup, so this backend must be a fresh install whose trigger may fire.
+      run: scripts/ci_e2e_reset_backend.sh
       shell: bash
 
     - name: Start vite dev server
@@ -207,6 +184,25 @@ runs:
       run: npx playwright install --with-deps chromium
       shell: bash
       working-directory: ui
+
+    # ---- Playwright scenario: first-run setup (needs the fresh backend above) ----
+    - name: Playwright — first-run setup scenario
+      env:
+        SETUP_FE_PORT: '5099'
+      run: npx playwright test --config tests/e2e/first-run-setup/playwright.config.ts --max-failures=1
+      shell: bash
+      working-directory: ui
+
+    # First-run setup has now fired and left its wizard page as the last-active
+    # view; context folders needs a fresh database again, with setup switched off.
+    - name: Reset backend state before context folders
+      env:
+        MINIHUB_RELOAD: 'False'
+        FLOWPAD_SKIP_DOTENV: 'true'
+        FLOWPAD_SKIP_LOCK: 'true'
+        FLOWPAD_SKIP_FIRST_RUN_SETUP: 'true'
+      run: scripts/ci_e2e_reset_backend.sh
+      shell: bash
 
     - name: Playwright — context folders scenario
       env:

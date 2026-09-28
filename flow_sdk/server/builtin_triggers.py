@@ -13,6 +13,7 @@ Adding a new system trigger:
 from __future__ import annotations
 
 import logging
+import os
 import shlex
 import sys
 from pathlib import Path
@@ -31,6 +32,9 @@ if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ReturnedValue, WizardResult
 
 _log = logging.getLogger(__name__)
+
+#: Set to ``true`` on a test backend to keep the first-run llm-setup trigger from running.
+SKIP_FIRST_RUN_SETUP_ENV = "FLOWPAD_SKIP_FIRST_RUN_SETUP"
 
 
 # ── Built-in callbacks ───────────────────────────────────────────────────────
@@ -419,6 +423,13 @@ async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[Returne
 )
 async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> None:
     from flow_sdk.schema.data_spec.returned_value_spec import ExitCode  # noqa: PLC0415
+
+    # A test backend is a fresh install every run, so this would fire on the first tab of
+    # every suite, steer it to the wizard page and start installing tools on the runner.
+    # Settings → "Run setup again" calls `run_llm_setup` directly and is not gated.
+    if os.environ.get(SKIP_FIRST_RUN_SETUP_ENV, "").lower() == "true":
+        _log.info("llm setup trigger %r: skipped (%s=true)", trigger.uname, SKIP_FIRST_RUN_SETUP_ENV)
+        return
 
     wizard = await _wizard_for(trigger)
     if wizard is None:

@@ -354,7 +354,12 @@ function WizardViewerBody({
               const trail = stepIsLive ? [] : rungTrail(outcome);
               const agentExecutor = trail.includes('agent') ? agentExecutorOf(outcome) : null;
               return (
-                <li key={step_id} className="flex items-start gap-2 text-sm" data-testid={`wizard-step-${step_id}`}>
+                <li
+                  key={step_id}
+                  className="flex items-start gap-2 text-sm"
+                  data-testid={`wizard-step-${step_id}`}
+                  data-status={status || 'not_reached'}
+                >
                   <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
                   <span className="mt-0.5 shrink-0 font-mono text-xs text-muted-foreground">{step_id}</span>
                   {trail.length > 0 && (
