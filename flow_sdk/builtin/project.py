@@ -3,6 +3,7 @@ import logging
 import ntpath
 import os
 import random
+import re
 import string
 import sys
 import tempfile
@@ -163,6 +164,16 @@ _TEMP_ROOTS = frozenset(canonical_posix_path(p) for p in (tempfile.gettempdir(),
 
 class NestedProjectError(ValueError):
     """A project was about to be created inside another project's folder, or around one."""
+
+
+class DuplicateProjectNameError(ValueError):
+    """A project was about to take a name another visible project already has."""
+
+
+def project_name_key(name: str | None) -> str:
+    """The name two projects may not share: case-insensitive, and spaces, ``-`` and
+    ``_`` fold together — "GTM Studio", "gtm-studio" and "gtm_studio" are one name."""
+    return re.sub(r"[\s_\-]+", "-", (name or "").casefold()).strip("-")
 
 
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
@@ -1701,8 +1712,11 @@ class Project(Entity):
         was_create = not self.exist_in_db
         if was_create:
             await self._refuse_nested_mount()
+            await self._refuse_duplicate_name()
             await self._warn_if_mount_owned_elsewhere()
             self._ensure_mount_dir()
+        elif await self._name_changed():
+            await self._refuse_duplicate_name()
         await super().save(owner, notify=notify)
         if was_create:
             await self._stamp_index_sentinel()
@@ -1732,6 +1746,38 @@ class Project(Entity):
         result = await super().delete_by_id(eid)
         invalidate_projects_cache()
         return result
+
+    def _visible(self) -> bool:
+        """A project the user sees and names: not a hidden row (shipped, the workspace
+        root, helpdesk portals) and not a row on the temp dir."""
+        mount = self.fs_storage_mount_path or ""
+        return not is_hidden_project(mount, bool(self.system)) and mount not in _TEMP_ROOTS
+
+    async def _name_changed(self) -> bool:
+        """True when this save renames the row. Read from the stored row, not the entity
+        cache, which may already hold the new name."""
+        stored = await type(self)._db.get_by_id(str(self.id), self.type)
+        return stored is None or project_name_key(stored.name) != project_name_key(self.name)
+
+    async def _refuse_duplicate_name(self) -> None:
+        """No two visible projects share a name (see ``project_name_key``). Checked on
+        create — which is also how a folder the indexer discovers becomes a project — and
+        on rename. Rows that already collided before this rule keep saving until one of
+        them is renamed."""
+        key = project_name_key(self.name)
+        if not key or not self._visible():
+            return
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # Names are stored as typed; LIKE (case-insensitive) with the separators widened
+        # to "%" narrows to the candidates, and the key decides.
+        candidates = await type(self).get_all(QueryFilter(
+            match=ExpressionNode(op=QueryOp.LIKE, operands=["name", key.replace("-", "%")])))
+        for other in candidates:
+            if str(other.id) != str(self.id) and other._visible() and project_name_key(other.name) == key:
+                raise DuplicateProjectNameError(
+                    f"a project named {other.name!r} already exists ({other.fs_storage_mount_path}); "
+                    "project names must be unique")
 
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor
@@ -1769,8 +1815,8 @@ class Project(Entity):
     async def _warn_if_mount_owned_elsewhere(self) -> None:
         """Log (never raise) when a brand-new project lands on a folder another
         project already owns: the caller skipped ``find_by_cwd``, the natural
-        key. Names are display-only and may legitimately repeat, so they are
-        not checked. Only the indexed EQ query runs — no table scan on create."""
+        key. (Names are a separate, hard rule — ``_refuse_duplicate_name``.)
+        Only the indexed EQ query runs — no table scan on create."""
         mount = self.fs_storage_mount_path
         if not mount:
             return

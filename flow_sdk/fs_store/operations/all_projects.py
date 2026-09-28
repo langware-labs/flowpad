@@ -332,7 +332,12 @@ async def join_projects(
                 await _materialize(info, include_temp=include_temp)
             except Exception as exc:  # noqa: BLE001
                 import logging
-                logging.warning("get_all_projects: skip materialize %s: %s", info.cwd, exc)
+                from flow_sdk.builtin.project import DuplicateProjectNameError  # noqa: PLC0415 — cycle
+
+                # A folder whose name another project already has is refused, loudly:
+                # it stays unindexed until the folder (or the other project) is renamed.
+                level = logging.ERROR if isinstance(exc, DuplicateProjectNameError) else logging.WARNING
+                logging.log(level, "get_all_projects: skip materialize %s: %s", info.cwd, exc)
 
     for cwd, proj in by_cwd.items():
         if cwd in fs_by_cwd:

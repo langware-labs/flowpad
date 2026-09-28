@@ -580,7 +580,9 @@ async def test_duplicate_mount_path_resolves_to_the_same_row_everywhere(
     await first.save()
     second = Project.model_validate({"fs_storage_mount_path": cwd, "name": "twice"})
     second.id = Project.allocate_id(second.model_dump())
-    await second.save()
+    # Project.save now refuses a second "twice"; seed the legacy duplicate the way
+    # pre-rule code wrote it, straight through the entity base.
+    await super(Project, second).save()
     assert first.id != second.id
 
     infos = await ap.get_all_projects(include_temp=True, create_missing=False)

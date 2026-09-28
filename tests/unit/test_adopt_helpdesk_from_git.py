@@ -93,7 +93,8 @@ def _tracked_changes(repo: Path) -> list[str]:
 async def _project(tmp_path: Path, name: str) -> Project:
     work = tmp_path / name
     work.mkdir()
-    project = Project(name=name, fs_storage_mount_path=str(work))
+    # The test DB is shared across tests and project names are unique — keep one per test.
+    project = Project(name=f"{name}-{tmp_path.name}", fs_storage_mount_path=str(work))
     await project.save()
     return project
 

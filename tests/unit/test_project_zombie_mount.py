@@ -22,6 +22,7 @@ import pytest
 from flow_sdk.builtin.project import Project
 from flow_sdk.config import agent_workspace_root
 from flow_sdk.fs_store.fs_record import FSRecord
+from tests.unit._project_names import unique_project_name
 
 # Resolve both sides: `canonical_posix_path` resolves symlinks on the mount it
 # stores (on macOS /var -> /private/var), so an unresolved workspace root would
@@ -58,6 +59,6 @@ async def test_record_with_a_cwd_is_left_where_it_lives(tmp_path):
     """The control: with `cwd` present the real location survives."""
     real = tmp_path / "Documents" / "dev" / "flowpad-oss"
     real.mkdir(parents=True)
-    record = FSRecord(type="project", name="flowpad-oss", cwd=str(real))
+    record = FSRecord(type="project", name=unique_project_name("flowpad-oss"), cwd=str(real))
 
     assert Path(await _mount_from_record(record)).resolve() == real.resolve()
