@@ -210,3 +210,25 @@ def test_a_provider_key_is_stored_where_the_funding_resolver_reads():
 def test_lm_provider_authoring_rules_are_load_errors(override, why):
     with pytest.raises(Exception):
         CredentialSpec.model_validate({**TWILIO, **override})
+
+
+@pytest.mark.asyncio
+async def test_setup_is_the_setup_md_beside_the_manifest(folder_db, tmp_path):
+    """How to obtain the values is markdown a person reads and an agent follows — its own file."""
+    folder = _seed(tmp_path, "twilio", TWILIO)
+    (folder / "setup.md").write_text("1. Open **Console → Account**.\n", encoding="utf-8")
+
+    await _index(tmp_path)
+
+    ent = await Entity.get_by_asset_ref(str(folder))
+    assert ent.setup == "1. Open **Console → Account**."
+
+
+@pytest.mark.asyncio
+async def test_a_manifest_still_carrying_setup_inline_is_read_not_lost(folder_db, tmp_path):
+    """Written before setup became a file: read the inline value (a boot migration moves it out)."""
+    folder = _seed(tmp_path, "twilio", {**TWILIO, "setup": "Open the console."})
+
+    await _index(tmp_path)
+
+    assert (await Entity.get_by_asset_ref(str(folder))).setup == "Open the console."

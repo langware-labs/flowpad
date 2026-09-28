@@ -245,6 +245,7 @@ async def _on_server_startup():
 
     await _lift_credential_stores()
     await _lift_place_settings()
+    await _lift_credential_guides()
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_keep_alive_loop()
@@ -428,6 +429,12 @@ async def _lift_place_settings() -> None:
     """A data source's per-machine settings move out of ``data_source.json`` into its credential — before
     any source reads them (``migration_2026_09_place_settings``)."""
     await _boot_lift("migration_2026_09_place_settings", "Place settings")
+
+
+async def _lift_credential_guides() -> None:
+    """An authored credential's inline guide moves into ``setup.md`` beside it
+    (``migration_2026_09_credential_setup_md``)."""
+    await _boot_lift("migration_2026_09_credential_setup_md", "Credential guides")
 
 
 async def _prune_retired_type_rows() -> None:

@@ -49,7 +49,12 @@ def _sources(monkeypatch, *providers: str) -> None:
 async def test_every_shipped_credential_carries_setup_instructions():
     repo_packs = Path(__file__).parents[3] / "agentic-assets/credential"
     folders = [*SHIPPED.values(), *(repo_packs.iterdir() if repo_packs.is_dir() else [])]
-    manifests = [json.loads((f / "credential.json").read_text()) for f in folders if (f / "credential.json").is_file()]
+    manifests = [
+        # setup.md beside the manifest; a pack written before that carries it inline (read the same way).
+        {**(doc := json.loads((f / "credential.json").read_text())),
+         "setup": (f / "setup.md").read_text() if (f / "setup.md").is_file() else str(doc.get("setup") or "")}
+        for f in folders if (f / "credential.json").is_file()
+    ]
     assert manifests
     bare = [m["name"] for m in manifests if not str(m.get("setup") or "").strip()]
     assert bare == [], "a credential Flowpad ships must say how to obtain and store its values"

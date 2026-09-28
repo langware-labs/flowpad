@@ -13,6 +13,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import assert_value_free, is_valid_env_var
+from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec, unique_stages
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -70,11 +71,13 @@ class CredentialSpec(DataSpec):
     manifest_schema: int = Field(default=0, alias="schema", validate_default=True)
     help_url: str = ""
     setup_wiki: str = ""
-    #: How to obtain the values and store them, written for an AGENT to follow (markdown): where the
-    #: key is created, what to click, and the ``flow credentials set <name> --stdin`` it is piped into.
-    #: Authoring requires it (``credential_service.save_credential``); a pack read from disk without
-    #: it still loads — ``flow project setup`` reports it, and offers no AI setup for it.
-    setup: str = ""
+    #: How to obtain the values and store them — the file ``setup.md`` beside ``credential.json``,
+    #: markdown a person follows by hand (the setup dialog and the credential page show it) and an agent
+    #: follows too: where each value is created, what to click, and the
+    #: ``flow credentials set <name> --stdin`` it is piped into. Authoring requires it
+    #: (``credential_service.save_credential``); a pack read from disk without it still loads —
+    #: ``flow project setup`` reports it, and offers no AI setup for it.
+    setup: Text = ""
     #: The LLM provider this credential's single key funds. Its value always lives in the vault
     #: entry the funding resolver reads (``lm_api.<provider>``), whatever a deployment says.
     lm_provider: str = ""
