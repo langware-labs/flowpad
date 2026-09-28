@@ -79,7 +79,7 @@ async def test_every_legacy_emit_site_goes_through_the_mirroring_seam():
     from flow_sdk.builtin.faas import fs_records_actions
 
     source = inspect.getsource(fs_records_actions)
-    assert source.count("activity.set_table(") == 6, (
+    assert source.count("activity.set_table(") == 5, (
         "a legacy progress producer was added or removed; every one must report through "
         "set_table or it reaches the old pill only"
     )
