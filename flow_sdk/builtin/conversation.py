@@ -629,6 +629,92 @@ class Conversation(ProjectedFields, Entity):
             if fm.body_status == BodyStatus.UPLOADING:
                 await _upload_body_and_finalize(fm, self.id)
 
+    # ------------------------------------------------------------------ invite conversation
+    #
+    # The sharer's client (not the hub) writes the invite conversation of a project
+    # share: ``open_invite_conversation`` creates a ROOT-level hub conversation owned
+    # by the sharer, the caller grants the recipient (a person as a second target on
+    # their project invite, a team as a group principal), and only then
+    # ``post_invite_message`` sends the one message — so an auto-accepted invitee is
+    # already a member and receives it live. Root-level on purpose: a project's child
+    # conversation is readable by every project member, which would leak the note.
+    # The join lives here, not in ``Project``, because the share identity test forbids
+    # ``/join`` in the project share path.
+
+    @classmethod
+    async def open_invite_conversation(cls, title: str, client) -> "Conversation":
+        """Create a local conversation, publish it root-level on the hub and join it.
+
+        ``client`` is the caller's open ``FlowpadClient``. Raises when the hub
+        refuses the create or the join; nothing is left half-owned, because the
+        join (which stamps ``initiated_by``) directly follows the create.
+        """
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+        conv = cls.model_validate({"title": title, "status": "open"})
+        conv.id = cls.allocate_id(conv.model_dump())
+        local = await User.get_local()
+        await conv.save(str(local.typeid) if local else None)
+        await Entity.share(conv)
+        await client.post(f"/graph/conversation/{conv.id}/join", {})
+        conv.remote = True
+        await conv.save(str(local.typeid) if local else None)
+        return conv
+
+    async def post_invite_message(self, text: str, reference: str) -> "FlowMessage":
+        """Send the invite message — ``text`` plus a TYPE_ID ``reference``
+        (``project-<id>``) — through the normal send pipeline.
+
+        Header first, then the body bundle: the hub stamps a client-sent TYPE_ID
+        message ``uploading`` and receivers wait for READY, so the body upload is
+        what lets the Install chip resolve. Raises on a refused header or a failed
+        upload instead of logging, so the caller can report the recipient's outcome.
+        """
+        from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
+            _append_message_to_conversation,
+            _attach_asset_references,
+            _build_reply_flow_message,
+            _send_conversation_message_header,
+        )
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+        sender = await User.current_sender_participant()
+        local = await User.get_local()
+        someone_typeid = str(local.typeid) if local else None
+        fm = _build_reply_flow_message(
+            conv_id=self.id,
+            message=text,
+            sender_id=sender.get("user_id") or None,
+            sender_name=sender.get("name") or "",
+        )
+        await _attach_asset_references(fm, [reference])
+        fm.body_status = BodyStatus.UPLOADING
+        fm = await fm.save(someone_typeid)
+        await _append_message_to_conversation(conv=self, fm_id=fm.id, someone_typeid=someone_typeid)
+        if not await _send_conversation_message_header(self, fm):
+            raise RuntimeError(f"the hub did not accept the invite message in conversation {self.id}")
+        fm.remote = True
+        await fm.save()
+        await fm.upload_body()
+        await fm.save()
+        return fm
+
+    async def discard_invite_conversation(self, client) -> None:
+        """Delete an invite conversation whose grant failed — the hub row (the
+        sharer owns it once joined) and the local row — so a refused invite leaves
+        no empty conversation behind. Best-effort on each side."""
+        try:
+            response = await client.request("DELETE", f"/graph/conversation/{self.id}")
+            if response.status_code >= 400:
+                logging.warning("[invite] hub delete of conversation %s answered %s", self.id, response.status_code)
+        except Exception as e:  # noqa: BLE001
+            logging.warning("[invite] hub delete of conversation %s failed: %s", self.id, e)
+        try:
+            await self.delete()
+        except Exception as e:  # noqa: BLE001
+            logging.warning("[invite] local delete of conversation %s failed: %s", self.id, e)
+
     async def ensure_message_edges(self) -> dict:
         """Backfill parent→message ``is_child`` edges from what we already know.
 
