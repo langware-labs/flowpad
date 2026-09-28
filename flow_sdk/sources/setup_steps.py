@@ -4,11 +4,10 @@ A connection comes with wizards (``setup_wizards``); their ops are shell one-lin
 the provider — "is this app id real", "subscribe this number's webhook" — has to reach the driver's own
 code. The driver declares that code here, the machinery asks:
 
-    class WhatsAppSource(MessageSource):
-        @setup_step("number")
-        async def _number(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue: ...
+    @setup_step("account")
+    async def _account(self, *, check: bool, values: Mapping[str, str]) -> ReturnedValue: ...
 
-``flow source step <source> number [--check]`` (``DataSource.step``) opens the source — its config may still
+``flow source step <source> account [--check]`` (``DataSource.step``) opens the source — its config may still
 be incomplete, that is what setup is for — and calls it. ``check`` asks only whether the goal already holds
 (the op's completion check); without it the step does the work. ``values`` are what the wizard's asks bound.
 
