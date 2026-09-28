@@ -1,5 +1,3 @@
-# WhatsApp (official Cloud API)
-
 The values a WhatsApp channel sends and receives with. The **Add channel → WhatsApp** setup asks for each
 one in turn and stores it here; this page is the whole picture.
 
