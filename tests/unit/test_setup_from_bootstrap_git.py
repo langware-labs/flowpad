@@ -510,7 +510,7 @@ def test_an_empty_reservation_is_not_a_collision(tmp_path: Path, monkeypatch) ->
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    monkeypatch.setattr("flow_sdk.config.AGENT_MOUNT_FOLDER", str(workspace))
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
 
     # Nothing there yet → the plain name.
     assert fresh_clone_slot("acme").name == "acme"

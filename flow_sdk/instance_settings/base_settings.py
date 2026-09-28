@@ -513,6 +513,19 @@ class BaseInstanceSettings:
         return self.instances_root / self.instance_name
 
     @property
+    def workspace_root(self) -> Path:
+        """Where this instance's projects live — the agent mount ROOT.
+
+        ``~/Flowpad workspace`` is prod's. Any other instance sharing the user's
+        home (``oss``, ``dev-1``, an e2e ``test-*``) gets ``~/Flowpad workspaces/<name>``,
+        so nothing it creates lands among the user's real projects. Not under the
+        instance dir: nothing under ``flow_home`` may be a project (``is_protected_path``).
+        """
+        if self.instance_name == "prod":
+            return self.user_home / "Flowpad workspace"
+        return self.user_home / "Flowpad workspaces" / self.instance_name
+
+    @property
     def deepagents_data_dir(self) -> Path:
         """The Deep Agents worker's session store (one LangGraph checkpoint DB per session).
 

@@ -27,7 +27,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
-from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider, is_hidden_project
+from flow_sdk.config import PLATFORM_WIN32, StorageProvider, is_hidden_project
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
@@ -148,6 +148,13 @@ def _detach_git_history(repo_root: Path) -> None:
     import subprocess  # noqa: PLC0415
 
     subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
+
+
+def _workspace_root() -> Path:
+    """This instance's agent mount root, read at call time (see ``agent_workspace_root``)."""
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+
+    return agent_workspace_root()
 
 
 #: A row on a temp ROOT is not a real work folder, so it is no one's parent project.
@@ -683,7 +690,7 @@ class Project(Entity):
                 # Name is a VFS-relative path - convert to absolute OS path
                 # VFS root maps to OS root ("/" on Unix, "C:\" on Windows)
                 if sys.platform == PLATFORM_WIN32:
-                    drive = os.path.splitdrive(AGENT_MOUNT_FOLDER)[0]
+                    drive = os.path.splitdrive(str(_workspace_root()))[0]
                     os_root = drive + os.sep
                 else:
                     os_root = os.sep
@@ -693,7 +700,7 @@ class Project(Entity):
             else:
                 # Simple name like "my_first_project"
                 leaf = os.path.basename(self.name)
-                self.fs_storage_mount_path = os.path.join(AGENT_MOUNT_FOLDER, leaf)
+                self.fs_storage_mount_path = os.path.join(str(_workspace_root()), leaf)
 
         # Retain protected legacy paths so the model carries one truthful source
         # value. They remain readable for cleanup/migration, but must never be
@@ -942,7 +949,7 @@ class Project(Entity):
 
         # A record with no path is LOCATIONLESS — never fall through to a
         # construction from `name`. `set_fs_storage_mount_path`'s simple-name
-        # branch would root it at `<AGENT_MOUNT_FOLDER>/<name>`, which for any
+        # branch would root it at `<agent_workspace_root()>/<name>`, which for any
         # project living outside the agent workspace silently RELOCATES it
         # there; the next PTY spawn (`os.makedirs(cwd)`) then materializes that
         # folder, so deleting it never sticks. A project whose record lost its
