@@ -46,7 +46,6 @@ from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.core.compute.process_step import launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.schema.data_spec.compute_op_spec import (
-    ASK_TIMEOUT_SECONDS,
     CHECK_TIMEOUT,
     AgentOp,
     AskOp,
@@ -135,9 +134,10 @@ async def run_op(
     #: Run IN this process instead of spawning one — ``answer.executor`` from
     #: an earlier agent op. The op says WHAT; this says WHERE.
     executor: Optional[str] = None,
-    #: How long a person is given. A caller may give LESS than the product
-    #: default; there is no way to give more from here.
-    ask_timeout: float = ASK_TIMEOUT_SECONDS,
+    #: How long a person is given — any span, longer or shorter than the product
+    #: default. ``None`` leaves it to the op (its own ``timeout_seconds``, else
+    #: ``ASK_TIMEOUT_SECONDS``). A wizard is resumable, so a long wait costs nothing.
+    ask_timeout: Optional[float] = None,
     shell: Shell = run_shell,
     launch: Launch = launch_step_process,
     on_status: Optional[Callable[[str], None]] = None,
@@ -191,8 +191,18 @@ async def run_op(
         return _with_value(spec, done, said=after)
     return call.model_copy(update={
         "exit_code": ExitCode.NOT_YET, "value": None, "check": after,
-        "detail": f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.",
+        "detail": f"{spec.display_label}: {_reason(call) or f'the {spec.subkind} call ran, but the check still fails.'}",
     })
+
+
+def _reason(call: ReturnedValue) -> str:
+    """A call that FAILED says why on its last stderr line ("Meta refused that App ID …"): that sentence is
+    the person's next step, and the generic "the check still fails" would bury it. A call that succeeded
+    but did not reach the goal has no reason of its own to give."""
+    if call.exit_code is ExitCode.OK:
+        return ""
+    lines = [line.strip() for line in str(getattr(call, "stderr", "") or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
 
 
 def refused_for(spec: ComputeOpSpec) -> ReturnedValue:
@@ -228,6 +238,12 @@ def _already(spec: ComputeOpSpec, said: CliResult) -> ReturnedValue:
     try:
         value = to_declared(value_from_stdout(said.stdout), spec.output_spec_kind)
     except DeclaredShapeError as error:
+        if not spec.exe_data.VALUE_FROM_CHECK:
+            # An ask whose check is the GOAL's ("the credential is stored", "the app
+            # is known"), not a read of the value: the goal holds, so nobody is asked
+            # — and there is no value to hand on, which is not a failure. This is
+            # what lets a wizard be run again and resume past answered questions.
+            return done
         # The goal holds but the check did not print what the op promises to
         # return — the document disagreeing with itself. Say so.
         return answer.not_yet(
@@ -277,7 +293,7 @@ async def _cli(spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Option
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
-async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], None], **_: Any) -> AskResult:
+async def _ask(spec: ComputeOpSpec, *, ask_timeout: Optional[float], say: Callable[[str], None], **_: Any) -> AskResult:
     """Put the op's declared output to a person and wait a bounded time.
 
     Asked here when this process is the backend the answer reaches; handed to
@@ -285,14 +301,16 @@ async def _ask(spec: ComputeOpSpec, *, ask_timeout: float, say: Callable[[str], 
     """
     from flow_sdk.core.compute_op.ask import ask_person, ask_through_backend, served_here  # noqa: PLC0415
 
-    # The person gets the SHORTEST of: what the op asks for, what the caller
-    # allows, and the product default. Nothing here lengthens it.
-    timeout = min(spec.exe_data.timeout(), ask_timeout, ASK_TIMEOUT_SECONDS)
+    # The caller's span when it gives one, else the op's own, else the product
+    # default. An override may be longer than the default: a person working in
+    # another application (a provider's dashboard) takes minutes, and a wizard
+    # that runs out of time is simply resumed.
+    timeout = ask_timeout if ask_timeout is not None else spec.exe_data.timeout()
     say(f"{spec.display_label}: waiting for you…")
     ask = ask_person if served_here() else ask_through_backend
     return await ask(
         spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind,
-        timeout=timeout, label=spec.display_label, secret=spec.exe_data.secret,
+        timeout=timeout, label=spec.display_label, secret=spec.exe_data.secret, guide=spec.setup or "",
     )
 
 

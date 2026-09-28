@@ -14,8 +14,6 @@ export interface Browser {
   profiles: BrowserProfile[];
 }
 
-let loaded: Promise<Browser[]> | null = null;
-
 /** Only a backend on the user's own machine can see — and launch — their browsers. */
 function backendIsOnThisMachine(): boolean {
   const kind = dataContext.runtimeKind;
@@ -23,28 +21,20 @@ function backendIsOnThisMachine(): boolean {
 }
 
 /**
- * The installed browsers and their profiles, fetched once per session. A failed fetch is
- * forgotten so the next caller retries; off the user's machine it is `[]` without asking.
+ * The installed browsers and their profiles, asked fresh each time — a profile added a minute ago shows on
+ * the next right-click. `[]` off the user's machine (without asking) or when the backend cannot list them.
  */
-export function loadBrowserProfiles(): Promise<Browser[]> {
-  if (!backendIsOnThisMachine()) return Promise.resolve([]);
-  loaded ??= apiClient.get<{ browsers: Browser[] }>('/api/v1/browser-profiles').then(
-    (res) => res.browsers,
-    (error: unknown) => {
-      loaded = null;
-      console.warn('[browser-profiles] could not list browser profiles', error);
-      return [];
-    },
-  );
-  return loaded;
+export async function fetchBrowserProfiles(): Promise<Browser[]> {
+  if (!backendIsOnThisMachine()) return [];
+  try {
+    return (await apiClient.get<{ browsers: Browser[] }>('/api/v1/browser-profiles')).browsers;
+  } catch (error) {
+    console.warn('[browser-profiles] could not list browser profiles', error);
+    return [];
+  }
 }
 
 /** Open a web URL in one browser profile. Rejects with the backend's reason. */
 export async function openInBrowserProfile(url: string, browser: string, profile: string): Promise<void> {
   await apiClient.post('/api/v1/browser-profiles/open', { browser, profile, url });
-}
-
-/** For tests: forget the session's list. */
-export function resetBrowserProfiles(): void {
-  loaded = null;
 }

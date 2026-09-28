@@ -1,0 +1,22 @@
+{
+  "type": "compute_op",
+  "id": "42fac849-a92f-4ecf-ad3b-5923c365921e",
+  "name": "whatsapp-ask-phone-number-id",
+  "label": "Phone number ID",
+  "description": "Phone number ID, for the number step.",
+  "subkind": "ask",
+  "output_spec_kind": "string",
+  "exe_data": {
+    "prompt": "The test number's Phone number ID",
+    "secret": false,
+    "timeout_seconds": 1800
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE number --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

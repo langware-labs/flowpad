@@ -1,5 +1,6 @@
 """Portable asset bundle byte operations; no message or entity dependencies."""
 import filecmp
+import json
 import logging
 import shutil
 from pathlib import Path
@@ -202,7 +203,11 @@ def _attachment_snapshot(entry_dir: Path, entry_type: str) -> "tuple[str | None,
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     info = SchemaRegistry.get(entry_type)
-    main_file = getattr(info, "main_file", None) if info else None
+    # The main document the type's shape names (``SKILL.md``, ``agent.json``) —
+    # without it an agent was named after the first ``*.md`` it carried, its
+    # ``system_prompt``.
+    shape = getattr(info, "shape", None) if info else None
+    main_file = getattr(shape, "main", None) if shape is not None else None
     # Early-stop lookups (no full-tree listing): an attachment carrying a large
     # resource tree must not be walked whole on the sync path.
     main_path = None
@@ -222,8 +227,12 @@ def _attachment_snapshot(entry_dir: Path, entry_type: str) -> "tuple[str | None,
     description: str | None = None
     if main_path is not None:
         try:
-            fm_text = _extract_frontmatter(main_path.read_text(encoding="utf-8", errors="replace"))
-            meta = _yaml_load(fm_text) if fm_text else None
+            text = main_path.read_text(encoding="utf-8", errors="replace")
+            if main_path.suffix == ".json":
+                meta = json.loads(text)
+            else:
+                fm_text = _extract_frontmatter(text)
+                meta = _yaml_load(fm_text) if fm_text else None
             if isinstance(meta, dict):
                 name = str(meta.get("name") or meta.get("title") or name or "") or name
                 raw_desc = meta.get("description")

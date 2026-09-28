@@ -1,4 +1,4 @@
-"""`flow snippet run` — run a snippet exactly as the snippet view's Run button does.
+"""`flow snippet run` / `flow snippet check` — what the snippet view's Run button and problem markers do.
 
 In-process (no server): the same ``run_snippet`` the route calls, so what an
 agent sees here is what the user sees under the editor. Prints the
@@ -32,3 +32,21 @@ def run(
     result = asyncio.run(run_snippet(Path(path).expanduser(), timeout_seconds=timeout))
     typer.echo(json.dumps(result.model_dump(mode="json")))
     raise typer.Exit(int(result.exit_code))
+
+
+@snippet_app.command("check", help="Check a snippet file for what would stop it (syntax, undefined names, imports); prints the problems as JSON.")
+def check(
+    path: Annotated[str, typer.Argument(help="Snippet file (.py; other languages answer no problems).")],
+    timeout: Annotated[float, typer.Option("--timeout", min=0.1, max=600, help="Seconds before the check is abandoned.")] = 30.0,
+) -> None:
+    """Exit 0 when the file is clean, 1 when it has problems, 4 when there is no such file — the same
+    check the viewer marks its regions with, on the interpreter the Run button uses."""
+    from flow_sdk.core.snippet import check_snippet  # noqa: PLC0415
+
+    target = Path(path).expanduser()
+    if not target.is_file():
+        typer.echo(json.dumps({"ok": False, "error": f"no such file: {target}"}))
+        raise typer.Exit(4)
+    found = asyncio.run(check_snippet(target, timeout_seconds=timeout))
+    typer.echo(json.dumps({"ok": not found, "diagnostics": [d.model_dump() for d in found]}))
+    raise typer.Exit(1 if found else 0)

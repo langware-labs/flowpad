@@ -1,0 +1,305 @@
+{
+  "hcode-gmail": {
+    "opening": "gmail",
+    "md": [
+      0
+    ]
+  },
+  "hcode-slack": {
+    "opening": "slack"
+  },
+  "hcode-telegram": {
+    "opening": "telegram"
+  },
+  "hcode-whatsapp": {
+    "opening": "whatsapp"
+  },
+  "op-dataspec": {
+    "doc": "data-spec.md",
+    "heading": "7. One value, fields and documents",
+    "nth": 0,
+    "md": [
+      1
+    ]
+  },
+  "op-process": {
+    "doc": "processes.md",
+    "heading": "1. Give one process an MCP server",
+    "nth": 0,
+    "md": [
+      2
+    ]
+  },
+  "op-chain": {
+    "doc": "processes.md",
+    "heading": "4. Typed folder in, typed folder out",
+    "nth": 0,
+    "md": [
+      3
+    ]
+  },
+  "sc-1": {
+    "doc": "secret-stores.md",
+    "heading": "1. A store: load, save, validate",
+    "nth": 0,
+    "md": [
+      4
+    ]
+  },
+  "sc-2": {
+    "doc": "secret-stores.md",
+    "heading": "6. Connections \u2014 the same pattern, for accounts",
+    "nth": 1,
+    "md": [
+      5
+    ]
+  },
+  "cn-families": {
+    "doc": "data-sources.md",
+    "heading": "13. Three families: files, records, messages",
+    "nth": 0,
+    "md": [
+      6
+    ]
+  },
+  "si-0": {
+    "doc": "data-sources.md",
+    "heading": "10. A source behind a connection: Google Drive",
+    "nth": 0,
+    "md": [
+      7
+    ]
+  },
+  "si-1": {
+    "doc": "data-sources.md",
+    "heading": "13. Three families: files, records, messages",
+    "nth": 1,
+    "md": [
+      8
+    ]
+  },
+  "si-2": {
+    "doc": "workflows.md",
+    "heading": "3. The same loop in a Slack channel",
+    "nth": 0,
+    "md": [
+      9
+    ]
+  },
+  "ag-0": {
+    "doc": "data-spec.md",
+    "heading": "8. An agent is a DataSpec",
+    "nth": 0,
+    "md": [
+      10
+    ]
+  },
+  "ag-1": {
+    "doc": "agents-on-channels.md",
+    "heading": "4. A phone agent",
+    "nth": 0,
+    "md": [
+      11
+    ]
+  },
+  "ag-2": {
+    "doc": "agent-deployment.md",
+    "heading": "7. Run it on this computer \u2014 a process per deployment",
+    "nth": 0,
+    "md": [
+      12
+    ]
+  },
+  "c2-shapes-0": {
+    "doc": "data-spec.md",
+    "heading": "2. A shape written in a document",
+    "nth": 0,
+    "md": [
+      13
+    ]
+  },
+  "c2-shapes-1": {
+    "doc": "data-spec.md",
+    "heading": "2. A shape written in a document",
+    "nth": 3,
+    "md": [
+      14
+    ]
+  },
+  "c2-shapes-2": {
+    "doc": "data-spec.md",
+    "heading": "5. A field that is a file",
+    "nth": 0,
+    "md": [
+      15
+    ]
+  },
+  "c2-shapes-3": {
+    "doc": "data-spec.md",
+    "heading": "6. Identity",
+    "nth": 0,
+    "md": [
+      16
+    ]
+  },
+  "c2-files-0": {
+    "doc": "data-sources.md",
+    "heading": "6. Write items in from outside a driver",
+    "nth": 0,
+    "md": [
+      17
+    ]
+  },
+  "c2-files-1": {
+    "doc": "data-sources.md",
+    "heading": "3. Search what landed",
+    "nth": 0,
+    "md": [
+      18
+    ]
+  },
+  "c2-files-2": {
+    "doc": "rag.md",
+    "heading": "At a glance: search a folder by meaning",
+    "nth": 0,
+    "md": [
+      19
+    ]
+  },
+  "c2-agents-1": {
+    "doc": "message-block.md",
+    "heading": "Simple message block",
+    "nth": 0,
+    "md": [
+      20
+    ]
+  },
+  "c2-agents-2": {
+    "doc": "processes.md",
+    "heading": "2. Give an agent an MCP server, inherited by every process it spawns",
+    "nth": 0,
+    "md": [
+      21
+    ]
+  },
+  "c2-agents-3": {
+    "doc": "llm-endpoints.md",
+    "heading": "1. From the environment, with no database",
+    "nth": 0,
+    "md": [
+      22
+    ]
+  },
+  "c2-orchestration-0": {
+    "doc": "workflows.md",
+    "heading": "1. Mail concierge",
+    "nth": 1,
+    "md": [
+      23
+    ]
+  },
+  "c2-orchestration-1": {
+    "doc": "compute-ops.md",
+    "heading": "1. An op that gets a value from a person",
+    "nth": 0,
+    "md": [
+      24
+    ]
+  },
+  "c2-orchestration-2": {
+    "doc": "compute-ops.md",
+    "heading": "2. Asked once, never again",
+    "nth": 0,
+    "md": [
+      25
+    ]
+  },
+  "c2-orchestration-3": {
+    "doc": "call-returns.md",
+    "heading": "5. Nothing raises for an outcome",
+    "nth": 0,
+    "md": [
+      26
+    ]
+  },
+  "c2-sources-0": {
+    "doc": "data-sources.md",
+    "heading": "1. Connect a feed and sync it once",
+    "nth": 0,
+    "md": [
+      27
+    ]
+  },
+  "c2-sources-1": {
+    "doc": "data-sources.md",
+    "heading": "7. Operate a source",
+    "nth": 0,
+    "md": [
+      28
+    ]
+  },
+  "c2-sources-2": {
+    "doc": "data-sources.md",
+    "heading": "14. Write your own driver",
+    "nth": 0,
+    "md": [
+      29
+    ]
+  },
+  "c2-channels-0": {
+    "doc": "agents-on-channels.md",
+    "heading": "2. Variant A \u2014 the app answers",
+    "nth": 0,
+    "md": [
+      30
+    ]
+  },
+  "c2-channels-1": {
+    "doc": "pipes.md",
+    "heading": "5. An agent on several sources",
+    "nth": 0,
+    "md": [
+      31
+    ]
+  },
+  "c2-connections-1": {
+    "doc": "connections.md",
+    "heading": "Require and use a held connection",
+    "nth": 0,
+    "md": [
+      32
+    ]
+  },
+  "c2-credentials-1": {
+    "doc": "secret-stores.md",
+    "heading": "1. A store: load, save, validate",
+    "nth": 0,
+    "md": [
+      33
+    ]
+  },
+  "c2-ship-0": {
+    "doc": "agent-deployment.md",
+    "heading": "1. Place the agent",
+    "nth": 0,
+    "md": [
+      34
+    ]
+  },
+  "c2-ship-1": {
+    "doc": "agent-deployment.md",
+    "heading": "7. Run it on this computer \u2014 a process per deployment",
+    "nth": 0,
+    "md": [
+      35
+    ]
+  },
+  "c2-ship-2": {
+    "doc": "agent-deployment.md",
+    "heading": "6. Serve it your way \u2014 you pick the channels and the routing",
+    "nth": 0,
+    "md": [
+      36
+    ]
+  }
+}

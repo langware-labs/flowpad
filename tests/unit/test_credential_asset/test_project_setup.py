@@ -139,7 +139,8 @@ async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, 
     ]
     assert {s.on_fail for s in wizard.steps} == {"continue"}, "one credential nobody can provide stops nothing"
     ask = ops["ask-telegram-TELEGRAM_BOT_TOKEN"]
-    assert ask.exe_data.secret and ask.completion_check is None
+    assert ask.exe_data.secret
+    assert ask.completion_check == ops["store-telegram"].completion_check, "a resumed run asks nobody once stored"
     assert wizard.steps[1].bind == "telegram__TELEGRAM_BOT_TOKEN"
     store, ai = ops["store-telegram"], ops["ai-telegram"]
     assert store.completion_check == ai.completion_check, "the AI rung skips itself when the key step got there"
@@ -249,7 +250,12 @@ async def test_an_empty_answer_hands_the_credential_to_the_ai_setup(project, tem
     assert "never print" in call["prompt"].lower() and f"--project {project.id} --stdin" in call["prompt"]
     assert "VAR=<value>" not in call["prompt"], "the store command never takes a value as an argument"
     assert all(TOKEN not in " ".join(argv) for argv in cli["ran"]), "the agent's value never reached an argv"
-    assert "left empty" in out and "✗  Store Telegram bot: the cli call ran" in out
+    assert "·  Telegram bot: Bot token: left empty" in out
+    # A failed call lends its own last words to the line, so the person reads the store
+    # command's refusal rather than the runner's generic sentence. That sentence is still
+    # right for a call that SUCCEEDED without reaching its goal, which this is not.
+    assert '✗  Store Telegram bot: {"ok": false, "error_code": "NO_VALUE"' in out
+    assert "the cli call ran" not in out, "the generic sentence is back over the call's own reason"
     assert "✓  AI setup: Telegram bot: done" in out
     assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN
 

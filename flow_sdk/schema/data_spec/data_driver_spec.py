@@ -7,6 +7,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec, validate_permission
+from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec, unique_stages
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 
@@ -211,6 +212,13 @@ class DataDriverSpec(DataSpec):
     #: This driver takes provider pushes: which ``auth.vars`` key holds the machine's public webhook URL, and
     #: what a genuine delivery looks like. A cloud deployment gets a hub webhook for it (``webhook_spec.py``).
     webhook: Optional[DriverWebhookSpec] = None
+    #: The wizards a source of this driver is set up with, in order (``setup_stage_spec.py``).
+    setup_wizards: list[SetupStageSpec] = Field(default_factory=list)
+
+    @field_validator("setup_wizards")
+    @classmethod
+    def _stages_unique(cls, value: list[SetupStageSpec]) -> list[SetupStageSpec]:
+        return unique_stages(value)
 
     @model_validator(mode="after")
     def _webhook_url_is_a_var(self) -> "DataDriverSpec":

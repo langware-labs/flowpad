@@ -29,8 +29,28 @@ from flow_sdk.instances.atomic import locked, read_json, write_json_atomic
 STATE_FILENAME = "run.json"
 
 
+def run_key(wizard_id: str, target: str = "") -> str:
+    """Which run a caller means: the wizard's own, or its run FOR one target entity.
+
+    A setup wizard is declared once and run once per thing it sets up — two agents'
+    WhatsApp channels are two runs of one wizard, each with its own answers, its own
+    slot and its own resume point. The target's run lives in a folder INSIDE the
+    wizard's (``<wizard_id>/<target>``), so the wizard's approval — a fact about the
+    wizard, kept in its own ``run.json`` — is never copied into a target's.
+
+    Every function below takes this key where it says ``wizard_id``. An empty target
+    is today's one-run-per-wizard layout, unchanged.
+    """
+    return f"{wizard_id}/{target_segment(target)}" if target else str(wizard_id)
+
+
+def target_segment(target: str) -> str:
+    """A target (a typeid such as ``data_source:<uuid>``) as ONE path segment on every OS."""
+    return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(target))
+
+
 def run_dir(wizard_id: str) -> Path:
-    """This wizard's run folder — also the cwd its command steps execute in."""
+    """This run's folder (see :func:`run_key`) — also the cwd its command steps execute in."""
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     return Path(get_instance_settings().flow_home) / "wizard-runs" / str(wizard_id)

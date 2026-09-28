@@ -5,6 +5,7 @@ import { ProjectGitChip, type GitCheck } from '@src/components/project-home/Proj
 import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
+import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
 import { GitShareGateDialog } from '@src/components/share-to-conversation/GitShareGateDialog';
 import type { GitShareGate } from '@src/hooks/use-git-share-gate';
 import { invalidateGitPreflight } from '@src/hooks/use-git-share-preflight';
@@ -239,6 +240,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
                 <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
                 {project && <ProjectCloudLinkButton project={project} />}
                 <ProjectPublishedButton projectId={projectTypeId.id} />
+                <ProjectUploadMessageButton projectId={projectTypeId.id} />
               </>
             )}
           </div>

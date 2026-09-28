@@ -360,9 +360,10 @@ class RagIndex(Entity):
         if refusal:
             report.errors.append(refusal)
             return report
-        embed, model = await reconcile.embedder_for(self)
-        if embed is None:
-            report.errors.append("no embedding endpoint is available on this machine")
+        try:
+            embed, model = await reconcile.embedder_for(self)
+        except reconcile.EmbeddingUnavailable:
+            report.errors.append(reconcile.NO_EMBEDDING)
             return report
 
         weight: dict[str, int] = {}
@@ -402,12 +403,11 @@ class RagIndex(Entity):
         return report
 
     async def search(self, question: str, *, top_k: int = 5) -> list[Any]:
-        """Nearest chunks to *question*, best first. Empty when nothing funds an embedding."""
+        """Nearest chunks to *question*, best first. ``EmbeddingUnavailable`` when nothing funds an
+        embedding — an empty answer would read as "nothing matched", which is a different fact."""
         from flow_sdk.rag import reconcile  # noqa: PLC0415
 
         embed, _model = await reconcile.embedder_for(self)
-        if embed is None:
-            return []
         vectors = await embed([question])
         async with self.open_store() as store:
             return store.search(vectors[0], top_k=top_k)

@@ -64,7 +64,7 @@ def _node_dirs() -> "list[Path]":
 
 #: How long a person gets in THIS test. Shorter than the product default so a
 #: driver that never finds the window fails the test instead of holding it.
-#: Nothing here lengthens ASK_TIMEOUT_SECONDS.
+#: Each test passes its own short span; none relies on ASK_TIMEOUT_SECONDS.
 ASK_BUDGET = 45.0
 
 

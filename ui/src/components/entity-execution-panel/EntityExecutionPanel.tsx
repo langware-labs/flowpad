@@ -7,6 +7,7 @@ import {
   type StatusBearingProcess,
   TypeId,
   type FlowData,
+  type AgenticContext,
 } from '@sdk';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 import { appendUploadedFileRefs, uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
@@ -239,7 +240,7 @@ interface EntityExecutionPanelProps {
    * bypasses the current process so the send lazy-creates a fresh one — one
    * process per run, so each run is its own history entry.
    */
-  autoPrompt?: { text: string; nonce: number; newSession?: boolean } | null;
+  autoPrompt?: { text: string; nonce: number; newSession?: boolean; files?: File[] } | null;
   /**
    * Extra context prepended to the NEXT user prompt (e.g. an element the user
    * selected on a previewed web app). Rendered as a dismissible chip above the
@@ -267,6 +268,17 @@ interface EntityExecutionPanelProps {
    * duration. Not for turn-busy: a busy turn still accepts input (it enqueues).
    */
   composerDisabled?: boolean;
+  /**
+   * Narrows the panel to ONE context among the target's processes: only
+   * processes whose `context_key` equals it are picked, and a new process is
+   * stamped with it. The Flowpad Assistant keeps one chat per dock context this
+   * way. The history dropdown still offers every process of the target.
+   * `undefined` = no narrowing (every other host).
+   */
+  contextKey?: string;
+  /** Extra creation context merged into the lazy `createProcess` call (e.g. the
+   *  `instructions` describing the context a chat was opened on). */
+  processContext?: Pick<AgenticContext, 'instructions' | 'contextData'>;
 }
 
 /**
@@ -324,6 +336,8 @@ export function EntityExecutionPanel({
   onProcessSelected,
   initialProcessId,
   composerDisabled = false,
+  contextKey,
+  processContext,
 }: EntityExecutionPanelProps) {
   const { t } = useLingui();
   const capabilityDefaultWorkerType = useDefaultWorkerType();
@@ -335,7 +349,12 @@ export function EntityExecutionPanel({
     processType,
     deploymentId,
   });
-  const sortedProcesses = useMemo(() => byRecency(processes), [processes]);
+  const targetProcesses = useMemo(() => byRecency(processes), [processes]);
+  // What this panel binds to: the whole target, or one context of it.
+  const sortedProcesses = useMemo(
+    () => (contextKey === undefined ? targetProcesses : targetProcesses.filter((p) => p.context_key === contextKey)),
+    [targetProcesses, contextKey],
+  );
 
   // 1b. The pool the HISTORY dropdown draws from. Same set by default; a
   //     project-level composer opts into the project's conversational sessions
@@ -347,8 +366,8 @@ export function EntityExecutionPanel({
     enabled: !!historyProjectId,
   });
   const sortedHistorySource = useMemo(
-    () => (historyProjectId ? byRecency(projectProcesses) : sortedProcesses),
-    [historyProjectId, projectProcesses, sortedProcesses],
+    () => (historyProjectId ? byRecency(projectProcesses) : targetProcesses),
+    [historyProjectId, projectProcesses, targetProcesses],
   );
 
   // Worker-history join — same backend action that powers the terminal's
@@ -675,6 +694,8 @@ export function EntityExecutionPanel({
                   projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
                   targetVfsPath: targetStr,
                   processType,
+                  ...(contextKey !== undefined ? { contextKey } : {}),
+                  ...processContext,
                   ...(effectiveModel ? { model: effectiveModel } : {}),
                   ...(effectiveWorkerType ? { workerType: effectiveWorkerType } : {}),
                   // pty-poll: interactive PTY worker, no stream-json print mode.
@@ -735,6 +756,8 @@ export function EntityExecutionPanel({
       onPromptContextConsumed,
       selectedProcessId,
       inputHistory,
+      contextKey,
+      processContext,
       t,
     ],
   );
@@ -764,7 +787,7 @@ export function EntityExecutionPanel({
     if (!autoPrompt || autoPrompt.nonce === lastAutoNonceRef.current) return;
     lastAutoNonceRef.current = autoPrompt.nonce;
     if (autoPrompt.newSession) startNewSession();
-    void handleSend(autoPrompt.text, { forceNewProcess: autoPrompt.newSession });
+    void handleSend(autoPrompt.text, { forceNewProcess: autoPrompt.newSession, files: autoPrompt.files });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoPrompt?.nonce]);
 
@@ -985,7 +1008,9 @@ export function EntityExecutionPanel({
         onStop={handleStop}
         statusSlot={statusSlot}
         placeholder={placeholder}
-        onPasteImages={allowImagePaste ? handlePasteImages : undefined}
+        // Before the first send there is no process to upload into: with
+        // attachments on, a pasted image becomes a chip sent with the text.
+        onPasteImages={allowImagePaste && (activeProcess || !allowAttachments) ? handlePasteImages : undefined}
         allowAttachments={allowAttachments}
         leadingSlot={<QueueChip process={activeProcess} />}
         history={inputHistory}
@@ -1000,7 +1025,7 @@ export function EntityExecutionPanel({
         // It resolves asynchronously, so it starts undefined — CompactExecutionInput
         // carries live text across that first undefined -> id transition rather
         // than clearing it.
-        draftScope={activeProcess?.id}
+        draftScope={activeProcess?.id ?? (contextKey ? `context:${contextKey}` : undefined)}
       />
       <ConfirmDialog
         open={!!pendingDelete}

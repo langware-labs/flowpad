@@ -185,13 +185,13 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   (`flow_sdk/sources/families.py`): the base a driver's class extends, i.e. what its items ARE.
   `ObjectSource` — files (`FileItem`), reflected onto disk and indexed as assets (folder, gcs, gdrive,
   git). `RecordSource` — records (`RecordData`), kept as `SourceItem` rows updated in place (rss,
-  hackernews; a Jira issue tracker would be one). `MessageSource` — a `RecordSource` whose records are
+  hackernews, jira). `MessageSource` — a `RecordSource` whose records are
   `MessageData` in conversations, threaded into the stream inbox and answered through the source
   (every channel). Declared, unlike the access protocols (`Openable`, `ByteStore`, `Mutable`, `Messaging`,
   `Reacting`), which stay discovered; a `MessageSource` also declares its channel's traits (`files`,
   `quotes`, `reactions_per_actor`); `DataDriver.family` serializes it. A provider with two kinds of stream is two
-  drivers (Jira: issues are records, their comments messages). Not `ReflectMode.RECORD`, which is a
-  destination.
+  drivers (the shipped `jira` reads issues as records; their comments, as messages, would be a
+  driver of their own). Not `ReflectMode.RECORD`, which is a destination.
 * **`Conversation`** (on a channel) — ours; THE conversation unit, as its channel defines it: an email topic, a chat, a phone call, a Slack thread. `address` is who it is with (set when it starts: the sender of an inbound first message, the recipient of one we sent), `started_at` / `ended_at` when it began and ended (a call hung up, a thread retired by its channel's timeout). `DataSource.start(to=, body=)` opens one and returns it; `Conversation.send(body)` continues it — to whoever last wrote, else to its `address`. The contract spells it `MessageData.conversation`; the agent's session is `conversation-<id>`.
 * **`MessageThread`** — ours, internal. The mapping from a provider's thread key (channel, `thread_key`, owner, data source) to its `Conversation` — the seam two keys are merged at, and where a channel's timeout retires one. Not a user-facing noun: say Conversation.
 * **`MessageSource`** (a configured row) — ours. A bidirectional `DataSource`: one with `channel` set whose driver is a `MessageSource` (so `sends`) and carries an identity (`account_identities`) on that channel — Slack, Telegram, a person's Gmail, an Agent's mailbox. It ingests like any data source and can reply, and it belongs to one owner (the local user or an Agent). The predicate is `is_message_source` (`flow_sdk/stream_inbox/agent_scope.py`). Not a driver (the driver is the code; a message source is one configured row of it), not the block above, not a `MessageSpec`, not a connection.
