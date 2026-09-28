@@ -286,7 +286,8 @@ immediately after the process that showed it.
 **It never navigates**, and that is the load-bearing decision. A show is the agent
 saying "this is ready", not "drop what you are doing"; navigating would yank a
 user who is mid-task in another tab. The destination tab glows for two seconds,
-and `ShownTargetBadge` puts a persistent shortcut on the process's own chip.
+and the Shown chip on the process's bottom ribbon (beside Open Plan) keeps a
+persistent list of everything the run has shown (`display_stack`), newest first.
 The shared `TabStrip` starts the glow after the chip mounts; a later live show
 of the same target restarts it. This cue is local and expires, so old shows do
 not light up when switching projects later. Three problems fall away with
