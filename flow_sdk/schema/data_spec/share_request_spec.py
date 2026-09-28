@@ -102,9 +102,9 @@ class ShareRequestSpec(DataSpec):
 
     * ``recipients`` — people to invite, each a bare ``idOrEmail`` string or
       ``{idOrEmail, role?}``, resolved to a ``ShareInvitee``.
-    * ``teams`` — ``team-<uuid>`` typeids, expanded to their people by
-      ``Project.share`` through each team's member list.
-    * ``note`` — the sharer's personal message, carried in each invite.
+    * ``teams`` — ``team-<uuid>`` typeids, each granted on the hub as ONE group
+      principal by ``Project.share`` (no expansion into people).
+    * ``note`` — the sharer's personal message, carried in each invite message.
 
     ``teams`` and ``note`` apply to a Project share only; the handler enforces
     that, since it depends on the target in the URL, not on the body.
