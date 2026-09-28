@@ -14851,6 +14851,10 @@ msgstr ""
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
 msgstr "פתחו את דף {PRIVACY_WIKI_PAGE}"
 
+#: src/components/floating-chat/FloatingChatWindow.tsx
+msgid "Open the assistant in its own window, beside Flowpad"
+msgstr ""
+
 #: src/components/footer.tsx
 msgid "Open the help desk"
 msgstr "פתחו את מרכז התמיכה"
