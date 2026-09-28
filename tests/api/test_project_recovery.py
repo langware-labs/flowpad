@@ -10,6 +10,8 @@ remains idempotent without making the path-derived record alias the entity id.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -102,7 +104,6 @@ async def test_recover_by_path_refuses_agent_mount_root(bootstrapped_client, tmp
     canonical = canonical_posix_path(mount_root)
 
     # Point the mount-root predicate at our tmp workspace.
-    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical)
     monkeypatch.setattr(cfg, "agent_workspace_root", lambda: mount_root)
 
     assert await Project.recover_by_path(str(mount_root)) is None
@@ -134,7 +135,6 @@ async def test_reap_protected_path_projects(bootstrapped_client, tmp_path, monke
     mount_root.mkdir()
     (mount_root / "source.txt").write_text("keep")
     canonical = canonical_posix_path(mount_root)
-    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical)
     monkeypatch.setattr(cfg, "agent_workspace_root", lambda: mount_root)
 
     # Stale mount-root project: construct safely, then bypass the new validator

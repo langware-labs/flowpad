@@ -407,35 +407,18 @@ def _clear_server_info_locked(
 # ---------------------------------------------------------------------------
 
 
-def get_agent_mount_folder() -> str:
-    """
-    Get the agent mount folder based on deployment environment.
-
-    Returns:
-        Path to the agent mount folder:
-        - Desktop/Local mode: User home / "Flowpad workspace"
-        - Other modes: FLOWPAD_TEMP_DIR/flowpad_sandbox
-    """
-    # Desktop-only in flow-cli, always return user home workspace
-    agent_folder = Path.home() / "Flowpad workspace"
-    agent_folder.mkdir(parents=True, exist_ok=True)
-    return str(agent_folder)
-
-
-# Agent mount folder constant
-AGENT_MOUNT_FOLDER = get_agent_mount_folder()
-
-
 def agent_workspace_root() -> Path:
-    """Per-instance agent mount ROOT (``<user_home>/Flowpad workspace``).
+    """Per-instance agent mount ROOT: where new projects are placed, the folder
+    ``iter_workspace_project_paths`` scans, and the default agent working directory.
 
-    Matches the folder scanned by ``iter_workspace_project_paths`` and used as
-    the default agent working directory, resolved through instance settings so a
-    named dev instance points at its own home rather than ``Path.home()``.
+    ``~/Flowpad workspace`` for prod only; every other instance has its own (see
+    ``BaseInstanceSettings.workspace_root``). Resolved at CALL time — the instance is
+    not known at import, which is how every instance and test used to write into
+    prod's workspace.
     """
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    return get_instance_settings().user_home / "Flowpad workspace"
+    return get_instance_settings().workspace_root
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +516,12 @@ def is_agent_mount_root(path: str | Path) -> bool:
         target = canonical_posix_path(path)
     except (OSError, ValueError):
         return False
-    return target in _canonical_mount_roots(AGENT_MOUNT_FOLDER, str(agent_workspace_root()))
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    # This instance's root and prod's: ``~/Flowpad workspace`` is never a project,
+    # whichever instance is looking at it.
+    prod_root = get_instance_settings().user_home / "Flowpad workspace"
+    return target in _canonical_mount_roots(str(prod_root), str(agent_workspace_root()))
 
 
 def is_hidden_project(cwd: str | Path, system_flag: bool = False) -> bool:

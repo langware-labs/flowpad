@@ -381,3 +381,28 @@ async def test_reinit_db_rebinds_lazy_db_driver(
     assert DBRelationship._db is rebound_driver, (
         "DBRelationship._db still points at the pre-reinit driver — split-brain"
     )
+
+
+def test_only_prod_places_projects_in_the_users_flowpad_workspace():
+    """``~/Flowpad workspace`` is prod's. Any other instance sharing the user's home
+    (``oss``, ``dev-1``, an e2e ``test-*``) gets ``~/Flowpad workspaces/<name>`` — nothing a dev instance or a test
+    run creates lands among real projects, and a project can live there (nothing
+    under ``flow_home`` can)."""
+    import dataclasses
+
+    from flow_sdk.instance_settings import get_instance_settings
+    from flow_sdk.instance_settings.base_settings import BaseInstanceSettings
+
+    current = get_instance_settings()
+    fields = {f.name: getattr(current, f.name) for f in dataclasses.fields(current)}
+
+    def as_instance(name: str) -> BaseInstanceSettings:
+        return BaseInstanceSettings(**{**fields, "instance_name": name})
+
+    users_workspace = current.user_home / "Flowpad workspace"
+    assert as_instance("prod").workspace_root == users_workspace
+    for name in ("oss", "dev-1", "test-4f2a"):
+        settings = as_instance(name)
+        assert settings.workspace_root == current.user_home / "Flowpad workspaces" / name
+        assert users_workspace not in (settings.workspace_root, *settings.workspace_root.parents)
+        assert settings.flow_home not in settings.workspace_root.parents

@@ -1099,12 +1099,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
               "target_name": "<optional override>" }
 
         Collision policy: if the derived (or supplied) folder name already
-        exists under AGENT_MOUNT_FOLDER, refuse and return the next-free
+        exists under the agent workspace root, refuse and return the next-free
         suggestion in ``data.suggested_name``. The caller re-submits with
         ``target_name`` set to accept the suggestion.
         """
         from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
-        from flow_sdk.config import AGENT_MOUNT_FOLDER
+        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+
+        workspace_root = str(agent_workspace_root())
         from flow_sdk.fs_store.origin.git_origin import GitOrigin
         from flow_sdk.utils.git import derive_repo_leaf_from_url
 
@@ -1139,7 +1141,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 status_code=400,
             )
 
-        target_dir = os.path.join(AGENT_MOUNT_FOLDER, leaf)
+        target_dir = os.path.join(workspace_root, leaf)
         suggested = self._next_free_leaf(leaf)
         if suggested != leaf:
             # The caller chose this name and it is taken — refuse; offer the
@@ -1212,7 +1214,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @staticmethod
     def _next_free_leaf(leaf: str) -> str:
         """``leaf``, or the next ``leaf-N`` nothing has claimed at all, under
-        AGENT_MOUNT_FOLDER — ``fresh_clone_slot`` without the empty-dir reuse.
+        the agent workspace root — ``fresh_clone_slot`` without the empty-dir reuse.
         All three callers want a path that does not exist: a 409 suggestion, a
         delivered tree moved into place, and the name-availability probe."""
         from flow_sdk.fs_store.origin.git_origin import fresh_clone_slot  # noqa: PLC0415
@@ -1337,7 +1339,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
 
     async def _place_project(self, leaf: str, raw_project_id: object, deliver) -> ApiResponse:
-        """Put a project at a free slot under ``AGENT_MOUNT_FOLDER`` and mint it.
+        """Put a project at a free slot under ``agent_workspace_root()`` and mint it.
 
         Everything the ways of getting a project onto this box agree on: where it
         lands, that a name clash auto-suffixes rather than fails (the caller has
@@ -1349,14 +1351,16 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         to attach this checkout to another project as a context folder, and only
         this side knows where it landed.
         """
-        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+
+        workspace_root = str(agent_workspace_root())
 
         try:
             project_id = self._adopted_project_id(raw_project_id)
         except ValueError as exc:
             return ApiFailResponse(message=str(exc), status_code=400)
 
-        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
+        target_dir = os.path.join(workspace_root, self._next_free_leaf(leaf))
         deliver(target_dir)
         project = await self._materialize_project(target_dir, project_id)
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json"), "path": target_dir})
@@ -1368,8 +1372,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         Body: ``{ "staging_path": "<abs source dir>", "name": "<optional>",
         "project_id": "<optional uuid v4/v5>" }``. Moves the staged tree under
-        ``AGENT_MOUNT_FOLDER/<leaf>`` and mints the Project — indexing is the
-        caller's own step. Keeps ``AGENT_MOUNT_FOLDER`` placement on the box
+        ``agent_workspace_root()/<leaf>`` and mints the Project — indexing is the
+        caller's own step. Keeps ``agent_workspace_root()`` placement on the box
         side so the hub never needs the box's home path. A name clash
         auto-suffixes (``<leaf>-N``) rather than 409-ing: the launch path has
         already committed to a desktop, so failing it over a folder name would
@@ -1409,7 +1413,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from it stay what they were. Materializing again would park a second copy
         at a suffixed folder. Indexing stays the caller's own step.
 
-        Only a project under ``AGENT_MOUNT_FOLDER`` can be refreshed — the folders
+        Only a project under ``agent_workspace_root()`` can be refreshed — the folders
         this node materialized — so a caller cannot aim the overwrite anywhere else.
         """
         import asyncio  # noqa: PLC0415
@@ -1417,7 +1421,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         import subprocess  # noqa: PLC0415
 
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
-        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+
+        workspace_root = str(agent_workspace_root())
 
         request_info = get_current_request_info()
         body = (await request_info.get_post_data() if request_info else {}) or {}
@@ -1434,7 +1440,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         path = str(getattr(project, "fs_storage_mount_path", "") or "") if project else ""
         if not path or not os.path.isdir(path):
             return ApiFailResponse(message=f"project {project_id} is not on this node", status_code=404)
-        mount_root = os.path.realpath(AGENT_MOUNT_FOLDER)
+        mount_root = os.path.realpath(workspace_root)
         if os.path.commonpath([mount_root, os.path.realpath(path)]) != mount_root:
             return ApiFailResponse(message="only a project this node materialized can be refreshed", status_code=403)
 

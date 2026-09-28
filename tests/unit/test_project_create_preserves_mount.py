@@ -10,7 +10,7 @@ carries `id` + `name` but no `fs_storage_mount_path`, and
       -> graph_crud_actions.py:390 handle_create_entity
         -> entity_model.model_validate(sanitized_data)
           -> Project.set_fs_storage_mount_path "simple name" branch
-             -> AGENT_MOUNT_FOLDER/<name>
+             -> agent_workspace_root()/<name>
 
 Every project living OUTSIDE the agent workspace is silently moved into it, and
 the next PTY spawn (`os.makedirs(cwd)`) materializes the folder — which is why
@@ -34,7 +34,7 @@ import pytest
 
 from flow_sdk.app.actions.graph_crud_actions import handle_create_entity
 from flow_sdk.builtin.project import Project
-from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.config import agent_workspace_root
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -99,7 +99,7 @@ async def test_create_with_partial_body_does_not_relocate_an_existing_project(tm
     stored = await Project.get_by_id(str(project.id))
     assert stored is not None, "the project vanished on create"
     mount = Path(str(stored.fs_storage_mount_path)).resolve()
-    workspace = Path(AGENT_MOUNT_FOLDER).resolve()
+    workspace = agent_workspace_root().resolve()
 
     assert workspace not in mount.parents, (
         f"zombie: a create that omitted the mount RELOCATED the project from "

@@ -6,6 +6,8 @@ entity — the exact same reconcile → mint → materialize path Claude/Codex
 cwds take. Drives the real SQLite persistence layer (no mocks of save/query).
 """
 
+from pathlib import Path
+
 import asyncio
 import uuid
 
@@ -82,6 +84,7 @@ async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, m
     import flow_sdk.fs_store.operations.all_projects as ap
     monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
     monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: ws)
 
     from flow_sdk.builtin.project import Project
     from flow_sdk.api.api_types.identifier import is_valid_entity_id
@@ -475,7 +478,7 @@ async def test_agent_mount_root_entity_is_not_returned(project_db, tmp_path, mon
     import flow_sdk.fs_store.operations.all_projects as ap
     monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
     monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
-    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical_posix_path(ws))
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: ws)
 
     # Simulate the pre-guard stale entity sitting at the mount root, plus a real
     # work subfolder project under it (which must NOT be tagged hidden).
@@ -510,7 +513,6 @@ def test_is_hidden_project_predicate(tmp_path, monkeypatch):
 
     ws = tmp_path / "home" / "Flowpad workspace"
     ws.mkdir(parents=True)
-    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical_posix_path(ws))
     monkeypatch.setattr(cfg, "agent_workspace_root", lambda: ws)
 
     normal = tmp_path / "some" / "repo"
