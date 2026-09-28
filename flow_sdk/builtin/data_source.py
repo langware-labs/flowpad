@@ -1314,6 +1314,119 @@ class DataSource(Entity):
         driver = await driver_of(self.provider)  # an authored driver loads on first use
         return await stage_states(getattr(driver, "setup_wizards", None) or [], str(self.typeid))
 
+    @core_action.post(action_name="step")
+    async def step_action(self) -> ApiResponse:
+        """POST /api/v1/graph/data_source/{id}/step ``{"step", "check"?, "values"?}`` — :meth:`step`. The
+        answer is the ``ReturnedValue`` with a 200 either way: its exit code is the answer."""
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        values = body.get("values") if isinstance(body.get("values"), dict) else {}
+        answer = await self.step(str(body.get("step") or ""), check=bool(body.get("check")), values=values)
+        return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+
+    async def step(self, name: str, *, check: bool = False, values: Optional[dict] = None):
+        """Run the setup step ``name`` this source's driver declares (``flow_sdk/sources/setup_steps.py``),
+        or the generic ``public-webhook``. ``check`` only asks whether it already holds. What the step
+        learned (a ``SourceUpdateSpec``) is stored here — config, allowed senders, credential values — and
+        the answer goes back without the secrets. Never raises for an outcome."""
+        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import PUBLIC_WEBHOOK, SourceUpdateSpec, setup_steps  # noqa: PLC0415
+
+        driver = await DataDriver.get(self.provider or "")
+        if driver is None:
+            return ReturnedValue.not_found(f"no data driver {self.provider!r}")
+        try:
+            if name == PUBLIC_WEBHOOK:
+                answer = await self._public_webhook(driver, check=check)
+            else:
+                method = setup_steps(driver.cls).get(name)
+                if method is None:
+                    return ReturnedValue.not_found(f"{self.provider} has no setup step {name!r}")
+                live = await self._open_for_setup(driver)
+                answer = await getattr(live, method)(check=check, values={k: str(v) for k, v in (values or {}).items()})
+        except Exception as exc:  # noqa: BLE001 — a step that raises is a sentence for the person, not a 500
+            logger.warning("setup step %s of %s failed: %s", name, self.id, exc, exc_info=True)
+            return ReturnedValue.not_yet(f"{name}: {exc}")
+        update = answer.value
+        if isinstance(update, dict) and set(update) <= set(SourceUpdateSpec.model_fields):
+            update = SourceUpdateSpec.model_validate(update)
+        if isinstance(update, SourceUpdateSpec):
+            if answer.ok and not check:
+                await self._keep(driver, update)
+            answer = answer.model_copy(update={"value": update.model_copy(update={"secrets": {}}).model_dump()})
+        return answer
+
+    async def _open_for_setup(self, driver):
+        """This source, opened as far as its setup allows: with its credential when it resolves, else
+        without one — the step that stores the credential runs before there is one to read."""
+        from flow_sdk.sources.credentials import ResolvedSecrets  # noqa: PLC0415
+
+        try:
+            return await driver.open(self)
+        except Exception:  # noqa: BLE001 — no credential yet is the normal first step
+            return await driver.open(self, credentials=ResolvedSecrets())
+
+    async def _keep(self, driver, update) -> None:
+        """Store what a setup step learned: config on the file, senders on the row, secrets in the credential."""
+        if update.config or update.allowed_senders is not None:
+            if update.config:
+                self.config = {**(self.config or {}), **update.config}
+            if update.allowed_senders is not None:
+                self.allowed_senders = list(update.allowed_senders)
+            await self.save()
+        if update.secrets:
+            from flow_sdk.builtin.credential_service import set_credential_by_name  # noqa: PLC0415
+
+            auth = driver.auth
+            if auth is None or not auth.credential:
+                raise ValueError(f"{self.provider} names no credential to keep {sorted(update.secrets)} in")
+            unknown = set(update.secrets) - set(auth.vars)
+            if unknown:
+                raise ValueError(f"{self.provider}'s credential has no {sorted(unknown)}")
+            project = await self._resolve_scope_project()
+            await set_credential_by_name(
+                auth.credential, {auth.vars[key]: value for key, value in update.secrets.items()},
+                project_id=str(project.id) if project is not None else None,
+            )
+
+    async def _public_webhook(self, driver, *, check: bool):
+        """The generic step for a driver that takes pushes (its ``webhook`` block): a stable public URL for
+        THIS desktop, held by the hub (``webhook/create_for_desktop``) and delivered over its socket, stored
+        as the driver's URL variable. A config ``verify_token`` (made here when the driver declares one and it
+        is empty) lets the hub answer the provider's handshake itself."""
+        import secrets  # noqa: PLC0415
+
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webhook_spec import WEBHOOK_ROUTE  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import SourceUpdateSpec  # noqa: PLC0415
+
+        hook = driver.webhook
+        if hook is None:
+            return ReturnedValue.not_applicable(f"{self.provider} takes no pushes")
+        try:
+            held = (await driver.credentials_for(self)).values.get(hook.url_var)
+        except Exception:  # noqa: BLE001 — no credential declared yet: nothing held
+            held = None
+        if check:
+            return ReturnedValue.satisfied("a public URL is set") if held else ReturnedValue.not_yet("no public URL yet")
+        config: dict = {}
+        token = str((self.config or {}).get("verify_token") or "")
+        if not token and "verify_token" in (driver.config or {}):
+            token = config["verify_token"] = secrets.token_urlsafe(24)
+        body = {
+            "name": f"{self.provider}-{self.id}",
+            "default_path": WEBHOOK_ROUTE.format(name=self.provider),
+            "filters": {"methods": list(hook.methods), "required_headers": list(hook.required_headers)},
+            **({"verify_token": token} if token else {}),
+        }
+        data = await hub_post("webhook", body, None, "create_for_desktop")
+        if not data or not data.get("url"):
+            return ReturnedValue.not_yet("sign in to Flowpad cloud first — the public URL is held by the hub")
+        update = SourceUpdateSpec(config=config, secrets={hook.url_var: str(data["url"])})
+        return ReturnedValue.satisfied(f"public URL {data['url']}", value=update)
+
     @core_action.post(action_name="verify")
     async def verify_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/verify — the route over ``verify``.
