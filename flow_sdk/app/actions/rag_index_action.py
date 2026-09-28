@@ -61,7 +61,7 @@ async def index_action():
     The refusal, when there is one, is the sentence — the caller shows it rather than decoding
     a status code.
     """
-    from flow_sdk.rag import reconcile
+    from flow_sdk.rag import reconcile, runtime
 
     index = await _index()
     # A person asking to index is the moment to look for funding again.
@@ -83,6 +83,8 @@ async def index_action():
         # for the heartbeat to notice a mark that force does not set.
         reconcile.force_pass(index)
     else:
+        # A person asking is the moment to offer the runtime again, if it was declined before.
+        runtime.forget_answer()
         index.pending = True
         await index.save(notify=False)
         await reconcile.dispatch_due_indexes()
@@ -105,9 +107,12 @@ async def toggle_root_action():
         raise HTTPException(status_code=400, detail="path is required")
 
     index, covered = await RagIndex.toggle_root(path)
-    return ApiSuccessResponse(
-        data={"covered": covered, "index_id": str(index.id), "roots": index.roots}
-    )
+    if covered:
+        from flow_sdk.rag import runtime  # noqa: PLC0415
+
+        # A person making a folder searchable is asking for search: offer the runtime again.
+        runtime.forget_answer()
+    return ApiSuccessResponse(data={"covered": covered, "index_id": str(index.id), "roots": index.roots})
 
 
 @action.post(action_name="query", types=["rag_index"])
@@ -115,7 +120,7 @@ async def query_action():
     """Ask the index a question. Embeds the query with the SAME model the chunks were embedded
     with — a vector from a different model is meaningless in this space, not merely worse.
     """
-    from flow_sdk.rag import reconcile
+    from flow_sdk.rag import reconcile, runtime
 
     index = await _index()
     body = await _body()
@@ -124,11 +129,14 @@ async def query_action():
         raise HTTPException(status_code=400, detail="q is required")
     top_k = int(body.get("top_k") or 8)
 
+    # Before the paid embed: a store that cannot load its index cannot answer.
+    missing = runtime.refusal()
+    if missing:
+        return ApiSuccessResponse(data={"hits": [], "refusal": missing})
+
     embed, _model = await reconcile.embedder_for(index)
     if embed is None:
-        return ApiSuccessResponse(
-            data={"hits": [], "refusal": "no embedding endpoint is available on this machine"}
-        )
+        return ApiSuccessResponse(data={"hits": [], "refusal": "no embedding endpoint is available on this machine"})
     vectors = await embed([question])
     async with index.open_store() as store:
         hits = store.search(vectors[0], top_k=top_k)

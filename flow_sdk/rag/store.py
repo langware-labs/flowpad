@@ -123,8 +123,9 @@ class RagStore:
         return row["v"] if row else ""
 
     def _set_meta(self, key: str, value: str) -> None:
-        self._db.execute("INSERT INTO meta(k, v) VALUES(?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
-                         (key, str(value)))
+        self._db.execute(
+            "INSERT INTO meta(k, v) VALUES(?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v", (key, str(value))
+        )
 
     @property
     def dimensions(self) -> int:
@@ -156,7 +157,13 @@ class RagStore:
 
     def _open_index(self):
         """The usearch handle, opened on first use — the width is unknown until the first add."""
-        from usearch.index import Index  # noqa: PLC0415
+        try:
+            from usearch.index import Index  # noqa: PLC0415
+        except ImportError as exc:
+            # A sentence a person can act on, not "DLL load failed" (see ``rag/runtime.py``).
+            from flow_sdk.rag.runtime import refusal  # noqa: PLC0415
+
+            raise RuntimeError(refusal() or str(exc)) from exc
 
         if self._index is not None:
             return self._index
@@ -247,9 +254,7 @@ class RagStore:
         if index.ndim != width:
             # Reached only if a store on disk disagrees with its own sidecar. Say so, rather
             # than letting the native side read past the end of every vector.
-            raise DimensionMismatch(
-                f"the vector index is {index.ndim}-dimensional and was handed {width}"
-            )
+            raise DimensionMismatch(f"the vector index is {index.ndim}-dimensional and was handed {width}")
         row = self._db.execute("SELECT COALESCE(MAX(key), 0) AS m FROM chunks").fetchone()
         next_key = int(row["m"]) + 1
 
@@ -257,15 +262,24 @@ class RagStore:
         for offset, (chunk, _) in enumerate(fresh):
             key = next_key + offset
             keys.append(key)
-            rows.append((key, chunk.chunk_id, chunk.doc_ref, chunk.doc_hash, chunk.ordinal,
-                         json.dumps(chunk.heading_path), chunk.text, chunk.text_hash))
+            rows.append(
+                (
+                    key,
+                    chunk.chunk_id,
+                    chunk.doc_ref,
+                    chunk.doc_hash,
+                    chunk.ordinal,
+                    json.dumps(chunk.heading_path),
+                    chunk.text,
+                    chunk.text_hash,
+                )
+            )
         self._db.executemany(
             "INSERT INTO chunks(key, chunk_id, doc_ref, doc_hash, ordinal, heading_path, text, text_hash) "
             "VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
             rows,
         )
-        index.add(np.array(keys, dtype=np.uint64),
-                  np.array([v for _, v in fresh], dtype=np.float32))
+        index.add(np.array(keys, dtype=np.uint64), np.array([v for _, v in fresh], dtype=np.float32))
         return len(fresh)
 
     def retain(self, doc_ref: str, keep_ids: Iterable[str]) -> int:
@@ -289,9 +303,7 @@ class RagStore:
                 except Exception:  # noqa: BLE001 -- a key the index never held is already gone
                     pass
         placeholders = ",".join("?" * len(doomed))
-        self._db.execute(
-            f"DELETE FROM chunks WHERE key IN ({placeholders})", [int(r["key"]) for r in doomed]
-        )
+        self._db.execute(f"DELETE FROM chunks WHERE key IN ({placeholders})", [int(r["key"]) for r in doomed])
         return len(doomed)
 
     def remove_document(self, doc_ref: str) -> int:
@@ -338,8 +350,7 @@ class RagStore:
         # they are reassembled against usearch's ranking rather than read in row order.
         placeholders = ",".join("?" * len(keys))
         by_key = {
-            int(r["key"]): r
-            for r in self._db.execute(f"SELECT * FROM chunks WHERE key IN ({placeholders})", keys)
+            int(r["key"]): r for r in self._db.execute(f"SELECT * FROM chunks WHERE key IN ({placeholders})", keys)
         }
         hits: list[RagHit] = []
         for key, distance in zip(keys, matches.distances):
