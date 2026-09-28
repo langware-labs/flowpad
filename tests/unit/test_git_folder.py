@@ -16,7 +16,7 @@ The properties this file exists to hold:
   commit anything else. The single most valuable behaviour here, and the easiest
   to regress.
 * **Alignment.** A branch ahead of or diverged from its remote must refuse to
-  publish — except for our own half-finished publish, which must recover.
+  publish.
 * **Containment.** ``_safe_path`` refuses ``..``, ``.git``, symlinked components
   and nested repositories.
 * **Secret hygiene.** The token never reaches argv, and a failure never carries
@@ -40,14 +40,12 @@ from flow_sdk.utils.git_folder import (
     GitErrorCode,
     GitFolder,
     validate_branch_name,
-    validate_github_remote,
 )
 from tests.unit.conftest import git_cmd
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 AUTHOR = GitAuthor(name="Test User", email="test@example.com", typeid="user-1")
-MARKER = "FlowPad-Asset: markdown-1"
 
 # Nothing here tests executor SELECTION, so threading it through every
 # construction is noise.
@@ -77,29 +75,9 @@ async def test_invalid_branch_names_are_refused(branch):
     assert excinfo.value.code is GitErrorCode.BRANCH_INVALID
 
 
-@pytest.mark.parametrize("branch", ["main", "flow-cloud", "feature/x", "v1.2.3"])
+@pytest.mark.parametrize("branch", ["main", "published", "feature/x", "v1.2.3"])
 async def test_valid_branch_names_pass(branch):
     assert validate_branch_name(branch) == branch
-
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "https://user:pw@github.com/o/n.git",  # embedded credentials
-        "http://github.com/o/n.git",  # not https
-        "https://evil.com/o/n.git",  # not github
-        "https://github.com/only-one-part",
-        "https://github.com/o/n.git?x=1",
-    ],
-)
-async def test_non_canonical_github_remotes_are_refused(url):
-    with pytest.raises(GitError) as excinfo:
-        validate_github_remote(url)
-    assert excinfo.value.code is GitErrorCode.REMOTE_INVALID
-
-
-async def test_canonical_github_remote_parses():
-    assert validate_github_remote("https://github.com/flowpad/assets.git") == ("flowpad", "assets")
 
 
 async def test_constructor_refuses_a_remote_with_embedded_credentials(tmp_path: Path):
@@ -180,28 +158,6 @@ async def test_publish_is_a_noop_when_nothing_changed(git_remote):
     assert receipt.head_commit == before
 
 
-async def test_publish_advances_a_second_branch_in_the_same_push(git_remote):
-    repo = git_remote.make_checkout()
-    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
-    (repo / "note.md").write_text("hello\n", encoding="utf-8")
-
-    receipt = await publish(folder, "note.md", also_advance="flow-cloud")
-
-    assert git_cmd(git_remote.path, "rev-parse", "refs/heads/flow-cloud") == receipt.head_commit
-    assert git_cmd(git_remote.path, "rev-parse", "refs/heads/main") == receipt.head_commit
-
-
-async def test_the_second_branch_advances_even_when_nothing_changed(git_remote):
-    """It may not exist yet, so a clean re-publish still has to create it."""
-    repo = git_remote.make_checkout()
-    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
-
-    receipt = await publish(folder, "README.md", also_advance="flow-cloud")
-
-    assert receipt.changed is False
-    assert git_cmd(git_remote.path, "rev-parse", "refs/heads/flow-cloud") == receipt.head_commit
-
-
 async def test_unrelated_local_commit_blocks_publishing(git_remote):
     repo = git_remote.make_checkout()
     folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
@@ -250,36 +206,17 @@ async def test_a_diverged_branch_is_refused(git_remote, tmp_path: Path):
     assert excinfo.value.code is GitErrorCode.BRANCH_DIVERGED
 
 
-async def test_a_failed_push_is_retried_without_a_second_commit(git_remote, tmp_path: Path):
-    """Without retry_marker, a publish that committed then failed to push is
-    stuck behind the BRANCH_AHEAD guard forever."""
+async def test_a_failed_push_reports_its_commit_and_then_blocks(git_remote, tmp_path: Path):
+    """A push that never landed says which commit it left behind, and that
+    unpushed commit then refuses the next publish rather than stacking on it."""
     repo = git_remote.make_checkout()
     folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
     (repo / "note.md").write_text("pending\n", encoding="utf-8")
     git_cmd(repo, "remote", "set-url", "--push", "origin", (tmp_path / "gone.git").as_uri())
-
     with pytest.raises(GitError) as first:
-        await publish(folder, "note.md", trailers=[MARKER], retry_marker=MARKER)
-    assert first.value.code is GitErrorCode.PUSH_REJECTED
-    assert first.value.data["head_commit"], "a retry needs the head it left behind"
-    pending = git_cmd(repo, "rev-parse", "HEAD")
-
-    git_cmd(repo, "remote", "set-url", "--push", "origin", git_remote.uri)
-    receipt = await publish(folder, "note.md", trailers=[MARKER], retry_marker=MARKER)
-
-    assert receipt.changed is True
-    assert receipt.head_commit == pending, "the retry must reuse the pending commit"
-    assert git_cmd(repo, "rev-list", "--count", "HEAD") == "2", "a second commit was created"
-
-
-async def test_without_a_retry_marker_a_pending_commit_still_blocks(git_remote, tmp_path: Path):
-    """The recovery is opt-in: an unrecognised ahead-branch stays refused."""
-    repo = git_remote.make_checkout()
-    folder = git_folder(repo, branch="main", remote_url=git_remote.uri)
-    (repo / "note.md").write_text("pending\n", encoding="utf-8")
-    git_cmd(repo, "remote", "set-url", "--push", "origin", (tmp_path / "gone.git").as_uri())
-    with pytest.raises(GitError):
         await publish(folder, "note.md")
+    assert first.value.code is GitErrorCode.PUSH_REJECTED
+    assert first.value.data["head_commit"] == git_cmd(repo, "rev-parse", "HEAD")
 
     git_cmd(repo, "remote", "set-url", "--push", "origin", git_remote.uri)
     with pytest.raises(GitError) as excinfo:
@@ -318,7 +255,7 @@ async def test_publish_deletion_is_committed_path_only(git_remote):
 # ---------------------------------------------------------------------------
 
 
-async def _publish_subtree(git_remote, branch: str = "flow-cloud") -> str:
+async def _publish_subtree(git_remote, branch: str = "published") -> str:
     """A remote carrying ``docs/`` and ``other/`` on ``branch``. Returns the head."""
     repo = git_remote.make_checkout("publisher")
     for folder_name in ("docs", "other"):
@@ -332,7 +269,7 @@ async def _publish_subtree(git_remote, branch: str = "flow-cloud") -> str:
 
 async def test_checkout_materializes_the_subtree_and_reports_the_head(git_remote, tmp_path: Path):
     head = await _publish_subtree(git_remote)
-    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")
 
     receipt = await folder.checkout("docs")
 
@@ -343,7 +280,7 @@ async def test_checkout_materializes_the_subtree_and_reports_the_head(git_remote
 async def test_checkout_is_sparse_to_the_named_path(git_remote, tmp_path: Path):
     """A shared asset is a subtree; the rest of the repo must not be fetched."""
     await _publish_subtree(git_remote)
-    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")
 
     receipt = await folder.checkout("docs")
 
@@ -353,14 +290,14 @@ async def test_checkout_is_sparse_to_the_named_path(git_remote, tmp_path: Path):
 
 async def test_checkout_reuses_the_cache_and_follows_the_branch(git_remote, tmp_path: Path):
     await _publish_subtree(git_remote)
-    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")
     first = await folder.checkout("docs")
 
     publisher = tmp_path / "publisher"
     (publisher / "docs" / "f.md").write_text("moved on\n", encoding="utf-8")
     git_cmd(publisher, "add", ".")
     git_cmd(publisher, "commit", "-q", "-m", "second")
-    git_cmd(publisher, "push", "-q", "origin", "HEAD:refs/heads/flow-cloud")
+    git_cmd(publisher, "push", "-q", "origin", "HEAD:refs/heads/published")
 
     second = await folder.checkout("docs")
 
@@ -372,12 +309,12 @@ async def test_checkout_refuses_a_cache_holding_a_different_repository(git_remot
     """Silently re-pointing is how one repo's content gets served as another's."""
     await _publish_subtree(git_remote)
     root = tmp_path / "cache"
-    await git_folder(root, remote_url=git_remote.uri, branch="flow-cloud").checkout("docs")
+    await git_folder(root, remote_url=git_remote.uri, branch="published").checkout("docs")
 
     other_remote = tmp_path / "other.git"
     other_remote.mkdir()
     git_cmd(other_remote, "init", "--bare", "-q", "-b", "main")
-    impostor = git_folder(root, remote_url=other_remote.as_uri(), branch="flow-cloud")
+    impostor = git_folder(root, remote_url=other_remote.as_uri(), branch="published")
 
     with pytest.raises(GitError) as excinfo:
         await impostor.checkout("docs")
@@ -387,7 +324,7 @@ async def test_checkout_refuses_a_cache_holding_a_different_repository(git_remot
 async def test_checkout_of_an_unprovisioned_branch_reports_branch_not_found(git_remote, tmp_path: Path):
     """Never a silent branch-and-push: provisioning belongs to whoever publishes."""
     git_remote.make_checkout("publisher")
-    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")
 
     with pytest.raises(GitError) as excinfo:
         await folder.checkout("docs")
@@ -396,7 +333,7 @@ async def test_checkout_of_an_unprovisioned_branch_reports_branch_not_found(git_
 
 @pytest.mark.parametrize("rel", ["../escape", ".git/config", "a/../../escape"])
 async def test_checkout_refuses_a_path_that_escapes(git_remote, tmp_path: Path, rel):
-    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")
     with pytest.raises(GitError) as excinfo:
         await folder.checkout(rel)
     assert excinfo.value.code is GitErrorCode.PATH_ESCAPES_REPO
@@ -420,7 +357,7 @@ def symlink_entries(payload: bytes) -> list[str]:
 async def test_capture_returns_the_subtree_flattened(git_remote, tmp_path: Path):
     """Rooted AT the asset: a consumer unpacks content, not a copy of its path."""
     await _publish_subtree(git_remote)
-    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")
 
     receipt = await folder.capture("docs")
 
@@ -429,7 +366,7 @@ async def test_capture_returns_the_subtree_flattened(git_remote, tmp_path: Path)
 
 async def test_capture_leaves_no_archive_behind(git_remote, tmp_path: Path):
     await _publish_subtree(git_remote)
-    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")
 
     await folder.capture("docs")
 
@@ -448,9 +385,9 @@ async def test_capture_never_exports_a_symlink_target(git_remote, tmp_path: Path
     (repo / "docs" / "leak.md").symlink_to(secret)
     git_cmd(repo, "add", ".")
     git_cmd(repo, "commit", "-q", "-m", "with a link")
-    git_cmd(repo, "push", "-q", "origin", "HEAD:refs/heads/flow-cloud")
+    git_cmd(repo, "push", "-q", "origin", "HEAD:refs/heads/published")
 
-    receipt = await (git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")).capture("docs")
+    receipt = await (git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")).capture("docs")
 
     assert b"SUPER-SECRET" not in receipt.archive, "SECURITY: the link target's content was exported"
     assert symlink_entries(receipt.archive) == ["leak.md"], "the link must survive as a link, not a copy"
@@ -462,10 +399,10 @@ async def test_capture_carries_no_git_directory_and_no_untracked_junk(git_remote
     (repo / "docs" / "note.md").write_text("tracked\n", encoding="utf-8")
     git_cmd(repo, "add", ".")
     git_cmd(repo, "commit", "-q", "-m", "tracked only")
-    git_cmd(repo, "push", "-q", "origin", "HEAD:refs/heads/flow-cloud")
+    git_cmd(repo, "push", "-q", "origin", "HEAD:refs/heads/published")
     (repo / "docs" / "junk.md").write_text("untracked\n", encoding="utf-8")
 
-    receipt = await (git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")).capture("docs")
+    receipt = await (git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")).capture("docs")
     names = zip_entries(receipt.archive)
 
     assert set(names) == {"note.md"}
@@ -474,7 +411,7 @@ async def test_capture_carries_no_git_directory_and_no_untracked_junk(git_remote
 
 async def test_capture_reports_the_commit_it_came_from(git_remote, tmp_path: Path):
     head = await _publish_subtree(git_remote)
-    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="flow-cloud")
+    folder = git_folder(tmp_path / "cache", remote_url=git_remote.uri, branch="published")
 
     assert (await folder.capture("docs")).head_commit == head
 

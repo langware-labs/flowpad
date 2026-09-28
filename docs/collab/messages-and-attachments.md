@@ -110,6 +110,11 @@ storage (`flow_sdk/builtin/flow_message.py:233`):
   the message removes the folder, and the bytes with it. The UI reads a
   non-null `local_path` as "this file is downloaded": a receiver sees `null`
   until it pulls the bundle; the sender sees it set the moment the file is staged.
+  A message projected from a channel (WhatsApp, Telegram, email — it has an `origin`) carries
+  its files as `FILE` attachments too, but the projection places their bytes in that same
+  storage itself (`stream_inbox/projection.py`, from the copy the source staged); there is no
+  bundle to pull, so a channel file with a `null` `local_path` is one whose link expired before
+  it could be copied, and the bubble says so rather than offering a download.
 - **`prompt_preview`** — an inline copy of a prompt-entity `TYPE_ID`'s text that
   rides the **header** so receivers can preview the prompt *before* pulling the
   body bundle. On a `remote_worker_session-<id>` carrier it holds the session

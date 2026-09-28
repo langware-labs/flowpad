@@ -24,6 +24,13 @@ export interface AgentAutoLaunchResponse {
 
 export const AGENT_AUTO_LAUNCH_ENDPOINT = '/api/v1/agents/auto-launch';
 
+/** Projects whose auto-launch answer this session was "nothing to enter". */
+const settledProjects = new Set<string>();
+
+export function resetAgentAutoLaunchForTests(): void {
+  settledProjects.clear();
+}
+
 /**
  * The project agent auto-launch redirect, or null when there is nothing to enter.
  *
@@ -43,6 +50,10 @@ export async function agentAutoLaunchRedirect(request: Request): Promise<Respons
   // Hub just provisioned.
   const projectId = scoped ?? dataContext.project?.id ?? null;
   if (!projectId) return null;
+  // The backend launches once per project; once it answered "nothing to enter"
+  // for this project, asking again on every landing only holds the URL on a POST
+  // (dock-loading I4). A reload asks again.
+  if (settledProjects.has(projectId)) return null;
 
   let data: AgentAutoLaunchResponse;
   try {
@@ -51,6 +62,7 @@ export async function agentAutoLaunchRedirect(request: Request): Promise<Respons
     console.warn('[agent-auto-launch] backend call failed; no auto-launch', e);
     return null;
   }
+  if (!data?.process_id && !data?.error) settledProjects.add(projectId);
   // A refused launch arrives IN the payload, never as a rejection (see the
   // route). Unreported, it looks exactly like a project with no agent.
   if (data?.error) {

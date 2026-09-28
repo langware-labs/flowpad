@@ -19,8 +19,8 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from flow_sdk.builtin.source_item import MessageSpec
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -32,13 +32,13 @@ class HttpChatMessageSpec(MessageSpec):
     """A reply in a chat thread: to the caller who asked, answering their message."""
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "HttpChatMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "HttpChatMessageSpec":
         return cls(
             to=[str(getattr(m, "author_external_id", "") or "")],
             body=body,
             thread_key=str(getattr(m, "thread_key", "") or ""),
             reply_to_external_id=str(getattr(m, "external_id", "") or ""),
-            attachments=list(attachments),
+            files=list(files),
         )
 
 
@@ -48,7 +48,7 @@ class HttpChatConfig(SourceConfig):
     deployment_id: str
 
 
-class HttpChatSource(Source):
+class HttpChatSource(MessageSource):
 
     Config = HttpChatConfig
     provider = "http_chat"

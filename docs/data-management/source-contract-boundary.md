@@ -17,17 +17,26 @@ async with await source.open() as live:              # a DataSource: its driver 
     item  = await s.get(origin)                       # SourceItemSpec | None — None only on confirmed absence
     page  = await s.fetch(cursor, page_size=…, narrow=…)  # DataPage(items, next_cursor); the query is s.query()
     async for item in s.iterate(narrow=…): …
-    async with s.open(file) as chunks: …             # ByteStore
+    async with s.open(file) as chunks: …             # Openable (and ByteStore, which is Openable + write/delete)
     await s.write(path, chunks)                       # ByteStore
-    sent  = await s.send(MessageData(...))            # Messaging
+    sent  = await s.send(MessageData(...))            # Messaging — attachments are local files
     reply = await s.reply(origin, MessageData(...))   # Messaging
+    await s.react(origin, "👍"); await s.unreact(origin)   # Reacting
     await s.notify(DataSourceEvent(...))              # every source; one on_change handler per session
 ```
 
 Values are frozen `DataSpec`s: `CloudOrigin(kind, namespace, key, url|None)` (identity is the
-triple), `SourceItemSpec(origin, data)`, `FileData`, `MessageData` (+ `UserProfile` for sender and
-recipients), `DataPage`, the `DataQuery` family, `DataSourceEvent`. Capabilities are protocols
-discovered by `isinstance` (`Readable`, `Listable`, `Mutable`, `ByteStore`, `Messaging`, `Drafting`),
+triple), `SourceItemSpec(origin, data)`, `FileData`, `RecordData`, `MessageData` (+ `UserProfile` for
+sender and recipients, and `MessageFileData` for the files a message carries), `ReactionData` (an emoji on a
+message — a change of state reported as `SET`, `ADD` or `REMOVE`, never a message of its own), `DataPage`,
+the `DataQuery` family, `DataSourceEvent`. A source class extends one
+**family** — `ObjectSource` (files), `RecordSource` (records) or `MessageSource` (a record source of
+messages) — which is declared, because it is what the items ARE and where the application lands them;
+the conformance kit checks the listed items match it. A family also carries the facts only its kind has,
+declared on the class: a `MessageSource` says which files `send` takes (`files: FileSupport` — kinds,
+sizes, files per provider message, captions), whether a reply `quotes` the message it answers, and how many
+reactions one person keeps on a message (`reactions_per_actor`). Capabilities are protocols discovered by
+`isinstance` (`Readable`, `Listable`, `Mutable`, `Openable`, `ByteStore`, `Messaging`, `Drafting`, `Reacting`),
 never declared. Failures are one `SourceError` family (`AccessDenied`, `SourceUnavailable`,
 `NotFound`, `Unsupported`, `InvalidCursor`, `Rejected`, `OutcomeUnknown`), each also subclassing the
 closest built-in. A source class is the same object whether it ships in `flow_sdk`, is authored as an
@@ -51,6 +60,8 @@ Everything the contract deliberately refuses is an **application** concern, and 
 | Health and parking (`config_error` stops, `transient` retries) | `ingest/health.py` | The contract raises; classifying a raise into a verdict is policy |
 | Reflection (`none` / `copy` / `symlink`) and `reindex_paths` | `ingest/reflect.py` | Where bytes land is the source ROW's choice, not the provider's |
 | Stream inbox projection, owner partition, reconcile lane, storm caps | `stream_inbox/projection.py` | A message's placement in a person's stream inbox is a product rule |
+| Message files: checked against `files` before any provider I/O, fanned out one per provider message, inbound bytes copied inside the session to the source's data dir | `ingest/driver_runtime.py`, `sources/files.py` | Where bytes land and when a send is refused is the runtime's; a source only opens and sends |
+| Reactions folded into state on the message they name (`SourceItem.reactions`, projected onto `FlowMessage.reactions`) | `stream_inbox/reactions.py` | A reaction report is a delta or a snapshot; holding the state it applies to is the application's |
 | Allowlists, `open_inbound`, self-address loop guards | `builtin/agent_serve.py`, `stream_inbox/agent_scope.py` | Who may drive an agent is policy |
 | Pipes: `ConsumerPosition`, `page_after`, `StreamInbox.listen`, `FolderChanges.listen`, `Delivered.ack/reply` | `blocks/`, `builtin/consumer_position.py`, `builtin/ingest_order.py` | At-least-once consumption with a durable watermark is what the contract explicitly scrapped as an SDK feature |
 | Hub relay, agent places, adoption hints | `builtin/agentic_process/*`, `builtin/agent_places.py` | Which machine holds the send-capable session is deployment |

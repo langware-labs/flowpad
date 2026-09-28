@@ -251,7 +251,7 @@ async def _agent_mailbox(mailboxes, server, *, allow: list[str]) -> DataSource:
         config={"agent_id": mailboxes["agent_id"], "address": mailboxes["agent_address"]},
         account_key=mailboxes["agent_address"],
         # The allowlist the gate reads — what ``AgentMailbox._cache_policy`` mirrors from the hub.
-        inbound_allowed_senders=list(allow),
+        allowed_senders=list(allow),
     )
     await source.save()
     await _served(server, agent, source)

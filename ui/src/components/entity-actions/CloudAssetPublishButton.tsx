@@ -16,7 +16,9 @@ interface CloudAssetPublishButtonProps {
 
 /**
  * Publish a TypeInfo-opted-in Git asset through the entity's standard Share
- * action. Git/Hub behavior stays backend-owned; this is only capability chrome.
+ * action. The backend uploads it into its project's hub-hosted repository and
+ * owns every refusal (e.g. `asset_conflict`, shown in its own words); this is
+ * only capability chrome.
  */
 export function CloudAssetPublishButton({ typeId, variant }: CloudAssetPublishButtonProps) {
   const { t } = useLingui();

@@ -22,9 +22,15 @@ const h = vi.hoisted(() => ({
   userTable: { values: [] as unknown[] },
 }));
 
-vi.mock('@sdk', async (importOriginal) => ({
+// Mock the modules the hook imports. It used to import the SDK barrel; nothing inside
+// the SDK imports the barrel any more (ui/tests/unit/sdk-module-layering.test.ts), so
+// a mock of '@sdk' intercepts nothing.
+vi.mock('@sdk/services/oauth/oauth-service', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   oauthService: { detach: h.detach, disconnect: h.disconnect, attach: h.attach, connect: h.connect },
+}));
+vi.mock('@sdk/FlowSync/context', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   dataContext: { userTypeId: { type: 'user', id: 'u1', toString: () => 'user-u1' } },
 }));
 // Only the user has a table; the project query stays empty, which is the

@@ -21,7 +21,12 @@ interface ProjectGitChipProps {
 }
 
 /**
- * The project header's Git slot: the repo it publishes to, or a way to add one.
+ * The project header's Git slot: the folder's own git remote, or a way to add one.
+ *
+ * Optional either way. Linking the project to the cloud and publishing its
+ * assets go through the project's hub-hosted repository, so a folder with no
+ * git at all links and publishes just the same; this chip only names a local
+ * origin when the folder happens to have one.
  *
  * Reads `git_share_preflight`, which derives the origin locally (no network) —
  * and now returns it even when the tree is dirty or unpushed, so a real repo is
@@ -131,7 +136,7 @@ export function ProjectGitChip({ projectTypeId, onChecked }: ProjectGitChipProps
       onClick={() => void runChecks()}
       disabled={checking}
       aria-label={t`Add Git`}
-      title={t`Add Git`}
+      title={t`Add Git (optional — linking to the cloud doesn't need it)`}
       data-testid="project-git-add"
       className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
     >

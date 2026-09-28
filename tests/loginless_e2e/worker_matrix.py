@@ -9,6 +9,7 @@ cell failed, so a container run is its own verdict.
 """
 
 import asyncio
+import os
 import shutil
 import sys
 import tempfile
@@ -25,7 +26,13 @@ TURN_DEADLINE_S = 240.0
 
 #: OpenRouter slugs. All three are in the hub's price table -- a public endpoint carries a cost
 #: limit, and the hub refuses a model it cannot price where a cost limit could not meter it.
-MODELS = ["moonshotai/kimi-k2.5", "z-ai/glm-4.7-flash", "qwen/qwen3-coder-30b-a3b-instruct"]
+#: ``MATRIX_MODELS`` (comma-separated) swaps them: a Vertex root is proven with
+#: ``anthropic/claude-sonnet-4.6,z-ai/glm-5,openai/gpt-oss-120b`` -- the hub maps each onto its Vertex name.
+MODELS = [m for m in os.environ.get("MATRIX_MODELS", "").split(",") if m] or [
+    "moonshotai/kimi-k2.5",
+    "z-ai/glm-4.7-flash",
+    "qwen/qwen3-coder-30b-a3b-instruct",
+]
 
 #: ``(worker, binary, how that CLI spells an OpenRouter slug)`` -- opencode namespaces by provider.
 WORKERS = [
@@ -33,6 +40,8 @@ WORKERS = [
     (WorkerType.CODEX, "codex", "{slug}"),
     (WorkerType.COPILOT, "copilot", "{slug}"),
     (WorkerType.OPENCODE, "opencode", "openrouter/{slug}"),
+    # In-process (flow_sdk's own runner), so "installed" means the python running this script.
+    (WorkerType.DEEPAGENTS, "python", "{slug}"),
 ]
 
 
@@ -84,7 +93,7 @@ async def main() -> int:
     only = set(sys.argv[1:])
     failed = 0
     for worker_type, binary, spelling in WORKERS:
-        if only and binary not in only:
+        if only and binary not in only and worker_type.value not in only:
             continue
         if shutil.which(binary) is None:
             print(f"SKIP  {binary:9} (CLI not installed)", flush=True)
@@ -94,7 +103,7 @@ async def main() -> int:
             ok, detail = await _turn(worker_type, spelling.format(slug=slug))
             failed += 0 if ok else 1
             print(
-                f"{'PASS' if ok else 'FAIL'}  {binary:9} {slug:38} {time.monotonic() - started:5.0f}s  {detail}",
+                f"{'PASS' if ok else 'FAIL'}  {worker_type.value:11} {slug:38} {time.monotonic() - started:5.0f}s  {detail}",
                 flush=True,
             )
     return 1 if failed else 0

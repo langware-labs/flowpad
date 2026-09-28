@@ -29,6 +29,9 @@ import { healthStyle } from './health-style';
 import { statusStyle } from './status-style';
 import { sourceIcon } from './source-icon';
 import { SourceMenu } from './SourceMenu';
+import { OpenFolderButton } from './OpenFolderButton';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openDriver, openSourceFile } from './data-sources-pointer';
 import { useSourceToggle } from './use-source-toggle';
 import { useSourceVerify } from './use-source-verify';
 
@@ -47,6 +50,7 @@ interface Props {
 
 export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Props) {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
   // Collapsed by default, whatever the state: the pill already says "needs
   // setup" / "needs attention", and a screen of parked sources must still fit
   // on one screen. The detail is one click away.
@@ -132,11 +136,27 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
           </button>
           <Icon className="size-5 shrink-0" />
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="truncate text-sm font-medium leading-tight" title={source.name}>
+            {/* The name opens the source's own file; the provider opens the driver it is an instance of. */}
+            <button
+              type="button"
+              className="truncate text-start text-sm font-medium leading-tight hover:underline disabled:no-underline"
+              title={source.asset_ref ? t`Open data_source.json` : source.name}
+              disabled={!source.asset_ref}
+              data-testid={`data-source-file-${source.id}`}
+              onClick={() => openSourceFile(navigation, source.asset_ref)}
+            >
               {source.name || source.provider || source.id.slice(0, 8)}
-            </span>
+            </button>
             <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {source.provider}
+              <button
+                type="button"
+                className="hover:text-foreground hover:underline"
+                title={t`Open the ${source.provider} driver`}
+                data-testid={`data-source-driver-${source.id}`}
+                onClick={() => openDriver(navigation, source.provider)}
+              >
+                {source.provider}
+              </button>
               {/* The agent transport's channel is `gmail` while its provider is
                   `agent` — showing only the provider is actively misleading. */}
               {source.channel && source.channel !== source.provider && ` · ${source.channel}`}
@@ -169,6 +189,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
             </Button>
           )}
           {Pull}
+          <OpenFolderButton path={source.asset_ref} testId={`data-source-folder-${source.id}`} />
           <SourceMenu
             source={source}
             spec={spec}
@@ -207,6 +228,10 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
     </div>
   );
 }
+
+/** The header row's look, shared by the sources table and the drivers table. */
+export const HEADER_ROW =
+  'border-b border-border bg-muted/30 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground';
 
 /** The one column template the header and every row share. */
 export const ROW_GRID =

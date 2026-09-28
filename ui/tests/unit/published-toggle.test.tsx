@@ -121,5 +121,9 @@ describe('PublishedToggle', () => {
     const text = document.body.textContent ?? '';
     expect(text).toContain('project_manifest.json');
     expect(text).toContain('flow asset install');
+    // The document goes to the project's repository on the hub — not a GitHub branch.
+    expect(text).toContain("uploaded to the project's repository on the hub");
+    expect(text).not.toContain('flow-cloud');
+    expect(text).not.toContain('GitHub');
   });
 });

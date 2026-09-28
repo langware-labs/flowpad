@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { EntityEnv, EnvVar, TypeId } from '@sdk';
+import { TypeId } from '../../models/TypeId';
+import { EntityEnv, EnvVar } from '../../models/env_var';
 
 import { entityEnvQueryKey } from './useEntityEnv';
 

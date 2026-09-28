@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""A PTY stand-in for the `claude` CLI — no LLM, no network, no keys.
+
+Put this folder FIRST on a disposable test instance's PATH and capability
+discovery resolves it as the Claude harness, so an agentic process's terminal
+runs through the real process / PTY / open / pty-stream path with a scripted
+program on the other end (docs/navigation/dock-loading.md, browser tier).
+
+Behaviour:
+  --version / -v            print a version and exit (capability probes)
+  otherwise                 print a banner with MOCK_WORKER_MARKER, then echo
+                            every line typed as "mock> <line>"; a line
+                            "flood <n>" prints n numbered lines (large
+                            recordings for the cold-open budget); "exit" quits.
+Env:
+  MOCK_WORKER_MARKER        banner marker (default MOCK-WORKER-READY)
+  MOCK_WORKER_FLOOD         print this many lines right after the banner
+"""
+import os
+import sys
+
+args = sys.argv[1:]
+if any(a in ("--version", "-v", "version") for a in args):
+    print("2.0.0 (Mock Code)")
+    sys.exit(0)
+if "-p" in args or "--print" in args:
+    # Print mode is not what this mock is for; answer and leave.
+    print("mock: print mode is not supported")
+    sys.exit(0)
+
+marker = os.environ.get("MOCK_WORKER_MARKER", "MOCK-WORKER-READY")
+
+
+def flood(n: int) -> None:
+    for i in range(n):
+        sys.stdout.write(f"mock line {i:07d} {'.' * 60}\r\n")
+    sys.stdout.flush()
+
+
+sys.stdout.write(f"\x1b]0;mock worker\x07{marker} pid={os.getpid()}\r\n")
+sys.stdout.flush()
+flood(int(os.environ.get("MOCK_WORKER_FLOOD", "0") or 0))
+sys.stdout.write("mock> ")
+sys.stdout.flush()
+for line in sys.stdin:
+    text = line.rstrip("\r\n")
+    if text == "exit":
+        break
+    if text.startswith("flood "):
+        flood(int(text.split()[1]))
+    else:
+        sys.stdout.write(f"mock> {text}\r\n")
+    sys.stdout.write("mock> ")
+    sys.stdout.flush()

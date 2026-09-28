@@ -3,7 +3,7 @@ id: 5204aeda-dfc7-43bb-a689-300e6795263c
 name: building-deliverables
 description: Routes a build request to the right Flowpad skill and says how to present
   the result — web apps, slide decks, standalone HTML pages, static sites, images,
-  skills, agents, whiteboards, docs, runnable code snippets and URL-to-markdown captures. Use whenever the
+  skills, agents (agent-builder), subagents, whiteboards, docs, runnable code snippets and URL-to-markdown captures. Use whenever the
   user asks to build, create, make, generate, scaffold or prototype something, when
   they ask to test what was built, or when they want an existing app opened or a
   command run in their visible terminal. NOT for showing or navigating to a
@@ -21,6 +21,12 @@ already owns. After every deliverable, present it with `flow show` (see the
 
 **MCP UI / MCP Apps / interactive chat forms** → the **mcp-ui** skill, which owns the
 `.mcp.html` format and the submission protocol.
+
+**Agent** — a Flowpad agent the user chats with, puts beside a page, calls from code or
+deploys to a channel (`agentic-assets/agent/<name>/`), including "an assistant / helper /
+bot our users or customers use", and "my agent keeps doing X" → the
+**agent-builder** skill, which owns the interview, `agent.json` + `system_prompt.md`, the
+screens and the test loop with the user.
 
 **Data source / feed / RSS / Slack / Drive / mail / repo to ingest**, "what can I do
 with these items", label / annotate / training set → the **connect-data-source** skill
@@ -113,8 +119,9 @@ show the FILE itself:
 `flow show file <abs-path-to-SKILL.md>` — this opens the full skill editor (Flowpad
 resolves the entity for you; no indexing step).
 
-**Agent** → write `.claude/agents/<name>.md` (frontmatter: name, description, tools),
-then `flow show file <abs-path>`.
+**SubAgent** (a Claude Code helper this session delegates to — not a Flowpad agent,
+which is **agent-builder**'s) → write `.claude/agents/<name>.md` (frontmatter: name,
+description, tools), then `flow show file <abs-path>`.
 
 **Whiteboard / board / diagram** → a folder `.claude/whiteboards/<name>/` in the project
 containing:

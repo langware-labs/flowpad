@@ -13,7 +13,7 @@ export interface UsePromptsForProcessResult {
   transcriptPrompts: TranscriptPrompt[];
   promptEntries: PromptEntry[];
   isLoading: boolean;
-  refresh: () => void;
+  refresh: (options?: { force?: boolean }) => void;
 }
 
 /**
@@ -40,7 +40,9 @@ export function usePromptsForProcess(process: AgenticProcess | null): UsePrompts
   // changed, or a newer refresh started) discard their result.
   const fetchGenRef = useRef(0);
 
-  const refresh = useCallback(() => {
+  // `force`: a live refresh (a prompt was just submitted) re-reads the transcript;
+  // a mount answers from the process's cached read when nothing has moved.
+  const refresh = useCallback((options: { force?: boolean } = {}) => {
     if (!process) {
       fetchGenRef.current += 1;
       setTranscriptPrompts([]);
@@ -51,7 +53,7 @@ export function usePromptsForProcess(process: AgenticProcess | null): UsePrompts
     setIsLoading(true);
     void (async () => {
       try {
-        const ums = await process.getPrompts();
+        const ums = await process.getPrompts({ force: options.force ?? false });
         if (fetchGenRef.current !== myGen) return;
         const shown: TranscriptPrompt[] = [];
         for (const e of ums) {

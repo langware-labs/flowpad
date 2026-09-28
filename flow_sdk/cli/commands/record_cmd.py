@@ -272,23 +272,10 @@ _SHARE_EXIT_CODES = {
     "NOT_INDEXED": EXIT_NOT_FOUND,
     "NO_PROJECT": EXIT_NOT_FOUND,
     "PROJECT_NOT_LINKED": EXIT_SHARE_BLOCKED,
-    "PROJECT_NOT_READY": EXIT_SHARE_BLOCKED,
     "CLOUD_LOGIN_REQUIRED": EXIT_SHARE_BLOCKED,
     "AUTHENTICATED_USER_REQUIRED": EXIT_SHARE_BLOCKED,
-    "GITHUB_NOT_CONNECTED": EXIT_SHARE_BLOCKED,
     "LOCAL_MODE": EXIT_SHARE_BLOCKED,
-    "BRANCH_AHEAD": EXIT_SHARE_BLOCKED,
-    "BRANCH_DIVERGED": EXIT_SHARE_BLOCKED,
-    "NOT_IN_REPO": EXIT_SHARE_BLOCKED,
-    "MISSING_REMOTE": EXIT_SHARE_BLOCKED,
-    "UNSUPPORTED_ORIGIN": EXIT_SHARE_BLOCKED,
-    "DETACHED_HEAD": EXIT_SHARE_BLOCKED,
-    "NO_COMMIT": EXIT_SHARE_BLOCKED,
-    "DIRTY": EXIT_SHARE_BLOCKED,
-    "UNPUSHED": EXIT_SHARE_BLOCKED,
-    "STATUS_FAILURE": EXIT_SHARE_BLOCKED,
-    # From AssetPublishCode — both are gates the user can act on.
-    "ORIGIN_INVALID": EXIT_SHARE_BLOCKED,
+    # From AssetPublishCode — a gate the user can act on.
     "PROJECT_NOT_PUBLISHED": EXIT_SHARE_BLOCKED,
 }
 
@@ -296,9 +283,9 @@ _SHARE_EXIT_CODES = {
 @record_app.command(
     "share",
     help=(
-        "Put a git-backed asset in the cloud and print a link a reviewer can "
-        "open. Commits ONLY the paths named — the asset plus each --with — and "
-        "pushes the branch. Read-only until every gate has passed."
+        "Put an asset in the cloud and print a link a reviewer can open. When the "
+        "project folder is a git checkout, commits ONLY the paths named — the asset "
+        "plus each --with — and pushes its branch. Read-only until every gate has passed."
     ),
 )
 def share_record(
@@ -330,7 +317,7 @@ def share_record(
 
         0 — shared; ``url`` is in the payload
         2 — INVALID_ARG / NOT_PUBLISHABLE
-        3 — a gate you can fix (project not linked, git not ready, no GitHub);
+        3 — a gate you can fix (project not linked, not logged in to the cloud);
             nothing was committed or pushed
         4 — NOT_FOUND / NOT_INDEXED / NO_PROJECT
         5 — the instance or the server is unreachable

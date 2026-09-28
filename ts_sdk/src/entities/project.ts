@@ -1,7 +1,7 @@
 import type { AssetScanResult } from '../process/asset-descriptor';
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import type { IEntity } from '../IEntity';
-import apiClient, { getRaw } from '../client';
+import { getRaw } from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import {
   ActionInfo,
@@ -28,13 +28,8 @@ import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 import { Wiki } from './wiki';
-
-export interface ProjectMember {
-  member_id: string;
-  name: string;
-  joined_at: string | null;
-  last_seen_at: string | null;
-}
+import type { IProject, ProjectContextDirInfo, ProjectCustomization, ProjectMember } from './project-types';
+export type * from './project-types';
 
 export interface ResolveProjectResult {
   project_id: string;
@@ -139,46 +134,6 @@ export interface ProjectContextFolderResolveResult {
   path?: string;
   message?: string;
   [key: string]: unknown;
-}
-
-/** Mirror of the backend computed `Project.context_dir_infos` entries. */
-export interface ProjectContextDirInfo {
-  path: string;
-  /** Origin kind stamped at link time — "git" for cloned repos, else "local". */
-  origin_kind: string;
-  /** The linked Folder entity's typeid (e.g. "folder-<uuid>") — referenced by
-   *  UI surfaces like the push-notify message chip. Empty for legacy dirs. */
-  typeid?: string;
-}
-
-/** A project's visual identity, from the `brand` block of
- *  `.flow/customization/string.json`. Every field is optional; the block itself
- *  is null unless at least one survived validation.
- *
- *  `logo` / `logo_dark` are REPO-RELATIVE paths the backend has already
- *  confirmed exist and are inside the project root — hand them straight to
- *  `useFS(projectTypeId).getDownloadUrl(path)`, no probe needed. */
-export interface ProjectBrand {
-  name?: string | null;
-  tagline?: string | null;
-  /** CSS colour for the accent. Apply it SCOPED to the branded container, never
-   *  to `documentElement` — see `useHelpdeskBrand`. */
-  accent?: string | null;
-  logo?: string | null;
-  logo_dark?: string | null;
-}
-
-/** Optional per-project branding read from `.flow/customization/`.
- *  Mirrors the backend `Project.customization` computed field. Image bytes are
- *  fetched on demand via the `fs` download action; here only a flag (home
- *  background) or a relative path (brand logos). */
-export interface ProjectCustomization {
-  /** From `.flow/customization/string.json` — overrides the home greeting. */
-  home_title?: string | null;
-  /** True when `.flow/customization/home.png` exists → render it as background. */
-  has_home_background?: boolean;
-  /** Null when the project ships no usable brand block. */
-  brand?: ProjectBrand | null;
 }
 
 /** `GET project/<id>/home-page` — `Project.open_home_page()`. */
@@ -338,7 +293,7 @@ export class Project extends APIEntity<Project> {
    *  `system` means the narrower "SDK-shipped". See `isHiddenProject`. */
   hidden: boolean = false;
 
-  constructor(entity: Partial<Project> = {}) {
+  constructor(entity: Partial<IProject> = {}) {
     super(entity);
     this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
     // The hub sends the git kind under its wire name `git_origin`; a local row says `origin`.
@@ -470,7 +425,9 @@ export class Project extends APIEntity<Project> {
    * Discover directory (`GET project/published_directory`), newest first, with
    * facets over the whole set. `typeid` / `project` / `type` narrow the rows.
    */
-  static async getPublishedDirectory(opts: { typeid?: string; project?: string; type?: string } = {}): Promise<PublishedDirectory> {
+  static async getPublishedDirectory(
+    opts: { typeid?: string; project?: string; type?: string } = {},
+  ): Promise<PublishedDirectory> {
     const actionInfo = new ActionInfo('published_directory', Project.type, null, 'GET');
     const params: Record<string, string> = {};
     if (opts.typeid) params.typeid = opts.typeid;
@@ -581,7 +538,9 @@ export class Project extends APIEntity<Project> {
       // status and its own message is "Request failed with status code 400",
       // which is what the recipient saw — the one sentence that says nothing.
       const ax = err as { response?: { data?: { message?: string } }; message?: string };
-      throw new Error(ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.');
+      throw new Error(
+        ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.',
+      );
     }
     // A FAIL envelope on a 200 unwraps to `undefined` rather than throwing.
     if (!response) throw new Error('The project could not be set up from its Git origin.');
@@ -599,9 +558,10 @@ export class Project extends APIEntity<Project> {
     }
     const infos = (response as { context_dir_infos?: unknown } | null)?.context_dir_infos;
     if (Array.isArray(infos)) {
-      this.context_dir_infos = infos.filter((item): item is ProjectContextDirInfo => (
-        !!item && typeof item === 'object' && typeof (item as ProjectContextDirInfo).path === 'string'
-      ));
+      this.context_dir_infos = infos.filter(
+        (item): item is ProjectContextDirInfo =>
+          !!item && typeof item === 'object' && typeof (item as ProjectContextDirInfo).path === 'string',
+      );
     }
   }
 
@@ -692,9 +652,10 @@ export class Project extends APIEntity<Project> {
     this.adoptContextDirs(response);
     const results = response?.context_folder_results;
     if (!Array.isArray(results)) return [];
-    return results.filter((item): item is ProjectContextFolderResolveResult => (
-      !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string'
-    ));
+    return results.filter(
+      (item): item is ProjectContextFolderResolveResult =>
+        !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string',
+    );
   }
 
   async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {
@@ -836,10 +797,7 @@ export class Project extends APIEntity<Project> {
     const memberId = hostMemberId ?? getOrCreateLocalMemberId();
     const info = new ActionInfo('ensure-collaboration-code', Project.type, this.typeId.id, 'POST');
     info.bodyParameters = { host_name: hostName, host_member_id: memberId };
-    const result = await dataManager.callAction<
-      { host_name: string; host_member_id: string },
-      Partial<Project>
-    >(info);
+    const result = await dataManager.callAction<{ host_name: string; host_member_id: string }, Partial<Project>>(info);
     if (result) {
       if (result.session_code !== undefined) this.session_code = result.session_code ?? null;
       if (result.host_member_id !== undefined) this.host_member_id = result.host_member_id ?? null;
@@ -852,10 +810,7 @@ export class Project extends APIEntity<Project> {
   async joinCollaboration(memberId: string, name: string): Promise<ProjectMember | null> {
     const info = new ActionInfo('join-collaboration', Project.type, this.typeId.id, 'POST');
     info.bodyParameters = { member_id: memberId, name };
-    const result = await dataManager.callAction<
-      { member_id: string; name: string },
-      Partial<Project>
-    >(info);
+    const result = await dataManager.callAction<{ member_id: string; name: string }, Partial<Project>>(info);
     if (result && Array.isArray(result.presence)) {
       this.presence = result.presence as ProjectMember[];
     }
@@ -866,10 +821,9 @@ export class Project extends APIEntity<Project> {
   async heartbeatCollaboration(memberId: string): Promise<ProjectMember[] | null> {
     const info = new ActionInfo('heartbeat-collaboration', Project.type, this.typeId.id, 'POST');
     info.bodyParameters = { member_id: memberId };
-    const result = await dataManager.callAction<
-      { member_id: string },
-      { ok: boolean; presence: ProjectMember[] }
-    >(info);
+    const result = await dataManager.callAction<{ member_id: string }, { ok: boolean; presence: ProjectMember[] }>(
+      info,
+    );
     if (result && Array.isArray(result.presence)) {
       this.presence = result.presence;
       return result.presence;
@@ -905,13 +859,10 @@ export class Project extends APIEntity<Project> {
     if (!path) return null;
     const { lazyAssets, LazyAsset } = await import('../lazy');
     const projects = await lazyAssets.load(LazyAsset.Projects);
-    const candidates = projects.filter(
-      (p) => p.fs_storage_mount_path && path.startsWith(p.fs_storage_mount_path),
-    );
+    const candidates = projects.filter((p) => p.fs_storage_mount_path && path.startsWith(p.fs_storage_mount_path));
     return (
-      candidates.sort(
-        (a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0),
-      )[0] ?? null
+      candidates.sort((a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0))[0] ??
+      null
     );
   }
 
@@ -966,12 +917,13 @@ export class Project extends APIEntity<Project> {
         { project: unknown }
       >(action);
       if (!response?.project) return { kind: 'error', message: 'No project returned' };
-      const project = dataManager.updateEntityFromJson<Project>(
-        response.project as Record<string, unknown>,
-      );
+      const project = dataManager.updateEntityFromJson<Project>(response.project as Record<string, unknown>);
       return { kind: 'ok', project };
     } catch (err: unknown) {
-      const ax = err as { response?: { status?: number; data?: { data?: unknown; message?: string } }; message?: string };
+      const ax = err as {
+        response?: { status?: number; data?: { data?: unknown; message?: string } };
+        message?: string;
+      };
       if (ax.response?.status === 409) {
         const payload = ax.response.data?.data as { suggested_name?: string; attempted_name?: string } | undefined;
         return {
@@ -996,7 +948,9 @@ export class Project extends APIEntity<Project> {
   static async recoverOrphaned(orphanedId: string, computeNodeId: string): Promise<Project | null> {
     const action = new ActionInfo('recover-orphaned-project', 'compute_node', computeNodeId, 'POST');
     action.bodyParameters = { dangling_id: orphanedId };
-    const response = await dataManager.callAction<{ dangling_id: string }, { project: unknown; rebound: number }>(action);
+    const response = await dataManager.callAction<{ dangling_id: string }, { project: unknown; rebound: number }>(
+      action,
+    );
     if (!response?.project) return null;
     return dataManager.updateEntityFromJson<Project>(response.project as Record<string, unknown>);
   }

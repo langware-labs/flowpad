@@ -194,6 +194,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_clean_claude_pty_stress",
         "test_cli_driver_binary_smoke",
         "test_process_mcp_multi_vendor",
+        "test_process_typed_io_live",
         "test_transcript_cache_live_parity",
         "test_markdown_index",
         "test_prompt_queue_integration",

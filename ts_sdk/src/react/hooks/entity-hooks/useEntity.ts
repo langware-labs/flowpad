@@ -1,4 +1,6 @@
-import { APIEntity, ApiError, dataManager, TypeId } from '@sdk';
+import { APIEntity, dataManager } from '../../../APIEntity';
+import { ApiError } from '../../../ApiResponse';
+import { TypeId } from '../../../models/TypeId';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 import { useEntityOptions, UseEntityResult } from './types';
 import { useWatch } from './useWatch';
@@ -13,10 +15,7 @@ type EntityQueryState<T> = {
   notFound: boolean;
 };
 
-function initialState<T>(
-  typeId: TypeId | null,
-  enabled: boolean,
-): EntityQueryState<T> {
+function initialState<T>(typeId: TypeId | null, enabled: boolean): EntityQueryState<T> {
   return {
     data: typeId && enabled ? undefined : null,
     isLoading: !!(typeId && enabled),

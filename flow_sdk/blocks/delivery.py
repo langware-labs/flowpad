@@ -48,7 +48,7 @@ def _announce_needs_review(source, row, consumer: str) -> None:
 
 
 class Delivered(Generic[T]):
-    __slots__ = ("item", "redelivered", "source_id", "_position", "_row")
+    __slots__ = ("item", "redelivered", "source_id", "_position", "_row", "_quoted")
 
     def __init__(
         self,
@@ -58,12 +58,14 @@ class Delivered(Generic[T]):
         row: "Entity",
         source_id: str,
         redelivered: bool = False,
+        quoted: Any = None,
     ) -> None:
         self.item = item
         self.redelivered = redelivered
         self.source_id = source_id
         self._position = position
         self._row = row
+        self._quoted = quoted
 
     def __getattr__(self, name: str) -> Any:
         # Only reached when normal lookup fails, so the envelope's own fields never recurse.
@@ -90,12 +92,70 @@ class Delivered(Generic[T]):
             raise LookupError(f"source {self.source_id} is gone; nothing to reply through")
         return source
 
-    async def reply_spec(self, *, body: str, attachments=()) -> "MessageSpec":
+    # ── what the message carries ────────────────────────────────────────
+    @property
+    def files(self) -> tuple:
+        """The files that came with this message (``MessageFileData``: ``name``, ``media_type``,
+        ``as_``, ``caption``, ``path``) — already copied to this machine when it arrived; a file
+        whose bytes never came says why in ``fetch_error``."""
+        data = getattr(self.item, "data", None)
+        return tuple(f.data for f in getattr(data, "attachments", ()) or ())
+
+    @property
+    def reply_to(self) -> Any:
+        """The message this one quotes (its ``SourceItem``), or ``None`` — looked up when it was handed out."""
+        return self._quoted
+
+    @property
+    def reactions(self) -> list:
+        """Who reacted with what on this message, as of now (``MessageReaction``)."""
+        return list(getattr(self._row, "reactions", None) or [])
+
+    async def react(self, emoji: str) -> list:
+        """Put our ``emoji`` on this message; on a channel that keeps one per person it replaces ours."""
+        from flow_sdk.stream_inbox.reactions import react  # noqa: PLC0415
+
+        self._row.reactions = await react(await self._message(), emoji)
+        return self.reactions
+
+    async def unreact(self, emoji: str = "") -> list:
+        """Take back our ``emoji`` (all of ours with ``""``)."""
+        from flow_sdk.stream_inbox.reactions import unreact  # noqa: PLC0415
+
+        self._row.reactions = await unreact(await self._message(), emoji)
+        return self.reactions
+
+    async def _message(self) -> Any:
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+        found = await FlowMessage.get_one({"source_item_id": str(self._row.id)})
+        # Not projected yet: the reaction verbs read the SourceItem either way.
+        return found if found is not None else _Unprojected(str(self._row.id))
+
+    async def reply_spec(self, *, body: str, files=(), quote: "bool | None" = None) -> "MessageSpec":
         """The reply to THIS item, in its own channel's shape — the rule and the
         reason are ``DataSource.reply_spec``'s. Async only because it reads the
-        source."""
+        source.
+
+        ``quote=None`` quotes this message only when the person wrote again before the answer
+        went out — what a person does; quoting every answer in a 1:1 chat is noise."""
         source = await self._source()
-        return source.reply_spec(self.item, body=body, attachments=attachments)
+        if quote is None:
+            quote = await self._newer_from_them(source)
+        return source.reply_spec(self.item, body=body, files=files, quote=quote)
+
+    async def _newer_from_them(self, source) -> bool:
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+        thread = getattr(self._row, "thread_key", None)
+        if not thread:
+            return False
+        rows = await SourceItem.get_all({"data_source_id": str(source.id), "thread_key": thread})
+        mine = str(getattr(self._row, "occurred_at", "") or "")
+        return any(
+            str(r.id) != str(self._row.id) and not r.is_ours(source) and str(r.occurred_at or "") > mine
+            for r in rows
+        )
 
     async def reply(self, spec: "MessageSpec") -> "SendOutcome | None":
         """Send *spec* as the answer to this item, then ack — the piggybacked ack.
@@ -163,6 +223,14 @@ class Delivered(Generic[T]):
         """
         if self._position.advance_to(self._row):
             await self._position.commit()
+
+
+class _Unprojected:
+    """A message known only by its SourceItem — enough for the reaction verbs."""
+
+    def __init__(self, source_item_id: str) -> None:
+        self.id = ""
+        self.source_item_id = source_item_id
 
 
 class DeliveredPage:

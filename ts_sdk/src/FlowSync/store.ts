@@ -1,6 +1,5 @@
 import { webUrlFromPointer } from '../models/web-url-pointer';
 import { ViewType } from '../utils/ui/view-types';
-import { lazyAssets, LazyAsset } from '../lazy';
 import { bindAssetEditorRegistry } from '../models/asset-editor';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
@@ -10,14 +9,15 @@ import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
 import { IEntity } from '../IEntity';
 import type { AssetOccurrence } from '../APIEntity';
-import { ActionInfo, BootstrapInfo, DeferredInfo, ScanInfo } from '../models';
-import { isValidUUIDv4, TypeId } from '../models/TypeId';
+import { ActionInfo } from '../models/ActionInfo';
+import { BootstrapInfo, DeferredInfo, ScanInfo } from '../models/BootstrapInfo';
+import { isValidIdentifier, isValidUUIDv4, TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
 import { isElectronShell } from '../utils/runtime';
 import { isAbsoluteMachinePath } from '../utils/vfs-path';
 import { parseWikiPointer } from '../utils/wiki-word';
-import { UserRole } from '../services/membershipService';
+import { UserRole } from '../models/Membership';
 import {
   ConnectionManager,
   ControlMessage,
@@ -28,7 +28,7 @@ import {
 } from '../websocket';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { toplog } from '../services/toplog';
-import { getUtmParams } from './auth';
+import { getUtmParams } from '../utils/utm';
 import { emitEntityTag } from './entity.onTag';
 import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
@@ -43,7 +43,6 @@ import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 function canFetchAbsolute(): boolean {
   return /^https?:\/\//i.test(apiClient.defaults.baseURL ?? '');
 }
-
 
 export enum EntityStatus {
   NA = 'NA',
@@ -142,10 +141,13 @@ class EntityEditMarker {
 
   private arm(state: PendingEditMark): void {
     if (state.timer) clearTimeout(state.timer);
-    state.timer = setTimeout(() => {
-      state.timer = null;
-      void this.flush(state);
-    }, Math.max(0, state.dueAt - Date.now()));
+    state.timer = setTimeout(
+      () => {
+        state.timer = null;
+        void this.flush(state);
+      },
+      Math.max(0, state.dueAt - Date.now()),
+    );
   }
 
   private async flush(state: PendingEditMark): Promise<void> {
@@ -398,6 +400,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       return;
     }
     try {
+      // Loaded here, not at module scope: `lazy/assets` reaches `dataManager` (i.e.
+      // `APIEntity`), and this module loads inside APIEntity's own load — an eager
+      // import would put the base class in a cycle with itself, which is what made
+      // `class X extends APIEntity` see `undefined`. See
+      // ui/tests/unit/sdk-module-layering.test.ts.
+      const { lazyAssets, LazyAsset } = await import('../lazy');
       const raw = await lazyAssets.refresh(LazyAsset.IndexStatus);
       this.setScanInfo({
         total_indexed: raw?.per_type?.reduce((s: number, t: any) => s + (t.entity_count ?? 0), 0) ?? 0,
@@ -405,7 +413,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         never_indexed: raw?.never_indexed ?? true,
         stale: raw?.stale ?? false,
       });
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   public async bootstrap(domain?: string, session?: boolean): Promise<BootstrapInfo> {
@@ -575,7 +585,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
   }
 
-  private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity, fromEntityStr?: string | null) {
+  private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity) {
     const typeId = new TypeId(typeIdStr);
 
     // child_* INVERTS the envelope: `typeId` is the PARENT, `data` is the CHILD.
@@ -1023,6 +1033,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return null;
   }
 
+  /** The first live cached entity matching `predicate` (optionally of one `type`) — no request. */
+  public findInCache<U extends T>(predicate: (entity: U) => boolean, type?: string): U | null {
+    for (const [typeId, ref] of this.entities.entries()) {
+      if (type && typeId.type !== type) continue;
+      const entity = ref.entity as U | undefined;
+      if (entity && predicate(entity)) return entity;
+    }
+    return null;
+  }
+
   /**
    * Distinguished initial name for a tab opening on a DockPointer (called ONCE
    * at Tab creation; docs/tab-management.md). Resolves, in order:
@@ -1047,16 +1067,18 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         // surfaces its `title` via getDisplayName), falling back to the raw
         // `name` — both for entities with no display override and for plain
         // cached rows that have no `displayName` getter.
-        const ent = this.getByTypeIdFromCache(tid) as
-          | { displayName?: string | null; name?: string | null; hasSyntheticDisplayName?: boolean }
-          | null;
+        const ent = this.getByTypeIdFromCache(tid) as {
+          displayName?: string | null;
+          name?: string | null;
+          hasSyntheticDisplayName?: boolean;
+        } | null;
         // Never adopt the `<type>-<id>` synthetic as a tab name: returning it here
         // would freeze `agentic_process-<id>` into the durable `Tab.name` (backfill
         // only heals a NULL name). Fall back to null so the chip shows the provider
         // label until a real name is stamped onto the entity (backend
         // `stamp_default_name`), which then flows through `displayName`.
         if (ent?.hasSyntheticDisplayName) return null;
-        return (ent?.displayName ?? ent?.name) ?? null;
+        return ent?.displayName ?? ent?.name ?? null;
       } catch {
         return null;
       }
@@ -1614,9 +1636,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig: any = actionInfo.abortSignal
-      ? { signal: actionInfo.abortSignal }
-      : undefined;
+    let requestConfig: any = actionInfo.abortSignal ? { signal: actionInfo.abortSignal } : undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
         ...(requestConfig ?? {}),
@@ -1690,12 +1710,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           // One body-carrying send per verb — keeps adding a verb to the case
           // labels above the only edit, instead of another ternary level.
           const send = { POST: apiClient.post, PUT: apiClient.put, PATCH: apiClient.patch }[method];
-          response = (await send.call(
-            apiClient,
-            endpoint,
-            actionInfo.bodyParameters,
-            requestConfig,
-          )) as unknown as Res;
+          response = (await send.call(apiClient, endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res;
         }
         break;
       case 'DELETE':
@@ -1712,7 +1727,10 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
   }
 
-  public async callActionOverWS<_Req, Res>(actionInfo: ActionInfo, options?: import('../websocket').IWSRestOptions): Promise<Res> {
+  public async callActionOverWS<_Req, Res>(
+    actionInfo: ActionInfo,
+    options?: import('../websocket').IWSRestOptions,
+  ): Promise<Res> {
     const connectionManager = ConnectionManager.getInstance();
 
     if (!connectionManager.connected) {
@@ -1784,7 +1802,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // `.catch`, not `void`: unawaited by design, but a rejected promise nobody
     // observes is an unhandled rejection. A failed handshake here is already
     // reported by the connection status; it must not take the process down.
-    ConnectionManager.getInstance().connect().catch(() => undefined);
+    ConnectionManager.getInstance()
+      .connect()
+      .catch(() => undefined);
 
     // Check if a WatchedQuery exists
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
@@ -1904,10 +1924,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
         // Use same identifier logic as APIEntity.identifier to ensure consistent cache lookups
         const identifier = entityJson['uname'] ? `@${entityJson['uname']}` : entityJson['id'];
-        let typeId: TypeId;
-        try {
-          typeId = new TypeId(entityJson['type'], identifier);
-        } catch (e) {
+        // An unparseable id must not enter the cache — the same check the TypeId
+        // constructor makes, without allocating one per row to throw it away.
+        if (!isValidIdentifier(identifier)) {
           console.warn(`[DataManager] Skipping entity with invalid id "${identifier}" for type: ${entityJson['type']}`);
           continue;
         }
@@ -2191,34 +2210,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.updateEntityFromJson<U>(json);
   }
 
-  /**
-   * Field-name whitelist for the TypeId auto-coercion in `deepAssign`.
-   *
-   * The default heuristic — "if the value looks like a TypeId string, treat it
-   * as one" — corrupts plain-string fields whose values happen to match the
-   * `<type>-<id>` shape. The canonical example is `target_typeid_str` on
-   * `AgenticProcess` / `Run`: the Python schema declares it `str | None`, the
-   * on-disk record stores it as the string `"project-<uuid>"`, but
-   * `deepAssign` would otherwise wrap it into a TypeId object — breaking
-   * `useProcessesForTarget` queries (string match on the server, object
-   * mismatch on the client validator) and silently disabling the chat
-   * toolbar's history.
-   *
-   * The list below names every field whose value should NEVER be promoted to
-   * a TypeId, regardless of how it looks. Add new entries here when a plain
-   * string id field is introduced and its values can collide with the TypeId
-   * shape. Reference IDs (project_id, created_by, …) are intentionally NOT in
-   * this set — current consumers rely on the auto-coercion for those.
-   */
-  private static TYPEID_COERCION_DENYLIST: ReadonlySet<string> = new Set([
-    'target_typeid_str',
-    'message',
-    'text',
-    'instruction',
-    'title',
-    'sender_name',
-  ]);
-
   public deepAssign(target: any, source: any) {
     for (const key in source) {
       if (typeof source[key] === 'object' && source[key] !== null) {
@@ -2251,9 +2242,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (!(wireField in source)) return;
       const wireValue = source[wireField] ?? target[wireField];
       if (!Array.isArray(wireValue)) return;
-      target[internalField] = wireValue.map((v: unknown) =>
-        v instanceof TypeId ? v : new TypeId(String(v)),
-      );
+      target[internalField] = wireValue.map((v: unknown) => (v instanceof TypeId ? v : new TypeId(String(v))));
       delete target[wireField];
     };
     rehydrate('shared_context_entities', '_shared_context_entities_');

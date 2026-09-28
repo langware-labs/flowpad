@@ -1,5 +1,8 @@
-import type { BrowseCache, ContentCache } from '../..';
-import { fsManager, fsStore, type FSEntry, type TypeId } from '../..';
+import type { BrowseCache, ContentCache } from '../../stores/fsStore';
+import { fsStore } from '../../stores/fsStore';
+import { fsManager } from '../../services/fsService';
+import type { FSEntry } from '../../fs/FSEntry';
+import type { TypeId } from '../../models/TypeId';
 import { useFSStore } from './useFSStore';
 
 /**

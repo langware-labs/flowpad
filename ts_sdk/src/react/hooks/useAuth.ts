@@ -1,4 +1,6 @@
-import { AuthError, TypeId, User } from '@sdk';
+import { AuthError } from '../../FlowSync/auth';
+import { User } from '../../entities/user';
+import { TypeId } from '../../models/TypeId';
 import { useContext } from './useContext';
 
 export interface UseAuthResult {

@@ -42,8 +42,15 @@ class Mutable(Protocol):
 
 
 @runtime_checkable
-class ByteStore(Protocol):
+class Openable(Protocol):
+    """Read the bytes of a file the source handed out — an inbound message's attachment. The runtime
+    copies them while the session is open, because a provider's link rarely outlives it."""
+
     def open(self, file: FileItem, *, chunk_size: int = ...) -> AbstractAsyncContextManager[AsyncIterator[bytes]]: ...
+
+
+@runtime_checkable
+class ByteStore(Openable, Protocol):
     async def write(self, path: str, content: AsyncIterator[bytes]) -> FileItem: ...
     async def delete(self, origin: CloudOrigin) -> None: ...
 
@@ -52,6 +59,16 @@ class ByteStore(Protocol):
 class Messaging(Protocol):
     async def send(self, data: MessageData) -> MessageItem: ...
     async def reply(self, origin: CloudOrigin, data: MessageData) -> MessageItem: ...
+
+
+@runtime_checkable
+class Reacting(Protocol):
+    """Put or take back our emoji on a message. ``emoji`` is unicode; the driver translates it to its
+    provider's form and refuses one the channel cannot show (``Rejected``) — it never substitutes
+    another. ``unreact`` with ``""`` takes back all of ours."""
+
+    async def react(self, target: CloudOrigin, emoji: str) -> None: ...
+    async def unreact(self, target: CloudOrigin, emoji: str = "") -> None: ...
 
 
 @runtime_checkable
@@ -134,9 +151,11 @@ CAPABILITIES: dict[str, type] = {
     "readable": Readable,
     "listable": Listable,
     "mutable": Mutable,
+    "openable": Openable,
     "byte_store": ByteStore,
     "messaging": Messaging,
     "drafting": Drafting,
+    "reacting": Reacting,
     "verifiable": Verifiable,
     "choosing": Choosing,
     "identified": Identified,
@@ -161,6 +180,8 @@ __all__ = [
     "Listable",
     "Messaging",
     "Mutable",
+    "Openable",
+    "Reacting",
     "Readable",
     "StableHandle",
     "Verdict",

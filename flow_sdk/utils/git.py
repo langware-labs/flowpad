@@ -341,9 +341,7 @@ async def git_clone(
     return _answer(result, "clone", "Cloned successfully.")
 
 
-async def git_remote_access(
-    clone_url: str, token: Optional[str] = None, *, ignore_local_credentials: bool = False
-) -> Tuple[bool, Optional[str]]:
+async def git_remote_access(clone_url: str, token: Optional[str] = None) -> Tuple[bool, Optional[str]]:
     """Can we read ``clone_url``, and what is its default branch?
 
     ``git ls-remote --symref <url> HEAD`` is the cheap, provider-agnostic
@@ -352,23 +350,10 @@ async def git_remote_access(
     as ``git_clone``, so "the check passed" and "the clone will work" cannot
     disagree.
 
-    ``ignore_local_credentials`` empties the ``credential.helper`` list for this
-    one invocation, which changes WHO the answer is about: not "can this machine
-    read it" but "can a stranger". Without it the caller's own keychain (macOS
-    osxkeychain, `gh auth`, a cached PAT) silently authenticates the probe, so a
-    private repo comes back reachable — the exact false positive that would tell
-    an admin their teammates can clone something only they can. Ignored when a
-    ``token`` is given: naming a credential and then asking to be anonymous is a
-    contradiction, and the token branch installs its own helper.
-
     Returns (accessible, default_branch or None).
     """
     try:
         auth_args, env = _git_token_auth(token)
-        if ignore_local_credentials and not token:
-            # An empty value RESETS the helper list (git-config(1)), so system,
-            # global and repo-local helpers are all dropped for this call.
-            auth_args = ["-c", "credential.helper=", *auth_args]
         env = {**(env or os.environ), "GIT_TERMINAL_PROMPT": "0"}
         cmd = ["git", *auth_args, "ls-remote", "--symref", clone_url, "HEAD"]
 

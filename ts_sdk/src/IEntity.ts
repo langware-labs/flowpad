@@ -1,4 +1,4 @@
-import { EntityExpansion } from '.';
+import { EntityExpansion } from './FlowSync/store';
 import { IResource } from './IResource';
 
 /**

@@ -189,6 +189,22 @@ def test_missing_main_with_existing_capsule_is_a_malformed_declared_asset(tmp_pa
     assert capsule.exists()
 
 
+def test_identity_only_husk_is_removed_by_the_first_scan(tmp_path):
+    """A folder left holding nothing but its `.flow` identity is not reported
+    on every scan: the first one removes it, and the next one is clean."""
+    path = _write(tmp_path, "mcp")
+    capsule = path / ".flow" / "capsules" / "identity.json"
+    capsule.parent.mkdir(parents=True)
+    capsule.write_text(json.dumps({"data": {"id": mint_uuid()}, "version": 1}))
+    for entry in path.iterdir():
+        if entry.name != ".flow":
+            entry.unlink()
+
+    assert AssetFolder(path=tmp_path).scan().issues == []
+    assert not path.exists()
+    assert AssetFolder(path=tmp_path).scan().issues == []
+
+
 def test_malformed_json_identity_is_reported_once_from_overlapping_mounts(tmp_path):
     path = _write(tmp_path, "mcp")
     capsule = path / ".flow" / "capsules" / "identity.json"
@@ -198,3 +214,16 @@ def test_malformed_json_identity_is_reported_once_from_overlapping_mounts(tmp_pa
         AssetFolder(path=tmp_path, recursive=True).assets()
     assert [issue.path for issue in error.value.issues] == [path.resolve()]
     assert capsule.read_text() == "{malformed"
+
+
+@pytest.mark.parametrize("wanted", [{"skill"}, {"skill", "subagent", "mcp"}, {"task", "markdown"}])
+def test_type_scoped_scan_finds_what_a_full_scan_filters_to(tmp_path, wanted):
+    """A scan told which types it keeps skips every other mount; it must still
+    find exactly what the full scan, filtered afterwards, would have kept."""
+    for name, mount in CASES:
+        _write(tmp_path, name, mount=mount)
+    full = {(str(a.typeid), a.path) for a in AssetFolder(path=tmp_path, recursive=True).scan().assets
+            if str(a.typeid.type) in wanted}
+    scoped = {(str(a.typeid), a.path) for a in AssetFolder(path=tmp_path, recursive=True, types=sorted(wanted)).scan().assets
+              if str(a.typeid.type) in wanted}
+    assert full and scoped == full

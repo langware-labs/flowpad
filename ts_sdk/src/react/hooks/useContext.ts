@@ -1,4 +1,4 @@
-import { ContextEventType, dataContext } from '../..';
+import { ContextEventType, dataContext } from '../../FlowSync/context';
 import { useCallback, useRef, useSyncExternalStore } from 'react';
 
 // Single subscription manager to avoid multiple EventEmitter listeners

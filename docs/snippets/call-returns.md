@@ -19,6 +19,28 @@ The decisions behind this page were made one problem at a time in review
 
 ---
 
+Every fence below runs in one session, after this one — the names they use and a folder to work in:
+
+```python
+# setup
+import tempfile
+from pathlib import Path
+from typing import ClassVar
+
+from pydantic import ValidationError
+
+from flow_sdk.core.compute_op import run_op
+from flow_sdk.core.wizard.runner import Resolved, run_wizard
+from flow_sdk.schema.data_spec import DataSpec
+from flow_sdk.schema.data_spec.compute_op_spec import CHECK_TIMEOUT, AgentOp, AskOp, CliOp, ComputeOpSpec, PromptOp
+from flow_sdk.schema.data_spec.returned_value_spec import (
+    AskResult, CliResult, ExitCode, OpNotReached, PromptResult, ReturnedValue, WizardResult,
+)
+from flow_sdk.schema.data_spec.wizard_spec import WizardSpec, WizardStepSpec
+
+tmp = Path(tempfile.mkdtemp())       # the folder the ops below work in
+```
+
 ## 1. A ComputeOp is one call
 
 An op is ONE call of one subkind. It is not a ladder: a fallback — "try the
@@ -87,6 +109,7 @@ class CliResult(ReturnedValue):               # compute.returned.cli
 
 class PromptResult(ReturnedValue):            # compute.returned.prompt — a prompt AND an agent
     text: str                                 # the full reply, beside the declared value
+    files: list[str]                          # what an agentic run left in its output folder
 
 class AskResult(ReturnedValue):               # compute.returned.ask
     cancelled: bool
@@ -113,8 +136,8 @@ same subclass.
 install = ComputeOpSpec(
     name="marker",
     subkind="cli",
-    exe_data=CliOp(commands={"darwin": "touch done.txt"}),
-    completion_check=CliOp(commands={"darwin": "test -f done.txt"}, timeout_seconds=30),
+    exe_data=CliOp(commands={"darwin": "touch done.txt", "linux": "touch done.txt"}),
+    completion_check=CliOp(commands={"darwin": "test -f done.txt", "linux": "test -f done.txt"}, timeout_seconds=30),
 )
 first = await run_op(install, trusted=True, workdir=tmp)
 type(first) is CliResult                  # True
@@ -130,7 +153,7 @@ again.exit_code, again.ran                # (ExitCode.OK, False) — the check h
 broken = ComputeOpSpec(
     name="build",
     subkind="cli",
-    exe_data=CliOp(commands={"darwin": "echo 'error: missing header' >&2; exit 2"}),
+    exe_data=CliOp(commands={"darwin": "echo 'error: missing header' >&2; exit 2", "linux": "echo 'error: missing header' >&2; exit 2"}),
 )
 answer = await run_op(broken, trusted=True, workdir=tmp)
 answer.exit_code                          # ExitCode.NOT_YET
@@ -140,7 +163,7 @@ answer.detail                             # 'The command exited 2.' — one sent
 
 
 slow = ComputeOpSpec(name="slow", subkind="cli",
-                     exe_data=CliOp(commands={"darwin": "sleep 5"}, timeout_seconds=0.2))
+                     exe_data=CliOp(commands={"darwin": "sleep 5", "linux": "sleep 5"}, timeout_seconds=0.2))
 answer = await run_op(slow, trusted=True, workdir=tmp)
 answer.exit_code, answer.timed_out        # (ExitCode.NOT_YET, True) — a fact, not an exit code
 ```
@@ -153,14 +176,14 @@ class Greeting(DataSpec):
     text: str
 
 hello = ComputeOpSpec(name="hello", subkind="cli",
-                      exe_data=CliOp(commands={"darwin": "echo '{\"text\": \"hi\"}'"}),
+                      exe_data=CliOp(commands={"darwin": "echo '{\"text\": \"hi\"}'", "linux": "echo '{\"text\": \"hi\"}'"}),
                       output_spec_kind="snippet.greeting")
 answer = await run_op(hello, trusted=True, workdir=tmp)
 type(answer.value) is Greeting            # True — not an anonymous class
 answer.value.text                         # 'hi'
 
 try:
-    ComputeOpSpec(name="x", subkind="cli", exe_data=CliOp(commands={"darwin": "true"}),
+    ComputeOpSpec(name="x", subkind="cli", exe_data=CliOp(commands={"darwin": "true", "linux": "true"}),
                   output_spec_kind="snippet.greetin")
 except ValidationError as refused:
     reason = str(refused)
@@ -181,8 +204,17 @@ Refused, busy, never started, timed out, failed: all returned. Only bad input
 raise opts in, and the exception carries the answer.
 
 ```python
+import sys
+import tempfile
+from pathlib import Path
+
+from flow_sdk.core.compute_op import run_op
+from flow_sdk.schema.data_spec.compute_op_spec import CliOp, ComputeOpSpec
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, OpNotReached
+
+tmp = Path(tempfile.mkdtemp())
 broken = ComputeOpSpec(name="build", subkind="cli",
-                       exe_data=CliOp(commands={"darwin": "exit 2"}))
+                       exe_data=CliOp(commands={sys.platform: "exit 2"}))
 
 refused = await run_op(broken, trusted=False, workdir=tmp)
 refused.exit_code, refused.ran            # (ExitCode.REFUSED, False) — not approved; nothing ran
@@ -214,9 +246,9 @@ One class serves as both the completion check and a cli op's work, so the
 default belongs to the READER. An explicit value always wins; nothing is raised.
 
 ```python
-CliOp(commands={"darwin": "true"}).timeout()                  # 600.0 — CLI_TIMEOUT, as the work
-CliOp(commands={"darwin": "true"}).timeout(CHECK_TIMEOUT)     # 30.0 — as a completion check
-CliOp(commands={"darwin": "true"}, timeout_seconds=5).timeout(CHECK_TIMEOUT)   # 5 — explicit wins
+CliOp(commands={"darwin": "true", "linux": "true"}).timeout()                  # 600.0 — CLI_TIMEOUT, as the work
+CliOp(commands={"darwin": "true", "linux": "true"}).timeout(CHECK_TIMEOUT)     # 30.0 — as a completion check
+CliOp(commands={"darwin": "true", "linux": "true"}, timeout_seconds=5).timeout(CHECK_TIMEOUT)   # 5 — explicit wins
 PromptOp(prompt="hi").timeout()                               # 120.0 — PROMPT_TIMEOUT
 AgentOp(agent="provisioner").timeout()                        # 1800.0 — AGENT_TIMEOUT
 AskOp(prompt="token").timeout()                               # 60.0 — ASK_TIMEOUT_SECONDS
@@ -239,12 +271,12 @@ class ApiToken(DataSpec):
 get_key = ComputeOpSpec(
     name="get-api-key", subkind="ask",
     exe_data=AskOp(prompt="Service X API token"),
-    completion_check=CliOp(commands={"darwin": "cat token.json"}),
+    completion_check=CliOp(commands={"darwin": "cat token.json", "linux": "cat token.json"}),
     output_spec_kind="snippet.api_token",
 )
 store_key = ComputeOpSpec(
     name="store-api-key", subkind="cli",
-    exe_data=CliOp(commands={"darwin": 'printf \'{"token": "%s"}\' "$TOKEN" > token.json'}),
+    exe_data=CliOp(commands={"darwin": 'printf \'{"token": "%s"}\' "$TOKEN" > token.json', "linux": 'printf \'{"token": "%s"}\' "$TOKEN" > token.json'}),
 )
 
 key = await run_op(get_key, trusted=True, workdir=tmp)       # a person types sk-live-1
@@ -271,10 +303,10 @@ reached the goal, the second's check holds and it does nothing.
 
 ```python
 install = ComputeOpSpec(name="marker", subkind="cli",
-                        exe_data=CliOp(commands={"darwin": "touch done.txt"}),
-                        completion_check=CliOp(commands={"darwin": "test -f done.txt"}))
+                        exe_data=CliOp(commands={"darwin": "touch done.txt", "linux": "touch done.txt"}),
+                        completion_check=CliOp(commands={"darwin": "test -f done.txt", "linux": "test -f done.txt"}))
 broken = ComputeOpSpec(name="build", subkind="cli",
-                       exe_data=CliOp(commands={"darwin": "echo 'error: missing header' >&2; exit 2"}))
+                       exe_data=CliOp(commands={"darwin": "echo 'error: missing header' >&2; exit 2", "linux": "echo 'error: missing header' >&2; exit 2"}))
 ops = {"marker": install, "build": broken}
 
 async def resolve(name):

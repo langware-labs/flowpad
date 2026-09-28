@@ -14,6 +14,13 @@
       "OPENAI_API_KEY"
     ]
   },
+  "permissions": {
+    "permission.openai.realtime": {
+      "mechanism": "api_key",
+      "api_key": "OPENAI_API_KEY",
+      "why": "Answer a recorded clip through the Realtime API."
+    }
+  },
   "config": {
     "folder": {
       "type": "text",

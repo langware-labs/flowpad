@@ -22,19 +22,21 @@ from email.utils import formataddr, getaddresses
 from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.source_item_spec import SourceItemSpec
-from flow_sdk.sources.values.items import EmailMessageData, FeedItemData, MessageData, Payload, UserProfile
+from flow_sdk.sources.values.items import EmailMessageData, FeedItemData, MessageData, Payload, RecordData, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
 
 MESSAGE_KIND = "content.message"
 EMAIL_KIND = "content.message.email"
 CHAT_KIND = "content.message.chat"
 FEED_KIND = "content.feed.item"
+RECORD_KIND = "content.record"
 
 #: The record kind each payload family is stored under, most specific first.
 _KIND_OF: tuple[tuple[type[Payload], str], ...] = (
     (EmailMessageData, EMAIL_KIND),
     (MessageData, CHAT_KIND),
     (FeedItemData, FEED_KIND),
+    (RecordData, RECORD_KIND),
 )
 
 
@@ -72,6 +74,8 @@ def data_of(source: Any, item: Any, origin: CloudOrigin) -> Payload:
 
     author = _text(item, "author_external_id")
     sender = person(author, _verbatim(item, "author_display")) if author else None
+    if kind.startswith(RECORD_KIND):
+        return RecordData(title=_verbatim(item, "name"), text=_verbatim(item, "body"), url=_verbatim(item, "permalink"))
     if not kind.startswith(MESSAGE_KIND):
         return FeedItemData(
             title=_verbatim(item, "name"),
@@ -106,7 +110,7 @@ def kind_of(data: Payload) -> str:
     for family, kind in _KIND_OF:
         if isinstance(data, family):
             return kind
-    raise TypeError(f"{type(data).__name__} has no record kind; a record source emits a message or feed payload")
+    raise TypeError(f"{type(data).__name__} has no record kind; a record source emits a message or record payload")
 
 
 def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemSpec:
@@ -124,7 +128,8 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
         kind=kind_of(data),
         external_id=item.origin.key,
         name=getattr(data, "subject", None) or getattr(data, "title", None) or "",
-        body=getattr(data, "text", None) or "",
+        # A media message's words ride its files as captions (WhatsApp, Telegram): they are its body.
+        body=getattr(data, "text", None) or _captions(data),
         occurred_at=when.isoformat() if when else None,
         author_external_id=person.origin.key if person else None,
         author_display=(person.name if person else None) or getattr(data, "byline", None),
@@ -140,6 +145,11 @@ def envelope_of(item: Any, *, data_source_id: str, provider: str) -> SourceItemS
         origin=item.origin,
         data=data,
     )
+
+
+def _captions(data: Any) -> str:
+    files = getattr(data, "attachments", None) or ()
+    return "\n".join(c for c in (getattr(f.data, "caption", None) for f in files) if c)
 
 
 def _key_of(origin: Optional[CloudOrigin]) -> Optional[str]:
