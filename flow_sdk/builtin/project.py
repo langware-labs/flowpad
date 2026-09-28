@@ -28,7 +28,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
-from flow_sdk.config import PLATFORM_WIN32, StorageProvider, is_hidden_project
+from flow_sdk.config import PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
@@ -1710,13 +1710,11 @@ class Project(Entity):
         if self.legacy_include_dirs_:
             await self._migrate_legacy_context_dirs()
         was_create = not self.exist_in_db
+        await self._refuse_duplicate_name()
         if was_create:
             await self._refuse_nested_mount()
-            await self._refuse_duplicate_name()
             await self._warn_if_mount_owned_elsewhere()
             self._ensure_mount_dir()
-        elif await self._name_changed():
-            await self._refuse_duplicate_name()
         await super().save(owner, notify=notify)
         if was_create:
             await self._stamp_index_sentinel()
@@ -1748,25 +1746,20 @@ class Project(Entity):
         return result
 
     def _visible(self) -> bool:
-        """A project the user sees and names: not a hidden row (shipped, the workspace
-        root, helpdesk portals) and not a row on the temp dir."""
-        mount = self.fs_storage_mount_path or ""
-        return not is_hidden_project(mount, bool(self.system)) and mount not in _TEMP_ROOTS
-
-    async def _name_changed(self) -> bool:
-        """True when this save renames the row. Read from the stored row, not the entity
-        cache, which may already hold the new name."""
-        stored = await type(self)._db.get_by_id(str(self.id), self.type)
-        return stored is None or project_name_key(stored.name) != project_name_key(self.name)
+        """A real work folder: neither hidden (see ``hidden``) nor a row on the temp dir."""
+        return not self.hidden and (self.fs_storage_mount_path or "") not in _TEMP_ROOTS
 
     async def _refuse_duplicate_name(self) -> None:
-        """No two visible projects share a name (see ``project_name_key``). Checked on
-        create — which is also how a folder the indexer discovers becomes a project — and
-        on rename. Rows that already collided before this rule keep saving until one of
-        them is renamed."""
+        """No two visible projects share a name (``project_name_key``), on create and rename."""
         key = project_name_key(self.name)
         if not key or not self._visible():
             return
+        if self.exist_in_db:
+            # Only a rename is checked, so rows that collided before the rule keep saving.
+            # The stored row, not the entity cache, which may already hold the new name.
+            stored = await type(self)._db.get_by_id(str(self.id), self.type)
+            if stored and project_name_key(stored.name) == key:
+                return
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         # Names are stored as typed; LIKE (case-insensitive) with the separators widened
@@ -1791,10 +1784,7 @@ class Project(Entity):
             return
 
         def _counts(other: "Project") -> bool:
-            other_mount = other.fs_storage_mount_path or ""
-            return (str(other.id) != str(self.id)
-                    and not is_hidden_project(other_mount, bool(other.system))
-                    and other_mount not in _TEMP_ROOTS)
+            return str(other.id) != str(self.id) and other._visible()
 
         for parent in PurePosixPath(mount).parents:
             for owner in await self._mount_owners(str(parent)):
@@ -1815,8 +1805,7 @@ class Project(Entity):
     async def _warn_if_mount_owned_elsewhere(self) -> None:
         """Log (never raise) when a brand-new project lands on a folder another
         project already owns: the caller skipped ``find_by_cwd``, the natural
-        key. (Names are a separate, hard rule — ``_refuse_duplicate_name``.)
-        Only the indexed EQ query runs — no table scan on create."""
+        key. Only the indexed EQ query runs — no table scan on create."""
         mount = self.fs_storage_mount_path
         if not mount:
             return

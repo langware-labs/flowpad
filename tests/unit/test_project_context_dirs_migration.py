@@ -39,7 +39,7 @@ def _dirs(tmp_path, *names):
 @pytest.mark.asyncio
 async def test_stash_and_readthrough_without_write(tmp_path):
     legacy = _dirs(tmp_path, "a", "b")
-    project = Project(name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"), include_dirs=list(legacy))
+    project = Project(name=str(tmp_path / "proj"), include_dirs=list(legacy))
 
     # Raw key captured; computed merge exposes it pre-migration.
     assert project.legacy_include_dirs_ == legacy
@@ -52,7 +52,9 @@ async def test_stash_and_readthrough_without_write(tmp_path):
 @pytest.mark.asyncio
 async def test_first_save_converges(tmp_path):
     legacy = _dirs(tmp_path, "a", "b")
-    project = Project(name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"), include_dirs=list(legacy))
+    project = Project(
+        name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"), include_dirs=list(legacy)
+    )
     await project.save()
 
     # Folders minted + linked privately; stash cleared; list unchanged.
@@ -73,7 +75,9 @@ async def test_first_save_converges(tmp_path):
 async def test_action_migrates_then_applies(tmp_path):
     legacy = _dirs(tmp_path, "old")
     (extra,) = _dirs(tmp_path, "new")
-    project = Project(name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"), include_dirs=list(legacy))
+    project = Project(
+        name=unique_project_name("proj"), fs_storage_mount_path=str(tmp_path / "proj"), include_dirs=list(legacy)
+    )
 
     await project.add_context_dir(extra)
     assert sorted(project.include_dirs) == sorted(legacy + [extra])

@@ -69,12 +69,11 @@ async def test_create_with_partial_body_does_not_relocate_an_existing_project(tm
     """The body omits `fs_storage_mount_path`; the stored mount must survive."""
     real_dir = tmp_path / "Documents" / "dev" / "flowpad-oss"
     real_dir.mkdir(parents=True)
-    name = unique_project_name("flowpad-oss")
 
     project = Project(
         id=str(uuid.uuid4()),
         type="project",
-        name=name,
+        name=unique_project_name("flowpad-oss"),
         fs_storage_mount_path=str(real_dir),
     )
     await project.save()
@@ -85,7 +84,7 @@ async def test_create_with_partial_body_does_not_relocate_an_existing_project(tm
     body = {
         "id": str(project.id),
         "type": "project",
-        "name": name,
+        "name": project.name,
         "visitor_role": "owner",
     }
     request = _create_request(body)

@@ -327,17 +327,18 @@ async def join_projects(
     # Sequential saves: SQLite serializes writes anyway and asyncio.gather hits
     # "database is locked" under contention from concurrent indexer scans.
     if create_missing and to_create:
+        import logging
+
+        from flow_sdk.builtin.project import DuplicateProjectNameError  # noqa: PLC0415 — cycle
+
         for info in to_create:
             try:
                 await _materialize(info, include_temp=include_temp)
+            except DuplicateProjectNameError as exc:
+                # Refused loudly: the folder stays unindexed until it (or the other project) is renamed.
+                logging.error("get_all_projects: skip materialize %s: %s", info.cwd, exc)
             except Exception as exc:  # noqa: BLE001
-                import logging
-                from flow_sdk.builtin.project import DuplicateProjectNameError  # noqa: PLC0415 — cycle
-
-                # A folder whose name another project already has is refused, loudly:
-                # it stays unindexed until the folder (or the other project) is renamed.
-                level = logging.ERROR if isinstance(exc, DuplicateProjectNameError) else logging.WARNING
-                logging.log(level, "get_all_projects: skip materialize %s: %s", info.cwd, exc)
+                logging.warning("get_all_projects: skip materialize %s: %s", info.cwd, exc)
 
     for cwd, proj in by_cwd.items():
         if cwd in fs_by_cwd:
