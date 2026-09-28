@@ -527,6 +527,12 @@ class Deployment(Entity):
 
         return await ServiceEndpoint.of_deployment(str(self.typeid))
 
+    async def health(self) -> str:
+        """As healthy as its least healthy service, by each endpoint's last check. Derived, never stored."""
+        from flow_sdk.schema.data_spec.health_spec import worst  # noqa: PLC0415
+
+        return worst(e.health.state if e.health else "unknown" for e in await self.endpoints())
+
     @action.get(action_name="endpoints")
     async def endpoints_action(self):
         """`GET /deployment/<id>/endpoints` — what this placement serves.
