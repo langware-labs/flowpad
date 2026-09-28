@@ -3669,6 +3669,10 @@ msgstr ""
 msgid "Check again"
 msgstr "إعادة التحقق"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "Check every service now"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
 msgstr "التحقق من الرسائل الجديدة"
@@ -5432,6 +5436,10 @@ msgstr ""
 msgid "Could not read this budget's history."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "Could not read this deployment's services"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "Could not read this machine's secrets"
 msgstr ""
@@ -6306,6 +6314,10 @@ msgstr "قالب العرض التقديمي"
 #: src/i18n/type-labels.ts
 msgid "Decks"
 msgstr "العروض التقديمية"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "Declared by this deployment, but nothing serves it"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Declared on the agent's card. Not yet applied to the worker."
@@ -13908,6 +13920,7 @@ msgstr "عقد"
 msgid "Non-empty"
 msgstr "غير فارغ"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "none"
@@ -18709,6 +18722,10 @@ msgstr "الخدمة غير متاحة"
 msgid "Service Unavailable"
 msgstr "الخدمة غير متاحة"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "Services"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -20924,6 +20941,10 @@ msgstr "لم يكتمل الاتصال بـ GitHub."
 msgid "the guest"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "The health check did not answer"
+msgstr ""
+
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "The help desk files are missing. Open the help desk again to download them."
 msgstr "ملفات مكتب المساعدة مفقودة. يُرجى فتح مكتب المساعدة مرة أخرى لتنزيل الملفات."
@@ -21315,6 +21336,10 @@ msgstr ""
 #: src/routes/loaders/load-conversation.ts
 msgid "This conversation no longer exists or is unavailable."
 msgstr "هذه المحادثة لم تعد موجودة أو غير متاحة."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This could not be prepared for download."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/CredentialChild.tsx
 msgid "This credential no longer exists."
