@@ -1387,7 +1387,7 @@ class DataSource(Entity):
             return ReturnedValue.not_applicable("this source belongs to a person, not an agent")
         serving = [d for d in await agent.deployments() if d.target.provider == "local" and d.serving]
         if serving:
-            return ReturnedValue.satisfied(f"{agent.name} answers here", ran=not check)
+            return ReturnedValue.satisfied(f"{agent.name} answers here", ran=False)
         if check:
             return ReturnedValue.not_yet(f"{agent.name} is not running on this computer")
         await agent.run_locally()

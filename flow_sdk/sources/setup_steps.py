@@ -21,6 +21,7 @@ from typing import Any, Callable, ClassVar, Optional, TypeVar
 
 from pydantic import ConfigDict, Field
 
+from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 _STEP_ATTR = "__flow_setup_step__"
@@ -73,5 +74,5 @@ class SourceUpdateSpec(DataSpec):
 
 
 __all__ = [
-    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "PUBLIC_WEBHOOK", "VERIFY", "SourceUpdateSpec", "setup_step", "setup_steps",
+    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "PUBLIC_WEBHOOK", "VERIFY", "ReturnedValue", "SourceUpdateSpec", "setup_step", "setup_steps",
 ]
