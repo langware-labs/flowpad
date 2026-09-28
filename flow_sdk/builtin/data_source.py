@@ -378,7 +378,7 @@ class DataSource(Entity):
         if len(rows) > 1:
             raise DataSourceAmbiguous(name, [str(row.typeid) for row in rows])
         # An authored source's folder loads on first use; the accessors below read its manifest.
-        await DataDriver.get(rows[0].provider or "")
+        await DataDriver.find(rows[0].provider or "")
         return rows[0]
 
     def _auth(self):
@@ -420,7 +420,7 @@ class DataSource(Entity):
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.ingest.session import SourceSession  # noqa: PLC0415
 
-        stype = await DataDriver.get(self.provider or "")
+        stype = await DataDriver.find(self.provider or "")
         if stype is None:
             raise LookupError(f"no data source type {self.provider!r}")
         return SourceSession(self, await stype.open(self, persona=persona))
@@ -1016,7 +1016,7 @@ class DataSource(Entity):
             # class. The poller's per-tick re-save of an existing row never pays for the lookup.
             from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-            await DataDriver.get(self.provider or "")
+            await DataDriver.find(self.provider or "")
         if self.status == SourceStatus.NEW.value:
             stype = self._driver()
             if stype is not None and stype.has_setup:
@@ -1225,7 +1225,7 @@ class DataSource(Entity):
     async def send_text(self, *, to: str, text: str, thread_key: str = "", subject: str = "", in_reply_to: str = "") -> dict:
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
-        driver = await DataDriver.get(self.provider or "")
+        driver = await DataDriver.find(self.provider or "")
         if driver is None or not driver.sends:
             raise RuntimeError(f"{self.provider} cannot send")
         if not (text or "").strip():
@@ -1334,7 +1334,7 @@ class DataSource(Entity):
         from flow_sdk.sources import setup_steps as steps  # noqa: PLC0415
         from flow_sdk.sources.setup_steps import SourceUpdateSpec, setup_steps  # noqa: PLC0415
 
-        driver = await DataDriver.get(self.provider or "")
+        driver = await DataDriver.find(self.provider or "")
         if driver is None:
             return ReturnedValue.not_found(f"no data driver {self.provider!r}")
         try:
@@ -1608,7 +1608,7 @@ class DataSource(Entity):
         from flow_sdk.sources.base import Source  # noqa: PLC0415
 
         try:
-            driver = await DataDriver.get(self.provider or "")
+            driver = await DataDriver.find(self.provider or "")
             if driver is None or getattr(driver.cls, "teardown", Source.teardown) is Source.teardown:
                 return ""  # nothing to undo: no source is opened for it
             async with await self.open() as live:

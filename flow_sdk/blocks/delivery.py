@@ -155,8 +155,12 @@ class Delivered(Generic[T]):
         ])))
         return any(str(r.id) != str(self._row.id) and not r.is_ours(source) for r in rows)
 
-    async def reply(self, spec: "MessageSpec") -> "SendOutcome | None":
+    async def reply(self, spec: "MessageSpec | str") -> "SendOutcome | None":
         """Send *spec* as the answer to this item, then ack — the piggybacked ack.
+
+        A plain ``str`` is the common case — "answer with this text" — and is the same as
+        ``await m.reply(await m.reply_spec(body=text))``: addressed the way THIS channel replies.
+        Pass a ``MessageSpec`` for anything more (files, a subject, an explicit ``quote``).
 
         The order is what makes it safe: **intent → send → record → ack**. Intent goes on the
         position row BEFORE the send, so a crash anywhere in the window is visible on
@@ -175,6 +179,8 @@ class Delivered(Generic[T]):
         from flow_sdk.ingest.driver_runtime import SendOutcome  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
+        if isinstance(spec, str):
+            spec = await self.reply_spec(body=spec)
         position, row = self._position, self._row
         source = await self._source()
 

@@ -156,5 +156,17 @@ async def test_an_authored_folder_loads_on_first_use(tmp_path, monkeypatch):
         DRIVERS.unregister("wiki-authored")
 
 
+async def test_a_name_no_driver_answers_is_loud_on_get_and_none_on_find(monkeypatch):
+    """A script that names a driver means that one: ``get`` raises, naming what IS installed, instead
+    of a ``None`` that fails a line later as ``'NoneType' object has no attribute 'family'``."""
+    from flow_sdk.builtin.data_driver import DataDriver, DataDriverNotFound
+    from flow_sdk.ingest import driver_registry
+
+    monkeypatch.setattr(driver_registry, "_authored_folder", lambda name: _async(None))
+    with pytest.raises(DataDriverNotFound, match=r"no data driver named 'no-such-driver' — installed: .*\brss\b"):
+        await DataDriver.get("no-such-driver")
+    assert await DataDriver.find("no-such-driver") is None
+
+
 async def _async(value):
     return value

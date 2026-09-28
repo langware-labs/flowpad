@@ -51,7 +51,7 @@ async def driver_of(provider: str) -> Any:
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     try:
-        return await DataDriver.get(provider or "")
+        return await DataDriver.find(provider or "")
     except Exception:  # noqa: BLE001
         return None
 

@@ -24,6 +24,7 @@ from pydantic import PrivateAttr, computed_field
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.core.named_lookup import NameNotFound
 from flow_sdk.ingest.driver_runtime import DRIVERS, DriverRuntime
 from flow_sdk.schema.data_spec.data_driver_spec import (
     CURRENT_SCHEMA,
@@ -39,6 +40,18 @@ from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
+
+
+
+class DataDriverNotFound(NameNotFound):
+    """No data driver answers that name; the message lists the ones that do."""
+
+    message = "no data driver named {name!r}"
+
+    def __init__(self, name: str, installed: "list[str] | tuple[str, ...]" = ()) -> None:
+        super().__init__(name)
+        if installed:
+            self.args = (f"{self.args[0]} — installed: {', '.join(sorted(installed))}",)
 
 
 class DataDriver(DriverRuntime, Entity):
@@ -132,9 +145,18 @@ class DataDriver(DriverRuntime, Entity):
         return DRIVERS.get_or_none(name or "")
 
     @classmethod
-    async def get(cls, name: str) -> Optional["DataDriver"]:
+    async def get(cls, name: str) -> "DataDriver":
         """The driver for ``name``: registered, or an authored folder loaded now from its indexed row
-        (again when its code changed since)."""
+        (again when its code changed since). ``DataDriverNotFound`` — naming what IS installed — when
+        there is none: a script that names a driver means that one (``DataSource.get`` answers alike)."""
+        driver = await cls.find(name)
+        if driver is None:
+            raise DataDriverNotFound(name, DRIVERS.kinds())
+        return driver
+
+    @classmethod
+    async def find(cls, name: str) -> Optional["DataDriver"]:
+        """``get``, but ``None`` for a name no driver answers — for callers that branch on absence."""
         from flow_sdk.ingest.driver_registry import resolve  # noqa: PLC0415
 
         return await resolve(name)
