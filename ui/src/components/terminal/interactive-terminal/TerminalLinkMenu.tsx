@@ -14,7 +14,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
-import { loadBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
+import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
 import { errorMessage } from '@src/lib/error-message';
 import { useDockNavigation } from '@src/navigation';
 import { notify } from '@src/notifications/notify';
@@ -99,13 +99,13 @@ const TerminalLinkMenu = forwardRef<
   useImperativeHandle(ref, () => ({
     open: (link, x, y, host) => setState((prev) => ({ link, x, y, host, id: (prev?.id ?? 0) + 1 })),
   }), []);
-  // Kept across opens: fetched on the first right-click, then already there.
+  // Refetched on every open; the last list stays shown meanwhile, so only the first right-click waits.
   const [browsers, setBrowsers] = useState<Browser[]>([]);
   const opened = state !== null;
   useEffect(() => {
     if (!opened) return;
     let live = true;
-    void loadBrowserProfiles().then((list) => live && setBrowsers(list));
+    void fetchBrowserProfiles().then((list) => live && setBrowsers(list));
     return () => {
       live = false;
     };

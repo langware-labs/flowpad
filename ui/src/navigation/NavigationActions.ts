@@ -835,7 +835,7 @@ export class NavigationActions {
     }
   }
 
-  /** `openLinkInBrowser`, in one browser profile of this machine (`loadBrowserProfiles`). */
+  /** `openLinkInBrowser`, in one browser profile of this machine (`fetchBrowserProfiles`). */
   async openLinkInBrowserProfile(link: string, source: Shell | null, browser: string, profile: string): Promise<void> {
     try {
       await openInBrowserProfile(await this.browserUrlFor(link, source), browser, profile);

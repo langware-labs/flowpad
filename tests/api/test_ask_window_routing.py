@@ -92,4 +92,7 @@ async def test_a_live_tab_gets_a_modal_not_a_navigation(monkeypatch):
 
     ((socket, kind, fields),) = sent
     assert (socket, kind) == ("the-socket", "open_ask_modal")
-    assert fields == {"pointer": question.id}, "a modal needs only the question id, not a screen to navigate to"
+    assert fields == {"pointer": question.id, "run": question.run}, (
+        "a modal needs only the question id (and the run it belongs to, for a screen "
+        "showing that run to claim it), not a screen to navigate to"
+    )

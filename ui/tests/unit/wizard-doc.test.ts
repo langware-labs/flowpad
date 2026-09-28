@@ -35,8 +35,8 @@ const FULL: WizardDoc = {
       label: 'One',
       description: 'the first',
       kind: 'compute',
-      ref: 'waha-container',
-      args: { API_KEY: 'WAHA_API_KEY', PORT: '3000' },
+      ref: 'gateway-container',
+      args: { API_KEY: 'GATEWAY_API_KEY', PORT: '3000' },
       on_fail: 'continue',
     },
     { id: 'two', kind: 'wizard', ref: 'region-setup' },
@@ -52,7 +52,7 @@ describe('setIn', () => {
     // The sibling arg, the sibling fields, the sibling STEP, and every
     // top-level key. A shallow spread of the step drops all but the first.
     expect(step.args!.PORT).toBe('3000');
-    expect(step.ref).toBe('waha-container');
+    expect(step.ref).toBe('gateway-container');
     expect(step.on_fail).toBe('continue');
     expect(next.steps![1]).toEqual(FULL.steps![1]);
     expect(next.output).toEqual(FULL.output);

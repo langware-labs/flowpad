@@ -35,6 +35,8 @@ export interface AskQuestion {
   /** The Wizard this question is one step of, when it is one. Empty for a
    *  question an op raised outside any wizard. */
   wizard_id?: string;
+  /** How a person finds the value — the op's `setup.md`, markdown. */
+  guide?: string;
 }
 
 /** The field names to draw. An object shape is its keys; anything else is one

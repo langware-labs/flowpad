@@ -1,10 +1,8 @@
 import { t } from '@lingui/core/macro';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
-import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
-import { AttachFilesButton, PickedFileList, usePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
+import { AttachFilesButton, PickedFileList, useAnnotatedImagePaste, usePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
 import { cn } from '@src/lib/utils';
-import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
 import { Send } from 'lucide-react';
 import React, { useCallback, useState, type ReactNode } from 'react';
 
@@ -71,17 +69,8 @@ export function SessionInput({
     }
   };
 
-  // Image paste — same annotator popup flow as the vibe workspace composer;
-  // cancelled images are dropped. Survivors become chips (uploaded on submit).
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (!allowAttachments || disabled) return;
-    const images = imageFilesFromClipboardData(e.clipboardData);
-    if (!images.length) return;
-    e.preventDefault();
-    void annotateImageFiles(images).then((annotated) => {
-      if (annotated.length) picker.addFiles(annotated);
-    });
-  };
+  // Image paste: annotated, then chips (uploaded on submit).
+  const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: allowAttachments && !disabled });
 
   return (
     <form

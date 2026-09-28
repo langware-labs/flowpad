@@ -212,3 +212,5 @@ class WizardRunDetailSpec(DataSpec):
     result: Optional[WizardResult] = None
     #: Filenames of previous runs this wizard's resets archived, newest first.
     archived: list[str] = []
+    #: Where this run reports progress (a target's run has its own address).
+    activity_path: str = ""

@@ -251,13 +251,19 @@ export function accountKeyFor(draft: SourceDraft, spec?: DataDriver): string {
  * the same account, and that is allowed — the cost of a second poller is the
  * operator's call, not this form's.
  */
-export function validateDraft(draft: SourceDraft, spec?: DataDriver): string[] {
+/** A new source of a driver that declares setup wizards: the wizard asks for its config, so the
+ *  Add form asks only for a name. Editing an existing source keeps the whole form. */
+export function setUpByWizard(spec: DataDriver | undefined, editing: boolean): boolean {
+  return !editing && !!spec?.setup_wizards?.length;
+}
+
+export function validateDraft(draft: SourceDraft, spec?: DataDriver, { config = true } = {}): string[] {
   const problems: string[] = [];
 
   if (!draft.name.trim()) problems.push('Name is required.');
   if (!spec) problems.push(t`Unknown provider ${draft.provider}.`);
 
-  for (const [key, field] of specFields(spec)) {
+  for (const [key, field] of config ? specFields(spec) : []) {
     const raw = (draft.fields[key] ?? '').trim();
     const label = field.label || key;
     // A pick satisfies "has a value" on its own, and needs no pattern check: it came off

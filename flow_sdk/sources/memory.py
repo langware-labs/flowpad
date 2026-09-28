@@ -20,12 +20,11 @@ from flow_sdk.sources.base import Altitude, CollectionSource
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import NotFound, Rejected, Unsupported
 from flow_sdk.sources.families import MessageSource, RecordSource
-from flow_sdk.sources.files import LOCAL_KIND, FileSupport
+from flow_sdk.sources.files import FileSupport, check_files, chunked
 from flow_sdk.sources.values.items import (
     FileItem,
     FileKind,
     MessageData,
-    MessageFileData,
     MessageItem,
     SourceItemSpec,
     UserProfile,
@@ -175,11 +174,7 @@ class MemoryMessages(MessageSource, MemoryStore):
         if blob is None:
             raise NotFound("file does not exist", origin=file.origin)
 
-        async def chunks() -> AsyncIterator[bytes]:
-            for i in range(0, len(blob), chunk_size):
-                yield blob[i : i + chunk_size]
-
-        yield chunks()
+        yield chunked(blob, chunk_size)
 
     def open(self, file: FileItem, *, chunk_size: int = 65536):
         self._require_open()
@@ -240,13 +235,7 @@ def check_outgoing(data: object, *, reply: bool, support: FileSupport = FileSupp
     and routing is exactly one of a known conversation or recipients — or, for a reply, neither."""
     if not isinstance(data, MessageData):
         raise TypeError(f"expected MessageData, got {type(data).__name__}")
-    if data.text is None and not data.attachments:
-        raise ValueError("text is required")
-    for f in data.attachments:
-        if f.origin.kind != LOCAL_KIND or not isinstance(f.data, MessageFileData) or not f.data.path:
-            raise ValueError(f"an outgoing file must be a local file with a path, got {f.origin!r}")
-        if f.data.as_ not in support.kinds:
-            raise ValueError(f"this channel does not send a {f.data.as_.value}")
+    check_files(data.attachments, support, title="this channel", text=data.text)
     for name in ("sender", "sent_at", "in_reply_to"):
         if getattr(data, name) is not None:
             raise ValueError(f"{name} is assigned by the provider and must be None")

@@ -65,7 +65,7 @@ class _Message:
 
 async def test_messages_arriving_together_each_get_their_own_turn(monkeypatch):
     worker, sent = _Worker(), []
-    source = SimpleNamespace(id="ds-1", channel="whatsapp", provider="waha")
+    source = SimpleNamespace(id="ds-1", channel="whatsapp", provider="whatsapp")
     engine = TurnEngine(SimpleNamespace(name="a", id="1"), None)
 
     monkeypatch.setattr(agent_serve, "is_own_outgoing", lambda *_: False)

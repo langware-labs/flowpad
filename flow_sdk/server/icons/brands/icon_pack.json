@@ -166,15 +166,6 @@
       "source": "simple-icons `whatsapp` (CC0)"
     },
     {
-      "kind": "whatsapp-waha",
-      "asset": "whatsapp.svg",
-      "color": "#FACC15",
-      "aliases": [
-        "WhatsAppWaha"
-      ],
-      "source": "the WhatsApp mark in yellow, so a WAHA-linked number reads apart from the Cloud API one"
-    },
-    {
       "kind": "hackernews",
       "asset": "hackernews.svg",
       "color": "#F0652F",

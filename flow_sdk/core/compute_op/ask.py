@@ -6,15 +6,16 @@ future; nothing is persisted, because a restart ends the wait either way — the
 future, and whatever awaits it, both live in this process and die with it.
 
 **The wait is USUALLY bounded.** A caller holding a ``ReturnedValue`` needs an
-answer or a reason, so the question gets a deadline — the op's, resolved by the
-role an ask plays (``ASK_TIMEOUT_SECONDS`` in ``compute_op_spec``, beside the
-other four) — and the op answers ``NOT_YET`` when it passes. The one exception
-is an op declared ``until_answered`` — install-time infrastructure the app
-cannot proceed without — which waits with NO deadline: until answered,
-cancelled, or the process restarts. It pays for that with one rule: a question
-nobody could be shown (no live tab, no browser — a headless sandbox) is dropped
-after a short presence grace instead, because an unbounded wait with nobody to
-answer never ends.
+answer or a reason, so the question gets a deadline — the caller's, else the
+op's own, else ``ASK_TIMEOUT_SECONDS`` (``compute_op_spec``, beside the other
+four) — and the op answers ``NOT_YET`` when it passes. A long wait is a long
+deadline, and a question left unanswered is asked again when its wizard
+resumes. The one exception is an op declared ``until_answered`` — install-time
+infrastructure the app cannot proceed without — which waits with NO deadline:
+until answered, cancelled, or the process restarts. It pays for that with one
+rule: a question nobody could be shown (no live tab, no browser — a headless
+sandbox) is dropped after a short presence grace instead, because an unbounded
+wait with nobody to answer never ends.
 
 **The question lives where answers arrive.** The future is held by the process
 that serves the answer routes — the backend. ``run_op`` running there asks
@@ -31,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -69,6 +71,11 @@ class Question:
     #: without it, answering felt like the last step, even when five more were
     #: about to run right after.
     wizard_id: str = ""
+    #: The wizard run that asked (its activity address), when one did. A screen showing that run
+    #: claims the question and draws it in place; nobody claiming it, it opens on its own.
+    run: str = ""
+    #: How a person finds the value — the op's ``setup.md``, markdown. Drawn beside the fields.
+    guide: str = ""
     _future: "asyncio.Future" = field(repr=False, default=None)  # type: ignore[assignment]
 
     def to_payload(self) -> dict:
@@ -85,7 +92,14 @@ class Question:
             "fields": self.fields,
             "secret": self.secret,
             "wizard_id": self.wizard_id,
+            "run": self.run,
+            "guide": self.guide,
         }
+
+
+#: The wizard run the current task is executing, set by ``execute_wizard`` for the length of a
+#: run. A question opened inside it is stamped with it (``Question.run``).
+ASKING_RUN: ContextVar[str] = ContextVar("asking_run", default="")
 
 
 #: Whether THIS process serves the answer routes — set by the app that mounts
@@ -132,6 +146,7 @@ def open_question(
     cancel_label: str = "",
     secret: bool = False,
     wizard_id: str = "",
+    guide: str = "",
 ) -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
@@ -148,6 +163,8 @@ def open_question(
         cancel_label=cancel_label,
         secret=secret,
         wizard_id=wizard_id,
+        run=ASKING_RUN.get(),
+        guide=guide,
         _future=asyncio.get_event_loop().create_future(),
     )
     _PENDING[question.id] = question
@@ -202,9 +219,9 @@ def forget(question_id: str) -> None:
 async def wait_for(question: Question, *, timeout: Optional[float]) -> Any:
     """The answer, or ``TimeoutError``/``Cancelled``.
 
-    ``timeout`` is required: the deadline is the OP's, resolved by its role and
-    narrowed by its caller, and a default here would be a second opinion about
-    how long a person gets. ``None`` is an ``until_answered`` op's: no deadline.
+    ``timeout`` is required: the deadline is the caller's or the OP's, resolved
+    before it gets here, and a default here would be a second opinion about how
+    long a person gets. ``None`` is an ``until_answered`` op's: no deadline.
 
     The question is forgotten on every exit, so a late answer to a question
     nobody is waiting for is refused rather than silently dropped into a future
@@ -239,6 +256,7 @@ async def ask_person(
     cancel_label: str = "",
     secret: bool = False,
     wizard_id: str = "",
+    guide: str = "",
 ) -> "AskResult":
     """Raise one question here and answer with what the person did.
 
@@ -259,6 +277,7 @@ async def ask_person(
         cancel_label=cancel_label,
         secret=secret,
         wizard_id=wizard_id,
+        guide=guide,
     )
     shown = await raise_question(question)
     if timeout is None and not shown:
@@ -306,6 +325,7 @@ async def ask_through_backend(
     cancel_label: str = "",
     secret: bool = False,
     wizard_id: str = "",
+    guide: str = "",
 ) -> "AskResult":
     """:func:`ask_person`, run by the backend for a process that is not it.
 
@@ -328,6 +348,7 @@ async def ask_through_backend(
         "cancel_label": cancel_label,
         "secret": secret,
         "wizard_id": wizard_id,
+        "guide": guide,
     }
     try:
         async with flow_service() as lease:

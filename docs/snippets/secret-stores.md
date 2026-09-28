@@ -287,7 +287,7 @@ What a source reads, per manifest `auth` shape (`ingest/credentials.resolve_cred
 
 * **`credential`** + **`vars`** — `{value key: env var}` of a named credential,
   resolved where the deployment that answers the row keeps it. A setting that
-  differs per machine (WAHA's URLs) is one of these, not config.
+  differs per machine (a webhook URL) is one of these, not config.
 
 * **`connector`** — the bound connection's provider, else the manifest's
   ([§6](#6-connections--the-same-pattern-for-accounts)).

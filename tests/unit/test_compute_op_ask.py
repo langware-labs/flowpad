@@ -21,14 +21,14 @@ import pytest
 
 from flow_sdk.core.compute_op import run_op
 from flow_sdk.core.compute_op.ask import answer, cancel, open_questions
-from flow_sdk.schema.data_spec.compute_op_spec import ASK_TIMEOUT_SECONDS, ComputeOpSpec
+from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.returned_value_spec import AskResult, ExitCode
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 #: Short enough that a person who never answers does not hold the suite. This
-#: PASSES a smaller deadline; it never raises ASK_TIMEOUT_SECONDS.
+#: PASSES a smaller deadline as the caller's span.
 BRIEF = 0.25
 
 
@@ -276,18 +276,16 @@ def _until_answered_spec(tmp: Path, **over) -> ComputeOpSpec:
     return _spec(tmp, exe_data={"prompt": "Service X API token", "until_answered": True}, **over)
 
 
-#: The "full budget" caller timeout — `ask_timeout >= ASK_TIMEOUT_SECONDS` is
-#: exactly the condition the runner checks to grant `until_answered` its
-#: unbounded wait. `min()` in a shorter number here does NOT simulate a longer
-#: wait; it does the opposite (see the failed first draft of these tests) —
-#: these must pass the real constant, never a patched one.
-FULL_BUDGET = ASK_TIMEOUT_SECONDS
+#: A caller that imposes no deadline of its own — what every production caller
+#: does (none passes ``ask_timeout``). The caller's span wins when it gives one,
+#: so only this grants an ``until_answered`` op its unbounded wait.
+NO_CALLER_DEADLINE = None
 
 
 async def test_until_answered_reaches_wait_for_with_no_deadline(tmp_path, monkeypatch):
     """The whole point, proven without waiting out a real 60s: a caller that
-    allows the full budget (no explicit SHORTER `ask_timeout`) gets no deadline
-    at all passed to the waiter, not just a longer one."""
+    imposes no deadline of its own gets no deadline at all passed to the
+    waiter, not just a longer one."""
     from flow_sdk.core.compute_op import ask as ask_module
     from flow_sdk.core.compute_op import ask_window
 
@@ -305,7 +303,7 @@ async def test_until_answered_reaches_wait_for_with_no_deadline(tmp_path, monkey
     monkeypatch.setattr(ask_module, "wait_for", spy)
     spec = _until_answered_spec(tmp_path)
 
-    run = asyncio.create_task(_run(spec, tmp_path, timeout=FULL_BUDGET))
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=NO_CALLER_DEADLINE))
     await _answer_when_asked({"token": "sk-live-1"})
     said = await run
 
@@ -336,7 +334,7 @@ async def test_nobody_to_show_it_to_gives_up_after_the_presence_grace(tmp_path, 
     monkeypatch.setattr(op_ask, "PRESENCE_POLL_SECONDS", 0.01)
     spec = _until_answered_spec(tmp_path)
 
-    said = await _run(spec, tmp_path, timeout=FULL_BUDGET)
+    said = await _run(spec, tmp_path, timeout=NO_CALLER_DEADLINE)
 
     assert said.exit_code is ExitCode.NOT_YET
     assert said.ran is False
@@ -361,7 +359,7 @@ async def test_a_tab_that_connects_during_the_grace_window_still_gets_asked(tmp_
     monkeypatch.setattr(ask_window, "_push_to_live_tab", flaky_push)
     spec = _until_answered_spec(tmp_path)
 
-    run = asyncio.create_task(_run(spec, tmp_path, timeout=FULL_BUDGET))
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=NO_CALLER_DEADLINE))
     await _answer_when_asked({"token": "sk-live-1"})
     said = await run
 
@@ -388,7 +386,70 @@ async def test_the_browser_fallback_is_tried_once_not_once_per_poll(tmp_path, mo
     monkeypatch.setattr(ask_window, "_open_a_window", counted_window)
     spec = _until_answered_spec(tmp_path)
 
-    said = await _run(spec, tmp_path, timeout=FULL_BUDGET)
+    said = await _run(spec, tmp_path, timeout=NO_CALLER_DEADLINE)
 
     assert said.exit_code is ExitCode.NOT_YET and said.ran is False
     assert len(window_calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("op_timeout", "caller_timeout", "expected"),
+    [
+        (None, None, 60.0),  # the product default
+        (900.0, None, 900.0),  # the op's own span, longer than the default
+        (900.0, 7200.0, 7200.0),  # the caller's span wins, longer still
+        (900.0, 5.0, 5.0),  # and may be shorter
+    ],
+)
+async def test_the_wait_is_the_callers_else_the_ops_else_the_default(
+    tmp_path, monkeypatch, op_timeout, caller_timeout, expected
+):
+    """A step done in another application takes minutes: an author or a caller sets any span, the
+    default only applies when nobody did. The person is not waited on here — the span is read off
+    the ask the runner makes."""
+    from flow_sdk.core.compute_op import ask
+    from flow_sdk.schema.data_spec.returned_value_spec import AskResult
+
+    seen: list[float] = []
+
+    async def fake_ask(*_args, timeout, **_kw):
+        seen.append(timeout)
+        return AskResult.not_yet("nobody", timed_out=True)
+
+    monkeypatch.setattr(ask, "ask_person", fake_ask)
+    exe = {"prompt": "Service X API token"} | ({"timeout_seconds": op_timeout} if op_timeout else {})
+    spec = _spec(tmp_path, exe_data=exe)
+    await run_op(spec, trusted=True, workdir=Path(tmp_path), platform=sys.platform, ask_timeout=caller_timeout)
+    assert seen == [expected]
+
+
+async def test_a_question_names_the_run_that_asked_and_carries_the_ops_guide(tmp_path):
+    """A setup screen showing a run claims that run's questions and draws them in place, beside the
+    step's guide — so the question has to say which run asked, and bring the guide along."""
+    from flow_sdk.core.compute_op.ask import ASKING_RUN
+
+    spec = _spec(tmp_path, setup="Open WhatsApp → API Setup and copy the **Phone number ID**.")
+    token = ASKING_RUN.set("wizard-whatsapp-test-1-data_source_a")
+    try:
+        run = asyncio.create_task(_run(spec, tmp_path, timeout=5))
+        for _ in range(200):
+            if open_questions():
+                break
+            await asyncio.sleep(0.01)
+    finally:
+        ASKING_RUN.reset(token)
+    (question,) = open_questions()
+    payload = question.to_payload()
+    assert payload["run"] == "wizard-whatsapp-test-1-data_source_a"
+    assert "Phone number ID" in payload["guide"]
+    cancel(question.id)
+    assert not (await run).ok
+
+
+async def test_an_ask_whose_goal_already_holds_asks_nobody_even_when_its_check_prints_no_value(tmp_path):
+    """The resume rule: an ask carries its goal's check (``flow source step … --check`` prints a status, not
+    the value). Holding means nothing to ask — satisfied, no value — never "the document disagrees"."""
+    spec = _spec(tmp_path, completion_check={"commands": {sys.platform: "echo '{\"ok\": true}'"}})
+    said = await _run(spec, tmp_path)
+    assert said.ok is True and said.ran is False and said.value is None
+    assert open_questions() == []

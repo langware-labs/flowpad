@@ -96,7 +96,7 @@ async with workflow("whatsapp-support"):
     async with agent.process_messages():
         async for m in box.listen():
             out = await agent.process_message(m)              # one session per chat
-            await m.reply(await m.reply_spec(body=out.text))  # send → record → ack
+            await m.reply(out.text)  # send → record → ack
 ```
 
 `box.listen()` polls the source through the poller's slot and drains what landed in ingest order;

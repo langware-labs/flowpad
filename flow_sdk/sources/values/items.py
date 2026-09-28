@@ -17,7 +17,6 @@ from typing import ClassVar, Optional
 from pydantic import AwareDatetime, Field
 
 from flow_sdk._compat import StrEnum
-
 from flow_sdk.schema.data_spec.spec import DataSpec, Tagged
 from flow_sdk.sources.values.origin import CloudOrigin
 
@@ -134,7 +133,7 @@ class MessageItem(SourceItemSpec):
 
 class ReactionMode(StrEnum):
     """What a reaction report says. ``SET``: ``emojis`` is this person's whole set on the target now
-    (``()`` = they took it back) — WhatsApp, WAHA and Telegram report state, and a WhatsApp removal
+    (``()`` = they took it back) — WhatsApp and Telegram report state, and a WhatsApp removal
     carries no emoji at all, so only the holder of the previous state can tell what went. ``ADD`` /
     ``REMOVE``: a delta (Slack's ``reaction_added``)."""
 

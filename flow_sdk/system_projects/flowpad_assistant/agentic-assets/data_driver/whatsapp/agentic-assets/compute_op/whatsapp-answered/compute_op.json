@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "19617c4d-08c8-4e30-b6a5-fcdf90c0e581",
+  "name": "whatsapp-answered",
+  "label": "Agent running",
+  "description": "The agent answers on this computer.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" answered",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" answered",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE answered; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" answered --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" answered --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE answered --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

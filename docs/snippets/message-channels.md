@@ -3,7 +3,7 @@ id: 370a5982-3e75-4a8b-a8fb-49e59485be6c
 ---
 # Files, quote-replies and reactions on a channel
 
-Every message channel (WhatsApp, WAHA, Telegram, Slack, email) speaks the same three verbs when the
+Every message channel (WhatsApp, Telegram, Slack, email — and an external connector's) speaks the same three verbs when the
 provider allows them. What a channel can do is data on its conversation — `channel_spec.accepts_attachments`,
 `quotes`, `reacts` — never a test of its name. A file or an emoji the channel cannot take is refused with the
 reason, before anything is sent; nothing is converted or dropped.

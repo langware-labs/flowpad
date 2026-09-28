@@ -10,6 +10,7 @@ import {
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Button } from '@src/components/ui/button';
+import { MarkdownView } from '@src/components/markdown-view';
 import { useAskModalStore } from './ask-modal-store';
 import { fieldsOf, useAskQuestion } from './use-ask-question';
 
@@ -78,6 +79,12 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
                 <DialogDescription data-testid="ask-modal-detail">{question.detail}</DialogDescription>
               ) : null}
             </DialogHeader>
+
+            {question.guide ? (
+              <div className="rounded border bg-muted/30 p-3 text-sm" data-testid="ask-modal-guide">
+                <MarkdownView value={question.guide} compact />
+              </div>
+            ) : null}
 
             {fieldsOf(question.fields).map((name) => (
               <div key={name} className="flex flex-col gap-1">

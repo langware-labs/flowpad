@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "9ba238e1-33d1-4a83-b8d7-3642baa47373",
+  "name": "whatsapp-number",
+  "label": "Test number",
+  "description": "The token sends from the number (and is made to last).",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE number; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" number --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE number --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}
