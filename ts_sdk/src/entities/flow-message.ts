@@ -512,11 +512,21 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   }
 }
 
+export interface UploadedAttachment {
+  /** The MessageAttachment row staged for review. */
+  id: string;
+  asset_type: string;
+  asset_id: string;
+  name: string | null;
+}
+
 export interface UploadFlowMessageResult {
   message_id: string;
   task_id: string | null;
   conversation_id: string | null;
   was_new_task: boolean;
+  /** What the file staged — reviewable and installable before anything goes live. */
+  attachments: UploadedAttachment[];
 }
 
 export interface UploadConflict {
@@ -538,26 +548,38 @@ export async function uploadFlowMessage(
   return res!;
 }
 
-export type CreateTaskBundleParams = {
-  spec_title: string;
-  spec_content?: string;
-  task_title?: string;
-  message?: string | null;
-  team_space_id?: string | null;
-};
-
-export interface CreateTaskBundleResult {
-  flow_message_id: string;
-  task_id: string;
-  conversation_id: string;
-  spec_id: string;
+export interface ExportFlowMessageParams {
+  /** The message the recipient reads. */
+  text: string;
+  /** TypeIds of every entity the file carries (`skill-<uuid>`, …). */
+  asset_references: string[];
 }
 
-export async function createTaskBundle(params: CreateTaskBundleParams): Promise<CreateTaskBundleResult> {
-  const action = new ActionInfo('flow-message-create', null, null, 'POST');
+/** Pack entities into one `.flowmsg` with no conversation — an offline package
+ *  handed to someone as a file. Returns the zip bytes. */
+export async function exportFlowMessage(params: ExportFlowMessageParams): Promise<Blob> {
+  const action = new ActionInfo('flow-message-export', null, null, 'POST', true, false, null, 'blob');
   action.bodyParameters = params;
-  const res = await dataManager.callAction<CreateTaskBundleParams, CreateTaskBundleResult>(action);
-  return res!;
+  return (await dataManager.callAction<ExportFlowMessageParams, Blob>(action))!;
+}
+
+export interface InstallAttachmentsResult {
+  installed: string[];
+  skipped: string[];
+  failed: string[];
+  /** Why each failed row failed, keyed by MessageAttachment id. */
+  errors: Record<string, string>;
+}
+
+/** Install every attachment of one message into a project — the review
+ *  dialog's "Install all" for a message that has no conversation. */
+export async function installMessageAttachments(
+  flowMessageId: string,
+  projectId: string,
+): Promise<InstallAttachmentsResult> {
+  const action = new ActionInfo('install-attachments', FlowMessage.type, flowMessageId, 'POST');
+  action.bodyParameters = { project_id: projectId };
+  return (await dataManager.callAction<{ project_id: string }, InstallAttachmentsResult>(action))!;
 }
 
 /** URL for downloading a local FlowMessage as a `.flowmsg` bundle. */

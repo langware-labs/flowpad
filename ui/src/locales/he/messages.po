@@ -1426,8 +1426,8 @@ msgid "Add a note to the running session about this message"
 msgstr "הוסף הערה לסשן הפעיל על הודעה זו"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Add a personal note..."
-msgstr "הוסף הערה אישית..."
+#~ msgid "Add a personal note..."
+#~ msgstr "הוסף הערה אישית..."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a personal note…"
@@ -1676,6 +1676,10 @@ msgstr "הוסף טריגר"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Add variable"
+msgstr ""
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Add…"
 msgstr ""
 
 #. placeholder {0}: draft.name.trim()
@@ -3249,8 +3253,8 @@ msgid "Bullet list"
 msgstr "רשימת נקודות"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Bundle ready — download started."
-msgstr "החבילה מוכנה — ההורדה החלה."
+#~ msgid "Bundle ready — download started."
+#~ msgstr "החבילה מוכנה — ההורדה החלה."
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "By"
@@ -3536,6 +3540,10 @@ msgstr "היכולות אינן זמינות. נסה שוב"
 #: src/i18n/type-labels.ts
 msgid "Capability"
 msgstr "יכולת"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Carries"
+msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/SourcePicker.tsx
@@ -7292,12 +7300,13 @@ msgstr "בוצע!"
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Download"
 msgstr "הורד"
 
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download .flowmsg"
 msgstr "הורד .flowmsg"
 
@@ -7306,6 +7315,10 @@ msgstr "הורד .flowmsg"
 msgid "Download {count} {0}"
 msgstr "הורד {count} {0}"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Download a <0>.flowmsg</0> file. The recipient uploads it on their project home, reviews what it carries, and installs it."
+msgstr ""
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Download again"
 msgstr "הורדה מחדש"
@@ -7313,6 +7326,10 @@ msgstr "הורדה מחדש"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download all attachments"
 msgstr "הורד את כל הקבצים המצורפים"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Download as a file instead of sending"
+msgstr ""
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download attachments"
@@ -7333,6 +7350,7 @@ msgid "Download file"
 msgstr "הורד קובץ"
 
 #: src/components/conversation/chips/MessageChips.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "הורד הודעה"
 
@@ -12147,16 +12165,21 @@ msgstr "קונפליקטים בהיתוך"
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message"
 msgstr "הודעה"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Message (optional)"
-msgstr "הודעה (אופציונלי)"
+#~ msgid "Message (optional)"
+#~ msgstr "הודעה (אופציונלי)"
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
 msgstr "קובץ מצורף להודעה"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Message downloaded"
+msgstr ""
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Message not queued"
@@ -14167,6 +14190,10 @@ msgstr "אין מה לשפר"
 msgid "Nothing to index"
 msgstr ""
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Nothing to install"
+msgstr ""
+
 #: src/lib/publish-state.ts
 msgid "Nothing to publish"
 msgstr "אין מה לפרסם"
@@ -15176,8 +15203,8 @@ msgid "Pack keys into credentials"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
-msgstr "ארוז שיתוף זה לקובץ <0>.flowmsg</0> נייד שנמענים יכולים לייבא."
+#~ msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+#~ msgstr "ארוז שיתוף זה לקובץ <0>.flowmsg</0> נייד שנמענים יכולים לייבא."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
@@ -16786,8 +16813,10 @@ msgstr "סשן עובד מרוחק"
 msgid "Remove"
 msgstr "הסרה"
 
+#. placeholder {0}: c.label
 #. placeholder {0}: source.name
 #. placeholder {0}: source.name || source.provider
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
@@ -18173,6 +18202,7 @@ msgstr "חפש כל ישות. בחירה של אחת מכניסה [[wikilink]] �
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Search assets…"
 msgstr "חפש assets…"
 
@@ -21384,6 +21414,10 @@ msgstr "כתובת הסשן החי אינה תקינה או אינה זמינה.
 msgid "this machine"
 msgstr ""
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "This message carries no assets."
+msgstr ""
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this minute"
 msgstr ""
@@ -21839,8 +21873,6 @@ msgstr "עצה: חבר GitHub כדי לשבוט מאגרים פרטיים."
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Title"
 msgstr "כותרת"
 
@@ -22508,8 +22540,16 @@ msgstr "משדרג…"
 msgid "Upload"
 msgstr "העלאה"
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Upload a .flowmsg and install what it carries into this project"
+msgstr ""
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Upload CSV"
+msgstr ""
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Upload failed"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -22525,6 +22565,7 @@ msgid "Upload image"
 msgstr "העלו תמונה"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "Upload message"
 msgstr "העלאת הודעה"
 
@@ -23206,6 +23247,10 @@ msgstr ""
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
 msgstr "מה צריך העובד לעשות עם הודעה זו?"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "What should they know?"
+msgstr ""
 
 #. placeholder {0}: readiness.environment
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
