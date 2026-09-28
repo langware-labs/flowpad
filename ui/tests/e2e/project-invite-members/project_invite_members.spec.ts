@@ -57,7 +57,8 @@ function instance(name: string): User {
     const eq = line.indexOf('=');
     if (eq > 0 && !line.startsWith('#')) env[line.slice(0, eq)] = line.slice(eq + 1);
   }
-  const home = process.env[`INVITE_HOME_${name.replace(/-/g, '_').toUpperCase()}`] ?? join(homedir(), `flowpad-${name}-home`);
+  const home =
+    process.env[`INVITE_HOME_${name.replace(/-/g, '_').toUpperCase()}`] ?? join(homedir(), `flowpad-${name}-home`);
   return {
     name,
     email: env.FLOWPAD_CLOUD_USER_EMAIL,
@@ -83,7 +84,9 @@ async function graph<T = Record<string, unknown>>(u: User, path: string, init?: 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 const samePath = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase();
 const isUnder = (child: string, parent: string) =>
-  resolve(child).toLowerCase().startsWith(resolve(parent).toLowerCase() + sep);
+  resolve(child)
+    .toLowerCase()
+    .startsWith(resolve(parent).toLowerCase() + sep);
 const lf = (s: string) => s.replace(/\r\n/g, '\n');
 
 async function openAs(browser: Browser, u: User): Promise<{ context: BrowserContext; page: Page }> {
@@ -160,8 +163,8 @@ async function openInviteConversation(page: Page, u: User, conversationId: strin
 /**
  * Install from the invite message's chip. Returns the clone path.
  *
- * The chip is the only offer: no dialog pops up for a shared project. Once
- * installed, the same chip reads Open project.
+ * The dashed chip opens the review popup, whose project branch offers Install
+ * project; nothing pops up on its own. Once installed, the chip is the installed one.
  */
 async function installShared(page: Page, u: User, projectId: string, conversationId: string): Promise<string> {
   await expect
@@ -171,19 +174,21 @@ async function installShared(page: Page, u: User, projectId: string, conversatio
     })
     .toBe(true);
   await openInviteConversation(page, u, conversationId);
-  const chip = page.getByTestId('project-install-chip');
+  const chip = page.getByTestId('project-chip');
   await expect(chip).toContainText(RUN, { timeout: 60_000 });
   await expect(page.getByTestId('incoming-project-dialog')).toHaveCount(0);
-  await chip.getByTestId('project-install-button').click();
+  // The dashed chip opens the review popup; its project branch offers Install project.
+  await chip.getByRole('button').click();
+  await page.getByTestId('asset-review-dialog').getByTestId('project-install-button').click();
   await expect
     .poll(async () => (await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path ?? '', {
       timeout: 120_000,
       message: `${u.name} never finished installing`,
     })
     .not.toBe('');
-  // Installing lands in the project; back in the conversation the chip now opens it.
+  // Installing lands in the project; back in the conversation the chip is the installed one.
   await openInviteConversation(page, u, conversationId);
-  await expect(page.getByTestId('project-open-button')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByTestId('project-chip')).toHaveAttribute('data-state', 'installed', { timeout: 30_000 });
   return String((await graph<ProjectRow>(u, `project/${projectId}`)).fs_storage_mount_path);
 }
 

@@ -703,11 +703,19 @@ export function MembersAvatarStack({
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => addTeam(team)}
                                 disabled={teamPicked(team)}
-                                className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-start text-xs hover:bg-muted disabled:opacity-50"
+                                className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-start text-xs hover:bg-muted disabled:opacity-50"
                                 data-testid={`contact-team-option-${team.id}`}
                               >
-                                <TeamIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                                <span className="truncate">{team.name}</span>
+                                <span className="flex min-w-0 items-center gap-1.5">
+                                  <TeamIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                  <span className="truncate">{team.name}</span>
+                                </span>
+                                <span
+                                  className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground"
+                                  data-testid={`contact-team-option-label-${team.id}`}
+                                >
+                                  <Trans>Team</Trans>
+                                </span>
                               </button>
                             ))}
                             {suggestedContacts.map((u) => {
@@ -817,7 +825,15 @@ export function MembersAvatarStack({
                               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted">
                                 <TeamIcon className="h-3 w-3 text-muted-foreground" />
                               </span>
-                              <span className="min-w-0 flex-1 truncate">{label}</span>
+                              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                                <span className="truncate">{label}</span>
+                                <span
+                                  className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground"
+                                  data-testid={`members-invite-row-label-${key}`}
+                                >
+                                  <Trans>Team</Trans>
+                                </span>
+                              </span>
                               <select
                                 aria-label={t`Invite ${label} as`}
                                 data-testid={`members-invite-role-${key}`}

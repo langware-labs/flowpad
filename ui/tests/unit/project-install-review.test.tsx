@@ -1,21 +1,22 @@
 /**
- * U6 — a project reference in a message renders the Install project / Open
- * project chip (R11, R13, R15; KTD10).
+ * U6 — a project reference in a message is the generic entity chip: dashed
+ * until the project is installed here, opening the review popup, whose
+ * project branch offers Install project in place of Install in project /
+ * Install global (R11, R13, R15; KTD10).
  *
- * Drives the REAL `MessageEntityChip` → `ProjectInstallChip` →
- * `useInstallSharedProjectAndOpen` chain over REAL `Project` entities. The
- * stand-ins are only the boundaries:
+ * Drives the REAL `MessageEntityChip` → `AssetReviewDialog` →
+ * `ProjectInstallAction` → `useInstallSharedProjectAndOpen` chain over REAL
+ * `Project` entities. The stand-ins are only the boundaries:
  *   - `useProjects` (the live lazy-asset collection) and `useEntity` (the
  *     per-TypeId fetch) — the rows the chip is stated from;
- *   - `Project.prototype.setupFromGitOrigin` — the clone, which is U5's typed
- *     failure contract (`err.code`);
+ *   - `Project.prototype.setupFromGitOrigin` — the clone;
  *   - `useDockNavigation` (router shortcut) and `isHubOnly` (runtime signal);
  *   - the skill-run helper `MessageEntityChip` wires for skills (irrelevant here).
  *
  * Unit tier, not `tests/react/`: the react tier's setup refuses to run without
  * a live launcher-owned backend, and nothing here needs one.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import { Agent, Project, TypeId } from '@sdk';
@@ -101,10 +102,20 @@ function renderChip(typeId: TypeId = PROJECT_TID) {
 }
 
 function chipState(): string | null {
-  return screen.getByTestId('project-install-chip').getAttribute('data-state');
+  return screen.getByTestId('project-chip').getAttribute('data-state');
 }
 
-describe('MessageEntityChip — project install chip', () => {
+function actionState(): string | null {
+  return screen.getByTestId('project-install-action').getAttribute('data-state');
+}
+
+/** Click the dashed chip: the review popup opens on the project branch. */
+function openReview(): void {
+  fireEvent.click(within(screen.getByTestId('project-chip')).getByRole('button'));
+  expect(screen.getByTestId('asset-review-dialog')).toBeTruthy();
+}
+
+describe('MessageEntityChip — project reference', () => {
   beforeEach(() => {
     h.projects = [];
     h.projectsLoading = false;
@@ -117,36 +128,62 @@ describe('MessageEntityChip — project install chip', () => {
     vi.restoreAllMocks();
   });
 
-  it('waits while the row has not arrived, then offers Install project once it arrives without a mount path', () => {
+  it('not installed: a dashed chip whose popup offers Install project, not the scope pair', () => {
+    h.projects = [sharedRow(null)];
+    entityState(PROJECT_TID, { data: sharedRow(null) });
+    renderChip();
+
+    expect(chipState()).toBe('staged');
+    expect(screen.getByText('Apollo')).toBeTruthy();
+    openReview();
+
+    expect(actionState()).toBe('install');
+    expect(screen.getByTestId('project-install-button').textContent).toContain('Install project');
+    expect(screen.queryByTestId('asset-install-project')).toBeNull();
+    expect(screen.queryByTestId('asset-install-global')).toBeNull();
+  });
+
+  it('a git-backed project (it has an origin) labels the install Clone & Open', () => {
+    const row = new Project({
+      id: PID,
+      name: 'Apollo',
+      fs_storage_mount_path: null,
+      origin: { kind: 'git', provider: 'github', owner: 'acme', name: 'apollo', branch: 'main', rel_path: '' },
+    } as unknown as Partial<Project>);
+    h.projects = [row];
+    entityState(PROJECT_TID, { data: row });
+    renderChip();
+    openReview();
+
+    expect(actionState()).toBe('install');
+    expect(screen.getByTestId('project-install-button').textContent).toContain('Clone & Open');
+  });
+
+  it('waits in the popup while the row has not arrived, then offers Install project', () => {
     entityState(PROJECT_TID, { isLoading: true });
     const view = renderChip();
+    openReview();
 
-    expect(chipState()).toBe('waiting');
+    expect(actionState()).toBe('waiting');
     expect(screen.queryByTestId('project-install-button')).toBeNull();
 
     h.projects = [sharedRow(null)];
     entityState(PROJECT_TID, { data: sharedRow(null) });
     view.rerender(chip());
 
-    expect(chipState()).toBe('install');
-    expect(screen.getByTestId('project-install-button').textContent).toContain('Install project');
+    expect(actionState()).toBe('install');
   });
 
-  it('AE5: a row with a mount path reads Open project and navigates to the project dock', () => {
+  it('AE5: installed here, the chip is the normal chip and no popup opens', () => {
     h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
     entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
     renderChip();
 
-    expect(chipState()).toBe('open');
-    const open = screen.getByTestId('project-open-button');
-    expect(open.textContent).toContain('Open project');
-
-    fireEvent.click(open);
-    expect(h.openDock).toHaveBeenCalledTimes(1);
-    expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${PID}`);
+    expect(chipState()).toBe('installed');
+    expect(screen.queryByTestId('asset-review-dialog')).toBeNull();
   });
 
-  it('installs on click: installing, then Open project on success', async () => {
+  it('installs from the popup: installing, then lands in the project and closes', async () => {
     h.projects = [sharedRow(null)];
     entityState(PROJECT_TID, { data: sharedRow(null) });
     let resolveInstall!: (p: Project) => void;
@@ -154,17 +191,18 @@ describe('MessageEntityChip — project install chip', () => {
       .spyOn(Project.prototype, 'setupFromGitOrigin')
       .mockImplementation(() => new Promise<Project>((r) => (resolveInstall = r)));
     renderChip();
+    openReview();
 
     fireEvent.click(screen.getByTestId('project-install-button'));
-    expect(chipState()).toBe('installing');
+    expect(actionState()).toBe('installing');
     expect(setup).toHaveBeenCalledTimes(1);
 
     resolveInstall(sharedRow('/Users/eli/Flowpad workspace/apollo'));
 
-    await waitFor(() => expect(chipState()).toBe('open'));
     // The install lands URL-first in the project, like a fresh clone.
-    expect(h.openDock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(h.openDock).toHaveBeenCalledTimes(1));
     expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${PID}`);
+    await waitFor(() => expect(screen.queryByTestId('asset-review-dialog')).toBeNull());
   });
 
   it('a failed install shows the error, installs nothing, and retry returns to Install', async () => {
@@ -174,47 +212,43 @@ describe('MessageEntityChip — project install chip', () => {
       new Error('Git clone failed: Repository not found'),
     );
     renderChip();
+    openReview();
 
     fireEvent.click(screen.getByTestId('project-install-button'));
 
-    await waitFor(() => expect(chipState()).toBe('error'));
+    await waitFor(() => expect(actionState()).toBe('error'));
     expect(screen.getByTestId('project-install-error').textContent).toMatch(/could not be installed/i);
-    expect(screen.queryByTestId('project-open-button')).toBeNull();
     expect(h.openDock).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByTestId('project-install-retry'));
-    expect(chipState()).toBe('install');
-    expect(screen.getByTestId('project-install-button')).toBeTruthy();
+    expect(actionState()).toBe('install');
   });
 
-  it('project not found for the invitee → unavailable', () => {
+  it('project not found for the invitee → the popup says unavailable', () => {
     entityState(PROJECT_TID, { data: null, notFound: true });
     renderChip();
+    openReview();
 
-    expect(chipState()).toBe('unavailable');
+    expect(actionState()).toBe('unavailable');
     expect(screen.queryByTestId('project-install-button')).toBeNull();
-    expect(screen.queryByTestId('project-open-button')).toBeNull();
   });
 
-  it('hides the install action in a hub-only runtime', () => {
+  it('a hub-only runtime never installs: the project counts as installed and opens', () => {
     h.hubOnly = true;
     h.projects = [sharedRow(null)];
     entityState(PROJECT_TID, { data: sharedRow(null) });
     renderChip();
 
-    // Hub projects have no local folder: the chip still renders the project
-    // (navigable), but never offers a local install.
-    expect(chipState()).toBe('open');
+    expect(chipState()).toBe('installed');
     expect(screen.queryByTestId('project-install-button')).toBeNull();
   });
 
-  it('AE10 (client side): a non-project reference renders the existing chip, not the install chip', () => {
+  it('AE10 (client side): a non-project reference renders the existing chip, not the project chip', () => {
     const agentTid = new TypeId(Agent.type, '33333333-3333-4333-8333-333333333333');
     entityState(agentTid, { data: new Agent({ id: agentTid.id, name: 'Helper' } as Partial<Agent>) });
     renderChip(agentTid);
 
-    expect(screen.queryByTestId('project-install-chip')).toBeNull();
-    expect(screen.queryByTestId('project-install-button')).toBeNull();
+    expect(screen.queryByTestId('project-chip')).toBeNull();
     // The existing entity chip renders the agent.
     expect(screen.getByText('Helper')).toBeTruthy();
   });

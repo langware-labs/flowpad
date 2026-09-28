@@ -17,6 +17,7 @@ import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRout
 import { notify } from '@src/notifications';
 import { buildDockPointer, iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
+import { ProjectInstallAction } from './ProjectInstallAction';
 import { StagedAssetViewer } from './StagedAssetViewer';
 
 /** Where the asset's content actually comes from — the reviewer's trust signal.
@@ -121,16 +122,35 @@ function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment })
  * "Install in project" opens the same picker switch-project uses to choose the
  * target, then installs.
  *
+ * A project is the exception: it is not installed INTO a scope, it is cloned as
+ * itself, so its branch offers one **Install project** ({@link ProjectInstallAction}).
+ * A project reference with no MessageAttachment row (the hub-authored invite
+ * message is body-free) opens the popup through `project` instead of
+ * `attachments`.
+ *
  * All state flips live off the per-attachment MessageAttachment UPDATE via the
  * `AttachmentLiveSubscriber`s below — no optimistic writes anywhere.
  */
-export function AssetReviewDialog({
-  open,
-  onClose,
-  attachments,
-  initialAttachmentId,
-  attachmentProjectId,
-}: {
+export function AssetReviewDialog(props: AssetReviewDialogProps) {
+  return props.project ? (
+    <ProjectReviewDialog {...props} project={props.project} />
+  ) : (
+    <AttachmentReviewDialog {...props} />
+  );
+}
+
+/** A project referenced by a message — the popup's project branch. */
+export interface ProjectReviewRef {
+  typeId: TypeId;
+  /** Display-name fallback until the row arrives (the attachment's name). */
+  name?: string | null;
+  /** The row as the chip's `useEntity` resolved it (undefined = loading). */
+  entityRow?: Project | null;
+  /** The per-TypeId fetch settled on not-found / refused. */
+  entityUnavailable: boolean;
+}
+
+interface AssetReviewDialogProps {
   open: boolean;
   onClose: () => void;
   /** Every MessageAttachment on the message (entities + files). */
@@ -140,7 +160,63 @@ export function AssetReviewDialog({
   /** The conversation's mapped project (install target when present). When
    *  null, "Install in project" opens the picker to choose one. */
   attachmentProjectId: string | null;
-}) {
+  /** A project reference with no MessageAttachment row: the popup shows the
+   *  project branch alone. */
+  project?: ProjectReviewRef;
+}
+
+/**
+ * The popup's project branch: Install project / Open project, and the
+ * project's name and type. No content preview: there is no
+ * preview surface for a project that is not on this machine yet.
+ */
+function ProjectReviewDialog({ open, onClose, project }: AssetReviewDialogProps & { project: ProjectReviewRef }) {
+  const { t } = useLingui();
+  const Icon = iconForEntity(Project.type);
+  const row = project.entityRow ?? null;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="sm:max-w-xl" data-testid="asset-review-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-bold">
+            <Trans>Received project — review before installing.</Trans>
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            <Trans>Review the shared project and install it.</Trans>
+          </DialogDescription>
+        </DialogHeader>
+        <ProjectInstallAction
+          typeId={project.typeId}
+          entityRow={project.entityRow}
+          entityUnavailable={project.entityUnavailable}
+          onDone={onClose}
+        />
+        <div className="flex flex-col gap-1 border-t border-border pt-3">
+          <div className="flex items-center gap-2">
+            <Icon className="h-4 w-4 shrink-0 text-primary" />
+            <span className="truncate font-semibold">{row?.name || project.name || t`Project`}</span>
+            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+              {typeWordOf(Project.type)}
+            </span>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function AttachmentReviewDialog({
+  open,
+  onClose,
+  attachments,
+  initialAttachmentId,
+  attachmentProjectId,
+}: AssetReviewDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
@@ -229,7 +305,11 @@ export function AssetReviewDialog({
 
   // Non-git attachments are the ones the project/global scope buttons act on;
   // git rows install through their own Download/Setup flow (AssetInstallActions).
-  const installable = useMemo(() => liveOrdered.filter((a) => !isGitAttachment(a)), [liveOrdered]);
+  // A project is cloned as itself, never installed into a scope — excluded too.
+  const installable = useMemo(
+    () => liveOrdered.filter((a) => !isGitAttachment(a) && a.asset_type !== Project.type),
+    [liveOrdered],
+  );
 
   // Install target: the conversation mapping wins; otherwise the project the
   // user picks through the switch-project dialog on "Install in project".
@@ -251,6 +331,13 @@ export function AssetReviewDialog({
   const userScopeAllowed = installable.every((a) => a.user_scope_allowed !== false);
 
   const selectedIsGit = isGitAttachment(selected);
+  // A project in the list gets Install project in place of the scope pair.
+  const selectedProjectTypeId = selected.asset_type === Project.type ? selected.targetTypeId : null;
+  const {
+    data: selectedProjectRow,
+    notFound: selectedProjectNotFound,
+    isError: selectedProjectError,
+  } = useEntity<Project>(selectedProjectTypeId);
   const selectedInstalled = selected.effectiveScope != null;
 
   const installAllToProject = async (projectId: string, name?: string) => {
@@ -373,7 +460,14 @@ export function AssetReviewDialog({
             list; Open acts on the selected entity. When no project is mapped,
             "Install in project" opens the picker to choose the target. */}
         <div className="flex flex-wrap items-center gap-2">
-          {selectedIsGit ? (
+          {selectedProjectTypeId ? (
+            <ProjectInstallAction
+              typeId={selectedProjectTypeId}
+              entityRow={selectedProjectRow}
+              entityUnavailable={selectedProjectNotFound || selectedProjectError}
+              onDone={onClose}
+            />
+          ) : selectedIsGit ? (
             <AssetInstallActions attachment={selected} conversationProjectId={attachmentProjectId} />
           ) : (
             <>
@@ -428,7 +522,7 @@ export function AssetReviewDialog({
                 ))}
             </>
           )}
-          {selectedInstalled && (
+          {selectedInstalled && !selectedProjectTypeId && (
             <Button size="sm" variant="secondary" onClick={() => void openSelected()} data-testid="asset-open-entity">
               <ExternalLink className="h-3.5 w-3.5" />
               <Trans>Open</Trans>
