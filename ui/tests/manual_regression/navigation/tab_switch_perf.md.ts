@@ -37,13 +37,7 @@ import {
 test.skip(process.env.FLOWPAD_PERF_GATE !== '1', 'speed budgets run on a production build only (FLOWPAD_PERF_GATE=1)');
 
 const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
-// Sample count, not a budget and not a timeout — both of those are unchanged.
-// Each round waits out the ~19 background refreshes a warm switch fires plus a
-// 250ms silence (clickChip -> networkQuiet), so the loop, not the switches, is
-// what the 60s test timeout is spent on: 20 rounds is ~32s on this laptop and
-// overran 60s on CI's slower runner, failing mid-click before it ever measured.
-// 10 rounds still gives p50/p90 and leaves CI room.
-const ROUNDS = 10;
+const ROUNDS = 20;
 /**
  * What only a LOADER asks for: tab materialization, an entity's identity, an asset
  * or wiki lookup, a runtime attach or its recording, a chat history. Inside a warm
@@ -161,10 +155,36 @@ async function awaitSwitch(
   return found!;
 }
 
+/** Everything currently painted over the page: a stranded modal overlay blocks every click. */
+function blockingLayers(page: Page) {
+  return page.evaluate(() =>
+    [...document.querySelectorAll('[data-state="open"], [role="dialog"], [aria-modal="true"]')].map((el) => ({
+      tag: el.tagName.toLowerCase(),
+      state: el.getAttribute('data-state'),
+      role: el.getAttribute('role'),
+      testid: el.getAttribute('data-testid'),
+      cls: (el.getAttribute('class') ?? '').slice(0, 80),
+      text: (el.textContent ?? '').trim().slice(0, 80),
+      children: el.childElementCount,
+    })),
+  );
+}
+
 /** Click a tab chip, wait for its switch's `metric` line, then for the view's own fetches to finish. */
 async function clickChip(page: Page, chip: string, trail: string[], metric: 'ready' | 'painted'): Promise<Switch> {
   const before = switches(trail).size;
-  await page.locator(chip).first().click();
+  // A click that cannot land is almost always a modal overlay left open over the
+  // page; time out fast and name it rather than burning the whole test budget.
+  await page
+    .locator(chip)
+    .first()
+    .click({ timeout: 10_000 })
+    .catch(async (e: unknown) => {
+      throw new Error(
+        `${String(e)}\nblocking layers: ${JSON.stringify(await blockingLayers(page), null, 1)}` +
+          `\nstate: ${JSON.stringify(await screenState(page))}`,
+      );
+    });
   const sw = await awaitSwitch(page, trail, before, metric);
   await networkQuiet(page);
   return sw;
@@ -175,7 +195,8 @@ function requestCounts(page: Page, sinceMs: number): Promise<Record<string, numb
   return page.evaluate((since) => {
     const reqs = (window as unknown as { __apiRequests: { t: number; method: string; path: string }[] }).__apiRequests;
     const counts: Record<string, number> = {};
-    for (const r of reqs) if (r.t >= since) counts[`${r.method} ${r.path}`] = (counts[`${r.method} ${r.path}`] ?? 0) + 1;
+    for (const r of reqs)
+      if (r.t >= since) counts[`${r.method} ${r.path}`] = (counts[`${r.method} ${r.path}`] ?? 0) + 1;
     return counts;
   }, sinceMs);
 }
@@ -187,8 +208,14 @@ test('warm tab switches: content visible within budget, nothing waited on', asyn
   await awaitSteerable(page);
   // Visit each place once (cold), so every later visit is warm.
   await navigateTo(page, `shell/agentic_process-${a.processId}`, `/shell/agentic_process-${a.processId}`);
-  await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, { timeout: 15_000 });
-  await navigateTo(page, `project/${a.projectId}/editor/markdown/vfs/compute_node-%40local${a.reportPath}`, '/editor/markdown/');
+  await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
+    timeout: 15_000,
+  });
+  await navigateTo(
+    page,
+    `project/${a.projectId}/editor/markdown/vfs/compute_node-%40local${a.reportPath}`,
+    '/editor/markdown/',
+  );
   await navigateTo(page, `shell/shell-${a.shellId}`, `/shell/shell-${a.shellId}`);
 
   const terminalChip = `[data-testid="tab-shell|agentic_process-${a.processId}"]`;
@@ -214,7 +241,10 @@ test('warm tab switches: content visible within budget, nothing waited on', asyn
   console.log(`[perf] warm switches (${ROUNDS} rounds) ms`, JSON.stringify(table));
   // Background refreshes views make after they mount — not waited on (content is
   // already visible, see the budgets above), reported so they stay visible.
-  console.log(`[perf] view refreshes over ${ROUNDS * 3} warm switches`, JSON.stringify(await requestCounts(page, warmFromMs)));
+  console.log(
+    `[perf] view refreshes over ${ROUNDS * 3} warm switches`,
+    JSON.stringify(await requestCounts(page, warmFromMs)),
+  );
 
   expect(table.terminal.p90, 'warm switch to a terminal').toBeLessThanOrEqual(BUDGET.warmMs);
   expect(table.report.p90, 'warm switch to a document').toBeLessThanOrEqual(BUDGET.warmMs);
@@ -232,9 +262,13 @@ test('project switch between visited projects: content visible within budget', a
   const toA = () => navigateTo(page, `shell/agentic_process-${a.processId}`, `/shell/agentic_process-${a.processId}`);
   const toB = () => navigateTo(page, `shell/agentic_process-${b.processId}`, `/shell/agentic_process-${b.processId}`);
   await toA();
-  await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, { timeout: 15_000 });
+  await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
+    timeout: 15_000,
+  });
   await toB();
-  await expect(page.locator(`[data-session-id="agentic_process-${b.processId}"]`)).toContainText(MOCK_MARKER, { timeout: 15_000 });
+  await expect(page.locator(`[data-session-id="agentic_process-${b.processId}"]`)).toContainText(MOCK_MARKER, {
+    timeout: 15_000,
+  });
 
   const measured: number[] = [];
   for (let i = 0; i < 8; i++) {
@@ -269,7 +303,9 @@ test('cold open of a terminal with a large recording: from its checkpoint, withi
     body: JSON.stringify({ shell_id: a.processShellId, data: 'flood 200000\r' }),
   });
   expect(flood.ok, 'could not send input to the mock worker').toBe(true);
-  await expect.poll(() => ptyText(a.processShellId).then((t) => t.length), { timeout: 60_000 }).toBeGreaterThan(10_000_000);
+  await expect
+    .poll(() => ptyText(a.processShellId).then((t) => t.length), { timeout: 60_000 })
+    .toBeGreaterThan(10_000_000);
 
   // The first open ever replays the whole recording (no client has yet), and
   // leaves a checkpoint behind for every open after it. Reported, not budgeted:
@@ -277,15 +313,20 @@ test('cold open of a terminal with a large recording: from its checkpoint, withi
   const first = await coldOpen(await browser.newPage(), a);
   console.log(`[perf] first-ever open of a large recording: ${first.ms}ms — ${first.line}`);
   expect(first.line, 'the first open was not a cold terminal mount').toContain('mode=cold');
-  expect(Number(/history_kb=(\d+)/.exec(first.line)?.[1] ?? 0), 'the replayed recording was not large').toBeGreaterThan(1000);
+  expect(Number(/history_kb=(\d+)/.exec(first.line)?.[1] ?? 0), 'the replayed recording was not large').toBeGreaterThan(
+    1000,
+  );
 
   // Every later cold open — a reload, another window, coming back tomorrow —
   // starts from that checkpoint and replays only what came after it.
   await expect
-    .poll(async () => {
-      const r = await fetch(`${BACKEND}/api/v1/shell/${a.processShellId}/pty-stream?since=checkpoint`);
-      return r.ok && 'checkpoint' in ((await r.json()) as { data: object }).data;
-    }, { timeout: 15_000, message: 'the first open stored no checkpoint' })
+    .poll(
+      async () => {
+        const r = await fetch(`${BACKEND}/api/v1/shell/${a.processShellId}/pty-stream?since=checkpoint`);
+        return r.ok && 'checkpoint' in ((await r.json()) as { data: object }).data;
+      },
+      { timeout: 15_000, message: 'the first open stored no checkpoint' },
+    )
     .toBe(true);
   const again = await coldOpen(await browser.newPage(), a);
   console.log(`[perf] cold open from the checkpoint: ${again.ms}ms — ${again.line}`);
