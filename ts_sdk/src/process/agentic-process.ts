@@ -334,6 +334,10 @@ export interface IAgenticProcess extends IEntity {
   shell_mode?: boolean;
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
+  /** The concrete model slug this process's spawn actually resolved to (e.g.
+   *  'anthropic/claude-haiku-4.5'), stamped once at spawn. Null for a DEVICE
+   *  source or before anything has spawned. */
+  resolved_model_slug?: string | null;
   /** Discriminates how this process is being used (chat vs execution). */
   process_type?: ProcessKind | null;
   /** Shell entity ID linked to this process */
@@ -1096,6 +1100,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** CLI worker vendor (e.g. 'claude', 'codex', 'copilot'). Drives icon selection. */
   worker_type?: string | null;
 
+  /** The concrete model slug this process's spawn actually resolved to (e.g.
+   *  'anthropic/claude-haiku-4.5'), stamped once at spawn. Null for a DEVICE
+   *  source or before anything has spawned. */
+  resolved_model_slug?: string | null;
+
   /** Discriminates how this process is being used (chat vs execution). */
   process_type?: ProcessKind | null;
 
@@ -1656,6 +1665,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
     this.worker_type = entity.worker_type ?? null;
+    this.resolved_model_slug = entity.resolved_model_slug ?? null;
     this.process_type = entity.process_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;

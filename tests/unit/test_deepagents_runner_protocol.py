@@ -11,7 +11,11 @@ import json
 import os
 import subprocess
 import sys
+import threading
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -28,17 +32,168 @@ FACTORY = "tests.utils.deepagents_fake_model:scripted"
 SESSION = "5a0c0a3e-1b6e-4c7d-8a55-6f0e3c1b2d90"
 
 
-def _run(tmp_path: Path, script: list[dict], prompt: str, *extra: str) -> tuple[list[dict], subprocess.CompletedProcess]:
+def _run(
+    tmp_path: Path, script: list[dict], prompt: str, *extra: str
+) -> tuple[list[dict], subprocess.CompletedProcess]:
     script_file = tmp_path / "script.json"
     script_file.write_text(json.dumps(script), encoding="utf-8")
-    env = {**os.environ, "DEEPAGENTS_FAKE_SCRIPT": str(script_file), "PYTHONPATH": str(REPO), "FLOWPAD_DEEPAGENTS_API_KEY": "secret-token"}
+    env = {
+        **os.environ,
+        "DEEPAGENTS_FAKE_SCRIPT": str(script_file),
+        "PYTHONPATH": str(REPO),
+        "FLOWPAD_DEEPAGENTS_API_KEY": "secret-token",
+    }
     proc = subprocess.run(
-        [sys.executable, "-m", MODULE, "--session-id", SESSION, "--workdir", str(tmp_path), "--model", "scripted",
-         "--checkpoint-db", str(tmp_path / "sessions" / f"{SESSION}.sqlite"), "--model-factory", FACTORY, *extra],
-        input=prompt, capture_output=True, text=True, check=False, env=env, cwd=str(REPO),
+        [
+            sys.executable,
+            "-m",
+            MODULE,
+            "--session-id",
+            SESSION,
+            "--workdir",
+            str(tmp_path),
+            "--model",
+            "scripted",
+            "--checkpoint-db",
+            str(tmp_path / "sessions" / f"{SESSION}.sqlite"),
+            "--model-factory",
+            FACTORY,
+            *extra,
+        ],
+        input=prompt,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=str(REPO),
     )
     events = [json.loads(line) for line in proc.stdout.splitlines() if line.strip().startswith("{")]
     return events, proc
+
+
+@contextmanager
+def _fake_chain_server(models_allow: list[str]) -> Iterator[str]:
+    """A minimal stand-in for the hub's own ``.../llm_endpoint/<id>/chain`` — just enough JSON
+    shape (``data.hops[0].effective_filters.models_allow``) for ``_fallback_model`` to read.
+    Yields the id-embedding base URL the runner's ``FLOWPAD_DEEPAGENTS_BASE_URL`` would carry."""
+
+    class _Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 — stdlib's own name
+            body = json.dumps({"data": {"hops": [{"effective_filters": {"models_allow": models_allow}}]}}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args: object) -> None:  # noqa: D102 — quiet the test output
+            pass
+
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    httpd.daemon_threads = True
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{httpd.server_port}/api/v1/graph/llm_endpoint/11111111-2222-4333-8444-555555555555/invoke/v1"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+@pytest.mark.long  # ~1.8s — two real runner-side model builds plus a real (loopback) chain call
+def test_a_model_the_endpoint_rejects_falls_back_to_one_its_chain_allows(tmp_path):
+    """The exact failure this exists for: the leaf endpoint's own row shows no restriction, but
+    the hub's chain (a parent pool) rejects the tier's default model at invoke time. The runner
+    asks the chain what it actually allows and retries once on a model from that list, rather
+    than ending the turn on a rejection a person can do nothing about."""
+    script_file = tmp_path / "script.json"
+    script_file.write_text(json.dumps([{"text": "done on the fallback model"}]), encoding="utf-8")
+
+    with _fake_chain_server(["good-model", "vendor/family-*"]) as base_url:
+        env = {
+            **os.environ,
+            "DEEPAGENTS_FAKE_SCRIPT": str(script_file),
+            "PYTHONPATH": str(REPO),
+            "FLOWPAD_DEEPAGENTS_API_KEY": "secret-token",
+            "FLOWPAD_DEEPAGENTS_BASE_URL": base_url,
+        }
+        proc = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                MODULE,
+                "--session-id",
+                SESSION,
+                "--workdir",
+                str(tmp_path),
+                "--model",
+                "rejected-model",
+                "--checkpoint-db",
+                str(tmp_path / "sessions" / f"{SESSION}.sqlite"),
+                "--model-factory",
+                "tests.utils.deepagents_fake_model:scripted_rejecting",
+            ],
+            input="install it",
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+            cwd=str(REPO),
+        )
+    events = [json.loads(line) for line in proc.stdout.splitlines() if line.strip().startswith("{")]
+    assert proc.returncode == 0, proc.stderr[-2000:]
+
+    inits = [e for e in events if e["type"] == "init"]
+    assert [i["model"] for i in inits] == ["rejected-model", "good-model"], (
+        "a glob entry (vendor/family-*) is not a callable slug; the first LITERAL entry wins"
+    )
+    rejection = next(e for e in events if e["type"] == "error")
+    assert rejection["kind"] == "model" and "not allowed by endpoint" in rejection["message"]
+    text = next(e for e in events if e["type"] == "text")
+    assert text["text"] == "done on the fallback model"
+    assert events[-1]["type"] == "result" and events[-1]["is_error"] is False and events[-1]["num_turns"] == 1
+
+
+@pytest.mark.long  # ~1.7s — one real runner process, no chain to ask (a raw key, not a hub endpoint)
+def test_a_rejection_off_a_non_hub_base_url_is_not_retried(tmp_path):
+    """``_chain_url`` returns None for anything that is not a hub invoke URL — a raw OpenRouter
+    key has no chain, so a rejected model there is a real "unknown model", not a budget
+    restriction, and must fail exactly as it always did rather than loop looking for one."""
+    script_file = tmp_path / "script.json"
+    script_file.write_text(json.dumps([{"text": "unreachable"}]), encoding="utf-8")
+    env = {
+        **os.environ,
+        "DEEPAGENTS_FAKE_SCRIPT": str(script_file),
+        "PYTHONPATH": str(REPO),
+        "FLOWPAD_DEEPAGENTS_API_KEY": "secret-token",
+        "FLOWPAD_DEEPAGENTS_BASE_URL": "https://openrouter.ai/api/v1",
+    }
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            MODULE,
+            "--session-id",
+            SESSION,
+            "--workdir",
+            str(tmp_path),
+            "--model",
+            "rejected-model",
+            "--checkpoint-db",
+            str(tmp_path / "sessions" / f"{SESSION}.sqlite"),
+            "--model-factory",
+            "tests.utils.deepagents_fake_model:scripted_rejecting",
+        ],
+        input="install it",
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+        cwd=str(REPO),
+    )
+    events = [json.loads(line) for line in proc.stdout.splitlines() if line.strip().startswith("{")]
+    assert proc.returncode == 1
+    assert len([e for e in events if e["type"] == "init"]) == 1, "no chain to ask, so exactly one attempt"
+    assert events[-1]["type"] == "result" and events[-1]["is_error"] is True
 
 
 @pytest.mark.long  # 1.78s — pays the LangChain stack import in a real subprocess
@@ -61,7 +216,11 @@ def test_a_tool_turn_prints_the_whole_protocol(tmp_path):
     call = next(e for e in events if e["type"] == "tool_call")
     result = next(e for e in events if e["type"] == "tool_result")
     assert call["name"] == "execute" and call["input"] == {"command": "echo hello-from-shell"} and call["agent"] is None
-    assert result["tool_call_id"] == call["tool_call_id"] and "hello-from-shell" in result["output"] and result["is_error"] is False
+    assert (
+        result["tool_call_id"] == call["tool_call_id"]
+        and "hello-from-shell" in result["output"]
+        and result["is_error"] is False
+    )
 
     text = next(e for e in events if e["type"] == "text")
     assert text["text"] == "The shell said hello." and text["agent"] is None
@@ -123,9 +282,27 @@ def test_an_unsupported_permission_mode_is_an_error_then_a_result(tmp_path):
     """Refused before the engine is imported (so this is fast): the runner says why, then ends
     the turn like any other — ``error`` is non-terminal, ``result`` is the terminal."""
     proc = subprocess.run(
-        [sys.executable, "-m", MODULE, "--session-id", SESSION, "--workdir", str(tmp_path), "--model", "x",
-         "--checkpoint-db", str(tmp_path / "s.sqlite"), "--permission-mode", "plan"],
-        input="hi", capture_output=True, text=True, check=False, env={**os.environ, "PYTHONPATH": str(REPO)}, cwd=str(REPO),
+        [
+            sys.executable,
+            "-m",
+            MODULE,
+            "--session-id",
+            SESSION,
+            "--workdir",
+            str(tmp_path),
+            "--model",
+            "x",
+            "--checkpoint-db",
+            str(tmp_path / "s.sqlite"),
+            "--permission-mode",
+            "plan",
+        ],
+        input="hi",
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(REPO)},
+        cwd=str(REPO),
     )
     lines = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
     assert proc.returncode == 1
@@ -140,7 +317,11 @@ def test_version_answers_from_metadata_without_importing_the_engine():
     """The capability probe budget is 5s and the engine takes seconds to import."""
     proc = subprocess.run(
         [sys.executable, "-c", f"import sys, {MODULE} as r; r.main(['--version']); print('deepagents' in sys.modules)"],
-        capture_output=True, text=True, check=False, env={**os.environ, "PYTHONPATH": str(REPO)}, cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(REPO)},
+        cwd=str(REPO),
     )
     assert proc.returncode == 0, proc.stderr[-1500:]
     assert proc.stdout.splitlines()[0].startswith("deepagents ")
@@ -157,12 +338,18 @@ def test_claude_agents_json_becomes_subagent_dicts():
 
 def test_mcp_servers_body_becomes_adapter_connections():
     connections = mcp_connections(
-        {"mcpServers": {
-            "local": {"command": "flow-sdk-mcp", "args": ["--x"], "env": {"A": "1"}},
-            "remote": {"type": "http", "url": "https://x.test/mcp", "headers": {"Authorization": "Bearer t"}},
-            "legacy": {"type": "sse", "url": "https://x.test/sse"},
-        }}
+        {
+            "mcpServers": {
+                "local": {"command": "flow-sdk-mcp", "args": ["--x"], "env": {"A": "1"}},
+                "remote": {"type": "http", "url": "https://x.test/mcp", "headers": {"Authorization": "Bearer t"}},
+                "legacy": {"type": "sse", "url": "https://x.test/sse"},
+            }
+        }
     )
     assert connections["local"] == {"transport": "stdio", "command": "flow-sdk-mcp", "args": ["--x"], "env": {"A": "1"}}
-    assert connections["remote"] == {"transport": "streamable_http", "url": "https://x.test/mcp", "headers": {"Authorization": "Bearer t"}}
+    assert connections["remote"] == {
+        "transport": "streamable_http",
+        "url": "https://x.test/mcp",
+        "headers": {"Authorization": "Bearer t"},
+    }
     assert connections["legacy"] == {"transport": "sse", "url": "https://x.test/sse"}

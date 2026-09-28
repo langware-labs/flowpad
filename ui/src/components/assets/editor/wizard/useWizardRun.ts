@@ -66,6 +66,16 @@ export function rungTrail(outcome: WizardStepAnswer | null | undefined): string[
   return trail;
 }
 
+/** The agent rung's own executor typeid (``agentic_process-<id>``), or ``null`` when the step
+ *  never reached that rung — the process to resolve for "which harness, which model actually
+ *  ran" (see {@link AgentRungLabel} in `WizardViewer.tsx`). Same extraction as {@link rungTrail},
+ *  kept separate so a caller that only wants the id is not forced through the whole trail. */
+export function agentExecutorOf(outcome: WizardStepAnswer | null | undefined): string | null {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  const install = asShape?.steps?.install ?? asShape ?? null;
+  return install?.executor ?? null;
+}
+
 /** One step, as the debugger sees it: what it is doing now, and what it answered. */
 export interface WizardRunStep {
   step_id: string;
