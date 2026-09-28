@@ -250,7 +250,12 @@ async def test_an_empty_answer_hands_the_credential_to_the_ai_setup(project, tem
     assert "never print" in call["prompt"].lower() and f"--project {project.id} --stdin" in call["prompt"]
     assert "VAR=<value>" not in call["prompt"], "the store command never takes a value as an argument"
     assert all(TOKEN not in " ".join(argv) for argv in cli["ran"]), "the agent's value never reached an argv"
-    assert "left empty" in out and "✗  Store Telegram bot: the cli call ran" in out
+    assert "·  Telegram bot: Bot token: left empty" in out
+    # A failed call lends its own last words to the line, so the person reads the store
+    # command's refusal rather than the runner's generic sentence. That sentence is still
+    # right for a call that SUCCEEDED without reaching its goal, which this is not.
+    assert '✗  Store Telegram bot: {"ok": false, "error_code": "NO_VALUE"' in out
+    assert "the cli call ran" not in out, "the generic sentence is back over the call's own reason"
     assert "✓  AI setup: Telegram bot: done" in out
     assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN
 
