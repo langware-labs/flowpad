@@ -1,6 +1,5 @@
 import { dataManager, type Project } from '@sdk';
-import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
-import { useInlineRename } from '@src/components/browseable-tree/use-inline-rename';
+import { EditableTitle } from '@src/components/organization/budgets/EditableTitle';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useCallback } from 'react';
@@ -18,7 +17,6 @@ import { useLingui } from '@lingui/react/macro';
  */
 export function ProjectNameTitle({ project }: { project: Project }) {
   const { t } = useLingui();
-  const name = project.displayName;
 
   const onRename = useCallback(
     async (next: string) => {
@@ -27,33 +25,25 @@ export function ProjectNameTitle({ project }: { project: Project }) {
       try {
         await project.save();
       } catch (error) {
+        // A failed save does not roll back the cached row, and an in-place revert
+        // notifies no one — re-fetch so every surface drops the refused name.
         project.name = previous;
-        // Re-fetch so every surface holding the cached row drops the refused name.
-        await dataManager.refreshByTypeId(project.typeId).catch(() => null);
         notify.error({ title: t`Could not rename project`, message: errorMessage(error, t`Rename failed.`) });
+        void dataManager.refreshByTypeId(project.typeId).catch(() => null);
       }
     },
     [project, t],
   );
-  const rename = useInlineRename(name, onRename);
 
-  const textClass = 'text-sm font-medium';
-  return rename.editing ? (
-    <InlineRenameInput
-      rename={rename}
-      className={`min-w-0 rounded-md border border-border bg-background px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring ${textClass}`}
-      testId="project-name-input"
-      ariaLabel={t`Project name`}
+  // Renaming is not permission-gated here: the hub is the authority for a
+  // cloud-linked project and answers a refused rename with an error.
+  return (
+    <EditableTitle
+      name={project.displayName}
+      onRename={onRename}
+      manage
+      headingClassName="text-sm font-medium"
+      testIdPrefix="project"
     />
-  ) : (
-    <button
-      type="button"
-      className={`truncate rounded px-1 py-0.5 text-left hover:bg-muted ${textClass}`}
-      title={t`Rename project`}
-      data-testid="project-name"
-      onClick={rename.startEditing}
-    >
-      {name}
-    </button>
   );
 }
