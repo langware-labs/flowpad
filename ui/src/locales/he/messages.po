@@ -3669,6 +3669,10 @@ msgstr ""
 msgid "Check again"
 msgstr "בדוק שוב"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "Check every service now"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Check for new messages"
 msgstr "בדוק הודעות חדשות"
@@ -5432,6 +5436,10 @@ msgstr ""
 msgid "Could not read this budget's history."
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "Could not read this deployment's services"
+msgstr ""
+
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "Could not read this machine's secrets"
 msgstr ""
@@ -6306,6 +6314,10 @@ msgstr "תבנית מצגת"
 #: src/i18n/type-labels.ts
 msgid "Decks"
 msgstr "מצגות"
+
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "Declared by this deployment, but nothing serves it"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Declared on the agent's card. Not yet applied to the worker."
@@ -13908,6 +13920,7 @@ msgstr "צמתים"
 msgid "Non-empty"
 msgstr "לא ריק"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "none"
@@ -18709,6 +18722,10 @@ msgstr "השירות אינו זמין"
 msgid "Service Unavailable"
 msgstr "השירות אינו זמין"
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "Services"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -20924,6 +20941,10 @@ msgstr "החיבור ל-GitHub לא הושלם."
 msgid "the guest"
 msgstr ""
 
+#: src/components/assets/editor/agent-profile/deployment/DeploymentHealth.tsx
+msgid "The health check did not answer"
+msgstr ""
+
 #: src/routes/loaders/load-dock-pointer.ts
 msgid "The help desk files are missing. Open the help desk again to download them."
 msgstr "קבצי שירות העזרה חסרים. יש לפתוח את שירות העזרה שוב כדי להורידם."
@@ -21315,6 +21336,10 @@ msgstr ""
 #: src/routes/loaders/load-conversation.ts
 msgid "This conversation no longer exists or is unavailable."
 msgstr "שיחה זו כבר אינה קיימת או אינה זמינה."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This could not be prepared for download."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/CredentialChild.tsx
 msgid "This credential no longer exists."
