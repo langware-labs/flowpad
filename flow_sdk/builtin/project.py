@@ -271,18 +271,14 @@ def _merge_share_people(people: list[_SharePerson]) -> list[_SharePerson]:
     return merged
 
 
-def _share_group_ref(value: str) -> Optional[tuple[str, str]]:
-    """``(type, id)`` for a ``team-<uuid>`` / ``organization-<uuid>`` string; a
-    bare uuid is a team. Anything else is not a group and is ignored."""
-    from flow_sdk.builtin.user import recipient_user_id  # noqa: PLC0415 — the uuid shape check
+def _share_team_ref(value: str) -> Optional[str]:
+    """The ``team-<uuid>`` typeid a share names, or None for anything else
+    (ignored). ``ShareRequestSpec`` already validates this shape on the wire."""
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
 
     text = (value or "").strip()
-    for group_type in ("team", "organization"):
-        prefix = f"{group_type}-"
-        if text.startswith(prefix) and recipient_user_id(text[len(prefix):]):
-            return group_type, text[len(prefix):]
-    if recipient_user_id(text) == text:
-        return "team", text
+    if text.startswith("team-") and is_valid_uuid(text.removeprefix("team-")):
+        return text
     return None
 
 
@@ -1365,10 +1361,9 @@ class Project(Entity):
         new_teams: list[str] = []
         skipped_teams: list[ShareSkippedTeamSpec] = []
         for team in teams or []:
-            ref = _share_group_ref(team)
-            if ref is None:
+            team_ref = _share_team_ref(team)
+            if team_ref is None:
                 continue
-            team_ref = f"{ref[0]}-{ref[1]}"
             if team_ref in new_teams or any(t.team == team_ref for t in skipped_teams):
                 continue
             if team_ref in granted_groups:
