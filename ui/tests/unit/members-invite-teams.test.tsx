@@ -3,8 +3,10 @@
  *
  * On a Project, whoever can open the add-member form (an editor here, not only
  * an admin) is offered the hub teams this desk knows; a picked team is ONE chip,
- * never expanded client-side, and Apply sends people and teams through ONE
- * `share` action (`Project.invite`). A conversation never offers teams.
+ * never expanded, and Apply sends people and teams through ONE `share` action
+ * (`Project.invite`), where the hub grants each team as one principal. A granted
+ * team is one roster row with its icon and a locked role; each partial outcome is
+ * reported. A conversation never offers teams.
  *
  * React test in the UNIT tier: the react tier needs a live backend. The real
  * `useMembers` runs; only the entity/team queries and `dataManager.callAction`
@@ -68,19 +70,45 @@ const CONVERSATION = new Conversation({
 } as Partial<Conversation>);
 
 /** The roster the `members` action answers — I am an editor, not an admin. */
-const ROSTER = [{ user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'editor' }];
+const ME = { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'editor' };
+const ROSTER = [ME];
+/** A roster after sandbox-team was granted: one team row, and its member Dana
+ *  listed as an ordinary user row (the hub flattens inherited people). */
+const ROSTER_WITH_TEAM = [
+  ME,
+  { type: 'team', id: SANDBOX.id, user_id: null, name: 'sandbox-team', role: 'member', status: 'approved' },
+  { user_id: 'dana-id', email: null, name: 'Dana', role: 'member' },
+];
 
-const EMPTY_RESULT: ShareResult = { invited: [], skipped: [], failed: [], skipped_teams: [] };
+const EMPTY_RESULT: ShareResult = {
+  invited: [],
+  skipped: [],
+  failed: [],
+  granted_teams: [],
+  skipped_teams: [],
+  failed_teams: [],
+};
 
 let shareResult: ShareResult;
+let roster: unknown[];
+let refuseDelete: string | null;
 let callAction: ReturnType<typeof vi.spyOn>;
 const shareCalls = () =>
   callAction.mock.calls.map(([info]) => info as ActionInfo).filter((info) => info.name === 'share');
+const deleteCalls = () =>
+  callAction.mock.calls
+    .map(([info]) => info as ActionInfo)
+    .filter((info) => info.name === 'members' && info.method === 'DELETE');
 
 beforeEach(() => {
   shareResult = EMPTY_RESULT;
+  roster = ROSTER;
+  refuseDelete = null;
   callAction = vi.spyOn(dataManager, 'callAction').mockImplementation((info: ActionInfo) => {
-    if (info.name === 'members') return Promise.resolve(ROSTER);
+    if (info.name === 'members' && info.method === 'DELETE' && refuseDelete) {
+      return Promise.reject(new Error(refuseDelete));
+    }
+    if (info.name === 'members') return Promise.resolve(roster);
     if (info.name === 'share') {
       return Promise.resolve({ type: Project.type, id: PROJECT_ID, share_result: shareResult });
     }
@@ -105,7 +133,7 @@ const input = () => screen.getByTestId('members-invite-input');
 const type = (text: string) => fireEvent.change(input(), { target: { value: text } });
 const teamOption = () => screen.queryByTestId(`contact-team-option-${SANDBOX.id}`);
 const teamRows = () => screen.queryAllByTestId(`members-invite-row-team-${SANDBOX.id}`);
-const teamRole = () => screen.getByTestId(`members-invite-role-team-${SANDBOX.id}`) as HTMLSelectElement;
+const teamRole = () => screen.getByTestId(`members-invite-role-team-${SANDBOX.id}`);
 
 describe('members popover on a Project — teams', () => {
   it('suggests sandbox-team as an editor types "sand"; picking it adds one row with the role fixed to member, picking again adds nothing', async () => {
@@ -144,18 +172,137 @@ describe('members popover on a Project — teams', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('names a team whose member list could not be read', async () => {
+  async function applyTeam() {
+    await openInvite(PROJECT);
+    type('sand');
+    fireEvent.click(teamOption()!);
+    fireEvent.click(screen.getByTestId('members-invite-submit'));
+  }
+
+  it('reports a refused team grant with the hub message when nothing else landed', async () => {
+    // Nothing succeeded, so the share throws (inviteFailure) and the form shows
+    // the hub's sentence as its error.
     shareResult = {
       ...EMPTY_RESULT,
-      skipped_teams: [{ team: `team-${SANDBOX.id}`, name: 'sandbox-team', reason: 'not_listable' }],
+      failed_teams: [{ team: `team-${SANDBOX.id}`, name: null, status: 403, message: 'not allowed' }],
+    };
+    await applyTeam();
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(`team-${SANDBOX.id}`);
+    expect(alert).toHaveTextContent('not allowed');
+  });
+
+  it('names a refused team beside a person who was invited', async () => {
+    shareResult = {
+      ...EMPTY_RESULT,
+      invited: [{ user_id: 'u-noa', email: 'noa@example.com', name: 'Noa', conversation_id: 'c' }],
+      failed_teams: [{ team: `team-${SANDBOX.id}`, name: 'sandbox-team', status: 403, message: 'not allowed' }],
     };
     await openInvite(PROJECT);
-
+    type('Noa');
+    fireEvent.click(screen.getByTestId('members-invite-add'));
     type('sand');
     fireEvent.click(teamOption()!);
     fireEvent.click(screen.getByTestId('members-invite-submit'));
 
-    expect(await screen.findByTestId('members-invite-skipped-teams')).toHaveTextContent('sandbox-team');
+    const row = await screen.findByTestId('members-invite-failed-team');
+    expect(row).toHaveTextContent('sandbox-team');
+    expect(row).toHaveTextContent('not allowed');
+  });
+
+  it('warns when a team was granted but its invite message was not sent', async () => {
+    shareResult = {
+      ...EMPTY_RESULT,
+      granted_teams: [{ team: `team-${SANDBOX.id}`, name: 'sandbox-team', conversation_id: null }],
+    };
+    await applyTeam();
+
+    expect(await screen.findByTestId('members-invite-team-no-message')).toHaveTextContent('sandbox-team');
+    expect(screen.queryByTestId('members-invite-failed-team')).toBeNull();
+  });
+
+  it('says nothing more when a team was granted with its conversation', async () => {
+    shareResult = {
+      ...EMPTY_RESULT,
+      granted_teams: [{ team: `team-${SANDBOX.id}`, name: 'sandbox-team', conversation_id: 'conv-1' }],
+    };
+    await applyTeam();
+
+    await waitFor(() => expect(teamRows()).toHaveLength(0));
+    expect(screen.queryByTestId('members-invite-team-no-message')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('says a team already had access', async () => {
+    shareResult = {
+      ...EMPTY_RESULT,
+      skipped_teams: [{ team: `team-${SANDBOX.id}`, name: 'sandbox-team', reason: 'already_granted' }],
+    };
+    await applyTeam();
+
+    expect(await screen.findByTestId('members-invite-team-already-granted')).toHaveTextContent('sandbox-team');
+  });
+
+  it('shows a failed person even when another invite landed', async () => {
+    shareResult = {
+      ...EMPTY_RESULT,
+      invited: [{ user_id: 'u-noa', email: 'noa@example.com', name: 'Noa', conversation_id: 'c' }],
+      failed: [{ user_id: null, email: 'eli@example.com', status: 500, message: 'boom' }],
+    };
+    await openInvite(PROJECT);
+    type('Noa');
+    fireEvent.click(screen.getByTestId('members-invite-add'));
+    fireEvent.click(screen.getByTestId('members-invite-submit'));
+
+    const row = await screen.findByTestId('members-invite-failed-person');
+    expect(row).toHaveTextContent('eli@example.com');
+    expect(row).toHaveTextContent('boom');
+  });
+});
+
+describe('members popover on a Project — a granted team on the roster', () => {
+  async function openRoster() {
+    roster = ROSTER_WITH_TEAM;
+    await openInvite(PROJECT);
+  }
+  const teamRow = () => screen.getByText('sandbox-team').closest('li') as HTMLElement;
+
+  it('is one row with the team icon, a locked role and no role selector', async () => {
+    await openRoster();
+
+    const row = teamRow();
+    expect(row.querySelector('[data-testid="member-team-icon"]')).not.toBeNull();
+    expect(row.querySelector('[data-testid="member-role-select"]')).toBeNull();
+    expect(row).toHaveTextContent(/member/i);
+  });
+
+  it('can be removed by an editor, which revokes the grant by team id', async () => {
+    await openRoster();
+
+    fireEvent.click(teamRow().querySelector('[data-testid="member-remove"]') as HTMLElement);
+
+    await waitFor(() => expect(deleteCalls()).toHaveLength(1));
+    expect(deleteCalls()[0].bodyParameters).toMatchObject({ user_id: SANDBOX.id });
+  });
+
+  it('is already picked, so the team is not offered again', async () => {
+    await openRoster();
+
+    type('sand');
+
+    expect(teamOption()).toBeDisabled();
+  });
+
+  it('shows the hub message when removing an inherited member is refused, and keeps the row', async () => {
+    await openRoster();
+    refuseDelete = 'Dana has access through a team';
+    const dana = screen.getByText('Dana').closest('li') as HTMLElement;
+
+    fireEvent.click(dana.querySelector('[data-testid="member-remove"]') as HTMLElement);
+
+    expect(await screen.findByTestId('member-error')).toHaveTextContent('Dana has access through a team');
+    expect(screen.getByText('Dana')).toBeInTheDocument();
   });
 });
 

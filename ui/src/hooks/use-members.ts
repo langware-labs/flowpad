@@ -72,11 +72,11 @@ export interface UseMembersResult {
    *  ``role`` is optional and only a Project invite honours it. Recipients
    *  only appear in ``members`` after they accept + join hub-side.
    *
-   *  ``teams`` (Project only) rides the SAME round-trip — ``Project.invite``
-   *  posts people and teams as one ``share`` action and the backend expands
-   *  each team; its ``ShareResult`` is returned (``skipped_teams`` names any
-   *  team whose member list the user may not read). Without teams this is the
-   *  plain ``share`` and returns null. A failed person throws either way. */
+   *  On a Project every invite goes through ``Project.invite`` and its
+   *  ``ShareResult`` is returned: ``teams`` ride the SAME round-trip, each
+   *  granted on the hub as one principal, and each person and team has its own
+   *  outcome. It throws only when nothing landed; a partial failure is read
+   *  from the result. Any other entity uses the plain ``share`` and returns null. */
   addMembers: (
     users: { idOrEmail: string; role?: string }[],
     opts?: { teams?: TypeId[] },
@@ -162,17 +162,17 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
       const teams = opts?.teams ?? [];
       if (!users.length && !teams.length) return null;
       if (!entity) throw new Error('useMembers: entity not loaded; cannot invite');
-      if (!teams.length) {
-        await entity.share(users);
+      if (entity instanceof Project) {
+        const result = await entity.invite(users, teams.length ? { teams } : {});
         await refresh();
-        return null;
+        const failure = inviteFailure(result);
+        if (failure) throw failure;
+        return result;
       }
-      if (!(entity instanceof Project)) throw new Error('useMembers: only a project can be shared with a team');
-      const result = await entity.invite(users, { teams });
+      if (teams.length) throw new Error('useMembers: only a project can be shared with a team');
+      await entity.share(users);
       await refresh();
-      const failure = inviteFailure(result);
-      if (failure) throw failure;
-      return result;
+      return null;
     },
     [entity, refresh],
   );

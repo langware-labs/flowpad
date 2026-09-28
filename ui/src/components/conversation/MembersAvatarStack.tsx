@@ -9,7 +9,7 @@ import {
   Team,
   type ContactsGroup,
   type ConversationParticipant,
-  type SkippedTeam,
+  type ShareResult,
   type TypeId,
 } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -36,6 +36,7 @@ import {
   useContacts,
 } from '@src/components/contact-picker/use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
+import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-list';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
@@ -118,10 +119,15 @@ export function MembersAvatarStack({
   // the backend until Apply sends the whole list as one batch.
   const [pending, setPending] = useState<PendingInvite[]>([]);
   // Whole teams picked on a Project — one chip each (a ``teamParticipant``),
-  // never expanded here: Apply sends them and the backend expands each one.
+  // never expanded: Apply sends them and the hub grants each team as ONE principal.
   const [pendingTeams, setPendingTeams] = useState<ConversationParticipant[]>([]);
-  // Teams the last Apply could not expand (their member list isn't readable).
-  const [skippedTeams, setSkippedTeams] = useState<SkippedTeam[]>([]);
+  // What the last Apply did per recipient, for the partial outcomes it reports
+  // (a refused team, a team granted without its message, a failed person).
+  const [shareOutcome, setShareOutcome] = useState<ShareResult | null>(null);
+  // The hub's own message when it refused a removal or a role change — e.g. a
+  // person who reaches this entity through a granted team, whose access no
+  // per-person DELETE can revoke (KTD8: the row keeps its controls).
+  const [memberError, setMemberError] = useState<string | null>(null);
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [linking, setLinking] = useState(false);
@@ -156,6 +162,12 @@ export function MembersAvatarStack({
   // peers, those above, an unranked role and myself are untouchable).
   const myRank = participantRank(me);
   const mayRemove = (p: ConversationParticipant) => {
+    // A team row carries its principal in ``id``, not ``user_id``; the same rank
+    // ceiling applies (the hub's group removal checks it too).
+    if (isGroupMember(p)) {
+      const theirRank = participantRank(p);
+      return mayInvite && myRank !== null && theirRank !== null && theirRank > myRank;
+    }
     if (!p.user_id || p.user_id === me?.user_id) return false;
     if (typeId.type === Conversation.type) return iAmOwner && (p.role ?? '').toLowerCase() !== 'owner';
     const theirRank = participantRank(p);
@@ -173,6 +185,8 @@ export function MembersAvatarStack({
   // narrowed to ``inviteRoles`` when the surface passes them — so changing a
   // role offers exactly what inviting does (a project's ``share-roles``).
   const rowRoles = (p: ConversationParticipant) => {
+    // A team's role is shown locked: re-roling a group is out of scope here.
+    if (isGroupMember(p)) return [];
     const assignable = assignableRoles(me, p);
     return inviteRoles?.length ? inviteRoles.filter((r) => assignable.includes(r)) : assignable;
   };
@@ -211,20 +225,23 @@ export function MembersAvatarStack({
     [teams, draftText],
   );
   const teamPicked = (team: TeamSuggestion) =>
+    members.some((m) => isGroupMember(m) && memberPrincipalId(m) === team.id) ||
     pendingTeams.some((p) => participantKey(p) === participantKey(teamParticipant(team)));
   const showSuggestions =
     suggestOpen &&
     !draftPick &&
     (suggestedGroups.length > 0 || suggestedTeams.length > 0 || suggestedContacts.length > 0);
 
-  const handleRemove = async (userId: string) => {
-    setRemovingId(userId);
+  const handleRemove = async (principalId: string) => {
+    setRemovingId(principalId);
+    setMemberError(null);
     try {
-      await removeMember(userId);
-    } catch {
-      // Hub rejects non-owner/owner-self with 403; the control is already
-      // owner-gated, so a failure here is a transient/again-case — leave the
-      // row as-is rather than surfacing a modal in this compact popover.
+      await removeMember(principalId);
+    } catch (err) {
+      // The control is rank-gated, so a refusal is the hub knowing something
+      // the roster can't show — typically a person whose access comes through a
+      // granted team. The row stays; the hub's own sentence says why.
+      setMemberError(err instanceof Error ? err.message : t`Couldn't remove this member.`);
     } finally {
       setRemovingId(null);
     }
@@ -232,12 +249,13 @@ export function MembersAvatarStack({
 
   const handleRoleChange = async (userId: string, role: string) => {
     setChangingId(userId);
+    setMemberError(null);
     try {
       await setRole(userId, role);
-    } catch {
-      // The selector is already ceiling-gated, so a hub denial here is a
-      // stale-roster/transient case; the post-change refresh in setRole didn't
-      // run, so the row simply keeps showing the hub-authoritative role.
+    } catch (err) {
+      // Ceiling-gated already, so a denial is the hub's call (e.g. an inherited
+      // member); the row keeps the hub-authoritative role and shows why.
+      setMemberError(err instanceof Error ? err.message : t`Couldn't change this member's role.`);
     } finally {
       setChangingId(null);
     }
@@ -408,12 +426,12 @@ export function MembersAvatarStack({
     }
     setInviting(true);
     setInviteError(null);
-    setSkippedTeams([]);
+    setShareOutcome(null);
     try {
       const result = teamIds.length ? await addMembers(invitable, { teams: teamIds }) : await addMembers(invitable);
       setPending([]);
       setPendingTeams([]);
-      setSkippedTeams(result?.skipped_teams ?? []);
+      setShareOutcome(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Invite failed';
       // Re-inviting an accepted member is hub-rejected (400 "use change_role")
@@ -428,7 +446,11 @@ export function MembersAvatarStack({
 
   /** People and teams on the list — what Apply would send. */
   const listed = pending.length + pendingTeams.length;
-  const skippedTeamNames = skippedTeams.map((s) => s.name || s.team).join(', ');
+  const teamLabel = (team: { name?: string | null; team: string }) => team.name || team.team;
+  const failedTeams = shareOutcome?.failed_teams ?? [];
+  const alreadyGranted = shareOutcome?.skipped_teams ?? [];
+  const grantedWithoutMessage = (shareOutcome?.granted_teams ?? []).filter((g) => !g.conversation_id);
+  const failedPeople = shareOutcome?.failed ?? [];
 
   const inline = members.slice(0, MAX_INLINE_AVATARS);
   const overflow = members.length - inline.length;
@@ -453,7 +475,8 @@ export function MembersAvatarStack({
       clearDraft();
       setPending([]);
       setPendingTeams([]);
-      setSkippedTeams([]);
+      setShareOutcome(null);
+      setMemberError(null);
       setInviteRole('member');
       setInviteError(null);
       setInviting(false);
@@ -493,12 +516,18 @@ export function MembersAvatarStack({
                 </span>
               ) : (
                 inline.map((p, i) => (
-                  <Avatar key={p.user_id || p.email || i} className="h-6 w-6 ring-2 ring-background">
-                    <AvatarFallback
-                      className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
-                    >
-                      {participantInitials(p)}
-                    </AvatarFallback>
+                  <Avatar key={memberPrincipalId(p) || p.email || i} className="h-6 w-6 ring-2 ring-background">
+                    {isGroupMember(p) ? (
+                      <AvatarFallback className="bg-muted text-muted-foreground">
+                        <TeamIcon className="h-3.5 w-3.5" aria-hidden />
+                      </AvatarFallback>
+                    ) : (
+                      <AvatarFallback
+                        className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
+                      >
+                        {participantInitials(p)}
+                      </AvatarFallback>
+                    )}
                   </Avatar>
                 ))
               )}
@@ -552,21 +581,29 @@ export function MembersAvatarStack({
                     // ``share-roles`` list) the options are that list, the same one
                     // the invite form offers; otherwise the full ladder.
                     const roles = rowRoles(p);
-                    const contact = participantIsUser(p, localUser) ? null : contactFromParticipant(p);
+                    const group = isGroupMember(p);
+                    const principalId = memberPrincipalId(p);
+                    const contact = group || participantIsUser(p, localUser) ? null : contactFromParticipant(p);
                     const identity = (
                       <>
                         <Avatar className="h-6 w-6">
-                          <AvatarFallback
-                            className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
-                          >
-                            {participantInitials(p)}
-                          </AvatarFallback>
+                          {group ? (
+                            <AvatarFallback className="bg-muted text-muted-foreground" data-testid="member-team-icon">
+                              <TeamIcon className="h-3.5 w-3.5" aria-hidden />
+                            </AvatarFallback>
+                          ) : (
+                            <AvatarFallback
+                              className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
+                            >
+                              {participantInitials(p)}
+                            </AvatarFallback>
+                          )}
                         </Avatar>
                         <span className="flex-1 truncate">{participantLabel(p)}</span>
                       </>
                     );
                     return (
-                      <li key={p.user_id || p.email || i} className="flex items-center gap-2 text-xs">
+                      <li key={principalId || p.email || i} className="flex items-center gap-2 text-xs">
                         {contact ? (
                           <button
                             type="button"
@@ -617,8 +654,8 @@ export function MembersAvatarStack({
                             type="button"
                             aria-label={`Remove ${participantLabel(p)}`}
                             data-testid="member-remove"
-                            disabled={removingId === p.user_id}
-                            onClick={() => void handleRemove(p.user_id as string)}
+                            disabled={removingId === principalId}
+                            onClick={() => principalId && void handleRemove(principalId)}
                             className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
                           >
                             <X className="h-3 w-3" />
@@ -628,6 +665,11 @@ export function MembersAvatarStack({
                     );
                   })}
                 </ul>
+                {memberError && (
+                  <div className="mt-1.5 px-1 text-[11px] text-destructive" role="alert" data-testid="member-error">
+                    {memberError}
+                  </div>
+                )}
                 {/* Invite — admin+/owner only (the hub policy method-scopes the
             mutating ``members`` action; a plain member's POST would 403).
             Also requires an available hub; hidden when stale/offline so an
@@ -793,14 +835,44 @@ export function MembersAvatarStack({
                         {inviteError}
                       </div>
                     )}
-                    {skippedTeams.length > 0 && (
+                    {failedTeams.map((f) => (
                       <div
-                        className="mt-1.5 text-[11px] text-muted-foreground"
-                        data-testid="members-invite-skipped-teams"
+                        key={f.team}
+                        className="mt-1.5 text-[11px] text-destructive"
+                        role="alert"
+                        data-testid="members-invite-failed-team"
                       >
-                        {t`Not sent to ${skippedTeamNames} — you can't see its member list.`}
+                        {t`Couldn't share with ${teamLabel(f)}: ${f.message}`}
                       </div>
-                    )}
+                    ))}
+                    {alreadyGranted.map((s) => (
+                      <div
+                        key={s.team}
+                        className="mt-1.5 text-[11px] text-muted-foreground"
+                        data-testid="members-invite-team-already-granted"
+                      >
+                        {t`${teamLabel(s)} already has access.`}
+                      </div>
+                    ))}
+                    {grantedWithoutMessage.map((g) => (
+                      <div
+                        key={g.team}
+                        className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-400"
+                        data-testid="members-invite-team-no-message"
+                      >
+                        {t`${teamLabel(g)} now has access, but the invite message wasn't sent.`}
+                      </div>
+                    ))}
+                    {failedPeople.map((f) => (
+                      <div
+                        key={f.user_id || f.email || f.message}
+                        className="mt-1.5 text-[11px] text-destructive"
+                        role="alert"
+                        data-testid="members-invite-failed-person"
+                      >
+                        {t`Couldn't invite ${f.name || f.email || f.user_id || ''}: ${f.message}`}
+                      </div>
+                    ))}
                     {/* The list Apply sends — one row per recipient with the
                     role they'll be granted, changeable until Apply. A mixed
                     batch (some admin, some member, some addressed by email,
