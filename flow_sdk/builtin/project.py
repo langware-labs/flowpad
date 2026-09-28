@@ -652,6 +652,20 @@ class Project(Entity):
 
     @computed_field
     @property
+    def folder_name_mismatch(self) -> str | None:
+        """The mount folder's own name when it is not the project's name, else None.
+
+        A rename changes the name, never the folder (the path keys sessions,
+        records and discovery), so the two drift apart; the UI flags the drift.
+        Compared as ``project_name_key``, so "gtm studio" in ``gtm-studio/`` matches."""
+        mount = self.fs_storage_mount_path
+        if not mount or self.hidden:
+            return None
+        folder = PurePosixPath(mount).name
+        return folder if folder and project_name_key(folder) != project_name_key(self.name) else None
+
+    @computed_field
+    @property
     def context_dir_infos(self) -> list[dict[str, str]]:
         """Per-context-folder info the UI needs beyond the bare path.
 

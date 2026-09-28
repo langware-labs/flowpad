@@ -21066,9 +21066,19 @@ msgstr ""
 msgid "The project declares the same variables; its values are the ones its runs get."
 msgstr ""
 
+#. placeholder {0}: bucketRowLabel(bucket)
+#: src/components/terminal/project-list-menu.tsx
+msgid "The project is named \"{0}\" but its folder is \"{folderMismatch}\""
+msgstr ""
+
 #: src/components/project-home/ProjectCloudLinkButton.tsx
 #~ msgid "The project was not linked to the cloud."
 #~ msgstr "הפרויקט לא קושר לענן."
+
+#. placeholder {0}: project.folderNameMismatch
+#: src/components/top-nav-bar/RuntimeChip.tsx
+msgid "The project's folder is named \"{0}\""
+msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The project's own assets"
