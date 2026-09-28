@@ -250,47 +250,102 @@ async def test_a_run_that_did_not_finish_tells_the_person_what_is_missing(monkey
         await _cleanup(wizard, trigger)
 
 
-def test_resolving_the_llm_source_needs_no_indexed_entity(monkeypatch):
-    """A plain shell call, not a ComputeOp — it must not depend on the
-    system-content index having found any row yet (that race is exactly what
-    made `run_llm_setup` answer "not installed" on a fresh first boot)."""
-    import asyncio
-    import sys
+def _row(**over):
+    from flow_sdk.cli.commands.llm_cmd import Row
 
+    fields = dict(
+        n=1,
+        typeid="llm_endpoint-x",
+        name="Claude",
+        kind="device",
+        provider="anthropic",
+        harnesses=["claude"],
+        scope="default",
+        active_for=["claude"],
+    )
+    return Row(**{**fields, **over})
+
+
+def test_the_llm_source_is_settled_in_process_for_the_box(monkeypatch):
+    """No `flow` subprocess: that paid a fresh shell and a cold import (~3s on
+    Windows) before the chooser appeared. It needs no indexed entity either —
+    that race is what once made `run_llm_setup` answer "not installed" on a
+    fresh first boot. The scope is the box, as the old subprocess (run from
+    home) answered: the server's own working directory means nothing here."""
+    import asyncio
+
+    from flow_sdk.cli.commands import llm_cmd
     from flow_sdk.core.compute import exec as compute_exec
-    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
     from flow_sdk.server.builtin_triggers import _resolve_llm_source
 
     seen: dict = {}
 
-    async def _shell(command, *, timeout_seconds, workdir, platform, **_):
-        seen.update(command=command, timeout_seconds=timeout_seconds, platform=platform)
-        return CliResult.of_process(command, 0)
+    def _resolve(**kwargs):
+        seen.update(kwargs)
+        return _row()
 
-    monkeypatch.setattr(compute_exec, "run_shell", _shell)
-    monkeypatch.setattr(sys, "platform", "linux")
+    async def _no_shell(*_a, **_k):
+        raise AssertionError("settling the source must not spawn a process")
+
+    monkeypatch.setattr(llm_cmd, "_resolve_or_choose", _resolve)
+    monkeypatch.setattr(compute_exec, "run_shell", _no_shell)
 
     result = asyncio.run(_resolve_llm_source())
 
-    assert result.ok
-    # This interpreter's own flow_cli module, not a bare `flow` that depends on
-    # PATH — see `_flow_cli`'s docstring for why.
-    assert sys.executable in seen["command"]
-    assert "flow_sdk.cli.flow_cli" in seen["command"]
-    assert "llm set auto" in seen["command"]
-    assert seen["platform"] == "linux"
+    assert result.ok, result.detail
+    assert seen == {"project_id": ""}
+    assert "Claude" in result.detail
 
 
-def test_flow_cli_never_depends_on_path():
-    """`_flow_cli` builds an absolute-interpreter command on every platform —
-    darwin/linux included, not only the win32 branch that looked different."""
-    from flow_sdk.server.builtin_triggers import _flow_cli
+def test_nothing_chosen_is_not_ok_and_does_not_raise(monkeypatch):
+    """`_fail` exits the CLI; in-process that is a `typer.Exit` to catch, not a crash."""
+    import asyncio
 
-    for platform in ("darwin", "linux", "win32"):
-        command = _flow_cli("llm", "set", "auto", platform=platform)
-        assert "flow_sdk.cli.flow_cli" in command
-        assert "llm" in command and "auto" in command
-        assert "command -v flow" not in command and "Get-Command flow" not in command
+    import typer
+
+    from flow_sdk.cli.commands import llm_cmd
+    from flow_sdk.server.builtin_triggers import _resolve_llm_source
+
+    def _skipped(**_kwargs):
+        raise typer.Exit(4)
+
+    monkeypatch.setattr(llm_cmd, "_resolve_or_choose", _skipped)
+
+    result = asyncio.run(_resolve_llm_source())
+
+    assert not result.ok
+
+
+@async_context
+async def test_run_setup_clears_the_last_run_before_the_llm_source(monkeypatch):
+    """A person who clicks "Run setup again" sees empty steps at once, not the
+    last run's answers sitting there while the chooser is open."""
+    from flow_sdk.config import system_projects_root
+    from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard.state import read_result, record_result
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+    from flow_sdk.server import builtin_triggers
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
+    record = await index_path("wizard", shipped, write=False)
+    wizard = await Wizard.get_by_id(record.id)
+    record_result(str(wizard.id), WizardResult.not_yet("the last run"))
+    seen_at_source: list = []
+
+    async def _resolve_source():
+        seen_at_source.append(read_result(str(wizard.id)))
+        return CliResult.satisfied("funded")
+
+    async def _wizard(spec, **kwargs):
+        return WizardResult.satisfied("stubbed")
+
+    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
+    try:
+        await builtin_triggers.run_llm_setup(wizard, unattended=False)
+        assert seen_at_source == [None], "the last run's answer was still there while the source was settled"
+    finally:
+        await _cleanup(wizard)
 
 
 @pytest.mark.parametrize("funded", [True, False])
