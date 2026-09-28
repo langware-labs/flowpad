@@ -406,3 +406,19 @@ def test_only_prod_places_projects_in_the_users_flowpad_workspace():
         assert settings.workspace_root == current.user_home / "Flowpad workspaces" / name
         assert users_workspace not in (settings.workspace_root, *settings.workspace_root.parents)
         assert settings.flow_home not in settings.workspace_root.parents
+
+
+def test_only_prod_keeps_user_docs_in_the_users_home(tmp_path, monkeypatch):
+    """``~/docs`` is prod's user vault. Any other instance keeps its user docs in its
+    own instance dir, so a test that leaves a document behind never lands in the
+    user's real vault (906 test files had piled up in ~/docs by 2026-09-28)."""
+    from flow_sdk.instance_settings.base_settings import ENV_FLOW_HOME, BaseInstanceSettings
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv(ENV_FLOW_HOME, str(tmp_path / ".flow"))
+
+    assert BaseInstanceSettings.from_env("prod").user_docs_dir == tmp_path / "docs"
+    for name in ("oss", "dev-1", "test-4f2a"):
+        settings = BaseInstanceSettings.from_env(name)
+        assert settings.user_docs_dir == tmp_path / ".flow" / "instances" / name / "docs"
+        assert tmp_path / "docs" not in (settings.user_docs_dir, *settings.user_docs_dir.parents)
