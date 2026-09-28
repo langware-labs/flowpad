@@ -5260,6 +5260,10 @@ msgstr "Could not disconnect from {0}."
 msgid "Could not download"
 msgstr "Could not download"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Could not download this message."
+msgstr "Could not download this message."
+
 #: src/components/account/secrets-section.tsx
 msgid "Could not enable secrets"
 msgstr "Could not enable secrets"
@@ -5723,6 +5727,10 @@ msgstr "Could not upgrade the sandbox"
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not upload avatar"
 msgstr "Could not upload avatar"
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Could not upload this message."
+msgstr "Could not upload this message."
 
 #. placeholder {0}: agent.displayName
 #: src/components/agents/use-agent-launcher.ts
