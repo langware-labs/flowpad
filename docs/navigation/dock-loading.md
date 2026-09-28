@@ -104,9 +104,16 @@ Measured from the app's own `tab_switch` trail (`start` → `ready` for a termin
 `painted` for a page) on a production build (`vite build` + `vite preview`), p90,
 asserted by `tab_switch_perf.md.ts` — never raised; a miss is a slow path to fix.
 
+The spec also prints every request that fell inside a switch's `start` → `loader`
+window, but asserts on none of them: from the browser a request can be placed in
+time and not attributed to an issuer, and that window holds ~195 concurrent widget
+reads per run. A background entity read that merely overlapped the first warm
+switch once failed it as "a warm switch waited on the backend" (2026-09-28). I4 is
+asserted in the unit matrix, where the loader is the only thing running.
+
 | Switch | Budget | Measured 2026-09-27 |
 |---|---|---|
-| Warm tab switch (terminal / document / plain shell) | ≤ 150 ms, no loader request inside it | 85 / 53 / 67 ms |
+| Warm tab switch (terminal / document / plain shell) | ≤ 150 ms | 85 / 53 / 67 ms |
 | Project switch between visited projects | ≤ 300 ms | 95 ms |
 | Cold open of a large recording (3.9 MB screen), from its checkpoint | ≤ 1 s | 655–767 ms |
 | First open ever of that recording (makes the checkpoint) | reported | 957–1149 ms |
