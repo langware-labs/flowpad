@@ -120,12 +120,12 @@ the source's own lane or interval allows.
 
 ```python
 from flow_sdk.blocks import EmailMessageSpec, FolderChange, FolderChanges, StreamInbox, listen, workflow
-from flow_sdk.builtin.agent_registry import get_agent
+from flow_sdk.builtin.agent import Agent
 
 async with workflow("triage"):
     stream_inbox = StreamInbox("me@agentmail.to", api_key=KEY)
     docs = FolderChanges(SRC)
-    agent = await get_agent("triager")
+    agent = await Agent.by_name("triager")
 
     async with agent.process_messages():
         async for item in listen(stream_inbox, docs): # merged; each item carries ITS source's ack

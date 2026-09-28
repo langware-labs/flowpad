@@ -521,3 +521,15 @@ Open:
   now; re-registering is `POST /{app_id}/subscriptions` with the app token (outward-facing).
 - C5 the test number only messages pre-registered recipients; the person texting it must be on that list.
 - G13 applies (the channel must be created on the box).
+
+**2026-09-28 (after a reboot ended the e2b box):**
+- G15 FIXED hub 385743e76: a redeploy reused a node whose sandbox the provider had ended (NOT_FOUND), placed
+  nothing, answered success → now drops it and boots a new box for the same placement (store/webhooks kept).
+- G16 the local hub's hosted git repos live in `$TMPDIR` (`git_storage_mount_folder`) → wiped at boot while their
+  rows survive → "could not clone the project repository" (rig; restored from the desk's mirror).
+- G17 the desk shows a cloud place "On" after its machine is gone, and offers only Pause/Delete machine — no
+  redeploy for a dead machine in the UI.
+- C3 is not a gap for a hand-made hub webhook (no required header): Meta's GET handshake answered through
+  hub → box (`hub.challenge` echoed, 200).
+- G18 a picture sent on WhatsApp did not reach the agent on the e2b box (the caption did): the box's template
+  predates the channel-files feature (2cf4d00bc..) → rebuild the template from HEAD for picture turns.

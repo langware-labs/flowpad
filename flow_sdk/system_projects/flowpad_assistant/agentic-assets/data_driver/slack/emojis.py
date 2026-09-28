@@ -15,14 +15,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-_VS16 = "️"
+from flow_sdk.sources.files import normalize_emoji
+
 #: Slack's ``::skin-tone-N`` suffix, N = 2..6, and the Fitzpatrick modifier each one is.
 _TONES = {str(n): chr(0x1F3FB + n - 2) for n in range(2, 7)}
 _TONE_OF = {glyph: n for n, glyph in _TONES.items()}
-
-
-def _bare(glyph: str) -> str:
-    return glyph.replace(_VS16, "")
 
 
 @lru_cache(maxsize=1)
@@ -30,7 +27,7 @@ def _tables() -> tuple[dict[str, str], dict[str, str]]:
     names: dict[str, str] = json.loads((Path(__file__).parent / "emoji_names.json").read_text(encoding="utf-8"))
     glyphs: dict[str, str] = {}
     for name, glyph in names.items():
-        glyphs.setdefault(_bare(glyph), name)
+        glyphs.setdefault(normalize_emoji(glyph), name)
     return names, glyphs
 
 
@@ -50,7 +47,7 @@ def name_of(emoji: str) -> Optional[str]:
         return emoji[1:-1]
     tone = _TONE_OF.get(emoji[-1:]) if emoji else None
     base = emoji[:-1] if tone else emoji
-    name = _tables()[1].get(_bare(base))
+    name = _tables()[1].get(normalize_emoji(base))
     if name is None:
         return None
     return f"{name}::skin-tone-{tone}" if tone else name

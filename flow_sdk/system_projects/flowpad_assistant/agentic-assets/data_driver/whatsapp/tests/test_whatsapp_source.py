@@ -27,8 +27,8 @@ from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.errors import NotFound
 from flow_sdk.sources.files import local_file
 from flow_sdk.sources.testing import Subject, checks_for
-from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.items import FileItem, FileKind, MessageData, MessageFileData, ReactionItem, ReactionMode
+from flow_sdk.sources.values.origin import CloudOrigin
 
 WhatsAppSource = asset_module("whatsapp").WhatsAppSource
 digits = asset_module("whatsapp").digits
@@ -155,7 +155,8 @@ def test_an_inbound_media_message_carries_its_file_as_a_handle(wire, extra, kind
     (item,) = _events(_webhook({"id": "wamid.M", "from": WA_ID, "timestamp": "1789000003", "type": wire, wire: media}))
     (f,) = item.data.attachments
     probe = WhatsAppSource(_binding())
-    assert item.origin == probe.message_origin("wamid.M", WA_ID) and item.data.text is None
+    assert item.origin == probe.message_origin("wamid.M", WA_ID)
+    assert item.data.text == ("look at this" if wire in ("image", "video", "document") else None)
     assert f.origin == probe.media_origin("media-77") and f.origin.namespace != item.origin.namespace
     assert (f.data.as_, f.data.media_type, f.data.sha256) == (kind, "application/x-test", "abc123")
     assert f.data.caption == ("look at this" if wire in ("image", "video", "document") else None)
@@ -389,7 +390,7 @@ async def test_a_file_that_is_not_local_or_a_second_file_is_refused(serve, tmp_p
         to = source.conversation_origin(WA_ID)
         with pytest.raises(ValueError, match="local file"):
             await source.send(MessageData(conversation=to, attachments=(foreign,)))
-        with pytest.raises(ValueError, match="one file"):
+        with pytest.raises(ValueError, match="1 file"):
             await source.send(MessageData(conversation=to, attachments=two))
         with pytest.raises(ValueError, match="no caption"):
             await source.send(MessageData(text="words", conversation=to, attachments=(_file(tmp_path, "s.webp", b"s", as_="sticker"),)))

@@ -33,15 +33,31 @@ logger = logging.getLogger(__name__)
 _inflight: set[str] = set()
 
 
-async def embedder_for(index: "RagIndex"):
-    """The embed call this index is funded by, or ``None`` when nothing funds it.
+#: What every surface says when nothing funds an index's embeddings — the card, the search route,
+#: a pass's report and the exception a script sees read the same.
+NO_EMBEDDING = "no embedding endpoint is available on this machine"
 
-    The resolution itself lives on the entity, because the status card answers the same
-    question ("is anything funding this?") and the two must never disagree.
+
+class EmbeddingUnavailable(LookupError):
+    """Nothing funds this index's embeddings: no endpoint is bound and no local key resolves."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            f"{NO_EMBEDDING} — store an embedding API key (Credentials) or bind an LLM endpoint to the index"
+        )
+
+
+async def embedder_for(index: "RagIndex"):
+    """``(embed, model)``: the embed call this index is funded by, and the model it embeds with.
+
+    ``EmbeddingUnavailable`` when nothing funds it — a script calling ``embed`` must fail HERE with
+    the reason, not a line later as ``'NoneType' object is not callable``. The resolution itself
+    lives on the entity, because the status card answers the same question ("is anything funding
+    this?") and the two must never disagree.
     """
     endpoint = await index.resolve_endpoint()
     if endpoint is None:
-        return None, ""
+        raise EmbeddingUnavailable()
 
     model = index.model or endpoint.models.get("embedding", "")
 
@@ -64,9 +80,10 @@ async def run_index(index: "RagIndex", *, force: bool = False) -> list["IndexRep
     if refusal:
         return []
 
-    embed, model = await embedder_for(index)
-    if embed is None:
-        index.last_error = "no embedding endpoint is available on this machine"
+    try:
+        embed, model = await embedder_for(index)
+    except EmbeddingUnavailable:
+        index.last_error = NO_EMBEDDING
         await index.save(notify=False)
         return []
 
@@ -187,4 +204,4 @@ async def _heartbeat_dispatch() -> None:
         logger.info("rag: dispatched %d index pass(es)", len(dispatched))
 
 
-__all__ = ["dispatch_due_indexes", "embedder_for", "force_pass", "run_index"]
+__all__ = ["NO_EMBEDDING", "EmbeddingUnavailable", "dispatch_due_indexes", "embedder_for", "force_pass", "run_index"]

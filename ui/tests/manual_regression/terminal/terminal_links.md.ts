@@ -1,7 +1,7 @@
 /** Real PTY output → xterm hit testing → backend resolution → focused dock tab. */
 import { expect, test, type Page } from '@playwright/test';
-import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises';
-import { homedir, tmpdir } from 'node:os';
+import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,7 +35,8 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  // A browser the backend launched keeps its tab — and its keep-alive socket — open; close() would wait on it.
+  // A browser the backend launched keeps its tab open, with idle preconnect sockets that never carry a
+  // request — `Connection: close` cannot reach those, and server.close() would wait on them.
   server.closeAllConnections();
   await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()));
   await Promise.all([rm(root, { recursive: true, force: true }), rm(outside, { recursive: true, force: true })]);
@@ -251,24 +252,15 @@ test('a site that refuses embedding retains its external-open escape', async ({ 
   await external.close();
 });
 
-/** This machine's Chrome profile directories, read the way the backend reads them (`flow_sdk/core/browser_profiles.py`). */
-async function localChromeProfiles(): Promise<string[]> {
-  const root =
-    process.platform === 'darwin' ? join(homedir(), 'Library/Application Support/Google/Chrome')
-      : process.platform === 'win32' ? join(process.env.LOCALAPPDATA ?? '', 'Google/Chrome/User Data')
-        : join(homedir(), '.config/google-chrome');
-  try {
-    const state = JSON.parse(await readFile(join(root, 'Local State'), 'utf8'));
-    return Object.keys(state.profile?.info_cache ?? {});
-  } catch {
-    return [];
-  }
-}
-
 test('right-click → Open in ▸ a Chrome profile really opens the link in that browser', async ({ page }) => {
-  const profiles = await localChromeProfiles();
-  test.skip(profiles.length === 0, 'this machine has no Chrome profiles to open a link in');
   const { shellId } = await openFixtureTerminal(page);
+  // What the backend offers is pinned per OS by tests/unit/test_browser_profiles.py; here the menu must show it.
+  const profiles: string[] = await page.evaluate(async (sdkModule) => {
+    const { apiClient } = await import(sdkModule);
+    const { browsers } = await apiClient.get('/api/v1/browser-profiles');
+    return browsers.find((b: { id: string }) => b.id === 'chrome')?.profiles.map((p: { id: string }) => p.id) ?? [];
+  }, sdkModule);
+  test.skip(profiles.length === 0, 'this machine has no Chrome profiles to open a link in');
   const path = `/profile-hit/${randomUUID()}`;
   const link = `${new URL(webUrl).origin}${path}`;
   await printLink(page, shellId, link);

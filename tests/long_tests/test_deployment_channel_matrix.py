@@ -69,7 +69,8 @@ def _backend_log(tmp_path) -> str:
 
 
 @pytest.mark.long  # ~15s a cell: a real backend boot, a deployment process, a turn on the mock worker
-@pytest.mark.parametrize("doubles", ["whatsapp", "waha", "telegram", "slack", "teams", "gmail", "agentmail"], indirect=True)
+# The shipped drivers; an external connector is proven in its own project.
+@pytest.mark.parametrize("doubles", ["whatsapp", "telegram", "slack", "teams", "gmail", "agentmail"], indirect=True)
 def test_a_deployment_process_answers_the_channel(doubles, tmp_path):
     (provider,) = doubles.doubles
     sender = doubles.channels()[provider]["sender"]

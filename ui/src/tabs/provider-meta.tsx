@@ -1,4 +1,3 @@
-import type { ShowTarget } from '@sdk';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 /**
@@ -15,11 +14,7 @@ import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
-import { DockPointer } from '@src/navigation/DockPointer';
-import {dockForDisplayTarget} from '@src/navigation/display-target-pointer';
 
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Eye } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 /**
@@ -157,52 +152,6 @@ export const LazyProcessTooltip: React.FC<{
       </p>
       {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
     </div>
-  );
-};
-
-/**
- * The marker a process chip carries when its agent has shown something.
- *
- * Outside vibe a `flow show` mints a tab but never navigates (see
- * `use-show-target-listener`), so the agent's "look at this" needs somewhere to
- * land that does not steal the screen. This is it: a glyph on the process's own
- * chip that opens whatever it last showed. In vibe the Display pane already
- * plays that role — the badge is harmless there, but the pane is the answer.
- *
- * Renders nothing until there is a target that maps to a dock, so a process
- * that has never shown anything looks exactly as it does today.
- */
-export const ShownTargetBadge: React.FC<{ processId: string }> = ({ processId }) => {
-  const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
-  const { navigation } = useDockNavigation();
-  const shown = (process?.context_data as { last_shown?: ShowTarget } | undefined)?.last_shown;
-  const projectId = process?.project_id ?? null;
-  // Same project rebase the listener applies when it mints the tab — without it
-  // this would navigate to the scope-collapsed Assets dock instead of the
-  // document's own tab, i.e. a different tab than the one the show created.
-  const dock = useMemo(() => {
-    const base = dockForDisplayTarget(shown);
-    return base ? DockPointer.rebaseAssetsOntoProject(base, projectId) : null;
-  }, [shown, projectId]);
-  if (!dock) return null;
-
-  const label = shown?.name || shown?.path?.split('/').pop() || shown?.type || 'the shown item';
-  return (
-    <button
-      type="button"
-      // The chip's own click activates the tab; this one opens the target
-      // instead, so it must not bubble (same guard the close button uses).
-      onClick={(e) => {
-        e.stopPropagation();
-        navigation.openDock(dock);
-      }}
-      className="shrink-0 rounded p-0.5 text-sky-500 transition-colors hover:bg-muted hover:text-sky-400"
-      title={`Open ${label}`}
-      aria-label={`Open ${label}`}
-      data-testid="tab-shown-target"
-    >
-      <Eye className="h-3 w-3" />
-    </button>
   );
 };
 

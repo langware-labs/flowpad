@@ -80,7 +80,8 @@
     "llm-endpoints",
     "token-plan",
     "llm-sources",
-    "llm-setup"
+    "llm-setup",
+    "assistant"
   ],
   "subview_vocabularies": {
     "credentials": [
@@ -655,6 +656,14 @@
       "scope_keyed": false,
       "folds_sub_pointer": false,
       "chrome": "workspace"
+    },
+    "assistant": {
+      "addressable": true,
+      "pointer": "none",
+      "folds_pointer": false,
+      "scope_keyed": false,
+      "folds_sub_pointer": false,
+      "chrome": "fullbleed"
     },
     "agent": {
       "addressable": true,

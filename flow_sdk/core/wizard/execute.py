@@ -28,7 +28,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.wizard.runner import run_wizard
-from flow_sdk.core.wizard.state import record_result, reset_run, run_dir
+from flow_sdk.core.wizard.state import record_result, reset_run, run_dir, run_key, target_segment
 from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -50,22 +50,29 @@ async def execute_wizard(
     approved: bool = False,
     subject_entity: Optional[str],
     check_only: bool = False,
+    target: str = "",
+    inputs: Optional[dict] = None,
 ) -> WizardResult:
     """Run `spec` as the wizard `wizard_id`, and stamp what it answered.
 
     A wizard already running answers ``NOT_YET`` with ``ran=False`` — it did
     not run, and trying later is right — never a raise.
 
-    `subject_entity` is the ONLY thing the two callers differ on, and it is
-    routing alone: the wizard's id decides who may run, `subject_entity` decides
-    who is told about it.
+    `subject_entity` is routing alone: the wizard's id decides who may run,
+    `subject_entity` decides who is told about it.
 
     `check_only` reports the goal's current state and stamps it into
     `run_state` the same way a real run does — never asking, never installing,
     never spawning an agent. It still takes the same run slot: a status refresh
     racing a real run for the same steps would read a torn picture otherwise.
+
+    `target` is the entity this run sets up (a data source, a credential). Each
+    target is its own run — own slot, own record, own resume point — so setting up
+    one agent's channel never answers "already running" for another's. `inputs`
+    are the values the caller puts in scope (the target's id, its owner…).
     """
-    workdir: "Path" = run_dir(wizard_id)
+    key = run_key(wizard_id, target)
+    workdir: "Path" = run_dir(key)
     workdir.mkdir(parents=True, exist_ok=True)
 
     # Archive the previous run and start this one's record BLANK, before we
@@ -76,7 +83,7 @@ async def execute_wizard(
     # below; `reset_run` already refuses (returns `None`) when another run
     # holds it, which doubles as this call's own busy check — see its own
     # docstring for why it must run BEFORE, never from inside, that acquire.
-    if reset_run(wizard_id) is None:
+    if reset_run(key) is None:
         return WizardResult.held(f"{spec.name or wizard_id} {ALREADY_RUNNING}")
     await _notify_wizard_watchers(wizard_id)
 
@@ -105,9 +112,13 @@ async def execute_wizard(
         # locking the SAME path again here would not be reentrant (a plain
         # `FileLock` does not know one is already held) and self-deadlocks.
         # This lock is what keeps the write safe without re-acquiring it.
-        record_result(wizard_id, partial, already_locked=True)
+        record_result(key, partial, already_locked=True)
         await _notify_wizard_watchers(wizard_id)
 
+    from flow_sdk.core.compute_op.ask import ASKING_RUN  # noqa: PLC0415
+
+    activity_path = activity_path_for(wizard_id, asset_ref, target)
+    asking = ASKING_RUN.set(activity_path)  # a question this run asks names the run
     try:
         result = await run_wizard(
             spec,
@@ -116,7 +127,7 @@ async def execute_wizard(
             # pops from `_roots` only, and eviction is "a root's terminal untracks
             # its tree". A shared `wizard/` parent never terminates, so a resumed
             # run would inherit the previous run's counters.
-            activity_path=activity_path_for(wizard_id, asset_ref),
+            activity_path=activity_path,
             trusted=trusted,
             workdir=workdir,
             # A step's `ref` is a NAME; only the entity layer knows what is
@@ -132,15 +143,17 @@ async def execute_wizard(
             # also finishes just because the durable record is otherwise
             # written once, at the very end.
             on_step=_on_step,
+            inputs=inputs,
         )
     finally:
+        ASKING_RUN.reset(asking)
         lock.release()
 
     # Persisted so an UNATTENDED run leaves any trace at all. The activity tree
     # is live-only (a finished root is dropped), so without this the whole
     # outcome of a first-launch setup survives as one log line and the wizard
     # reports "has not run on this machine yet", which is false.
-    record_result(wizard_id, result)
+    record_result(key, result)
     await _notify_wizard_watchers(wizard_id)
     return result
 
@@ -163,7 +176,7 @@ async def _notify_wizard_watchers(wizard_id: str) -> None:
         await wizard.notify_updated()
 
 
-def activity_path_for(wizard_id: str, asset_ref: str) -> str:
+def activity_path_for(wizard_id: str, asset_ref: str, target: str = "") -> str:
     """This wizard's activity ROOT address — also its run SLOT.
 
     A function rather than an f-string at the call site because the frontend has
@@ -175,9 +188,11 @@ def activity_path_for(wizard_id: str, asset_ref: str) -> str:
     must collide (that is the busy guard), two wizards must not. The folder name
     alone made two same-named wizards in different scopes share a slot, so the
     second answered "already running" and recorded it over its real last run.
+    A run FOR a target is its own slot for the same reason (``state.run_key``).
     """
     slug = _slug(asset_ref)
-    return f"wizard-{slug}-{wizard_id}" if slug else f"wizard-{wizard_id}"
+    base = f"wizard-{slug}-{wizard_id}" if slug else f"wizard-{wizard_id}"
+    return f"{base}-{target_segment(target)}" if target else base
 
 
 def _slug(asset_ref: str) -> str:

@@ -29,6 +29,7 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
+import { SetupWizardDialog } from '@src/components/setup-wizard/SetupWizardDialog';
 import {
   accountKeyFor,
   buildConfig,
@@ -38,6 +39,7 @@ import {
   pickedFrom,
   pickedIn,
   specFields,
+  setUpByWizard,
   validateDraft,
   type SourceDraft,
 } from './source-form';
@@ -149,7 +151,13 @@ export function DataSourceDialog({
   // The agent the cloud creates this account for — no form, nothing to validate. The
   // picker only offers a provisioned provider with an agent owner, so this is that agent.
   const provisioned = !editing && spec?.provisioned ? ownerAgentId : null;
-  const problems = useMemo(() => (provisioned ? [] : validateDraft(draft, spec)), [provisioned, draft, spec]);
+  // The wizard asks for this driver's config — the form asks only for a name, then hands over.
+  const byWizard = setUpByWizard(spec, !!editing);
+  const [settingUp, setSettingUp] = useState<DataSource | null>(null);
+  const problems = useMemo(
+    () => (provisioned ? [] : validateDraft(draft, spec, { config: !byWizard })),
+    [provisioned, draft, spec, byWizard],
+  );
 
   const setField = (key: string, value: string) =>
     // Typing into a choosable field drops its picks: the two inputs are never both
@@ -226,6 +234,10 @@ export function DataSourceDialog({
         });
         await source.save(project?.typeId && !ownerAgentId ? [project.typeId] : []);
         notify.success({ title: t`Added ${source.name}` });
+        if (byWizard) {
+          setSettingUp(source); // the form gives way to the setup wizard; closing that closes both
+          return;
+        }
       }
       onOpenChange(false);
     } catch (e) {
@@ -285,6 +297,21 @@ export function DataSourceDialog({
       </div>
     );
   };
+
+  if (settingUp) {
+    return (
+      <SetupWizardDialog
+        source={settingUp}
+        title={spec?.title || settingUp.name}
+        open
+        onOpenChange={(next) => {
+          if (next) return;
+          setSettingUp(null);
+          onOpenChange(false);
+        }}
+      />
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -368,9 +395,15 @@ export function DataSourceDialog({
                 />
               </div>
 
-              {specFields(spec)
-                .filter(([, f]) => !f.advanced)
-                .map(renderField)}
+              {byWizard ? (
+                <p className="rounded border bg-muted/30 p-2 text-xs text-muted-foreground" data-testid="ds-by-wizard">
+                  <Trans>A guided setup asks for everything else this channel needs, step by step.</Trans>
+                </p>
+              ) : (
+                specFields(spec)
+                  .filter(([, f]) => !f.advanced)
+                  .map(renderField)
+              )}
 
               <div className="flex items-center justify-between rounded border p-2">
                 <Label htmlFor="ds-enabled" className="text-sm">
@@ -455,9 +488,10 @@ export function DataSourceDialog({
                       <Trans>This source&apos;s remote identity — one source per account.</Trans>
                     </p>
                   </div>
-                  {specFields(spec)
-                    .filter(([, f]) => f.advanced)
-                    .map(renderField)}
+                  {!byWizard &&
+                    specFields(spec)
+                      .filter(([, f]) => f.advanced)
+                      .map(renderField)}
                 </div>
               )}
             </>
@@ -477,7 +511,15 @@ export function DataSourceDialog({
             <Trans>Cancel</Trans>
           </Button>
           <Button onClick={() => { setTried(true); void submit(); }} disabled={busy}>
-            {busy ? '…' : editing ? t`Save` : provisioned ? t`Create ${spec?.title}` : t`Add source`}
+            {busy
+              ? '…'
+              : editing
+                ? t`Save`
+                : provisioned
+                  ? t`Create ${spec?.title}`
+                  : byWizard
+                    ? t`Add and set up`
+                    : t`Add source`}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -15,7 +15,7 @@ from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(10)]  # do not increase timeout without approval
 
-SOURCE = SimpleNamespace(id="ds-1", channel="whatsapp", provider="waha")
+SOURCE = SimpleNamespace(id="ds-1", channel="whatsapp", provider="whatsapp")
 
 
 class _Worker:

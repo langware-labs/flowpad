@@ -597,7 +597,10 @@ class Agent(Entity):
 
         agent = await get_agent(str(name or "").strip())
         if agent is None:
-            raise LookupError(f"no agent named {name!r}")
+            raise LookupError(
+                f"no agent named {name!r} on this machine — check the spelling, or create it: "
+                f"`await Agent(name={name!r}, system_prompt=...).save()` or the Agents screen"
+            )
         return agent
 
     # ── deployment ────────────────────────────────────────────────────────

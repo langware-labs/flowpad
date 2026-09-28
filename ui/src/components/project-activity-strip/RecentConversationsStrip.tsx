@@ -16,7 +16,8 @@ import {
   latestPointer,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
+import { uploadFlowMessage, type UploadConflict, type UploadFlowMessageResult } from '@sdk/entities/flow-message';
+import { type UploadedMessage, UploadedMessageReview } from '@src/components/project-home/ProjectUploadMessageButton';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { EntityBatchHydrator } from '@src/components/entity-batch/EntityBatchHydrator';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
@@ -100,7 +101,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   // reads ``invitation_id`` off that first message's ``context_entities``.
   // The local user's stream inbox, filtered by the backend — the same request the stream
   // inbox builds, so opening it later is a warm remount (see `streamInboxConversationsRequest`).
-  const { localUser } = useContext();
+  const { localUser, project } = useContext();
   const localUserId = localUser?.id;
   const request = useMemo(
     () => (localUserId ? streamInboxConversationsRequest(new TypeId(User.type, localUserId)) : null),
@@ -226,6 +227,19 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     }
   };
 
+  // A message that belongs to a conversation opens there; one that does not (an
+  // offline package) opens its review, installing into the active project.
+  const [review, setReview] = useState<UploadedMessage | null>(null);
+  const openUploaded = (result: UploadFlowMessageResult) => {
+    if (result.conversation_id) {
+      navigation.openDock(DockPointer.forConversation(result.conversation_id));
+    } else if (result.task_id) {
+      navigation.openDock(DockPointer.forTasks(result.task_id));
+    } else if (result.attachments?.length) {
+      setReview({ messageId: result.message_id, firstAttachmentId: result.attachments[0].id });
+    }
+  };
+
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -234,11 +248,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     setUploadConflicts(null);
     try {
       const result = await uploadFlowMessage(file);
-      if (result.conversation_id) {
-        navigation.openDock(DockPointer.forConversation(result.conversation_id));
-      } else if (result.task_id) {
-        navigation.openDock(DockPointer.forTasks(result.task_id));
-      }
+      openUploaded(result);
       void refetch();
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { data?: { conflicts?: UploadConflict[] } } } };
@@ -259,11 +269,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       const result = await uploadFlowMessage(pendingFile, { overwrite: true });
       setPendingFile(null);
       setUploadConflicts(null);
-      if (result.conversation_id) {
-        navigation.openDock(DockPointer.forConversation(result.conversation_id));
-      } else if (result.task_id) {
-        navigation.openDock(DockPointer.forTasks(result.task_id));
-      }
+      openUploaded(result);
       void refetch();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Upload failed.';
@@ -273,6 +279,9 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
   return (
     <div className="flex flex-col rounded-lg border" data-testid="recent-conversations-strip">
+      {review && (
+        <UploadedMessageReview {...review} projectId={project?.id ?? null} onClose={() => setReview(null)} />
+      )}
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />

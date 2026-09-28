@@ -251,4 +251,5 @@ def test_a_steps_output_rides_run_detail_and_never_run_state(tmp_path, monkeypat
 def test_a_wizard_that_never_ran_has_no_result(tmp_path, monkeypatch):
     wizard = _wizard(tmp_path, monkeypatch)
     assert wizard.run_state == {"result": None, "approved": False}
-    assert asyncio.run(wizard.run_detail_action()).data == {"result": None, "archived": []}
+    detail = asyncio.run(wizard.run_detail_action()).data
+    assert detail == {"result": None, "archived": [], "activity_path": wizard.activity_path}

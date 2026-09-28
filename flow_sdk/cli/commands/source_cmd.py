@@ -129,6 +129,27 @@ def verify(source_id: str) -> None:
     ok({"verdict": _source_action(source_id, "verify")})
 
 
+@source_app.command("step", help="Run one setup step of a source — what its setup wizard calls. --check only asks.")
+def step(
+    source_id: str,
+    name: str,
+    check: Annotated[bool, typer.Option("--check", help="Only answer whether the step's goal already holds.")] = False,
+) -> None:
+    """The step's ``ReturnedValue``, and its exit code as this command's (0 done, 1 not yet, 4 no such step).
+    The values a wizard bound (``FLOWPAD_WIZARD_INPUT_<NAME>``) go along as ``values``, lower-cased — env,
+    never argv, so a pasted secret is never on a command line."""
+    import os  # noqa: PLC0415
+
+    prefix = "FLOWPAD_WIZARD_INPUT_"
+    values = {k[len(prefix):].lower(): v for k, v in os.environ.items() if k.startswith(prefix) and v}
+    answer = _source_action(source_id, "step", {"step": name, "check": check, "values": values}, timeout=300) or {}
+    code = int(answer.get("exit_code") or 0)
+    if code:
+        typer.echo(answer.get("detail") or f"{name}: not done", err=True)
+        raise typer.Exit(code)
+    ok({"step": name, "answer": answer})
+
+
 @source_app.command("choices", help="What the credential can see for one config field.")
 def choices(provider: str, field: str, config: ConfigOpt = None) -> None:
     ok({"choices": _post("data_source/choices", {"provider": provider, "field": field, "config": _config(config)})})

@@ -255,7 +255,7 @@ msgstr ""
 msgid "{0} — no email sent."
 msgstr ""
 
-#. placeholder {0}: a.data.replace(/^data\//, '')
+#. placeholder {0}: attachmentFileName(a)
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "{0} — not downloaded (the link expired)"
 msgstr ""
@@ -541,6 +541,11 @@ msgstr ""
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "orphan_count"
 msgstr "{0} سجل يتيم{1}"
+
+#. placeholder {0}: problems.length
+#: src/components/code-editor/SnippetView.tsx
+msgid "{0} problems"
+msgstr ""
 
 #. js-lingui-explicit-id
 #. placeholder {0}: grandTotal.toLocaleString()
@@ -1084,6 +1089,10 @@ msgstr "ساعة واحدة"
 msgid "1 message"
 msgstr "رسالة واحدة"
 
+#: src/components/code-editor/SnippetView.tsx
+msgid "1 problem"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "1 week"
 msgstr "أسبوع واحد"
@@ -1160,6 +1169,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "A fresh shell needs to be allocated. (Backend action coming — for now Restart will retry.)"
 msgstr "يلزم تخصيص صدفة جديدة. (إجراء من الخادم قادم — في الوقت الحالي ستعيد «إعادة التشغيل» المحاولة.)"
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "A guided setup asks for everything else this channel needs, step by step."
+msgstr ""
 
 #: src/components/llm-endpoints/FundingProvenance.tsx
 msgid "a key the hub holds (the chain could not be read from here)"
@@ -1431,8 +1444,8 @@ msgid "Add a note to the running session about this message"
 msgstr "إضافة ملاحظة إلى الجلسة الجارية بشأن هذه الرسالة"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Add a personal note..."
-msgstr "إضافة ملاحظة شخصية..."
+#~ msgid "Add a personal note..."
+#~ msgstr "إضافة ملاحظة شخصية..."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Add a personal note…"
@@ -1448,6 +1461,10 @@ msgstr "إضافة وكيل…"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Add an API key"
+msgstr ""
+
+#: src/components/data-sources/DataSourceDialog.tsx
+msgid "Add and set up"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -1677,6 +1694,10 @@ msgstr "إضافة مشغّل"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Add variable"
+msgstr ""
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Add…"
 msgstr ""
 
 #. placeholder {0}: draft.name.trim()
@@ -2578,9 +2599,13 @@ msgstr "طلب المساعدة من شخص آخر"
 msgid "Ask the agent to connect one"
 msgstr ""
 
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "Ask the Flowpad Assistant anything about this page."
+msgstr ""
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
-msgid "Ask the Flowpad Assistant anything."
-msgstr "يمكن سؤال مساعد Flowpad عن أي شيء."
+#~ msgid "Ask the Flowpad Assistant anything."
+#~ msgstr "يمكن سؤال مساعد Flowpad عن أي شيء."
 
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
@@ -3247,8 +3272,8 @@ msgid "Bullet list"
 msgstr "قائمة نقطية"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Bundle ready — download started."
-msgstr "الحزمة جاهزة — بدأ التنزيل."
+#~ msgid "Bundle ready — download started."
+#~ msgstr "الحزمة جاهزة — بدأ التنزيل."
 
 #: src/components/organization/budgets/BudgetHistoryDialog.tsx
 msgid "By"
@@ -3383,6 +3408,7 @@ msgstr ""
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/asset-manager/AssetManagerButton.tsx
@@ -3470,6 +3496,7 @@ msgstr "إلغاء"
 msgid "Cancel reply"
 msgstr ""
 
+#: src/components/ask/AskForm.tsx
 #: src/components/ask/use-ask-question.ts
 msgid "Cancelled."
 msgstr ""
@@ -3535,6 +3562,10 @@ msgstr "القدرات غير متاحة. أعد المحاولة"
 #: src/i18n/type-labels.ts
 msgid "Capability"
 msgstr "قدرة"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Carries"
+msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
 #: src/components/llm-endpoints/SourcePicker.tsx
@@ -3609,7 +3640,11 @@ msgstr ""
 msgid "Chat"
 msgstr "المحادثة"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantContextChips.tsx
+msgid "Chat context"
+msgstr ""
+
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Chat history"
 msgstr "سجل الدردشة"
 
@@ -3706,6 +3741,10 @@ msgstr "جاري التحقق…"
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Checkpoint:"
 msgstr "نقطة الحفظ:"
+
+#: src/components/code-editor/SnippetView.tsx
+msgid "checks pass"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -4806,6 +4845,11 @@ msgstr "متابعة"
 msgid "Continue journey"
 msgstr "متابعة الرحلة"
 
+#. placeholder {0}: pending.label
+#: src/components/setup-wizard/SetupStagesButton.tsx
+msgid "Continue setup: {0}"
+msgstr ""
+
 #: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 msgid "Continue this conversation"
 msgstr "متابعة هذه المحادثة"
@@ -5247,6 +5291,10 @@ msgstr "تعذر قطع الاتصال عن {0}."
 msgid "Could not download"
 msgstr "تعذر التنزيل"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Could not download this message."
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "Could not enable secrets"
 msgstr "تعذّر تفعيل الأسرار"
@@ -5463,6 +5511,10 @@ msgstr ""
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
 msgstr "تعذر إعادة تسمية السياق"
+
+#: src/components/project-home/ProjectNameTitle.tsx
+msgid "Could not rename project"
+msgstr ""
 
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "Could not repair the model redirect"
@@ -5710,6 +5762,10 @@ msgstr ""
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Could not upload avatar"
 msgstr "تعذر رفع الصورة الرمزية"
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Could not upload this message."
+msgstr ""
 
 #. placeholder {0}: agent.displayName
 #: src/components/agents/use-agent-launcher.ts
@@ -7292,12 +7348,13 @@ msgstr "تم!"
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Download"
 msgstr "تنزيل"
 
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download .flowmsg"
 msgstr "تنزيل .flowmsg"
 
@@ -7306,6 +7363,10 @@ msgstr "تنزيل .flowmsg"
 msgid "Download {count} {0}"
 msgstr "تنزيل {count} {0}"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Download a <0>.flowmsg</0> file. The recipient uploads it on their project home, reviews what it carries, and installs it."
+msgstr ""
+
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Download again"
 msgstr "تنزيل مجددًا"
@@ -7313,6 +7374,10 @@ msgstr "تنزيل مجددًا"
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download all attachments"
 msgstr "تنزيل جميع المرفقات"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Download as a file instead of sending"
+msgstr ""
 
 #: src/components/conversation/FlowMessageBubble.tsx
 msgid "Download attachments"
@@ -7333,6 +7398,7 @@ msgid "Download file"
 msgstr "تنزيل الملف"
 
 #: src/components/conversation/chips/MessageChips.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "تنزيل الرسالة"
 
@@ -7473,6 +7539,10 @@ msgstr ""
 #: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
 msgstr "يُضاف مجلد كل مشروع محدد كمجلد سياق."
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
+msgstr ""
 
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 #~ msgid "earlier output dropped — this is the tail"
@@ -8109,6 +8179,11 @@ msgstr ""
 
 #: src/components/organization/budgets/AdvancedEndpointDialog.tsx
 msgid "Everything this budget is tuned with beyond its total and its allowed models. These are set by the organization's owner."
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+msgid "Everything this run has shown"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
@@ -8998,10 +9073,12 @@ msgstr "Flowpad"
 msgid "FlowPad API Key"
 msgstr "مفتاح FlowPad API"
 
+#: src/components/floating-chat/AssistantPopoutView.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
+#: src/types/ViewType.ts
 msgid "Flowpad Assistant"
 msgstr "مساعد Flowpad"
 
@@ -9021,7 +9098,7 @@ msgstr ""
 #~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 #~ msgstr "تم تثبيت مساعد Flowpad (تُمرَّر مهاراته ووكلاؤه إلى العامل عبر --add-dir). انقر لإلغاء التثبيت — سيلزم إعادة التشغيل."
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Flowpad Assistant project not available."
 msgstr "مشروع مساعد Flowpad غير متاح حالياً."
 
@@ -11513,7 +11590,7 @@ msgstr "جارٍ تحميل الأخطاء..."
 msgid "Loading feed item"
 msgstr "جاري تحميل العنصر"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Loading Flowpad Assistant…"
 msgstr "جاري تحميل مساعد Flowpad…"
 
@@ -11670,8 +11747,8 @@ msgstr "جاري التحميل..."
 
 #: src/components/account/secrets-section.tsx
 #: src/components/account/system-diagnoses.tsx
+#: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
-#: src/components/ask/AskView.tsx
 #: src/components/assets/AssetListView.tsx
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 #: src/components/assets/editor/ReportAssetShell.tsx
@@ -12153,16 +12230,21 @@ msgstr "تعارضات الدمج"
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message"
 msgstr "رسالة"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Message (optional)"
-msgstr "رسالة (اختيارية)"
+#~ msgid "Message (optional)"
+#~ msgstr "رسالة (اختيارية)"
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
 msgstr "مرفق الرسالة"
+
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "Message downloaded"
+msgstr ""
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Message not queued"
@@ -12628,9 +12710,13 @@ msgid "New build"
 msgstr "إصدار جديد"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "محادثة جديدة"
+
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "New chat for this page"
+msgstr ""
 
 #: src/components/organization/org-node-management.tsx
 msgid "New class"
@@ -13417,7 +13503,7 @@ msgstr "لا توجد صفحة بهذا الاسم حتى الآن."
 msgid "No past builds"
 msgstr "لا توجد إصدارات سابقة"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "No past chats"
 msgstr "لا توجد محادثات سابقة"
 
@@ -13839,6 +13925,11 @@ msgstr "لا يوجد تطبيق ويب متاح"
 msgid "No web page in this view"
 msgstr ""
 
+#. placeholder {0}: stage.wizard
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "No wizard named {0} is installed."
+msgstr ""
+
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Nobody has a budget in this team yet."
 msgstr ""
@@ -14169,6 +14260,10 @@ msgstr "لا توجد تحسينات مقترحة"
 msgid "Nothing to index"
 msgstr ""
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Nothing to install"
+msgstr ""
+
 #: src/lib/publish-state.ts
 msgid "Nothing to publish"
 msgstr "لا يوجد شيء للنشر"
@@ -14185,6 +14280,10 @@ msgstr ""
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Nothing to save"
 msgstr "لا توجد تغييرات للحفظ"
+
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Nothing to set up."
+msgstr ""
 
 #: src/pages/hub-browse/HubEntityView.tsx
 msgid "Nothing to show."
@@ -14643,6 +14742,7 @@ msgstr ""
 msgid "Open in new tab"
 msgstr "فتح في تبويب جديد"
 
+#: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/top-nav-bar/OpenInWindowButton.tsx
 msgid "Open in new window"
 msgstr ""
@@ -15173,8 +15273,8 @@ msgid "Pack keys into credentials"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
-msgstr "يتم تحزيم هذه المشاركة في ملف <0>.flowmsg</0> محمول يمكن للمستقبلين استيراده."
+#~ msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+#~ msgstr "يتم تحزيم هذه المشاركة في ملف <0>.flowmsg</0> محمول يمكن للمستقبلين استيراده."
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Page"
@@ -15229,7 +15329,7 @@ msgstr "التحليلات السابقة"
 msgid "Past builds"
 msgstr "الإصدارات السابقة"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Past chats"
 msgstr "المحادثات السابقة"
 
@@ -16787,8 +16887,10 @@ msgstr "جلسة العامل البعيد"
 msgid "Remove"
 msgstr "إزالة"
 
+#. placeholder {0}: c.label
 #. placeholder {0}: source.name
 #. placeholder {0}: source.name || source.provider
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 #: src/components/stream-inbox-view/AttachedChannelsBar.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Remove {0}"
@@ -16994,6 +17096,7 @@ msgid "Rename failed"
 msgstr "فشلت إعادة التسمية"
 
 #: src/components/graph-context/GraphContextViewer.tsx
+#: src/components/project-home/ProjectNameTitle.tsx
 msgid "Rename failed."
 msgstr "فشلت إعادة التسمية."
 
@@ -17004,6 +17107,10 @@ msgstr "إعادة تسمية المفضلة"
 #: src/components/browseable-tree/adapters/groupRoot.tsx
 msgid "Rename folder"
 msgstr "إعادة تسمية المجلد"
+
+#: src/components/project-home/ProjectNameTitle.tsx
+#~ msgid "Rename project"
+#~ msgstr ""
 
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Rename this budget"
@@ -17369,6 +17476,7 @@ msgstr "النتائج"
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/events/EventFeed.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/journey/JourneyViewer.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Resume"
@@ -18183,6 +18291,7 @@ msgstr "ابحث عن أي كيان. عند اختيار أحدها، سيتم �
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/project-home/HomeCustomizationCard.tsx
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Search assets…"
 msgstr "البحث عن الأصول…"
 
@@ -18544,6 +18653,7 @@ msgstr "شريط أدوات التحديد"
 msgid "Self-Summary"
 msgstr "الملخص الذاتي"
 
+#: src/components/ask/AskForm.tsx
 #: src/components/ask/AskModal.tsx
 #: src/components/ask/AskView.tsx
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
@@ -18841,6 +18951,10 @@ msgstr "إعداد"
 msgid "Set up (runs an agentic process)"
 msgstr "إعداد (يشغّل عملية ذاتية التنفيذ)"
 
+#: src/components/setup-wizard/SetupWizardDialog.tsx
+msgid "Set up {title}"
+msgstr ""
+
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the repo and index it so it's ready to use."
 msgstr "سيتم إعداد <0>{projectName}</0> في مساحة العمل هذه. سنستنسخ المستودع ونفهرسه ليصبح جاهزاً للاستخدام."
@@ -18930,6 +19044,8 @@ msgid "Settings"
 msgstr "الإعدادات"
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
+#: src/components/setup-wizard/SetupStagesButton.tsx
 msgid "Setup"
 msgstr ""
 
@@ -19906,6 +20022,7 @@ msgid "Star chat"
 msgstr "إضافة نجمة للمحادثة"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
 msgid "Start"
@@ -20689,9 +20806,9 @@ msgstr "نجح الاختبار — يمكن لهذا المصدر تمويل ا
 msgid "Test trigger"
 msgstr "اختبار المحفز"
 
-#: src/components/ask/AskView.tsx
-#~ msgid "Thank you — sent."
-#~ msgstr ""
+#: src/components/ask/AskForm.tsx
+msgid "Thank you — sent."
+msgstr ""
 
 #: src/navigation/agentic-process-open.ts
 #: src/navigation/agentic-process-open.ts
@@ -21422,6 +21539,10 @@ msgstr "رابط الجلسة المباشرة هذا غير صحيح أو غي�
 msgid "this machine"
 msgstr ""
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "This message carries no assets."
+msgstr ""
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "this minute"
 msgstr ""
@@ -21572,6 +21693,8 @@ msgstr "مكتب المساعدة الخاص بهذا المشروع"
 msgid "this project's runs"
 msgstr ""
 
+#: src/components/ask/AskForm.tsx
+#: src/components/ask/AskView.tsx
 #: src/components/ask/use-ask-question.ts
 msgid "This question is no longer waiting."
 msgstr ""
@@ -21876,8 +21999,6 @@ msgstr "نصيحة: الاتصال بـ GitHub يتيح استنساخ المس�
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/task-bar/SharedTaskView.tsx
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-#: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Title"
 msgstr "العنوان"
 
@@ -22549,8 +22670,16 @@ msgstr "جاري الترقية…"
 msgid "Upload"
 msgstr "رفع"
 
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Upload a .flowmsg and install what it carries into this project"
+msgstr ""
+
 #: src/components/organization/budgets/AddPeopleDialog.tsx
 msgid "Upload CSV"
+msgstr ""
+
+#: src/components/project-home/ProjectUploadMessageButton.tsx
+msgid "Upload failed"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
@@ -22566,6 +22695,7 @@ msgid "Upload image"
 msgstr "رفع صورة"
 
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
+#: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "Upload message"
 msgstr "رفع الرسالة"
 
@@ -23157,7 +23287,7 @@ msgstr ""
 msgid "What"
 msgstr ""
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "What can flowpad do for you ?"
 msgstr "ماذا يمكن لـ Flowpad أن يفعله لك؟"
 
@@ -23248,6 +23378,10 @@ msgstr ""
 msgid "What should the worker do with this message?"
 msgstr "ماذا يجب أن يفعل العامل بهذه الرسالة؟"
 
+#: src/components/share-to-conversation/DownloadMessageForm.tsx
+msgid "What should they know?"
+msgstr ""
+
 #. placeholder {0}: readiness.environment
 #: src/components/assets/editor/agent-profile/DeploymentSecretsGate.tsx
 msgid "What the {0} machine still needs"
@@ -23276,6 +23410,10 @@ msgstr "ما ينبغي الانتباه إليه"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "ما المشكلة؟ (يُترك الحقل فارغاً لإجراء فحص شامل)"
+
+#: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
+msgid "What would you like the agent {displayName} to do?"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"
@@ -23450,6 +23588,7 @@ msgid "Working Tree"
 msgstr "شجرة العمل"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/version-popover/diagnose-modal.tsx

@@ -295,6 +295,42 @@ def _make_aiosqlite_stop_idempotent() -> None:
     aiosqlite.Connection.stop = _stop_once
 
 
+def _close_ends_the_transaction() -> None:
+    """``close()`` ends the write transaction before it closes the sqlite handle.
+
+    Upstream's ``Connection.close()`` runs a bare ``sqlite3.Connection.close()`` on
+    the worker. When a write transaction is open and a cursor still holds a
+    statement — a read not fully fetched, which is what a task cancelled mid-query
+    leaves — SQLite defers that close: the handle turns zombie and keeps its
+    transaction and the writer lock until the cursor is garbage-collected. Every
+    writer after it waits out busy_timeout into "database is locked", reported on
+    whichever test happened to write next (CI, PR #505: three unrelated tests across
+    two PRs). ``close()`` is the path SQLAlchemy takes to close a connection, and
+    ``stop()`` already closes through ``_release_handle``; this routes ``close()``
+    the same way. A rollback ends the transaction whatever a cursor holds.
+    Upstream as of aiosqlite 0.22.1.
+    """
+    import aiosqlite
+
+    close = aiosqlite.Connection.close
+    if getattr(close, "_flow_ends_transaction", False):
+        return
+
+    async def _close(self) -> None:
+        if self._connection is None:
+            return
+        try:
+            await self._execute(_release_handle, self._connection)
+        finally:
+            self._connection = None
+            future = self.stop()
+            if future:
+                await future
+
+    _close._flow_ends_transaction = True
+    aiosqlite.Connection.close = _close
+
+
 def _release_connections_whose_loop_closed() -> None:
     """A connection whose event loop closed under it closes its sqlite handle.
 
@@ -379,17 +415,18 @@ def _release_connections_whose_loop_closed() -> None:
 
 
 def _patch_aiosqlite() -> None:
-    """Both patches reach into aiosqlite internals as of 0.22; on any other
+    """The patches reach into aiosqlite internals as of 0.22; on any other
     version they could silently mis-drive its worker, so they stand down."""
     import aiosqlite
 
     if not aiosqlite.__version__.startswith("0.22."):
         logger.warning(
-            "sqlite: aiosqlite %s is not 0.22.x — the stop/closed-loop patches are not installed",
+            "sqlite: aiosqlite %s is not 0.22.x — the stop/close/closed-loop patches are not installed",
             aiosqlite.__version__,
         )
         return
     _make_aiosqlite_stop_idempotent()
+    _close_ends_the_transaction()
     _release_connections_whose_loop_closed()
 
 

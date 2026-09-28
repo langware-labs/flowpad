@@ -38,7 +38,7 @@ async def sync_source(source: DataSource, *, now: Optional[datetime] = None) -> 
     now = now or datetime.now(timezone.utc)
     report = IngestReport()
 
-    stype = await DataDriver.get(source.provider)
+    stype = await DataDriver.find(source.provider)
     if stype is None:
         await _fail_source(source, "unknown_provider", f"no source type registered for {source.provider!r}", now)
         return report

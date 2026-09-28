@@ -1,12 +1,13 @@
 import React from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Artifact, type AgenticProcess } from '@sdk';
+import { Artifact, type AgenticProcess, type DisplayEntry } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, FileText } from 'lucide-react';
+import { BookMarked, ChevronDown, FileText, Layers } from 'lucide-react';
+import { DisplayHistoryList } from '@src/pages/flow-page/display-history-button';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { compareArtifactsNewest } from '@src/hooks/use-process-artifacts';
@@ -28,6 +29,10 @@ interface TerminalBottomRibbonProps {
   artifacts?: Artifact[];
   /** Open an artifact's REFERENCED ASSET by path — never the artifact row. */
   onOpenArtifact?: (assetRef: string) => void;
+  /** What this run has shown (`flow show`), oldest first — `display_stack`. */
+  shown?: readonly DisplayEntry[];
+  /** Open a shown target as its own tab. */
+  onOpenShown?: (entry: DisplayEntry) => void;
   /** Enables the Prompt Library button (prompt → queue needs a process). */
   process?: AgenticProcess | null;
   /** Chat composer rendered as the top tier of the ribbon (Standard/chat only). */
@@ -59,6 +64,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenLastPlan,
   artifacts = [],
   onOpenArtifact,
+  shown = [],
+  onOpenShown,
   process = null,
   composer,
 }) => {
@@ -98,6 +105,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
               </Tooltip>
             </TooltipProvider>
           )}
+          {shown.length > 0 && onOpenShown && <ShownChip shown={shown} onOpen={onOpenShown} />}
           {artifacts.length > 0 && onOpenArtifact && <ArtifactsChip artifacts={artifacts} onOpen={onOpenArtifact} />}
         </div>
 
@@ -258,5 +266,52 @@ const ArtifactsChip: React.FC<{
         )}
       </div>
     </TooltipProvider>
+  );
+};
+
+/**
+ * "Shown" stack — what this run has put in front of the user with `flow show`,
+ * beside the Open-Plan chip. It replaces the glyph that used to sit on the
+ * process's tab chip: the tab strip is for tabs, and a run's output belongs on
+ * the run's own ribbon.
+ *
+ * One button with a count; clicking it lists the whole `display_stack`
+ * newest-first with an "ago" stamp, and a row opens that target as a tab. The
+ * stack rides on the process entity (backend-capped at 50), so this costs no
+ * fetch, and the rows mount only while the popover is open.
+ */
+const SHOWN_CHIP_CLASSES = 'h-6 text-sky-400 border-sky-400/40 hover:border-sky-400 hover:text-sky-300';
+
+const ShownChip: React.FC<{
+  shown: readonly DisplayEntry[];
+  onOpen: (entry: DisplayEntry) => void;
+}> = ({ shown, onOpen }) => {
+  const { t } = useLingui();
+  const [open, setOpen] = React.useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="ribbon-shown"
+          aria-label={t`Everything this run has shown`}
+          title={t`Everything this run has shown`}
+          className={cn(SHOWN_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]')}
+        >
+          <Layers className="h-3.5 w-3.5" />
+          <span className="tabular-nums">{shown.length}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-72 p-1">
+        <DisplayHistoryList
+          stack={shown}
+          onOpen={(entry) => {
+            setOpen(false);
+            onOpen(entry);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 };

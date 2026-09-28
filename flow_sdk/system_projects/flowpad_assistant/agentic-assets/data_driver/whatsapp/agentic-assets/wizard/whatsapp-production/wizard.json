@@ -1,0 +1,41 @@
+{
+  "name": "whatsapp-production",
+  "description": "Move the channel to your own number with a permanent token.",
+  "version": 1,
+  "enabled": true,
+  "icon": "MessageCircle",
+  "steps": [
+    {
+      "id": "prod-ask-phone-number-id",
+      "label": "Real number's Phone number ID",
+      "kind": "compute",
+      "ref": "whatsapp-prod-ask-phone-number-id",
+      "bind": "phone_number_id"
+    },
+    {
+      "id": "prod-ask-access-token",
+      "label": "Permanent token",
+      "kind": "compute",
+      "ref": "whatsapp-prod-ask-access-token",
+      "bind": "access_token"
+    },
+    {
+      "id": "prod-number",
+      "label": "Real number",
+      "kind": "compute",
+      "ref": "whatsapp-prod-number"
+    },
+    {
+      "id": "prod-subscribe",
+      "label": "Meta webhook",
+      "kind": "compute",
+      "ref": "whatsapp-prod-subscribe"
+    },
+    {
+      "id": "prod-verify",
+      "label": "Ready to send",
+      "kind": "compute",
+      "ref": "whatsapp-prod-verify"
+    }
+  ]
+}
