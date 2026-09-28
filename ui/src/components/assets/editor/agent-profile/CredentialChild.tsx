@@ -13,6 +13,7 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
+import { MarkdownView } from '@src/components/markdown-view';
 
 /**
  * One credential, nested in the agent editor (`…/child/credential/<credential typeid>`): what it
@@ -167,7 +168,12 @@ export function CredentialChild({ typeid, onGone }: { typeid: string; onGone: ()
             <h2 id="credential-setup" className="mb-2 text-[13px] font-semibold">
               <Trans>How to get the values</Trans>
             </h2>
-            {source.setup && <p className="whitespace-pre-wrap text-sm text-muted-foreground">{source.setup}</p>}
+            {/* The credential's setup.md — the same guide the setup dialog shows beside each question. */}
+            {source.setup && (
+              <div className="text-sm text-muted-foreground" data-testid="credential-setup-guide">
+                <MarkdownView value={source.setup} compact />
+              </div>
+            )}
             {source.help_url && (
               <a href={source.help_url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-sm text-primary hover:underline">
                 {source.help_url}

@@ -125,7 +125,9 @@ def catalogue(monkeypatch):
         # one no single driver owns stays at the top (credential/<name>). Either is a shipped template.
         (path,) = [*shipped.glob(f"credential/{name}/credential.json"),
                    *shipped.glob(f"data_driver/*/agentic-assets/credential/{name}/credential.json")]
-        spec = CredentialSpec.model_validate(json.loads(path.read_text()))
+        guide = path.parent / "setup.md"  # the body lives beside the manifest, as the indexer reads it
+        spec = CredentialSpec.model_validate({**json.loads(path.read_text()),
+                                              "setup": guide.read_text().strip() if guide.is_file() else ""})
         fields = {f: getattr(spec, f) for f in credential_service._MANIFEST_FIELDS}
         return Credential(name=spec.name, scope="system", manifest_schema=spec.manifest_schema, **fields)
 
