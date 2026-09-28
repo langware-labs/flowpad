@@ -236,11 +236,10 @@ class _SharePerson:
 
     user_id: Optional[str] = None
     email: Optional[str] = None
-    name: Optional[str] = None
     role: Optional[str] = None
 
     def identity(self) -> dict[str, Optional[str]]:
-        return {"user_id": self.user_id, "email": self.email, "name": self.name}
+        return {"user_id": self.user_id, "email": self.email}
 
 
 def _merge_share_people(people: list[_SharePerson]) -> list[_SharePerson]:
@@ -262,7 +261,6 @@ def _merge_share_people(people: list[_SharePerson]) -> list[_SharePerson]:
         else:
             found.user_id = found.user_id or person.user_id
             found.email = found.email or person.email
-            found.name = found.name or person.name
             found.role = found.role or person.role
         if found.user_id:
             by_user_id[found.user_id] = found

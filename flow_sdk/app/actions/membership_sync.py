@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Optional, Type
+from typing import TYPE_CHECKING, Any, Optional, Type
 
 from pydantic import TypeAdapter
 
@@ -28,6 +28,9 @@ from flow_sdk.builtin.organization import Organization
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.load_context import lenient_entity_load
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.flow_message import Attachment
 from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -157,7 +160,7 @@ async def materialize_remote_organization(
     return await materialize_remote_membership_entity(Organization, data, someone_typeid, notify=notify)
 
 
-async def mirror_referenced_projects(attachments: Any, someone_typeid: str | None = None) -> None:
+async def mirror_referenced_projects(attachments: list["Attachment"], someone_typeid: str | None = None) -> None:
     """Mirror each ``project-<id>`` a received message references but this box lacks.
 
     A project shared with a TEAM reaches its members through a hub group grant:
@@ -175,13 +178,11 @@ async def mirror_referenced_projects(attachments: Any, someone_typeid: str | Non
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
     project_ids: list[str] = []
-    for att in attachments or []:
-        kind = getattr(att, "attachment_type", None) or (att.get("attachment_type") if isinstance(att, dict) else None)
-        data = getattr(att, "data", None) or (att.get("data") if isinstance(att, dict) else None)
-        if kind != AttachmentType.TYPE_ID or not isinstance(data, str):
+    for att in attachments:
+        if att.attachment_type != AttachmentType.TYPE_ID or not att.data:
             continue
         try:
-            tid = TypeId(data)
+            tid = TypeId(att.data)
         except (ValueError, TypeError):
             continue
         if tid.type == BuiltinEntityType.PROJECT.value and tid.id and tid.id not in project_ids:
