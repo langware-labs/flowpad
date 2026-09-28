@@ -1331,14 +1331,21 @@ class DataSource(Entity):
         the answer goes back without the secrets. Never raises for an outcome."""
         from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
         from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
-        from flow_sdk.sources.setup_steps import PUBLIC_WEBHOOK, SourceUpdateSpec, setup_steps  # noqa: PLC0415
+        from flow_sdk.sources import setup_steps as steps  # noqa: PLC0415
+        from flow_sdk.sources.setup_steps import SourceUpdateSpec, setup_steps  # noqa: PLC0415
 
         driver = await DataDriver.get(self.provider or "")
         if driver is None:
             return ReturnedValue.not_found(f"no data driver {self.provider!r}")
         try:
-            if name == PUBLIC_WEBHOOK:
+            if name == steps.PUBLIC_WEBHOOK:
                 answer = await self._public_webhook(driver, check=check)
+            elif name == steps.VERIFY:
+                answer = await self._verify_step(check=check)
+            elif name == steps.ANSWERED:
+                answer = await self._answered_step(check=check)
+            elif name == steps.FIRST_TURN:
+                answer = await self._first_turn_step(check=check, wait=float((values or {}).get("wait") or 0))
             else:
                 method = setup_steps(driver.cls).get(name)
                 if method is None:
@@ -1356,6 +1363,62 @@ class DataSource(Entity):
                 await self._keep(driver, update)
             answer = answer.model_copy(update={"value": update.model_copy(update={"secrets": {}}).model_dump()})
         return answer
+
+    async def _verify_step(self, *, check: bool):
+        """The driver's own verify, as a step: ``check`` reads the status, the call re-runs it (and makes
+        the source active when it passes)."""
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+
+        if check:
+            active = self.status == SourceStatus.ACTIVE.value
+            return ReturnedValue.satisfied("active") if active else ReturnedValue.not_yet(self.setup_detail or "not verified")
+        verdict = await self.verify() or {}
+        detail = str(verdict.get("detail") or "")
+        return ReturnedValue.satisfied(detail or "verified") if verdict.get("ready") else ReturnedValue.not_yet(detail)
+
+    async def _answered_step(self, *, check: bool):
+        """Someone answers what arrives: the owning agent has a local deployment serving on this computer
+        (``Agent.run_locally``, which a call here starts when none is)."""
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+        from flow_sdk.stream_inbox.projection import owning_agent  # noqa: PLC0415
+
+        agent = await owning_agent(self)
+        if agent is None:
+            return ReturnedValue.not_applicable("this source belongs to a person, not an agent")
+        serving = [d for d in await agent.deployments() if d.target.provider == "local" and d.serving]
+        if serving:
+            return ReturnedValue.satisfied(f"{agent.name} answers here", ran=not check)
+        if check:
+            return ReturnedValue.not_yet(f"{agent.name} is not running on this computer")
+        await agent.run_locally()
+        return ReturnedValue.satisfied(f"{agent.name} now answers here")
+
+    async def _first_turn_step(self, *, check: bool, wait: float):
+        """The conversation works: a message from an allowed sender (anyone, when none are named) and one
+        after it from someone else — the answer. Without ``check`` it waits up to ``wait`` seconds (the
+        person is sending it from their phone) for that to be true."""
+        import asyncio  # noqa: PLC0415
+        import time  # noqa: PLC0415
+
+        from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.returned_value_spec import ReturnedValue  # noqa: PLC0415
+
+        allowed = {"".join(ch for ch in s if ch.isalnum()) for s in (self.allowed_senders or [])}
+
+        async def talked() -> bool:
+            rows = sorted(await SourceItem.get_all({"data_source_id": str(self.id)}) or [], key=lambda r: r.occurred_at or "")
+            mine = lambda r: not allowed or "".join(ch for ch in str(r.author_external_id or "") if ch.isalnum()) in allowed  # noqa: E731
+            first = next((i for i, r in enumerate(rows) if mine(r)), None)
+            return first is not None and any(not mine(r) for r in rows[first + 1:])
+
+        deadline = time.monotonic() + (0 if check else max(0.0, wait))
+        while True:
+            if await talked():
+                return ReturnedValue.satisfied("a message came in and the answer went back", ran=not check)
+            if time.monotonic() >= deadline:
+                return ReturnedValue.not_yet("no conversation yet — send a message from your phone")
+            # A wait on a person, polled at a human pace: the person is typing on their phone.
+            await asyncio.sleep(2.0)
 
     async def _open_for_setup(self, driver):
         """This source, opened as far as its setup allows: with its credential when it resolves, else

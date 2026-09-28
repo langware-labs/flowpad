@@ -118,3 +118,25 @@ async def test_public_webhook_asks_the_hub_for_this_desktops_url_with_a_fresh_ve
     assert token and body["verify_token"] == token, "the hub answers the handshake with the token the source keeps"
     assert kept["credentials"] == [("stubcred", {"STUB_WEBHOOK_URL": "https://hub.example/api/v1/webhook/w-1"})]
     assert answer.exit_code is ExitCode.OK
+
+
+async def test_first_turn_holds_once_an_allowed_sender_spoke_and_an_answer_followed(stub, monkeypatch):
+    from types import SimpleNamespace
+
+    from flow_sdk.builtin.source_item import SourceItem
+
+    name, _ = stub
+    rows: list = []
+
+    async def get_all(*_a, **_kw):
+        return rows
+
+    monkeypatch.setattr(SourceItem, "get_all", get_all)
+    source = DataSource(provider=name, name="bot", allowed_senders=["+972 50-000-0000"])
+    item = lambda who, at: SimpleNamespace(author_external_id=who, occurred_at=at)  # noqa: E731
+
+    assert (await source.step("first-turn", check=True)).exit_code is ExitCode.NOT_YET
+    rows[:] = [item("15550001111", "2026-09-28T10:00:00"), item("972500000000", "2026-09-28T10:01:00")]
+    assert (await source.step("first-turn", check=True)).exit_code is ExitCode.NOT_YET, "no answer after the person yet"
+    rows.append(item("15550001111", "2026-09-28T10:01:05"))
+    assert (await source.step("first-turn", check=True)).exit_code is ExitCode.OK
