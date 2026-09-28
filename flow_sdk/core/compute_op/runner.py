@@ -228,6 +228,12 @@ def _already(spec: ComputeOpSpec, said: CliResult) -> ReturnedValue:
     try:
         value = to_declared(value_from_stdout(said.stdout), spec.output_spec_kind)
     except DeclaredShapeError as error:
+        if not spec.exe_data.VALUE_FROM_CHECK:
+            # An ask whose check is the GOAL's ("the credential is stored", "the app
+            # is known"), not a read of the value: the goal holds, so nobody is asked
+            # — and there is no value to hand on, which is not a failure. This is
+            # what lets a wizard be run again and resume past answered questions.
+            return done
         # The goal holds but the check did not print what the op promises to
         # return — the document disagreeing with itself. Say so.
         return answer.not_yet(

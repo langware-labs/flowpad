@@ -1,0 +1,108 @@
+{
+  "name": "whatsapp-test",
+  "description": "Talk to your agent on WhatsApp from your own phone, through Meta's free test number.",
+  "version": 1,
+  "enabled": true,
+  "icon": "MessageCircle",
+  "steps": [
+    {
+      "id": "ask-app-id",
+      "label": "App ID",
+      "kind": "compute",
+      "ref": "whatsapp-ask-app-id",
+      "bind": "app_id"
+    },
+    {
+      "id": "ask-app-secret",
+      "label": "App secret",
+      "kind": "compute",
+      "ref": "whatsapp-ask-app-secret",
+      "bind": "app_secret"
+    },
+    {
+      "id": "app",
+      "label": "Meta app",
+      "kind": "compute",
+      "ref": "whatsapp-app"
+    },
+    {
+      "id": "ask-phone-number-id",
+      "label": "Phone number ID",
+      "kind": "compute",
+      "ref": "whatsapp-ask-phone-number-id",
+      "bind": "phone_number_id"
+    },
+    {
+      "id": "ask-waba-id",
+      "label": "WhatsApp Business Account ID",
+      "kind": "compute",
+      "ref": "whatsapp-ask-waba-id",
+      "bind": "waba_id"
+    },
+    {
+      "id": "ask-access-token",
+      "label": "Access token",
+      "kind": "compute",
+      "ref": "whatsapp-ask-access-token",
+      "bind": "access_token"
+    },
+    {
+      "id": "number",
+      "label": "Test number",
+      "kind": "compute",
+      "ref": "whatsapp-number"
+    },
+    {
+      "id": "ask-my-number",
+      "label": "Your number",
+      "kind": "compute",
+      "ref": "whatsapp-ask-my-number",
+      "bind": "my_number"
+    },
+    {
+      "id": "me",
+      "label": "Your phone",
+      "kind": "compute",
+      "ref": "whatsapp-me"
+    },
+    {
+      "id": "public-url",
+      "label": "Public URL",
+      "kind": "compute",
+      "ref": "whatsapp-public-url"
+    },
+    {
+      "id": "subscribe",
+      "label": "Meta webhook",
+      "kind": "compute",
+      "ref": "whatsapp-subscribe"
+    },
+    {
+      "id": "verify",
+      "label": "Ready to send",
+      "kind": "compute",
+      "ref": "whatsapp-verify"
+    },
+    {
+      "id": "answered",
+      "label": "Agent running",
+      "kind": "compute",
+      "ref": "whatsapp-answered"
+    },
+    {
+      "id": "ask-say-hi",
+      "label": "Say hi",
+      "kind": "compute",
+      "ref": "whatsapp-ask-say-hi"
+    },
+    {
+      "id": "first-turn",
+      "label": "First conversation",
+      "kind": "compute",
+      "ref": "whatsapp-first-turn",
+      "args": {
+        "wait": "240"
+      }
+    }
+  ]
+}

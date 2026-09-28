@@ -1,0 +1,21 @@
+{
+  "type": "compute_op",
+  "name": "whatsapp-ask-my-number",
+  "label": "Your number",
+  "description": "Your number, for the me step.",
+  "subkind": "ask",
+  "output_spec_kind": "string",
+  "exe_data": {
+    "prompt": "Your own WhatsApp number, with country code",
+    "secret": false,
+    "timeout_seconds": 1800
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" me --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" me --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE me --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

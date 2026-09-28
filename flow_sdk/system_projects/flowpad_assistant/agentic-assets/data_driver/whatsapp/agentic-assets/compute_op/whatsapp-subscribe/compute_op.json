@@ -1,0 +1,23 @@
+{
+  "type": "compute_op",
+  "name": "whatsapp-subscribe",
+  "label": "Meta webhook",
+  "description": "Meta sends this number's messages to the public URL.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" subscribe",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" subscribe",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE subscribe; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" subscribe --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" subscribe --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE subscribe --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}
