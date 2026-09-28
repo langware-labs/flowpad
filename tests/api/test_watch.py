@@ -22,6 +22,7 @@ from flow_sdk.app.actions.watch_registry import (
 from flow_sdk.builtin.project import Project
 from flow_sdk.core.network.connections import get_all_connections
 from flow_sdk.server.app import app
+from tests.unit._project_names import unique_project_name
 
 
 @pytest.fixture
@@ -39,7 +40,7 @@ def connection_id():
 async def watched_project(bootstrapped_client, tmp_path):
     project = Project(
         id=mint_uuid(),
-        name="Watch fixture",
+        name=unique_project_name("Watch fixture"),
         fs_storage_mount_path=str(tmp_path / "project"),
     )
     await project.save(notify=False)
