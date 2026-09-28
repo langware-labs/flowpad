@@ -57,3 +57,66 @@ def test_the_chief_is_recognised_by_what_its_instructions_carry():
 
     assert _turn(instructions=f"{COS_MARKER}\n# Chief of Staff").is_chief_of_staff
     assert not _turn(instructions="You are Dana.").is_chief_of_staff
+
+
+class _Proc:
+    """Just enough process for file actions: a record dir and a workdir."""
+
+    def __init__(self, root):
+        self._root, self.workdir, self.session_id = root, str(root / "work"), "s1"
+
+    def _record_dir(self):
+        return self._root / "record"
+
+
+def _tools(turn) -> list[tuple[str, dict]]:
+    calls = [e["message"]["content"][0] for e in turn.entries if e["type"] == "assistant"]
+    return [(c["name"], c["input"]) for c in calls]
+
+
+def test_file_actions_change_disk_and_record_the_tool_call_a_real_worker_makes(tmp_path):
+    turn = MockTurn(prompt="", process=_Proc(tmp_path), vendor="claude")
+    assert turn.input_dir == tmp_path / "record" / "execution" / "input"
+    assert turn.output_dir == tmp_path / "record" / "execution" / "output"
+
+    draft = turn.write(turn.output_dir / "draft.md", "# CV\nold line")
+    turn.edit(draft, "old line", "new line")
+    final = turn.rename(draft, turn.output_dir / "body.md")
+    turn.write("scratch.txt", "tmp")                       # relative -> the process's workdir
+    turn.delete("scratch.txt")
+
+    assert final.read_text() == "# CV\nnew line" and not draft.exists()
+    assert not (tmp_path / "work" / "scratch.txt").exists()
+    assert turn.read(final) == "# CV\nnew line"
+    assert turn.listdir(turn.output_dir) == ["body.md"]
+    names = [n for n, _ in _tools(turn)]
+    assert names == ["Write", "Edit", "Bash", "Write", "Bash", "Read", "Bash"]
+    assert _tools(turn)[2][1]["command"].startswith("mv ") and _tools(turn)[4][1]["command"].startswith("rm ")
+
+
+def test_a_test_written_handler_replaces_the_default_action(tmp_path):
+    written: list[str] = []
+
+    def wrong_name(turn, path, content):                   # the agent writes the right data under the wrong name
+        (path.parent / "cv_spec.json").parent.mkdir(parents=True, exist_ok=True)
+        (path.parent / "cv_spec.json").write_text(content)
+        written.append(path.name)
+
+    def refuse(turn, path):
+        raise PermissionError(f"read-only: {path}")
+
+    turn = MockTurn(prompt="", process=_Proc(tmp_path), vendor="claude", handlers={"write": wrong_name, "delete": refuse})
+    turn.write(turn.output_dir / "cv.json", "{}")
+    assert written == ["cv.json"] and (turn.output_dir / "cv_spec.json").exists() and not (turn.output_dir / "cv.json").exists()
+    with pytest.raises(PermissionError):
+        turn.delete(turn.output_dir / "cv_spec.json")
+    assert _tools(turn) == [("Write", {"file_path": str(turn.output_dir / "cv.json"), "content": "{}"})], \
+        "a failed action records no tool call"
+
+
+def test_the_driver_hands_its_handlers_to_every_turn(tmp_path):
+    from tests.utils.mock_worker import MockDriver  # noqa: PLC0415
+
+    marker = object()
+    driver = MockDriver(tmp_path, behavior=lambda t: "ok", handlers={"write": marker})
+    assert driver.handlers == {"write": marker}

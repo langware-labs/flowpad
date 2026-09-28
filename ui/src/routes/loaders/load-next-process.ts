@@ -21,7 +21,7 @@
  */
 
 import { t } from '@lingui/core/macro';
-import { AgenticProcess, Shell, tabManager, tabTargetKey, tabsForProject, TypeId } from '@sdk';
+import { AgenticProcess, Shell, tabManager, tabTargetKey, tabsForProject } from '@sdk';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, ShellLoadError } from './load-shell';
 
@@ -33,8 +33,7 @@ export type CleanupKind =
   | 'process_no_shell'
   | 'process_project_missing'
   | 'shell_not_found'
-  | 'shell_error_status'
-  | 'shell_start_failed';
+  | 'shell_error_status';
 
 export interface CleanupRecord {
   kind: CleanupKind;
@@ -137,7 +136,7 @@ export function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
   }
 }
 
-export async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
+export function buildShellCleanup(e: ShellLoadError): CleanupRecord {
   switch (e.kind) {
     case 'not_found':
       return {
@@ -153,18 +152,6 @@ export async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecor
         title: t`Shell unavailable`,
         description: e.errorMessage ?? 'Shell error',
       };
-    case 'start_failed': {
-      // Best-effort close so the user isn't stuck with a zombie row
-      // (mirrors the pre-refactor behaviour at routePlainShellPointer:272-273).
-      await tabManager.closeTarget(new TypeId(Shell.type, e.shellId)).catch(() => {});
-      const desc = describeProcessStartError(e.cause ?? e);
-      return {
-        kind: 'shell_start_failed',
-        shellId: e.shellId,
-        title: desc.title,
-        description: desc.description,
-      };
-    }
   }
 }
 
@@ -214,7 +201,7 @@ export async function loadNextProcess(options: LoadNextProcessOptions = {}): Pro
       return { loaded: { kind: 'shell', shell }, cleaned };
     } catch (e) {
       if (!(e instanceof ShellLoadError)) throw e;
-      cleaned.push(await buildShellCleanup(e));
+      cleaned.push(buildShellCleanup(e));
       tried.add(shellId);
       continue;
     }

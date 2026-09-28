@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
     id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     target_typeid_str: 'markdown-cccccccc-cccc-4ccc-8ccc-cccccccccccc',
     worker_type: 'claude_code',
+    session_id: 'session-with-turns',
   },
 }));
 
@@ -43,6 +44,18 @@ vi.mock('@src/components/entity-execution-panel', () => ({
           data-testid="pick-history"
           onClick={() =>
             (props.onProcessSelected as ((id: string) => void) | undefined)?.('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb')
+          }
+        />
+        <button
+          data-testid="switch-worker-empty"
+          onClick={() =>
+            (props.onActiveWorkerChange as ((args: Record<string, unknown>) => void) | undefined)?.({
+              workerType: 'copilot',
+              activeProcess: { ...mocks.sourceProcess, session_id: null },
+              model: null,
+              projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              workdir: '/source-workspace',
+            })
           }
         />
         <button
@@ -139,6 +152,15 @@ describe('VibeChatPane', () => {
         .getAllByRole('button')
         .map((button) => button.textContent),
     ).toEqual(['Cancel', 'Start new', 'Continue this conversation']);
+  });
+
+  it('switches an empty chat straight to the new worker — nothing to continue, no question', async () => {
+    render(<VibeChatPane process={hostProcess()} />);
+    fireEvent.click(screen.getByTestId('switch-worker-empty'));
+
+    expect(screen.queryByTestId('vibe-worker-switch-dialog')).toBeNull();
+    await waitFor(() => expect(mocks.createProcess).toHaveBeenCalledWith(expect.objectContaining({ workerType: 'copilot' })));
+    expect(mocks.continueProcess).not.toHaveBeenCalled();
   });
 
   it('starts a blank selected-worker chat with the source target', async () => {

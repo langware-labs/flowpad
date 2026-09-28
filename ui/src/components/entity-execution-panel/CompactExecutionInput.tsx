@@ -2,11 +2,17 @@ import { cn } from '@src/lib/utils';
 import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
 import { AttachFilesButton, PickedFileList, usePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
 import { Send, Square } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { caretOnFirstLine, caretOnLastLine, type InputHistory } from '@src/hooks/use-input-history';
 import { PromptHistoryList } from './PromptHistoryList';
 import { readDraft, writeDraft } from './composer-drafts';
+
+/** Lets the owner push text into the composer the user is typing in. */
+export interface CompactExecutionInputHandle {
+  /** Replace the selection at the caret with `text` (native editing: undoable). */
+  insertAtCaret: (text: string) => void;
+}
 
 interface CompactExecutionInputProps {
   onSend: (text: string, files?: File[]) => void | Promise<void>;
@@ -67,6 +73,7 @@ interface CompactExecutionInputProps {
    * than risk one chat's draft appearing in another.
    */
   draftScope?: string;
+  handleRef?: Ref<CompactExecutionInputHandle>;
 }
 
 /**
@@ -97,12 +104,29 @@ export function CompactExecutionInput({
   animateEnqueue = false,
   saveDraft = true,
   draftScope,
+  handleRef,
 }: CompactExecutionInputProps) {
   const { t } = useLingui();
   const scope = saveDraft ? draftScope : undefined;
   const [value, setValue] = useState(() => readDraft(scope));
   const taRef = useRef<HTMLTextAreaElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // insertText goes through the textarea's own editing path: it replaces the
+  // selection, fires `input` (so the controlled value updates) and stays on the
+  // undo stack.
+  useImperativeHandle(
+    handleRef,
+    () => ({
+      insertAtCaret: (text: string) => {
+        const node = taRef.current;
+        if (!node || node.disabled) return;
+        node.focus();
+        document.execCommand('insertText', false, text);
+      },
+    }),
+    [],
+  );
 
   // Persist as the text changes, NOT on unmount: a reload runs no React
   // cleanup, so a draft saved only on the way out would survive navigation and

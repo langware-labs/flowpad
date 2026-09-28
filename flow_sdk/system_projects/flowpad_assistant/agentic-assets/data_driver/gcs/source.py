@@ -19,10 +19,11 @@ import httpx
 from pydantic import AwareDatetime, StringConstraints
 
 from flow_sdk.sources import _paging, http
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import AccessDenied, Rejected, SourceError, SourceUnavailable
+from flow_sdk.sources.families import ObjectSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import FileData, FileItem
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -64,11 +65,10 @@ class GcsConfig(SourceConfig):
     base_url: str = ""
 
 
-class GcsSource(Source):
+class GcsSource(ObjectSource):
 
     Config = GcsConfig
     provider = "gcs"
-    reflects = True
     page_size = MAX_PAGE_SIZE
     connection = "google"
     identity_config_key = "bucket"

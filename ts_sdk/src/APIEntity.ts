@@ -1,7 +1,11 @@
 import type { FSRefJson } from './fs/FSRef';
 import { v4 as uuidv4 } from 'uuid';
-import { ActionInfo, ActionType, EntityExpansion, ExpansionType, JSONSchemaParser, Workspace } from '.';
-import type { IWorkspace } from './entities/workspace';
+import { ActionInfo } from './models/ActionInfo';
+import { ActionType, JSONSchemaParser } from './FlowSync/schema';
+import { ExpansionType } from './FlowSync/expand';
+import { EntityExpansion } from './FlowSync/store';
+import { EntityTypes } from './schema/types';
+import type { IWorkspace, Workspace } from './entities/workspace';
 // Aliased: a bare `Record` import shadows the global `Record<K,V>` utility for
 // this entire file, so every `Record<string, unknown>` in it resolved to the
 // FS record class and failed as a non-generic type.
@@ -17,7 +21,7 @@ import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
 import { normalizeEmail } from './utils/utils';
-import { Callable } from './types';
+import { Callable } from './types/callable';
 
 /**
  * The DisplayTarget an `install()` / `setup()` returns — what the receiver should
@@ -567,7 +571,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this.expand?.auth_scopes.forEach((scope) => {
       scope.forEach((raw) => {
         const tid = new TypeId(raw);
-        if (tid.type === Workspace.type) {
+        if (tid.type === EntityTypes.Workspace) {
           workspaces.push(tid);
         }
       });
@@ -822,10 +826,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // instance in the constructor. Measured, that cost ~300-430ns and ~176
     // bytes per entity — on the hottest constructor in the app — and it needed
     // a prototype-chain guard so it would not shadow a subclass override.
-    if (
-      baseObject.icon === undefined &&
-      (!this.schema || this.isDbField('icon'))
-    ) {
+    if (baseObject.icon === undefined && (!this.schema || this.isDbField('icon'))) {
       const icon = this.icon;
       if (icon !== undefined) baseObject.icon = icon;
     }
@@ -1383,9 +1384,8 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     // The action answers wire JSON, not a hydrated entity — hence `IWorkspace`.
     const ws = await dataManager.callAction<undefined, IWorkspace>(actionInfo);
     if (!ws) return undefined;
-    let workspace = ws.id ? Workspace.getByIdFromCache<Workspace>(ws.id) : null;
-    if (!workspace) workspace = new Workspace(ws);
-    return workspace;
+    const cached = ws.id ? dataManager.getByTypeIdFromCache<Workspace>(new TypeId(EntityTypes.Workspace, ws.id)) : null;
+    return cached ?? (EntityFactory.createEntity({ ...ws, type: EntityTypes.Workspace }) as Workspace);
   }
 
   public findWorkspaceScope(workspaceTypeId: TypeId | null): TypeId[] {

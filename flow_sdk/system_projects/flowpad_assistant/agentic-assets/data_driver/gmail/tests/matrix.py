@@ -11,16 +11,17 @@ from email import policy
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import formatdate, make_msgid
-from typing import Optional
+from typing import Optional, Sequence
 
 from pydantic import SecretStr
 
 from flow_sdk.ingest.driver_registry import asset_module
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 from .test_gmail_source import ADDRESS, ALL_MAIL, PASSWORD, _Gmail, _Imap, _Smtp
 
 message_body = asset_module("gmail").message_body
+message_attachments = asset_module("gmail").message_attachments
 
 CRLF = b"\r\n"
 
@@ -253,12 +254,13 @@ class Double:
             server.server_close()
         self._servers = []
 
-    async def credentials(self, _row) -> Credentials:
-        return Credentials(shape=AuthShape.ENV, values={k: SecretStr(v) for k, v in self.secrets.items()})
+    async def credentials(self, _row) -> ResolvedSecrets:
+        return ResolvedSecrets(shape=AuthShape.ENV, values={k: SecretStr(v) for k, v in self.secrets.items()})
 
-    def deliver(self, text: str, *, sender: str, thread: Optional[str] = None) -> dict:
+    def deliver(self, text: str, *, sender: str, thread: Optional[str] = None, files: Sequence[dict] = ()) -> dict:
         """An inbound message arriving now, in INBOX and All Mail. ``thread`` is the Message-ID it
-        answers (its Gmail thread continues) or a Gmail thread id; None starts a thread."""
+        answers (its Gmail thread continues) or a Gmail thread id; None starts a thread. ``files``
+        (``{name, media_type, bytes}``) ride as MIME attachments."""
         message = EmailMessage(policy=policy.default)
         message["From"], message["To"], message["Subject"] = sender, ADDRESS.lower(), f"From {sender}"
         message["Date"] = formatdate(usegmt=True)
@@ -268,6 +270,9 @@ class Double:
             if thread and thread.startswith("<"):
                 message["In-Reply-To"], message["References"] = thread, thread
             message.set_content(text)
+            for f in files:
+                maintype, _, subtype = f["media_type"].partition("/")
+                message.add_attachment(f["bytes"], maintype=maintype, subtype=subtype, filename=f["name"])
             self.mailbox.deliver(message.as_bytes(), thrid)
         return {"external_id": str(message["Message-ID"]), "thread": thrid}
 
@@ -288,6 +293,8 @@ class Double:
                     "text": message_body(m).strip(),
                     "thread": str(m["In-Reply-To"]) if m["In-Reply-To"] else None,
                     "external_id": str(m["Message-ID"]),
+                    # Only a message that carried files says so — a text send reads as before.
+                    **({"files": [{"name": n, "media_type": t, "bytes": b} for n, t, b in files]} if (files := message_attachments(m)) else {}),
                 }
                 for m in self.mailbox.sent
             ]

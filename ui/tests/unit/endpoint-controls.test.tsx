@@ -65,12 +65,8 @@ vi.mock('@sdk', async (importOriginal) => {
 });
 // Its own dedicated suite covers the call/verdict cycle; here it only needs to exist so the row
 // renders — asserting on its testid is enough to know it is actually wired in.
-import {
-  DEFAULT_MODELS,
-  EndpointControls,
-  SEED_BY_SCOPE,
-  aliasesForPinnedModel,
-} from '@src/components/organization/budgets/EndpointControls';
+import { EndpointControls } from '@src/components/organization/budgets/EndpointControls';
+import { DEFAULT_MODELS, SEED_BY_SCOPE, aliasesForPinnedModel } from '@src/components/organization/budgets/budget-models';
 
 /**
  * REGRESSION: the seed used to be the single `sm` slug, which refused the model a normal prompt

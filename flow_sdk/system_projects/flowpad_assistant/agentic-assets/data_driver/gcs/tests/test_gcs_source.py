@@ -19,7 +19,7 @@ from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.health import SourceHealth, classify
 from flow_sdk.ingest.testing import local_http_server, make_data_source, position
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.errors import NotFound, Rejected
 from flow_sdk.sources.testing import Subject, checks_for
 
@@ -27,7 +27,7 @@ GcsSource = asset_module("gcs").GcsSource
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-TOKEN = Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
+TOKEN = ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("tok"))
 
 
 def _credentials(credentials):
@@ -234,7 +234,7 @@ async def test_a_missing_bucket_is_a_config_error_named_by_its_field(driver, tmp
 
 
 async def test_verify_says_what_to_do_when_there_is_no_credential(driver, tmp_path, monkeypatch):
-    monkeypatch.setattr(driver, "credentials_for", _credentials(Credentials()))
+    monkeypatch.setattr(driver, "credentials_for", _credentials(ResolvedSecrets()))
     with local_http_server(_Bucket()) as base:
         verdict = await driver.verify(_source(tmp_path, base))
     assert verdict.ready is False and "Connect Google" in verdict.detail

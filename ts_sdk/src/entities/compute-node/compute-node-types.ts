@@ -1,7 +1,19 @@
 /**
- * Compute node type definitions.
- * Enums and interfaces for compute provider configuration.
+ * Compute node type definitions — enums and interfaces for compute provider config.
+ *
+ * THE LAYERING RULE THIS FILE ESTABLISHES, stated once for every `*-types.ts` sibling:
+ *
+ * A row's WIRE SHAPE lives below the entity classes; nothing below the classes may
+ * name a class. `APIEntity` is the base of every entity, so if a lower layer (a
+ * bootstrap payload, the store, a page DTO) can only reach a shape THROUGH the module
+ * that also declares `class X extends APIEntity`, the base class ends up loading its
+ * own subclasses. The loader then has to hand someone a half-built module, and
+ * `extends` evaluates against `undefined`. Splitting the shape out is what keeps the
+ * graph acyclic; the class module re-exports it, so importers are unaffected.
+ *
+ * Enforced by `ui/tests/unit/sdk-module-layering.test.ts`.
  */
+import { IEntity } from '../../IEntity';
 
 /**
  * Available compute provider types.
@@ -131,4 +143,29 @@ export interface AppUpgrade {
   /** Tail of the pip/CLI output, so "already the latest" is tellable from
    *  "fetched a new one" without opening a terminal on the box. */
   output?: string;
+}
+
+/**
+ * Interface for ComputeNode entity data.
+ *
+ * `status` is omitted from the base: a compute_node row has no persisted status
+ * field, and the name is taken on the class by the async `status()` call that
+ * asks the provider what the machine is doing.
+ */
+export interface IComputeNode extends Omit<IEntity, 'status'> {
+  name: string;
+  runtime: RuntimeEnvironment;
+  node_provider_type?: ComputeProviderType;
+  node_provider_id?: string;
+  node_config?: Record<string, unknown>;
+  fs_storage_mount_path?: string | null;
+  home_dir?: string | null;
+  /** Whether the box belongs to a single person. Owner-only to change, and only
+   *  through the hub's `auto-login` action — it is in the hub's
+   *  `_immutable_update`, so a PUT carrying it is silently dropped. */
+  auto_login?: boolean;
+  /** Who the box last reported itself signed in as, cached hub-side. `null` (or
+   *  absent) means "not signed in as far as the hub knows", which includes
+   *  "never looked". Read-only: server-owned, never sent. */
+  logged_in_user?: string | null;
 }

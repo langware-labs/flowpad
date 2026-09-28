@@ -57,6 +57,8 @@ class TestDataSourceSend:
             text="Hello",
             subject="Question",
             in_reply_to="<parent@example.com>",
+            files=(),
+            quote=True,
         )
 
     @pytest.mark.asyncio
@@ -72,21 +74,33 @@ class TestDataSourceSend:
         assert driver.send.await_args.kwargs["subject"] == ""
 
     @pytest.mark.asyncio
-    async def test_attachments_refuse_before_provider_io(self, monkeypatch):
-        from flow_sdk.schema.data_spec.dataset_spec import FileRef
-
+    async def test_files_reach_the_driver_as_local_files(self, monkeypatch, tmp_path):
+        report = tmp_path / "report.pdf"
+        report.write_bytes(b"%PDF")
         source = _source()
-        get_driver = AsyncMock()
-        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", get_driver)
-        spec = EmailMessageSpec(
-            to=["friend@example.com"],
-            body="Hello",
-            attachments=[FileRef(path="report.pdf")],
-        )
+        driver = AsyncMock()
+        driver.sends = True
+        driver.send.return_value = SendOutcome(external_id="m-1")
+        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", lambda provider: driver)
 
-        with pytest.raises(NotImplementedError, match="attachments"):
-            await source.send(spec)
-        get_driver.assert_not_called()
+        await source.send(EmailMessageSpec(to=["friend@example.com"], body="Hello", files=[str(report)]))
+
+        (sent,) = driver.send.await_args.kwargs["files"]
+        assert sent.origin.kind == "local" and sent.data.path == str(report)
+        assert sent.data.name == "report.pdf" and sent.data.as_ == "document"
+
+    @pytest.mark.asyncio
+    async def test_a_reply_spec_can_decline_to_quote(self, monkeypatch):
+        source = _source()
+        driver = AsyncMock()
+        driver.sends = True
+        driver.send.return_value = SendOutcome(external_id="m-1")
+        monkeypatch.setattr("flow_sdk.builtin.data_driver.DataDriver.loaded", lambda provider: driver)
+
+        await source.send(MessageSpec(to=["chat-1"], body="Hello", reply_to_external_id="m-0", quote=False))
+
+        assert driver.send.await_args.kwargs["quote"] is False
+        assert driver.send.await_args.kwargs["in_reply_to"] == "m-0"
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("recipients", [[], ["a@example.com", "b@example.com"]])

@@ -25,8 +25,8 @@ from datetime import datetime, timezone
 from typing import Any, ClassVar, Optional
 
 from flow_sdk.builtin.source_item import MessageSpec
-from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.event import DataSourceEvent, EventKind
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -54,9 +54,9 @@ class TaskMessageSpec(MessageSpec):
     """Said into a task's thread: a reply to its owner. The task IS the thread."""
 
     @classmethod
-    def reply_to(cls, m, *, body: str, attachments=()) -> "TaskMessageSpec":
+    def reply_to(cls, m, *, body: str, files=()) -> "TaskMessageSpec":
         thread_key = str(getattr(m, "thread_key", "") or "")
-        return cls(to=[thread_key], body=body, thread_key=thread_key, attachments=list(attachments))
+        return cls(to=[thread_key], body=body, thread_key=thread_key, files=list(files))
 
 
 class TaskManagerConfig(SourceConfig):
@@ -65,7 +65,7 @@ class TaskManagerConfig(SourceConfig):
     principal: str
 
 
-class TaskManagerSource(Source):
+class TaskManagerSource(MessageSource):
 
     Config = TaskManagerConfig
     provider = "task_manager"

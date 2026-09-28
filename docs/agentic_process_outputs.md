@@ -174,19 +174,31 @@ its own document's `[[wiki link]]`.
 shared `resolve_display_target` policy, stamps `generated_by` **from the URL
 scope — never from the body**, and presents it unless `--no-show`.
 
-Not every file an agent writes is an artifact. Nothing is inferred from writes
-and nothing is swept off disk: an artifact is a distinct deliverable — an app, a
-plan, a document, a skill, **a message it sent** — that the user asked for or
-that is the direct product of what they asked for.
+Not every file an agent writes is an artifact. A process works in one of two
+modes, and only one of them produces artifacts without an explicit call:
+
+* **Workdir (the default).** The agent works on top of its `workdir`. Nothing is
+  inferred from its writes and nothing is swept off disk: an artifact is a
+  distinct deliverable — an app, a plan, a document, a skill, **a message it
+  sent** — that the user asked for or that is the direct product of what they
+  asked for, and the agent registers it with `flow artifact`.
+* **Declared output.** The caller declares `output_spec` (`AgenticProcess.run` /
+  `launch(output_spec=…)`); the agent is told the exact layout to write into
+  `execution/output/`, and the folder is loaded back into the answer's `value`.
+  A valid declared output is a product of the run, so its files are registered
+  as the run's Artifacts (`generated_by` = the process) and listed in the
+  answer's `files`. An invalid one is `NOT_YET`; its files stay listed as
+  evidence and are not registered.
 
 The counter-example worth keeping in mind is the **run receipt**: the small JSON
 a worker leaves in `execution/output/` so its caller can read a structured
 result (the `agent` data source's `transport.py` reads its `sent.json`). That is a *return value*, not
 a deliverable — nobody asked for it, and registering it would put a file nobody
 wants to open in the run's output list. The email send registers the
-`source_item` it created, and leaves its receipt alone. The platform has no
-named contract for run return values; the receipt convention is local to its
-driver.
+`source_item` it created, and leaves its receipt alone. The named contract for a
+run's return value is the declared-output mode above ([processes](snippets/processes.md)
+§4). The `agent` data source's receipt predates it and stays local to its driver:
+that driver never declares an output, so its receipt is never registered.
 
 `flow show` remains the display-only verb. The two are distinct contracts:
 `show` changes display focus, `artifact` records durable provenance and may also

@@ -30,7 +30,7 @@ from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, 
 from pydantic import StringConstraints
 
 from flow_sdk.sources import http
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import ChoiceEntry, SourceConfig
 from flow_sdk.sources.errors import (
@@ -42,6 +42,7 @@ from flow_sdk.sources.errors import (
     SourceUnavailable,
     Unsupported,
 )
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.protocols import Verdict
 from flow_sdk.sources.values.items import MessageData, MessageItem, UserProfile
 from flow_sdk.sources.values.origin import CloudOrigin
@@ -81,7 +82,7 @@ class TeamsConfig(SourceConfig):
     base_url: str = ""
 
 
-class TeamsSource(Source):
+class TeamsSource(MessageSource):
 
     Config = TeamsConfig
     provider = "teams"

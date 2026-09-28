@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -104,10 +104,10 @@ async def resolve_reply_target(conversation_id: str, *, source_id: str | None = 
     self_ids = await User.self_ids()
     target = next((m for m in channel_messages if not (m.sender and m.sender.authored_by(self_ids))), None)
     if target is None:
-        # Every message here is ours — a thread we started and nobody answered.
-        # The original recipient is not recorded anywhere, and guessing one is
-        # how a reply reaches the wrong person.
-        raise ChannelSendUnavailable("no one else has written in this thread yet")
+        # Every message here is ours — a conversation we started and nobody answered yet. It is
+        # addressed by who it is WITH (`Conversation.address`, stamped from our first message's
+        # recipients), never by a guess: without an address there is nobody to write to.
+        return await _started_target(conversation_id, channel_messages[0])
 
     # Defensive reads end here: these are typed entities.
     origin = target.origin
@@ -147,12 +147,42 @@ async def _target_for_item(item, source=None) -> ReplyTarget:
     return _reply_target(source, item, str(getattr(source, "channel", "") or source.provider))
 
 
-def _reply_target(source, item, channel: str) -> ReplyTarget:
+async def _started_target(conversation_id: str, newest) -> ReplyTarget:
+    """The target of a conversation only we have written in: its address, on its thread."""
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    conversation = await Conversation.get_one({"id": conversation_id})
+    address = list(getattr(conversation, "address", None) or [])
+    local = newest.origin_local
+    if not address or local is None:
+        raise ChannelSendUnavailable("no one else has written in this thread yet")
+    source, item = await asyncio.gather(
+        DataSource.get_one({"id": local.data_source_id}),
+        SourceItem.get_one({"id": local.source_item_id}),
+    )
+    if source is None:
+        raise ChannelSendUnavailable("the data source this arrived through is gone")
+    driver = _sending_driver(source, newest.origin.kind)
+    return ReplyTarget(
+        driver=driver, source=source, channel=newest.origin.kind, to=address[0],
+        thread_key=str(getattr(item, "thread_key", "") or ""), subject=str(getattr(item, "name", "") or ""), in_reply_to="",
+    )
+
+
+def _sending_driver(source, channel: str):
+    """*source*'s driver, when it can send; else why not."""
     from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
 
     driver = DataDriver.loaded(source.provider)
     if driver is None or not driver.sends:
         raise ChannelSendUnavailable(f"the {channel} transport cannot send")
+    return driver
+
+
+def _reply_target(source, item, channel: str) -> ReplyTarget:
+    driver = _sending_driver(source, channel)
 
     # ASK the channel who a reply is addressed to; do not assume. `outbound_spec`
     # is the one seam that answers it — `DataSource.reply_spec` is the same
@@ -180,6 +210,36 @@ def _reply_target(source, item, channel: str) -> ReplyTarget:
     )
 
 
+async def quoting(target: ReplyTarget, reply_to) -> ReplyTarget:
+    """*target* answering one chosen message (a FlowMessage, or its id) instead of the newest. Only
+    the reference changes: WHO the reply goes to and on which thread stays the target's — quoting our
+    own message on email must still mail the other person."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+
+    message = await FlowMessage.get_one({"id": str(reply_to)}) if isinstance(reply_to, str) else reply_to
+    item_id = getattr(message, "source_item_id", None) if message is not None else None
+    item = await SourceItem.get_one({"id": str(item_id)}) if item_id else None
+    if item is None or not item.external_id:
+        raise ChannelSendUnavailable("the message to reply to did not come through this channel")
+    if str(item.data_source_id) != str(target.source.id):
+        raise ChannelSendUnavailable("the message to reply to is on another channel")
+    return replace(target, in_reply_to=item.external_id)
+
+
+def outgoing_files(target: ReplyTarget, files) -> tuple:
+    """*files* (paths or ``MessageFile``s) as the contract's local files, checked against the channel
+    — a refusal names the file and the limit, before anything is sent."""
+    from flow_sdk.builtin.source_item import MessageFile  # noqa: PLC0415
+    from flow_sdk.sources.files import resolve_files  # noqa: PLC0415
+
+    items = tuple(MessageFile.model_validate(f).to_item() for f in files or ())
+    if not items:
+        return ()
+    driver = target.driver
+    return resolve_files(items, driver.cls.files, title=driver.display_title)
+
+
 async def dispatch_channel_reply(
     conversation_id: str,
     *,
@@ -187,10 +247,16 @@ async def dispatch_channel_reply(
     source_id: str | None = None,
     item=None,
     source=None,
+    reply_to=None,
+    files=(),
 ):
     """Accept a reply and start it. Returns once DISPATCHED. ``item`` is the message this answers;
     without it the reply answers the newest message someone else wrote. ``source`` is ``item``'s
-    already-loaded row, when the caller holds one."""
+    already-loaded row, when the caller holds one.
+
+    ``reply_to`` (a FlowMessage or its id) quotes that message; without it a person's reply does not
+    quote — a channel whose replies only thread keeps its reference either way. ``files`` are checked
+    here, so a refusal reaches the caller rather than the log."""
     from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
     try:
@@ -199,11 +265,15 @@ async def dispatch_channel_reply(
             if item is not None
             else resolve_reply_target(conversation_id, source_id=source_id)
         )
-    except ChannelSendUnavailable as exc:
+        if reply_to:
+            target = await quoting(target, reply_to)
+        outgoing = outgoing_files(target, files)
+    except (ChannelSendUnavailable, ValueError) as exc:
         return ApiFailResponse(message=str(exc))
+    quote = bool(reply_to) or item is not None
 
     task = asyncio.create_task(
-        _run_send(conversation_id, target, text),
+        _run_send(conversation_id, target, text, files=outgoing, quote=quote),
         name=f"channel_send_{conversation_id[:8]}",
     )
     _INFLIGHT.add(task)
@@ -212,21 +282,29 @@ async def dispatch_channel_reply(
     return ApiSuccessResponse(data={"accepted": True, "channel": target.channel, "to": target.to})
 
 
-async def _run_send(conversation_id: str, target: ReplyTarget, text: str) -> None:
+async def send_to(conversation_id: str, target: ReplyTarget, text: str, *, files: tuple = (), quote: bool = True):
+    """*text* (and *files*, the contract's local files) into the conversation, where *target* says —
+    the one outbound send. Answers the ``SendOutcome``."""
+    return await target.driver.send(
+        target.source,
+        thread_key=target.thread_key,
+        to=target.to,
+        text=text,
+        subject=target.subject,
+        conversation_id=conversation_id,
+        in_reply_to=target.in_reply_to,
+        files=files,
+        quote=quote,
+    )
+
+
+async def _run_send(conversation_id: str, target: ReplyTarget, text: str, *, files: tuple = (), quote: bool = True) -> None:
     """The background half. Never raises — a failed reply must not take down
     the request that started it, and the worker's own record is the trail."""
     from flow_sdk.builtin.agentic_process.launch_health import LaunchError  # noqa: PLC0415
 
     try:
-        outcome = await target.driver.send(
-            target.source,
-            thread_key=target.thread_key,
-            to=target.to,
-            text=text,
-            subject=target.subject,
-            conversation_id=conversation_id,
-            in_reply_to=target.in_reply_to,
-        )
+        outcome = await send_to(conversation_id, target, text, files=files, quote=quote)
         logger.info(
             "[channel-send] %s → %s %s (id=%s, artifact=%s)",
             target.channel,

@@ -21,10 +21,11 @@ from typing import Annotated, Any, AsyncGenerator, ClassVar, Mapping, Optional, 
 
 from pydantic import StringConstraints
 
-from flow_sdk.sources.base import Source, positive_int
+from flow_sdk.sources.base import positive_int
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.config import SourceConfig
 from flow_sdk.sources.errors import AccessDenied, InvalidCursor, Rejected, SourceUnavailable, Unsupported
+from flow_sdk.sources.families import MessageSource
 from flow_sdk.sources.values.items import EmailMessageData, MessageData, MessageItem
 from flow_sdk.sources.values.origin import CloudOrigin
 from flow_sdk.sources.values.page import MAX_PAGE_SIZE, ChangePage
@@ -128,7 +129,7 @@ class AgentConfig(SourceConfig):
     send_deadline_seconds: int = 120
 
 
-class AgentSource(Source):
+class AgentSource(MessageSource):
 
     Config = AgentConfig
     provider = "agent"

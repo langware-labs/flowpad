@@ -10,13 +10,12 @@ kind is a cloud origin — and keeps the local half beside it.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
-
 from flow_sdk.fs_store.origin.fs_origin import CLOUD_ORIGIN_KIND, ORIGIN_MODELS
+from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.origin import CloudOrigin
 
 
-class CloudOriginLocal(BaseModel):
+class CloudOriginLocal(DataSpec):
     """The local row pointers behind a cached cloud record. NEVER leaves the machine.
 
     Split out of :class:`CloudOrigin` because these two ids are row ids in THIS

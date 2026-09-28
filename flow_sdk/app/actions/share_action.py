@@ -10,6 +10,7 @@ to the hub through ``FlowpadClient`` using the stored cloud credentials.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from json import JSONDecodeError
 
 from fastapi import HTTPException
@@ -147,9 +148,10 @@ async def share_entity() -> ApiResponse:
             return ApiFailResponse(
                 status_code=blocked.status_code, message=blocked.message, data=blocked.data()
             )
-        # Carry the exact origin that passed the authoritative preflight into
-        # the share operation and, below, into the durable local row.
-        entity.origin = project_git_origin
+        # A folder that is a clean git checkout still advertises its origin; its
+        # published assets travel through the project's hub repo either way.
+        if project_git_origin is not None:
+            entity.origin = project_git_origin
 
     type_info = SchemaRegistry.get(target.type)
     if type_info is not None and type_info.git_publishable:
@@ -405,8 +407,12 @@ async def conversation_send_external() -> ApiResponse:
 
     body = await request_info.get_post_data() or {}
     text = str((body or {}).get("text") or (body or {}).get("message") or "").strip()
-    if not text:
+    uploads = (body or {}).get("files") or []
+    if not isinstance(uploads, list):
+        uploads = [uploads]
+    if not text and not uploads:
         return ApiFailResponse(message="send_external: an empty message is not a reply")
+    reply_to = str((body or {}).get("reply_to_id") or "").strip() or None
 
     agent_id = str((body or {}).get("agent_id") or "").strip()
     if agent_id:
@@ -427,4 +433,45 @@ async def conversation_send_external() -> ApiResponse:
     # agent's "first" source: an agent with a mailbox AND a channel answers each on its channel.
     # The scope check above is what makes an agent's send legitimate: a conversation in the
     # agent's stream inbox came through a source the agent owns.
-    return await dispatch_channel_reply(request_info.target_entity_typeid.id, text=text)
+    files = await _keep_uploads(request_info.target_entity_typeid.id, uploads)
+    return await dispatch_channel_reply(request_info.target_entity_typeid.id, text=text, reply_to=reply_to, files=files)
+
+
+async def _keep_uploads(conversation_id: str, uploads: list) -> list[str]:
+    """Files a person attached, written where they outlive the request — the send runs after it
+    returns, and the sent copy keeps its own durable copy (``DriverRuntime._keep_sent``)."""
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+    paths = []
+    for upload in uploads:
+        if not hasattr(upload, "read"):
+            continue
+        name = Path(str(getattr(upload, "filename", "") or "file")).name or "file"
+        home = data_dir_for("conversation", conversation_id) / "outbox" / mint_uuid() / name
+        home.parent.mkdir(parents=True, exist_ok=True)
+        home.write_bytes(await upload.read())
+        paths.append(str(home))
+    return paths
+
+
+@action.post(action_name="react", types=["flow_message"])
+async def flow_message_react() -> ApiResponse:
+    """``POST /graph/flow_message/<id>/react`` ``{emoji, remove?}`` — put (or take back) our emoji on a
+    channel message. Synchronous, so a channel's refusal ("🦄 is not a reaction this channel shows")
+    reaches the person who clicked. Answers the message's reactions after."""
+    from flow_sdk.sources.errors import SourceError  # noqa: PLC0415
+    from flow_sdk.stream_inbox.reactions import react, unreact  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail="react: target message typeid required")
+    body = await request_info.get_post_data() or {}
+    emoji = str(body.get("emoji") or "").strip()
+    remove = str(body.get("remove") or "").lower() in ("1", "true", "yes")
+    message_id = request_info.target_entity_typeid.id
+    try:
+        reactions = await (unreact(message_id, emoji) if remove else react(message_id, emoji))
+    except (SourceError, ValueError, LookupError) as exc:
+        return ApiFailResponse(message=str(exc))
+    return ApiSuccessResponse(data={"reactions": [r.model_dump(mode="json") for r in reactions]})

@@ -88,9 +88,10 @@ different options:
 - `design` with `data-testid="mcp-ui-multiselect-design"`
 - `implementation` with `data-testid="mcp-ui-multiselect-implementation"`
 
-After the host sends the follow-up prompt back to you, reply with the exact marker
-`MCP_UI_RECEIVED` and echo every submitted value, including the file name and text
-preview.
+After the host sends the follow-up prompt back to you, echo every submitted value,
+including the file name and text preview, so the user can catch a mistake. In this demo
+only, open that reply with the marker `MCP_UI_RECEIVED`; a form in an agent that people
+use should never answer with a protocol marker.
 
 ## Minimal inline bridge
 

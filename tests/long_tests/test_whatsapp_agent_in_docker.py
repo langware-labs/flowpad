@@ -203,5 +203,5 @@ def test_the_snippet_alone_puts_an_agent_on_whatsapp_and_it_answers(rig, variant
     assert "cracked screen. What should I do?" not in reply["text"], "the reply is an answer, not the question"
     assert str(rows[0].get("owner") or "").startswith("agent-"), "the source is the agent's"
     if variant == "A":
-        assert rows[0].get("inbound_allowed_senders") == [channel["sender"]], "the source carries the allowlist the runner gates on"
+        assert rows[0].get("allowed_senders") == [channel["sender"]], "the source carries the allowlist the runner gates on"
         assert "run_whatsapp_agent" not in _exec(c["name"], "cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\\0' ' '"), "nothing of the snippet's stays running: the backend answered"

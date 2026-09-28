@@ -62,6 +62,9 @@ async def test_snippet_2_mirror_one_folder_into_another(tree):
 async def test_snippet_3_react_to_a_change(tree):
     """`on_tag` returns its own unsubscribe, and the payload names what moved."""
     src, _ = tree
+    printed: list[tuple] = []
+    ns = await run_fence(fence_under(doc("pipes.md"), "3."), {"print": lambda *a: printed.append(a)},
+                         filename="pipes.md §3")          # the fence as written; its print is watched
     seen: list[dict] = []
     off = on_tag("ingest.*.change.received", lambda event: seen.append(event.data))
     try:
@@ -70,7 +73,9 @@ async def test_snippet_3_react_to_a_change(tree):
         emit_change("src-1", "folder", refs=[str(src / "alpha.md")], tombstones=[])
     finally:
         off()
+        ns["off"]()                                         # the fence's own unsubscribe
 
+    assert printed and printed[0][0] == "src-1" and printed[0][1] == [str(src / "alpha.md")]
     assert seen and seen[0]["source_id"] == "src-1"
     assert seen[0]["refs"] == [str(src / "alpha.md")]
     # Identity and a locator, never content — that is what makes a replay harmless.
@@ -98,16 +103,6 @@ async def _acked_signal(monkeypatch):
     return fired
 
 
-def _pipes_doc(name: str) -> str:
-    """The page with its workflow names made unique per test — positions are keyed on them."""
-    from flow_sdk.api.api_types.identifier import mint_uuid
-
-    text = doc("pipes.md")
-    for wf in ("mirror", "triage", "docs-rag", "digest"):
-        text = text.replace(f'workflow("{wf}")', f'workflow("{wf}-{mint_uuid()}")')
-    return text
-
-
 async def test_snippet_2_follow_a_folder(tmp_path, monkeypatch):
     from tests.utils.snippets import fence_under, run_fence_until
 
@@ -116,7 +111,7 @@ async def test_snippet_2_follow_a_folder(tmp_path, monkeypatch):
     (src / "alpha.md").write_text("# Alpha\n\nThe first note.\n")
     acked = await _acked_signal(monkeypatch)
     ns = {"SRC": str(src), "DEST": str(dest)}
-    await run_fence_until(fence_under(_pipes_doc("pipes.md"), "2.", nth=1), ns, acked, filename="pipes.md §2")
+    await run_fence_until(fence_under(doc("pipes.md"), "2.", nth=1), ns, acked, filename="pipes.md §2")
     assert (dest / "alpha.md").exists(), "the block mirrors like the source above"
     assert ns["change"].added and ns["change"].added[0].endswith("alpha.md")
 
@@ -128,7 +123,7 @@ async def test_snippet_4_cadence(tmp_path, monkeypatch):
     src.mkdir()
     (src / "a.md").write_text("# a\n\nbody\n")
     acked = await _acked_signal(monkeypatch)
-    await run_fence_until(fence_under(_pipes_doc("pipes.md"), "4."), {"SRC": str(src)}, acked, filename="pipes.md §4")
+    await run_fence_until(fence_under(doc("pipes.md"), "4."), {"SRC": str(src)}, acked, filename="pipes.md §4")
 
 
 async def test_snippet_5_an_agent_on_several_sources(tmp_path, monkeypatch):
@@ -149,7 +144,7 @@ async def test_snippet_5_an_agent_on_several_sources(tmp_path, monkeypatch):
     with scripted_provider("agentmail") as mail:
         mail.push({"body": "please triage", "author": "alice@example.com", "thread_key": "t1"})
         await run_fence_until(
-            fence_under(_pipes_doc("pipes.md"), "5."), {"KEY": "k", "SRC": str(src)}, mail.settled, filename="pipes.md §5"
+            fence_under(doc("pipes.md"), "5."), {"KEY": "k", "SRC": str(src)}, mail.settled, filename="pipes.md §5"
         )
     assert worker.received_prompts == ["please triage"], "the folder page was acked, not answered"
     assert len(mail.sent) == 1
@@ -182,7 +177,7 @@ async def test_snippet_6_keep_a_search_index_level(tmp_path, monkeypatch):
     (src / "walk.md").write_text("# Walk\n\nThe walker skips ignored directories on the way down.\n")
     acked = await _acked_signal(monkeypatch)
     ns = {"SRC": str(src)}
-    await run_fence_until(fence_under(_pipes_doc("pipes.md"), "6."), ns, acked, filename="pipes.md §6")
+    await run_fence_until(fence_under(doc("pipes.md"), "6."), ns, acked, filename="pipes.md §6")
     assert ns["report"].embedded > 0
     hits = await ns["index"].search("which directories does the walker skip", top_k=1)
     assert hits and hits[0].doc_ref.endswith("walk.md")
@@ -198,10 +193,10 @@ async def test_snippet_7_pages_fifty_at_a_time(monkeypatch):
     with scripted_provider("agentmail") as mail:
         mail.push(*({"body": f"m{i:03d}", "author": "alice@example.com", "thread_key": f"t{i}"} for i in range(120)))
         ns = await run_fence_until(
-            fence_under(_pipes_doc("pipes.md"), "7."), {"KEY": "k"}, acked, filename="pipes.md §7"
+            fence_under(doc("pipes.md"), "7."), {"KEY": "k"}, acked, filename="pipes.md §7"
         )
     assert len(ns["digest"]) == 50, "the first page is 50 deliveries"
     # The fence is cancelled on the first ack; the other source's page may or may not have been
     # acked by then. Whatever was: one page is one write on ITS source's position.
-    positions = [p for p in await ConsumerPosition.get_all({}) if p.consumer.startswith("digest-") and p.acked_count]
+    positions = [p for p in await ConsumerPosition.get_all({}) if p.consumer == "digest" and p.acked_count]
     assert 1 <= len(positions) <= 2 and {p.acked_count for p in positions} == {1}, "one page, one write, one source's position"

@@ -44,9 +44,22 @@ conversation rather than as a data driver, since native messages arrive live thr
 the hub mirror and there is nothing to poll. The projection's `Conversation.adopt_channel`
 replaces that home channel with the source's channel when it places the first message (a
 help desk ticket is born `flowpad` and becomes `helpdesk`); a source channel is never
-overwritten. What a channel IS — chip, transport, attachments, sessions — is
+overwritten. What a channel IS — chip, transport, attachments, quotes, reactions, sessions — is
 `Conversation.channel_spec` (`ChannelSpec`, `schema/data_spec/channel_spec.py`); surfaces
-read those traits and never test the channel's name or treat a missing channel as "ours".
+read those traits and never test the channel's name or treat a missing channel as "ours". A
+source channel's `accepts_attachments`, `quotes` and `reacts` are read off the class of the driver
+behind it — `Conversation.channel_provider` (PRIVATE, stamped with `channel_source_id`), because two
+drivers can speak one channel (WhatsApp's Cloud API and WAHA are both `whatsapp`).
+
+**A conversation knows who it is with and when it ran.** `stamp_conversation` stamps each placed
+message onto its `Conversation`: `started_at` is the earliest message's event time; `address` gains
+each other side's sender, and a conversation WE opened names its recipients from our first message
+(only while `address` is empty) — so `DataSource.start(to=, body=)` returns a conversation that
+`Conversation.send(body)` can continue before anyone answers (`resolve_reply_target` falls back to
+`address` when every message is ours). `ended_at` is set once: when a call's line goes down
+(`agent_calls`) and when `resolve_thread` retires a thread past its channel's timeout
+(`end_conversation`, stamped with the last message's time). The deployment timeline reads
+`ended_at`; it never matches message text.
 
 **The keys.** `channel` is `DataSource.channel`, falling back to `provider`
 for rows written before the field existed. `thread_key` is the driver's
@@ -89,6 +102,17 @@ reply's `reply_to_external_id` as key — then its message by
 `envelope` — sender, recipients, subject and event time as `UserProfile`s — is
 read from the item's payload and stamped PRIVATE, like `sent_at`; the message
 bubble renders it and derives nothing.
+
+**Files and reactions ride the message.** The files a channel message carried were copied
+to the source's own data dir while the provider's session was open (`DriverRuntime._stage`);
+the projection hard-links each into the message's embedded storage as a FILE `Attachment`
+(`data/<name>`), so a bubble serves it the way it serves a native chat file. A file whose
+bytes never came (`fetch_error`: the link expired) keeps its attachment with nothing on disk
+and renders as not downloaded. A media message with no text is its files' captions
+(`envelope_of`'s `body`), which is what the reference row is hydrated from. `reactions` is
+PRIVATE, projected from `SourceItem.reactions` — the state `stream_inbox/reactions.py` folds
+reaction reports into; a reaction never becomes a message, a thread entry or a turn. The heal
+block keeps both equal to the item on every re-projection.
 
 ## Two clocks — the timestamp law
 

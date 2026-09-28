@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pydantic import SecretStr
 
 from flow_sdk.external_apis.voice.testing import FakeRealtime
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 
 #: A 44-byte silent WAV header: bytes a clip is made of; the fake transcribes it as the utterance.
 WAV = bytes.fromhex("52494646240000005741564566d7420100000001000100401f0000803e0000020010006461746100000000")
@@ -36,7 +36,7 @@ class Double:
         await self.fake.__aexit__(*exc)
 
     async def credentials(self, _row):
-        return Credentials(shape=AuthShape.ENV, values={"OPENAI_API_KEY": SecretStr("sk-test")})
+        return ResolvedSecrets(shape=AuthShape.ENV, values={"OPENAI_API_KEY": SecretStr("sk-test")})
 
     def offer(self) -> dict:
         return {"audio_b64": base64.b64encode(WAV).decode(), "name": "question.wav", "caller": self.sender}
@@ -59,7 +59,7 @@ def case(monkeypatch, tmp_path):
         return 200, b"ID3matrix", {"Content-Type": "audio/mpeg"}
 
     async def credentials(_row):
-        return Credentials(shape=AuthShape.ENV, values={"OPENAI_API_KEY": SecretStr("sk-test")})
+        return ResolvedSecrets(shape=AuthShape.ENV, values={"OPENAI_API_KEY": SecretStr("sk-test")})
 
     monkeypatch.setattr(DataDriver.loaded("voice_file"), "credentials_for", credentials)
     with local_http_server(speech) as base:

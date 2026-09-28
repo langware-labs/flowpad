@@ -11,6 +11,15 @@
       "https://www.googleapis.com/auth/drive.readonly"
     ]
   },
+  "permissions": {
+    "permission.google.drive.read": {
+      "mechanism": "oauth",
+      "oauth_scopes": [
+        "https://www.googleapis.com/auth/drive.readonly"
+      ],
+      "why": "List and read the files of the configured folder."
+    }
+  },
   "reflect": [
     "none",
     "copy"

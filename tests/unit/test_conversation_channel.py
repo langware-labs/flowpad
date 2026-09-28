@@ -67,4 +67,6 @@ def test_a_source_channel_replaces_home_but_is_never_moved_by_a_twin_source():
 
 def test_a_source_channel_wears_a_chip_and_replies_through_its_source():
     spec = Conversation(title="t", channel="slack").channel_spec
-    assert (spec.chip, spec.transport, spec.home, spec.accepts_attachments) == (True, "source", False, False)
+    assert (spec.chip, spec.transport, spec.home) == (True, "source", False)
+    # What it can do is the driver's: Slack takes files and reactions, and its replies thread.
+    assert (spec.accepts_attachments, spec.reacts, spec.quotes) == (True, True, False)

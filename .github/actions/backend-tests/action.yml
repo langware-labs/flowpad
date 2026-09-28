@@ -75,7 +75,7 @@ runs:
         SHARD='${{ inputs.shard }}'
         SHARDS='${{ inputs.shards }}'
         if [ "$SHARDS" -le 1 ]; then
-          uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source -q --long
+          uv run pytest tests/unit flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -q --long
           exit $?
         fi
         # Atoms are DIRECTORIES (plus the loose top-level test files), never
@@ -100,7 +100,7 @@ runs:
         # A data source's own tests live in its asset folder; each folder is an atom.
         done < <( { find tests/unit -mindepth 1 -maxdepth 1 -type d ! -name '__pycache__';
                     find tests/unit -mindepth 1 -maxdepth 1 -name 'test_*.py';
-                    find flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_source -mindepth 2 -maxdepth 2 -type d -name tests; } | sort )
+                    find flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver -mindepth 2 -maxdepth 2 -type d -name tests; } | sort )
         if [ ${#SEL[@]} -eq 0 ]; then
           echo "::error::shard $SHARD/$SHARDS selected no test files — the split is broken"
           exit 1

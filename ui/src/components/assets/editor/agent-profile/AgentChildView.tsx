@@ -10,6 +10,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AssetEditorRouter } from '../AssetEditorRouter';
 import { NestedHostContext, type NestedHost } from '../nested-host';
 import { AgentDeploymentPage } from './deployment/AgentDeploymentPage';
+import { CredentialChild } from './CredentialChild';
 
 function Missing() {
   return (
@@ -63,6 +64,8 @@ export function AgentChildView({ agent, section, typeIdString }: { agent: Agent;
     body = <AgentDeploymentPage agent={agent} deploymentId={typeId.id} />;
   } else if (section === 'channel' || section === 'data_source') {
     body = <SourceChild typeId={typeId} onGone={host.close} />;
+  } else if (section === 'credential') {
+    body = <CredentialChild typeid={typeIdString} onGone={host.close} />;
   } else if (section === 'schedule') {
     body = <ScheduleChild typeId={typeId} onDone={host.close} />;
   } else {

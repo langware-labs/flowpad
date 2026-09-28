@@ -5,7 +5,7 @@ A driver's ``source.py`` owns the shape of its config the way it owns everything
     class FeedConfig(SourceConfig):
         urls: list[Annotated[str, StringConstraints(pattern=r"^https?://")]] = Field(min_length=1)
 
-    class FeedSource(CollectionSource):
+    class FeedSource(RecordSource, CollectionSource):
         Config = FeedConfig
 
 The manifest's ``config`` catalog keeps only what a form needs to draw a field (label, hint, widget);

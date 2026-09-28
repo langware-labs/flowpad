@@ -33,6 +33,8 @@ from flow_sdk.schema.data_spec.data_driver_spec import (
     FieldHints,
     Runtime,
 )
+from flow_sdk.schema.data_spec.permission_spec import PermissionMappingSpec
+from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
@@ -69,6 +71,8 @@ class DataDriver(DriverRuntime, Entity):
     manifest_schema: int = APIField(default=CURRENT_SCHEMA)
     requires: dict[str, str] = APIField(default_factory=dict)
     auth: Optional[AuthSpec] = APIField(default=None)
+    permissions: dict[str, PermissionMappingSpec] = APIField(default_factory=dict)
+    webhook: Optional[DriverWebhookSpec] = APIField(default=None)
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)
@@ -139,9 +143,16 @@ class DataDriver(DriverRuntime, Entity):
 
     @computed_field
     @property
+    def family(self) -> Optional[str]:
+        """``object`` / ``record`` / ``message`` — the base the driver's class extends (files, records,
+        messages); None for a driver nothing has loaded. Computed at serialization for ``sends``'s reason."""
+        driver = self._loaded()
+        return driver.cls.family.value if driver is not None else None
+
+    @computed_field
+    @property
     def sends(self) -> bool:
-        """Whether a source of this driver is a MessageSource — its class can push a reply back to the
-        channel.
+        """Whether a source of this driver answers on its channel: a MessageSource that sends.
 
         Computed at serialization, not derived by the indexer like ``runtime``: the answer lives on
         the source CLASS, and importing source code from inside the indexer's per-record sync

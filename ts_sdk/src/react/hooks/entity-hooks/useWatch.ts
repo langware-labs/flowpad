@@ -1,4 +1,5 @@
-import { dataManager, TypeId } from '@sdk';
+import { dataManager } from '../../../APIEntity';
+import { TypeId } from '../../../models/TypeId';
 import { useEffect } from 'react';
 
 export function useWatch(typeId: TypeId | null, enabled: boolean = true) {

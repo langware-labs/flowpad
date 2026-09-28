@@ -8,7 +8,7 @@ import {
   type ShareInvitee,
 } from '../APIEntity';
 import type { IEntity } from '../IEntity';
-import apiClient, { getRaw } from '../client';
+import { getRaw } from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import {
   ActionInfo,
@@ -36,6 +36,8 @@ import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 import { Wiki } from './wiki';
 import type { ShareResult } from './members';
+import type { IProject, ProjectContextDirInfo, ProjectCustomization, ProjectMember } from './project-types';
+export type * from './project-types';
 
 /** Who a Project share invites beyond the bare people list. */
 export interface ProjectInviteOptions {
@@ -64,13 +66,6 @@ export function inviteFailure(result: ShareResult): Error | null {
   ].join(', ');
   const message = failed[0]?.message ?? failedTeams[0]?.message;
   return new Error(`Could not invite ${who}: ${message}`);
-}
-
-export interface ProjectMember {
-  member_id: string;
-  name: string;
-  joined_at: string | null;
-  last_seen_at: string | null;
 }
 
 export interface ResolveProjectResult {
@@ -176,46 +171,6 @@ export interface ProjectContextFolderResolveResult {
   path?: string;
   message?: string;
   [key: string]: unknown;
-}
-
-/** Mirror of the backend computed `Project.context_dir_infos` entries. */
-export interface ProjectContextDirInfo {
-  path: string;
-  /** Origin kind stamped at link time — "git" for cloned repos, else "local". */
-  origin_kind: string;
-  /** The linked Folder entity's typeid (e.g. "folder-<uuid>") — referenced by
-   *  UI surfaces like the push-notify message chip. Empty for legacy dirs. */
-  typeid?: string;
-}
-
-/** A project's visual identity, from the `brand` block of
- *  `.flow/customization/string.json`. Every field is optional; the block itself
- *  is null unless at least one survived validation.
- *
- *  `logo` / `logo_dark` are REPO-RELATIVE paths the backend has already
- *  confirmed exist and are inside the project root — hand them straight to
- *  `useFS(projectTypeId).getDownloadUrl(path)`, no probe needed. */
-export interface ProjectBrand {
-  name?: string | null;
-  tagline?: string | null;
-  /** CSS colour for the accent. Apply it SCOPED to the branded container, never
-   *  to `documentElement` — see `useHelpdeskBrand`. */
-  accent?: string | null;
-  logo?: string | null;
-  logo_dark?: string | null;
-}
-
-/** Optional per-project branding read from `.flow/customization/`.
- *  Mirrors the backend `Project.customization` computed field. Image bytes are
- *  fetched on demand via the `fs` download action; here only a flag (home
- *  background) or a relative path (brand logos). */
-export interface ProjectCustomization {
-  /** From `.flow/customization/string.json` — overrides the home greeting. */
-  home_title?: string | null;
-  /** True when `.flow/customization/home.png` exists → render it as background. */
-  has_home_background?: boolean;
-  /** Null when the project ships no usable brand block. */
-  brand?: ProjectBrand | null;
 }
 
 /** `GET project/<id>/home-page` — `Project.open_home_page()`. */
@@ -375,7 +330,7 @@ export class Project extends APIEntity<Project> {
    *  `system` means the narrower "SDK-shipped". See `isHiddenProject`. */
   hidden: boolean = false;
 
-  constructor(entity: Partial<Project> = {}) {
+  constructor(entity: Partial<IProject> = {}) {
     super(entity);
     this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
     // The hub sends the git kind under its wire name `git_origin`; a local row says `origin`.

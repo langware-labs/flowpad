@@ -40,7 +40,7 @@ class TestEmailMessageSpec:
         assert r.thread_key == "thr-1"
         assert r.reply_to_external_id == "<m1@provider>"
         assert r.subject == "Re: Probe coffee?"
-        assert r.attachments == []
+        assert r.files == []
 
     def test_an_existing_re_prefix_is_not_stacked(self):
         r = EmailMessageSpec.reply_to(_inbound(name="Re: Probe"), body="x")
@@ -349,16 +349,14 @@ class TestStreamInboxSend:
             "text": "yes!",
             "subject": "Re: Probe coffee?",
             "in_reply_to": "<m1@provider>",
+            "files": (),
+            "quote": True,
         }
 
     @pytest.mark.asyncio
-    async def test_attachments_refuse_loudly_rather_than_dropping(self, stream_inbox):
-        from flow_sdk.schema.data_spec.dataset_spec import FileRef
-
-        spec = EmailMessageSpec(
-            to=["a@b.to"], body="x", attachments=[FileRef(path="report.pdf")]
-        )
-        with pytest.raises(NotImplementedError):
+    async def test_a_file_that_is_not_there_refuses_loudly_before_anything_is_sent(self, stream_inbox, tmp_path):
+        spec = EmailMessageSpec(to=["a@b.to"], body="x", files=[str(tmp_path / "report.pdf")])
+        with pytest.raises(ValueError, match="no such file"):
             await stream_inbox.send(spec)
 
     @pytest.mark.asyncio

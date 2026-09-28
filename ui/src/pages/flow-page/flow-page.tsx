@@ -3,49 +3,30 @@ import { TopNavBar } from '@src/components/top-nav-bar/TopNavBar';
 import { Footer } from '@src/components/footer';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
-import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@src/types/ViewType';
-import { PageId } from '@sdk';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockLayout, resolveDockLayout } from '@src/navigation/dock-layout';
 import { ContentPanel } from './content-panel/content-panel';
 import { VibeWorkspace } from './vibe-workspace';
 import { VibeNewChat } from './vibe-new-chat';
 import { VibeNoProcessWorkspace } from './vibe-no-process-workspace';
 import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
-import { isContentAssetDock, isOwnChatAssetDock, isPreviewAssetDock } from '@src/navigation/content-asset-dock';
 import { AssetVibeWorkspace } from './asset-vibe-workspace';
 
 export default function FlowPage() {
   const isVibe = useIsVibe();
   // A Vibe "session" = a workspace surface: the process's own dock (its ONE
   // shell URL — vibe is a view mode, not a URL family) OR a child tab opened
-  // from inside it. Resolved by one hook so the "is this a workspace surface"
-  // shape lives in one place, reusable by any future workspace-with-children
-  // view. Null on the bare home (centered prompt).
+  // from inside it. Null on the bare home (centered prompt).
   const vibeSession = useVibeWorkspaceSession();
-  // Any OTHER real dock URL in Vibe (project home, assets, a conversation…) is
-  // not a workspace surface, but it is still a navigable destination — it must
-  // render through the normal ContentPanel (which carries its own Vibe skin:
-  // creator surfaces go chrome-less, everything else falls back to Standard
-  // chrome). Only the bare home (no dock URL, or the HOME landing) gets the
-  // VibeNewChat hero. Without this, clicking e.g. the footer project name
-  // (→ /dock/project/<id>) fell through to VibeNewChat and the project home
-  // never opened.
   const { currentDock } = useDockNavigation();
-  const isHomeSurface = useIsHomeSurface();
-  const isVibeNoProcess = currentDock?.viewType === ViewType.HOME && currentDock.options?.vibeNoProcess === 'true';
-  // The hub page is its own SPA-surface — vibe skinning (a desk view-mode) does
-  // not apply. Route it through the standard layout so ContentPanel's page=hub
-  // dispatch renders HubHome / WorldView instead of the desk VibeNewChat hero.
-  const hubMode = currentDock?.page === PageId.HUB;
-  // A `flow show`-pinned preview stays with VibeWorkspace's Display pane rather
-  // than swapping to AssetVibeWorkspace. `isActiveDisplay` is what limits this to
-  // the agent's own pin — a file the USER opened keeps the asset chrome.
-  const isPreviewDisplay = isVibe && !!currentDock && currentDock.isActiveDisplay && isPreviewAssetDock(currentDock);
-  const isAssetContent = !!currentDock && !hubMode && isContentAssetDock(currentDock) && !isPreviewDisplay;
+  // The layout is ONE pure rule (docs/navigation/dock-loading.md, step 5) — this
+  // component renders its answer and decides nothing itself.
+  const { layout, assetChatBeside } = resolveDockLayout({
+    dock: currentDock ?? null,
+    isVibe,
+    hasVibeSession: !!vibeSession,
+  });
 
-  // One common tree keeps asset/file ContentPanel ancestry stable while the URL
-  // changes only its view mode. Non-asset Vibe destinations retain the existing
-  // process-display/new-chat dispatch.
   return (
     /* `flex-col` on the provider's own root (it appends className to a flex div)
        rather than a wrapper of our own: that makes the navigation bar the app's
@@ -66,20 +47,14 @@ export default function FlowPage() {
             pushing the right arrow / close-all / opener toolbar off-screen. */}
         <div className="flex min-w-0 flex-1 flex-col">
           <div className="flex-1 overflow-hidden">
-            {isAssetContent ? (
-              // An asset with its own chat (an agent) is not a Vibe surface: no Vibe chat beside it,
-              // and its normal chrome (tabs + its navigator) instead of the chrome-less canvas.
-              <AssetVibeWorkspace isVibe={isVibe && !isOwnChatAssetDock(currentDock)} session={vibeSession} />
-            ) : isVibe && !hubMode ? (
-              vibeSession ? (
-                <VibeWorkspace session={vibeSession} />
-              ) : isVibeNoProcess ? (
-                <VibeNoProcessWorkspace />
-              ) : isHomeSurface ? (
-                <VibeNewChat />
-              ) : (
-                <ContentPanel />
-              )
+            {layout === DockLayout.ASSET_WORKSPACE ? (
+              <AssetVibeWorkspace isVibe={assetChatBeside} session={vibeSession} />
+            ) : layout === DockLayout.VIBE_WORKSPACE && vibeSession ? (
+              <VibeWorkspace session={vibeSession} />
+            ) : layout === DockLayout.VIBE_NO_PROCESS ? (
+              <VibeNoProcessWorkspace />
+            ) : layout === DockLayout.VIBE_NEW_CHAT ? (
+              <VibeNewChat />
             ) : (
               <ContentPanel />
             )}
