@@ -14532,6 +14532,10 @@ msgstr "فتح البحث الكامل"
 msgid "Open help desk"
 msgstr ""
 
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+msgid "Open in"
+msgstr ""
+
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Open in a new browser tab"
 msgstr "فتح في علامة تبويب جديدة"
