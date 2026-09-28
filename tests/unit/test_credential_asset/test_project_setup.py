@@ -25,9 +25,11 @@ from flow_sdk.cli.commands import credentials_cmd, project_cmd
 from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_OAUTH, REQUIREMENT_PACK
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, PromptResult
 
+from tests.unit.test_credential_asset._shipped import shipped_credential_folders
+
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-SHIPPED = Path(project_setup.__file__).parents[1] / "system_projects/flowpad_assistant/agentic-assets/credential"
+SHIPPED = shipped_credential_folders()
 TOKEN = "123456:telegram-token-never-printed"
 
 
@@ -46,7 +48,7 @@ def _sources(monkeypatch, *providers: str) -> None:
 
 async def test_every_shipped_credential_carries_setup_instructions():
     repo_packs = Path(__file__).parents[3] / "agentic-assets/credential"
-    folders = [*SHIPPED.iterdir(), *(repo_packs.iterdir() if repo_packs.is_dir() else [])]
+    folders = [*SHIPPED.values(), *(repo_packs.iterdir() if repo_packs.is_dir() else [])]
     manifests = [json.loads((f / "credential.json").read_text()) for f in folders if (f / "credential.json").is_file()]
     assert manifests
     bare = [m["name"] for m in manifests if not str(m.get("setup") or "").strip()]
