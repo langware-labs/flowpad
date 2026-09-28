@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, Link as LinkIcon, Loader2, Plus, UserPlus, UsersRound, X } from 'lucide-react';
 import {
@@ -38,6 +38,7 @@ import {
 import { filterGroups, mergeGroupMembers, useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
 import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-roles';
 import { useLocalUser } from './useLocalUser';
+import { nestTeamMembers, useTeamRosters } from './team-member-nesting';
 import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 import {
@@ -141,6 +142,8 @@ export function MembersAvatarStack({
   // (mirrors the hub's ``can_assign`` ceiling), editor+ for invite and — on
   // rows below my rank — remove. The hub enforces all of these too — hiding
   // here just keeps the UI from offering controls that would 403.
+  const teamRosters = useTeamRosters(members);
+  const roster = useMemo(() => nestTeamMembers(members, teamRosters), [members, teamRosters]);
   const me = members.find((m) => !!m.user_id && !!localUser?.id && m.user_id === localUser.id) ?? null;
   const iAmOwner = participantRank(me) === 0;
   // Invite gate applies only when my roster row resolved. A local-only /
@@ -459,6 +462,104 @@ export function MembersAvatarStack({
   // popup (not authenticated) or, in Local mode, opens the popover to a short
   // "unavailable" notice. Offline-but-authenticated is NOT gated here — it shows
   // the cached roster + a "can't update" note (the ``stale`` flag below).
+  // One roster row. ``nested`` rows sit under their team row: their access is
+  // the team's, so they show its role and carry no controls of their own.
+  const renderMember = (p: ConversationParticipant, i: number, key: string, nested: boolean) => {
+    const role = participantRoleLabel(p);
+    // Role selector mirrors the hub ``can_assign`` ceiling: options
+    // strictly below my rank, only on members strictly below my rank,
+    // never my own row / the owner. Empty = render the static label.
+    // Where the surface passes ``inviteRoles`` (the backend's
+    // ``share-roles`` list) the options are that list, the same one
+    // the invite form offers; otherwise the full ladder.
+    // A nested row's access is its team's: no role change, no remove.
+    const roles = nested ? [] : rowRoles(p);
+    const group = isGroupMember(p);
+    const principalId = memberPrincipalId(p);
+    const contact = group || participantIsUser(p, localUser) ? null : contactFromParticipant(p);
+    const identity = (
+      <>
+        <Avatar className="h-6 w-6">
+          {group ? (
+            <AvatarFallback className="bg-muted text-muted-foreground" data-testid="member-team-icon">
+              <TeamIcon className="h-3.5 w-3.5" aria-hidden />
+            </AvatarFallback>
+          ) : (
+            <AvatarFallback
+              className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
+            >
+              {participantInitials(p)}
+            </AvatarFallback>
+          )}
+        </Avatar>
+        <span className="flex-1 truncate">{participantLabel(p)}</span>
+      </>
+    );
+    return (
+      <li
+        key={key}
+        className={`flex items-center gap-2 text-xs ${nested ? 'ms-6' : ''}`}
+        data-testid={nested ? 'member-nested' : undefined}
+      >
+        {contact ? (
+          <button
+            type="button"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
+            onClick={() => {
+              setPermissionsContact(contact);
+              setOpen(false);
+            }}
+            aria-label={`Open permissions for ${participantLabel(p)}`}
+            data-testid={`member-contact-${p.user_id || p.email || i}`}
+          >
+            {identity}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
+        )}
+        {roles.length > 0 ? (
+          <select
+            aria-label={`Change role of ${participantLabel(p)}`}
+            data-testid="member-role-select"
+            value={(p.role ?? '').toLowerCase()}
+            disabled={changingId === p.user_id}
+            onChange={(e) => void handleRoleChange(p.user_id as string, e.target.value)}
+            className="rounded border border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
+          >
+            {/* Current role stays selectable when it's outside the
+        offered menu (a rankable-but-not-assignable role like
+        ``guest``, or a comma-joined multi-role value) so the
+        select never shows a blank value. */}
+            {!roles.includes((p.role ?? '').toLowerCase()) && (
+              <option value={(p.role ?? '').toLowerCase()} disabled>
+                {role}
+              </option>
+            )}
+            {roles.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        ) : (
+          role && <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>
+        )}
+        {!nested && mayRemove(p) && (
+          <button
+            type="button"
+            aria-label={`Remove ${participantLabel(p)}`}
+            data-testid="member-remove"
+            disabled={removingId === principalId}
+            onClick={() => principalId && void handleRemove(principalId)}
+            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </li>
+    );
+  };
+
   const handleOpenChange = (next: boolean) => {
     if (next && reason === 'unauthenticated') {
       // Route through the shared sign-in dialog; don't open the roster popover.
@@ -572,96 +673,14 @@ export function MembersAvatarStack({
                   </div>
                 )}
                 <ul className="flex flex-col gap-1.5">
-                  {members.map((p, i) => {
-                    const role = participantRoleLabel(p);
-                    // Role selector mirrors the hub ``can_assign`` ceiling: options
-                    // strictly below my rank, only on members strictly below my rank,
-                    // never my own row / the owner. Empty = render the static label.
-                    // Where the surface passes ``inviteRoles`` (the backend's
-                    // ``share-roles`` list) the options are that list, the same one
-                    // the invite form offers; otherwise the full ladder.
-                    const roles = rowRoles(p);
-                    const group = isGroupMember(p);
-                    const principalId = memberPrincipalId(p);
-                    const contact = group || participantIsUser(p, localUser) ? null : contactFromParticipant(p);
-                    const identity = (
-                      <>
-                        <Avatar className="h-6 w-6">
-                          {group ? (
-                            <AvatarFallback className="bg-muted text-muted-foreground" data-testid="member-team-icon">
-                              <TeamIcon className="h-3.5 w-3.5" aria-hidden />
-                            </AvatarFallback>
-                          ) : (
-                            <AvatarFallback
-                              className={`text-[10px] text-white ${avatarColorForParticipant(p, participantIsUser(p, localUser))}`}
-                            >
-                              {participantInitials(p)}
-                            </AvatarFallback>
-                          )}
-                        </Avatar>
-                        <span className="flex-1 truncate">{participantLabel(p)}</span>
-                      </>
-                    );
+                  {roster.top.map((p, i) => {
+                    const key = memberPrincipalId(p) || p.email || String(i);
+                    const children = isGroupMember(p) ? (roster.childrenOf.get(memberPrincipalId(p) ?? '') ?? []) : [];
                     return (
-                      <li key={principalId || p.email || i} className="flex items-center gap-2 text-xs">
-                        {contact ? (
-                          <button
-                            type="button"
-                            className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-start transition-colors hover:bg-muted"
-                            onClick={() => {
-                              setPermissionsContact(contact);
-                              setOpen(false);
-                            }}
-                            aria-label={`Open permissions for ${participantLabel(p)}`}
-                            data-testid={`member-contact-${p.user_id || p.email || i}`}
-                          >
-                            {identity}
-                          </button>
-                        ) : (
-                          <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">{identity}</div>
-                        )}
-                        {roles.length > 0 ? (
-                          <select
-                            aria-label={`Change role of ${participantLabel(p)}`}
-                            data-testid="member-role-select"
-                            value={(p.role ?? '').toLowerCase()}
-                            disabled={changingId === p.user_id}
-                            onChange={(e) => void handleRoleChange(p.user_id as string, e.target.value)}
-                            className="rounded border border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
-                          >
-                            {/* Current role stays selectable when it's outside the
-                        offered menu (a rankable-but-not-assignable role like
-                        ``guest``, or a comma-joined multi-role value) so the
-                        select never shows a blank value. */}
-                            {!roles.includes((p.role ?? '').toLowerCase()) && (
-                              <option value={(p.role ?? '').toLowerCase()} disabled>
-                                {role}
-                              </option>
-                            )}
-                            {roles.map((r) => (
-                              <option key={r} value={r}>
-                                {r}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          role && (
-                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{role}</span>
-                          )
-                        )}
-                        {mayRemove(p) && (
-                          <button
-                            type="button"
-                            aria-label={`Remove ${participantLabel(p)}`}
-                            data-testid="member-remove"
-                            disabled={removingId === principalId}
-                            onClick={() => principalId && void handleRemove(principalId)}
-                            className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        )}
-                      </li>
+                      <Fragment key={key}>
+                        {renderMember(p, i, key, false)}
+                        {children.map((c, j) => renderMember(c, j, `${key}/${c.user_id ?? j}`, true))}
+                      </Fragment>
                     );
                   })}
                 </ul>
