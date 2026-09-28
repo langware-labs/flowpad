@@ -154,10 +154,10 @@ def _message_headers(hub: _Hub) -> list[dict]:
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_grant(hub):
-    """R1/R6/R7: a person gets two single-target invitations — the project one
-    (emailed, so its link lands on the project) and a conversation one sent with
-    ``notify_by_email: false``; no hub ``notify_by_message``. A team is ONE group
-    grant plus a conversation granted to it; nobody reads the team's member list."""
+    """R1/R6/R7: a person gets two single-target invitations, the project one and
+    the conversation one, each emailed by the hub's default; no hub
+    ``notify_by_message``. A team is ONE group grant plus a conversation granted
+    to it; nobody reads the team's member list."""
     proj = _project(hub, "share-person-and-team")
 
     await proj.share(invitees=[ShareInvitee(user_id=ISHAY)], teams=[f"team-{ZSCHOOL}"], note="Welcome aboard")
@@ -173,7 +173,7 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     ((person_conv_path, person_conv),) = [(p, b) for p, b in grants.items() if b.get("recipient_user_id") == ISHAY]
     (conversation_target,) = person_conv["invitation_targets"]
     assert conversation_target["typeid"].startswith("conversation-") and conversation_target["role"] == "member"
-    assert person_conv["notify_by_email"] is False
+    assert "notify_by_email" not in person_conv
     assert person_conv_path == f"/graph/conversation/{conversation_target['typeid'][len('conversation-'):]}/members"
 
     assert _group_grants(hub, proj) == [
