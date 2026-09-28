@@ -1,7 +1,8 @@
 /** Real PTY output → xterm hit testing → backend resolution → focused dock tab. */
 import { expect, test, type Page } from '@playwright/test';
-import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, type Server } from 'node:http';
@@ -11,6 +12,8 @@ let root: string;
 let outside: string;
 let webUrl: string;
 let server: Server;
+/** Every path the fixture server was asked for — by this page OR by a browser the backend launched. */
+const hits = new Set<string>();
 
 test.beforeAll(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'flowpad-link-project-')));
@@ -20,6 +23,7 @@ test.beforeAll(async () => {
   await writeFile(join(root, '.claude/skills/link-probe/SKILL.md'), '---\nname: link-probe\ndescription: Terminal link browser fixture\n---\n# Skill link content\n');
   await writeFile(join(outside, 'outside.txt'), 'Temporary file link content\n');
   server = createServer((req, res) => {
+    hits.add(req.url ?? '');
     res.setHeader('Content-Type', 'text/html');
     if (req.url === '/blocked') res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
     res.end('<!doctype html><title>Link browser fixture</title><h1>Web link content</h1>');
@@ -31,6 +35,8 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
+  // A browser the backend launched keeps its tab — and its keep-alive socket — open; close() would wait on it.
+  server.closeAllConnections();
   await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()));
   await Promise.all([rm(root, { recursive: true, force: true }), rm(outside, { recursive: true, force: true })]);
 });
@@ -243,4 +249,43 @@ test('a site that refuses embedding retains its external-open escape', async ({ 
   const external = await popup;
   await expect(external.getByRole('heading')).toHaveText('Web link content');
   await external.close();
+});
+
+/** This machine's Chrome profile directories, read the way the backend reads them (`flow_sdk/core/browser_profiles.py`). */
+async function localChromeProfiles(): Promise<string[]> {
+  const root =
+    process.platform === 'darwin' ? join(homedir(), 'Library/Application Support/Google/Chrome')
+      : process.platform === 'win32' ? join(process.env.LOCALAPPDATA ?? '', 'Google/Chrome/User Data')
+        : join(homedir(), '.config/google-chrome');
+  try {
+    const state = JSON.parse(await readFile(join(root, 'Local State'), 'utf8'));
+    return Object.keys(state.profile?.info_cache ?? {});
+  } catch {
+    return [];
+  }
+}
+
+test('right-click → Open in ▸ a Chrome profile really opens the link in that browser', async ({ page }) => {
+  const profiles = await localChromeProfiles();
+  test.skip(profiles.length === 0, 'this machine has no Chrome profiles to open a link in');
+  const { shellId } = await openFixtureTerminal(page);
+  const path = `/profile-hit/${randomUUID()}`;
+  const link = `${new URL(webUrl).origin}${path}`;
+  await printLink(page, shellId, link);
+
+  const point = await printedLinkPoint(page, link);
+  await page.mouse.click(point.x, point.y, { button: 'right' });
+  const menu = page.getByTestId('terminal-link-menu');
+  await expect(menu).toBeVisible();
+  await page.getByTestId('terminal-link-menu-open-in').click();
+  for (const profile of profiles) {
+    await expect(page.getByTestId(`terminal-link-menu-profile-chrome-${profile}`)).toBeVisible();
+  }
+
+  // The last profile, so a single-window default is not what proves it.
+  await page.getByTestId(`terminal-link-menu-profile-chrome-${profiles.at(-1)}`).click();
+  await expect(menu).toBeHidden();
+  // The system browser, not this Playwright page, is what asks for the page.
+  await expect.poll(() => hits.has(path)).toBe(true);
+  await expect(page.getByText('Could not open link', { exact: true })).toHaveCount(0);
 });

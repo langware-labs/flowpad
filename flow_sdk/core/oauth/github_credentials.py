@@ -1,5 +1,5 @@
-"""Public resolver for ONE user's GitHub OAuth credential (the publish path,
-which acts for an explicit actor — no request/local/hub fallback)."""
+"""Public resolver for ONE user's GitHub OAuth credential, for callers acting
+for an explicit actor — no request/local/hub fallback."""
 
 from __future__ import annotations
 

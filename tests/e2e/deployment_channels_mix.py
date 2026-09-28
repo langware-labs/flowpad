@@ -129,7 +129,7 @@ class Mix:
                 })
             body = {
                 "name": f"Mix {channel.provider}", "provider": channel.provider, "config": entry["config"],
-                "owner": f"agent-{self.agent_id}", "inbound_allowed_senders": [entry["sender"]],
+                "owner": f"agent-{self.agent_id}", "allowed_senders": [entry["sender"]],
                 "thread_timeout_seconds": self.timeout, **(entry.get("fields") or {}),
                 # A pulled channel is read at its interval (a fast-lane driver sooner): the floor, 60s.
                 "poll_interval_seconds": 60,
@@ -365,6 +365,7 @@ async def main() -> int:
         log(step="finished", ok=[c.provider for c in channels if not c.failures])
     finally:
         if watcher is not None:  # the page is read to the end — each thread opened — before anything goes
+            await asyncio.sleep(5)  # the last answer's lines reach the page just after the runner sees it
             (Path(args.watch_out) / "stop").touch()
             await watcher.wait()
         if not args.keep:

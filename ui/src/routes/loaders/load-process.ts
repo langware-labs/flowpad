@@ -12,6 +12,7 @@
 import { t } from '@lingui/core/macro';
 import { AgenticProcess, ContextEntitiesEnum, dataContext, Project, Shell, systemTools, tabManager, TypeId } from '@sdk';
 import { perfLog, perfTime } from './_perf';
+import { errorStatus } from '@src/lib/error-message';
 import { loadProject } from './load-project';
 
 /**
@@ -109,6 +110,48 @@ export function describeProcessStartError(error: unknown): { title: string; desc
 }
 
 /**
+ * The process a URL names — the entity phase every process route shares.
+ * Cache-first; a 404 is ``entity_not_found`` (the URL is dead), any other fetch
+ * failure ``network_error`` (the URL is fine, the fetch was not — offer Retry).
+ */
+export async function resolveProcessIdentity(processId: string): Promise<AgenticProcess> {
+  const cached = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
+  perfLog(`loadProcess cache=${cached ? 'hit' : 'miss'} processId=${processId.slice(0, 8)}`);
+  if (cached) return cached;
+  let process: AgenticProcess | null;
+  try {
+    process = await perfTime('AgenticProcess.getById (network)', () => AgenticProcess.getById<AgenticProcess>(processId));
+  } catch (cause) {
+    throw new ProcessLoadError(errorStatus(cause) === 404 ? 'entity_not_found' : 'network_error', processId, null, cause);
+  }
+  if (!process) throw new ProcessLoadError('entity_not_found', processId);
+  return process;
+}
+
+/**
+ * The process's owning project into context — URL-first, before the route
+ * commits, so the mounted view's runtime (CWD, session discovery) never observes
+ * the previously-active project. A stored ``project_id`` that dangles (the
+ * project was deleted under us) is recovered through the backend's
+ * recover_by_path; unrecoverable → ``project_missing``. No ``project_id``: a
+ * workdir inside a project's mount adopts the process, else it is Global.
+ */
+export async function loadProcessProject(process: AgenticProcess): Promise<void> {
+  if (!process.project_id) {
+    await systemTools.resolveProjectContext(process.workdir ?? undefined, process);
+    return;
+  }
+  try {
+    await perfTime('loadProject', () => loadProject(new TypeId(Project.type, process.project_id!)));
+  } catch (cause) {
+    if (errorStatus(cause) !== 404) throw cause;
+    const recovered = await process.recoverProject().catch(() => null);
+    if (!recovered) throw new ProcessLoadError('project_missing', process.id, process.shell_id ?? null, cause);
+    await loadProject(new TypeId(Project.type, recovered.id));
+  }
+}
+
+/**
  * Load an AgenticProcess by id: cache-first fetch, resolve its owning project
  * and linked Shell, then write URL-derived context. The PTY attach belongs to
  * the mounted terminal panel, not this route loader.
@@ -116,63 +159,8 @@ export function describeProcessStartError(error: unknown): { title: string; desc
  * Throws ProcessLoadError on any failure. Never redirects.
  */
 export async function loadProcess(processId: string): Promise<{ process: AgenticProcess; shell: Shell | null }> {
-  // ── Entity phase (hard errors only) ────────────────────────────────────
-  // Split the fetch catch so a real network failure (timeout, abort,
-  // non-404 5xx) reports as ``network_error`` instead of being silently
-  // collapsed into ``entity_not_found``. The route uses both as hard
-  // (URL is unloadable now) but distinguishes them so the banner can
-  // offer Retry for transient hiccups vs. fall-through-to-sibling for
-  // deleted entities.
-  const cached = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
-  perfLog(`loadProcess cache=${cached ? 'hit' : 'miss'} processId=${processId.slice(0, 8)}`);
-  let process: AgenticProcess | null = cached ?? null;
-  if (!process) {
-    try {
-      process = await perfTime('AgenticProcess.getById (network)', () =>
-        AgenticProcess.getById<AgenticProcess>(processId),
-      );
-    } catch (cause) {
-      // 404 → entity is genuinely gone; anything else → transient fetch
-      // failure that doesn't mean the URL is dead.
-      const status =
-        (cause as { response?: { status?: number }; status?: number })?.response?.status ??
-        (cause as { status?: number })?.status;
-      if (status === 404) {
-        throw new ProcessLoadError('entity_not_found', processId, null, cause);
-      }
-      throw new ProcessLoadError('network_error', processId, null, cause);
-    }
-  }
-  if (!process) {
-    throw new ProcessLoadError('entity_not_found', processId);
-  }
-
-  // ── Project phase — URL-first: resolve the owning project into context
-  // before the route commits. The mounted view starts the process only after
-  // this loader has established the project, so runtime CWD/session discovery
-  // cannot observe the previously-active project.
-  if (process.project_id) {
-    try {
-      await perfTime('loadProject', () => loadProject(new TypeId(Project.type, process.project_id!)));
-    } catch (cause) {
-      // The stored project_id can dangle when the project was deleted under
-      // us. Recover via the backend's 3-phase recover_by_path, then continue.
-      const status =
-        (cause as { response?: { status?: number }; status?: number })?.response?.status ??
-        (cause as { status?: number })?.status;
-      if (status !== 404) throw cause;
-      const recovered = await process.recoverProject().catch(() => null);
-      if (!recovered) {
-        throw new ProcessLoadError('project_missing', processId, process.shell_id ?? null, cause);
-      }
-      await loadProject(new TypeId(Project.type, recovered.id));
-    }
-  } else {
-    // No stored project_id. A workdir inside a project's mount adopts the process
-    // into that project; otherwise this is a genuinely global target and
-    // resolveProjectContext clears the active project to null (the Global scope).
-    await systemTools.resolveProjectContext(process.workdir ?? undefined, process);
-  }
+  const process = await resolveProcessIdentity(processId);
+  await loadProcessProject(process);
 
   // ── Linked-Shell identity phase ────────────────────────────────────────
   // Do not call process.start() here: it awaits the backend worker plus PTY/WS

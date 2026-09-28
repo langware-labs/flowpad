@@ -65,7 +65,6 @@ export class FsRecord implements IResource {
   origin_ref?: FsRecordRef;
 
   // ── Instance state (not serialized) ──────────────────────────
-  private _computeNodeId?: string;
 
   constructor(data?: Partial<FsRecordData>) {
     if (data) {
@@ -97,18 +96,6 @@ export class FsRecord implements IResource {
   }
 
   // ── Compute node binding ─────────────────────────────────────
-
-  /** Bind this record to a backend compute node (required for CRUD). */
-  setComputeNode(computeNodeId: string): void {
-    this._computeNodeId = computeNodeId;
-  }
-
-  private get computeNodeId(): string {
-    if (!this._computeNodeId) {
-      throw new Error('FsRecord: computeNodeId not set — call setComputeNode() first');
-    }
-    return this._computeNodeId;
-  }
 
   // ── Serialization ────────────────────────────────────────────
 

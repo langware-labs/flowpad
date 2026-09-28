@@ -206,7 +206,7 @@ EXPECTED = {
     # source, its per-stream cursor, and the records it produces — additive
     # members, no existing value changed.
     "DATA_SOURCE": "data_source",
-    "SECRET_PACK": "secret_pack",
+    "CREDENTIAL": "credential",
     "DATA_DRIVER": "data_driver",
     "SOURCE_ITEM": "source_item",
     # The stream inbox projection's thread grouping — additive member, no existing
@@ -243,7 +243,8 @@ def test_back_compat_aliases_are_the_same_class():
 #: TypeId still carrying one on an unmigrated install must read as unknown — never as a different type.
 RETIRED_VALUES: dict[str, str] = {
     "data_source_spec": "the driver definition, now data_driver (0.2.170; old rows are pruned at boot, no migration)",
-    "credential_spec": "the named set of environment variables, now secret_pack (0.2.170; old rows are pruned at boot)",
+    "credential_spec": "the named set of environment variables, then secret_pack (0.2.170; old rows are pruned at boot)",
+    "secret_pack": "the named set of environment variables, now credential (0.2.178; folders moved, old rows pruned at boot)",
     "data_source_cursor": "a source's per-segment position, now DataSource.cursor (one source = one stream; old rows are pruned at boot)",
     "inbox_manager": "the unread-badge singleton, now stream_inbox_manager (old rows are pruned at boot, no migration)",
     "code_ref": "a pointer to a file/folder/glob/URL, Artifact's old base class; the class went in 0a425adcd, the name lingered unused",

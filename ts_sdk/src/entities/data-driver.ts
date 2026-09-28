@@ -62,6 +62,9 @@ export interface ConfigSchema {
   required?: string[];
 }
 
+/** What a driver's items ARE — the base its source class extends (files, records, messages). */
+export type DataSourceFamily = 'object' | 'record' | 'message';
+
 export interface IDataDriver extends IEntity {
   /** The definition's folder on this machine. */
   asset_ref?: string;
@@ -75,7 +78,10 @@ export interface IDataDriver extends IEntity {
   kind?: string;
   /** Always `source`: the folder's own `source.py`. */
   runtime?: string;
-  /** The source class can push a reply back to its channel — a source of this provider is a MessageSource. */
+  /** `object` (files, reflected to disk), `record` (SourceItem rows) or `message` (records threaded into
+   *  the stream inbox). Absent for a driver the backend has not loaded. */
+  family?: DataSourceFamily;
+  /** A message source that answers on its channel: it sends and replies. */
   sends?: boolean;
   /** Why the folder's source did not load, or empty. */
   load_error?: string;

@@ -1,6 +1,7 @@
 """The ``agentmail`` source's case in the data source matrix: an inbox over a loopback AgentMail API."""
 from __future__ import annotations
 
+import base64
 import json
 import uuid
 from contextlib import contextmanager
@@ -36,13 +37,23 @@ class _Inbox:
 
     def __init__(self, inbox: str, key: str) -> None:
         self.inbox, self.key, self.messages, self.outbox = inbox, key, [], []
+        #: attachment_id → bytes, behind a signed URL on this same server.
+        self.blobs: dict[str, bytes] = {}
+        self.base = ""
 
     def __call__(self, path, headers):
         route, _, query = path.partition("?")
         params = {k: v[0] for k, v in parse_qs(query).items()}
         body = json.loads(headers["_body"]) if headers.get("_body") else {}
+        if route.startswith("/signed/") and route[len("/signed/"):] in self.blobs:
+            return 200, self.blobs[route[len("/signed/"):]], {"Content-Type": "application/octet-stream"}
         if headers.get("Authorization") != f"Bearer {self.key}":
             return self._json(401, {"error": "bad key"})
+        if "/attachments/" in route:
+            attachment_id = unquote(route.rsplit("/attachments/", 1)[1])
+            if attachment_id not in self.blobs:
+                return self._json(404, {"error": "no such attachment"})
+            return self._json(200, {"attachment_id": attachment_id, "download_url": f"{self.base}/signed/{attachment_id}"})
         if route.endswith("/messages/send") or route.endswith("/reply"):
             answered = unquote(route.split("/messages/")[1][: -len("/reply")]) if route.endswith("/reply") else ""
             parent = next((m for m in self.messages if m["message_id"] == answered), None)
@@ -53,8 +64,9 @@ class _Inbox:
                     "from": self.inbox, "to": list(body.get("to") or ([parent["from"]] if parent else [])),
                     "subject": body.get("subject") or (parent or {}).get("subject") or "", "preview": body.get("text") or ""}
             self.messages.append(sent)
+            files = [{"name": a["filename"], "media_type": a["content_type"], "bytes": base64.b64decode(a["content"])} for a in body.get("attachments") or []]
             self.outbox.append({"to": ",".join(sent["to"]), "text": body.get("text"), "thread": thread,
-                                "external_id": sent["message_id"]})
+                                "external_id": sent["message_id"], **({"files": files} if files else {})})
             return self._json(200, {"message_id": sent["message_id"], "thread_id": thread})
         # Newest first, as AgentMail lists an inbox: a pass reads the first page down to what it has
         # seen, so an oldest-first listing hid every new message once the inbox outgrew one page.
@@ -87,7 +99,8 @@ class Double:
 
     def __enter__(self) -> "Double":
         self._server = local_http_server(self.inbox)
-        self.config = {"inbox": self.inbox_address, "base_url": self._server.__enter__()}
+        self.inbox.base = self._server.__enter__()
+        self.config = {"inbox": self.inbox_address, "base_url": self.inbox.base}
         return self
 
     def __exit__(self, *exc):
@@ -95,11 +108,19 @@ class Double:
             self._server.__exit__(*exc)
             self._server = None
 
-    def deliver(self, text: str, *, sender: str, thread=None) -> dict:
+    def deliver(self, text: str, *, sender: str, thread=None, files=()) -> dict:
+        """An inbound message; ``files`` (``{name, media_type, bytes}``) are listed as its attachments."""
         message_id = f"<in-{uuid.uuid4().hex[:8]}@example.com>"
         thread_id = thread or f"t-{uuid.uuid4().hex[:8]}"
+        attachments = []
+        for f in files:
+            attachment_id = f"att-{uuid.uuid4().hex[:8]}"
+            self.inbox.blobs[attachment_id] = f["bytes"]
+            attachments.append({"attachment_id": attachment_id, "filename": f["name"], "content_type": f["media_type"],
+                                "size": len(f["bytes"]), "content_disposition": "attachment"})
         self.inbox.messages.append({"message_id": message_id, "thread_id": thread_id, "timestamp": _now(), "from": sender,
-                                    "to": [self.inbox_address], "subject": "Hello", "preview": text})
+                                    "to": [self.inbox_address], "subject": "Hello", "preview": text,
+                                    **({"attachments": attachments} if attachments else {})})
         return {"external_id": message_id, "thread": thread_id}
 
     def sent(self) -> list[dict]:

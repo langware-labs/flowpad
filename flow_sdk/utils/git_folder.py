@@ -9,9 +9,8 @@ local disk or on a compute node.
 
 What this class is NOT:
 
-* **Not a policy layer.** It does not decide that a remote must be GitHub, or
-  that a branch must be ``flow-cloud``, or who may push. Those are caller rules;
-  ``validate_github_remote`` is offered for the callers that want the first one.
+* **Not a policy layer.** It does not decide which host a remote must be on,
+  which branch to use, or who may push. Those are caller rules.
 * **Not a durable store.** A checkout is a cache. Callers that treat it as state
   are the reason the hub's per-process checkout keeps surprising people.
 * **Not a secret holder beyond one command.** The token reaches git through an
@@ -55,17 +54,16 @@ KEEP_FILE = ".flowpad-vfs-keep"
 
 _REPO_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" = WeakValueDictionary()
 
-# Mirrors PortableGitOrigin._validate_branch. Kept as a plain predicate so a
-# branch can be checked before a subprocess exists to ask.
+# Kept as a plain predicate so a branch can be checked before a subprocess
+# exists to ask.
 _BRANCH_FORBIDDEN = re.compile(r"[\x00-\x20~^:?*\[\\]")
 
 
 class GitErrorCode(StrEnum):
     """Why a git operation failed, in terms a caller can map to its own contract.
 
-    Deliberately free of hub and asset vocabulary: the hub maps these to
-    ``GitMutationCode`` and the publish path maps them to ``AssetPublishCode``,
-    so neither existing wire contract has to change.
+    Deliberately free of hub and asset vocabulary, so each caller maps these
+    onto its own wire contract.
     """
 
     NOT_A_REPO = "not_a_repo"
@@ -136,29 +134,6 @@ def validate_branch_name(branch: str) -> str:
     ):
         raise GitError(GitErrorCode.BRANCH_INVALID, "Invalid branch name")
     return candidate
-
-
-def validate_github_remote(remote_url: str) -> tuple[str, str]:
-    """``(owner, name)`` for a canonical GitHub HTTPS remote, else raise.
-
-    Caller policy, not a GitFolder rule — the publish path requires it; a plain
-    checkout on a compute node does not.
-    """
-    parsed = urlparse((remote_url or "").strip())
-    if (
-        parsed.scheme != "https"
-        or (parsed.hostname or "").lower() != "github.com"
-        or parsed.username is not None
-        or parsed.password is not None
-        or parsed.port is not None
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise GitError(GitErrorCode.REMOTE_INVALID, "Only a canonical GitHub HTTPS remote is allowed")
-    parts = [p for p in parsed.path.strip("/").split("/") if p]
-    if len(parts) != 2:
-        raise GitError(GitErrorCode.REMOTE_INVALID, "Remote must be <owner>/<name>")
-    return parts[0], parts[1].removesuffix(".git")
 
 
 def _assert_no_credentials(remote_url: str) -> str:
@@ -307,11 +282,6 @@ class GitFolder:
         if (await self.git("merge-base", "--is-ancestor", remote, local)).ok:
             return "ahead"
         return "behind" if (await self.git("merge-base", "--is-ancestor", local, remote)).ok else "diverged"
-
-    async def _status_paths(self, *paths: str) -> list[str]:
-        scope = ["--", *paths] if paths else []
-        out = await self._required("status", "--porcelain", *scope)
-        return [line for line in out.splitlines() if line.strip()]
 
     @staticmethod
     def _failure_code(result: CliResult) -> GitErrorCode:
@@ -477,8 +447,6 @@ class GitFolder:
         message: str,
         author: "GitAuthor",
         trailers: Sequence[str] = (),
-        also_advance: str | None = None,
-        retry_marker: str | None = None,
     ) -> PublishReceipt:
         """Commit one path and publish it. The whole operation, not a step of one.
 
@@ -486,20 +454,10 @@ class GitFolder:
         sequence — align, probe, commit, push — and each one is a chance to get
         the order wrong. What a caller actually means is "publish this path".
 
-        Three behaviours are deliberate and easy to lose:
-
-        * **The commit is path-scoped through a temporary index**, so publishing
-          inside a checkout where the user has unrelated staged work does not
-          sweep it in.
-        * **``retry_marker`` recovers a half-finished publish.** If a previous
-          run committed and then failed to push, the branch is one commit ahead
-          and would be refused forever. When the single unpushed commit carries
-          this trailer it is recognised as ours and re-pushed rather than
-          re-committed.
-        * **``also_advance`` is pushed in the SAME invocation** as the working
-          branch — one connection, one credential handshake, and no window where
-          one ref moved and the other did not. It is pushed even when nothing
-          changed, because the branch may not exist yet.
+        The commit is **path-scoped through a temporary index**, so publishing
+        inside a checkout where the user has unrelated staged work does not
+        sweep it in. A branch that is ahead of, behind, or diverged from its
+        remote is refused before anything is committed.
 
         Raises :class:`GitError`; callers map the code onto their own contract.
         """
@@ -514,25 +472,15 @@ class GitFolder:
         remote_head = await self._remote_head(branch)
         relation = await self._relation(local_head, remote_head)
 
-        retrying = relation == "ahead" and await self._is_own_pending_commit(remote_head, retry_marker)
-        if relation == "ahead" and not retrying:
+        if relation == "ahead":
             raise GitError(GitErrorCode.BRANCH_AHEAD, "Local branch has unpublished commits")
         if relation in {"behind", "diverged"}:
             raise GitError(GitErrorCode.BRANCH_DIVERGED, "Local branch is not aligned with its remote")
-        if retrying and await self._status_paths(scoped):
-            raise GitError(GitErrorCode.BRANCH_AHEAD, "The pending commit no longer matches the working tree")
 
-        committed = None if retrying else await self._commit(scoped, message, author=author, trailers=trailers)
-        changed = retrying or committed is not None
-        head = committed or local_head
-
-        refspecs = [f"HEAD:refs/heads/{validate_branch_name(also_advance)}"] if also_advance else []
-        if changed:
-            refspecs.insert(0, f"HEAD:refs/heads/{branch}")
-        if refspecs:
-            await self._push(refspecs, head)
-
-        return PublishReceipt(changed=changed, head_commit=head, branch=branch)
+        committed = await self._commit(scoped, message, author=author, trailers=trailers)
+        if committed is not None:
+            await self._push([f"HEAD:refs/heads/{branch}"], committed)
+        return PublishReceipt(changed=committed is not None, head_commit=committed or local_head, branch=branch)
 
     async def checkout(
         self,
@@ -623,19 +571,6 @@ class GitFolder:
             raise GitError(self._failure_code(result), "Could not archive the path")
         return dest
 
-    async def _is_own_pending_commit(self, remote_head: str, marker: str | None) -> bool:
-        """True when the one unpushed commit is ours, identified by ``marker``.
-
-        Without this a publish whose push failed after committing is stuck behind
-        the "unpublished commits" guard forever.
-        """
-        if not marker:
-            return False
-        if await self._required("rev-list", "--count", f"{remote_head}..HEAD") != "1":
-            return False
-        body = await self._required("show", "-s", "--format=%B", "HEAD")
-        return any(line.strip() == marker for line in body.splitlines())
-
     async def _commit(
         self,
         path: str,
@@ -688,15 +623,14 @@ class GitFolder:
         """Push every refspec in ONE invocation, keeping the failure actionable.
 
         They travel together so they cost one connection and one credential
-        handshake — and so a caller advancing two refs cannot end up with one
-        moved and the other not.
+        handshake.
 
         A refused push and an unreachable remote are the same fact to a caller —
         *the commit exists locally and did not reach the remote* — so both become
         ``PUSH_REJECTED``. A credential failure is NOT flattened into that: it
         keeps its own code, so a user whose token expired mid-publish is told to
         reconnect rather than to resolve a conflict that does not exist. Either
-        way the head travels along, so a retry can recognise its own work.
+        way the head travels along in ``data``.
         """
         result = await self.git("push", "origin", *refspecs, auth=True)
         if result.ok:

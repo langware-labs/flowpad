@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
@@ -312,6 +313,11 @@ async def dock_target(address: str) -> dict:
         raise InvalidDisplayTarget(f"View '{view.value}' is not addressable (it decodes for history only)")
     if meta.pointer is da.PointerRequirement.REQUIRED and not pointer:
         raise InvalidDisplayTarget(f"View '{view.value}' requires a pointer")
+    if meta.pointer_shape and pointer and not re.fullmatch(meta.pointer_shape, pointer):
+        raise InvalidDisplayTarget(
+            f"View '{view.value}' is addressed as '{view.value}/{meta.pointer_form}'"
+            + (" — to show the agent itself, run `flow show entity agent-<id>`" if view is da.ViewType.AGENT else "")
+        )
     # A hub-only view asked for on the desk page is the same failure this module's
     # vocabulary exists to prevent: the address parses, the request succeeds, and the
     # content panel falls through to the Home landing because only `renderHubBody`

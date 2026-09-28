@@ -36,7 +36,7 @@ import {
   useContacts,
 } from '@src/components/contact-picker/use-contacts';
 import { filterGroups, mergeGroupMembers, useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
-import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-list';
+import { isGroupMember, memberPrincipalId } from '@src/components/organization/member-roles';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';

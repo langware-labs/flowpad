@@ -278,6 +278,25 @@ def _isolate_capability_discovery():
 
 
 @pytest.fixture(autouse=True)
+async def _end_the_loop_like_asyncio_run():
+    """Cancel every task still pending on the test's loop, and let each unwind, before the loop closes.
+
+    pytest-asyncio ends a test's loop with a bare ``loop.close()``: a task still running — a
+    fire-and-forget ``create_task`` like ``stream_inbox.touch``'s recompute — is destroyed where it
+    stands, its ``finally`` never runs, and a write transaction it had open is never rolled back. The
+    sqlite handle keeps the writer lock for the rest of the session and the next test's first write
+    waits out ``busy_timeout`` into "database is locked". ``asyncio.run`` cancels and drains pending
+    tasks before closing; this does the same, on the test's own loop. ``_drop_leftover_bus_tasks``
+    covers what this cannot see: tasks left on OTHER loops (a session loop, a sync test's own).
+    """
+    yield
+    pending = asyncio.all_tasks() - {asyncio.current_task()}
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
+@pytest.fixture(autouse=True)
 def _restore_main_thread_event_loop():
     """Keep the main thread's event-loop slot usable across the whole run.
 
@@ -316,7 +335,8 @@ def _drop_leftover_bus_tasks():
 
     A task on a closed loop can never run again, so it is dropped. One on an idle
     loop is cancelled ON that loop, so its ``finally`` blocks release what they
-    hold. Nothing here waits on a budget.
+    hold. Nothing here waits on a budget. Tasks on the TEST's own loop are drained
+    before it closes by ``_end_the_loop_like_asyncio_run``.
     """
     import asyncio as _asyncio
     import sys as _sys

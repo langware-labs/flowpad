@@ -125,6 +125,16 @@ flow show webapp --port <port>
 
 Use the port the dev server actually reported, never an assumed one.
 
+## A web page (docs, a vendor's guide)
+
+```bash
+flow show url https://metallb.io/installation/
+```
+
+Opens the page in a tab beside the chat — each URL is its own tab, so several pages
+can stay open side by side. A site that forbids being framed shows blank there; then
+give the user the link as well.
+
 ## A screen
 
 Screens are addressed by **view name**, optionally plus `/pointer` and `?opts` — the
@@ -191,7 +201,7 @@ These take a pointer; without one they are an error, not a landing. Get the id f
 
 | Screen | address | also called |
 | --- | --- | --- |
-| Agent | `agent/<id>` | — |
+| Agent stream inbox | `agent/<id>/stream_inbox` | — |
 | App | `app/<id>` | — |
 | Context | `graph_context/<id>` | frozen context |
 | Conversation | `conversation/<id>` | — |

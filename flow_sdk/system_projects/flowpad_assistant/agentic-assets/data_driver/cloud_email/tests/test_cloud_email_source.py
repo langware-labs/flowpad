@@ -24,7 +24,10 @@ from flow_sdk.ingest.testing import position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
 from flow_sdk.sources.errors import NotFound, SourceUnavailable
+from flow_sdk.sources.files import local_file
+from flow_sdk.sources.protocols import Openable
 from flow_sdk.sources.testing import Subject, checks_for
+from flow_sdk.sources.values.items import FileKind, MessageData
 
 CloudEmailSource = asset_module("cloud_email").CloudEmailSource
 AppMailbox = asset_module("cloud_email", "transport").AppMailbox
@@ -153,6 +156,42 @@ class TestMapping:
         (item,) = (await DataDriver.loaded("cloud_email").traverse(_row(), _view())).items
         assert item.body == FULL_TEXT and item.body != LIST_ITEM["preview"]
 
+    async def test_attachments_keep_their_metadata_and_say_why_the_bytes_never_came(self, mailbox):
+        mailbox.messages = [{**LIST_ITEM, "attachments": [
+            {"attachment_id": "att-1", "filename": "map.png", "content_type": "image/png", "size": 264, "inline": False},
+            {"attachment_id": "att-2", "filename": "log.pdf", "content_type": "application/pdf", "size": 26, "inline": False},
+        ]}]
+        async with CloudEmailSource(SourceBinding(config={"agent_id": AGENT_ID}), mailbox=mailbox) as source:
+            (item,) = (await source.fetch()).items
+        chart, log = item.data.attachments
+        assert [(f.origin.key, f.data.name, f.data.media_type, f.data.size, f.data.as_, f.data.path) for f in (chart, log)] == [
+            ("<abc@mail.example>#att-1", "map.png", "image/png", 264, FileKind.IMAGE, None),
+            ("<abc@mail.example>#att-2", "log.pdf", "application/pdf", 26, FileKind.DOCUMENT, None),
+        ]
+        assert {f.data.fetch_error for f in (chart, log)} == {asset_module("cloud_email").NO_ATTACHMENT_BYTES}
+        assert not isinstance(source, Openable), "no byte route on the hub: nothing to open"
+        # A pass over it stages nothing and still ingests the message.
+        (ingested,) = (await DataDriver.loaded("cloud_email").traverse(_row(), _view())).items
+        assert ingested.external_id == "<abc@mail.example>"
+
+    async def test_a_message_without_attachments_carries_none(self, mailbox):
+        async with CloudEmailSource(SourceBinding(config={"agent_id": AGENT_ID}), mailbox=mailbox) as source:
+            (item,) = (await source.fetch()).items
+        assert item.data.attachments == ()
+
+
+class TestFiles:
+    async def test_the_channel_sends_no_files_and_says_so_before_any_io(self, mailbox, tmp_path):
+        assert not CloudEmailSource.files.kinds
+        (path := tmp_path / "map.png").write_bytes(b"png")
+        with pytest.raises(ValueError, match="does not send files"):
+            await DataDriver.loaded("cloud_email").send(_row(), thread_key="", to="joe@example.com", text="hi", files=(local_file(path),))
+        async with CloudEmailSource(SourceBinding(config={"agent_id": AGENT_ID}), mailbox=mailbox) as source:
+            to = UserProfile(origin=source.origin("joe@example.com"), address="joe@example.com")
+            with pytest.raises(ValueError, match="sends no files"):
+                await source.send(MessageData(text="hi", recipients=(to,), attachments=(local_file(path),)))
+        assert not [c for c in mailbox.calls if c[0] in ("send", "reply")]
+
 
 class TestHydration:
     async def test_it_does_not_filter_to_received(self, mailbox):
@@ -255,3 +294,17 @@ def test_a_source_stamped_under_the_retired_key_still_names_its_mailbox():
     stamped = "agent_mailbox-3f1c2a4b-5d6e-4f70-8a9b-0c1d2e3f4a5b"
     assert config_cls.lift({"agent_id": "a", "inbox_typeid": stamped}) == {"agent_id": "a", "mailbox_typeid": stamped}
     assert _mailbox_id_from({"inbox_typeid": stamped}) == "3f1c2a4b-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+
+
+async def test_the_double_lists_files_as_references():
+    from pathlib import Path
+
+    from flow_sdk.ingest.driver_registry import load_module
+
+    Double = load_module(Path(__file__).parent, "matrix").Double  # as the matrix runner loads it
+    with Double() as double:
+        delivered = double.deliver("The map.", sender="joe@example.com", files=[{"name": "map.png", "media_type": "image/png", "bytes": b"png"}])
+        async with CloudEmailSource(SourceBinding(config=dict(double.config)), mailbox=double.mailbox) as source:
+            (item,) = (await source.fetch()).items
+        (chart,) = item.data.attachments
+        assert (chart.origin.key, chart.data.size, chart.data.path) == (f"{delivered['external_id']}#att-0", 3, None)

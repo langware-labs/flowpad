@@ -139,7 +139,7 @@ function PublishedInfo() {
         <ul className="list-disc space-y-1 ps-4 text-muted-foreground">
           <li>{t`Writes a row for this asset into the project's manifest (agentic-assets/project_manifest/project_manifest.json) and lists it on the project's Discover page.`}</li>
           <li>{t`Grants no access: only people who can see the project see it. They install it with one click, or with flow asset install <typeid>.`}</li>
-          <li>{t`When the project is linked to the cloud and GitHub is connected, the document itself is pushed to the flow-cloud branch and readable on the hub. Otherwise only the row and where it comes from are listed.`}</li>
+          <li>{t`When the project is linked to the cloud, the document itself is uploaded to the project's repository on the hub, so its members can read and install it. Otherwise only the row and where it comes from are listed.`}</li>
         </ul>
       </PopoverContent>
     </Popover>

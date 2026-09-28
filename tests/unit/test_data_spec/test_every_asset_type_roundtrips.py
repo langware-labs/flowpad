@@ -61,8 +61,12 @@ VALID: dict[str, dict] = {
     # `exe_data` is the class its `subkind` names, and `output_spec_kind` must
     # name a registered kind — a filler string is refused at read, by design
     "compute_op": {"subkind": "cli", "exe_data": {"commands": {"linux": "true"}}, "output_spec_kind": "string"},
-    # a source has ONE credential lifetime, not four at once; `reflect` is closed
-    "data_driver": {"auth": None, "reflect": ["record"], "manifest_schema": 1},
+    # a source has ONE credential lifetime, not four at once; `reflect` is closed;
+    # a permission's key is a `permission.*` dot path and its mechanism a closed set;
+    # a webhook's URL is one of the credential's variables
+    "data_driver": {"auth": {"credential": "hooked", "vars": {"webhook_url": "HOOKED_WEBHOOK_URL"}},
+                    "webhook": {"url_var": "webhook_url"},
+                    "reflect": ["record"], "manifest_schema": 1, "permissions": {}},
     # a poll interval below 60s is refused
     "data_source": {"poll_interval_seconds": 300},
     # `location_type` is a closed enum, and entity-only (not in the spec)
@@ -76,15 +80,8 @@ VALID: dict[str, dict] = {
     },
     # a timestamp is normalised on read, so it has to be one going in
     "source_item": {"occurred_at": "2026-01-02T03:04:05+00:00"},
-    # `value_store` is env|vault, `lm_provider` is a closed set, and an
-    # lm_provider credential must live in the vault rather than the environment
-    "secret_pack": {
-        "value_store": "vault",
-        "lm_provider": "anthropic",
-        "manifest_schema": 2,
-        # each environment carries its own `value_store`, closed the same way
-        "environments": {},
-    },
+    # `lm_provider` is a closed set, and an lm_provider credential is one key
+    "credential": {"lm_provider": "anthropic", "manifest_schema": 2},
 }
 
 #: Fields the disk deliberately does not give back, and why. Each entry is a

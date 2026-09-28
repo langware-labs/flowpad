@@ -49,12 +49,30 @@ def alive(deployment):
     return fresh if fresh is not None and deployment_process.alive(fresh) else None
 
 
-def ready(deployment, channels: int) -> Path:
-    """Wait until the deployment's process runs its loop over *channels* channels; its log."""
-    log = Path(deployment_process.recorded(until("the deployment's process", lambda: alive(deployment), within=30)).log)
-    until(f"the loop to answer {channels} channels ({log})",
-          lambda: log.exists() and f"answers {channels} channel(s)" in log.read_text(), within=30)
-    return log
+class Console:
+    """What the deployment's process printed: its terminal's output (``Shell.read``)."""
+
+    def __init__(self, deployment) -> None:
+        self.deployment = deployment
+
+    def read_text(self) -> str:
+        from flow_sdk.builtin.shell import Shell
+
+        fresh = run(Deployment.get_by_id(self.deployment.id))
+        shell_id = deployment_process.shell_id_of(fresh) if fresh is not None else ""
+        shell = run(Shell.get_by_id(shell_id)) if shell_id else None
+        return run(shell.read()).decode(errors="replace") if shell is not None else ""
+
+    def __str__(self) -> str:
+        return self.read_text()[-1500:]
+
+
+def ready(deployment, channels: int) -> Console:
+    """Wait until the deployment's process runs its loop over *channels* channels; its console."""
+    until("the deployment's process", lambda: alive(deployment), within=30)
+    console = Console(deployment)
+    until(f"the loop to answer {channels} channels", lambda: f"answers {channels} channel(s)" in console.read_text(), within=30)
+    return console
 
 
 def end(*deployments) -> None:

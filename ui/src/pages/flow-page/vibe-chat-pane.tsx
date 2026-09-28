@@ -61,6 +61,8 @@ export function VibeChatPane({
     sourceProcess: AgenticProcess;
     projectId: string | null;
     workdir: string | null | undefined;
+    /** The chat never ran a turn — nothing to carry over, so no question to ask. */
+    empty: boolean;
   } | null>(null);
   const [workerSwitchIntent, setWorkerSwitchIntent] = useState<VibeWorkerSwitchIntent | null>(null);
 
@@ -189,14 +191,15 @@ export function VibeChatPane({
         sourceProcess: activeProcess,
         projectId,
         workdir,
+        empty: !activeProcess.session_id,
       });
     },
     [],
   );
 
   const runWorkerSwitch = useCallback(
-    async (intent: VibeWorkerSwitchIntent) => {
-      const pending = pendingWorkerSwitch;
+    async (intent: VibeWorkerSwitchIntent, requested?: typeof pendingWorkerSwitch) => {
+      const pending = requested ?? pendingWorkerSwitch;
       if (!pending || !pending.projectId || workerSwitchIntent) return;
       setWorkerSwitchIntent(intent);
       const options = {
@@ -226,6 +229,12 @@ export function VibeChatPane({
     },
     [navigation, pendingWorkerSwitch, t, workerSwitchIntent],
   );
+
+  // An empty chat has no conversation to continue, so "Continue this conversation"
+  // was a question with one real answer: start the new worker's chat directly.
+  useEffect(() => {
+    if (pendingWorkerSwitch?.empty) void runWorkerSwitch('new', pendingWorkerSwitch);
+  }, [pendingWorkerSwitch, runWorkerSwitch]);
 
   return (
     <>
@@ -305,7 +314,7 @@ export function VibeChatPane({
         }}
       />
       <VibeWorkerSwitchDialog
-        open={!!pendingWorkerSwitch}
+        open={!!pendingWorkerSwitch && !pendingWorkerSwitch.empty}
         workerType={pendingWorkerSwitch?.workerType ?? defaultWorkerType}
         inFlight={workerSwitchIntent}
         onStartNew={() => void runWorkerSwitch('new')}

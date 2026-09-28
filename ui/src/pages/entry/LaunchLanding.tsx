@@ -1,5 +1,5 @@
 import { cloudManager } from '@sdk';
-import { formatGitOrigin, gitOriginCloneUrl } from '@sdk/models/GitOrigin';
+import { formatGitOrigin, gitOriginCloneUrl, isGitOrigin } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { plannedSteps, useSandboxes } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
@@ -128,7 +128,10 @@ function RepoLaunchLanding() {
   const { currentUser } = useAuth();
   const signedIn = !!currentUser;
 
-  const { target, gitOrigin } = useLaunchTarget(params, signedIn);
+  const { target, gitOrigin: launchOrigin } = useLaunchTarget(params, signedIn);
+  // This page only launches repo links, whose origin is always a git one; a hub-hosted
+  // (`hub_repo`) origin belongs to an agent link, which `AgentLaunchLanding` handles.
+  const gitOrigin = isGitOrigin(launchOrigin) ? launchOrigin : null;
   const name = (params.get('name') || gitOrigin?.name || '').trim();
   const link = useMemo(() => linkIdentity(params), [params]);
 

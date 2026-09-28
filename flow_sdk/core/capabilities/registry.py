@@ -912,6 +912,8 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
         context_data=process.context_data,
         target_typeid_str=target_typeid_str,
         visible=False,
+        # The probe drives the interactive transport on purpose; ``run`` is headless by default.
+        pty_mode=True,
     )
     if not result.ok:
         return _failed(result, process.id)

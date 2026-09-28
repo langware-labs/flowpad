@@ -11,10 +11,9 @@ import type { UnifiedEntry } from '@src/components/lens-viewer/shared/transcript
 /**
  * Read-only chat rendering of a STAGED (not yet installed) worker transcript.
  *
- * A shared transcript is a `.jsonl` of parsed-out turns, so the generic
- * staged-file preview — which pipes any non-markdown file into a `<pre>` —
- * showed the reviewer a wall of raw JSON, the one shape that makes a transcript
- * unreadable. This renders the same turns the real viewer does, through the
+ * A shared transcript is a `.jsonl` of parsed-out turns; review routes it here
+ * rather than through the asset router, whose by-path file view would show raw
+ * JSON. This renders the same turns the real viewer does, through the
  * same server parse (`useTranscript` by absolute path) and the same
  * `ChatEntryItem` rows.
  *

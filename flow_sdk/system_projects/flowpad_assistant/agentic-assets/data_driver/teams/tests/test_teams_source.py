@@ -20,7 +20,7 @@ from flow_sdk.ingest.driver_registry import asset_module
 from flow_sdk.ingest.testing import local_http_server, position
 from flow_sdk.sources import UserProfile
 from flow_sdk.sources.binding import SourceBinding
-from flow_sdk.sources.credentials import AuthShape, Credentials
+from flow_sdk.sources.credentials import AuthShape, ResolvedSecrets
 from flow_sdk.sources.testing import Subject, checks_for
 
 TeamsSource = asset_module("teams").TeamsSource
@@ -54,7 +54,7 @@ def _message(message_id: str, text: str, *, created: str, **extra) -> dict:
 
 def _token(value):
     async def resolve(_row):
-        return Credentials(shape=AuthShape.CONNECTOR, token=SecretStr(value)) if value else Credentials()
+        return ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr(value)) if value else ResolvedSecrets()
 
     return resolve
 
@@ -148,7 +148,7 @@ def fake_graph(monkeypatch):
 
 @pytest.mark.parametrize("check", checks_for(TeamsSource), ids=str)
 async def test_conformance(check, fake_graph):
-    binding = SourceBinding(config={"channel": CONTAINER}, credentials=Credentials(shape=AuthShape.CONNECTOR, token=SecretStr("t")))
+    binding = SourceBinding(config={"channel": CONTAINER}, credentials=ResolvedSecrets(shape=AuthShape.CONNECTOR, token=SecretStr("t")))
     probe = TeamsSource(binding)
     await check.run(Subject(
         source=lambda: TeamsSource(binding),

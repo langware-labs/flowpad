@@ -23,6 +23,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.core import Entity
 from flow_sdk.fs_store.origin.cloud_origin import CloudOrigin, CloudOriginLocal
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
 from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderKind
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import UserProfile
@@ -553,6 +554,11 @@ class FlowMessage(Entity):
     reply_to_id: Optional[str] = APIField(
         None, sharing=Sharing.HUB_WRITE, description="Local id of the message this one replies to"
     )
+
+    # Who reacted with what, on a channel message — projected from ``SourceItem.reactions``
+    # (``stream_inbox.reactions``). PRIVATE like ``envelope``: re-derived here, so a hub refresh
+    # never blanks it, and never sent where the hub would drop it.
+    reactions: list[MessageReaction] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
 
     is_read: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
     is_archived: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)

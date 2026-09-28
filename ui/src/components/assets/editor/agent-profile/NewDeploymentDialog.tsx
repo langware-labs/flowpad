@@ -1,9 +1,9 @@
-import { Agent } from '@sdk';
+import { Agent, Deployment, type AgentReadiness, type AgentTokenAllocation, type IDeployment } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 import { Cloud, Laptop, Loader2, Rocket } from 'lucide-react';
 
-import { errorMessage } from '@src/lib/error-message';
+import { describeApiError, errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
@@ -12,12 +12,20 @@ import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 
 import { AgentDeployChecklist } from './AgentDeployChecklist';
+import { DeploymentSecretsGate } from './DeploymentSecretsGate';
+import { TokenAllocationField, tokenAllocationComplete } from './TokenAllocationField';
 import { AGENT_MACHINE_SIZE_LABELS, AGENT_MACHINE_SIZES } from './agent-vocabularies';
 
 /** A cloud machine's credential environment when nobody names one. */
 const DEFAULT_CLOUD_ENVIRONMENT = 'production';
 const ENVIRONMENT_RE = /^[a-z][a-z0-9_-]{0,39}$/;
 const RESERVED_ENVIRONMENTS = new Set(['project', 'user', 'development']);
+
+/** What a deploy refused by the readiness gate carries (409 `not_ready`). */
+interface NotReadyData {
+  readiness?: AgentReadiness;
+  deployment?: IDeployment;
+}
 
 /** `local`, or a cloud machine size (`sm` | `md` | `lg`). */
 type DeploymentType = 'local' | (typeof AGENT_MACHINE_SIZES)[number];
@@ -37,14 +45,25 @@ interface NewDeploymentDialogProps {
  * what launching that type needs, and Launch. Only a cloud machine needs the publish checklist
  * (it runs the published definition) and a credential environment; this computer needs neither.
  */
-export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, onLaunched }: NewDeploymentDialogProps) {
+export function NewDeploymentDialog({
+  agent,
+  open,
+  onOpenChange,
+  onMachineSize,
+  onLaunched,
+}: NewDeploymentDialogProps) {
   const { t } = useLingui();
   const [type, setType] = useState<DeploymentType>('local');
   const [launching, setLaunching] = useState(false);
   // Tri-state from the checklist: `null` (still checking) never disables Launch.
   const [ready, setReady] = useState<boolean | null>(null);
   const [environment, setEnvironment] = useState(DEFAULT_CLOUD_ENVIRONMENT);
+  // `null`: unchecked — the deployed agent spends its owner's capped default.
+  const [tokenAllocation, setTokenAllocation] = useState<AgentTokenAllocation | null>(null);
   const environmentValid = ENVIRONMENT_RE.test(environment) && !RESERVED_ENVIRONMENTS.has(environment);
+  // The deploy's own refusal (409 `not_ready`): what that placement's machine still lacks. Never
+  // asked ahead of a Launch — planning mints the hub's row for an environment, so it waits for one.
+  const [refused, setRefused] = useState<{ readiness: AgentReadiness; deployment: Deployment } | null>(null);
   const cloud = type !== 'local';
 
   const choices: { value: DeploymentType; label: string; hint: string; Icon: typeof Cloud }[] = [
@@ -68,7 +87,7 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
       } else {
         // The hub sizes the box from the PUBLISHED definition, so the size is written before the deploy publishes.
         await onMachineSize?.(type);
-        data = await agent.deploy(environment);
+        data = await agent.deploy(environment, undefined, tokenAllocation);
         if (data.agent_definition_error) {
           notify.warning({ title: t`Deployed without its definition`, message: data.agent_definition_error });
         } else if (data.reused) {
@@ -80,6 +99,14 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
       onOpenChange(false);
       await onLaunched(data.deployment?.id);
     } catch (e) {
+      if (describeApiError(e).code === 'not_ready') {
+        // The refusal names the planned placement and what it lacks; its fixes go there.
+        const data = (e as { response?: { data?: { data?: NotReadyData } } }).response?.data?.data;
+        if (data?.readiness && data.deployment) {
+          setRefused({ readiness: data.readiness, deployment: new Deployment(data.deployment) });
+          return;
+        }
+      }
       notify.error({
         title: t`Could not launch the deployment`,
         message: errorMessage(e, t`Launch failed.`),
@@ -90,7 +117,14 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
     }
   };
 
-  const blocked = !agent.enabled || launching || (cloud && (ready === false || !environmentValid));
+  const blocked =
+    !agent.enabled ||
+    launching ||
+    (cloud &&
+      (ready === false ||
+        !environmentValid ||
+        !tokenAllocationComplete(tokenAllocation) ||
+        refused?.readiness.ready === false));
 
   return (
     <Dialog open={open} onOpenChange={(next) => !launching && onOpenChange(next)}>
@@ -109,7 +143,10 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
               role="radio"
               aria-checked={type === value}
               disabled={launching}
-              onClick={() => setType(value)}
+              onClick={() => {
+                setType(value);
+                setRefused(null);
+              }}
               className={cn(
                 'flex items-center gap-3 rounded-md border px-3 py-2 text-start transition-colors disabled:cursor-not-allowed disabled:opacity-50',
                 type === value ? 'border-primary bg-primary/5' : 'hover:bg-muted/60',
@@ -136,7 +173,10 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
                   className="h-8 w-40 font-mono text-xs"
                   value={environment}
                   disabled={launching}
-                  onChange={(e) => setEnvironment(e.target.value.trim().toLowerCase())}
+                  onChange={(e) => {
+                    setEnvironment(e.target.value.trim().toLowerCase());
+                    setRefused(null);
+                  }}
                   aria-invalid={!environmentValid}
                   data-testid="new-deployment-environment"
                 />
@@ -148,6 +188,21 @@ export function NewDeploymentDialog({ agent, open, onOpenChange, onMachineSize, 
                   )}
                 </span>
               </div>
+              <TokenAllocationField
+                agent={agent}
+                environment={environment}
+                value={tokenAllocation}
+                onChange={setTokenAllocation}
+                disabled={launching}
+              />
+              {refused && (
+                <DeploymentSecretsGate
+                  agent={agent}
+                  deployment={refused.deployment}
+                  readiness={refused.readiness}
+                  onChange={(readiness) => setRefused({ ...refused, readiness })}
+                />
+              )}
             </>
           ) : (
             <p className="text-xs text-muted-foreground" data-testid="new-deployment-local-details">

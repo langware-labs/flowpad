@@ -22,7 +22,7 @@ import {
   ShellInputFlowData,
   ShellOutputFlowData,
 } from '../../flow_processing';
-import { IEntity, EntityMerge } from '../../IEntity';
+import { EntityMerge } from '../../IEntity';
 import { ActionInfo } from '../../models';
 import { hostTerminalTheme } from '../../utils/runtime';
 import {
@@ -32,6 +32,7 @@ import {
   RuntimeEnvironment,
   SANDBOX_PROVIDERS,
   type WorkspaceReady,
+  IComputeNode,
 } from './compute-node-types';
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
@@ -75,30 +76,6 @@ export function vfsToOsPath(vfsPath: string, root: string): string {
   const isWindows = root.includes('\\') || (root.length >= 2 && root[1] === ':');
   // Normalize slashes: backslash for Windows, forward slash for Unix
   return isWindows ? combined.replace(/\//g, '\\') : combined.replace(/\\/g, '/');
-}
-
-/**
- * Interface for ComputeNode entity data.
- */
-// `status` is omitted from the base: a compute_node row has no persisted status
-// field, and the name is taken on the class by the async `status()` call that
-// asks the provider what the machine is doing.
-export interface IComputeNode extends Omit<IEntity, 'status'> {
-  name: string;
-  runtime: RuntimeEnvironment;
-  node_provider_type?: ComputeProviderType;
-  node_provider_id?: string;
-  node_config?: Record<string, unknown>;
-  fs_storage_mount_path?: string | null;
-  home_dir?: string | null;
-  /** Whether the box belongs to a single person. Owner-only to change, and only
-   *  through the hub's `auto-login` action — it is in the hub's
-   *  `_immutable_update`, so a PUT carrying it is silently dropped. */
-  auto_login?: boolean;
-  /** Who the box last reported itself signed in as, cached hub-side. `null` (or
-   *  absent) means "not signed in as far as the hub knows", which includes
-   *  "never looked". Read-only: server-owned, never sent. */
-  logged_in_user?: string | null;
 }
 
 /**
@@ -231,7 +208,6 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       launchPrompt?: string;
     },
   ): Promise<import('../../process/agentic-process').AgenticProcess> {
-    const { AgenticProcess } = await import('../../process/agentic-process');
     const { serializeAgenticContext } = await import('../../process/agentic-context');
 
     const action = new ActionInfo('createProcess', ComputeNode.type, this.id, 'POST');
@@ -869,7 +845,10 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Returns null if the user cancelled.
    */
   async openPathDialog(initialDir?: string, mode: 'folder' | 'file' = 'folder'): Promise<string | null> {
-    const response = await this.post<{ path: string | null }>('pick-folder', { ...(initialDir ? { initial_dir: initialDir } : {}), mode });
+    const response = await this.post<{ path: string | null }>('pick-folder', {
+      ...(initialDir ? { initial_dir: initialDir } : {}),
+      mode,
+    });
     return (response as any)?.path ?? null;
   }
 

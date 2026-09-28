@@ -26,7 +26,7 @@ import functools
 import itertools
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import PrivateAttr
 
@@ -40,23 +40,27 @@ from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
+from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.schema.types import EntityType
-from flow_sdk.schema.data_spec._form import ShapeForm
 
 if TYPE_CHECKING:  # pragma: no cover
-    from collections.abc import Sequence
-
     from flow_sdk.blocks import MessageBlock
-    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
     from flow_sdk.builtin.data_source import DataSource
     from flow_sdk.builtin.mcp import Mcp
     from flow_sdk.schema.data_spec.mcp_spec import McpSpec
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+    from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec
+    from flow_sdk.schema.data_spec.webhook_spec import DeploymentWebhookSpec
 
 logger = logging.getLogger(__name__)
+
+#: ``token_allocation`` not given: leave the deployment's as it is.
+_UNSET = object()
 
 #: The two vocabularies for "which CLI": an agent.json declares the DRIVER
 #: short-id (``VENDORS[...].key``), ``AgenticProcess.worker_type`` carries the
@@ -141,6 +145,9 @@ class Agent(Entity):
     """``agentic-assets/agent/<name>/`` — the ROW. Its shape on disk is
     ``AgentSpec`` (``TypeInfo.asset_spec``); that ``agent.json`` is the main file
     and the folder names the agent is ``TypeInfo``'s (the serializer's)."""
+
+    # A remote agent's hub row owns its deployments, machines, mailbox and stored secrets.
+    owns_hub_delete: ClassVar[bool] = True
 
     type: str = APIField(default=EntityType.AGENT.value)
     _mailbox: AgentMailbox | None = PrivateAttr(default=None)
@@ -277,6 +284,15 @@ class Agent(Entity):
         default=None,
         description="The agent's own phone number — country code and national number — the one its "
         "WhatsApp channel answers on.",
+    )
+
+    # ── requirements ──────────────────────────────────────────────────────
+    # What the agent needs wherever it runs (``builtin/readiness.py``): a snapshot written when the
+    # agent is published, so it travels with it; readiness always derives it afresh. Authored entries
+    # are kept. Names only, never a value.
+    requirements: Optional[list[RequirementSpec]] = APIField(
+        default=None,
+        description="What this agent needs to run anywhere: credentials, permissions, variables. Names only.",
     )
 
     _api_visible: ClassVar[bool] = True
@@ -432,10 +448,21 @@ class Agent(Entity):
         return await target.create_process(prompt, **options)
 
     async def launch(
-        self, prompt: str, *, deployment: "Deployment | None" = None, wait: bool = False, **options
+        self,
+        prompt: str,
+        *,
+        deployment: "Deployment | None" = None,
+        wait: bool = False,
+        input: Any = None,
+        output_spec: Any = None,
+        **options,
     ) -> "PromptResult":
         """``create_process`` + save + run the first turn — a ``PromptResult``
         whose ``executor`` names the process. Never raises for an outcome.
+
+        ``input`` / ``output_spec``: typed folder I/O, as ``AgenticProcess.run`` — a DataSpec saved for
+        the run to read, and the DataSpec it must write back (``value``, with ``wait=True``). Omitted,
+        the agent's declared ``input`` / ``output`` apply.
 
         Goes through ``dispatch_agent_run`` rather than ``Deployment.launch``
         directly: that function owns the run lifecycle events and the refusal to
@@ -445,7 +472,21 @@ class Agent(Entity):
         from flow_sdk.builtin.agent_run import dispatch_agent_run  # noqa: PLC0415
 
         target = deployment or await self.local_deployment()
-        return await dispatch_agent_run(target, prompt, wait=wait, **options)
+        return await dispatch_agent_run(target, prompt, wait=wait, input=input, output_spec=output_spec, **options)
+
+    async def fresh(self) -> "Agent":
+        """This agent as its folder defines it NOW — re-parsed when the files changed since the
+        last index, else ``self``.
+
+        The folder IS the definition and people edit it by hand (or through agent-builder), while
+        a row is only re-read on an HTTP GET. The paths that load an agent from its ROW in order to
+        launch it — the ``use`` / ``run`` actions and auto-launch — call this first; otherwise a
+        new chat started the old worker and the old prompt. A caller holding its own Agent object
+        launches that object as given: the primitives never swap it for the disk.
+        """
+        if await self.check_and_refresh_record():
+            return await Agent.get_by_id(self.id) or self
+        return self
 
     async def use(
         self, project_id: str | None = None, *, deployment: "Deployment | None" = None, owner=None
@@ -516,7 +557,7 @@ class Agent(Entity):
             candidates.sort(key=age_key)
             winner, cancelled = candidates[0], candidates[1:]
 
-            process = await winner.use(project_id=project_id)
+            process = await (await winner.fresh()).use(project_id=project_id)
             update_project_device_state(
                 project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
             )
@@ -639,29 +680,36 @@ class Agent(Entity):
     # ── publish ───────────────────────────────────────────────────────────
 
     async def ensure_on_hub(self, actor: TypeId, *, force: bool = False) -> bool:
-        """Publish this repository-backed agent through the canonical Git path.
+        """Publish this agent into its project's hub-hosted repository.
 
         An Agent is not a loose deployment payload. It is an asset inside its
-        owning Project's repository, so publication must commit that asset path,
-        push it, and register its ``GitOrigin`` under the already-published
-        Project. The Hub can then clone the whole repository into the sandbox.
+        owning Project, so publication pushes that asset path into the project's
+        hub repo and registers it there (``publish_git_asset``); the hub can then
+        clone the repository into the sandbox.
 
-        ``remote=True`` without ``git_origin`` is legacy partial state produced by
-        the old field-only share path. Treat it as unpublished so the next deploy
-        repairs the row rather than preserving a deployment that cannot load its
-        files (notably ``avatar.png``).
+        ``remote=True`` without a hub-repo origin is legacy state (the old
+        field-only share path, or a GitHub origin). Treat it as unpublished so
+        the next deploy repairs the row rather than preserving a deployment that
+        cannot load its files (notably ``avatar.png``).
         """
-        if self.remote and self.origin and not force:
+        from flow_sdk.builtin.agent_places import hub_origin  # noqa: PLC0415
+
+        # Published means "in its project's hub repo"; any other origin is
+        # republished into the hub repo on the next deploy.
+        if self.remote and hub_origin(self) is not None and not force:
             return False
 
         from flow_sdk.builtin.asset_publishing import (
             owning_project,  # noqa: PLC0415
             publish_git_asset,  # noqa: PLC0415
         )
+        from flow_sdk.builtin.readiness import refresh_requirements  # noqa: PLC0415
 
         project = await owning_project(self)
         if project is not None:
             await project.ensure_on_hub()
+        # What it needs travels with it: the commit below carries the current requirements.
+        await refresh_requirements(self)
         await publish_git_asset(self, actor)
         return True
 
@@ -687,6 +735,55 @@ class Agent(Entity):
             data={"agent_id": self.id, "published": published, "already_on_hub": not published}
         )
 
+    # ── requirements and readiness ────────────────────────────────────────
+
+    @action.get(action_name="requirements")
+    async def requirements_action(self):
+        """`GET /agent/<id>/requirements` — what this agent needs to run anywhere. Names only."""
+        from flow_sdk.builtin.readiness import requirements  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in await requirements(self)])
+
+    @action.get(action_name="readiness")
+    async def readiness_action(self):
+        """`GET /agent/<id>/readiness?deployment_id=` — does that deployment (default: this computer)
+        satisfy each requirement? Names only."""
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        try:
+            deployment = await Deployment.resolve((request_info.get_param("deployment_id") if request_info else None) or "")
+        except LookupError as e:
+            return ApiFailResponse(message=str(e), status_code=404)
+        return ApiSuccessResponse(data=(await readiness(self, deployment)).model_dump(mode="json"))
+
+    @action.post(action_name="plan_deployment")
+    async def plan_deployment_action(self):
+        """`POST /agent/<id>/plan_deployment  {"environment"}` — the cloud placement before its machine,
+        and whether it is ready: what a deploy dialog lists, with "use mine" per missing value."""
+        from flow_sdk.builtin.readiness import readiness  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        body = await self._body()
+        try:
+            allocation = _token_allocation_of(body)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        try:
+            deployment = await self.plan_deployment(
+                str(body.get("environment") or "").strip() or None, token_allocation=allocation
+            )
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=f"plan failed: {exc}", status_code=502)
+        return ApiSuccessResponse(data={
+            "deployment": deployment.model_dump(mode="json"),
+            "readiness": (await readiness(self, deployment)).model_dump(mode="json"),
+        })
+
     # ── the mailbox ───────────────────────────────────────────────────────
 
     @property
@@ -710,53 +807,6 @@ class Agent(Entity):
         """
         return await AgentMailbox.allocate(self, **options)
 
-    async def bind_channel(self, *, provider: str, channel: str, allowed_senders: "Sequence[str]" = ()) -> "DataSource":
-        """Make ``channel`` on ``provider`` reach THIS agent, and answer as it.
-
-        The channel sibling of :meth:`allocate_mailbox`. A mailbox is *allocated* —
-        the hub mints an address nobody had. A channel already exists and someone
-        already connected the provider, so binding is a lookup plus an owner: the
-        source that watches this channel becomes the agent's, and everything
-        downstream (the turn, ``agent_id_of``, the outbound persona) keys on that
-        owner.
-
-        The adoption itself is ``StreamInbox.ensure_source`` — the same seam the SDK
-        block uses, NOT a second copy of it, so a binding gets its
-        connection precheck (``NotConnected`` naming the fix, rather than a row
-        that parks on its first poll) and its idempotency for free. Binding twice
-        adopts the existing row; a twin would double every message in the channel.
-
-        ``allowed_senders`` is the gate, and an empty list means NOBODY: a channel
-        is readable and writable by everyone in it, so an agent that answers
-        whoever speaks is one an unvetted stranger can drive.
-
-        Binding does not make the source listen. A provider with a setup step
-        lands in ``SETUP`` and answers no one until it is verified — the same
-        rule ``AgentMailbox.allowed`` enforces for a mailbox.
-        """
-        from flow_sdk.blocks import StreamInbox  # noqa: PLC0415
-        from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
-
-        channel = str(channel or "").strip()
-        if not channel:
-            raise ValueError("a binding needs the channel's id")
-        driver = DataDriver.loaded(provider)
-        if driver is None:
-            raise ValueError(f"unknown provider {provider!r}")
-        if not driver.sends:
-            # A one-way source can still be read, but an agent bound to it could
-            # never answer — which is the whole point of the binding.
-            raise ValueError(f"the {provider} driver cannot send, so an agent cannot converse on it")
-
-        source = await StreamInbox(channel, provider=provider, owner=self).ensure_source()
-        senders = [t for t in (str(s).strip() for s in allowed_senders) if t]
-        # Only on change: re-binding is the documented common case, and
-        # `DataSource.save` is a spec read plus a write.
-        if list(source.inbound_allowed_senders or []) != senders:
-            source.inbound_allowed_senders = senders
-            await source.save_runtime()
-        return source
-
     async def channels(self) -> "list[DataSource]":
         """Every message channel this agent owns — a source on a channel whose driver can send."""
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
@@ -776,36 +826,6 @@ class Agent(Entity):
         if len(found) != 1:
             raise LookupError(f"{self.name or self.id} has {len(found)} {kind!r} channels; expected one")
         return found[0]
-
-    @action.post(action_name="bind_channel")
-    @_mailbox_failures("bind a channel")
-    async def bind_channel_action(self):
-        """`POST /agent/<id>/bind_channel` — ``{provider, channel, allowed_senders?}``.
-
-        Declares no parameters, for the reason ``allocate_mailbox_action`` gives:
-        this module carries ``from __future__ import annotations`` and the
-        dispatcher resolves an annotated ``request`` by identity.
-        """
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required", status_code=401)
-        body = await request_info.get_post_data() or {}
-        try:
-            # `**body` on purpose: an unknown key is a TypeError, which is the
-            # same 400 a hand-rolled key check would produce, and one fewer
-            # place to edit when a parameter is added.
-            source = await self.bind_channel(**body)
-        except (TypeError, ValueError) as e:
-            return ApiFailResponse(message=str(e), status_code=400)
-        return ApiSuccessResponse(
-            data={
-                "source_id": str(source.id),
-                "provider": source.provider,
-                "status": source.status,
-                "owner": str(self.typeid),
-                "allowed_senders": list(source.inbound_allowed_senders or []),
-            }
-        )
 
     @action.get(action_name="mailbox_state")
     @_mailbox_failures("load the mailbox")
@@ -916,7 +936,9 @@ class Agent(Entity):
 
     # ── deploy to the cloud ───────────────────────────────────────────────
 
-    async def deploy_to_cloud(self, actor: TypeId, environment: str | None = None) -> dict:
+    async def deploy_to_cloud(
+        self, actor: TypeId, environment: str | None = None, *, token_allocation: "TokenAllocationSpec | None | object" = _UNSET
+    ) -> dict:
         """Give this agent a machine of its own on the hub.
 
         Publish is implicit: a deploy names an agent the hub has to already
@@ -928,15 +950,66 @@ class Agent(Entity):
         principal parameter: were either passable from here they would be
         passable from anywhere, which is the exact hole the hub's pentest guards
         exist to keep shut. This call says only *which agent*, and which
-        credential ``environment`` the placement reads (``production`` by default).
+        credential ``environment`` the placement reads (``production`` by default), and its
+        ``token_allocation`` (see :meth:`plan_deployment`).
 
         The credentials live in this process, so the browser never talks to the
         hub directly.
         """
         from flow_sdk.builtin.cloud_deploy import deploy_entity_to_cloud  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady, readiness  # noqa: PLC0415
 
         await self.ensure_on_hub(actor)
-        return await deploy_entity_to_cloud(self, environment)
+        # The readiness gate: the placement's store must hold every value the agent needs before a
+        # machine is paid for. The hub checks the same names again (``require``).
+        deployment = await self.plan_deployment(environment, token_allocation=token_allocation)
+        ready = await readiness(self, deployment)
+        if not ready.ready:
+            raise NotReady(ready, deployment)
+        return await deploy_entity_to_cloud(self, environment, require=ready.value_names())
+
+    async def webhook_specs(self) -> list["DeploymentWebhookSpec"]:
+        """One hub webhook per driver among this agent's sources that takes provider pushes (its manifest's
+        ``webhook``): named by the driver, its URL stored and placed as the driver's URL variable."""
+        from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import driver_of  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.webhook_spec import WEBHOOK_ROUTE, DeploymentWebhookSpec  # noqa: PLC0415
+
+        specs: dict[str, DeploymentWebhookSpec] = {}
+        for provider in dict.fromkeys(str(s.provider or "") for s in await DataSource.find_owned(self.typeid)):
+            driver = await driver_of(provider)
+            if driver is None or driver.webhook is None:
+                continue
+            hook = driver.webhook
+            specs[provider] = DeploymentWebhookSpec(
+                name=provider, var=driver.auth.vars[hook.url_var], path=WEBHOOK_ROUTE.format(name=provider),
+                methods=list(hook.methods), required_headers=list(hook.required_headers),
+            )
+        return list(specs.values())
+
+    async def plan_deployment(
+        self, environment: str | None = None, *, token_allocation: "TokenAllocationSpec | None | object" = _UNSET
+    ) -> "Deployment":
+        """The cloud placement this agent will have in ``environment`` — the hub's row, adopted here —
+        before it has a machine: where "use mine" stores values ahead of a deploy. Idempotent. Its
+        :meth:`webhook_specs` are kept on the hub, following its machine, each URL stored as its variable —
+        so readiness finds them and "use mine" never copies this computer's. ``token_allocation`` gives the
+        placement its own hub LLM endpoint drawn from ``source`` (``None`` releases it back to the owner's
+        default; omitted leaves it as it is)."""
+        from flow_sdk.builtin.cloud_deploy import DEFAULT_CLOUD_ENVIRONMENT  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415
+
+        environment = normalize_environment(environment or DEFAULT_CLOUD_ENVIRONMENT)
+        body = {"environment": environment, "webhooks": [w.model_dump(mode="json") for w in await self.webhook_specs()]}
+        if token_allocation is not _UNSET:
+            body["token_allocation"] = token_allocation.model_dump(mode="json") if token_allocation else None
+        data = await hub_post(self.type, body, self.id, "plan_deployment") or {}
+        deployment = await Deployment.adopt_from_hub(data.get("deployment"), element=self)
+        if deployment is None:
+            raise RuntimeError("the hub returned no deployment to plan")
+        return deployment
 
     @action.post(action_name="deploy")
     async def deploy_action(self):
@@ -967,13 +1040,29 @@ class Agent(Entity):
         if not actor:
             return ApiFailResponse(message="deploy requires an authenticated user", status_code=401)
         from flow_sdk.assets.git_publish import AssetPublishError  # noqa: PLC0415
+        from flow_sdk.builtin.readiness import NotReady  # noqa: PLC0415
         from flow_sdk.schema.data_spec.credential_contract import is_valid_environment  # noqa: PLC0415
 
         environment = str(body.get("environment") or "").strip() or None
         if environment is not None and not is_valid_environment(environment):
             return ApiFailResponse(message=f"{environment!r} is not a valid environment name", status_code=400)
         try:
-            data = await self.deploy_to_cloud(actor, environment)
+            allocation = _token_allocation_of(body)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        try:
+            data = await self.deploy_to_cloud(actor, environment, token_allocation=allocation)
+        except NotReady as exc:
+            # The gate: nothing is deployed, and each missing value is named with its fix.
+            return ApiFailResponse(
+                status_code=409,
+                message=str(exc),
+                data={
+                    "code": "not_ready",
+                    "readiness": exc.readiness.model_dump(mode="json"),
+                    "deployment": exc.deployment.model_dump(mode="json") if exc.deployment else None,
+                },
+            )
         except AssetPublishError as exc:
             # Deploy publishes the agent through git first, so every publish
             # precondition is a deploy precondition. These are the caller's
@@ -1013,7 +1102,8 @@ class Agent(Entity):
         # Every outcome — disabled here, placed remotely, busy, accepted — is the
         # launch's own answer, and the body of every response is that answer
         # (``executor`` names the process to navigate to). Only ``busy`` is 409.
-        answer = await self.launch(prompt, deployment=await self.local_deployment())
+        agent = await self.fresh()
+        answer = await agent.launch(prompt, deployment=await agent.local_deployment())
         payload = answer.model_dump(mode="json")
         if answer.busy:
             return ApiFailResponse(message=answer.detail, status_code=409, data=payload)
@@ -1240,18 +1330,19 @@ class Agent(Entity):
         project_id = str((body or {}).get("project_id") or "").strip() or None
         deployment_id = str((body or {}).get("deployment_id") or "").strip()
 
+        agent = await self.fresh()
         if deployment_id:
             if not is_valid_entity_id(deployment_id):
                 return ApiFailResponse(message="deployment_id must be a UUID v4 or v5", status_code=400)
             deployment = await Deployment.get_by_id(deployment_id)
-            if deployment is None or not deployment.is_agent_placement_of(self):
+            if deployment is None or not deployment.is_agent_placement_of(agent):
                 return ApiFailResponse(message="agent deployment not found", status_code=404)
-            deployment = deployment.with_element(self)
+            deployment = deployment.with_element(agent)
         else:
-            deployment = await self.local_deployment()
+            deployment = await agent.local_deployment()
         owner = request_info.someone_typeid if request_info else None
         try:
-            process = await self.use(project_id=project_id, deployment=deployment, owner=owner)
+            process = await agent.use(project_id=project_id, deployment=deployment, owner=owner)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()
@@ -1306,3 +1397,20 @@ class Agent(Entity):
         cli_json.update({k: v for k, v in cli_extra.items() if v is not None})
 
         return factory(cli_json, driver_key(worker_type or self.worker_type))
+
+
+def _token_allocation_of(body: dict):
+    """A request's ``token_allocation``: a ``TokenAllocationSpec``, ``None`` (release it), or ``_UNSET`` when the
+    request does not mention it (leave it as it is). ``ValueError`` names a malformed one."""
+    from pydantic import ValidationError  # noqa: PLC0415
+
+    from flow_sdk.schema.data_spec.token_allocation_spec import TokenAllocationSpec  # noqa: PLC0415
+
+    if "token_allocation" not in body:
+        return _UNSET
+    if body["token_allocation"] is None:
+        return None
+    try:
+        return TokenAllocationSpec.model_validate(body["token_allocation"])
+    except ValidationError as exc:
+        raise ValueError(f"invalid token allocation: {exc.errors(include_input=False)}") from exc

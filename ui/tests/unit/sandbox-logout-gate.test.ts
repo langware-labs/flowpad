@@ -10,7 +10,7 @@
  * going wrong. The button's wiring is covered by the card test.
  */
 import { describe, expect, it } from 'vitest';
-import { isSignedInAsMe } from '@src/pages/hub-home/HubHome';
+import { isSignedInAsMe } from '@src/pages/hub-home/signed-in-as-me';
 
 describe('isSignedInAsMe', () => {
   it('matches the viewer regardless of casing or padding', () => {

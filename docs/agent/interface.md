@@ -94,7 +94,7 @@ properties:
   markdown_docs: "list[dict]"
   status_report: "dict | null"
 methods:
-  run: "async (instruction, workdir=None, **kwargs) -> PromptResult"
+  run: "async (instruction, workdir=None, *, input=None, output_spec=None, **kwargs) -> PromptResult — input: a DataSpec saved to execution/input; output_spec: the DataSpec loaded from execution/output into value"
   resume: "(session_id, workdir=None, **kwargs) -> AgenticProcess"
   start_pty: "async (instruction=None, visible=None, retry=false, session_id_override=None) -> ApiResponse"
   prompt: "async (instruction) -> ApiResponse"
@@ -149,7 +149,7 @@ params:
   AgenticProcessEventName: "first_prompt"
   WorkerMode: "interactive | cli"
   ModelTier: "sm | md | lg"
-  PromptResult: "a turn's answer (ReturnedValue): text, value, executor"
+  PromptResult: "a turn's answer (ReturnedValue): text, value, executor, files (what the run left in execution/output)"
   StreamEvent: "streamed execution event"
 returns: "supporting Python contracts"
 source:
@@ -168,7 +168,7 @@ source:
 name: AgenticProcess.factories
 description: Class-level construction, environment checks, session adoption, and lookup.
 params:
-  run: "async (instruction, workdir=None, **kwargs) -> PromptResult"
+  run: "async (instruction, workdir=None, *, input=None, output_spec=None, **kwargs) -> PromptResult — input: a DataSpec saved to execution/input; output_spec: the DataSpec loaded from execution/output into value"
   is_installed: "async (worker_type=None) -> bool"
   is_logged_in: "async (worker_type=None) -> WorkerAuthResult"
   resume: "(session_id, workdir=None, **kwargs) -> AgenticProcess"
@@ -424,7 +424,7 @@ params:
   set-graph-context: "POST {graph_context_id} -> bound GraphContext"
   add-dir: "POST {path} -> additional_dirs"
   remove-dir: "POST {path} -> additional_dirs"
-  input-dir: "GET -> {abs_path, compute_node_id}"
+  input-dir: "GET -> {abs_path (execution/input), compute_node_id}"
 returns: ApiResponse
 errors: ["400", "404"]
 source:
