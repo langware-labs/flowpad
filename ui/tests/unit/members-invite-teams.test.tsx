@@ -73,7 +73,8 @@ const CONVERSATION = new Conversation({
 const ME = { user_id: 'me-id', email: 'me@example.com', name: 'Me', role: 'editor' };
 const ROSTER = [ME];
 /** A roster after sandbox-team was granted: one team row, and its member Dana
- *  listed as an ordinary user row (the hub flattens inherited people). */
+ *  listed as an ordinary user row (the hub flattens inherited people). The
+ *  popover reads the team's own roster to put Dana back under it. */
 const ROSTER_WITH_TEAM = [
   ME,
   { type: 'team', id: SANDBOX.id, user_id: null, name: 'sandbox-team', role: 'member', status: 'approved' },
@@ -91,6 +92,8 @@ const EMPTY_RESULT: ShareResult = {
 
 let shareResult: ShareResult;
 let roster: unknown[];
+/** What the team's own `members` read answers; null = the read fails. */
+let teamRoster: unknown[] | null;
 let refuseDelete: string | null;
 let callAction: ReturnType<typeof vi.spyOn>;
 const shareCalls = () =>
@@ -103,10 +106,14 @@ const deleteCalls = () =>
 beforeEach(() => {
   shareResult = EMPTY_RESULT;
   roster = ROSTER;
+  teamRoster = [{ user_id: 'dana-id', email: null, name: 'Dana', role: 'member' }];
   refuseDelete = null;
   callAction = vi.spyOn(dataManager, 'callAction').mockImplementation((info: ActionInfo) => {
     if (info.name === 'members' && info.method === 'DELETE' && refuseDelete) {
       return Promise.reject(new Error(refuseDelete));
+    }
+    if (info.name === 'members' && info.targetEntity?.type === 'team') {
+      return teamRoster ? Promise.resolve(teamRoster) : Promise.reject(new Error('team roster unavailable'));
     }
     if (info.name === 'members') return Promise.resolve(roster);
     if (info.name === 'share') {
@@ -294,7 +301,39 @@ describe('members popover on a Project — a granted team on the roster', () => 
     expect(teamOption()).toBeDisabled();
   });
 
-  it('shows the hub message when removing an inherited member is refused, and keeps the row', async () => {
+  it("nests the team's people under it, with the team's role and no remove or role control", async () => {
+    await openRoster();
+
+    const dana = await waitFor(() => {
+      const row = screen.getByText('Dana').closest('li') as HTMLElement;
+      expect(row).toHaveAttribute('data-testid', 'member-nested');
+      return row;
+    });
+    expect(dana.previousElementSibling).toBe(teamRow());
+    expect(dana).toHaveTextContent(/member/i);
+    expect(dana.querySelector('[data-testid="member-remove"]')).toBeNull();
+    expect(dana.querySelector('[data-testid="member-role-select"]')).toBeNull();
+    // Only the team row keeps its remove control.
+    expect(teamRow().querySelector('[data-testid="member-remove"]')).not.toBeNull();
+  });
+
+  it('keeps a person with a role of their own on top of the team as a top-level row', async () => {
+    roster = [
+      ME,
+      { type: 'team', id: SANDBOX.id, user_id: null, name: 'sandbox-team', role: 'member', status: 'approved' },
+      { user_id: 'dana-id', email: null, name: 'Dana', role: 'member, admin' },
+    ];
+    await openInvite(PROJECT);
+
+    await waitFor(() =>
+      expect(callAction.mock.calls.some(([i]) => (i as ActionInfo).targetEntity?.type === 'team')).toBe(true),
+    );
+    const dana = screen.getByText('Dana').closest('li') as HTMLElement;
+    expect(dana).not.toHaveAttribute('data-testid', 'member-nested');
+  });
+
+  it('shows the hub message when removing a member is refused, and keeps the row', async () => {
+    teamRoster = null; // the team's roster can't be read, so Dana stays a top-level row
     await openRoster();
     refuseDelete = 'Dana has access through a team';
     const dana = screen.getByText('Dana').closest('li') as HTMLElement;
