@@ -61,8 +61,8 @@ const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
  * (or a repeat of the modal that blocked clicks entirely) without flaking on
  * runner weather. Tighten it toward the SLA as samples accumulate.
  *
- * ONLY the warm budget moves. CI already meets `projectMs` and `coldTerminalMs`
- * as calibrated, and a budget that passes must not be loosened.
+ * `coldTerminalMs` does NOT move: CI meets it as calibrated, and a budget that
+ * passes must not be loosened.
  *
  * Where the time goes, when it is worth attacking: ~19 background refreshes per
  * warm switch, and a duplicate `POST /tab/<id>/activate` on shell and process
@@ -70,8 +70,29 @@ const BUDGET = { warmMs: 150, projectMs: 300, coldTerminalMs: 1000 };
  */
 const CI_WARM_MS = 400;
 
-/** CI runs on slower hardware than the SLA was calibrated on; see CI_WARM_MS. */
+/**
+ * The project-switch budget CI asserts, in place of the 300ms SLA above. Same
+ * reasoning as CI_WARM_MS, and the same 1.4x margin over the worst sample.
+ *
+ * Two samples from ONE commit (2b46a999f) — the first run failed, the re-run of
+ * the same job on the same commit passed, so 300 was a coin flip on CI, not a
+ * regression:
+ *
+ *            p50     p90
+ *   CI #1    282ms   387ms   (failed against 300)
+ *   CI #2    220ms   265ms   (passed against 300)
+ *   local     81ms    86ms   (two runs, production build; docs recorded 95ms)
+ *
+ * 4.5x and 3.1x slower than this machine, varying 46% between runs on the same
+ * commit — a wider spread than the warm switches showed (2.6-3.3x, ~30%), and
+ * this test is the one with 16 samples rather than 60, so its p90 is the second
+ * worst of 16. 550 sits above the worst sample with room for that variance.
+ */
+const CI_PROJECT_MS = 550;
+
+/** CI runs on slower hardware than the SLAs were calibrated on; see CI_WARM_MS. */
 const warmMs = process.env.CI ? CI_WARM_MS : BUDGET.warmMs;
+const projectMs = process.env.CI ? CI_PROJECT_MS : BUDGET.projectMs;
 const ROUNDS = 20;
 /**
  * The request shapes a LOADER would use: tab materialization, an entity's identity,
@@ -337,7 +358,7 @@ test('project switch between visited projects: content visible within budget', a
   }
   const p90 = p(measured, 0.9);
   console.log(`[perf] project switch ms p50=${p(measured, 0.5)} p90=${p90}`);
-  expect(p90, 'project switch').toBeLessThanOrEqual(BUDGET.projectMs);
+  expect(p90, `project switch (budget ${projectMs}ms)`).toBeLessThanOrEqual(projectMs);
 });
 
 /** Open the session in a FRESH page (nothing warm) and return its cold `ready` line. */
