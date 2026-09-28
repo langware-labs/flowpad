@@ -58,6 +58,11 @@ on:
         type: string
         required: false
         default: ''
+      backend-k:
+        description: 'pytest -k for the backend jobs: run only matching tests (unit + api both filter on it)'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -107,6 +112,7 @@ jobs:
           tier: unit
           shard: ${{ matrix.shard }}
           shards: '4'
+          k: ${{ inputs.backend-k }}
 
   backend-api:
     name: backend (pytest api)
@@ -118,6 +124,7 @@ jobs:
       - uses: ./.github/actions/backend-tests
         with:
           tier: api
+          k: ${{ inputs.backend-k }}
 
   frontend-tests:
     name: frontend (tsc + vitest unit + i18n)
