@@ -1447,11 +1447,21 @@ class DataSource(Entity):
             unknown = set(update.secrets) - set(auth.vars)
             if unknown:
                 raise ValueError(f"{self.provider}'s credential has no {sorted(unknown)}")
-            project = await self._resolve_scope_project()
+            project = await self._own_project()
             await set_credential_by_name(
                 auth.credential, {auth.vars[key]: value for key, value in update.secrets.items()},
                 project_id=str(project.id) if project is not None else None,
             )
+
+    async def _own_project(self):
+        """Where what this source's setup learns is kept: the SAME project its credentials are read from
+        (``owner_project`` — the owning agent's; None, the user scope, for a user-owned row). It used
+        ``_resolve_scope_project``, which answers PLACEMENT and is None for a saved row outside a
+        project-scoped request: a step's secrets were written to the user scope while the source read its
+        owner's project, so a step that ran still failed its own check."""
+        from flow_sdk.ingest.credentials import owner_project  # noqa: PLC0415
+
+        return await owner_project(self)
 
     async def _public_webhook(self, driver, *, check: bool):
         """The generic step for a driver that takes pushes (its ``webhook`` block): a stable public URL for
