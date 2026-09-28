@@ -307,3 +307,28 @@ def test_a_text_knows_the_file_save_and_load_use(tmp_path):
     assert note.body.path == tmp_path / "body.md"
     loaded = load(Doc, tmp_path)
     assert loaded.body.path == tmp_path / "body.md" and loaded == note
+
+
+# ── a save over an earlier save: what was cleared stays cleared ─────────────
+
+
+def test_a_body_emptied_since_the_last_save_leaves_no_file(tmp_path):
+    """The reader loads whatever body file is there, so a stale ``body.md`` came back as the text just
+    cleared — ``load(save(x)) != x`` on the second save."""
+    save(Doc(title="t", body="old"), tmp_path)
+    save(Doc(title="t"), tmp_path)
+    assert not (tmp_path / "body.md").exists()
+    assert load(Doc, tmp_path) == Doc(title="t")
+
+
+def test_a_list_saved_shorter_comes_back_at_its_new_length(tmp_path):
+    save(Everything(name="n", unnamed=[Endpoint(port=1), Endpoint(port=2), Endpoint(port=3)], steps=[Step(name="a"), Step(name="b")]), tmp_path)
+    save(Everything(name="n", unnamed=[Endpoint(port=1)], steps=[Step(name="b")]), tmp_path)
+    back = load(Everything, tmp_path)
+    assert [e.port for e in back.unnamed] == [1] and [s.name for s in back.steps] == ["b"]
+
+
+def test_a_dict_saved_without_a_key_loses_it(tmp_path):
+    save(Everything(name="n", by_key={"primary": Endpoint(port=1), "backup": Endpoint(port=2)}), tmp_path)
+    save(Everything(name="n", by_key={"primary": Endpoint(port=1)}), tmp_path)
+    assert set(load(Everything, tmp_path).by_key) == {"primary"}

@@ -82,12 +82,14 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.runtime_info_spec  # noqa: F401 — registers ``runtime.info``
     import flow_sdk.schema.data_spec.service_endpoint_spec  # noqa: F401  — registers ``web.app`` / ``api.rest`` / ``api.chat.openai`` / ``api.mcp`` / ``flowpad.workspace``
     import flow_sdk.schema.data_spec.session_spec  # noqa: F401  — registers ``session.start``
+    import flow_sdk.schema.data_spec.setup_stage_spec  # noqa: F401  — registers ``setup.stage`` / ``setup.stage_state``
     import flow_sdk.schema.data_spec.source_item_spec  # noqa: F401  — registers ``ingest.source_item``
     import flow_sdk.schema.data_spec.token_allocation_spec  # noqa: F401
     import flow_sdk.schema.data_spec.trigger_spec  # noqa: F401  — registers ``trigger`` / ``trigger.tag`` / ``trigger.schedule`` / ``trigger.watch`` / ``trigger.hook`` / ``trigger.action``
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``
+    import flow_sdk.sources.setup_steps  # noqa: F401  — registers ``source.setup_update``
     import flow_sdk.sources.values  # noqa: F401  — registers ``source.*`` and ``ingest.file`` / ``ingest.profile`` / ``ingest.message``
 
     # An asset defines its own payload kinds (``ingest.message.whatsapp``) in code the registry

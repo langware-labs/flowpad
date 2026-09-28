@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import mimetypes
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import ClassVar, Iterable, Optional
+from typing import AsyncIterator, ClassVar, Iterable, Optional
 
 from pydantic import ConfigDict, Field
 
@@ -65,6 +66,39 @@ def media_type_of(path: str) -> str:
     return "application/octet-stream"
 
 
+#: Where ``mimetypes`` answers oddly for a type channels carry (``audio/ogg`` → ``.oga``) or not at all.
+_EXTENSIONS = {
+    "audio/ogg": ".ogg", "audio/opus": ".opus", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "image/jpeg": ".jpg",
+    "image/webp": ".webp", "video/mp4": ".mp4", "video/webm": ".webm", "application/x-tgsticker": ".tgs",
+}
+
+
+def extension_of(media_type: Optional[str]) -> str:
+    """The file extension a media type is written with — ``""`` when none is known. Parameters
+    (``audio/ogg; codecs=opus``) are ignored."""
+    base = (media_type or "").split(";", 1)[0].strip().lower()
+    return _EXTENSIONS.get(base) or (mimetypes.guess_extension(base) if base else None) or ""
+
+
+def safe_name(name: Optional[str], *, fallback: str = "file") -> str:
+    """ONE rule for a file name on this machine: no path separators or control characters, no
+    leading dots, at most 120 characters."""
+    cleaned = re.sub(r"[^\w.\- ()]+", "_", Path(str(name or "")).name).strip(" .")
+    return cleaned[:120] or fallback
+
+
+def normalize_emoji(emoji: str) -> str:
+    """An emoji as reactions compare it: without the variation selector (U+FE0F) keyboards add, so
+    ❤ and ❤️ from one person are one reaction."""
+    return (emoji or "").replace("\ufe0f", "")
+
+
+async def chunked(blob: bytes, size: int = 65536) -> AsyncIterator[bytes]:
+    """Bytes already in hand, as the chunk stream ``Openable.open`` yields."""
+    for i in range(0, len(blob), size):
+        yield blob[i : i + size]
+
+
 def local_file(path: str | os.PathLike, *, as_: str = "auto", caption: Optional[str] = None) -> FileItem:
     """An outgoing file as the contract carries it: a ``local`` origin and a readable absolute path."""
     resolved = Path(path).expanduser().resolve()
@@ -112,6 +146,18 @@ def resolve_files(files: Iterable[FileItem], support: FileSupport, *, title: str
     if support.max_message_bytes and total > support.max_message_bytes:
         raise ValueError(f"{title} messages carry {_mb(support.max_message_bytes)} at most; these files are {_mb(total)}")
     return tuple(out)
+
+
+def check_files(files: tuple[FileItem, ...], support: FileSupport, *, title: str, text: Optional[str]) -> None:
+    """What every channel's ``send`` checks about the files it is handed, beyond ``resolve_files``'s
+    limits: text or a file is there, and no more files than one provider message carries. A driver
+    adds only the rules that are its provider's own."""
+    if text is None and not files:
+        raise ValueError("text is required")
+    if files:
+        resolve_files(files, support, title=title)
+    if len(files) > support.per_message:
+        raise ValueError(f"{title} carries {support.per_message} file(s) per message, got {len(files)}")
 
 
 @dataclass(frozen=True)
@@ -165,6 +211,11 @@ def read_file(file: FileItem) -> bytes:
 __all__ = [
     "LOCAL_KIND",
     "FileSupport",
+    "check_files",
+    "chunked",
+    "extension_of",
+    "normalize_emoji",
+    "safe_name",
     "Part",
     "kind_of",
     "local_file",

@@ -594,6 +594,10 @@ class HubWebSocketManager:
                         from flow_sdk.cloud_client.context_watch import browser_context_watch
 
                         asyncio.create_task(browser_context_watch.resync())
+                        # A desktop webhook's deliveries that waited on the hub while this was away.
+                        from flow_sdk.cloud_client import webhook_relay
+
+                        asyncio.create_task(webhook_relay.catch_up())
                         # Re-READ what arrived while the socket was down.
                         #
                         # The hub announces each FlowMessage exactly ONCE, live, to

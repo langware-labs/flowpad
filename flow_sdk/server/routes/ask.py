@@ -65,6 +65,8 @@ class AskRequest(BaseModel):
     secret: bool = False
     #: The Wizard entity this question is a step of, when it is one.
     wizard_id: str = ""
+    #: How a person finds the value (the op's ``setup.md``).
+    guide: str = ""
 
 
 @router.post("")
@@ -82,6 +84,7 @@ async def ask_for_another_process(body: AskRequest):
         cancel_label=body.cancel_label,
         secret=body.secret,
         wizard_id=body.wizard_id,
+        guide=body.guide,
     )
     return ApiSuccessResponse(data=said.model_dump(mode="json"))
 

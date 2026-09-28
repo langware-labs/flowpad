@@ -52,14 +52,14 @@ def test_a_snippet_on_windows_runs_on_flowpads_own_interpreter():
 
     assert "python3" not in command and "py -3" not in command
     # PowerShell runs a quoted path only behind its call operator.
-    assert command.startswith("& 'C:\\Program Files\\Flowpad\\python.exe' 'C:\\snips\\a.py'")
+    assert command.startswith("& 'C:\\Program Files\\Flowpad\\python.exe' -m flow_sdk.snippet_launch 'C:\\snips\\a.py'")
     # The script's exit code is the snippet's, not PowerShell's own verdict.
     assert command.endswith("exit $LASTEXITCODE")
 
 
 def test_a_snippet_off_windows_runs_on_flowpads_own_interpreter():
     for platform in ("darwin", "linux"):
-        assert runner_for(".py", platform) == "{python} {file}"
+        assert runner_for(".py", platform) == "{python} -m flow_sdk.snippet_launch {file}"
     assert runner_for(".js", "win32") == "node {file}"
     assert runner_for(".nope", "win32") is None
 

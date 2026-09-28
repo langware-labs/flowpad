@@ -645,6 +645,11 @@ class AgenticProcess(Entity):
         default=None,
         description='VFS path this process is keyed to. Either a serialized TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats.',
     )
+    context_key: str | None = APIField(
+        default=None,
+        description="The dock view this chat belongs to (`assistantContextKey` in the UI: the tab, narrowed to "
+        "the thing it shows). The Flowpad Assistant keeps one chat per context and finds it by this key.",
+    )
     exe_folder: FSRef | None = APIField(
         default=None,
         description="FSRef pointing at `<record_dir>/execution/`.",

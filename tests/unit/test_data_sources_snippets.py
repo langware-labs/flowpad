@@ -293,6 +293,25 @@ async def test_13_three_families():
     assert ns["answers"] == (False, False, True)
 
 
+async def test_13_a_record_source_is_a_table(monkeypatch, capsys):
+    """§13's second fence as written, against the jira driver's loopback double: every page lands in a
+    DataFrame whose columns are the record's fields, and each page's ack moves the position."""
+    from flow_sdk.builtin.data_driver import DataDriver
+    from flow_sdk.ingest.driver_registry import SHIPPED_ROOT, load_module
+
+    matrix = load_module(SHIPPED_ROOT / "jira" / "tests", "matrix")
+    with matrix.Double(4) as double:
+        monkeypatch.setattr(DataDriver.loaded("jira"), "credentials_for", double.credentials)
+        src = DataSource(name="PROJ issues", provider="jira", config=double.config, account_key=double.config["site"])
+        await src.save()
+        try:
+            await _section("13.", {}, nth=1)
+        finally:
+            await src.delete()
+    printed = capsys.readouterr().out
+    assert "PROJ-1" in printed and "status" in printed and "assignee" in printed
+
+
 async def test_14_write_your_own_driver():
     """The fence's driver pages, gets by key, and passes the SDK's own conformance kit."""
     from flow_sdk.sources.testing.conformance import Subject, run_all

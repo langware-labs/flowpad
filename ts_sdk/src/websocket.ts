@@ -166,6 +166,9 @@ export interface UiCommandMessage extends BaseMessage {
    *  backend can raise ONE component with no app around it. Without this field
    *  a pushed command could only ever land in the dock. */
   layout?: string;
+  /** For `navigate_dock` to a question: the wizard run that asked, so a screen showing that run
+   *  can draw it in place (`ask-claims.ts`). */
+  run?: string;
   /** For `desktop_notify`: the notification kind (e.g. "message"). */
   notify_type?: string;
   /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */

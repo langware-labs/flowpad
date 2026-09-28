@@ -247,6 +247,10 @@ class HubWsBridge:
         self.manager.register_handler("data_op_msg", self._on_data_op)
         self.manager.register_handler("install_request", self._on_install_request)
         self.manager.register_handler("oauth_msg", self._on_oauth_msg)
+        from flow_sdk.cloud_client import webhook_relay  # noqa: PLC0415
+
+        # A desktop webhook's delivery (the hub's public URL for this laptop): replayed here, then acked.
+        self.manager.register_handler("webhook_delivery", webhook_relay.on_delivery)
         self._installed = True
 
     async def _on_oauth_msg(self, message: dict) -> None:

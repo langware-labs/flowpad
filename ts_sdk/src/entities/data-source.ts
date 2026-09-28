@@ -11,6 +11,7 @@
 import { ActionInfo } from '../models/ActionInfo';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
+import type { SetupStageState } from './data-driver';
 
 /** Mirror of flow_sdk/ingest/health.py SourceHealth. */
 export type SourceHealth = 'never_synced' | 'ok' | 'transient_error' | 'config_error';
@@ -233,6 +234,11 @@ export class DataSource extends APIEntity<DataSource> implements IDataSource {
    */
   async pollNow(): Promise<{ status: string; health: SourceHealth; detail: string }> {
     return this.post('poll_now');
+  }
+
+  /** The setup wizards this source's driver declares, each as it stands for THIS source. */
+  async setupStages(): Promise<SetupStageState[]> {
+    return this.get('setup_stages');
   }
 
   /**

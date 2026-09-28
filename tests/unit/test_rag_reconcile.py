@@ -176,7 +176,7 @@ async def test_no_endpoint_leaves_the_reason_on_the_row(docs, monkeypatch):
     """A person reads this on the card; it must not be a traceback in a log."""
 
     async def nothing(index):
-        return None, ""
+        raise reconcile.EmbeddingUnavailable()
 
     monkeypatch.setattr(reconcile, "embedder_for", nothing)
     index = await _active(docs)

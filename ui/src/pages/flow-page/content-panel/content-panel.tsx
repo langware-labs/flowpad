@@ -45,6 +45,11 @@ import { useTerminalTabs, useTabLifecycle } from '@src/tabs/use-tab-manager';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { appDockAddress } from '@src/navigation/app-dock';
 import { NavigatorSlot } from '@src/navigation/NavigatorSlot';
+import {
+  DEFAULT_NAVIGATOR_POLICY,
+  NavigatorCollapsePolicyContext,
+  POPOUT_NAVIGATOR_POLICY,
+} from '@src/components/navigator-panel/NavigatorPanel';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
@@ -118,6 +123,7 @@ const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => 
 const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
 const ShowView = lazy(() => import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })));
 const AskView = lazy(() => import('@src/components/ask/AskView'));
+const AssistantPopoutView = lazy(() => import('@src/components/floating-chat/AssistantPopoutView'));
 const AppHost = lazy(() => import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })));
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
@@ -429,6 +435,12 @@ function ContentPanelBody({
             <AskView />
           </Suspense>
         );
+      case ViewType.ASSISTANT:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <AssistantPopoutView />
+          </Suspense>
+        );
       case ViewType.APPS:
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
@@ -579,7 +591,14 @@ function ContentPanelBody({
           opens its bottom over this line, so the menu + body read as one panel
           hanging from the current tab (the folder-tab continuum). */}
       <div className={`flex min-h-0 flex-1 overflow-hidden ${showTabStrip ? 'border-t border-border' : ''}`}>
-        {!suppressChrome && <NavigatorSlot />}
+        {/* A win/ popout starts its navigator collapsed and keeps toggles local. */}
+        {!suppressChrome && (
+          <NavigatorCollapsePolicyContext.Provider
+            value={windowMode ? POPOUT_NAVIGATOR_POLICY : DEFAULT_NAVIGATOR_POLICY}
+          >
+            <NavigatorSlot />
+          </NavigatorCollapsePolicyContext.Provider>
+        )}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           {/* Matches the proven per-viewType slot layout (plain h-full, no flex-col)
