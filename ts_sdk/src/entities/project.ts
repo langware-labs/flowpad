@@ -465,7 +465,16 @@ export class Project extends APIEntity<Project> {
     const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
     const { share_result: shareResult, ...entity } = response ?? {};
     this.adoptShareResponse(entity);
-    return (shareResult as ShareResult | undefined) ?? { invited: [], skipped: [], failed: [], granted_teams: [], skipped_teams: [], failed_teams: [] };
+    return (
+      (shareResult as ShareResult | undefined) ?? {
+        invited: [],
+        skipped: [],
+        failed: [],
+        granted_teams: [],
+        skipped_teams: [],
+        failed_teams: [],
+      }
+    );
   }
 
   /**
@@ -668,7 +677,9 @@ export class Project extends APIEntity<Project> {
       // status and its own message is "Request failed with status code 400",
       // which is what the recipient saw — the one sentence that says nothing.
       const ax = err as { response?: { data?: { message?: string } }; message?: string };
-      throw new Error(ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.');
+      throw new Error(
+        ax.response?.data?.message ?? ax.message ?? 'The project could not be set up from its Git origin.',
+      );
     }
     // A FAIL envelope on a 200 unwraps to `undefined` rather than throwing.
     if (!response) throw new Error('The project could not be set up from its Git origin.');

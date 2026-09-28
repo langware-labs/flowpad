@@ -74,15 +74,13 @@ describe('Project.invite — one share action; the backend orchestrates the invi
 
   it('POSTs the share action once with only the share keys and returns its share_result', async () => {
     const p = project();
-    const call = vi
-      .spyOn(dataManager, 'callAction')
-      .mockResolvedValue({
-        type: Project.type,
-        id: PROJECT_ID,
-        name: 'canonical',
-        remote: true,
-        share_result: outcome,
-      });
+    const call = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      type: Project.type,
+      id: PROJECT_ID,
+      name: 'canonical',
+      remote: true,
+      share_result: outcome,
+    });
 
     const result = await p.invite([' New@Example.com ', '', { idOrEmail: `user-${THEM}`, role: 'admin' }], {
       teams: [new TypeId('team', ZSCHOOL)],
@@ -198,6 +196,8 @@ describe('inviteFailure — an error only when nothing landed', () => {
   });
 
   it('is null when nothing was sent and nothing failed', () => {
-    expect(inviteFailure({ ...EMPTY, skipped_teams: [{ team: TEAM, name: 't', reason: 'already_granted' }] })).toBeNull();
+    expect(
+      inviteFailure({ ...EMPTY, skipped_teams: [{ team: TEAM, name: 't', reason: 'already_granted' }] }),
+    ).toBeNull();
   });
 });
