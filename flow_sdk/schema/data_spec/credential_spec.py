@@ -13,6 +13,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import assert_value_free, is_valid_env_var
+from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec, unique_stages
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 CURRENT_SCHEMA = 2
@@ -79,6 +80,14 @@ class CredentialSpec(DataSpec):
     lm_provider: str = ""
     #: The variables, keyed by env var NAME.
     vars: dict[str, CredentialVarSpec] = Field(default_factory=dict)
+    #: The wizards this credential's values are obtained with, in order (``setup_stage_spec.py``).
+    #: Empty: the default ask-store-check wizard ``flow project setup`` compiles from ``vars``.
+    setup_wizards: list[SetupStageSpec] = Field(default_factory=list)
+
+    @field_validator("setup_wizards")
+    @classmethod
+    def _stages_unique(cls, value: list[SetupStageSpec]) -> list[SetupStageSpec]:
+        return unique_stages(value)
 
     @field_validator("name")
     @classmethod

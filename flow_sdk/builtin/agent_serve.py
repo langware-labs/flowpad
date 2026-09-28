@@ -30,8 +30,8 @@ import asyncio
 import logging
 import os
 import weakref
-from datetime import datetime, timezone
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -778,7 +778,7 @@ async def answer(engine: TurnEngine, message, *, source=None, session: Optional[
         ),
         process=process,
     )
-    answer_files = sorted(str(p) for p in outbox.iterdir() if p.is_file()) if outbox.is_dir() else []
+    answer_files = outbox_files(outbox)
     if not outcome.ok or not (outcome.text or answer_files):
         console.info("✗ %s  %s — no reply: %s", channel, who, _line(outcome.detail))
         return False
@@ -801,6 +801,11 @@ def reply_outbox(source, key: str):
     return data_dir_for("data_source", source.id) / "outbox" / hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
+def outbox_files(outbox) -> list[str]:
+    """What a turn left in its outbox to send with its answer — absolute paths, in name order."""
+    return sorted(str(p) for p in outbox.iterdir() if p.is_file()) if outbox is not None and outbox.is_dir() else []
+
+
 def turn_body(message, *, outbox=None) -> str:
     """What the agent reads for one channel message: the message it quotes, its words, the files it
     carried (local paths it can open) and — when it carried files, on a channel that takes them —
@@ -818,7 +823,7 @@ def turn_body(message, *, outbox=None) -> str:
         lines.append("Files that came with this message:")
         for f in files:
             where = f.path or f"not downloaded ({f.fetch_error or 'unavailable'})"
-            caption = f" — {f.caption}" if getattr(f, "caption", None) else ""
+            caption = f" — {f.caption}" if getattr(f, "caption", None) and f.caption != body else ""
             lines.append(f"- {f.name or 'file'} ({f.as_.value}, {f.media_type or 'unknown type'}): {where}{caption}")
     if outbox is not None and files:
         # Said where files are already the subject; a plain message stays exactly the person's words

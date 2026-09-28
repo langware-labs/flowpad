@@ -19,6 +19,8 @@ import {
   toplog,
   type AgenticProcess,
 } from '@sdk';
+import type { DisplayEntry } from '@sdk';
+import { historyEntryDock } from '@src/pages/flow-page/display-stack';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
@@ -535,6 +537,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // The click opens the REFERENCED ASSET, never the artifact row — via the
   // shared file dispatch, the chokepoint every "open this file" surface uses.
   const handleOpenArtifact = useCallback((assetRef: string) => navigation.openFile(assetRef), [navigation]);
+
+  // Shown chip: every `flow show` this run made (`context_data.display_stack`).
+  // A row opens the target as its own tab, rebased onto the process's project
+  // — the same address the show listener mints, so it lands on that tab.
+  const shownStack = process?.displayStack;
+  const handleOpenShown = useCallback(
+    (entry: DisplayEntry) => {
+      const dock = historyEntryDock(entry, process?.project_id ?? null);
+      if (dock) navigation.openDock(dock);
+    },
+    [process, navigation],
+  );
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
@@ -1983,6 +1997,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             onOpenLastPlan={handleOpenLastPlan}
             artifacts={artifacts}
             onOpenArtifact={handleOpenArtifact}
+            shown={shownStack}
+            onOpenShown={handleOpenShown}
             composer={
               showSimpleChat && process ? (
                 <ChatComposerBar

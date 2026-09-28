@@ -138,6 +138,9 @@ export enum ViewType {
   // rather than a state on LLM_SOURCES because `flow llm set auto` opens it in a BROWSER, and
   // a CLI can hand a user nothing but a URL. No pointer: the screen is one question.
   LLM_SETUP = 'llm-setup', // /dock/llm-setup
+  // The Flowpad Assistant chat popped out of the floating window. Only ever drawn
+  // in `win/`, where the view IS the window; it follows the main window's context.
+  ASSISTANT = 'assistant', // /win/assistant
 }
 
 /**

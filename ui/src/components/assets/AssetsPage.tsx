@@ -11,6 +11,7 @@ import {
   WIKI_FRAGMENT_PARAM,
 } from '@src/navigation/asset-doc-types';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
+import { ProjectNameTitle } from '@src/components/project-home/ProjectNameTitle';
 import { ShareContextFolderButton } from '@src/components/assets/ShareContextFolderButton';
 import { useContextFolderForRel } from '@src/hooks/use-context-folder-for-rel';
 import { useIsAdvanced } from '@src/components/view-mode';
@@ -565,10 +566,13 @@ export function AssetsPage() {
             <BookOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
             <div className="min-w-0">
               <div className="truncate text-sm font-medium">
-                {/* A context folder gets its own name as the pane title;
+                {/* A context folder gets its own name as the pane title; the
+                  project's home carries the project's own (renamable) name;
                   everything else keeps Assets. */}
                 {isFsMode && fsRelPath ? (
                   fsRelPath.replace(/\/+$/, '').split('/').pop() || <Trans>Assets</Trans>
+                ) : isProjectHomeMode && projectEntity ? (
+                  <ProjectNameTitle project={projectEntity} />
                 ) : isProjectView ? (
                   <Trans>Project assets</Trans>
                 ) : (

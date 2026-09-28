@@ -124,11 +124,10 @@ async def query_action():
         raise HTTPException(status_code=400, detail="q is required")
     top_k = int(body.get("top_k") or 8)
 
-    embed, _model = await reconcile.embedder_for(index)
-    if embed is None:
-        return ApiSuccessResponse(
-            data={"hits": [], "refusal": "no embedding endpoint is available on this machine"}
-        )
+    try:
+        embed, _model = await reconcile.embedder_for(index)
+    except reconcile.EmbeddingUnavailable:
+        return ApiSuccessResponse(data={"hits": [], "refusal": reconcile.NO_EMBEDDING})
     vectors = await embed([question])
     async with index.open_store() as store:
         hits = store.search(vectors[0], top_k=top_k)

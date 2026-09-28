@@ -25,6 +25,7 @@ import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { WikiButton } from '@src/components/wiki-tip';
+import { SetupStagesButton } from '@src/components/setup-wizard/SetupStagesButton';
 import { healthStyle } from './health-style';
 import { statusStyle } from './status-style';
 import { sourceIcon } from './source-icon';
@@ -188,6 +189,7 @@ export function DataSourceRow({ source, spec, onEdit, onReplay, onDelete }: Prop
               {t`Verify`}
             </Button>
           )}
+          <SetupStagesButton source={source} spec={spec} />
           {Pull}
           <OpenFolderButton path={source.asset_ref} testId={`data-source-folder-${source.id}`} />
           <SourceMenu

@@ -173,6 +173,11 @@ function viewLabel(dock: DockPointer | null): string {
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
   const { project, activeEntity, activeEntityTypeId } = useContext();
   const { projectPath } = useProjectLocation();
+  // The context hands over the cached Project and does not re-publish when a
+  // rename mutates it in place — subscribe to the row (as the project chip does)
+  // so the crumb re-renders, and key the memo on the name, not the object.
+  const { data: liveProject } = useEntity<Project>(project?.typeId ?? null);
+  const projectLabel = (liveProject ?? project)?.displayName;
 
   // Identity of what this dock ADDRESSES, as a string.
   //
@@ -376,7 +381,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     if (project && !isAgentScoped) {
       out.push({
         key: 'project',
-        label: project.displayName,
+        label: projectLabel ?? project.displayName,
         Icon: iconForType(Project.type),
         pointer: null,
         kind: 'project',
@@ -579,6 +584,7 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     childTypeId,
     childEntity,
     project,
+    projectLabel,
     agentRoute,
     scopedAgentId,
     scopedAgentTypeId,

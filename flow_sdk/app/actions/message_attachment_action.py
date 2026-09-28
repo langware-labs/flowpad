@@ -2,6 +2,7 @@
 
   POST /api/v1/graph/message_attachment/{id}/install
   POST /api/v1/graph/message_attachment/{id}/uninstall
+  POST /api/v1/graph/flow_message/{id}/install-attachments  (every attachment of one message)
   GET  /api/v1/graph/message_attachment/{id}/staged-files
 
 A received bundle's file-backed assets stay STAGED under the owning
@@ -791,6 +792,83 @@ async def handle_staged_files(attachment_id: str) -> ApiResponse:
     )
 
 
+async def _install_all_into_project(
+    attachments: list[MessageAttachment],
+    project_id: str,
+    *,
+    overwrite: bool = False,
+    someone_typeid=None,
+) -> ApiResponse:
+    """Install each row into ``project_id`` — the one fan-out behind both the
+    conversation-wide and the message-wide "install all". Idempotent, and one
+    row's failure never aborts the rest; ``errors`` says why each failed row did."""
+    installed: list[str] = []
+    skipped: list[str] = []
+    failed: list[str] = []
+    errors: dict[str, str] = {}
+    for ma in attachments:
+        if ma.id is None:
+            continue
+        # Repo-determined placement — never scope-forced into a project.
+        if ma.transfer_mode == TransferMode.GIT.value:
+            skipped.append(ma.id)
+            continue
+        # Already filed under this project — nothing to do.
+        if ma.scope == AttachmentScope.PROJECT.value and ma.project_id == project_id and not overwrite:
+            skipped.append(ma.id)
+            continue
+        try:
+            res = await handle_attachment_install(
+                ma.id,
+                AttachmentScope.PROJECT.value,
+                project_id,
+                overwrite=overwrite,
+                someone_typeid=someone_typeid,
+            )
+            # ``use_enum_values=True`` on ApiResponse stores the enum *value*
+            # (the plain string), so compare against ``.value``.
+            if getattr(res, "status", None) == ApiResponseStatus.SUCCESS.value:
+                installed.append(ma.id)
+            else:
+                failed.append(ma.id)
+                errors[ma.id] = str(getattr(res, "message", "") or "")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[message_attachment] fan-out install for %s failed (non-fatal): %s",
+                ma.id,
+                e,
+                exc_info=True,
+            )
+            failed.append(ma.id)
+            errors[ma.id] = str(e)
+
+    return ApiSuccessResponse(data={"installed": installed, "skipped": skipped, "failed": failed, "errors": errors})
+
+
+async def handle_message_install_all(
+    flow_message_id: str,
+    project_id: str | None,
+    *,
+    overwrite: bool = False,
+    someone_typeid=None,
+) -> ApiResponse:
+    """Install every attachment of ONE message into ``project_id``.
+
+    The install-all for a message that has no conversation — an offline export
+    uploaded from project home. Same per-row path as the conversation fan-out.
+    """
+    if not flow_message_id:
+        return ApiFailResponse(message="flow_message_id is required", status_code=400)
+    if not project_id:
+        return ApiFailResponse(message="project_id is required", status_code=400)
+    attachments = await MessageAttachment.get_all({"flow_message_id": flow_message_id})
+    if not attachments:
+        return ApiFailResponse(message=f"message {flow_message_id} staged no attachments", status_code=404)
+    return await _install_all_into_project(
+        attachments, project_id, overwrite=overwrite, someone_typeid=someone_typeid
+    )
+
+
 async def handle_conversation_install_all(
     conversation_id: str,
     project_id: str | None,
@@ -822,43 +900,7 @@ async def handle_conversation_install_all(
         )
         return ApiFailResponse(message=f"attachment lookup failed: {e}")
 
-    installed: list[str] = []
-    skipped: list[str] = []
-    failed: list[str] = []
-    for ma in attachments:
-        if ma.id is None:
-            continue
-        # Repo-determined placement — never scope-forced into a project.
-        if ma.transfer_mode == TransferMode.GIT.value:
-            skipped.append(ma.id)
-            continue
-        # Already filed under this project — nothing to do.
-        if ma.scope == AttachmentScope.PROJECT.value and ma.project_id == project_id:
-            skipped.append(ma.id)
-            continue
-        try:
-            res = await handle_attachment_install(
-                ma.id,
-                AttachmentScope.PROJECT.value,
-                project_id,
-                someone_typeid=someone_typeid,
-            )
-            # ``use_enum_values=True`` on ApiResponse stores the enum *value*
-            # (the plain string), so compare against ``.value``.
-            if getattr(res, "status", None) == ApiResponseStatus.SUCCESS.value:
-                installed.append(ma.id)
-            else:
-                failed.append(ma.id)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(
-                "[message_attachment] conversation fan-out install for %s failed (non-fatal): %s",
-                ma.id,
-                e,
-                exc_info=True,
-            )
-            failed.append(ma.id)
-
-    return ApiSuccessResponse(data={"installed": installed, "skipped": skipped, "failed": failed})
+    return await _install_all_into_project(attachments, project_id, someone_typeid=someone_typeid)
 
 
 # ---------------------------------------------------------------------------
@@ -932,6 +974,25 @@ async def install_conversation_attachments_action() -> ApiResponse:
         )
     except Exception as e:
         logger.error("[message_attachment] install-attachments error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"install-attachments failed: {e}")
+
+
+@action.post(action_name="install-attachments", types=["flow_message"])
+async def install_message_attachments_action() -> ApiResponse:
+    """Install every attachment of the target message into ``project_id``."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        body = await request_info.get_post_data() or {}
+        return await handle_message_install_all(
+            str(request_info.target_entity_typeid.id),
+            body.get("project_id") or None,
+            overwrite=bool(body.get("overwrite")),
+            someone_typeid=await _local_owner_typeid(),
+        )
+    except Exception as e:
+        logger.error("[message_attachment] message install-attachments error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"install-attachments failed: {e}")
 
 

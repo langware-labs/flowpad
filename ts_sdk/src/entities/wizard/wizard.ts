@@ -34,6 +34,8 @@ export interface WizardRunDetail {
   /** Filenames of runs previous resets archived, newest first. Their presence
    *  is what tells a reader the current record is not the whole history. */
   archived?: string[];
+  /** Where this run reports progress — a target's run has its own address. */
+  activity_path?: string;
 }
 
 /**
@@ -161,10 +163,22 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     return await dataManager.callAction<Record<string, unknown>, WizardValidation>(action);
   }
 
-  /** The last run WITH every step's output — the only place it is served. */
-  async runDetail(): Promise<WizardRunDetail> {
+  /** The last run WITH every step's output — the only place it is served.
+   *  `target` reads that entity's run (a setup wizard runs once per thing it sets up). */
+  async runDetail(target?: string): Promise<WizardRunDetail> {
     const action = new ActionInfo('run-detail', Wizard.type, this.id, 'GET');
+    if (target) action.queryParameters = { target };
     return await dataManager.callAction<void, WizardRunDetail>(action);
+  }
+
+  /**
+   * Run this wizard FOR one entity, with values in scope for its steps. Running it again resumes:
+   * every step whose check already holds is skipped. Answers the `WizardResult`.
+   */
+  async runFor(target: string, inputs: Record<string, string> = {}, approved = false): Promise<WizardResult> {
+    const action = new ActionInfo('run', Wizard.type, this.id, 'POST');
+    action.bodyParameters = { target, inputs, ...(approved ? { approved } : {}) };
+    return await dataManager.callAction<Record<string, unknown>, WizardResult>(action);
   }
 
   /**
@@ -174,9 +188,9 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
    * it records that a person trusts this wizard to run shell on this machine,
    * which is a fact about the wizard, not about one run.
    */
-  async resetRun(): Promise<WizardRunState> {
+  async resetRun(target?: string): Promise<WizardRunState> {
     const action = new ActionInfo('reset', Wizard.type, this.id, 'POST');
-    action.bodyParameters = {};
+    action.bodyParameters = target ? { target } : {};
     return await dataManager.callAction<Record<string, unknown>, WizardRunState>(action);
   }
 }

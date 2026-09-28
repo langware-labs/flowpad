@@ -519,6 +519,8 @@ class ScanActionsMixin:
             project_id = context_data.pop("project_id", None)
             # VFS path of the attached entity (trigger, markdown, …); stored on the process for the runs drawer / chat panel queries.
             target_typeid_str = context_data.pop("target_typeid_str", None)
+            # Dock view the chat belongs to — the Flowpad Assistant keeps one chat per context.
+            context_key = context_data.pop("context_key", None)
             # Lift `process_type` out of `context_data` so it lands on the
             # top-level field declared in the AgenticProcess schema. The
             # `useProcessesForTarget` filter on the chat-panel queries
@@ -774,6 +776,7 @@ class ScanActionsMixin:
                 additional_dirs=additional_dirs,
                 project_id=project_id or None,
                 target_typeid_str=target_typeid_str or None,
+                context_key=context_key or None,
                 process_type=process_type,
                 load_flowpad_assistant=load_flowpad_assistant,
             )

@@ -5,9 +5,10 @@ import os
 import random
 import string
 import sys
+import tempfile
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, List, Literal, Optional
 
 from pydantic import (
@@ -26,7 +27,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
-from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
+from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider, is_hidden_project
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
@@ -147,6 +148,14 @@ def _detach_git_history(repo_root: Path) -> None:
     import subprocess  # noqa: PLC0415
 
     subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
+
+
+#: A row on a temp ROOT is not a real work folder, so it is no one's parent project.
+_TEMP_ROOTS = frozenset(canonical_posix_path(p) for p in (tempfile.gettempdir(), "/tmp", "/var/tmp"))
+
+
+class NestedProjectError(ValueError):
+    """A project was about to be created inside another project's folder, or around one."""
 
 
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
@@ -1692,6 +1701,7 @@ class Project(Entity):
             await self._migrate_legacy_context_dirs()
         was_create = not self.exist_in_db
         if was_create:
+            await self._refuse_nested_mount()
             await self._warn_if_mount_owned_elsewhere()
             self._ensure_mount_dir()
         await super().save(owner, notify=notify)
@@ -1723,6 +1733,39 @@ class Project(Entity):
         result = await super().delete_by_id(eid)
         invalidate_projects_cache()
         return result
+
+    async def _refuse_nested_mount(self) -> None:
+        """Projects do not nest: a new one may not sit inside a project's folder, nor
+        contain one. A folder belongs to exactly one project — a subfolder an agent
+        ran in is part of its project, not a project of its own.
+
+        Rows that are not real work folders are no one's parent: hidden projects
+        (shipped, the workspace root, helpdesk portals) and a row on the temp dir."""
+        mount = self.fs_storage_mount_path
+        if self.remote or self.system or not mount:
+            return
+
+        def _counts(other: "Project") -> bool:
+            other_mount = other.fs_storage_mount_path or ""
+            return (str(other.id) != str(self.id)
+                    and not is_hidden_project(other_mount, bool(other.system))
+                    and other_mount not in _TEMP_ROOTS)
+
+        for parent in PurePosixPath(mount).parents:
+            for owner in await self._mount_owners(str(parent)):
+                if _counts(owner):
+                    raise NestedProjectError(
+                        f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
+                        "projects do not nest")
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        below = await type(self).get_all(QueryFilter(
+            match=ExpressionNode(op=QueryOp.LIKE, operands=["fs_storage_mount_path", f"{mount}/%"])))
+        for inner in below:
+            if (inner.fs_storage_mount_path or "").startswith(f"{mount}/") and _counts(inner):
+                raise NestedProjectError(
+                    f"{mount} contains project {inner.name!r} ({inner.fs_storage_mount_path}); "
+                    "projects do not nest")
 
     async def _warn_if_mount_owned_elsewhere(self) -> None:
         """Log (never raise) when a brand-new project lands on a folder another

@@ -114,8 +114,10 @@ async def test_snippet_2_a_named_shape_comes_back_as_your_class():
     """§2's naming fence: a declared kind is what makes `parse` answer YOUR
     class instead of an anonymous compiled one."""
     ns = _namespace(to_authoring_form=to_authoring_form)
-    for nth in (3, 4):   # the class, then what `parse` answers for its kind
-        await run_fence(fence_under(doc(PAGE), "2.", nth=nth), ns, filename=f"{PAGE}#2[{nth}]")
+    source = fence_under(doc(PAGE), "2.", nth=3)   # the class, and what `parse` answers for its kind
+    await run_fence(source, ns, filename=f"{PAGE}#2[3]")
+    assert DataSpec.parse("demo.endpoint") is ns["Endpoint"]
+    await run_fence(source, ns, filename=f"{PAGE}#2[3] again")   # a re-run cell re-binds, as the page says
     assert DataSpec.parse("demo.endpoint") is ns["Endpoint"]
     assert to_authoring_form(ns["Endpoint"]) == "demo.endpoint"
 
@@ -330,11 +332,12 @@ def test_snippet_6_an_adopted_id_must_validate():
 
 
 @pytest.mark.asyncio
-async def test_snippet_6_the_identity_fence_declares_a_real_shape():
+async def test_snippet_6_the_identity_fence_declares_a_real_shape(tmp_path, monkeypatch):
     """§6's fence went unexecuted and drifted — it declared a `Markdown` type
     that does not exist. Running it is what keeps the page honest."""
     from flow_sdk.schema.data_spec.io import Text
 
+    monkeypatch.chdir(tmp_path)  # the fence saves into the current folder
     ns = _namespace(Text=Text)
     await run_fence(fence_under(doc(PAGE), "6."), ns, filename=f"{PAGE}#6")
     assert ns["Op"](name="n", setup="hello").setup == "hello"
@@ -349,7 +352,6 @@ async def test_snippet_6_save_mints_an_id_once_beside_the_content(tmp_path, monk
     monkeypatch.chdir(tmp_path)
     ns = _namespace()
     await run_fence(fence_under(doc(PAGE), "6."), ns, filename=f"{PAGE}#6")
-    await run_fence(fence_under(doc(PAGE), "6.", nth=1), ns, filename=f"{PAGE}#6b")
     root = tmp_path / ns["root"]
     carrier = root / ".flow" / "capsules" / "identity.json"
     assert json.loads((root / "op.json").read_text()) == {"name": "pick-port"}

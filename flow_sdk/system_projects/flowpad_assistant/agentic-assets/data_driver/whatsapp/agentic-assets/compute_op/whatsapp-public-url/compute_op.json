@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "7014ba7a-91be-473e-aa57-da8c6b91368e",
+  "name": "whatsapp-public-url",
+  "label": "Public URL",
+  "description": "Flowpad cloud holds a public URL for this computer and passes Meta's messages to it.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" public-webhook",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" public-webhook",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE public-webhook; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 300
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" public-webhook --check",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" public-webhook --check",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE public-webhook --check; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

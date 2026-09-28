@@ -146,7 +146,9 @@ async def test_reap_protected_path_projects(bootstrapped_client, tmp_path, monke
     )
     object.__setattr__(stale, "fs_storage_mount_path", canonical)
     stale.id = Project.allocate_id(stale.model_dump())
-    await stale.save()
+    # Written as a raw row, past ``Project.save``'s creation checks: legacy rows predate
+    # them, and "projects do not nest" would refuse the very layouts this reaper cleans.
+    await super(Project, stale).save()
     stale_shadow = FSRecord(
         type="project",
         id=stale.id,
@@ -181,9 +183,9 @@ async def test_reap_protected_path_projects(bootstrapped_client, tmp_path, monke
         name="legacy-home",
         fs_storage_mount_path=str(tmp_path / "safe-home-seed"),
     )
-    object.__setattr__(stale_home, "fs_storage_mount_path", str(home))
+    object.__setattr__(stale_home, "fs_storage_mount_path", canonical_posix_path(home))
     stale_home.id = Project.allocate_id(stale_home.model_dump())
-    await stale_home.save()
+    await super(Project, stale_home).save()  # a raw legacy row, as above
     home_shadow = FSRecord(
         type="project",
         id=stale_home.id,

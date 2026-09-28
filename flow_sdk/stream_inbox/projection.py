@@ -36,8 +36,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.fs_store.type_id import TypeId
@@ -482,41 +482,37 @@ async def _placed_message(item):
     return await FlowMessage.get_one({"id": hinted} if hinted else {"source_item_id": str(item.id)})
 
 
-def _message_files(item, fm_id: str) -> list:
+def _message_files(item, fm_id: str, *, have: Optional[list] = None) -> list:
     """The files a channel message carried, as the message row's FILE attachments — the bytes the
     runtime staged, hard-linked into the row's own storage (``data/<name>``) so they are served the
     way a native chat file is. A file whose bytes never came keeps its attachment with nothing on
-    disk: a surface shows it as not downloaded rather than pretending it never existed."""
-    import os  # noqa: PLC0415
-    import shutil  # noqa: PLC0415
-
+    disk: a surface shows it as not downloaded rather than pretending it never existed. ``have`` is
+    the row's current FILE list: when it already names these files, nothing on disk is touched."""
     from flow_sdk.builtin.flow_message import FILE_VFS_PREFIX, Attachment, AttachmentType  # noqa: PLC0415
-    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+    from flow_sdk.ingest.driver_runtime import link_or_copy  # noqa: PLC0415
+    from flow_sdk.sources.files import safe_name  # noqa: PLC0415
     from flow_sdk.sources.values.items import MessageFileData  # noqa: PLC0415
+    from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
 
     files = [f.data for f in (getattr(getattr(item, "data", None), "attachments", None) or ()) if isinstance(f.data, MessageFileData)]
-    if not files:
-        return []
-    root = data_dir_for("flow_message", fm_id) / "embedded"
-    out, used = [], set()
+    names, used = [], set()
     for f in files:
-        name = (f.name or (Path(f.path).name if f.path else "") or "file").replace("/", "_")
+        name = safe_name(f.name or (Path(f.path).name if f.path else None))
         stem, dot, ext = name.rpartition(".")
         n = 1
         while name in used:
             n += 1
             name = f"{stem} ({n}).{ext}" if dot else f"{ext} ({n})"
         used.add(name)
-        rel = f"{FILE_VFS_PREFIX}{name}"
-        dest = root / rel
-        if f.path and Path(f.path).is_file() and not dest.exists():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                os.link(f.path, dest)
-            except OSError:  # another device, or a filesystem without hard links
-                shutil.copyfile(f.path, dest)
-        out.append(Attachment(attachment_type=AttachmentType.FILE, data=rel))
-    return out
+        names.append(f"{FILE_VFS_PREFIX}{name}")
+    if have is not None and names == have:
+        return [Attachment(attachment_type=AttachmentType.FILE, data=rel) for rel in names]
+    storage = get_entity_embedded_storage(TypeId(f"flow_message{TypeId.TYPEID_DELIMITER}{fm_id}"))
+    for f, rel in zip(files, names):
+        if f.path and Path(f.path).is_file():
+            link_or_copy(Path(f.path), Path(storage.get_storage_path(rel)))
+    return [Attachment(attachment_type=AttachmentType.FILE, data=rel) for rel in names]
 
 
 async def _place_message(
@@ -575,8 +571,9 @@ async def _place_message(
             existing_fm.envelope = envelope
             dirty = True
         # Files and reactions are projection-owned: a row placed before either arrived heals here.
-        files = _message_files(item, fm_id)
-        if files and [a.data for a in files] != [a.data for a in (existing_fm.attachment or []) if a.attachment_type == "file"]:
+        have = [a.data for a in (existing_fm.attachment or []) if a.attachment_type == "file"]
+        files = _message_files(item, fm_id, have=have)
+        if files and [a.data for a in files] != have:
             existing_fm.attachment = [a for a in (existing_fm.attachment or []) if a.attachment_type != "file"] + files
             dirty = True
         if list(existing_fm.reactions or []) != list(getattr(item, "reactions", None) or []):

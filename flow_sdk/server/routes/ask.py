@@ -60,6 +60,8 @@ class AskRequest(BaseModel):
     label: str
     #: The answer is a secret: the window masks it.
     secret: bool = False
+    #: How a person finds the value (the op's ``setup.md``).
+    guide: str = ""
 
 
 @router.post("")
@@ -67,7 +69,7 @@ async def ask_for_another_process(body: AskRequest):
     """Raise the question here, wait the caller's bounded time, answer with the
     ``AskResult``. The answer routes below resolve it like any local question."""
     said = await ask_person(body.op, body.prompt, body.shape, timeout=body.timeout, label=body.label,
-                            secret=body.secret)
+                            secret=body.secret, guide=body.guide)
     return ApiSuccessResponse(data=said.model_dump(mode="json"))
 
 

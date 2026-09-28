@@ -183,6 +183,7 @@ class ViewType(StrEnum):
     # and a CLI can hand a user nothing but a URL. LLM_SOURCES answers "what funds each harness
     # and why"; this answers "you have nothing yet, pick something" -- one question, no pointer.
     LLM_SETUP = "llm-setup"  # /dock/llm-setup -- the whole screen is one question
+    ASSISTANT = "assistant"  # /win/assistant -- the Flowpad Assistant popped out into its own window
 
 
 # ── pointer vocabularies for the views whose pointer is a closed set ───────
@@ -490,6 +491,8 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     # destination ``flow llm set auto`` opens when the box can fund nothing, so the aliases are
     # the words someone stuck at that moment actually says.
     ViewType.LLM_SETUP: _m(_NONE, label="Set up LLM", aliases=("llm setup", "choose llm", "connect llm")),
+    # The chat IS the window: no workspace frame, never a tab (ASK precedent).
+    ViewType.ASSISTANT: _m(_NONE, chrome="fullbleed", label="Flowpad Assistant", aliases=("assistant chat", "help chat")),
 }
 
 

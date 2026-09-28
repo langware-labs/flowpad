@@ -19,7 +19,7 @@ test 1: Direct navigation to /dock/project/<uuid> renders the project asset brow
 - navigate to {APP_URL}/dock/project/<a real project uuid from GET /api/v1/graph/project>
 - validate the URL matches /dock/project/<uuid> (36-char UUID-shaped projectId)
 - validate the page does NOT contain the text "No editor for type: project"
-- validate the project asset browser rendered (the "Project assets" header and the project-name chip scope indicator, with the asset-type tree / "Select a type to browse" prompt)
+- validate the project asset browser rendered (the asset-browser header and the project-name chip scope indicator, with the asset-type tree / "Select a type to browse" prompt)
 - check console for errors
 - validate no errors appeared
 

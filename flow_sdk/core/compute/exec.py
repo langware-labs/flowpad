@@ -49,6 +49,24 @@ async def _spawn(command: str, *, cwd: str, env: dict, platform: str):
     )
 
 
+def flow_env() -> dict[str, str]:
+    """How a command reaches THIS Flowpad: ``$FLOWPAD_FLOW`` is this install's ``flow`` and
+    ``FLOW_INSTANCE`` this process's instance.
+
+    A step that asks Flowpad something (``"$FLOWPAD_FLOW" source step …``) must reach the backend
+    that is running it — not whichever ``flow`` is first on PATH, and not the ``prod`` instance an
+    unset ``FLOW_INSTANCE`` means. PATH is left alone: a check such as "is python3 on PATH" must
+    see the machine's PATH, not this install's.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    script = Path(sys.executable).parent / ("flow.exe" if sys.platform == "win32" else "flow")
+    env = {"FLOW_INSTANCE": get_instance_settings().instance_name}
+    if script.exists():
+        env["FLOWPAD_FLOW"] = str(script)
+    return env
+
+
 async def run_shell(
     command: str,
     *,
@@ -72,7 +90,7 @@ async def run_shell(
     # Unbuffered Python: stdout is a pipe here, so Python block-buffers it, and
     # the kill on a timeout drops the buffer — a step that printed and then hung
     # would report nothing at all. The caller's env still wins.
-    env = {**os.environ, "PYTHONUNBUFFERED": "1", **(extra_env or {})}
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", **flow_env(), **(extra_env or {})}
     t0 = time.monotonic()
     try:
         proc = await _spawn(command, cwd=str(workdir), env=env, platform=platform)

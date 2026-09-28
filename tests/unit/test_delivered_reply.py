@@ -65,6 +65,18 @@ async def test_reply_sends_records_then_acks():
     assert position.replying_to == "" and position.replied_external_id == ""
 
 
+async def test_reply_with_plain_text_is_addressed_the_way_this_channel_replies():
+    """``m.reply("…")`` is ``m.reply(await m.reply_spec(body="…"))`` — the common case in one call."""
+    with scripted_provider("scripted") as driver:
+        stream_inbox, _ = await _stream_inbox(f"{mint_uuid()}@x")
+        driver.push({"body": "hi", "author": "alice@example.com", "thread_key": "t1"})
+        async with workflow(_name()) as _:
+            m = await _one(stream_inbox)
+            outcome = await m.reply("hello back")
+    assert outcome.external_id and m.acked
+    assert (driver.sent[0]["to"], driver.sent[0]["text"], driver.sent[0]["thread_key"]) == ("alice@example.com", "hello back", "t1")
+
+
 async def test_a_drafted_outcome_acks():
     """A draft reached nobody, but it is a real outcome — not a failure to retry."""
     with scripted_provider("scripted") as driver:
