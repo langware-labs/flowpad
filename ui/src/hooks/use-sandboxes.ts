@@ -19,10 +19,7 @@ import {
   WORKSPACE_FLAVOR,
 } from '@sdk';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
-import {
-  type ContentInstallSpec,
-  installProjectLandingUrl,
-} from '@src/lib/content-install';
+import { type ContentInstallSpec, installProjectLandingUrl } from '@src/lib/content-install';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -350,7 +347,12 @@ function provisionSetupOf(setup: SandboxSetup): ProvisionSetup {
 
 /** Paint the project rows from what the hub reported. A planned row the hub did not report
  *  succeeded with nothing to do (no context declared); after a failure it never ran. */
-function paintProvisionRows(rows: ProvisionStep['id'][], reported: ReportedSteps, patch: PatchStep, failed: boolean): void {
+function paintProvisionRows(
+  rows: ProvisionStep['id'][],
+  reported: ReportedSteps,
+  patch: PatchStep,
+  failed: boolean,
+): void {
   for (const id of rows) {
     const step = reported.get(id);
     if (step) {
