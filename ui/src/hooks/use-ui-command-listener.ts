@@ -21,6 +21,7 @@ import {
   type NotificationPayload,
 } from '@src/notifications/renderDesktopNotification';
 import { openInstallRequest } from '@src/components/install/install-request-store';
+import { deliverClaimedQuestion } from '@src/components/ask/ask-claims';
 
 /** The subset of the Electron preload bridge this hook uses. */
 interface NotifyBridge {
@@ -115,6 +116,8 @@ export function useUiCommandListener(): void {
         console.warn('[ui_command] navigate_dock missing view_type', msg);
         return;
       }
+      // A question from a wizard run a screen is showing is drawn THERE, not by sending the tab away.
+      if (msg.view_type === ViewType.ASK && msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer)) return;
       navigateTo(
         new DockPointer(
           msg.view_type as ViewType,

@@ -83,6 +83,10 @@ async def execute_wizard(
     except Timeout:
         return WizardResult.held(f"{spec.name or wizard_id} {ALREADY_RUNNING}")
 
+    from flow_sdk.core.compute_op.ask import ASKING_RUN  # noqa: PLC0415
+
+    activity_path = activity_path_for(wizard_id, asset_ref, target)
+    asking = ASKING_RUN.set(activity_path)  # a question this run asks names the run
     try:
         result = await run_wizard(
             spec,
@@ -91,7 +95,7 @@ async def execute_wizard(
             # pops from `_roots` only, and eviction is "a root's terminal untracks
             # its tree". A shared `wizard/` parent never terminates, so a resumed
             # run would inherit the previous run's counters.
-            activity_path=activity_path_for(wizard_id, asset_ref, target),
+            activity_path=activity_path,
             trusted=trusted,
             workdir=workdir,
             # A step's `ref` is a NAME; only the entity layer knows what is
@@ -102,6 +106,7 @@ async def execute_wizard(
             inputs=inputs,
         )
     finally:
+        ASKING_RUN.reset(asking)
         lock.release()
 
     # Persisted so an UNATTENDED run leaves any trace at all. The activity tree

@@ -294,7 +294,7 @@ async def _ask(spec: ComputeOpSpec, *, ask_timeout: Optional[float], say: Callab
     ask = ask_person if served_here() else ask_through_backend
     return await ask(
         spec.name or "op", spec.exe_data.prompt or spec.display_label, spec.output_spec_kind,
-        timeout=timeout, label=spec.display_label, secret=spec.exe_data.secret,
+        timeout=timeout, label=spec.display_label, secret=spec.exe_data.secret, guide=spec.setup or "",
     )
 
 
