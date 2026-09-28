@@ -8,6 +8,7 @@ from .asset_share import router as asset_share_router
 from .assets import router as assets_router
 from .auth import router as auth_router
 from .bootstrap import router as bootstrap_router
+from .browser_profiles import router as browser_profiles_router
 from .capabilities import router as capabilities_router
 from .cloud import router as cloud_router
 from .data_source_webhook import router as data_source_webhook_router
@@ -54,6 +55,7 @@ __all__ = [
     "auth_router",
     "cloud_router",
     "privacy_router",
+    "browser_profiles_router",
     "hooks_router",
     "directory_router",
     "detection_router",

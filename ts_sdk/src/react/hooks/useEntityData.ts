@@ -19,7 +19,9 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { dataManager, FlowData, TypeId } from '../..';
+import { dataManager } from '../../APIEntity';
+import { FlowData } from '../../flow_processing/flow-data';
+import { TypeId } from '../../models/TypeId';
 
 export interface UseEntityDataResult {
   /** All FlowData items received so far */

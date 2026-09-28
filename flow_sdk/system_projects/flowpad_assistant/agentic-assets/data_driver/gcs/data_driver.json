@@ -11,6 +11,15 @@
       "https://www.googleapis.com/auth/devstorage.read_only"
     ]
   },
+  "permissions": {
+    "permission.google.storage.read": {
+      "mechanism": "oauth",
+      "oauth_scopes": [
+        "https://www.googleapis.com/auth/devstorage.read_only"
+      ],
+      "why": "List and read the objects of the configured bucket."
+    }
+  },
   "reflect": [
     "none",
     "copy"

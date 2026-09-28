@@ -1912,8 +1912,14 @@ def project_to_dict(project) -> dict:
     workdir off the cached row got nothing until some later list/activate call
     happened to overwrite it — a launch clicked in that window silently did
     nothing (no request, no error).
+
+    Hence the base is the FULL API serialization (``model_dump(mode="json")`` is
+    what the GET route returns), not a hand-picked list: ``context_roots`` was the
+    fourth field found missing this way — the home's agent tiles are gated on it
+    and stayed hidden until an unrelated refetch replaced the cached row.
     """
     return {
+        **project.model_dump(mode="json"),
         **entity_to_dict(project),
         "locale": getattr(project, "locale", None),
         "hidden": bool(getattr(project, "hidden", False)),

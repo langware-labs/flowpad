@@ -8,37 +8,19 @@ by re-implementing it — and a re-implementation that is 90% right is worse tha
 no CLI, because it would publish a project under weaker preconditions than the
 button enforces.
 
-The gates, in order, all of them fail-closed:
+The gates, in order, both fail-closed:
 
 1. an authenticated actor,
-2. cloud credentials,
-3. the authoritative git preflight (clean tree, named branch, pushed, supported
-   origin). The frontend never shells git; this is the only verdict.
-4. a GitHub token — but only when the origin that passed the preflight is
-   actually on GitHub. The token exists so the recipient's clone can reach a
-   private GitHub repo; demanding it for a ``file://`` or self-hosted remote
-   refused a share that needs no GitHub account at all, which is why this gate
-   runs AFTER the preflight that resolves the provider.
+2. a live cloud login.
 
-The origin that passed the preflight is the one carried forward — re-deriving
-it afterwards would open a window where the advertised commit is not the one
-that was checked.
+The folder's own git state never blocks: published assets travel through the
+project's hub-hosted repository. When the folder is a clean, pushed checkout,
+its ``GitOrigin`` is returned as an informational pointer.
 """
 
 from __future__ import annotations
 
-import logging
 from typing import Optional
-
-logger = logging.getLogger(__name__)
-
-#: Fail-closed preflight verdict, used when the probe itself raises.
-_STATUS_FAILURE = {
-    "available": False,
-    "reason": "Couldn't read the repository's Git status.",
-    "code": "status-failure",
-    "git_origin": None,
-}
 
 
 class ProjectPublishBlocked(Exception):
@@ -70,18 +52,21 @@ class ProjectPublishBlocked(Exception):
         return {"code": self.code, "reason": self.reason, "git_origin": self.git_origin}
 
 
-async def assert_project_publishable(project, actor) -> "object":
-    """Run every gate and return the ``GitOrigin`` that passed the preflight.
+async def assert_project_publishable(project, actor) -> "object | None":
+    """Run the linking gates; return the folder's ``GitOrigin`` when it has one, else None.
 
-    Raises :class:`ProjectPublishBlocked`. Mutates nothing — callers decide
-    whether to proceed, which is what lets ``--dry-run`` and the
-    "should I suggest linking?" question be answered without side effects.
+    Linking a Project needs a signed-in actor and a cloud login — nothing else.
+    Its published assets travel through the project's hub-hosted repository, so
+    the folder need not be a git checkout, have a remote, be clean, or have
+    GitHub connected. When the folder IS a clean GitHub/Git checkout, its origin
+    is still returned as a pointer recipients may use; its absence never blocks.
+
+    Raises :class:`ProjectPublishBlocked`. Mutates nothing.
     """
     from flow_sdk.app.actions.git_share_preflight_action import git_share_preflight  # noqa: PLC0415
-    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-    from flow_sdk.core.oauth.github_credentials import get_github_token  # noqa: PLC0415
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
 
     if not actor:
         raise ProjectPublishBlocked(
@@ -89,9 +74,7 @@ async def assert_project_publishable(project, actor) -> "object":
             message="Sign in before linking a Project to the cloud",
             status_code=401,
         )
-
-    credentials = load_credentials()
-    if not credentials or not credentials.api_key:
+    if not resolve_hub_api_key(require_live=True):
         raise ProjectPublishBlocked(
             code="cloud_login_required",
             message="Cloud login required before linking a Project to the cloud",
@@ -99,33 +82,6 @@ async def assert_project_publishable(project, actor) -> "object":
         )
     try:
         preflight = await git_share_preflight(Project.get_type(), str(project.id))
-    except Exception:  # noqa: BLE001 — publication eligibility fails closed
-        logger.exception("[share] Project Git preflight failed for %s", project.id)
-        preflight = _STATUS_FAILURE
-
-    if not preflight.get("available"):
-        raise ProjectPublishBlocked(
-            code=str(preflight.get("code") or "status-failure"),
-            message=str(preflight.get("reason") or "Project is not ready to link to the cloud"),
-            reason=preflight.get("reason"),
-            git_origin=preflight.get("git_origin"),
-        )
-
-    try:
-        origin = GitOrigin.model_validate(preflight.get("git_origin"))
-    except Exception as exc:  # noqa: BLE001 — a malformed success must fail closed
-        raise ProjectPublishBlocked(
-            code="status-failure",
-            message="Couldn't determine a valid Git origin for this Project",
-        ) from exc
-
-    # Only a GitHub origin needs a GitHub token: it is what lets the recipient
-    # clone a private repo. A file:// or self-hosted remote clones without one.
-    if origin.provider.strip().lower() == "github" and not await get_github_token(actor):
-        raise ProjectPublishBlocked(
-            code="github_not_connected",
-            message="Connect GitHub before linking a Project to the cloud",
-            git_origin=preflight.get("git_origin"),
-        )
-
-    return origin
+        return GitOrigin.model_validate(preflight["git_origin"]) if preflight.get("available") else None
+    except Exception:  # noqa: BLE001 — the folder's own git state is informational only
+        return None

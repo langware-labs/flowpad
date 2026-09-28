@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Optional
 
 from pydantic import BaseModel, PrivateAttr, field_validator
 
@@ -41,6 +41,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.core import Entity, action
 from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
+from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec, hub_store
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from flow_sdk.schema.types import EntityType
 from flow_sdk.worldview.models import (
@@ -56,6 +57,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+    from flow_sdk.secrets import SecretStoreRef
 
 #: What is placed. The ``compute.node`` kind is a desktop — a machine placed for
 #: a human rather than for an agent; from inside the box the two are identical
@@ -63,6 +65,8 @@ if TYPE_CHECKING:
 KIND_AGENT = "runtime.agent"
 KIND_WEB = "runtime.web"
 KIND_NODE = "compute.node"
+#: This computer itself: the place every process with no deployment of its own reads its credentials in.
+KIND_THIS_COMPUTER = "compute.this_computer"
 
 #: Providers that place a resource on a ComputeNode, so ``origin.external_id``
 #: names that node. An inventoried ``gcp`` resource is not node-backed — its
@@ -165,6 +169,10 @@ class PlacementOrigin(BaseModel):
 class Deployment(Entity):
     """A provider-neutral placement and observation record."""
 
+    # A remote placement's hub row owns the machine: deleting here without the hub would leave
+    # the machine running with no handle to it.
+    owns_hub_delete: ClassVar[bool] = True
+
     type: str = APIField(default=EntityType.DEPLOYMENT.value)
     name: str = APIField(description="Display name")
     kind: KindStr = APIField(description="Open dot-path ontology kind — WHAT is placed")
@@ -197,6 +205,18 @@ class Deployment(Entity):
         default=DEFAULT_ENVIRONMENT,
         description="Credential environment: development (this computer) or a named one (production, staging, ...)",
     )
+    #: The placement's own token allocation on the hub (an ``llm_endpoint`` typeid), set by planning it with a
+    #: ``token_allocation``; blank = its agent spends its owner's capped default.
+    llm_endpoint_typeid: str = APIField(default="", description="This placement's token allocation (hub LLM endpoint)")
+
+    #: Where this placement's credential values live (the WHERE a credential never says). ``None``:
+    #: this computer's — an agent's local deployment reads what the rest of this machine reads.
+    #: PRIVATE: a store binding names this machine's files and vault.
+    secrets: DeploymentSecretsSpec | None = APIField(
+        default=None,
+        sharing=Sharing.PRIVATE,
+        description="Where credential values live here: a store, per-variable exceptions, extra required variables",
+    )
 
     #: Which of an element's deployments on one provider this is: ``""`` the default one, else a
     #: short name ("2", "3", …). How one agent runs in several places on this computer.
@@ -220,6 +240,109 @@ class Deployment(Entity):
         """Attach the already-loaded deployed element. Returns self, for chaining."""
         self._element = element
         return self
+
+    # ── this computer ─────────────────────────────────────────────────────
+
+    @classmethod
+    async def this_computer(cls, *, save: bool = True) -> "Deployment":
+        """This instance's own placement — found, else created once (a lookup, never a minted key).
+        ``save=False`` (a dry run) returns an unsaved one instead of creating it.
+
+        Its ``secrets`` are the binding every process without a deployment of its own reads with —
+        terminals, ``flow credentials``, project setup. Its environment is not stored: it is the
+        instance default (``development``; a cloud box adopts ``production``), read as it is now.
+        """
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+        from flow_sdk.instance_settings.environment import get_default_environment  # noqa: PLC0415
+
+        rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["kind", KIND_THIS_COMPUTER])))
+        row = min(rows, key=lambda r: str(r.created_date or "")) if rows else None
+        if row is None:
+            row = cls(
+                name="This computer",
+                kind=KIND_THIS_COMPUTER,
+                target=DeploymentTarget(provider="local", scope="machine", location="this computer"),
+                secrets=DeploymentSecretsSpec(),
+            )
+            if save:
+                await row.save()
+        row.environment = get_default_environment()
+        return row
+
+    @classmethod
+    async def others(cls) -> "list[Deployment]":
+        """Every deployment but this computer."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        return await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.NE, operands=["kind", KIND_THIS_COMPUTER])))
+
+    @classmethod
+    async def resolve(cls, deployment_id: str = "") -> "Deployment":
+        """The deployment ``deployment_id`` names (an id or a ``deployment-`` typeid); empty is this
+        computer. Raises ``LookupError`` for one that does not exist."""
+        deployment_id = str(deployment_id or "").strip().removeprefix("deployment-")
+        if not deployment_id:
+            return await cls.this_computer()
+        row = await cls.get_by_id(deployment_id)
+        if row is None:
+            raise LookupError("deployment not found")
+        return row
+
+    @property
+    def is_this_computer(self) -> bool:
+        return kind_matches(KIND_THIS_COMPUTER, self.kind)
+
+    async def secrets_binding(self) -> DeploymentSecretsSpec:
+        """Where this placement's values live: its own binding, else this computer's."""
+        if self.secrets is not None:
+            return self.secrets
+        return (await type(self).this_computer()).secrets or DeploymentSecretsSpec()
+
+    async def keep_in(self, env_vars: list[str], store: "SecretStoreRef") -> "Deployment":
+        """Keep ``env_vars``' values in ``store`` here: an exception on this placement's own binding
+        (a placement that inherited this computer's gets a copy first). Existing values are not moved."""
+        binding = await self.secrets_binding()
+        self.secrets = binding.with_store(list(env_vars), store)
+        await self.save()
+        return self
+
+    # ── a cloud placement's secrets, held by the hub ──────────────────────
+
+    async def authorize(self, provider: str, permissions: list[str] | None = None) -> dict:
+        """Let this deployment's machine use your ``provider`` connection: it asks the hub for a fresh
+        token when it needs one; your refresh token never leaves the hub. Revoke with :meth:`revoke`."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_post  # noqa: PLC0415
+
+        return await hub_post(self.type, {"provider": provider, "permissions": list(permissions or [])},
+                              self.id, "authorize") or {}
+
+    async def revoke(self, provider: str) -> list[str]:
+        """Take back ``provider``: the machine's next token ask is refused."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_delete  # noqa: PLC0415
+
+        data = await hub_delete(self.type, self.id, action="authorize", sub_path=provider) or {}
+        return list(data.get("revoked") or [])
+
+    async def authorizations(self) -> list[dict]:
+        """The connections this deployment's machine may use (``{provider, permissions}``). Names only."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_get_or_raise  # noqa: PLC0415
+
+        return list(await hub_get_or_raise(self.type, self.id, action="authorize") or [])
+
+    async def secrets_inventory(self) -> dict:
+        """What the hub holds for this deployment: each name with its last write and placement, and the
+        connections its machine may use. Names only."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+        return await hub_get(self.type, self.id, action="secrets") or {"secrets": [], "authorizations": []}
+
+    async def funding(self) -> dict | None:
+        """What pays for this cloud placement's model turns (``kind``: ``allocation`` | ``default``, the
+        endpoint's ``name``) and ``exhausted``: the used-up limit its next turn would be refused with, or
+        empty. ``None`` when the hub cannot say."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+
+        return await hub_get(self.type, self.id, action="funding")
 
     # ── convergence ───────────────────────────────────────────────────────
 
@@ -340,8 +463,14 @@ class Deployment(Entity):
         """
         if not isinstance(payload, dict) or not payload.get("id"):
             return None
+        existing = await cls.get_by_id(str(payload["id"]))
         deployment = cls(**payload)
         deployment.remote = True
+        # Where its values live is this machine's, never the hub's: kept across adoptions. A new cloud
+        # placement keeps them in the hub store, which places them on its machine.
+        deployment.secrets = existing.secrets if existing is not None and existing.secrets is not None else (
+            None if deployment.is_local else DeploymentSecretsSpec(store=hub_store(str(deployment.id)))
+        )
         await deployment.save()
         return deployment.with_element(element)
 
@@ -464,6 +593,13 @@ class Deployment(Entity):
             return await self._set_serving(False)
         return await self._set_node_state("pause", "paused")
 
+    async def delete(self):
+        """Delete the placement: a process serving it here is stopped first, and a remote one is
+        deleted on the hub first (``owns_hub_delete``) — the hub stops its machine."""
+        if self._runs_here():
+            await self._stop_process()
+        return await super().delete()
+
     async def resume(self) -> bool:
         """Start a paused machine again. The counterpart of :meth:`pause`, same routing."""
         if self._runs_here():
@@ -478,16 +614,21 @@ class Deployment(Entity):
     async def _set_serving(self, serving: bool) -> bool:
         """Stop (or start) this deployment's process. Stopping ends it now — and, not serving, the
         app's supervisor will not start it again; starting is the supervisor's (``serving``)."""
+        self.serving = serving
+        self.status = self.status.model_copy(update={"provider_state": "running" if serving else "paused"})
+        await self.save()
+        if not serving:
+            await self._stop_process()
+        return True
+
+    async def _stop_process(self) -> None:
+        """End this deployment's process here, if it runs."""
         import asyncio  # noqa: PLC0415
 
         from flow_sdk.builtin import deployment_process  # noqa: PLC0415
 
-        self.serving = serving
-        self.status = self.status.model_copy(update={"provider_state": "running" if serving else "paused"})
-        await self.save()
-        if not serving and deployment_process.alive(self):
+        if deployment_process.alive(self):
             await asyncio.to_thread(deployment_process.stop, self)
-        return True
 
     async def _set_node_state(self, verb: str, provider_state: str) -> bool:
         """Pause or resume the machine: through the hub for a remote placement, else on the node here."""
@@ -586,6 +727,30 @@ class Deployment(Entity):
         """`POST /deployment/<id>/update` — bring a cloud machine to the published definition."""
         return await self._answer("update", self.update)
 
+    @action.get(action_name="secrets")
+    async def secrets_action(self):
+        """`GET /deployment/<id>/secrets` — what the hub holds for this cloud placement. Names only."""
+        return await self._answer("secrets", self.secrets_inventory)
+
+    @action.post(action_name="authorize")
+    async def authorize_action(self):
+        """`POST /deployment/<id>/authorize  {"provider", "permissions"?}` — let its machine use your
+        connection; `{"provider", "revoke": true}` takes it back."""
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = ((await request_info.get_post_data()) if request_info else None) or {}
+        provider = str(body.get("provider") or "").strip()
+
+        async def run():
+            if not provider:
+                raise DeploymentActionError("provider is required", status_code=400)
+            if body.get("revoke"):
+                return {"revoked": await self.revoke(provider)}
+            return await self.authorize(provider, list(body.get("permissions") or []))
+
+        return await self._answer("authorize", run)
+
     @action.get(action_name="timeline")
     async def timeline_action(self):
         """`GET /deployment/<id>/timeline?limit=&before=&conversation=` — what reached it, what it
@@ -618,6 +783,71 @@ class Deployment(Entity):
         from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
         return ApiSuccessResponse(data=(await threads(self)).model_dump(mode="json"))
+
+    def _local_process(self):
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentProcess  # noqa: PLC0415
+
+        return DeploymentProcess(
+            deployment_id=str(self.id), shell_id=deployment_process.shell_id_of(self),
+            file=str(deployment_process.file_of(self)), command=deployment_process.command_of(self),
+            pid=deployment_process.pid_of(self), serving=bool(self.serving),
+        )
+
+    @action.get(action_name="process")
+    async def process_action(self):
+        """`GET /deployment/<id>/process` — a local deployment's process: its file, its terminal, its pid."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.is_local:
+            return ApiFailResponse(message="only a local deployment runs a process here", status_code=400)
+        return ApiSuccessResponse(data=(await asyncio.to_thread(self._local_process)).model_dump(mode="json"))
+
+    @action.get(action_name="code")
+    async def code_action(self):
+        """`GET /deployment/<id>/code` — the text of the Python file a local deployment runs."""
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentCode  # noqa: PLC0415
+
+        if not self.is_local:
+            return ApiFailResponse(message="only a local deployment runs a file here", status_code=400)
+        path = deployment_process.file_of(self)
+        return ApiSuccessResponse(data=DeploymentCode(file=str(path), text=path.read_text(encoding="utf-8")).model_dump(mode="json"))
+
+    @action.post(action_name="save_code")
+    async def save_code_action(self):
+        """`POST /deployment/<id>/save_code {text}` — write the file; it runs from the next (re)start."""
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.deployment_timeline_spec import DeploymentCode  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        text = ((await request_info.get_post_data()) or {}).get("text") if request_info else None
+        if not self.is_local or not isinstance(text, str):
+            return ApiFailResponse(message="a local deployment's file takes {text: <python>}", status_code=400)
+        path = deployment_process.file_of(self)
+        path.write_text(text, encoding="utf-8")
+        return ApiSuccessResponse(data=DeploymentCode(file=str(path), text=text).model_dump(mode="json"))
+
+    @action.post(action_name="restart")
+    async def restart_action(self):
+        """`POST /deployment/<id>/restart` — stop the loop; the supervisor runs the file again at once
+        (this write is what tells it), in the same terminal."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.builtin import deployment_process  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+
+        if not self.is_local or not self.serving:
+            return ApiFailResponse(message="only a running local deployment restarts", status_code=400)
+        if not await asyncio.to_thread(deployment_process.stop, self):
+            return ApiFailResponse(message="its process did not stop", status_code=500)
+        await self.save()
+        return ApiSuccessResponse(data=(await asyncio.to_thread(self._local_process)).model_dump(mode="json"))
 
     @action.get(action_name="runs")
     async def runs_action(self):
@@ -687,6 +917,7 @@ class Deployment(Entity):
         """
         from flow_sdk.builtin.agent import worker_type_value  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.agentic_process import selected_worker_type  # noqa: PLC0415
         from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
 
         agent = await self._require_agent()
@@ -746,7 +977,7 @@ class Deployment(Entity):
             # interactive worker pass pty_mode=True and start it themselves.
             pty_mode=options.pop("pty_mode", False),
             process_type=options.pop("process_type", ProcessKind.EXECUTION.value),
-            worker_type=worker_type_value(worker_override or agent.worker_type),
+            worker_type=worker_type_value(worker_override or agent.worker_type or await selected_worker_type()),
             project_id=options.pop("project_id", None) or agent.project_id,
             load_flowpad_assistant=cos_options.get("load_flowpad_assistant", agent.load_flowpad_assistant),
             additional_dirs=list(agent.additional_dirs or []),
@@ -763,10 +994,11 @@ class Deployment(Entity):
             deployment_id=self.id,
             **options,
         )
-        _prepare_output_folder(process)
         return process
 
-    async def launch(self, prompt: str, *, wait: bool = False, **options) -> "PromptResult":
+    async def launch(
+        self, prompt: str, *, wait: bool = False, input: Any = None, output_spec: Any = None, **options
+    ) -> "PromptResult":
         """``create_process`` + save + run the first turn — answered as a
         ``PromptResult`` whose ``executor`` names the process. Never raises for
         an outcome.
@@ -777,19 +1009,28 @@ class Deployment(Entity):
         ``AgenticProcess.run`` reads it. Not taken is NOT_YET (``busy`` when a
         turn is in flight); a disabled agent is REFUSED, a missing one NOT_FOUND.
         A caller that needs the process resolves it from ``executor``.
-        """
-        from flow_sdk.builtin.agentic_process.agentic_process import _build_run_result  # noqa: PLC0415
 
+        ``input`` / ``output_spec``: typed folder I/O — see ``process_io``; the agent's declared ``input`` /
+        ``output`` apply when omitted, and the output is read back only with ``wait=True``.
+        """
+        from flow_sdk.builtin.agentic_process.process_io import (  # noqa: PLC0415
+            check_declared_input,
+            declared_output_spec,
+            prepare_io,
+            resolve_output_spec,
+            take_turn,
+        )
+
+        agent = await self.agent()
+        spec = resolve_output_spec(output_spec) or declared_output_spec(getattr(agent, "output", None))
+        check_declared_input(input, getattr(agent, "input", None))
         try:
             proc = await self.create_process(prompt, **options)
         except AgentUnavailable as gone:
             return gone.answer()
+        prepare_io(proc, input=input, output_spec=spec)
         await proc.save()
-        taken = await proc.send_turn(prompt)
-        if not taken.ok or not wait:
-            return taken
-        await proc.wait()
-        return _build_run_result(proc)
+        return await take_turn(proc, prompt, spec, wait=wait)
 
     async def use(self, *, owner=None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
@@ -899,32 +1140,6 @@ class Deployment(Entity):
             if observation and (observation.window_start is None or observation.window_end is None):
                 raise ValueError(f"{kind.value} observation requires a declared window")
         return value
-
-
-def _prepare_output_folder(process: "AgenticProcess") -> None:
-    """Give a non-flow run the same output convention a flow node gets.
-
-    The FOLDER is already universal — every process serializes
-    ``<record>/execution/{input,output,assets}``. What was flow-only is the
-    CONVENTION: only ``_agent_instruction`` ever told an agent that an output
-    folder exists, so a run launched from an Agent produced artifacts nowhere
-    and the runs UI showed "no files" for it.
-
-    Two lines, mirroring the flow engine: materialize the folder before the run
-    (the id is minted at construction, so the path is known pre-save), and say
-    where it is. Best-effort — a read-only disk must not fail the launch.
-    """
-    try:
-        output = process._record_dir() / "execution" / "output"
-        output.mkdir(parents=True, exist_ok=True)
-    except Exception:  # noqa: BLE001
-        return
-    existing = str(process.context_data.get("instructions") or "").strip()
-    line = (
-        f"Write any files you produce to: `{output}/`\n"
-        "Anything left there is collected as this run's output and shown in the UI."
-    )
-    process.context_data["instructions"] = "\n\n".join(p for p in (existing, line) if p)
 
 
 __all__ = ["KIND_AGENT", "KIND_NODE", "KIND_WEB", "NODE_PROVIDERS", "Deployment"]

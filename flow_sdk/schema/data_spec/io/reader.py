@@ -37,7 +37,16 @@ def _document(spec: type, path: Path) -> Any:
     body_name = body_field(spec)
     if body_name:
         fields[body_name] = _extract_body(text) if front else text
-    return spec.model_validate(fields)
+    return _located(spec.model_validate(fields), {body_name: path} if body_name and path.is_file() else {})
+
+
+def _located(value: Any, files: dict[str, Path]) -> Any:
+    """Stamp each carrier field with the file it was read from (``Text.path`` / ``Binary.path``)."""
+    for name, path in files.items():
+        held = getattr(value, name, None)
+        if held is not None:
+            held.path = path
+    return value
 
 
 def read(spec: type, root: Path) -> Any:
@@ -47,6 +56,7 @@ def read(spec: type, root: Path) -> Any:
 
     document = load_json_dict(root / names.main_document(spec))
     fields: dict[str, Any] = {}
+    files: dict[str, Path] = {}
 
     for name, place in placements(spec).items():
         annotation = unwrap(spec.model_fields[name].rebuild_annotation())
@@ -58,6 +68,7 @@ def read(spec: type, root: Path) -> Any:
             path = root / names.field_file(name, ".md")
             if path.is_file():
                 fields[name] = path.read_text(encoding="utf-8")
+                files[name] = path
         elif place is Placement.DOCUMENT:
             path = root / names.field_file(name, names.ext_for(annotation))
             if path.is_file():
@@ -66,6 +77,7 @@ def read(spec: type, root: Path) -> Any:
             path = root / names.field_file(name, getattr(annotation, "ext", ".bin"))
             if path.is_file():
                 fields[name] = annotation(path.read_bytes())
+                files[name] = path
         elif place is Placement.DIR_LIST:
             element = element_of(annotation)
             folder = root / name
@@ -81,7 +93,7 @@ def read(spec: type, root: Path) -> Any:
                     child.name: read(valued, child) for child in sorted(folder.iterdir()) if child.is_dir()
                 }
 
-    return spec.model_validate(fields)
+    return _located(spec.model_validate(fields), files)
 
 
 __all__ = ["read"]

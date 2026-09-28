@@ -25,6 +25,10 @@ SYSTEM_PROJECTS = Path(__file__).resolve().parents[2] / "flow_sdk" / "system_pro
 # Anything at or below this reads as the H1-title fallback ("Web App Builder"),
 # which carries no trigger information for routing.
 MIN_ROUTABLE_DESCRIPTION = 40
+# The Agent Skills cap. A worker that enforces it (copilot) drops a longer skill
+# outright — "Skill not found" — so a description that grew past it made
+# agent-builder vanish for every copilot worker while claude still loaded it.
+MAX_DESCRIPTION = 1024
 
 SKILL_FILES = sorted(SYSTEM_PROJECTS.glob("*/.claude/skills/*/SKILL.md"))
 
@@ -80,4 +84,8 @@ def test_skill_ships_a_routable_description(skill_md: Path):
     )
     assert len(description) > MIN_ROUTABLE_DESCRIPTION, (
         f"{skill_md.parent.name}: description is too short to route on: {description!r}"
+    )
+    assert len(description) <= MAX_DESCRIPTION, (
+        f"{skill_md.parent.name}: description is {len(description)} characters; over "
+        f"{MAX_DESCRIPTION} a copilot worker cannot load the skill at all"
     )

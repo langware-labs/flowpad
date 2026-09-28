@@ -93,13 +93,30 @@ async function materializeTab(
   // would otherwise re-resolve on every return navigation forever.
   const needsReparent =
     !!parentTabId && !!existingTab && existingTab.id !== parentTabId && existingTab.parent_tab_id !== parentTabId;
+  // The workspace's ACTIVE DISPLAY is the one dock whose identity is stable while
+  // its TARGET moves: `tabHash` is the host, so the lookup above finds the same row
+  // on every `flow show` and the reuse short-circuit would return before the backend
+  // ever hears about the new target — leaving the chip frozen on whatever was shown
+  // first. Compare the stored pointer, which is the field that actually changes, so
+  // a re-show falls through to `ensureDock` and the backend's repoint clause runs.
+  // Same shape as `lensProjectStale` below: a per-dock reason the cached row is out
+  // of date, expressed where the reuse decision is made.
+  //
+  // Decided BEFORE the re-parent shortcut below, which must not take a re-pointed
+  // display: that shortcut re-sends the ROW's pointer and name (`existingTab.*`),
+  // i.e. the PREVIOUS target, so the backend never hears about the new one and
+  // the chip keeps the first target's label ("metallb.io" while the frame shows
+  // cert-manager.io). A display whose parent edge the backend will not keep —
+  // `needsReparent` true on every show — never got past it at all.
+  const displayRepoint = dock.isActiveDisplay && !!existingTab && existingTab.pointer !== dock.toJSON();
+
   // Re-parenting an already-resolved asset must not resolve/download that same
   // entity a second time. On a live editor the entity ref can be FETCHING for
   // viewer work, which made `getFromDockPointer` queue behind it and left the
   // Vibe transition half-open. The existing Tab already carries the exact
   // denormalized target/project metadata; send it through the same backend
   // `new_tab` ensure seam with only the new parent edge.
-  if (needsReparent && existingTab?.pointer) {
+  if (needsReparent && existingTab?.pointer && !displayRepoint) {
     await perfTime('materializeTab.newTab(reparent)', () =>
       tabManager.newTab(existingTab.pointer, {
         targetType: existingTab.target_type,
@@ -150,15 +167,6 @@ async function materializeTab(
   // from a target, and a project-less shell is a legitimate GLOBAL terminal.
   // Widening this to every adoptable dock would re-mint those on every single
   // navigation chasing a project_id that is correctly null.
-  // The workspace's ACTIVE DISPLAY is the one dock whose identity is stable while
-  // its TARGET moves: `tabHash` is the host, so the lookup above finds the same row
-  // on every `flow show` and the reuse short-circuit would return before the backend
-  // ever hears about the new target — leaving the chip frozen on whatever was shown
-  // first. Compare the stored pointer, which is the field that actually changes, so
-  // a re-show falls through to `ensureDock` and the backend's repoint clause runs.
-  // Same shape as `lensProjectStale` above: a per-dock reason the cached row is out
-  // of date, expressed where the reuse decision is made.
-  const displayRepoint = dock.isActiveDisplay && !!existingTab && existingTab.pointer !== dock.toJSON();
 
   if (
     existingTab &&

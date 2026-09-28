@@ -1,12 +1,7 @@
 import type { EntityMerge } from '../IEntity';
 import { APIEntity, type AnyEntity } from '../APIEntity';
-import { LabelInfo } from '../models/LabelInfo';
-
-export interface ILabel extends LabelInfo {
-  id?: string;
-  created_at?: string;
-  updated_at?: string;
-}
+import { ILabel } from './label-types';
+export type * from './label-types';
 
 // `implements ILabel` only checks the class; it contributes no members, so every
 // field declared solely on ILabel read as "does not exist". deepAssign populates

@@ -1,4 +1,7 @@
-import { dataManager, EntityEnv, TypeId, EntityEnvVars, type OAuthMessage } from '@sdk';
+import { dataManager } from '../../APIEntity';
+import { TypeId } from '../../models/TypeId';
+import { EntityEnv, EntityEnvVars } from '../../models/env_var';
+import { type OAuthMessage } from '../../websocket';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { OAuthEventType, OAuthStatus } from '../../services/oauth/oauth-service';

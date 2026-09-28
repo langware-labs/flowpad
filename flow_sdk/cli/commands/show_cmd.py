@@ -163,6 +163,20 @@ def show_webapp(
 
 
 @show_app.command(
+    "url",
+    help="Show a web page (http/https) in a tab beside the chat, e.g. a docs page the user should read.",
+)
+def show_url(
+    url: Annotated[str, typer.Argument(help="The page's full address, e.g. https://metallb.io/installation/")],
+    process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
+) -> None:
+    value = (url or "").strip()
+    if not value.startswith(("http://", "https://")):
+        _fail(EXIT_INVALID_ARG, "INVALID_URL", f"Not a web address: {value!r}")
+    _post_show(process, {"url": value})
+
+
+@show_app.command(
     "app",
     help="Show an app by its artifact id (runtime is derived: dev server, or built output).",
 )

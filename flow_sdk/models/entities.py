@@ -30,7 +30,7 @@ except ImportError as e:
 
 # A core type: a failure here must be loud, not a WARN that leaves the type unregistered.
 from flow_sdk.builtin.data_driver import DataDriver  # noqa: F401
-from flow_sdk.builtin.secret_pack import SecretPack  # noqa: F401
+from flow_sdk.builtin.credential import Credential  # noqa: F401
 
 try:
     from flow_sdk.builtin.workspace import Workspace  # noqa: F401

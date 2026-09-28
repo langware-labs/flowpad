@@ -11,7 +11,7 @@ secrets. Behaviour lives in a `kind`-keyed driver registry.
 Two sibling families answer two different versions of that question. They
 are deliberately parallel in shape and deliberately **not** one type — their
 resolution contracts have nothing in common. (Where a *secret value* lives is not
-an origin: it is a credential's `value_store` — see [credentials](../secret_share.md).)
+an origin: it is a deployment's binding — see [credentials](../secret_share.md).)
 
 | Family | Answers | Kinds today | Resolves to |
 |---|---|---|---|

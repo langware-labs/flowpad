@@ -219,6 +219,18 @@ export interface IFlowMessage extends IEntity {
   /** Set on a REFERENCE row: the SourceItem whose body this message renders.
    *  The stored row's `text` is always empty; reads arrive hydrated. */
   source_item_id?: string | null;
+  /** Who reacted with what on a channel message — projection-owned. */
+  reactions?: IMessageReaction[];
+}
+
+/** One person's emoji on a channel message — mirrors `MessageReaction`
+ *  (flow_sdk/schema/data_spec/message_reaction_spec.py). `ours` marks the ones this machine put there. */
+export interface IMessageReaction {
+  emoji: string;
+  by: string;
+  by_name?: string | null;
+  ours?: boolean;
+  at?: string | null;
 }
 
 // `implements IFlowMessage` only checks the class; it contributes no members, so every
@@ -261,6 +273,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   thread_id?: string | null;
   reply_to_id?: string | null;
   source_item_id?: string | null;
+  reactions?: IMessageReaction[];
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -296,6 +309,21 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
     this.source_item_id = entity.source_item_id ?? null;
+    this.reactions = entity.reactions ?? [];
+  }
+
+  /**
+   * Put our `emoji` on this channel message (or, with `remove`, take it back — all of ours when
+   * `emoji` is empty). Answers the message's reactions after. A channel that cannot show the emoji
+   * refuses; the error says which.
+   */
+  async react(emoji: string, remove = false): Promise<IMessageReaction[]> {
+    if (!this.id) throw new Error('react requires this.id');
+    const action = new ActionInfo('react', FlowMessage.type, this.id, 'POST');
+    action.bodyParameters = { emoji, remove };
+    const data = await dataManager.callAction<unknown, { reactions?: IMessageReaction[] }>(action);
+    this.reactions = data?.reactions ?? [];
+    return this.reactions;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */

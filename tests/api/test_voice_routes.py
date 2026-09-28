@@ -42,7 +42,7 @@ async def _line(provider: str, double, monkeypatch) -> tuple[Agent, DataSource]:
     await agent.save()
     monkeypatch.setattr(DataDriver.loaded(provider), "credentials_for", double.credentials)
     source = make_data_source(provider, name=f"voice route {uuid.uuid4().hex[:6]}", config=dict(double.config),
-                              owner=agent.typeid, status=SourceStatus.ACTIVE.value, inbound_allowed_senders=[double.sender])
+                              owner=agent.typeid, status=SourceStatus.ACTIVE.value, allowed_senders=[double.sender])
     await source.save()
     return agent, source
 

@@ -1,6 +1,5 @@
 import { useRuntimeInfo } from './useRuntimeInfo';
 import {
-  cloudManager,
   createCloudConnectionAuthRejectedWarning,
   createCloudConnectionLostWarning,
   createCloudDisconnectedWarning,
@@ -11,10 +10,10 @@ import {
   createNoHarnessWarning,
   SNIFFER_ACTIVE_WARNING,
   createSnifferNotFoundWarning,
-  dataContext,
-  HubClientErrorInfo,
   UserWarning,
-} from '../..';
+} from '../../models/UserWarning';
+import { dataContext } from '../../FlowSync/context';
+import { cloudManager, type HubClientErrorInfo } from '../../services/cloud_login';
 import { shouldWarnAboutEmptyProjects } from '../../stores/project-cleanup-store';
 import { useCleanupSummary } from './use-cleanup-summary';
 import { useCallback, useEffect, useMemo, useState } from 'react';

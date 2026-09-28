@@ -5,7 +5,7 @@
   "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
   "folder_rel_path": "",
   "folder_name": "docs",
-  "inputs_hash": "6cf4b7747b2a5108822bd15d054fa716fe9f47aed983dbd21ce95f1334414f1a",
+  "inputs_hash": "1516ecd85ab2a877027c68c457e7ba9b5724000192074bd601cbb9bc393a24b5",
   "template_version": 1,
   "prompt_version": 1,
   "self_summary": "Flowpad's documentation root. The agentic-process stack and its interfaces, data management from disk to entity row, the ontology of types and kinds, collaboration and the hub, the runnable snippet shelf, and breadcrumbs recording root causes already proven.",
@@ -30,9 +30,9 @@
       "name": "agentic_process_outputs.md",
       "rel_path": "agentic_process_outputs.md",
       "title": "Agentic process outputs",
-      "summary": "What an agentic run produces: the derivation layer turning transcript shape into meaning, the Artifact recording outputs, and the bus lane keeping clients current.",
-      "content_hash": "ff3317a2cd58560f50783cd3d19e30a71305a402b93912793ff5688a92786aba",
-      "size_bytes": 11279
+      "summary": "How agent runs surface outputs: display, artifacts, workdir versus declared-output modes, and how results reach the client.",
+      "content_hash": "8d9a9c75ed367bf3c370c4d513e34958b1872d585efb6b0d4b54bf078e20f12d",
+      "size_bytes": 12182
     },
     {
       "name": "agents-management.md",
@@ -190,9 +190,9 @@
       "name": "glossary.md",
       "rel_path": "glossary.md",
       "title": "Glossary — our nouns vs. the ecosystem's",
-      "summary": "Cross-walk of our nouns against Claude Code's and OpenClaw's: provider mirrors versus ours, the three contexts, type·subkind·kind, naming rules and capability fields.",
-      "content_hash": "5f1547fe1bf8165e1a4e04f6585097f8d9324fe8d5d944b7e19b600218436a9c",
-      "size_bytes": 36406
+      "summary": "Glossary cross-walking Flowpad nouns with Claude Code and OpenClaw, marking provider mirrors versus Flowpad-owned entities.",
+      "content_hash": "f24771a9d8413100f7d42f3e083c8042e256cefcbcbc59143790c6af69bdd67e",
+      "size_bytes": 40145
     },
     {
       "name": "icons.md",
@@ -334,9 +334,9 @@
       "name": "staging-oauth-validation.md",
       "rel_path": "staging-oauth-validation.md",
       "title": "Staging OAuth validation — 2026-09-12",
-      "summary": "Results of the 2026-09-12 staging OAuth validation: per-provider pass table, local token copies bound to the cloud account, and the delegated-sandbox login limitation.",
-      "content_hash": "e4cb752e999d1dcf8b4293b118c71094130f50ebc0b72e4ead3ae3b5ae7ef52e",
-      "size_bytes": 3438
+      "summary": "2026-09-12 staging OAuth validation: provider-by-provider results on the local app and staging hub with verified identities.",
+      "content_hash": "b993e8d456286913281e5d35a7d854164e9c056d80e949686b2cad839e4e571a",
+      "size_bytes": 3487
     },
     {
       "name": "system_agents.md",
@@ -441,14 +441,14 @@
       "rel_path": "agent",
       "self_summary": "The AgenticProcess entity up close: the four-axis status model that says what a worker is doing and on what evidence, and a tour of its persisted fields, actions and public TypeScript surface.",
       "child_typeid": "markdown_index-ef6a0b49-4a8e-57b4-b375-c061146f5d56",
-      "child_inputs_hash": "d90778a96791c8e20f903b77b1306119483085bdd6324970585eda08c3f8c38e"
+      "child_inputs_hash": "45ccaf40b47826822ef9c74720842589f8a83a6a4136be73df59ec273f11abb1"
     },
     {
       "name": "agent-management",
       "rel_path": "agent-management",
       "self_summary": "Running and controlling agent sessions: which state survives a restart, the orthogonal headless/PTY transports and how a process switches between them, Claude session lifecycle, the PTY WebSocket stack, and the terminal's tabs and toolbars.",
       "child_typeid": "markdown_index-19ec5c4d-9a34-5922-9864-878be1f4d806",
-      "child_inputs_hash": "ee9034286475990565951ddad74dc00252bdb6ecdfd06bdad402237b642e8f43"
+      "child_inputs_hash": "298a429971422f43d1fb16297192adc15c0848d185dbd1a27b1d2b1ff11cc849"
     },
     {
       "name": "breadcrumbs",
@@ -469,7 +469,7 @@
       "rel_path": "data-management",
       "self_summary": "How disk and database stay one thing: assets and their identity capsules, the indexer walk and entity sync, DataSpec as the single shape system with its kind registry, data sources and datasets, records, search and the SQLite layer underneath.",
       "child_typeid": "markdown_index-66704284-b246-51c2-849b-cf3c916f33de",
-      "child_inputs_hash": "0f9313e09e5f0c7dc1e81e4b2c2c1a8c6eb2b5be31ed9c84be88e03b6279798f"
+      "child_inputs_hash": "fc1fa459991c4e17e88615586f8183a100b0b29dafe120fc734d8f7e8c688e2e"
     },
     {
       "name": "flows",
@@ -490,7 +490,7 @@
       "rel_path": "interface",
       "self_summary": "Reference pages for the agentic-process stack, layer by layer: AgenticProcess, Shell, the PTY layer and ComputeNode — their fields, HTTP actions and TypeScript surfaces — plus the driver protocol behind Claude, Codex and Copilot, and session naming.",
       "child_typeid": "markdown_index-034a266f-b952-5882-b474-c3d9a15d4816",
-      "child_inputs_hash": "caf3c134b17ab97dc65f8b7cdda33d507e829f1ad14e233b243559ac351ac9a8"
+      "child_inputs_hash": "5589eb14635e5fe210ed7e61df37726e70b56daea02cb8ebd2bbe057f1c1f221"
     },
     {
       "name": "mockups",
@@ -518,14 +518,14 @@
       "rel_path": "reports",
       "self_summary": "Validation records for completed refactors: what was run, what passed, and the gates each change had to clear. Evidence that a migration landed, not instructions for doing one.",
       "child_typeid": "markdown_index-9c3569a1-3e91-5616-8025-d0b68c0a610d",
-      "child_inputs_hash": "57c1bfe5440a0dd0a4c18213c5a98ad3488128d6728d7e41c4ea50a59e002297"
+      "child_inputs_hash": "b9f50096468010f11a676e565982cfdd7372d6f4f302fb731793678735a9c6a2"
     },
     {
       "name": "snippets",
       "rel_path": "snippets",
       "self_summary": "The runnable SDK shelf: one page per capability, every fence pinned by a test. Connections, credentials, data sources, datasets, activity, agents on email and chat channels, LLM endpoints, processes, workflows, compute ops and the one call-return contract — copyable code rather than prose.",
       "child_typeid": "markdown_index-a34feae9-8881-5202-b520-9281688839f2",
-      "child_inputs_hash": "6c5406a16ecdccb19bf2c22c22a1f9d96c97884af4e1cb426e97bd628fe5419a"
+      "child_inputs_hash": "f7d6b2f836466f67180f84bc54bfbc386f869578d79932e446e674cd887f40c8"
     },
     {
       "name": "tabs",
@@ -535,6 +535,6 @@
       "child_inputs_hash": "ca533fab86503809f37a9360c1517505abf503b1b0f9dab6950e9d54f2943730"
     }
   ],
-  "generated_at": "2026-09-23T19:02:12Z",
+  "generated_at": "2026-09-25T12:04:30Z",
   "latest_process_ref": ""
 }

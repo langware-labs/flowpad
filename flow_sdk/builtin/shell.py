@@ -91,19 +91,19 @@ def shell_pty_stream_path(record_id: str, pty_pid: str | None):
 
 
 def close_shell_record(record: FSRecord) -> None:
-    """Set status to CLOSED, delete the .pty stream file. Idempotent.
+    """Set status to CLOSED, delete the .pty stream file (and its replay checkpoint). Idempotent.
 
     The status write goes through the unified ``save_metadata_field`` path; the
-    .pty unlink is resource-lifecycle (not metadata sync) and stays here.
+    recording's deletion is resource-lifecycle (not metadata sync) and stays here.
     """
     if record.__dict__.get("status") == ShellStatus.CLOSED.value:
         return
     pty_pid = record.__dict__.get("pty_pid")
     if pty_pid is not None:
+        from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
+
         try:
-            p = shell_pty_stream_path(record.id, pty_pid)
-            if p.exists():
-                p.unlink()
+            PtyStreamFile(path=shell_pty_stream_path(record.id, pty_pid)).delete()
         except (OSError, ValueError):
             pass
     record.save_metadata_field("status", ShellStatus.CLOSED.value)
@@ -156,12 +156,12 @@ async def _with_attached_project_secrets(
     """
     try:
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
-        from flow_sdk.builtin.credential_resolver import environment_for, resolve_attached_secrets  # noqa: PLC0415
+        from flow_sdk.builtin.credential_resolver import resolve_attached_secrets  # noqa: PLC0415
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
         project = await Project.get_by_id(str(project_id)) if project_id else None
         process = await AgenticProcess.get_by_id(str(process_id)) if process_id else None
-        resolved = await resolve_attached_secrets(project, environment=await environment_for(process))
+        resolved = await resolve_attached_secrets(project, process=process)
         if not resolved:
             return extra_env
         # Explicit ``extra_env`` wins over a declared value.

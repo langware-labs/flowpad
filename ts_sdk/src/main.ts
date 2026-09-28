@@ -5,7 +5,7 @@ import { dataManager } from './APIEntity';
 import apiClient, { getErrorMessages } from './client';
 import config from './config';
 import { sdkConfig } from './config/index';
-import { SubAgent, ComputeNode, Project, User, Visitor } from './entities';
+import { SubAgent, ComputeNode, Project, User, Visitor, WebDomain } from './entities';
 import { loadIconPacks } from './icons/registry';
 import type { IconPackSpec } from './icons/types';
 import { dataContext, isTypeId, TypeId } from './FlowSync';
@@ -105,7 +105,12 @@ export async function initSdk(params?: {
 
       // Set domain in context if present
       if (bootstrapInfo.domain) {
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentDomainTypeId, bootstrapInfo.domain.typeId);
+        // Hydrated like its neighbours below: the bootstrap payload is wire JSON, so
+        // the row has no `typeId` accessor of its own. BEHAVIOUR CHANGE — the old
+        // `bootstrapInfo.domain.typeId` read a getter that does not exist on a plain
+        // object, so this context slot was never actually set.
+        const domain = new WebDomain(bootstrapInfo.domain);
+        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentDomainTypeId, domain.typeId);
       }
 
       // Set visitor in context if present (visitor object is returned, cookie already set by backend)
@@ -208,7 +213,7 @@ export async function initSdk(params?: {
 
 /** Optional services. The mounted UI calls this after paint; never await it in a loader. */
 export function asyncSdkInit(): Promise<void> {
-  return asyncInitPromise ??= (async () => {
+  return (asyncInitPromise ??= (async () => {
     await initSdk();
     if (!initialized) {
       asyncInitPromise = null;
@@ -243,7 +248,7 @@ export function asyncSdkInit(): Promise<void> {
       ...(setupWorkspace ? [run('workspace', () => dataContext.setupWorkspace())] : []),
     ]);
     performance.mark?.('sdk:async:settled');
-  })();
+  })());
 }
 
 // @ts-ignore - Intentionally unused, reserved for future use

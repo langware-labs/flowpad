@@ -136,7 +136,7 @@ class DataSpec(BaseModel):
         """What this shape looks like, in the authoring form.
 
         NOT called ``shape``: a spec may legitimately declare a field of that
-        name (``Credentials.shape``), and a method sharing
+        name (``ResolvedSecrets.shape``), and a method sharing
         a field's name silently wins — the same collision that once made
         ``ComputeOp.check()`` call a field and drop it from the document.
 

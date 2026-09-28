@@ -285,7 +285,8 @@ def test_the_two_egress_seams_now_agree():
             # is its projection-owned sibling (sender, recipients, subject).
             # `sender` is the typed author, local only: the hub keeps the `sender_id` wire
             # string, so a hub refresh must never turn an agent's reply back into a person.
-            ["origin_local", "source_item_id", "sent_at", "envelope", "sender"],
+            # `reactions`: who reacted with what on a channel message, projected from the SourceItem.
+            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions"],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -317,6 +318,7 @@ def test_the_two_egress_seams_now_agree():
                 "origin",
                 "origin_local",
                 "private_context_entities_",
+                "reactions",
                 "sender",
                 "shared_context_entities",
             ],
@@ -370,7 +372,11 @@ def test_the_two_egress_seams_now_agree():
             # conversation — a row id in OUR database.
             # `is_unread`: this viewer's unread, projected by `stream_inbox.recompute_unread`.
             # `channel_spec`: the channel's traits, derived locally from `channel` — never travels.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "channel_spec"],
+            # `address`/`started_at`/`ended_at`: who a channel conversation is with and when it ran —
+            # stamped by the local projection from the channel's own messages.
+            # `channel_provider`: the driver behind the channel (two drivers speak `whatsapp`) — local.
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "channel_spec",
+             "address", "started_at", "ended_at", "channel_provider"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.

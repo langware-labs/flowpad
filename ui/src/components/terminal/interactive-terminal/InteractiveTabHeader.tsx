@@ -31,11 +31,7 @@ export interface HeaderSlots {
  * modes never shifts the title. pointer-events-none keeps it from eating clicks
  * on whatever sits beneath it; the title carries a native tooltip only. */
 function CenteredTitle({ title }: Pick<HeaderSlots, 'title'>) {
-  return (
-    <div className="pointer-events-none absolute inset-x-0 flex justify-center">
-      {title}
-    </div>
-  );
+  return <div className="pointer-events-none absolute inset-x-0 flex justify-center">{title}</div>;
 }
 
 /** Full toolbar: [debug][restart] — (centered title) — [download][right]. */
@@ -52,14 +48,16 @@ export function AdvancedInteractiveTabHeader({ debug, restart, title, download, 
   );
 }
 
-/** Minimal toolbar: the centered title alone. Share + Bookmark are deliberately
- *  absent — the top navigation bar already carries them for whatever it is
- *  addressing, and a second copy on the same screen is pure duplication. */
-export function StandardInteractiveTabHeader({ title }: Pick<HeaderSlots, 'title'>) {
+/** Minimal toolbar: the centered title plus the few session actions a chat
+ *  needs (Fork). Share + Bookmark are deliberately absent — the top navigation
+ *  bar already carries them for whatever it is addressing, and a second copy on
+ *  the same screen is pure duplication. */
+export function StandardInteractiveTabHeader({ title, right }: Pick<HeaderSlots, 'title' | 'right'>) {
   return (
     <div data-testid="process-toolbar" className={`${ROW} relative`}>
       <CenteredTitle title={title} />
       <div className="flex-1" />
+      {right}
     </div>
   );
 }

@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.assets.projection import _LOCAL_OR_RUNTIME_FIELDS, PortableAssetProjection
+from flow_sdk.builtin.asset_publishing import publish_asset_payload
 from flow_sdk.builtin.project import Project
 
 ROOT = Path(__file__).parent.parent.parent
@@ -99,7 +100,17 @@ def test_share_puts_three_stripped_fields_back(project):
         assert f'body["{field}"]' in share_src, f"share() no longer re-adds {field}"
 
 
-def test_a_git_published_asset_sends_metadata_and_coordinates_only():
+def test_a_published_asset_sends_coordinates_only():
+    """The desk pushes the asset into its project's hub repo and then names it:
+    project, type, id and its path in that repo — no fields, no body, no local path."""
+    payload = publish_asset_payload("p-1", "skill", "a-1", ".claude/skills/review")
+
+    assert payload == {"project": {"id": "p-1"}, "asset": {"type": "skill", "id": "a-1"}, "rel_path": ".claude/skills/review"}
+
+
+def test_the_hub_side_projection_carries_metadata_and_coordinates_only():
+    """The hub builds ``PortableAssetProjection`` from the pushed tree with this
+    library; it too may carry metadata fields but never the bytes."""
     assert sorted(PortableAssetProjection.model_fields) == CONTRACT["portable_asset_projection_fields"]
     assert sorted(_LOCAL_OR_RUNTIME_FIELDS) == CONTRACT["portable_asset_local_or_runtime_fields"]
     # No body/content field anywhere in the projection — the bytes stay in git.

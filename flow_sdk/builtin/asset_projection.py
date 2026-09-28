@@ -6,9 +6,9 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
-from flow_sdk.assets.git_origin import PortableGitOrigin
 from flow_sdk.assets.projection import (
     _LOCAL_OR_RUNTIME_FIELDS,
+    AssetPlacement,
     PortableAssetProjection,
     layout_for_origin,
     read_asset_tree,
@@ -32,7 +32,7 @@ def project_asset_tree(
     entity_type: str,
     expected_id: str,
     checkout_root: Path,
-    origin: PortableGitOrigin,
+    origin: AssetPlacement,
 ) -> PortableAssetProjection:
     """Read filesystem content and apply the public Entity field allowlist."""
     record = read_asset_tree(

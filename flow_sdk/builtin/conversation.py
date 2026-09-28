@@ -191,6 +191,19 @@ class Conversation(ProjectedFields, Entity):
     # is PRIVATE.
     channel: str = APIField(default=HOME_CHANNEL, sharing=Sharing.HUB_WRITE)
     channel_source_id: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # The driver behind the channel — two drivers can speak one channel (WhatsApp's Cloud API and
+    # WAHA are both ``whatsapp``), and what the channel can do (files, quotes, reactions) is the
+    # driver's. Stamped with ``channel_source_id``.
+    channel_provider: Optional[str] = APIField(default=None, sharing=Sharing.PRIVATE)
+    # ── the conversation on its channel: an email topic, a chat, a phone call, a Slack thread ──
+    # Who it is with, as the channel addresses them (an email address, a phone number, a Slack channel):
+    # stamped from its first message and extended as others join, so a reply — or the first message of
+    # one WE started — goes to them rather than to whoever wrote last. When it began and ended, in
+    # message time: a call ends on hang-up, a chat when its source's thread timeout retires it; an
+    # email topic or a Slack thread stays open. PRIVATE: third parties' addresses, facts of this machine.
+    address: List[str] = APIField(default_factory=list, sharing=Sharing.PRIVATE)
+    started_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
+    ended_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
@@ -289,9 +302,44 @@ class Conversation(ProjectedFields, Entity):
     @property
     def channel_spec(self) -> ChannelSpec:
         """What this conversation's channel is — the traits every surface reads."""
-        return channel_spec(self.channel)
+        return channel_spec(self.channel, self.channel_provider)
 
-    def adopt_channel(self, channel: str, source_id: str) -> bool:
+    async def send(self, body: str, *, reply_to=None, files=()):
+        """Continue this conversation on its channel: to whom it is with, on its own thread — whether
+        they wrote last or only we have (a conversation we started). Answers the channel's ``SendOutcome``.
+
+        ``reply_to`` (one of ``messages()``, or its id) quotes that message — on a channel whose
+        replies only thread, the reply lands in its thread. ``files`` are paths or ``MessageFile``s;
+        one the channel cannot take is refused before anything is sent."""
+        from flow_sdk.stream_inbox.outbound import outgoing_files, quoting, resolve_reply_target, send_to  # noqa: PLC0415
+
+        target = await resolve_reply_target(str(self.id))
+        if reply_to is not None:
+            target = await quoting(target, reply_to)
+        return await send_to(str(self.id), target, body, files=outgoing_files(target, files), quote=reply_to is not None)
+
+    async def messages(self) -> list:
+        """This conversation's messages, oldest first."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+        rows = await FlowMessage.get_all({"match": {"conversation_id": str(self.id)}, "order_by": {"created_date": "asc"}})
+        # Event time first (a backfill lands in message time), then arrival.
+        return sorted(rows, key=lambda m: str(m.sent_at or m.created_date or ""))
+
+    async def react(self, message, emoji: str) -> list:
+        """Put our ``emoji`` on one of this conversation's messages; answers its reactions after. A
+        channel that cannot show the emoji refuses (``Rejected``) — it is never swapped for another."""
+        from flow_sdk.stream_inbox.reactions import react  # noqa: PLC0415
+
+        return await react(message, emoji)
+
+    async def unreact(self, message, emoji: str = "") -> list:
+        """Take back our ``emoji`` from a message — all of ours with ``""``."""
+        from flow_sdk.stream_inbox.reactions import unreact  # noqa: PLC0415
+
+        return await unreact(message, emoji)
+
+    def adopt_channel(self, channel: str, source_id: str, provider: str = "") -> bool:
         """Name the data source channel this conversation replies through. Returns whether
         anything changed (the caller saves).
 
@@ -306,6 +354,9 @@ class Conversation(ProjectedFields, Entity):
             changed = True
         if source_id and not self.channel_source_id:
             self.channel_source_id = source_id
+            changed = True
+        if provider and not self.channel_provider and (not source_id or self.channel_source_id == source_id):
+            self.channel_provider = provider
             changed = True
         return changed
 

@@ -2,25 +2,22 @@ import { perfTime } from '../utils/perf';
 import { EventEmitter } from 'events';
 import { autorun, computed, makeObservable, observable, runInAction } from 'mobx';
 import { v4 as uuidv4 } from 'uuid';
-import apiClient from '../client';
-import {
-  ActionInfo,
-  SubAgent,
-  ExpansionRequest,
-  Plugin,
-  PluginManifest,
-  QueryFilter,
-  QueryRequest,
-  Visitor,
-  WebDomain,
-} from '..';
-import { AgenticProcess } from '../process/agentic-process';
+// Owning modules, never the package barrel, and never an entity CLASS as a value:
+// this module is reachable from the `services` barrel, so a class value-import here
+// puts every entity subclass into whatever loads a service. Type names come from
+// `EntityTypes`, construction from `EntityFactory` (see entities/*-types.ts).
+import { ActionInfo } from '../models/ActionInfo';
+import { ExpansionRequest, QueryFilter, QueryRequest } from './query';
+import type { Plugin, PluginManifest } from '../entities/plugin';
+import type { Visitor } from '../entities/visitor';
+import type { WebDomain } from '../entities/web-domain';
+import type { AgenticProcess } from '../process/agentic-process';
 import { APIEntity, dataManager, type AnyEntity } from '../APIEntity';
-import { ComputeNode } from '../entities/compute_node';
-import { Project } from '../entities/project';
-import { User } from '../entities/user';
+import type { ComputeNode } from '../entities/compute_node';
+import type { Project } from '../entities/project';
+import type { User } from '../entities/user';
 import type { Shell } from '../entities/shell';
-import { Workspace } from '../entities/workspace';
+import type { Workspace } from '../entities/workspace';
 import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
@@ -29,7 +26,6 @@ import { isHiddenProject } from '../constants/system-projects';
 import { RuntimeInfo, RuntimeKind } from '../utils/runtime';
 import { SnifferHook } from '../services/sniffer-hook';
 import { HubConnectionStatus, HubLoginStatus, LocalConnectionStatus, LocalLoginStatus } from '../services/cloud_status';
-import { sdkConfig } from '../config/index';
 import { ConnectionManager } from '../websocket';
 import { AuthError, AuthEventType, authManager } from './auth';
 import {
@@ -41,6 +37,18 @@ import {
 import { EntityFactory } from './factory';
 import { EntityTypes } from '../schema/types';
 import type { DeferredInfo } from '../models/BootstrapInfo';
+
+/**
+ * The class registered for an entity type.
+ *
+ * This module sits below the entity classes (it is reachable from the `services`
+ * barrel), so it cannot value-import them — see the layering rule in
+ * `entities/compute-node/compute-node-types.ts`. Statics are reached through the
+ * registry instead, which is what `_onAddedToContext` already did for expansions.
+ */
+function entityClass<T>(type: string): T {
+  return EntityFactory.getEntityConstructor(type) as unknown as T;
+}
 
 export enum ContextEventType {
   CONTEXT_CHANGED = 'context_changed',
@@ -738,19 +746,19 @@ class DataContext extends EventEmitter {
 
   activeEntityTypeId2ContextEnum(typeId: TypeId): ContextEntitiesEnum | null {
     switch (typeId.type) {
-      case User.type:
+      case EntityTypes.User:
         // Active-entity highlight maps to the local desktop user; cloud user
         // is informational only and handled separately by CloudManager.
         return ContextEntitiesEnum.LocalUserTypeId;
-      case Workspace.type:
+      case EntityTypes.Workspace:
         return ContextEntitiesEnum.CurrentWorkspaceTypeId;
-      case Project.type:
+      case EntityTypes.Project:
         return ContextEntitiesEnum.CurrentProjectTypeId;
-      case ComputeNode.type:
+      case EntityTypes.ComputeNode:
         return ContextEntitiesEnum.CurrentComputeNodeTypeId;
-      case SubAgent.type:
+      case EntityTypes.SubAgent:
         return ContextEntitiesEnum.CurrentAgentTypeId;
-      case AgenticProcess.type:
+      case EntityTypes.AgenticProcess:
         return ContextEntitiesEnum.CurrentProcessTypeId;
       default:
         return null;
@@ -824,7 +832,7 @@ class DataContext extends EventEmitter {
       defineGlobal('workspace', entity);
     }
     // Load history for process entities when added to context
-    if (_entityKey === ContextEntitiesEnum.CurrentProcessTypeId && entity instanceof AgenticProcess) {
+    if (_entityKey === ContextEntitiesEnum.CurrentProcessTypeId && entity?.getType() === EntityTypes.AgenticProcess) {
       defineGlobal('activeProcess', entity);
       // In jsdom/Electron, window.process is the host Node process. Keep the
       // explicit app global and only preserve the legacy alias in plain browsers.
@@ -837,7 +845,11 @@ class DataContext extends EventEmitter {
       if (!hasNodeProcess) {
         defineGlobal('process', entity);
       }
-      await perfTime(`_onAddedToContext(${_entityKey}) entity.loadHistory`, () => entity.loadHistory());
+      // History is NOT loaded here. This runs inside the route loader's context
+      // write, and a full `get-history` there held the URL on the largest payload
+      // the app fetches — for PTY sessions nothing even reads. Every view that
+      // shows history loads it on its own mount (SimpleChatPane, VibeChatPane,
+      // EntityExecutionPanel, useFlowDataTrace); docs/navigation/dock-loading.md, I3.
     }
   }
 
@@ -869,14 +881,18 @@ class DataContext extends EventEmitter {
     //
     // Before the revision bump, so a rejected write never cancels a real switch
     // that is still loading.
-    if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId && newTypeId && await this.isHiddenProjectId(newTypeId)) {
+    if (
+      entityKey === ContextEntitiesEnum.CurrentProjectTypeId &&
+      newTypeId &&
+      (await this.isHiddenProjectId(newTypeId))
+    ) {
       return;
     }
     // Latest CALL wins for the project, not the latest to finish loading. Bumped
     // before the equality short-circuit: re-selecting the committed project while
     // another switch is still loading must still supersede that switch.
-    const projectRevision = entityKey === ContextEntitiesEnum.CurrentProjectTypeId
-      ? ++this._projectRevision : undefined;
+    const projectRevision =
+      entityKey === ContextEntitiesEnum.CurrentProjectTypeId ? ++this._projectRevision : undefined;
     const existingTypeId = this._contextEntitiesMap.get(entityKey);
     if (!existingTypeId && !newTypeId) {
       return;
@@ -885,8 +901,8 @@ class DataContext extends EventEmitter {
       return;
     }
 
-    const workspaceRevision = entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId
-      ? ++this._workspaceRevision : undefined;
+    const workspaceRevision =
+      entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId ? ++this._workspaceRevision : undefined;
 
     if (existingTypeId) {
       if (!newTypeId) {
@@ -927,7 +943,9 @@ class DataContext extends EventEmitter {
         // startup restore), and the equality guard above means it fires only on
         // an actual project switch — never on same-project re-navigation.
         // Fire-and-forget: context writes must stay fast.
-        void Project.activateById(newTypeId.id).catch(() => {});
+        void entityClass<typeof Project>(EntityTypes.Project)
+          .activateById(newTypeId.id)
+          .catch(() => {});
       }
     }
 
@@ -993,7 +1011,10 @@ class DataContext extends EventEmitter {
       return null;
     }
     if (this._sandboxComputeNode === null) {
-      this._sandboxComputeNode = new ComputeNode(this.bootstrapInfo.sandbox_compute_node as any);
+      this._sandboxComputeNode = EntityFactory.createEntity({
+        ...(this.bootstrapInfo.sandbox_compute_node as object),
+        type: EntityTypes.ComputeNode,
+      }) as ComputeNode;
       this._sandboxComputeNode.markAsExpanded();
     }
     return this._sandboxComputeNode;
@@ -1056,7 +1077,7 @@ class DataContext extends EventEmitter {
       query: filter,
       name: 'context getUserWorkspaces query',
     });
-    return await Workspace.query(request);
+    return await entityClass<typeof Workspace>(EntityTypes.Workspace).query(request);
   }
 
   async createNewUserWorkspace(): Promise<Workspace> {
@@ -1064,7 +1085,10 @@ class DataContext extends EventEmitter {
       throw new Error('Cannot create workspace without user');
     }
     const query = new ExpansionRequest({ expand: ['permissions'] });
-    const workspace = new Workspace({ name: this.user.name + ' Workspace' });
+    const workspace = EntityFactory.createEntity({
+      name: this.user.name + ' Workspace',
+      type: EntityTypes.Workspace,
+    }) as Workspace;
     await workspace.save();
     const expanded = await dataManager.getByTypeId<Workspace>(workspace.typeId, query);
     if (!expanded) {
@@ -1150,10 +1174,12 @@ class DataContext extends EventEmitter {
     // back to the server's choice. A transient failure must remain visible.
     const resolveProject = async (typeId: TypeId): Promise<Project | null> => {
       try {
-        return await dataManager.getByTypeId<Project>(typeId, Project.getLoadingExpansions());
+        const expansions = entityClass<typeof APIEntity>(EntityTypes.Project).getLoadingExpansions();
+        return await dataManager.getByTypeId<Project>(typeId, expansions);
       } catch (error) {
-        const status = (error as { response?: { status?: number }; status?: number })?.response?.status
-          ?? (error as { status?: number })?.status;
+        const status =
+          (error as { response?: { status?: number }; status?: number })?.response?.status ??
+          (error as { status?: number })?.status;
         if (status === 404 || status === 403) return null;
         throw error;
       }
@@ -1166,8 +1192,9 @@ class DataContext extends EventEmitter {
       project && !isHiddenProject(project) ? project : null;
     const remembered = unlessHidden(persistedProjectTypeId ? await resolveProject(persistedProjectTypeId) : null);
     const serverChoiceId = this.bootstrapInfo?.default_project?.id;
-    const targetProject = remembered ?? unlessHidden(serverChoiceId
-      ? await resolveProject(new TypeId(Project.type, serverChoiceId)) : null);
+    const targetProject =
+      remembered ??
+      unlessHidden(serverChoiceId ? await resolveProject(new TypeId(EntityTypes.Project, serverChoiceId)) : null);
 
     // Nothing valid to adopt. Leaving the context alone beats picking arbitrarily:
     // whatever a loader resolves next is a better answer than a project nobody chose.

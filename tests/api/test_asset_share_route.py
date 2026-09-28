@@ -89,3 +89,60 @@ async def test_dry_run_reports_without_touching_anything(client, tmp_path, monke
     # It refuses well before git either way; the point is that it refuses
     # rather than mutating.
     assert payload["status"] != "SUCCESS"
+
+
+async def _linked_skill(client, root, monkeypatch):
+    """A skill in a linked project whose folder is NOT a git repository, with
+    the hub's browser origin stood in for (it is environment, not state)."""
+    from flow_sdk.fs_store.record_types import RecordType
+    from tests.api._published import entity_row, index, project, write_skill
+
+    monkeypatch.setattr("flow_sdk.builtin.asset_sharing._hub_app_origin", lambda: "https://hub.example")
+    pid = await project(client, root)
+    write_skill(root, "review")
+    await index(root, pid, RecordType.SKILL)
+    skill = await entity_row(client, "skill", pid, "review")
+    await client.put(f"/api/v1/graph/project/{pid}", json={"remote": True})
+    return pid, skill
+
+
+async def test_a_project_folder_need_not_be_a_git_repo(client, tmp_path, monkeypatch):
+    """The asset reaches the cloud through the project's hub repo: no local
+    commit is attempted, and the publish still runs."""
+    from flow_sdk.assets.git_publish import AssetPublishResult
+
+    published: list[str] = []
+
+    async def _publish(entity, actor):
+        published.append(str(entity.typeid))
+        return AssetPublishResult(project={"id": entity.project_id}, asset={"id": entity.id}, git={"pushed": True})
+
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", _publish)
+    root = tmp_path / "plain-project"
+    root.mkdir()
+    _pid, skill = await _linked_skill(client, root, monkeypatch)
+
+    payload = await _share(client, typeid=f"skill-{skill['id']}")
+
+    assert payload["status"] == "SUCCESS", payload
+    assert not (root / ".git").exists()
+    assert payload["data"]["commit"]["state"] == "skipped"
+    assert payload["data"]["publish"]["git"] == {"pushed": True}
+    assert published == [f"skill-{skill['id']}"]
+
+
+async def test_a_hub_repo_conflict_is_reported_with_its_remedy(client, tmp_path, monkeypatch):
+    from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError
+
+    async def _conflict(entity, actor):
+        raise AssetPublishError(AssetPublishCode.ASSET_CONFLICT, "changed on the hub and here")
+
+    monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", _conflict)
+    root = tmp_path / "conflicted-project"
+    root.mkdir()
+    _pid, skill = await _linked_skill(client, root, monkeypatch)
+
+    payload = await _share(client, typeid=f"skill-{skill['id']}")
+
+    assert _code(payload) == "ASSET_CONFLICT"
+    assert any("hub" in step for step in payload["data"]["remediation"])

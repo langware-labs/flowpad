@@ -15,15 +15,13 @@ export interface StagedFileInfo {
 export interface StagedFilesResponse {
   files: StagedFileInfo[];
   main_file: string | null;
+  /** The asset inside the staged copy, located by its type's shape (a folder
+   *  type's folder, a file type's file), relative to `abs_root`; null when the
+   *  copy does not hold that shape. Review opens it here. */
+  asset_root: string | null;
   root: string;
   /** Absolute staged dir on the local machine (Test-it references it by path). */
   abs_root: string;
-}
-
-export interface StagedFileContent {
-  path: string;
-  content: string;
-  truncated: boolean;
 }
 
 // The DisplayTarget shape returned by install()/setup() lives on APIEntity (it is
@@ -169,13 +167,5 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
   async listStagedFiles(): Promise<StagedFilesResponse> {
     if (!this.id) throw new Error('listStagedFiles requires this.id');
     return await this.get<StagedFilesResponse>('staged-files');
-  }
-
-  /** Read one staged file's text content (rel path from listStagedFiles). */
-  async readStagedFile(relPath: string): Promise<StagedFileContent> {
-    if (!this.id) throw new Error('readStagedFile requires this.id');
-    const action = new ActionInfo('staged-file-content', MessageAttachment.type, this.id, 'GET');
-    action.queryParameters = { path: relPath };
-    return await dataManager.callAction<unknown, StagedFileContent>(action);
   }
 }

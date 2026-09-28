@@ -22,11 +22,11 @@ export function BodyReason({ reason }: { reason: BodyCopyKey | null }) {
   const { t } = useLingui();
   const copy: Record<BodyCopyKey, string> = {
     type_not_git: t`This type's document isn't stored on the hub yet.`,
-    not_on_hub_local: t`Published from a folder that isn't linked to the cloud, so only its row is here.`,
-    not_on_hub_git: t`Connect GitHub on the publishing desk and re-publish to put the document on the hub.`,
-    not_materialized: t`Registered on the hub, but its files were not snapshotted yet.`,
+    not_on_hub: t`Only its row is on the hub: the publishing project isn't linked to the cloud yet.`,
+    not_uploaded: t`Registered on the hub, but its document hasn't been uploaded to the project's repository yet.`,
     project_not_linked: t`Document not on the hub: link the project to the cloud first.`,
-    github_not_connected: t`Document not on the hub: connect GitHub on this desk, then publish again.`,
+    no_actor: t`Document not on the hub: sign in to Flowpad cloud on this desk, then publish again.`,
+    asset_conflict: t`Document not on the hub: it was changed both on the hub and on this desk. Keep one version, then publish again.`,
     publish_failed: t`The document could not be put on the hub the last time it was published.`,
   };
   return (

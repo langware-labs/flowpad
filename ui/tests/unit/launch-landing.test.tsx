@@ -322,6 +322,26 @@ describe('/launch?agent=', () => {
     expect(mocks.anonGet).not.toHaveBeenCalled();
   });
 
+  it('signed in: launches an agent in its project hub repo with the hub_repo origin passed through unchanged', async () => {
+    const hubOrigin = {
+      kind: 'hub_repo',
+      repo: 'git_repo-77777777-6666-4555-8444-333333333333',
+      rel_path: 'agentic-assets/agent/q',
+      head_commit: 'b'.repeat(40),
+      tree: 'c'.repeat(40),
+    };
+    mocks.entity = answered({ data: publishedAgent({ git_origin: hubOrigin }) });
+
+    renderLanding(`?agent=${AGENT_ID}`);
+
+    // The hub clones hub repos itself: nothing may rewrite the origin (rel_path included).
+    const sandboxProject = { gitOrigin: hubOrigin, name: 'q' };
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(workspaceServiceUrl(NODE_ID)));
+    expect(mocks.createSandbox).toHaveBeenCalledWith({ name: 'q', sandboxProject });
+    expect(mocks.launchSandbox).toHaveBeenCalledWith({ id: NODE_ID }, { sandboxProject });
+    expect(screen.queryByTestId('launch-agent-no-repo')).toBeNull();
+  });
+
   it('shows setup progress as the share of finished steps, not a spinner', () => {
     mocks.entity = answered({ data: publishedAgent() });
     // Never settles, so the page stays on the setup view with these rows.
@@ -482,7 +502,7 @@ describe('/launch?agent=', () => {
     expect(mocks.createSandbox).not.toHaveBeenCalled();
   });
 
-  it('has nothing to launch for an agent never published from git', async () => {
+  it('has nothing to launch for an agent never published', async () => {
     mocks.entity = answered({ data: publishedAgent({ git_origin: null }) });
 
     renderLanding(`?agent=${AGENT_ID}`);

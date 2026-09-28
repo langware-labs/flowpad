@@ -112,6 +112,33 @@ async def test_show_view_resolves_a_screen_and_persists_it(bootstrapped_client, 
 
 
 @pytest.mark.asyncio
+async def test_show_url_opens_a_web_page_in_the_display(bootstrapped_client, user):
+    """`flow show url` — an agent opens a docs page in a tab beside the chat.
+
+    The display already renders a `url` target (a web-app tab keyed by the URL);
+    the show action just never accepted one, so an agent that wanted to open a
+    page had to hand-encode a `web-app/url/<base64>` dock address.
+    """
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/show", json={"url": "https://metallb.io/installation/"})
+    assert resp.status_code == 200, resp.text
+    shown = ApiResponse(**resp.json()).data
+    assert shown == {"kind": "url", "url": "https://metallb.io/installation/"}
+    row = await get_agentic_process(bootstrapped_client, pid)
+    assert row["context_data"]["last_shown"] == shown
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["ftp://example.com/x", "/etc/passwd", "https://"])
+async def test_show_url_refuses_what_is_not_a_web_page(bootstrapped_client, user, url):
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    resp = await bootstrapped_client.post(f"/api/v1/graph/agentic_process/{pid}/show", json={"url": url})
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
 async def test_show_app_addresses_the_artifact_and_derives_the_runtime(bootstrapped_client, user):
     """`flow show app` — the form that had no caller until now.
 
@@ -1111,6 +1138,7 @@ async def test_input_dir_returns_abs_path_and_compute_node(bootstrapped_client, 
     assert resp.status_code == 200, resp.text
     data = ApiResponse(**resp.json()).data
     assert Path(data["abs_path"]).is_dir()
+    assert Path(data["abs_path"]).parts[-2:] == ("execution", "input"), "ONE input folder: the run's execution/input"
     assert data["compute_node_id"].startswith("compute_node-")
 
 
@@ -1231,3 +1259,15 @@ async def test_add_dir_then_remove_dir(bootstrapped_client, user, tmp_path):
     rr = await bootstrapped_client.post(f"{base}/remove-dir", json={"path": extra})
     assert rr.status_code == 200, rr.text
     assert extra not in ((await get_agentic_process(bootstrapped_client, pid))["additional_dirs"] or [])
+
+
+@pytest.mark.asyncio
+async def test_show_view_refuses_an_agent_address_the_ui_cannot_open(bootstrapped_client, user):
+    """`agent/<id>` validated, then the UI's only agent route read it as a malformed
+    stream-inbox URL. The shape is enforced here, and the error names the right verb."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/show", json={"view": "agent/6ba7b810-9dad-41d1-80b4-00c04fd430c8"}
+    )
+    assert resp.status_code == 400, resp.text
+    assert "flow show entity agent-" in resp.text

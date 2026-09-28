@@ -44,9 +44,11 @@ def test_git_key_is_byte_stable():
 
 def test_registry_dispatch_and_aliases():
     reg = ORIGIN_DRIVERS
-    assert set(reg.kinds()) == {"git", "local"}
+    assert set(reg.kinds()) == {"git", "hub_repo", "local"}
     assert get_origin_driver("git").kind == "git"
     assert get_origin_driver("local").kind == "local"
+    # A published asset lives in its project's hub-hosted repo.
+    assert get_origin_driver("hub_repo").kind == "hub_repo"
     # git-hosting providers fold onto the git backend.
     for hosting in ("github", "gitlab", "bitbucket", "GitHub"):
         assert get_origin_driver(hosting).kind == "git"

@@ -1,4 +1,4 @@
-"""``Credentials`` — the one shape a secret reaches a source in.
+"""``ResolvedSecrets`` — the one shape a secret reaches a source in.
 
 Resolved by the application from a manifest's ``auth`` (an OAuth connector, declared
 environment variables, or per-row secrets) and handed to the source inside its binding.
@@ -23,7 +23,7 @@ class AuthShape(StrEnum):
     SECRETS = "secrets"
 
 
-class Credentials(DataSpec):
+class ResolvedSecrets(DataSpec):
     spec_kind: ClassVar[str] = "source.credentials"
 
     shape: AuthShape = AuthShape.NONE
@@ -52,4 +52,4 @@ class Credentials(DataSpec):
         return self.values[name].get_secret_value()
 
 
-__all__ = ["AuthShape", "Credentials"]
+__all__ = ["AuthShape", "ResolvedSecrets"]

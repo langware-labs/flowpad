@@ -39,10 +39,12 @@ def test_two_local_deployments_are_two_processes_each_answering_its_chat(deploym
     try:
         assert (first.slot, second.slot) == ("", "2") and first.id != second.id
         logs = {d.id: ready(d, 1) for d in (first, second)}
-        pids = {deployment_process.recorded(alive(d)).pid for d in (first, second)}
+        pids = {deployment_process.pid_of(alive(d)) for d in (first, second)}
         assert len(pids) == 2, "two deployments, two processes"
         for deployment in (first, second):
             assert f"deployment {deployment.id}:" in logs[deployment.id].read_text(), "the process runs THIS deployment"
+            assert f"deployment {deployment.id}: pid {deployment_process.pid_of(deployment)}" in logs[deployment.id].read_text(), \
+                "its terminal is where it runs"
 
         chats = {d.id: run(ServiceEndpoint.find_existing(str(d.typeid), "chat")) for d in (first, second)}
         for deployment in (first, second):

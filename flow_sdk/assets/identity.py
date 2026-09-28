@@ -77,7 +77,7 @@ def manifest_fingerprint(info: Any, ref: Any) -> float:
     """Freshness of an asset that declares a main file but is not an entity document: the asset's
     own stat (what it was fresh by before — a file added or removed) PLUS its main file's.
 
-    Without the second term an edited ``secret_pack.json`` / ``data_driver.json`` inside an existing
+    Without the second term an edited ``credential.json`` / ``data_driver.json`` inside an existing
     folder never re-indexed: editing a file does not touch its folder's mtime."""
     total = 0
     for path in (ref._path, (ref._path if ref._path.is_dir() else ref._path.parent) / info.shape.main):
