@@ -280,8 +280,16 @@ class Deployment(Entity):
     @classmethod
     async def others(cls) -> "list[Deployment]":
         """Every deployment but this computer."""
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
         parent = _local_node_typeid()
-        return [row for row in await cls.get_all() if not (str(row.parent_type_id) == parent and row.target.provider == "local")]
+        # "Not (this node's parent AND local)", pushed down: a null parent is named, since SQL's != drops it.
+        rows = await cls.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.OR, operands=[
+            ExpressionNode(op=QueryOp.NE, operands=["parent_type_id", parent]),
+            ExpressionNode(op=QueryOp.IS_NULL, operands=["parent_type_id"]),
+            ExpressionNode(op=QueryOp.NE, operands=["target.provider", "local"]),
+        ])))
+        return [row for row in rows if not (str(row.parent_type_id) == parent and row.target.provider == "local")]
 
     @classmethod
     async def resolve(cls, deployment_id: str = "") -> "Deployment":
