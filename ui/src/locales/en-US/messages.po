@@ -2569,9 +2569,13 @@ msgstr "Ask someone for help"
 msgid "Ask the agent to connect one"
 msgstr "Ask the agent to connect one"
 
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "Ask the Flowpad Assistant anything about this page."
+msgstr "Ask the Flowpad Assistant anything about this page."
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
-msgid "Ask the Flowpad Assistant anything."
-msgstr "Ask the Flowpad Assistant anything."
+#~ msgid "Ask the Flowpad Assistant anything."
+#~ msgstr "Ask the Flowpad Assistant anything."
 
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
@@ -3598,7 +3602,11 @@ msgstr "Channels"
 msgid "Chat"
 msgstr "Chat"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantContextChips.tsx
+msgid "Chat context"
+msgstr "Chat context"
+
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Chat history"
 msgstr "Chat history"
 
@@ -8969,10 +8977,12 @@ msgstr "Flowpad"
 msgid "FlowPad API Key"
 msgstr "FlowPad API Key"
 
+#: src/components/floating-chat/AssistantPopoutView.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
+#: src/types/ViewType.ts
 msgid "Flowpad Assistant"
 msgstr "Flowpad Assistant"
 
@@ -8992,7 +9002,7 @@ msgstr "Flowpad Assistant directory is enabled. Asset availability depends on th
 #~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 #~ msgstr "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Flowpad Assistant project not available."
 msgstr "Flowpad Assistant project not available."
 
@@ -11472,7 +11482,7 @@ msgstr "Loading errors..."
 msgid "Loading feed item"
 msgstr "Loading feed item"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Loading Flowpad Assistant…"
 msgstr "Loading Flowpad Assistant…"
 
@@ -12586,9 +12596,13 @@ msgid "New build"
 msgstr "New build"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "New chat"
+
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "New chat for this page"
+msgstr "New chat for this page"
 
 #: src/components/organization/org-node-management.tsx
 msgid "New class"
@@ -13375,7 +13389,7 @@ msgstr "No page exists with this name yet."
 msgid "No past builds"
 msgstr "No past builds"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "No past chats"
 msgstr "No past chats"
 
@@ -14532,6 +14546,10 @@ msgstr "Open full search"
 msgid "Open help desk"
 msgstr "Open help desk"
 
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+msgid "Open in"
+msgstr "Open in"
+
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Open in a new browser tab"
 msgstr "Open in a new browser tab"
@@ -14592,6 +14610,7 @@ msgstr "Open in Flowpad"
 msgid "Open in new tab"
 msgstr "Open in new tab"
 
+#: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/top-nav-bar/OpenInWindowButton.tsx
 msgid "Open in new window"
 msgstr "Open in new window"
@@ -15174,7 +15193,7 @@ msgstr "Past analyses"
 msgid "Past builds"
 msgstr "Past builds"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Past chats"
 msgstr "Past chats"
 
@@ -23045,7 +23064,7 @@ msgstr "Welcome! Tell the user what this agent can do and how to start…"
 msgid "What"
 msgstr "What"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "What can flowpad do for you ?"
 msgstr "What can flowpad do for you ?"
 
@@ -23164,6 +23183,10 @@ msgstr "What to look at"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "What went wrong? (leave empty for a full sweep)"
+
+#: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
+msgid "What would you like the agent {displayName} to do?"
+msgstr "What would you like the agent {displayName} to do?"
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"

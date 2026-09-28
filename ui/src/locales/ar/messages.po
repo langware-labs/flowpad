@@ -2569,9 +2569,13 @@ msgstr "طلب المساعدة من شخص آخر"
 msgid "Ask the agent to connect one"
 msgstr ""
 
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "Ask the Flowpad Assistant anything about this page."
+msgstr ""
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
-msgid "Ask the Flowpad Assistant anything."
-msgstr "يمكن سؤال مساعد Flowpad عن أي شيء."
+#~ msgid "Ask the Flowpad Assistant anything."
+#~ msgstr "يمكن سؤال مساعد Flowpad عن أي شيء."
 
 #: src/components/rag/RagView.tsx
 msgid "Ask this index…"
@@ -3598,7 +3602,11 @@ msgstr ""
 msgid "Chat"
 msgstr "المحادثة"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantContextChips.tsx
+msgid "Chat context"
+msgstr ""
+
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Chat history"
 msgstr "سجل الدردشة"
 
@@ -8969,10 +8977,12 @@ msgstr "Flowpad"
 msgid "FlowPad API Key"
 msgstr "مفتاح FlowPad API"
 
+#: src/components/floating-chat/AssistantPopoutView.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
 #: src/components/floating-chat/FlowpadAssistantButton.tsx
+#: src/types/ViewType.ts
 msgid "Flowpad Assistant"
 msgstr "مساعد Flowpad"
 
@@ -8992,7 +9002,7 @@ msgstr ""
 #~ msgid "Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required."
 #~ msgstr "تم تثبيت مساعد Flowpad (تُمرَّر مهاراته ووكلاؤه إلى العامل عبر --add-dir). انقر لإلغاء التثبيت — سيلزم إعادة التشغيل."
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Flowpad Assistant project not available."
 msgstr "مشروع مساعد Flowpad غير متاح حالياً."
 
@@ -11472,7 +11482,7 @@ msgstr "جارٍ تحميل الأخطاء..."
 msgid "Loading feed item"
 msgstr "جاري تحميل العنصر"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Loading Flowpad Assistant…"
 msgstr "جاري تحميل مساعد Flowpad…"
 
@@ -12586,9 +12596,13 @@ msgid "New build"
 msgstr "إصدار جديد"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "محادثة جديدة"
+
+#: src/components/floating-chat/AssistantChat.tsx
+msgid "New chat for this page"
+msgstr ""
 
 #: src/components/organization/org-node-management.tsx
 msgid "New class"
@@ -13375,7 +13389,7 @@ msgstr "لا توجد صفحة بهذا الاسم حتى الآن."
 msgid "No past builds"
 msgstr "لا توجد إصدارات سابقة"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "No past chats"
 msgstr "لا توجد محادثات سابقة"
 
@@ -14532,6 +14546,10 @@ msgstr "فتح البحث الكامل"
 msgid "Open help desk"
 msgstr ""
 
+#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+msgid "Open in"
+msgstr ""
+
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Open in a new browser tab"
 msgstr "فتح في علامة تبويب جديدة"
@@ -14592,6 +14610,7 @@ msgstr ""
 msgid "Open in new tab"
 msgstr "فتح في تبويب جديد"
 
+#: src/components/floating-chat/FloatingChatWindow.tsx
 #: src/components/top-nav-bar/OpenInWindowButton.tsx
 msgid "Open in new window"
 msgstr ""
@@ -15174,7 +15193,7 @@ msgstr "التحليلات السابقة"
 msgid "Past builds"
 msgstr "الإصدارات السابقة"
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "Past chats"
 msgstr "المحادثات السابقة"
 
@@ -23045,7 +23064,7 @@ msgstr ""
 msgid "What"
 msgstr ""
 
-#: src/components/floating-chat/FloatingChatWindow.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 msgid "What can flowpad do for you ?"
 msgstr "ماذا يمكن لـ Flowpad أن يفعله لك؟"
 
@@ -23164,6 +23183,10 @@ msgstr "ما ينبغي الانتباه إليه"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "What went wrong? (leave empty for a full sweep)"
 msgstr "ما المشكلة؟ (يُترك الحقل فارغاً لإجراء فحص شامل)"
+
+#: src/components/assets/editor/agent-profile/AgentRequestLine.tsx
+msgid "What would you like the agent {displayName} to do?"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerButton.tsx
 msgid "What would you like to fix?"

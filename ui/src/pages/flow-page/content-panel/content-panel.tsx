@@ -118,6 +118,7 @@ const RunsView = lazy(() => import('@src/components/runs/RunsView').then((m) => 
 const SurveyView = lazy(() => import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })));
 const ShowView = lazy(() => import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })));
 const AskView = lazy(() => import('@src/components/ask/AskView'));
+const AssistantPopoutView = lazy(() => import('@src/components/floating-chat/AssistantPopoutView'));
 const AppHost = lazy(() => import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })));
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
@@ -427,6 +428,12 @@ function ContentPanelBody({
         return (
           <Suspense fallback={<PrimaryContentFallback />}>
             <AskView />
+          </Suspense>
+        );
+      case ViewType.ASSISTANT:
+        return (
+          <Suspense fallback={<PrimaryContentFallback />}>
+            <AssistantPopoutView />
           </Suspense>
         );
       case ViewType.APPS:

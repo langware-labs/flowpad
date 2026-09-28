@@ -1,6 +1,6 @@
 import { cn } from '@src/lib/utils';
 import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
-import { AttachFilesButton, PickedFileList, usePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
+import { AttachFilesButton, PickedFileList, useAnnotatedImagePaste, usePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
 import { Send, Square } from 'lucide-react';
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -238,12 +238,20 @@ export function CompactExecutionInput({
     await onSend(text, files);
   }, [canSend, value, picker, disabled, onSend, history, running, animateEnqueue, runEnqueueAnimation]);
 
+  // With no owner hook but attachments on (no process to upload into yet),
+  // pasted images take the shared path: annotate, then chips sent with the text.
+  const pasteAsChips = useAnnotatedImagePaste(picker.addFiles, { enabled: allowAttachments && !disabled });
+
   // Image paste: hand the image files to the owner (upload + open Files tab),
   // then splice the returned reference line(s) into the textarea at the caret.
   // Non-image pastes fall through to the browser's default text paste.
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      if (!onPasteImages || disabled) return;
+      if (!onPasteImages) {
+        pasteAsChips(e);
+        return;
+      }
+      if (disabled) return;
       const images = imageFilesFromClipboardData(e.clipboardData, new Date(), { prefix: 'screenshot' });
       if (images.length === 0) return;
       e.preventDefault();
@@ -267,7 +275,7 @@ export function CompactExecutionInput({
         });
       });
     },
-    [onPasteImages, disabled, value],
+    [onPasteImages, pasteAsChips, disabled, value],
   );
 
   const handleKeyDown = useCallback(
