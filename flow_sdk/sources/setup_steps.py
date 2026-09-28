@@ -24,8 +24,16 @@ from pydantic import ConfigDict, Field
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 _STEP_ATTR = "__flow_setup_step__"
-#: The generic step every driver with a ``webhook`` block answers: a public URL for this machine.
+#: Steps every source answers, whatever its driver (``DataSource.step``):
+#: a public URL for this machine (a driver with a ``webhook`` block);
 PUBLIC_WEBHOOK = "public-webhook"
+#: the driver's own ``verify`` — the source becomes active when it passes;
+VERIFY = "verify"
+#: the owning agent has a local deployment serving, so what arrives gets an answer;
+ANSWERED = "answered"
+#: a message from an allowed sender, and one after it going back — the conversation works.
+FIRST_TURN = "first-turn"
+GENERIC_STEPS = frozenset({PUBLIC_WEBHOOK, VERIFY, ANSWERED, FIRST_TURN})
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -64,4 +72,6 @@ class SourceUpdateSpec(DataSpec):
     secrets: dict[str, str] = Field(default_factory=dict)
 
 
-__all__ = ["PUBLIC_WEBHOOK", "SourceUpdateSpec", "setup_step", "setup_steps"]
+__all__ = [
+    "ANSWERED", "FIRST_TURN", "GENERIC_STEPS", "PUBLIC_WEBHOOK", "VERIFY", "SourceUpdateSpec", "setup_step", "setup_steps",
+]
