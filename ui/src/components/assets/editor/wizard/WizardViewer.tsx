@@ -23,6 +23,7 @@ import { useIsAdvanced } from '@src/components/view-mode';
 import { useJsonDoc } from '@src/hooks/use-json-doc';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
@@ -356,6 +357,19 @@ function WizardViewerBody({
               // answer and nothing is actively overriding it.
               const trail = stepIsLive ? [] : rungTrail(outcome);
               const agentExecutor = trail.includes('agent') ? agentExecutorOf(outcome) : null;
+              // Read live WHILE the wizard is still mid-run — `runView.live` (via
+              // `on_step`) fills `outcome.detail` for a step that already
+              // finished, long before the wizard's own last step settles. A
+              // tooltip, not an always-visible span: a passing run's steps used
+              // to each print their own "cli check passed" line permanently,
+              // which drowned the one row that actually needs reading (a failure)
+              // in five that do not.
+              const detail = live?.current || outcome?.detail;
+              const icon = (
+                <Icon
+                  className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''} ${detail ? 'cursor-help' : ''}`}
+                />
+              );
               return (
                 <li
                   key={step_id}
@@ -363,7 +377,16 @@ function WizardViewerBody({
                   data-testid={`wizard-step-${step_id}`}
                   data-status={status || 'not_reached'}
                 >
-                  <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
+                  {detail ? (
+                    <Tooltip delayDuration={0}>
+                      <TooltipTrigger asChild>{icon}</TooltipTrigger>
+                      <TooltipContent className="max-w-sm" data-testid={`wizard-step-${step_id}-detail`}>
+                        {detail}
+                      </TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    icon
+                  )}
                   <span className="mt-0.5 shrink-0 font-mono text-xs text-muted-foreground">{step_id}</span>
                   {trail.length > 0 && (
                     <span
@@ -374,9 +397,6 @@ function WizardViewerBody({
                     </span>
                   )}
                   {agentExecutor && <AgentRungLabel executorTypeId={agentExecutor} />}
-                  {live?.current || outcome?.detail ? (
-                    <span className="min-w-0 flex-1 text-muted-foreground">— {live?.current || outcome?.detail}</span>
-                  ) : null}
                 </li>
               );
             })}

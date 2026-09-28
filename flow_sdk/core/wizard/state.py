@@ -77,17 +77,28 @@ def read_state(wizard_id: str) -> dict[str, Any]:
     return state
 
 
-def _mutate(wizard_id: str, fields: "Callable[[dict], dict]") -> dict:
+def _mutate(wizard_id: str, fields: "Callable[[dict], dict]", *, already_locked: bool = False) -> dict:
     """Read-modify-write the run file under its lock, and return the new state.
 
     The ONE place the locking discipline is written. Every writer here is the
     same three steps — take the lock, fold some fields into what is on disk,
     write atomically — and stating that per writer is how the next one ends up
     quietly skipping the lock.
+
+    ``already_locked=True`` skips the acquire: the caller already holds THIS
+    path's lock across a longer critical section (``execute_wizard`` holds
+    ``run.lock`` for its whole run) and is writing again from inside it
+    (``on_step``'s progress write, mid-run). Re-acquiring here would be a
+    second, nested lock over the same path — not reentrant, since a plain
+    ``FileLock`` does not know about the one already held — so it would
+    deadlock the run it is reporting progress for. The caller's own lock is
+    what makes this still safe: nothing else can be touching this file while
+    it is held.
     """
     path = _state_path(wizard_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with locked(path.with_suffix(".lock")):
+
+    def _apply() -> dict:
         state = read_json(path)
         state.update(fields(state))
         write_json_atomic(path, state)
@@ -96,6 +107,11 @@ def _mutate(wizard_id: str, fields: "Callable[[dict], dict]") -> dict:
         # the one invalidation point.
         _CACHE.pop(wizard_id, None)
         return state
+
+    if already_locked:
+        return _apply()
+    with locked(path.with_suffix(".lock")):
+        return _apply()
 
 
 def reset_run(wizard_id: str) -> Optional[dict[str, Any]]:
@@ -170,15 +186,19 @@ def read_result(wizard_id: str) -> "Optional[WizardResult]":
         return None
 
 
-def record_result(wizard_id: str, result: "WizardResult") -> None:
+def record_result(wizard_id: str, result: "WizardResult", *, already_locked: bool = False) -> None:
     """Stamp what the last run answered — the ``WizardResult``, each step's
     output kept to its last ``OUTPUT_CAP`` characters.
 
     This is where output is trimmed: a result a caller READS arrives whole, and
     one written to disk must not grow by whatever a command printed.
+
+    ``already_locked``: see ``_mutate``. ``execute_wizard``'s ``on_step``
+    callback passes it — its outer ``run.lock`` is held for the run's whole
+    duration, so a mid-run partial write here must not try to lock it again.
     """
     dumped = result.trimmed().model_dump(mode="json")
-    _mutate(wizard_id, lambda _state: {"result": dumped})
+    _mutate(wizard_id, lambda _state: {"result": dumped}, already_locked=already_locked)
 
 
 #: Step fields that carry OUTPUT rather than a verdict — what `strip_heavy` drops.
@@ -193,6 +213,7 @@ def strip_heavy(result: dict[str, Any]) -> dict[str, Any]:
     what a step returned are for one wizard a person is actively debugging;
     ``run-detail`` serves them whole.
     """
+
     def light(answer: Any) -> Any:
         if not isinstance(answer, dict):
             return answer
@@ -230,9 +251,7 @@ def input_env(inputs: dict[str, Any]) -> dict[str, str]:
     """
     out: dict[str, str] = {}
     for name, value in (inputs or {}).items():
-        key = "FLOWPAD_WIZARD_INPUT_" + "".join(
-            ch if ch.isalnum() else "_" for ch in str(name).upper()
-        )
+        key = "FLOWPAD_WIZARD_INPUT_" + "".join(ch if ch.isalnum() else "_" for ch in str(name).upper())
         out[key] = value if isinstance(value, str) else _json(value)
     return out
 

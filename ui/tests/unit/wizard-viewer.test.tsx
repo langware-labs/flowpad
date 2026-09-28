@@ -11,7 +11,10 @@
  *    form: a wizard asks a person through an `ask` op, like any other step.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const h = vi.hoisted(() => ({ callAction: vi.fn(), refreshByTypeId: vi.fn() }));
 
@@ -36,8 +39,7 @@ vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(
  *  covered by its own tests; what these assert is what sits behind it. */
 const view = vi.hoisted(() => ({ advanced: false }));
 vi.mock('@src/components/view-mode', () => ({
-  AdvancedOnly: ({ children }: { children: React.ReactNode }) =>
-    view.advanced ? <>{children}</> : null,
+  AdvancedOnly: ({ children }: { children: React.ReactNode }) => (view.advanced ? <>{children}</> : null),
   useIsAdvanced: () => view.advanced,
 }));
 
@@ -74,9 +76,9 @@ const wizard = (runState: Record<string, unknown>, shipped = false) =>
     run_state: runState,
     activity_path: 'wizard-ui-probe',
     typeId: { toString: () => 'wizard-550e8400-e29b-41d4-a716-446655440000' },
-    validateDocument: async () => ({ ok: true, issues: [] }),
-    runDetail: async () => ({ result: runState.result ?? null }),
-    resetRun: async () => ({}),
+    validateDocument: () => Promise.resolve({ ok: true, issues: [] }),
+    runDetail: () => Promise.resolve({ result: runState.result ?? null }),
+    resetRun: () => Promise.resolve({}),
   }) as never;
 
 /** The wizard FOLDER. The viewer names `wizard.json` beneath it itself — the
@@ -88,12 +90,18 @@ const refWith = (read: () => Promise<string>) =>
     child: () => ({
       path: '/w/agentic-assets/wizard/ui-probe/wizard.json',
       read,
-      write: async () => undefined,
+      write: () => Promise.resolve(undefined),
     }),
   }) as never;
 
 const DOC = JSON.stringify({ name: 'UI probe', steps: [] });
-const fsRef = () => refWith(async () => DOC);
+const fsRef = () => refWith(() => Promise.resolve(DOC));
+
+/** A step's own detail is a Tooltip now, and `Tooltip.Root` throws without a
+ *  `TooltipProvider` ancestor — in the app that is mounted once in `App.tsx`,
+ *  which nothing here renders. `delayDuration={0}` so a hover in a test does
+ *  not need a real wait to open. */
+const renderWizard = (ui: React.ReactElement) => render(<TooltipProvider delayDuration={0}>{ui}</TooltipProvider>);
 
 beforeEach(() => {
   view.advanced = false;
@@ -107,7 +115,7 @@ afterEach(cleanup);
 describe('WizardViewer', () => {
   it('asks for approval in the page — never through window.confirm', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
 
     fireEvent.click(screen.getByTestId('wizard-run'));
 
@@ -122,13 +130,12 @@ describe('WizardViewer', () => {
   });
 
   it('runs a shipped wizard with no approval panel at all', async () => {
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({}, true)} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({}, true)} />);
     fireEvent.click(screen.getByTestId('wizard-run'));
     await waitFor(() => expect(h.callAction).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('wizard-approval')).toBeNull();
     expect(h.callAction.mock.calls[0][0].bodyParameters).toEqual({});
   });
-
 });
 
 describe('a settled run', () => {
@@ -150,23 +157,47 @@ describe('a settled run', () => {
       { id: 'deploy', kind: 'compute', ref: 'c', args: {} },
     ],
   });
+  const fsRefTwo = () => refWith(() => Promise.resolve(DOC_TWO));
 
   it('says what the run answered, in its own sentence', () => {
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard(settled)} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(settled)} />);
     expect(screen.getByText(settled.result.detail)).toBeTruthy();
   });
 
-  it('lists each step with what its own answer said', async () => {
-    render(<WizardViewer fsRef={refWith(async () => DOC_TWO)} wizard={wizard(settled)} />);
+  it('says nothing inline — a row′s own answer is read on hover, not printed permanently', async () => {
+    renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(settled)} />);
     await waitFor(() => expect(screen.getByTestId('wizard-step-build')).toBeTruthy());
-    expect(screen.getByTestId('wizard-step-version').textContent).toContain('already satisfied');
-    expect(screen.getByTestId('wizard-step-build').textContent).toContain('the check still fails');
-    // A step no run reached has no answer, so nothing is said about it.
-    expect(screen.getByTestId('wizard-step-deploy').textContent).not.toContain('—');
+
+    // A row's own detail is a tooltip now, not always-visible text: a slow,
+    // all-passing wizard used to print every step's own "already satisfied"
+    // line permanently, drowning the one row that actually needed reading — a
+    // failure — among five that did not.
+    expect(screen.getByTestId('wizard-step-version').textContent).not.toContain('already satisfied');
+    expect(screen.getByTestId('wizard-step-build').textContent).not.toContain('the check still fails');
+    // A step no run reached has no answer, so it offers nothing to hover.
+    expect(screen.getByTestId('wizard-step-deploy').querySelector('.cursor-help')).toBeNull();
+  });
+
+  it('shows a satisfied step′s own answer on hover', async () => {
+    const user = userEvent.setup();
+    renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(settled)} />);
+    await waitFor(() => expect(screen.getByTestId('wizard-step-version')).toBeTruthy());
+
+    await user.hover(screen.getByTestId('wizard-step-version').querySelector('.cursor-help')!);
+    expect((await screen.findByTestId('wizard-step-version-detail')).textContent).toContain('already satisfied');
+  });
+
+  it('shows a failed step′s own answer on hover', async () => {
+    const user = userEvent.setup();
+    renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(settled)} />);
+    await waitFor(() => expect(screen.getByTestId('wizard-step-build')).toBeTruthy());
+
+    await user.hover(screen.getByTestId('wizard-step-build').querySelector('.cursor-help')!);
+    expect((await screen.findByTestId('wizard-step-build-detail')).textContent).toContain('the check still fails');
   });
 
   it('never offers an answer form — a person is asked by an ask op, not by the viewer', () => {
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard(settled)} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(settled)} />);
     expect(screen.queryByTestId('wizard-awaiting')).toBeNull();
     expect(screen.queryByTestId('wizard-answers')).toBeNull();
     // Run is always Run; there is no parked run to Continue.
@@ -178,15 +209,17 @@ describe('the advanced gate is a skin', () => {
   /** Counts reads, so "the hooks still ran" is observable rather than asserted
    *  about internals. */
   const countingRef = (reads: { n: number }) =>
-    refWith(async () => {
+    refWith(() => {
       reads.n += 1;
-      return JSON.stringify({ name: 'UI probe', steps: [{ id: 'a', kind: 'compute', ref: 'noop', args: {} }] });
+      return Promise.resolve(
+        JSON.stringify({ name: 'UI probe', steps: [{ id: 'a', kind: 'compute', ref: 'noop', args: {} }] }),
+      );
     });
 
   it('hides the editor and debugger in Standard, without skipping the work', async () => {
     const reads = { n: 0 };
     view.advanced = false;
-    render(<WizardViewer fsRef={countingRef(reads)} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={countingRef(reads)} wizard={wizard({})} />);
 
     expect(screen.queryByTestId('wizard-form')).toBeNull();
     expect(screen.queryByTestId('wizard-debugger')).toBeNull();
@@ -197,7 +230,7 @@ describe('the advanced gate is a skin', () => {
 
   it('shows the editor inline and OFFERS run detail in Advanced', async () => {
     view.advanced = true;
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
 
     await waitFor(() => expect(screen.getByTestId('wizard-form')).toBeTruthy());
     // Run detail is a side window: the rail offers it, and it is not mounted
@@ -209,7 +242,7 @@ describe('the advanced gate is a skin', () => {
   it('renders run detail in the side drawer once that window is open', async () => {
     view.advanced = true;
     side.windows = ['wizard-run'];
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
 
     await waitFor(() => expect(screen.getByTestId('wizard-side-window')).toBeTruthy());
     expect(screen.getByTestId('wizard-debugger')).toBeTruthy();
@@ -217,20 +250,20 @@ describe('the advanced gate is a skin', () => {
 
   it('offers no run-detail window in Standard', () => {
     view.advanced = false;
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
 
     expect(screen.queryByTestId('wizard-side-tab-collapsed-wizard-run')).toBeNull();
     expect(screen.queryByTestId('wizard-debugger')).toBeNull();
   });
 
-  it('puts Reset beside Run, and only in Advanced', async () => {
+  it('puts Reset beside Run, and only in Advanced', () => {
     view.advanced = false;
-    const { unmount } = render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    const { unmount } = renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
     expect(screen.queryByTestId('wizard-reset')).toBeNull();
     unmount();
 
     view.advanced = true;
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
     const header = screen.getByTestId('wizard-run').closest('header');
     // Same header as Run: they are one decision made twice — start it, or
     // start it over.
@@ -240,7 +273,7 @@ describe('the advanced gate is a skin', () => {
   it('offers no editor for a conversational wizard — it has no steps to edit', () => {
     view.advanced = true;
     const conversational = { ...(wizard({}) as Record<string, unknown>), agent: 'git-setup' } as never;
-    render(<WizardViewer fsRef={fsRef()} wizard={conversational} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={conversational} />);
 
     expect(screen.queryByTestId('wizard-form')).toBeNull();
     expect(screen.queryByTestId('wizard-debugger')).toBeNull();
@@ -265,7 +298,7 @@ describe('the document arrives asynchronously', () => {
   it('shows the steps from the document once the read lands', async () => {
     view.advanced = true;
     side.windows = ['wizard-run'];
-    render(<WizardViewer fsRef={lateRef()} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={lateRef()} wizard={wizard({})} />);
 
     // The step list is sourced from the DOCUMENT, so a wizard that has never
     // run still lists what it would do.
@@ -279,7 +312,7 @@ describe('the document arrives asynchronously', () => {
 describe('starting a run reveals what it is doing', () => {
   it('opens the run-detail window when Run is clicked', async () => {
     view.advanced = true;
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
 
     fireEvent.click(screen.getByTestId('wizard-run'));
 
@@ -289,7 +322,7 @@ describe('starting a run reveals what it is doing', () => {
 
   it('opens it on the approval path too', async () => {
     view.advanced = true;
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
 
     fireEvent.click(screen.getByTestId('wizard-run'));
     fireEvent.click(await screen.findByTestId('wizard-approve'));
@@ -300,7 +333,7 @@ describe('starting a run reveals what it is doing', () => {
   it('does not push again when the window is already open', async () => {
     view.advanced = true;
     side.windows = ['wizard-run'];
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
 
     fireEvent.click(screen.getByTestId('wizard-run'));
 
@@ -312,7 +345,7 @@ describe('starting a run reveals what it is doing', () => {
 
   it('stamps no side-window id in Standard, where nothing renders it', async () => {
     view.advanced = false;
-    render(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({ approved: true })} />);
 
     fireEvent.click(screen.getByTestId('wizard-run'));
 

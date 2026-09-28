@@ -48,6 +48,21 @@ def locked(lock_path: Path) -> Iterator[None]:
     is correct here. Ledger critical sections are a few filesystem operations
     long, so a wait that does not resolve means a real deadlock to fix, not a
     budget to widen.
+
+    Deliberately NOT ``is_singleton=True``. That reentrancy is scoped to the OS
+    THREAD, not to the call stack or the asyncio task — and every task here
+    shares one thread. A caller already holding this path's lock across a long
+    critical section (``execute_wizard`` across its own ``run_wizard`` call)
+    does need to write here again from inside it (``on_step``'s progress
+    write); a SECOND, unrelated ``execute_wizard`` call for the same wizard,
+    running as a different task on that same thread, must NOT — that is the
+    single-flight guarantee `execute_wizard` exists to give. ``is_singleton``
+    cannot tell those two apart, so it was tried and reverted: it let the
+    second run "reenter" the first's lock instead of blocking, and the
+    busy-refusal test hung forever waiting for a run that had wrongly started.
+    A caller that already holds this lock and needs to write from inside its
+    own critical section skips this function entirely and writes directly —
+    see ``record_result(..., already_locked=True)``.
     """
     from filelock import FileLock
 
