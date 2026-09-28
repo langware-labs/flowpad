@@ -96,3 +96,26 @@ def test_worker_reported_paths_split_into_assistant_and_worker_extras(tmp_path):
     plugin = descriptor_from_asset(Asset.from_path(skill(tmp_path / "plugins/cache/acme", "lint")), sources)
     assert mounted.source == AssetSource.SYSTEM and CONTRACT["by_source"][mounted.source.value] == "assistant"
     assert plugin.source == AssetSource.EXTERNAL and CONTRACT["by_source"][plugin.source.value] == "worker"
+
+
+@pytest.mark.asyncio
+async def test_a_live_worker_keeps_the_mounted_assistant_under_its_own_scope(home, tmp_path, monkeypatch):
+    """A running PTY worker is inventoried from its launch snapshot, where the
+    assistant root was folded into ``--add-dir`` and the assistant flag cleared.
+    Its assets must still read as the assistant's, not as an added folder — else
+    they land under "Dirs", which is on by default, and flood the board."""
+    from flow_sdk.builtin.agentic_process.asset_usage import process_asset_sources
+
+    assistant_root, extra = tmp_path / "assistant", tmp_path / "extra"
+    assistant_root.mkdir()
+    extra.mkdir()
+    monkeypatch.setattr("flow_sdk.config.flowpad_assistant_canonical_root", lambda: str(assistant_root))
+    live = AgenticProcess(id=mint_uuid(), workdir=str(tmp_path / "work"), additional_dirs=[str(assistant_root), str(extra)], load_flowpad_assistant=False)
+    live.__dict__["_asset_inventory_snapshot"] = True
+
+    sources = await process_asset_sources(live)
+    by_path = {Path(path): source for path, source in sources}
+    assert by_path[assistant_root.resolve()] == AssetSource.SYSTEM
+    assert by_path[extra.resolve()] == AssetSource.ADDITIONAL_DIR
+    reported = descriptor_from_asset(Asset.from_path(skill(assistant_root, "decker")), sources)
+    assert reported.source == AssetSource.SYSTEM and CONTRACT["by_source"][reported.source.value] == "assistant"
