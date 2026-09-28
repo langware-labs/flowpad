@@ -21,7 +21,7 @@ import {
   type NotificationPayload,
 } from '@src/notifications/renderDesktopNotification';
 import { openInstallRequest } from '@src/components/install/install-request-store';
-import { openAskModal } from '@src/components/ask/ask-modal-store';
+import { closeAskModal, openAskModal, useAskModalStore } from '@src/components/ask/ask-modal-store';
 
 /** The subset of the Electron preload bridge this hook uses. */
 interface NotifyBridge {
@@ -161,6 +161,12 @@ export function useUiCommandListener(): void {
       if (msg.kind === 'open_ask_modal') {
         if (msg.pointer) openAskModal(msg.pointer);
         else console.warn('[ui_command] open_ask_modal without a pointer', msg);
+        return;
+      }
+      // `close_ask_modal`: the op stopped waiting (its run was replaced). Close
+      // only if this tab still shows THAT question — a newer one stays open.
+      if (msg.kind === 'close_ask_modal') {
+        if (msg.pointer && useAskModalStore.getState().payload === msg.pointer) closeAskModal();
         return;
       }
       // Forward-compat: log unknown kinds but don't crash.
