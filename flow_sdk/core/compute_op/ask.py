@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -52,11 +53,24 @@ class Question:
     fields: Any = None
     #: The answer is a secret: whoever draws the field masks it, and nothing echoes it.
     secret: bool = False
+    #: The wizard run that asked (its activity address), when one did. A screen showing that run
+    #: claims the question and draws it in place; nobody claiming it, it opens on its own.
+    run: str = ""
+    #: How a person finds the value — the op's ``setup.md``, markdown. Drawn beside the fields.
+    guide: str = ""
     _future: "asyncio.Future" = field(repr=False, default=None)  # type: ignore[assignment]
 
     def to_payload(self) -> dict:
         """What a UI needs to draw the field. Never the future."""
-        return {"id": self.id, "op": self.op_name, "prompt": self.prompt, "fields": self.fields, "secret": self.secret}
+        return {
+            "id": self.id, "op": self.op_name, "prompt": self.prompt, "fields": self.fields,
+            "secret": self.secret, "run": self.run, "guide": self.guide,
+        }
+
+
+#: The wizard run the current task is executing, set by ``execute_wizard`` for the length of a
+#: run. A question opened inside it is stamped with it (``Question.run``).
+ASKING_RUN: ContextVar[str] = ContextVar("asking_run", default="")
 
 
 #: Whether THIS process serves the answer routes — set by the app that mounts
@@ -93,7 +107,7 @@ def answered_here():
 _PENDING: "dict[str, Question]" = {}
 
 
-def open_question(op_name: str, prompt: str, shape: Any, *, secret: bool = False) -> Question:
+def open_question(op_name: str, prompt: str, shape: Any, *, secret: bool = False, guide: str = "") -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
 
@@ -101,7 +115,7 @@ def open_question(op_name: str, prompt: str, shape: Any, *, secret: bool = False
         id=str(uuid.uuid4()), op_name=op_name, prompt=prompt, shape=shape,
         # A kind string alone would render as one unnamed box.
         fields=fields_of_kind(shape) if isinstance(shape, str) else shape,
-        secret=secret,
+        secret=secret, run=ASKING_RUN.get(), guide=guide,
         _future=asyncio.get_event_loop().create_future(),
     )
     _PENDING[question.id] = question
@@ -166,7 +180,7 @@ async def wait_for(question: Question, *, timeout: float) -> Any:
 
 
 async def ask_person(
-    op_name: str, prompt: str, shape: Any, *, timeout: float, label: str, secret: bool = False
+    op_name: str, prompt: str, shape: Any, *, timeout: float, label: str, secret: bool = False, guide: str = "",
 ) -> "AskResult":
     """Raise one question here and answer with what the person did.
 
@@ -176,7 +190,7 @@ async def ask_person(
     from flow_sdk.core.compute_op.ask_window import raise_question  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import AskResult  # noqa: PLC0415
 
-    question = open_question(op_name, prompt, shape, secret=secret)
+    question = open_question(op_name, prompt, shape, secret=secret, guide=guide)
     await raise_question(question)
     try:
         value = await wait_for(question, timeout=timeout)
@@ -188,7 +202,7 @@ async def ask_person(
 
 
 async def ask_through_backend(
-    op_name: str, prompt: str, shape: Any, *, timeout: float, label: str, secret: bool = False
+    op_name: str, prompt: str, shape: Any, *, timeout: float, label: str, secret: bool = False, guide: str = "",
 ) -> "AskResult":
     """:func:`ask_person`, run by the backend for a process that is not it.
 
@@ -200,7 +214,8 @@ async def ask_through_backend(
     from flow_sdk.core.connections.service import FlowServiceError, flow_service  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import AskResult  # noqa: PLC0415
 
-    body = {"op": op_name, "prompt": prompt, "shape": shape, "timeout": timeout, "label": label, "secret": secret}
+    body = {"op": op_name, "prompt": prompt, "shape": shape, "timeout": timeout, "label": label, "secret": secret,
+            "guide": guide}
     try:
         async with flow_service() as lease:
             said = await lease.client.request("POST", "/api/v1/ask", json=body)

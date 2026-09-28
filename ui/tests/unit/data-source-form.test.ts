@@ -13,6 +13,7 @@ import {
   choiceOf,
   emptyDraft,
   pickedFrom,
+  setUpByWizard,
   validateDraft,
 } from '@src/components/data-sources/source-form';
 
@@ -221,5 +222,20 @@ describe('the typed fallback', () => {
     const typed = draft('gdrive', { drive: '0ABxyz' }, {});
     const spec = { config: { drive: { type: 'text', choices: true } } } as never;
     expect(buildConfig(typed, spec)).toEqual({ drive: '0ABxyz' });
+  });
+});
+
+describe('a driver that declares setup wizards is added by name, then set up by its wizard', () => {
+  const whatsapp = { ...(rss as object), setup_wizards: [{ stage: 'test', wizard: 'whatsapp-test' }] } as never;
+
+  it('asks the form for a name only when adding; editing keeps the whole form', () => {
+    expect(setUpByWizard(whatsapp, false)).toBe(true);
+    expect(setUpByWizard(whatsapp, true)).toBe(false);
+    expect(setUpByWizard(rss, false)).toBe(false);
+  });
+
+  it('does not hold the Add button on config the wizard will ask for', () => {
+    expect(validateDraft(draft('whatsapp', {}), whatsapp, { config: false })).toEqual([]);
+    expect(validateDraft(draft('whatsapp', {}), whatsapp).join(' ')).toContain('Feed URL is required');
   });
 });

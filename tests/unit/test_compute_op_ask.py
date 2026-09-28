@@ -249,3 +249,26 @@ async def test_the_wait_is_the_callers_else_the_ops_else_the_default(tmp_path, m
     spec = _spec(tmp_path, exe_data=exe)
     await run_op(spec, trusted=True, workdir=Path(tmp_path), platform=sys.platform, ask_timeout=caller_timeout)
     assert seen == [expected]
+
+
+async def test_a_question_names_the_run_that_asked_and_carries_the_ops_guide(tmp_path):
+    """A setup screen showing a run claims that run's questions and draws them in place, beside the
+    step's guide — so the question has to say which run asked, and bring the guide along."""
+    from flow_sdk.core.compute_op.ask import ASKING_RUN
+
+    spec = _spec(tmp_path, setup="Open WhatsApp → API Setup and copy the **Phone number ID**.")
+    token = ASKING_RUN.set("wizard-whatsapp-test-1-data_source_a")
+    try:
+        run = asyncio.create_task(_run(spec, tmp_path, timeout=5))
+        for _ in range(200):
+            if open_questions():
+                break
+            await asyncio.sleep(0.01)
+    finally:
+        ASKING_RUN.reset(token)
+    (question,) = open_questions()
+    payload = question.to_payload()
+    assert payload["run"] == "wizard-whatsapp-test-1-data_source_a"
+    assert "Phone number ID" in payload["guide"]
+    cancel(question.id)
+    assert not (await run).ok
