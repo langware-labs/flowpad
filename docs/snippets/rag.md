@@ -19,6 +19,27 @@ Two things are worth knowing before the code:
 Every snippet below is run verbatim by `tests/unit/test_rag_snippets.py`; the behaviour they
 lean on is pinned by `tests/unit/test_rag_indexing.py` and its neighbours.
 
+## At a glance: search a folder by meaning
+
+The whole life of an index in one fence — cover a folder, embed what is new, ask. The sections
+below take each step apart.
+
+```python
+from flow_sdk.builtin.rag_index import RagIndex
+from flow_sdk.rag import reconcile
+
+index = await RagIndex.ensure_default()
+await index.add_root(NOTES)                  # cover the folder
+await index.settle_status()                  # active once a key or a bound endpoint funds it
+await reconcile.run_index(index)             # embed only the chunks it has not seen
+
+for hit in await index.search("how does the gitignore walk decide what to skip", top_k=5):
+    print(f"{hit.score:.3f}  {hit.doc_ref}  {' / '.join(hit.heading_path)}")
+```
+
+With nothing funding embeddings, `search` raises `EmbeddingUnavailable` and says what to add — it
+never answers an empty list, which would read as "nothing matched".
+
 ## 1. Make a folder searchable
 
 One verb, addressed by PATH. It finds the box's index or creates it, so the first folder anybody
@@ -84,7 +105,8 @@ async with index.open_store() as store:
         print(f"{hit.score:.3f}  {hit.doc_ref}  {' / '.join(hit.heading_path)}")
 ```
 
-Embed the question with the SAME model the chunks were embedded with. A vector from another
+`embedder_for` raises `EmbeddingUnavailable` when nothing funds the index, before a paid call and
+with the fix in the message. Embed the question with the SAME model the chunks were embedded with. A vector from another
 model is not merely worse in this space, it is meaningless — which is why `model` and
 `dimensions` are pinned on the row at the first embed, and why changing either is a rebuild
 rather than a top-up.

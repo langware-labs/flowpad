@@ -5,8 +5,20 @@
  */
 import { Reply, SmilePlus } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
-import type { IMessageReaction } from '@sdk/entities/flow-message';
+import { AttachmentType, attachmentDataString, type FlowMessage, type IMessageReaction } from '@sdk/entities/flow-message';
 import { EmojiPicker } from './EmojiPicker';
+
+/** A FILE attachment's name — its `data/<name>` subpath, last segment. */
+export function attachmentFileName(a: Parameters<typeof attachmentDataString>[0]): string {
+  return attachmentDataString(a).split('/').pop() ?? '';
+}
+
+/** Who wrote a message and what it says, as a quote or a reply banner shows it: a files-only
+ *  message is named by its files. `someone` is the caller's translated fallback. */
+export function messageSummary(fm: FlowMessage, someone: string): { sender: string; text: string } {
+  const files = (fm.attachment ?? []).filter((a) => a.attachment_type === AttachmentType.FILE).map(attachmentFileName);
+  return { sender: fm.sender_name || fm.envelope?.sender?.name || someone, text: fm.text || files.join(', ') };
+}
 
 /** The message a reply quotes, drawn above its body. Clicking it scrolls to the original. */
 export function QuotedMessage({ sender, text, onJump }: { sender: string; text: string; onJump?: () => void }) {

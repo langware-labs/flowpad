@@ -292,14 +292,14 @@ async def test_args_bind_a_value_in_scope_to_the_callees_parameter(tmp_path):
         {
             "name": "outer",
             "steps": [
-                {"id": "sub", "kind": "wizard", "ref": "inner", "args": {"API_KEY": "WAHA_KEY"}},
+                {"id": "sub", "kind": "wizard", "ref": "inner", "args": {"API_KEY": "GATEWAY_KEY"}},
             ],
         }
     )
     result = await _run_wizard(
         outer,
         tmp_path=tmp_path,
-        inputs={"WAHA_KEY": "s3cret"},
+        inputs={"GATEWAY_KEY": "s3cret"},
         shell=_shell(lambda _c: 0, seen=seen),
         resolve_op=_ops(_op("use-key")),
         resolve_wizard=_wizards({"inner": inner}),

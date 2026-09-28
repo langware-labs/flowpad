@@ -354,6 +354,8 @@ async def _pack_attachment_entry(
     repo_cache: dict | None = None,
     transfers: dict | None = None,
     transfer_mode: str = _TRANSFER_MODE_COPY,
+    *,
+    mirror_repo_layout: bool = True,
 ) -> None:
     """Dispatch a single attachment entry to the correct FAMILY packer.
 
@@ -414,6 +416,7 @@ async def _pack_attachment_entry(
                 repo_cache,
                 transfers=transfers,
                 transfer_mode=transfer_mode,
+                mirror_repo_layout=mirror_repo_layout,
             )
 
 
@@ -709,8 +712,15 @@ async def _pack_file_backed_attachment(
     *,
     transfers: dict | None = None,
     transfer_mode: str = _TRANSFER_MODE_COPY,
+    mirror_repo_layout: bool = True,
 ) -> None:
     """Copy a file-backed asset's on-disk subtree into the bundle.
+
+    ``mirror_repo_layout=False`` (an offline export) ignores the sender's repo
+    entirely: no origin, always ``<main_subdir>/<leaf>``. A file handed to a
+    stranger has no shared checkout to mirror, and keying by the sender's
+    repo-relative path would nest the asset under that repo's folders on the
+    receiver (a shipped asset landed at ``flow_sdk/system_projects/…``).
 
     Bundle layout: ``attachment/<type>-@<id>/<in_bundle_rel>/…`` where
     ``in_bundle_rel`` is the asset's repo-relative ``rel_path`` when the asset
@@ -745,7 +755,9 @@ async def _pack_file_backed_attachment(
     # the receiver mirrors the sender's layout (else canonical main_subdir/leaf).
     # ``for_asset_path`` runs blocking git subprocesses — keep them off the loop.
     origin = (
-        await asyncio.to_thread(GitOrigin.for_asset_path, str(src_root), repo_cache) if src_root is not None else None
+        await asyncio.to_thread(GitOrigin.for_asset_path, str(src_root), repo_cache)
+        if src_root is not None and mirror_repo_layout
+        else None
     )
     if origin is not None and origins is not None:
         origins[_entry_key(entry_type, entry_id)] = origin.model_dump(mode="python")
@@ -1661,6 +1673,32 @@ def _normalize_transfer_mode(transfer_mode: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
+async def _row_as_its_file_says(entry_type: str, ent):
+    """A file-backed asset's row re-read from its file before it is snapshotted.
+
+    The envelope rides beside the file and the receiver overlays it onto the row
+    it indexed from that file — so the two must agree, and the FILE is the truth.
+    A row can lag its file (an ``agent.json`` edited after the last index shipped
+    ``mcp_servers: []`` beside a file naming the MCP, and the receiver's agent
+    lost its tool). Best-effort: a file that cannot be re-read keeps the row as is.
+    """
+    from flow_sdk.fs_store.resolve import index_one, resolve_asset  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entry_type)
+    ref = str(getattr(ent, "asset_ref", "") or "")
+    eid = getattr(ent, "id", None)
+    if info is None or info.main_subdir is None or not eid or not ref or not Path(ref).exists():
+        return ent
+    try:
+        resolved = await resolve_asset(ref, write=False, type_name=entry_type, owner_id=eid)
+        await index_one(resolved, scope=getattr(ent, "scope", None), project_id=getattr(ent, "project_id", None))
+        return await type(ent).get_one({"id": eid}) or ent
+    except Exception:  # noqa: BLE001
+        logger.warning("[bundle] could not re-read %s-%s from its file; packing the row", entry_type, eid, exc_info=True)
+        return ent
+
+
 async def _collect_attachment_envelopes(entry, entities: dict) -> None:
     """Add ``to_common_json()`` for a TYPE_ID attachment entity + its nested
     repo descendants into ``entities`` (keyed ``<type>-<id>``). Best-effort:
@@ -1689,6 +1727,7 @@ async def _collect_attachment_envelopes(entry, entities: dict) -> None:
     ent = await cls.get_one({"id": entry_id})
     if ent is None:
         return
+    ent = await _row_as_its_file_says(entry_type, ent)
     try:
         entities[f"{entry_type}-{entry_id}"] = ent.to_common_json()
     except Exception:
@@ -1771,6 +1810,7 @@ async def pack_bundle(
     *,
     transfer_mode: str = _TRANSFER_MODE_COPY,
     create_bookmark: bool = False,
+    mirror_repo_layout: bool = True,
 ) -> Path:
     """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path.
 
@@ -1810,6 +1850,7 @@ async def pack_bundle(
                 repo_cache,
                 transfers=transfers,
                 transfer_mode=transfer_mode,
+                mirror_repo_layout=mirror_repo_layout,
             )
             await _collect_attachment_envelopes(entry, entities)
         if entities:

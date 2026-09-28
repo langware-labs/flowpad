@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 
 from flow_sdk.schema.data_spec.message_reaction_spec import MessageReaction
+from flow_sdk.sources.files import normalize_emoji
 from flow_sdk.sources.values.items import ReactionData, ReactionMode
 
 logger = logging.getLogger(__name__)
@@ -28,20 +29,21 @@ OURS = "self"
 
 def fold(current: Iterable[MessageReaction], by: str, emojis: tuple[str, ...], mode: ReactionMode, *, by_name: Optional[str] = None, ours: bool = False, at: Optional[datetime] = None) -> list[MessageReaction]:
     """``current`` after one person's report. SET replaces their whole set; ADD / REMOVE edit it.
-    Everyone else's entries are untouched, and the order of first appearance is kept."""
+    Everyone else's entries are untouched, and the order of first appearance is kept. Emoji compare
+    without the variation selector (❤ and ❤️ are one reaction) and keep the glyph they came with."""
+    key = normalize_emoji
     kept = list(current)
-    mine = [r for r in kept if r.by == by]
+    mine = {key(r.emoji): r for r in kept if r.by == by}
     others = [r for r in kept if r.by != by]
-    held = [r.emoji for r in mine]
+    given = {key(e): e for e in emojis}
     if mode is ReactionMode.SET:
-        wanted = list(dict.fromkeys(emojis))
+        wanted = list(given)
     elif mode is ReactionMode.ADD:
-        wanted = held + [e for e in emojis if e not in held]
+        wanted = list(mine) + [k for k in given if k not in mine]
     else:
-        wanted = [e for e in held if e not in emojis]
-    by_emoji = {r.emoji: r for r in mine}
+        wanted = [k for k in mine if k not in given]
     stamp = at or datetime.now(timezone.utc)
-    fresh = [by_emoji.get(e) or MessageReaction(emoji=e, by=by, by_name=by_name, ours=ours, at=stamp) for e in wanted]
+    fresh = [mine.get(k) or MessageReaction(emoji=given[k], by=by, by_name=by_name, ours=ours, at=stamp) for k in wanted]
     return others + fresh
 
 
@@ -53,13 +55,15 @@ async def _target(source: Any, origin: Any):
         return found
     # A provider that names one chat two ways (WhatsApp's @lid and @c.us) scopes the same message
     # differently in a reaction than in the message: its key alone, when unique in this source, is it.
-    rows = await SourceItem.get_all({"data_source_id": str(source.id), "origin_key": origin.key})
+    rows = await SourceItem.get_all({"data_source_id": str(source.id), "origin_kind": origin.kind, "origin_key": origin.key})
     return rows[0] if len(rows) == 1 else None
 
 
 async def _store(item: Any, reactions: list[MessageReaction]) -> None:
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
 
+    if list(item.reactions or []) == reactions:
+        return  # a redelivered report, a webhook retry: nothing moved
     item.reactions = reactions
     await item.save()
     message = await FlowMessage.get_one({"source_item_id": str(item.id)})
@@ -97,17 +101,26 @@ async def apply_reactions(source: Any, items: Iterable[Any]) -> int:
     return landed
 
 
-async def _resolve(message: Any):
-    """``(source row, driver, source item)`` for a FlowMessage that mirrors a channel message."""
-    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
-    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+async def source_item_of(message: Any):
+    """The ``SourceItem`` a message mirrors — given one, or a FlowMessage, or a FlowMessage's id —
+    or ``None`` when it did not come through a channel on this machine."""
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
 
+    if isinstance(message, SourceItem):
+        return message
     if isinstance(message, str):
         message = await FlowMessage.get_one({"id": message})
     item_id = getattr(message, "source_item_id", None) or getattr(getattr(message, "origin_local", None), "source_item_id", None)
-    item = await SourceItem.get_one({"id": str(item_id)}) if item_id else None
+    return await SourceItem.get_one({"id": str(item_id)}) if item_id else None
+
+
+async def _resolve(message: Any):
+    """``(source row, driver, source item)`` for a message that mirrors a channel message."""
+    from flow_sdk.builtin.data_driver import DataDriver  # noqa: PLC0415
+    from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
+
+    item = await source_item_of(message)
     if item is None or item.origin is None:
         raise ValueError("this message did not come through a channel on this machine; there is nothing to react to")
     source = await DataSource.get_by_id(item.data_source_id)
@@ -118,7 +131,8 @@ async def _resolve(message: Any):
 
 
 async def react(message: Any, emoji: str) -> list[MessageReaction]:
-    """Put our ``emoji`` on a channel message (a FlowMessage or its id); answers its reactions after.
+    """Put our ``emoji`` on a channel message (its SourceItem, a FlowMessage or its id); answers its
+    reactions after.
     On a channel that keeps one per person (``reactions_per_actor == 1``) it replaces ours."""
     if not emoji:
         raise ValueError("an emoji is required; unreact takes a reaction back")
@@ -134,10 +148,13 @@ async def unreact(message: Any, emoji: str = "") -> list[MessageReaction]:
     """Take back our ``emoji`` (all of ours with ``""``) from a channel message."""
     source, driver, item = await _resolve(message)
     await driver.react(source, item.origin, emoji, remove=True)
-    mine = tuple(r.emoji for r in (item.reactions or []) if r.by == OURS)
-    folded = fold(item.reactions or [], OURS, mine if not emoji else (emoji,), ReactionMode.REMOVE, ours=True)
+    folded = (
+        fold(item.reactions or [], OURS, (emoji,), ReactionMode.REMOVE, ours=True)
+        if emoji
+        else fold(item.reactions or [], OURS, (), ReactionMode.SET, ours=True)  # "" takes back all of ours
+    )
     await _store(item, folded)
     return folded
 
 
-__all__ = ["OURS", "apply_reactions", "fold", "react", "unreact"]
+__all__ = ["OURS", "apply_reactions", "fold", "react", "source_item_of", "unreact"]

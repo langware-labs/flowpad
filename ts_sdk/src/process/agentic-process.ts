@@ -389,6 +389,8 @@ export interface IAgenticProcess extends IEntity {
   collaboration_room_id?: string | null;
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
   target_typeid_str?: string | null;
+  /** The dock view this chat belongs to — the Flowpad Assistant keeps one chat per context. */
+  context_key?: string | null;
   /**
    * True when a worker-relevant field changed since the last successful start()
    * while status==RUNNING. Backend sets this automatically via the save-hook;
@@ -1139,6 +1141,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
   target_typeid_str: string | null = null;
 
+  /** The dock view this chat belongs to — the Flowpad Assistant keeps one chat per context. */
+  context_key: string | null = null;
+
   /**
    * True when a worker-relevant field changed since the last successful start()
    * while status==RUNNING. Maintained by the backend save-hook; UI surfaces
@@ -1696,6 +1701,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_typeid_str = entity.target_typeid_str ?? null;
+    this.context_key = entity.context_key ?? null;
     this.exe_folder = parseFsRef(entity.exe_folder);
     this.input_folder = parseFsRef(entity.input_folder);
     this.output_folder = parseFsRef(entity.output_folder);

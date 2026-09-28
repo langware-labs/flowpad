@@ -115,22 +115,15 @@ class Delivered(Generic[T]):
         """Put our ``emoji`` on this message; on a channel that keeps one per person it replaces ours."""
         from flow_sdk.stream_inbox.reactions import react  # noqa: PLC0415
 
-        self._row.reactions = await react(await self._message(), emoji)
+        self._row.reactions = await react(self._row, emoji)
         return self.reactions
 
     async def unreact(self, emoji: str = "") -> list:
         """Take back our ``emoji`` (all of ours with ``""``)."""
         from flow_sdk.stream_inbox.reactions import unreact  # noqa: PLC0415
 
-        self._row.reactions = await unreact(await self._message(), emoji)
+        self._row.reactions = await unreact(self._row, emoji)
         return self.reactions
-
-    async def _message(self) -> Any:
-        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-
-        found = await FlowMessage.get_one({"source_item_id": str(self._row.id)})
-        # Not projected yet: the reaction verbs read the SourceItem either way.
-        return found if found is not None else _Unprojected(str(self._row.id))
 
     async def reply_spec(self, *, body: str, files=(), quote: "bool | None" = None) -> "MessageSpec":
         """The reply to THIS item, in its own channel's shape — the rule and the
@@ -145,20 +138,29 @@ class Delivered(Generic[T]):
         return source.reply_spec(self.item, body=body, files=files, quote=quote)
 
     async def _newer_from_them(self, source) -> bool:
+        """Did the person write again in this thread after this message? Only rows ingested since it
+        are read — an indexed range, however long the chat."""
+        from flow_sdk.builtin import ingest_order  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         thread = getattr(self._row, "thread_key", None)
-        if not thread:
+        since = getattr(self._row, "created_date", None)
+        if not thread or since is None:
             return False
-        rows = await SourceItem.get_all({"data_source_id": str(source.id), "thread_key": thread})
-        mine = str(getattr(self._row, "occurred_at", "") or "")
-        return any(
-            str(r.id) != str(self._row.id) and not r.is_ours(source) and str(r.occurred_at or "") > mine
-            for r in rows
-        )
+        rows = await SourceItem.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.AND, operands=[
+            ExpressionNode(op=QueryOp.EQ, operands=["data_source_id", str(source.id)]),
+            ExpressionNode(op=QueryOp.GT, operands=["created_date", ingest_order.bind(since)]),
+            ExpressionNode(op=QueryOp.EQ, operands=["thread_key", thread]),
+        ])))
+        return any(str(r.id) != str(self._row.id) and not r.is_ours(source) for r in rows)
 
-    async def reply(self, spec: "MessageSpec") -> "SendOutcome | None":
+    async def reply(self, spec: "MessageSpec | str") -> "SendOutcome | None":
         """Send *spec* as the answer to this item, then ack — the piggybacked ack.
+
+        A plain ``str`` is the common case — "answer with this text" — and is the same as
+        ``await m.reply(await m.reply_spec(body=text))``: addressed the way THIS channel replies.
+        Pass a ``MessageSpec`` for anything more (files, a subject, an explicit ``quote``).
 
         The order is what makes it safe: **intent → send → record → ack**. Intent goes on the
         position row BEFORE the send, so a crash anywhere in the window is visible on
@@ -177,6 +179,8 @@ class Delivered(Generic[T]):
         from flow_sdk.ingest.driver_runtime import SendOutcome  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
 
+        if isinstance(spec, str):
+            spec = await self.reply_spec(body=spec)
         position, row = self._position, self._row
         source = await self._source()
 
@@ -223,14 +227,6 @@ class Delivered(Generic[T]):
         """
         if self._position.advance_to(self._row):
             await self._position.commit()
-
-
-class _Unprojected:
-    """A message known only by its SourceItem — enough for the reaction verbs."""
-
-    def __init__(self, source_item_id: str) -> None:
-        self.id = ""
-        self.source_item_id = source_item_id
 
 
 class DeliveredPage:

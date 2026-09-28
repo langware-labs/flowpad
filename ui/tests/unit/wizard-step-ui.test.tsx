@@ -26,10 +26,10 @@ import { setStepKind, type WizardStepDoc } from '@src/components/assets/editor/w
 
 const STEP: WizardStepDoc = {
   id: 'container',
-  label: 'WAHA',
+  label: 'Gateway',
   kind: 'compute',
-  ref: 'waha-container',
-  args: { API_KEY: 'WAHA_API_KEY' },
+  ref: 'gateway-container',
+  args: { API_KEY: 'GATEWAY_API_KEY' },
 };
 
 afterEach(() => {
@@ -39,7 +39,7 @@ afterEach(() => {
 
 function renderForm(
   step: WizardStepDoc,
-  { onSet = vi.fn(), onRemove = vi.fn(), refOptions = [] as string[], scope = ['WAHA_API_KEY'] } = {},
+  { onSet = vi.fn(), onRemove = vi.fn(), refOptions = [] as string[], scope = ['GATEWAY_API_KEY'] } = {},
 ) {
   render(
     <WizardStepForm
@@ -65,9 +65,9 @@ describe('editing a step', () => {
     const { onSet } = renderForm(STEP);
 
     fireEvent.blur(screen.getByTestId('wizard-step-ref-container'), {
-      target: { value: 'waha-session' },
+      target: { value: 'gateway-session' },
     });
-    expect(onSet).toHaveBeenCalledWith(['steps', 0, 'ref'], 'waha-session');
+    expect(onSet).toHaveBeenCalledWith(['steps', 0, 'ref'], 'gateway-session');
 
     fireEvent.blur(screen.getByTestId('wizard-step-args-container-value-API_KEY'), {
       target: { value: 'literal-key' },
@@ -81,7 +81,7 @@ describe('editing a step', () => {
     fireEvent.blur(screen.getByTestId('wizard-step-args-container-key-API_KEY'), {
       target: { value: 'TOKEN' },
     });
-    expect(onSet).toHaveBeenCalledWith(['steps', 0, 'args', 'TOKEN'], 'WAHA_API_KEY');
+    expect(onSet).toHaveBeenCalledWith(['steps', 0, 'args', 'TOKEN'], 'GATEWAY_API_KEY');
     expect(onRemove).toHaveBeenCalledWith(['steps', 0, 'args', 'API_KEY']);
   });
 
@@ -89,7 +89,7 @@ describe('editing a step', () => {
     // A document written elsewhere may name a wizard this machine lacks. A
     // Select would render that as empty and erase it on the next save; the
     // field keeps the name and says what will happen.
-    renderForm({ ...STEP, kind: 'wizard', ref: 'not-installed' }, { refOptions: ['waha-setup'] });
+    renderForm({ ...STEP, kind: 'wizard', ref: 'not-installed' }, { refOptions: ['gateway-setup'] });
 
     expect((screen.getByTestId('wizard-step-ref-container') as HTMLInputElement).value).toBe(
       'not-installed',
@@ -127,7 +127,7 @@ describe('editing a step', () => {
   });
 
   it('clears the ref when the kind changes, because the string means something else', () => {
-    const doc = { steps: [{ id: 'a', kind: 'compute' as const, ref: 'waha-container', args: {} }] };
+    const doc = { steps: [{ id: 'a', kind: 'compute' as const, ref: 'gateway-container', args: {} }] };
     const next = setStepKind(doc, 0, 'wizard');
 
     expect(next.steps![0].kind).toBe('wizard');
@@ -139,7 +139,7 @@ describe('inspecting a step', () => {
   it('says what the step invoked, with its arguments', () => {
     render(<WizardStepInspector step={STEP} outcome={null} />);
 
-    expect(screen.getByText('waha-container')).toBeTruthy();
+    expect(screen.getByText('gateway-container')).toBeTruthy();
     expect(screen.getByTestId('wizard-step-args').textContent).toContain('API_KEY');
     // A step that ran no shell is no longer described as "ran no commands".
     expect(screen.getByTestId('wizard-step-not-run')).toBeTruthy();
@@ -183,7 +183,7 @@ describe('inspecting a step', () => {
           // As on the wire: a step's answer is Tagged, so it names its own class.
           spec_kind: 'compute.returned.cli',
           exit_code: 0,
-          command: 'docker run waha',
+          command: 'docker run gateway',
           returncode: 0,
           stdout: 'started',
           check: { exit_code: 0, command: 'curl -sf localhost:3000', returncode: 0 },
@@ -192,7 +192,7 @@ describe('inspecting a step', () => {
     );
 
     expect(screen.getByTestId('wizard-probes')).toBeTruthy();
-    expect(screen.getByTestId('wizard-probe-call').textContent).toContain('docker run waha');
+    expect(screen.getByTestId('wizard-probe-call').textContent).toContain('docker run gateway');
     expect(screen.getByTestId('wizard-probe-check').textContent).toContain('curl -sf localhost:3000');
     expect(screen.getByText('started')).toBeTruthy();
   });

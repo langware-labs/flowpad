@@ -116,3 +116,25 @@ def test_a_missing_snippet_exits_not_found(tmp_path):
     result = runner.invoke(app, ["snippet", "run", str(tmp_path / "missing.py")])
     assert result.exit_code == 4, "NOT_FOUND — not 2, which means the request itself was bad"
     assert "not found" in json.loads(result.stdout)["stderr"]
+
+
+def test_show_answers_what_the_viewer_will_mark(sent_body, tmp_path, monkeypatch):
+    """An agent hears about a broken import from the show itself, not from the user after a Run."""
+    (tmp_path / "broken.py").write_text("# %% flowpad:snippet\nimport not_a_module_anywhere\n")
+    monkeypatch.chdir(tmp_path)
+    result = runner.invoke(app, ["show", "snippet", "broken.py", _PROC])
+    assert result.exit_code == 0, result.output
+    (d,) = json.loads(result.output)["diagnostics"]
+    assert (d["line"], d["kind"]) == (2, "import")
+
+
+def test_check_exits_1_with_problems_0_clean_4_missing(tmp_path):
+    clean = tmp_path / "clean.py"
+    clean.write_text("# %% flowpad:hidden\nimport asyncio\n# %% flowpad:snippet\nawait asyncio.sleep(0)\n")
+    result = runner.invoke(app, ["snippet", "check", str(clean)])
+    assert (result.exit_code, json.loads(result.stdout)) == (0, {"ok": True, "diagnostics": []})
+    broken = tmp_path / "broken.py"
+    broken.write_text("# %% flowpad:snippet\nprint(NOTES)\n")
+    result = runner.invoke(app, ["snippet", "check", str(broken)])
+    assert result.exit_code == 1 and json.loads(result.stdout)["diagnostics"][0]["message"] == "name 'NOTES' is not defined"
+    assert runner.invoke(app, ["snippet", "check", str(tmp_path / "missing.py")]).exit_code == 4

@@ -53,7 +53,7 @@ EXIT_CONNECTION_ERROR = 5
 _PROCESS_HELP = "Target AgenticProcess id (defaults to the calling process via FLOWPAD_EXECUTION_SCOPE)."
 
 
-def _post_show(process_opt: Optional[str], body: dict) -> None:
+def _post_show(process_opt: Optional[str], body: dict, extra: Optional[dict] = None) -> None:
     """POST the show action for the resolved process and exit-map the outcome.
 
     Transport/parse handling is the shared ``post_graph_json``; this wrapper
@@ -72,7 +72,7 @@ def _post_show(process_opt: Optional[str], body: dict) -> None:
         _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
 
     data = _post_graph_json(url, body, timeout=5, on_error=_on_error)
-    _ok({"process_id": process_id, **data})
+    _ok({"process_id": process_id, **data, **(extra or {})})
 
 
 @show_app.command(
@@ -240,5 +240,12 @@ def show_snippet(
         _fail(EXIT_INVALID_ARG, "NOT_A_SNIPPET", "No '%% flowpad:snippet' marker line (e.g. '# %% flowpad:snippet', '//' for js/rs)")
     if path is None:
         path = str(write_temp_snippet(code, lang, name))
-    _post_show(process, {"path": _caller_abs_path(path)})
+    # Shown either way; the answer carries what the viewer will mark, so an agent hears about a
+    # broken import from the show itself instead of from the user after a Run.
+    import asyncio  # noqa: PLC0415
+
+    from flow_sdk.core.snippet import check_snippet  # noqa: PLC0415
+
+    found = asyncio.run(check_snippet(Path(_caller_abs_path(path)), timeout_seconds=30.0))
+    _post_show(process, {"path": _caller_abs_path(path)}, {"diagnostics": [d.model_dump() for d in found]})
 

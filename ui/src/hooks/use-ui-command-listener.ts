@@ -22,6 +22,7 @@ import {
 } from '@src/notifications/renderDesktopNotification';
 import { openInstallRequest } from '@src/components/install/install-request-store';
 import { closeAskModal, openAskModal, useAskModalStore } from '@src/components/ask/ask-modal-store';
+import { deliverClaimedQuestion } from '@src/components/ask/ask-claims';
 
 /** The subset of the Electron preload bridge this hook uses. */
 interface NotifyBridge {
@@ -114,6 +115,9 @@ export function useUiCommandListener(): void {
         console.warn('[ui_command] navigate_dock missing view_type', msg);
         return;
       }
+      // A question from a wizard run a screen is showing is drawn THERE, not by sending the tab away.
+      if ((msg.view_type as ViewType) === ViewType.ASK && msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer))
+        return;
       navigateTo(
         new DockPointer(
           msg.view_type as ViewType,
@@ -159,6 +163,8 @@ export function useUiCommandListener(): void {
       // navigation, so a wizard's own progress page (or anything else) stays
       // visible right behind it. See `ask_window.py::_push_to_live_tab`.
       if (msg.kind === 'open_ask_modal') {
+        // A setup screen showing the run that asked draws it in place instead (`ask-claims`).
+        if (msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer)) return;
         if (msg.pointer) openAskModal(msg.pointer);
         else console.warn('[ui_command] open_ask_modal without a pointer', msg);
         return;

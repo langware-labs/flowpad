@@ -214,12 +214,9 @@ async def quoting(target: ReplyTarget, reply_to) -> ReplyTarget:
     """*target* answering one chosen message (a FlowMessage, or its id) instead of the newest. Only
     the reference changes: WHO the reply goes to and on which thread stays the target's — quoting our
     own message on email must still mail the other person."""
-    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.stream_inbox.reactions import source_item_of  # noqa: PLC0415
 
-    message = await FlowMessage.get_one({"id": str(reply_to)}) if isinstance(reply_to, str) else reply_to
-    item_id = getattr(message, "source_item_id", None) if message is not None else None
-    item = await SourceItem.get_one({"id": str(item_id)}) if item_id else None
+    item = await source_item_of(reply_to)
     if item is None or not item.external_id:
         raise ChannelSendUnavailable("the message to reply to did not come through this channel")
     if str(item.data_source_id) != str(target.source.id):

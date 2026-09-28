@@ -357,6 +357,15 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: false,
     foldsPointer: false,
   },
+  // The Flowpad Assistant popped out of its floating window. Never a tab: it is
+  // opened in `win/`, where it IS the window (ASK precedent).
+  [ViewType.ASSISTANT]: {
+    title: msg`Flowpad Assistant`,
+    iconName: 'MessageCircle',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    chrome: 'fullbleed',
+  },
   [ViewType.SUBGRAPH]: {
     title: msg`Subgraph`,
     iconName: 'Workflow',

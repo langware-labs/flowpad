@@ -91,6 +91,10 @@ export interface AgenticContext {
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
   targetVfsPath?: string;
 
+  /** The dock view the process belongs to. The Flowpad Assistant keeps one
+   * chat per context and finds it by this key. */
+  contextKey?: string;
+
   /** One of "text" | "json" | "stream-json"; omit for CLI default. When
    * "stream-json", the process runs print-mode (no PTY) and `AgenticProcess.prompt`
    * streams per-event FlowData over HTTP. */
@@ -169,6 +173,7 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     load_flowpad_assistant: ctx.loadFlowpadAssistant,
     shared_context_entities: ctx.sharedContextEntities,
     target_typeid_str: ctx.targetVfsPath,
+    context_key: ctx.contextKey,
     output_format: ctx.outputFormat,
     worker_type: ctx.workerType,
     process_type: ctx.processType,

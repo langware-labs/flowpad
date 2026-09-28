@@ -1,4 +1,4 @@
-"""The snippet view's three verbs — read, save one region, run — over ``flow_sdk.core.snippet``.
+"""The snippet view's verbs — read, save one region, check, run — over ``flow_sdk.core.snippet``.
 
 Thin on purpose: every rule (what a region is, how an edit is written back, how
 a language runs, what a timeout does) lives in the core module and is proven
@@ -15,11 +15,13 @@ from pathlib import Path
 
 from fastapi import APIRouter
 from flow_sdk.core.snippet import (
+    SnippetCheckRequest,
     SnippetDoc,
     SnippetReadRequest,
     SnippetRunRequest,
     SnippetSaveRequest,
     SnippetStopRequest,
+    check_snippet,
     edit_region,
     read_snippet,
     run_snippet,
@@ -86,6 +88,17 @@ def snippet_save(req: SnippetSaveRequest):
     except ValueError as e:
         return _fail("STALE", str(e))
     return ApiSuccessResponse(data=_view(path, doc))
+
+
+@router.post("/api/v1/snippet/check")
+async def snippet_check(req: SnippetCheckRequest):
+    """What would stop the file before it does its job, in FILE lines — the viewer maps them onto
+    its regions. A file with problems is still a success: the problems are the answer."""
+    path = _existing(req.path)
+    if isinstance(path, ApiFailResponse):
+        return path
+    found = await check_snippet(path, timeout_seconds=req.timeout_seconds)
+    return ApiSuccessResponse(data={"path": str(path), "diagnostics": [d.model_dump() for d in found]})
 
 
 @router.post("/api/v1/snippet/run")

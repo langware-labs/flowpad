@@ -7,6 +7,11 @@ import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
 import type { AgenticProcess } from '@sdk';
 import { useEffect } from 'react';
 
+// The annotator popup stands in as "the user kept the image unchanged".
+vi.mock('@src/components/image-annotator/annotate-files', () => ({
+  annotateImageFiles: vi.fn((files: File[]) => Promise.resolve(files)),
+}));
+
 function Harness({
   running = false,
   onStop,
@@ -312,5 +317,36 @@ describe('CompactExecutionInput drafts across view modes', () => {
 
     rerender(<Harness draftScope="proc-1" />);
     expect(input().value).toBe('meant for proc-1');
+  });
+});
+
+describe('CompactExecutionInput image paste with no owner hook', () => {
+  afterEach(cleanup);
+
+  const pasteImage = () => {
+    const png = new File(['png'], 'image.png', { type: 'image/png' });
+    fireEvent.paste(input(), {
+      clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => png }], files: [] },
+    });
+  };
+
+  it('an annotated pasted image becomes a chip that rides the next send', async () => {
+    const onSend = vi.fn();
+    render(<Harness allowAttachments onSend={onSend} />);
+    pasteImage();
+    const chip = await screen.findByText(/^screenshot-.*\.png$/);
+    expect(chip).toBeTruthy();
+    fireEvent.change(input(), { target: { value: 'what is this?' } });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const [text, files] = onSend.mock.calls[0];
+    expect(text).toBe('what is this?');
+    expect(files.map((f: File) => f.type)).toEqual(['image/png']);
+  });
+
+  it('without attachments an image paste is left to the browser', () => {
+    render(<Harness />);
+    pasteImage();
+    expect(screen.queryByText(/^screenshot-/)).toBeNull();
   });
 });

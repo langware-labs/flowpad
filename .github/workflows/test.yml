@@ -47,6 +47,22 @@ on:
         type: boolean
         required: false
         default: true
+      e2e-only:
+        description: 'Iterate on one E2E failure: run ONLY this tier (skips backend and frontend jobs too)'
+        type: choice
+        required: false
+        default: ''
+        options: ['', vitest, first-run-setup, context-folders, navigation]
+      e2e-grep:
+        description: 'With e2e-only: Playwright --grep (a test title substring)'
+        type: string
+        required: false
+        default: ''
+      backend-k:
+        description: 'pytest -k for the backend jobs: run only matching tests (unit + api both filter on it)'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -74,7 +90,7 @@ jobs:
     # growth. Widening timeout-minutes is still the wrong lever: the cap is
     # what reported both times that the tier had outgrown its runner.
     name: backend (pytest unit) ${{ matrix.shard }}/4
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.backend-tests }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -96,10 +112,11 @@ jobs:
           tier: unit
           shard: ${{ matrix.shard }}
           shards: '4'
+          k: ${{ inputs.backend-k }}
 
   backend-api:
     name: backend (pytest api)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.backend-tests }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.backend-tests && inputs.e2e-only == '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -107,10 +124,11 @@ jobs:
       - uses: ./.github/actions/backend-tests
         with:
           tier: api
+          k: ${{ inputs.backend-k }}
 
   frontend-tests:
     name: frontend (tsc + vitest unit + i18n)
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.frontend-tests }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (inputs.frontend-tests && inputs.e2e-only == '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -137,3 +155,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/e2e-tests
+        with:
+          only: ${{ inputs.e2e-only }}
+          grep: ${{ inputs.e2e-grep }}

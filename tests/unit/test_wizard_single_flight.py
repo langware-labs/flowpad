@@ -151,3 +151,64 @@ async def test_a_failing_run_still_releases_the_slot(monkeypatch, tmp_path):
     monkeypatch.setattr(wizard_execute, "run_wizard", _ok)
     result = await execute_wizard(WIZARD_ID, SPEC, "/a/wizard/slot-probe", trusted=True, subject_entity=None)
     assert result.detail == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_one_wizard_runs_for_two_targets_at_once_each_with_its_own_record(monkeypatch, tmp_path):
+    """A setup wizard is declared once and run per thing it sets up: two agents' channels are two
+    runs — neither is "already running" for the other, each keeps its own record, and each gets the
+    inputs its caller put in scope."""
+    monkeypatch.setattr(wizard_execute, "run_dir", lambda key: tmp_path / key)
+    recorded: dict[str, str] = {}
+    monkeypatch.setattr(wizard_execute, "record_result", lambda key, result: recorded.__setitem__(key, result.detail))
+
+    both_started = asyncio.Barrier(2)
+    seen: list[tuple[str, dict]] = []
+
+    async def _held_together(spec, *, activity_path, inputs, **kwargs):
+        seen.append((activity_path, inputs))
+        await both_started.wait()  # deadlocks if the second target were refused as busy
+        return WizardResult.satisfied(f"set up {inputs['source']}")
+
+    monkeypatch.setattr(wizard_execute, "run_wizard", _held_together)
+
+    run = lambda target: execute_wizard(  # noqa: E731
+        WIZARD_ID,
+        SPEC,
+        "/a/wizard/slot-probe",
+        trusted=True,
+        subject_entity=None,
+        target=target,
+        inputs={"source": target},
+    )
+    first, second = await asyncio.wait_for(asyncio.gather(run("data_source:a"), run("data_source:b")), timeout=5)
+
+    assert (first.ok, second.ok) == (True, True)
+    assert recorded == {
+        f"{WIZARD_ID}/data_source_a": "set up data_source:a",
+        f"{WIZARD_ID}/data_source_b": "set up data_source:b",
+    }
+    paths = {path for path, _ in seen}
+    assert len(paths) == 2 and all(p.startswith(f"wizard-slot-probe-{WIZARD_ID}-data_source_") for p in paths)
+
+
+@pytest.mark.asyncio
+async def test_the_same_target_twice_is_still_one_slot(monkeypatch, tmp_path):
+    monkeypatch.setattr(wizard_execute, "run_dir", lambda key: tmp_path / key)
+    monkeypatch.setattr(wizard_execute, "record_result", lambda key, result: None)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def _slow(spec, **kwargs):
+        started.set()
+        await release.wait()
+        return WizardResult.satisfied("held")
+
+    monkeypatch.setattr(wizard_execute, "run_wizard", _slow)
+    first = asyncio.create_task(
+        execute_wizard(WIZARD_ID, SPEC, "", trusted=True, subject_entity=None, target="data_source:a")
+    )
+    await asyncio.wait_for(started.wait(), timeout=5)
+    second = await execute_wizard(WIZARD_ID, SPEC, "", trusted=True, subject_entity=None, target="data_source:a")
+    assert second.ran is False and "already running" in second.detail
+    release.set()
+    assert (await first).ok

@@ -5,6 +5,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
+import { MarkdownView } from '@src/components/markdown-view';
 import { fieldsOf, useAskQuestion } from './use-ask-question';
 
 /**
@@ -79,12 +80,11 @@ export default function AskView() {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <p className="text-sm text-muted-foreground">
-          <Trans>Loading…</Trans>
+          <Trans>This question is no longer waiting.</Trans>
         </p>
       </div>
     );
   }
-
   return (
     <div className="flex h-full items-center justify-center p-6" data-testid="ask-view">
       <div className="flex w-full max-w-md flex-col gap-4">
@@ -99,6 +99,11 @@ export default function AskView() {
           ) : (
             <p className="text-xs text-muted-foreground">{question.op}</p>
           )}
+          {question.guide ? (
+            <div className="mt-2 rounded border bg-muted/30 p-3 text-sm" data-testid="ask-guide">
+              <MarkdownView value={question.guide} compact />
+            </div>
+          ) : null}
           {wizardId && (
             <button
               type="button"
