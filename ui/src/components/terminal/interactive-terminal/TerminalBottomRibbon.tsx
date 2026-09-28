@@ -6,7 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { BookMarked, ChevronDown, Eye, FileText } from 'lucide-react';
+import { BookMarked, ChevronDown, FileText, Layers } from 'lucide-react';
 import { EntryIcon, entryLabel } from '@src/pages/flow-page/display-history-button';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
@@ -271,81 +271,71 @@ const ArtifactsChip: React.FC<{
 };
 
 /**
- * "Shown" chip — what this run has put in front of the user with `flow show`,
+ * "Shown" stack — what this run has put in front of the user with `flow show`,
  * beside the Open-Plan chip. It replaces the glyph that used to sit on the
  * process's tab chip: the tab strip is for tabs, and a run's output belongs on
  * the run's own ribbon.
  *
- * The button opens the newest show; when there is more than one, the chevron
- * lists the whole `display_stack` newest-first with an "ago" stamp.
+ * One button with a count; clicking it lists the whole `display_stack`
+ * newest-first with an "ago" stamp, and a row opens that target as a tab. The
+ * stack rides on the process entity (backend-capped at 50), so this costs no
+ * fetch, and the rows mount only while the popover is open.
  */
-const SHOWN_CHIP_CLASSES = 'h-6 text-sky-400 border-sky-400/40 hover:border-sky-400 hover:text-sky-300';
-
 const ShownChip: React.FC<{
   shown: readonly DisplayEntry[];
   onOpen: (entry: DisplayEntry) => void;
 }> = ({ shown, onOpen }) => {
   const { t } = useLingui();
-  // Stored oldest-first; list newest-first.
-  const ordered = [...shown].reverse();
-  const latest = ordered[0];
-  const hasMore = ordered.length > 1;
+  const [open, setOpen] = React.useState(false);
   return (
-    <TooltipProvider delayDuration={400}>
-      <div className="flex items-center" data-testid="ribbon-shown">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onOpen(latest)}
-              data-testid="ribbon-shown-latest"
-              className={cn(SHOWN_CHIP_CLASSES, 'gap-1.5 px-2 text-[11px]', hasMore && 'rounded-e-none border-e-0')}
-            >
-              <Eye className="h-3.5 w-3.5" />
-              <span className="max-w-[10rem] truncate">{entryLabel(latest)}</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
-            <Trans>Open the last thing shown</Trans>
-          </TooltipContent>
-        </Tooltip>
-        {hasMore && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                aria-label={t`Everything this run has shown`}
-                data-testid="ribbon-shown-list"
-                className={cn(SHOWN_CHIP_CLASSES, 'rounded-s-none px-1')}
-              >
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" side="top" className="w-72 p-1">
-              <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
-                {ordered.map((entry, i) => {
-                  const ago = formatTimeAgo(entry.shown_at);
-                  return (
-                    <button
-                      key={`${entry.shown_at ?? ''}:${i}`}
-                      type="button"
-                      onClick={() => onOpen(entry)}
-                      data-testid="ribbon-shown-row"
-                      className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start hover:bg-accent"
-                    >
-                      <EntryIcon entry={entry} />
-                      <span className="min-w-0 flex-1 truncate text-xs text-foreground">{entryLabel(entry)}</span>
-                      {ago && <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{ago}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            </PopoverContent>
-          </Popover>
-        )}
-      </div>
-    </TooltipProvider>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          data-testid="ribbon-shown"
+          aria-label={t`Everything this run has shown`}
+          title={t`Everything this run has shown`}
+          className="h-6 gap-1.5 border-sky-400/40 px-2 text-[11px] text-sky-400 hover:border-sky-400 hover:text-sky-300"
+        >
+          <Layers className="h-3.5 w-3.5" />
+          <span className="tabular-nums">{shown.length}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" side="top" className="w-72 p-1">
+        <ShownRows
+          shown={shown}
+          onOpen={(entry) => {
+            setOpen(false);
+            onOpen(entry);
+          }}
+        />
+      </PopoverContent>
+    </Popover>
   );
 };
+
+const ShownRows: React.FC<{
+  shown: readonly DisplayEntry[];
+  onOpen: (entry: DisplayEntry) => void;
+}> = ({ shown, onOpen }) => (
+  // Stored oldest-first; list newest-first.
+  <div className="flex max-h-72 flex-col gap-0.5 overflow-y-auto">
+    {[...shown].reverse().map((entry, i) => {
+      const ago = formatTimeAgo(entry.shown_at);
+      return (
+        <button
+          key={`${entry.shown_at ?? ''}:${i}`}
+          type="button"
+          onClick={() => onOpen(entry)}
+          data-testid="ribbon-shown-row"
+          className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-start hover:bg-accent"
+        >
+          <EntryIcon entry={entry} />
+          <span className="min-w-0 flex-1 truncate text-xs text-foreground">{entryLabel(entry)}</span>
+          {ago && <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{ago}</span>}
+        </button>
+      );
+    })}
+  </div>
+);
