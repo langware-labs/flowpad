@@ -35,8 +35,12 @@ function leafRoute(url: string): string | undefined {
 describe('entity landing route', () => {
   it('catches the post-accept URL the hub emits for any type', () => {
     expect(leafRoute(`/agent/${ID}`)).toBe(':entityType/:entityId');
-    expect(leafRoute(`/project/${ID}`)).toBe(':entityType/:entityId');
+    expect(leafRoute(`/team/${ID}`)).toBe(':entityType/:entityId');
     expect(leafRoute(`/foo/not-a-uuid`)).toBe(':entityType/:entityId');
+  });
+
+  it('sends a project to its own share landing, not the generic one', () => {
+    expect(leafRoute(`/project/${ID}`)).toBe('project/:projectId');
   });
 
   it('leaves every existing two-segment route where it was', () => {

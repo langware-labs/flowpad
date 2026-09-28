@@ -1,5 +1,5 @@
 import { useLingui } from '@lingui/react/macro';
-import { cloudManager, dataManager, navigator as sdkNavigator, type TypeId } from '@sdk';
+import { type AnyEntity, cloudManager, dataManager, navigator as sdkNavigator, type TypeId } from '@sdk';
 import { useAuth, useEntity } from '@sdk/react/hooks';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -43,10 +43,31 @@ const HubEntityLanding: React.FC = () => {
   // An unregistered type cannot be read, only 422'd — skip the round trip.
   const known = !!typeId && !!dataManager.getTypeInfo(typeId.type);
   if (!typeId || !known) return <EntityNotFound type={entityType ?? ''} id={entityId ?? ''} />;
-  return <LoadedEntityLanding key={typeId.toString()} typeId={typeId} />;
+  return (
+    <EntityLandingGate key={typeId.toString()} typeId={typeId}>
+      {(entity) => (
+        <EntityLandingView
+          typeId={typeId}
+          model={entityLandingModel(
+            entityLandingInputFrom(typeId, entity, dataManager.getTypeInfo(typeId.type)?.cloud_file_transport),
+          )}
+        />
+      )}
+    </EntityLandingGate>
+  );
 };
 
-const LoadedEntityLanding: React.FC<{ typeId: TypeId }> = ({ typeId }) => {
+/**
+ * Everything an entry page does before it has an entity to show, shared by the
+ * generic landing and the type-specific ones (`ProjectShareLanding`): read it,
+ * spin while that runs, take a 401 through one login round trip (as
+ * MessageLanding does), then the wrong-account panel; a dead link gets the
+ * not-found page. `children` renders the entity once it is there.
+ */
+export const EntityLandingGate: React.FC<{ typeId: TypeId; children: (entity: AnyEntity) => React.ReactNode }> = ({
+  typeId,
+  children,
+}) => {
   const { t } = useLingui();
   const [redirecting, setRedirecting] = useState(false);
   const [wrongAccount, setWrongAccount] = useState(false);
@@ -89,10 +110,7 @@ const LoadedEntityLanding: React.FC<{ typeId: TypeId }> = ({ typeId }) => {
     );
   }
 
-  const model = entityLandingModel(
-    entityLandingInputFrom(typeId, entity, dataManager.getTypeInfo(typeId.type)?.cloud_file_transport),
-  );
-  return <EntityLandingView typeId={typeId} model={model} />;
+  return <>{children(entity)}</>;
 };
 
 const EntityLandingView: React.FC<{ typeId: TypeId; model: ReturnType<typeof entityLandingModel> }> = ({
@@ -178,7 +196,7 @@ const EntityLandingView: React.FC<{ typeId: TypeId; model: ReturnType<typeof ent
   );
 };
 
-const CopyLine: React.FC<{ text: string }> = ({ text }) => {
+export const CopyLine: React.FC<{ text: string }> = ({ text }) => {
   const { t } = useLingui();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
