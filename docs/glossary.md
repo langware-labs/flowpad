@@ -172,7 +172,14 @@ worker boot, so attaching to a running process flips `restart_required` rather t
 
 * **`SourceItemSpec`** — ours. The ingestion envelope a data-source driver emits and the `asset_spec` of `SourceItem` (the row): the fields the DB medium persists. Not an entity; a `DataSpec`.
 * **`sent_at` / event time** — ours. A message's EVENT time (when the human sent it on its channel) as opposed to the PROCESSING clocks (`created_date`/`updated_date` — when our row was written). Projection-owned on `FlowMessage`; read everywhere through the one rule `event_time = sent_at or updated_date or created_date`; never render a message's processing clocks directly. See `docs/data-management/stream-inbox-projection.md`.
-* **`MessageSpec`** — ours. The channel-generic OUTBOUND message value (`flow_sdk/builtin/source_item.py`): what a script hands `blocks.StreamInbox.send`. Subclasses add what their channel needs and own their `reply_to` constructor, because channels disagree on who a reply targets — `EmailMessageSpec` adds `subject` and replies to the AUTHOR's address; `TelegramMessageSpec` replies to the CHAT. Inbound stays `SourceItemSpec`.
+* **`MessageSpec`** — ours. The channel-generic OUTBOUND message value (`flow_sdk/builtin/source_item.py`): what a script hands `blocks.StreamInbox.send`. Subclasses add what their channel needs and own their `reply_to` constructor, because channels disagree on who a reply targets — `EmailMessageSpec` adds `subject` and replies to the AUTHOR's address; `TelegramMessageSpec` replies to the CHAT. `files` are `MessageFile`s (a path, `as_`, `caption`; a bare path string is accepted) and `quote=False` answers without quoting. Inbound stays `SourceItemSpec`.
+* **Message files / reactions** — ours, the generic channel verbs (`docs/snippets/message-channels.md`).
+  Three nouns for a file, not one: `MessageFile` is the OUTBOUND value a caller hands a send; `MessageFileData`
+  is the contract's payload for a file riding a message (inbound: the provider's handle and the local copy the
+  runtime staged; outbound: a `local` file); `FlowMessage.Attachment` is the message ROW's attachment (FILE /
+  TYPE_ID / PROMPT) a bubble renders — the projection turns the first into the last. A **reaction** is an
+  emoji on a message: `ReactionData` is the channel's report (`SET` / `ADD` / `REMOVE`), `MessageReaction`
+  the state it folds into (`SourceItem.reactions`, projected onto `FlowMessage.reactions`) — never a message.
 * **`MessageBlock`** — ours. The process-local prompt/reply block (`flow_sdk/blocks/message_block.py`): `send(prompt)` waits while one `listen()` consumer handles the corresponding `MessageRequest` DataSpec and calls `reply(text)`; the source owns the one-shot correlation. `Agent.respond_to(source)` owns that loop and the private per-thread process runner. It has no address or rows and is not a `DataSource`, stream inbox, mailbox, provider connection, `MessageSpec`, or `FlowMessage`.
 * **`ObjectSource` / `RecordSource` / `MessageSource`** — ours, the three source FAMILIES
   (`flow_sdk/sources/families.py`): the base a driver's class extends, i.e. what its items ARE.
@@ -180,8 +187,9 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   git). `RecordSource` — records (`RecordData`), kept as `SourceItem` rows updated in place (rss,
   hackernews; a Jira issue tracker would be one). `MessageSource` — a `RecordSource` whose records are
   `MessageData` in conversations, threaded into the stream inbox and answered through the source
-  (every channel). Declared, unlike the access protocols (`ByteStore`, `Mutable`, `Messaging`), which
-  stay discovered; `DataDriver.family` serializes it. A provider with two kinds of stream is two
+  (every channel). Declared, unlike the access protocols (`Openable`, `ByteStore`, `Mutable`, `Messaging`,
+  `Reacting`), which stay discovered; a `MessageSource` also declares its channel's traits (`files`,
+  `quotes`, `reactions_per_actor`); `DataDriver.family` serializes it. A provider with two kinds of stream is two
   drivers (Jira: issues are records, their comments messages). Not `ReflectMode.RECORD`, which is a
   destination.
 * **`Conversation`** (on a channel) — ours; THE conversation unit, as its channel defines it: an email topic, a chat, a phone call, a Slack thread. `address` is who it is with (set when it starts: the sender of an inbound first message, the recipient of one we sent), `started_at` / `ended_at` when it began and ended (a call hung up, a thread retired by its channel's timeout). `DataSource.start(to=, body=)` opens one and returns it; `Conversation.send(body)` continues it — to whoever last wrote, else to its `address`. The contract spells it `MessageData.conversation`; the agent's session is `conversation-<id>`.
