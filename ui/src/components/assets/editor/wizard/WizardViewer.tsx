@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
-import { ActionInfo, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
+import { ActionInfo, AgenticProcess, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import {
   CheckCircle2,
@@ -28,7 +28,7 @@ import { useSideWindows } from '@src/navigation/useSideWindows';
 import { WizardDebugger } from './WizardDebugger';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
-import { rungTrail, stepStatus, useWizardRun } from './useWizardRun';
+import { agentExecutorOf, rungTrail, stepStatus, useWizardRun } from './useWizardRun';
 import { LIVE_STATE, type WizardDoc } from './wizard-doc';
 
 /** The document beside `wizard.json` — the file the editor owns. */
@@ -66,6 +66,41 @@ const STEP_STYLE: Record<string, { Icon: typeof Circle; className: string }> = {
 function WizardIcon({ className }: { className?: string }) {
   const Icon = iconForType(Wizard.type);
   return <Icon className={className} />;
+}
+
+/** A friendly name for the harness that actually ran the agent rung. Local to this display —
+ *  not `WORKER_LABELS` — because that table's names are chosen for the harness picker, not for
+ *  reading beside a model slug ("Claude" there would read as a partial sentence here). */
+const AGENT_HARNESS_LABEL: Record<string, string> = {
+  claude_code: 'Claude Code',
+  claude: 'Claude Code',
+  codex: 'Codex',
+  copilot: 'Copilot',
+  opencode: 'OpenCode',
+  deepagents: 'Deep agent',
+};
+
+/** "(harness: model-slug)" beside the agent rung — the SETTLED answer to "which agent, which
+ *  model actually ran", read off the executor process itself rather than re-derived, so it can
+ *  never disagree with what the spawn's own env injection used (see
+ *  `api_auth.py::binding_for_candidate`, the one place that resolves it). No live watch: this is
+ *  a historical rung of a step that has already settled, not a value expected to keep changing. */
+function AgentRungLabel({ executorTypeId }: { executorTypeId: string }) {
+  const typeId = useMemo(() => {
+    try {
+      return new TypeId(executorTypeId);
+    } catch {
+      return null;
+    }
+  }, [executorTypeId]);
+  const { data: process } = useEntity<AgenticProcess>(typeId, { enabled: !!typeId });
+  if (!process?.resolved_model_slug) return null;
+  const label = (process.worker_type && AGENT_HARNESS_LABEL[process.worker_type]) || process.worker_type || 'agent';
+  return (
+    <span className="mt-0.5 shrink-0 text-xs text-muted-foreground/60" data-testid="wizard-step-agent-model">
+      ({label}: {process.resolved_model_slug})
+    </span>
+  );
 }
 
 export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }) {
@@ -317,6 +352,7 @@ function WizardViewerBody({
               // in-flight case, so this only shows once there's a durable
               // answer and nothing is actively overriding it.
               const trail = stepIsLive ? [] : rungTrail(outcome);
+              const agentExecutor = trail.includes('agent') ? agentExecutorOf(outcome) : null;
               return (
                 <li key={step_id} className="flex items-start gap-2 text-sm" data-testid={`wizard-step-${step_id}`}>
                   <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
@@ -329,6 +365,7 @@ function WizardViewerBody({
                       ({trail.join(' → ')})
                     </span>
                   )}
+                  {agentExecutor && <AgentRungLabel executorTypeId={agentExecutor} />}
                   {live?.current || outcome?.detail ? (
                     <span className="min-w-0 flex-1 text-muted-foreground">— {live?.current || outcome?.detail}</span>
                   ) : null}

@@ -809,6 +809,19 @@ class AgenticProcess(Entity):
         description="Process-local worker hook events enabled for this process.",
     )
     worker_type: WorkerType | None = APIField(default=None)
+    resolved_model_slug: str | None = APIField(
+        default=None,
+        description=(
+            "The concrete model slug this process's spawn actually resolved to (e.g. "
+            "'anthropic/claude-haiku-4.5'), as opposed to the tier ('sm'/'md'/'lg') or literal "
+            "slug requested in cli_config.model. Stamped once at spawn, from "
+            "WorkerApiAuth.model_slug -- the SAME value the env injection used, so a display "
+            "surface (a wizard step, a transcript header) never has to re-derive the resolver's "
+            "answer and risk disagreeing with what actually ran. None for a DEVICE source (the "
+            "vendor CLI's own account; there is no per-call slug to report) or when nothing has "
+            "spawned yet."
+        ),
+    )
     plan_path: str | None = APIField(
         default=None,
         description=(
@@ -989,7 +1002,9 @@ class AgenticProcess(Entity):
         started = await proc.start_pty()
         if isinstance(started, ApiFailResponse):
             return PromptResult.not_yet(
-                started.message or "The agent could not start.", ran=False, executor=str(proc.typeid),
+                started.message or "The agent could not start.",
+                ran=False,
+                executor=str(proc.typeid),
             )
         try:
             await proc.send(instruction)
@@ -3024,7 +3039,8 @@ class AgenticProcess(Entity):
             # NOT_FOUND, which `flow terminal run` already exits as 4 — and the
             # caller reads why from the same place it reads every other outcome.
             missing = CliResult.not_found(
-                f"There is no terminal {shell_id!r}." if shell_id
+                f"There is no terminal {shell_id!r}."
+                if shell_id
                 else "No open terminal — run `flow terminal open` first.",
                 command=command,
             )

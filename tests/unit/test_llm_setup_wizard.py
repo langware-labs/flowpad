@@ -248,10 +248,11 @@ async def test_a_missing_tool_is_installed_only_after_send(platform):
 
     assert result.exit_code is ExitCode.OK
     assert machine.installed == EVERYTHING
-    assert machine.agents == [], "the plain command worked — the agent is never called"
-    # Where npm ships with node (brew, winget) its check then holds and nobody
-    # is asked; on apt it is its own package, so it is its own question.
-    assert asked == (["ask-install-node", "ask-install-npm"] if platform == "linux" else ["ask-install-node"])
+    # node's own command is deliberately broken (see its setup.md), so the
+    # agent installs it — not the bundled `brew install node` / winget command,
+    # so npm is not brought along for free the way a working one would.
+    assert machine.agents == ["node"]
+    assert asked == ["ask-install-node", "ask-install-npm"]
 
 
 @PLATFORMS
@@ -392,17 +393,19 @@ async def test_a_live_tab_connecting_during_the_grace_window_is_still_shown(monk
 
 @PLATFORMS
 async def test_a_failed_install_command_falls_back_to_the_agent(platform):
-    """jq's and ripgrep's install commands are broken on purpose (see their
-    setup.md). The command fails, the agent reaches the same goal, and the run
-    is a success — a rung covered by a later one is not a failure."""
-    machine = Machine(platform, EVERYTHING - {"jq", "ripgrep"})
-    result, asked = await _run(machine, platform, {"ask-install-jq": "yes", "ask-install-ripgrep": "yes"})
+    """jq's, ripgrep's, claude-code's and node's install commands are broken on
+    purpose (see their setup.md). The command fails, the agent reaches the same
+    goal, and the run is a success — a rung covered by a later one is not a
+    failure."""
+    broken = ("jq", "ripgrep", "claude-code", "node")
+    machine = Machine(platform, EVERYTHING - set(broken))
+    result, asked = await _run(machine, platform, {f"ask-install-{tool}": "yes" for tool in broken})
 
     assert result.exit_code is ExitCode.OK, result.detail
-    assert asked == ["ask-install-jq", "ask-install-ripgrep"]
-    assert machine.agents == ["jq", "ripgrep"]
+    assert asked == [f"ask-install-{tool}" for tool in broken]
+    assert machine.agents == list(broken)
     assert machine.installed == EVERYTHING
-    for tool in ("jq", "ripgrep"):
+    for tool in broken:
         install = result.steps[tool].steps["install"]
         assert install.ok and isinstance(install, PromptResult), "the agent's answer, from the one install step"
         assert "after the cli attempt" in install.detail

@@ -269,6 +269,11 @@ async def run_turn(args: argparse.Namespace, prompt: str, emitter: Emitter) -> i
 
     workdir = Path(args.workdir).resolve()
     model = load_factory(args.model_factory)(args.model)
+    # Captured before the pop below: a model-rejected retry needs both to ask the hub what its
+    # chain actually allows, and to rebuild the model against the fallback slug. Never written
+    # back to the environment except for that one rebuild, immediately followed by another pop.
+    deepagents_base_url = os.environ.get(BASE_URL_ENV, "").strip()
+    deepagents_api_key = os.environ.get(API_KEY_ENV, "").strip()
     # The funding token is the MODEL's, not the shell's: what the agent executes must not see it.
     os.environ.pop(API_KEY_ENV, None)
 
@@ -304,56 +309,78 @@ async def run_turn(args: argparse.Namespace, prompt: str, emitter: Emitter) -> i
     checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
 
     async with AsyncSqliteSaver.from_conn_string(str(checkpoint_db)) as saver:
-        agent = create_deep_agent(
-            model,
-            tools=tools or None,
-            system_prompt=system_prompt_for(workdir, instructions),
-            subagents=subagents or None,
-            skills=skills or None,
-            memory=memory or None,
-            backend=backend,
-            checkpointer=saver,
-        )
-        emitter.emit(
-            "init",
-            model=args.model,
-            cwd=str(workdir),
-            resumed=resumed,
-            tools=[getattr(t, "name", str(t)) for t in tools],
-            subagents=[s["name"] for s in subagents],
-            skills=skills,
-            mcp_servers=mcp_names,
-            runner_version=RUNNER_VERSION,
-            deepagents_version=deepagents_version(),
-        )
-        emitter.emit("user", text=prompt)
-
-        translator = TurnTranslator(emitter, args.model)
-        config = {"configurable": {"thread_id": args.session_id}}
-        is_error = False
-        try:
-            async for namespace, update in agent.astream(
-                {"messages": [{"role": "user", "content": prompt}]},
-                config,
-                stream_mode="updates",
-                subgraphs=True,
-            ):
-                translator.feed(namespace, update)
-        except Exception as exc:  # noqa: BLE001 — ANY failure must still end the turn with a ``result``
-            is_error = True
-            emitter.emit("error", message=f"{type(exc).__name__}: {exc}", kind=_error_kind(exc))
-        if not is_error and translator.num_turns and not translator.answered:
-            # Checked on the SHAPE, not a finish_reason whitelist: an empty completion has been
-            # seen arriving with ``finish_reason=stop``.
-            is_error = True
-            emitter.emit(
-                "error",
-                message=(
-                    "The model's last message neither called a tool nor answered "
-                    f"(finish_reason={translator.finish_reason!r}): the turn was cut short upstream."
-                ),
-                kind="incomplete",
+        current_model = args.model
+        current_llm = model
+        # One retry, only for the one failure a fallback can fix: the endpoint's chain (not the
+        # leaf row a spawn resolves against) rejected THIS model. Anything else — auth, a real
+        # network failure, an empty completion — reports exactly as it always did.
+        tried_fallback = False
+        while True:
+            agent = create_deep_agent(
+                current_llm,
+                tools=tools or None,
+                system_prompt=system_prompt_for(workdir, instructions),
+                subagents=subagents or None,
+                skills=skills or None,
+                memory=memory or None,
+                backend=backend,
+                checkpointer=saver,
             )
+            emitter.emit(
+                "init",
+                model=current_model,
+                cwd=str(workdir),
+                resumed=resumed,
+                tools=[getattr(t, "name", str(t)) for t in tools],
+                subagents=[s["name"] for s in subagents],
+                skills=skills,
+                mcp_servers=mcp_names,
+                runner_version=RUNNER_VERSION,
+                deepagents_version=deepagents_version(),
+            )
+            emitter.emit("user", text=prompt)
+
+            translator = TurnTranslator(emitter, current_model)
+            config = {"configurable": {"thread_id": args.session_id}}
+            is_error = False
+            rejection: Exception | None = None
+            try:
+                async for namespace, update in agent.astream(
+                    {"messages": [{"role": "user", "content": prompt}]},
+                    config,
+                    stream_mode="updates",
+                    subgraphs=True,
+                ):
+                    translator.feed(namespace, update)
+            except Exception as exc:  # noqa: BLE001 — ANY failure must still end the turn with a ``result``
+                is_error = True
+                rejection = exc
+                emitter.emit("error", message=f"{type(exc).__name__}: {exc}", kind=_error_kind(exc))
+            if not is_error and translator.num_turns and not translator.answered:
+                # Checked on the SHAPE, not a finish_reason whitelist: an empty completion has been
+                # seen arriving with ``finish_reason=stop``.
+                is_error = True
+                emitter.emit(
+                    "error",
+                    message=(
+                        "The model's last message neither called a tool nor answered "
+                        f"(finish_reason={translator.finish_reason!r}): the turn was cut short upstream."
+                    ),
+                    kind="incomplete",
+                )
+
+            if tried_fallback or rejection is None or not _model_rejected(rejection):
+                break
+            fallback = await _fallback_model(current_model, deepagents_base_url, deepagents_api_key)
+            if not fallback:
+                break
+            tried_fallback = True
+            current_model = fallback
+            os.environ[API_KEY_ENV] = deepagents_api_key
+            try:
+                current_llm = load_factory(args.model_factory)(fallback)
+            finally:
+                os.environ.pop(API_KEY_ENV, None)
 
     emitter.emit(
         "result",
@@ -364,6 +391,68 @@ async def run_turn(args: argparse.Namespace, prompt: str, emitter: Emitter) -> i
         usage=translator.totals,
     )
     return 1 if is_error else 0
+
+
+#: The hub's own wording (`flowpad-hub`'s gateway) when a model is rejected by an endpoint's
+#: (or one of its ancestors') ``models_allow``/``models_deny`` — never a code, so this is the
+#: only thing a caller can match on. See ``_fallback_model``.
+_MODEL_NOT_ALLOWED_MARKER = "not allowed by endpoint"
+
+
+def _model_rejected(exc: Exception) -> bool:
+    return _MODEL_NOT_ALLOWED_MARKER in str(exc)
+
+
+def _chain_url(invoke_base_url: str) -> str | None:
+    """``{hub}/api/v1/graph/llm_endpoint/<id>/invoke/v1`` (``FLOWPAD_DEEPAGENTS_BASE_URL``) →
+    ``{hub}/api/v1/graph/llm_endpoint/<id>/chain``, or ``None`` for a non-hub base URL (a raw
+    OpenRouter key has no chain to ask about — the rejection there is a real "unknown model",
+    not a budget restriction)."""
+    import re
+
+    m = re.match(r"^(https?://[^/]+/api/v1/graph/llm_endpoint/[0-9a-fA-F-]+)/invoke/v1/?$", invoke_base_url.strip())
+    return f"{m.group(1)}/chain" if m else None
+
+
+async def _fallback_model(rejected_model: str, base_url: str, api_key: str) -> str | None:
+    """A model the endpoint's CHAIN actually allows, or ``None`` when there is nothing to try.
+
+    ``base_url``'s own row can show no restriction at all (``filters.models_allow: []``) while
+    still drawing from a parent pool (a team, an org) that has one — the hub enforces the whole
+    chain at invoke time, but a spawn only ever fetches the leaf row, so the tier default can
+    name a model that was never going to work and nothing local could have caught. The hub's
+    ``chain`` action is the one place that already flattens a parent's restriction onto its
+    child (``effective_filters`` — the same field the LLM Sources screen renders as "Effective
+    filters at this endpoint"), so this asks it directly with the same bearer a spawn already
+    uses to invoke, rather than re-deriving something only the hub actually knows.
+
+    Best-effort: any failure (network, shape, no hub, no literal entry to fall back to) returns
+    ``None`` and the caller reports the original rejection — this is a second chance, not a
+    dependency the turn should die on.
+    """
+    url = _chain_url(base_url)
+    if not url or not api_key:
+        return None
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {api_key}"})
+        resp.raise_for_status()
+        body = resp.json()
+    except Exception:  # noqa: BLE001 — best-effort; see docstring
+        return None
+    data = body.get("data") if isinstance(body, dict) and "data" in body else body
+    hops = data.get("hops") if isinstance(data, dict) else None
+    entry = hops[0] if isinstance(hops, list) and hops else None
+    filters = entry.get("effective_filters") if isinstance(entry, dict) else None
+    allow = filters.get("models_allow") if isinstance(filters, dict) else None
+    if not isinstance(allow, list) or not allow:
+        return None
+    # A glob (``anthropic/claude-*``) names a family, not a callable slug; only a literal entry
+    # is something this runner could actually pass as ``model=``.
+    literal = next((m for m in allow if isinstance(m, str) and "*" not in m), None)
+    return literal if literal and literal != rejected_model else None
 
 
 def _error_kind(exc: Exception) -> str:

@@ -601,9 +601,20 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
   const loggedIn = login.status === 'logged_in';
   const signingIn = busy || login.status === 'logging_in';
   // Signed in ≠ funding something: a hub account with no bound endpoint is signed in but has
-  // nothing to give out (see `active_for`, the hub's own answer to "who does this fund right
-  // now"). Both are real, honest states this row's click has to tell apart.
-  const isFunding = (funding?.active_for.length ?? 0) > 0;
+  // nothing to give out. Both are real, honest states this row's click has to tell apart.
+  //
+  // `active_for` alone under-reports this: it only counts a harness whose resolved source IS
+  // the endpoint the hub explicitly PUSHED to this box (`bind`) — it says nothing about a
+  // harness resolved via the user's own personal default allocation off the global root, which
+  // every signed-in account gets WITHOUT ever being explicitly bound to anything. A box that
+  // has no CLI harness installed at all is exactly the case that only has this: deepagents'
+  // own resolved source is real and spendable, `active_for` is empty (nothing was ever bound),
+  // and the row read "not funding anything" for a person who, in fact, was.
+  const isFunding =
+    (funding?.active_for.length ?? 0) > 0 ||
+    Object.values(funding?.resolved ?? {}).some(
+      (pick) => !!pick && funding?.endpoints[pick.endpoint_typeid]?.kind === 'hub',
+    );
 
   // The OAuth-style flow this awaits can settle `login.status` a moment after its own promise
   // resolves, not necessarily within it — watching the FLIP here (never on mount, when a
