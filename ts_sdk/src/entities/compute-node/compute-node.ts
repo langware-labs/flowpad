@@ -39,6 +39,7 @@ import {
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
+import type { NodeHealth } from '../service-endpoint';
 import { GitWorkdir } from '../git-workdir';
 
 /**
@@ -494,6 +495,12 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    */
   async upgradeApp(): Promise<AppUpgrade> {
     return this.ops<AppUpgrade>('upgrade-app');
+  }
+
+  /** Every service on this machine, checked now — each endpoint's result, in one report. */
+  async healthCheck(): Promise<NodeHealth> {
+    const action = new ActionInfo('health', ComputeNode.type, this.id, 'GET');
+    return dataManager.callAction<undefined, NodeHealth>(action);
   }
 
   // ── setting a box's project up ───────────────────────────────────────

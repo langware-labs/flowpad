@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     # Runtime imports of Project stay function-local (circular import); this is
     # only so the "Project" annotations below resolve for linters/type checkers.
     from flow_sdk.builtin.project import Project
+    from flow_sdk.schema.data_spec.health_spec import NodeHealth
 
 from flow_sdk.api.api_types.api_field import APIField, EntityField, Sharing
 from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
@@ -782,6 +783,37 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         base = self.effective_attached(project_id, declared)
         await self._set_attached(project_id, [*base, env_var] if add else [n for n in base if n != env_var])
         return ApiSuccessResponse(data={"attached": self.attached_env_vars(project_id, declared)})
+
+    # ── health ────────────────────────────────────────────────────────────
+
+    async def service_endpoints(self) -> list:
+        """Every service this machine answers on: the endpoints of every deployment placed on it."""
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.builtin.service_endpoint import ServiceEndpoint  # noqa: PLC0415
+
+        endpoints = []
+        for deployment in await Deployment.get_all():
+            if deployment.compute_node_id == self.id:
+                endpoints.extend(e for e in await ServiceEndpoint.of_deployment(str(deployment.typeid)) if not e.remote)
+        return endpoints
+
+    async def health_check(self) -> "NodeHealth":
+        """Check every service on this machine, together. Each endpoint records its own change."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.schema.data_spec.health_spec import NodeHealth  # noqa: PLC0415
+
+        endpoints = await self.service_endpoints()
+        results = await asyncio.gather(*(e.health_check() for e in endpoints))
+        return NodeHealth(node_id=self.id, endpoints=list(results))
+
+    @action.get(action_name="health")
+    async def health_action(self) -> "ApiResponse":
+        """``GET compute_node/<id>/health`` — every service on this machine, checked now (a ``NodeHealth``).
+
+        The hub's control plane reads a box's report through this, over the box's loopback.
+        """
+        return ApiSuccessResponse(data=(await self.health_check()).model_dump(mode="json"))
 
     @action.post(action_name="keep-alive")
     async def keep_alive_action(self) -> "ApiResponse":

@@ -122,6 +122,24 @@ def _starting(deployment) -> Optional[int]:
     return None
 
 
+def loop_state(deployment) -> tuple[str, str]:
+    """The answering loop's health: ``alive`` while it holds its lock, ``starting`` while the process
+    typed for it is still importing, else ``failing``. The lock is the truth — no heartbeat involved."""
+    import fcntl  # noqa: PLC0415
+
+    path = _lock_path(str(deployment.id))
+    if path.is_file():
+        with open(path, encoding="utf-8") as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return "alive", ""
+            fcntl.flock(fh, fcntl.LOCK_UN)
+    if _starting(deployment) is not None:
+        return "starting", "the loop's process is starting"
+    return "failing", "no process runs this deployment's loop"
+
+
 def alive(deployment) -> bool:
     """Whether a process runs *deployment* now."""
     return pid_of(deployment) is not None
