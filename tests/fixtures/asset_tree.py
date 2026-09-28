@@ -75,10 +75,9 @@ ASSET_TREE_LAYOUT: tuple[NodeSpec, ...] = (
     NodeSpec("GIT", "git", "git", parent_key="P", link_scope="shared", assets={"skill": 1, "markdown": 1}),
     NodeSpec("A", "a", "project", parent_key="P", assets={"skill": 1, "subagent": 1}),
     NodeSpec("B", "b", "project", parent_key="A", assets={"markdown": 1, "task": 1}),
-    # Deliberately nested ON DISK inside B: B's path is a strict prefix of this
-    # one, so it is the only node that exercises the menu's longest-prefix
-    # attribution. `c_agent` must land here, never in B.
-    NodeSpec("C", "b/inner", "project", parent_key="B", assets={"subagent": 1}),
+    # B's context project, beside it on disk: projects do not nest, so a project
+    # inside B's folder cannot exist. `c_agent` is C's own and only accumulates into B.
+    NodeSpec("C", "c", "project", parent_key="B", assets={"subagent": 1}),
     NodeSpec("PLAIN", "plain", "plain", parent_key="P", assets={"markdown": 1}),
 )
 

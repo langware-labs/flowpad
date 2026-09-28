@@ -168,9 +168,9 @@ async def test_root_totals(tree):
     assert _total(root) == 12
 
 
-async def test_deepest_node_wins_for_nested_context_project(tree):
-    """C lives on disk INSIDE B, so B's path is a strict prefix of C's. The
-    agent there must be attributed to C alone, and only accumulate into B."""
+async def test_context_project_owns_its_agent_and_accumulates_into_its_parent(tree):
+    """C is B's context project. The agent there is C's own, and B only counts it
+    through the link."""
     root = (await _menu(tree))["root"]
     b, c = _node(tree, root, "B"), _node(tree, root, "C")
     assert _own(c, "subagent") == 1

@@ -294,11 +294,12 @@ async def join_projects(
                 # the FIRST. One folder, two project ids, depending on who asked.
                 by_cwd.setdefault(canonical, proj)
 
-    # A session running is not a project. A folder an agent ran in INSIDE another
-    # project (a service's per-user home, a subpackage someone opened a session in)
-    # belongs to that project; minting it its own row spun a project per folder.
+    # A session running is not a project, and projects do not nest. A folder an
+    # agent ran in INSIDE a project belongs to that project, and one that CONTAINS
+    # a project is not minted around it (``Project.save`` refuses both).
     claimed = set(by_cwd) | set(fs_by_cwd)
-    for cwd in [c for c in fs_by_cwd if c not in by_cwd and is_inside_any(c, claimed)]:
+    for cwd in [c for c in fs_by_cwd if c not in by_cwd and (
+            is_inside_any(c, claimed) or any(is_inside_any(m, {c}) for m in by_cwd))]:
         del fs_by_cwd[cwd]
 
     to_create: list[ProjectInfo] = []
