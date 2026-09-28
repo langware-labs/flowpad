@@ -151,21 +151,29 @@ async def index_one(
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     info = resolved.info
+    if not project_id:
+        try:
+            project_id = deepest_project_id_for_path(canonical_posix_path(resolved.root), await load_project_mounts())
+        except OSError:
+            project_id = None
+    if not scope:
+        scope = classify_path(resolved.root)
+        # ``classify_path`` knows only the server cwd as a project, so an asset in
+        # a workspace project (which lives under the user home) classifies as
+        # ``user``. A project that owns the path is authoritative; shipped
+        # ``system`` content stays system.
+        if project_id and scope != "system":
+            scope = "project"
     ref = FSRef(
         resolved.root,
         record_type=RecordType(resolved.type_name),
-        scope=scope or classify_path(resolved.root),
+        scope=scope,
         project_id=project_id,
         layout=resolved.layout,
     )
     record = info.record_for(ref, resolved.id)
     if record is None:
         return None
-    if not project_id:
-        try:
-            project_id = deepest_project_id_for_path(canonical_posix_path(resolved.root), await load_project_mounts())
-        except OSError:
-            project_id = None
     if project_id:
         object.__setattr__(record, "project_id", project_id)
     if not getattr(record, "parent_type_id", None):
