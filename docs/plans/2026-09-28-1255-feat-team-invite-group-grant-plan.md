@@ -127,6 +127,8 @@ Today the client expands a team into its members and sends each one a direct per
   - `ShareInvitedSpec.conversation_id` is filled from the conversation the client created.
   - `inviteFailure` changes rule. It returns an error only when nothing succeeded (no invited person and no granted team) and at least one person or team failed. Today it errors on any failed person, so a partial person failure is no longer thrown. U6 renders per-person failures from the result instead.
 
+- KTD8. **Inherited user rows keep their actions.** The popover can't tell a person who reaches the project through a team from a direct member, so remove and role change stay on every user row, and a refused removal or role change shows the hub's own message. (session-settled: user-directed — chosen over hiding actions on user rows whenever a team row exists, and over a hub roster provenance field: no hub change, and direct members stay fully manageable.)
+
 ### High-Level Technical Design
 
 Share with a person and a team, after this plan:
@@ -167,15 +169,8 @@ The team → conversation edge relies on KTD2 as well. Messages are graph childr
 | A team member has no invitation, so their client may have no local Project row. The chip's install state (`useLocalProject`) needs one. | U9 materializes the referenced project on the receiver when it's missing. |
 | The team is granted but its conversation or message fails. Members get access with no chip, and a re-share skips the team (KTD6). | The result reports granted with no conversation id, and the UI warns (U6, U7). Recovery is to remove the team and share again. |
 | If the roster read fails, `_hub_roster_statuses` returns an empty map. Everyone gets re-invited, and already-granted teams get a second conversation. The hub's own skip went away with `notify_by_message`. | Pre-existing fallback. Accepted for this PR. |
-| The hub roster lists people who inherit through the team as `type: user` rows, and the client can't tell them from direct members. | Open decision: see Open Questions. |
+| The hub roster lists people who inherit through the team as `type: user` rows, and the client can't tell them from direct members. | KTD8: keep the actions and show the hub's error when a removal or role change is refused. |
 | Existing team → org edges written before 8fe2106d8, and any edge re-roled since, are non-final. | Pre-existing and unchanged. Out of scope. |
-
-### Open Questions
-
-- **Inherited user rows in the members popover.** Blocks U6 only; the other units can proceed. The popover would offer remove and role change on each inherited person, but a DELETE for that person can't revoke access that comes through the team edge. The client can't tell inherited people from direct members without new hub data, and adding that data would change a hub response model (a stop condition). Options:
-  - Hide remove and role change on user rows whenever a team row is present.
-  - Keep them, and show the hub's error when a removal fails.
-  - Approve a hub roster provenance field (an exception to the stop condition).
 
 ---
 
@@ -350,9 +345,9 @@ The team → conversation edge relies on KTD2 as well. Messages are graph childr
 
 **Goal:** the popover shows granted teams and reports team outcomes.
 
-**Requirements:** R9, R11.
+**Requirements:** R9, R11; KTD8.
 
-**Dependencies:** U3, U5. The inherited-user-rows Open Question must be answered first.
+**Dependencies:** U3, U5.
 
 **Files:**
 - `ui/src/components/conversation/MembersAvatarStack.tsx`
@@ -374,6 +369,7 @@ The team → conversation edge relies on KTD2 as well. Messages are graph childr
    - skipped as `already_granted`;
    - granted with no conversation id: the warning "{team} now has access, but the invite message wasn't sent."
 6. Render every `failed[]` person (name and hub message) from the result, since `inviteFailure` no longer throws on partial failure (KTD7).
+7. User rows keep remove and role change; a refused removal or role change shows the hub's message (KTD8).
 
 **Execution note:** the Team label is already committed in `5fd596a86`; build on it. Re-run `npm run i18n:extract` before committing `.po` files.
 
@@ -387,6 +383,7 @@ The team → conversation edge relies on KTD2 as well. Messages are graph childr
 - A granted team with a conversation id shows no error. A granted team with no conversation id shows the warning.
 - A skipped `already_granted` team shows the already-has-access copy.
 - One of two people fails and no teams are involved: the popover shows that person's failure.
+- Removing a user row that the hub refuses (an inherited member) shows the hub's message, and the row stays.
 
 **Verification:** `members-invite-teams.test.tsx` and the adjacent popover tests pass.
 
