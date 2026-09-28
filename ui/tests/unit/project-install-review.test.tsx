@@ -197,8 +197,11 @@ describe('MessageEntityChip — project reference', () => {
     expect(actionState()).toBe('install');
   });
 
-  it('AE5 (Advanced): an installed project reopens the popup — preview, greyed install, Open', () => {
-    h.advanced = true;
+  it.each([
+    ['Standard / Vibe', false],
+    ['Advanced', true],
+  ])('AE5 (%s): an installed project reopens the popup — preview, greyed install, Open', (_mode, advanced) => {
+    h.advanced = advanced;
     h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
     entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
     renderChip();
@@ -212,16 +215,6 @@ describe('MessageEntityChip — project reference', () => {
     fireEvent.click(screen.getByTestId('asset-open-entity'));
     expect(h.openDock).toHaveBeenCalledTimes(1);
     expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${PID}`);
-  });
-
-  it('AE5 (Standard): an installed project chip opens no popup, like any installed shared entity', () => {
-    h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
-    entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
-    renderChip();
-
-    expect(chipState()).toBe('installed');
-    fireEvent.click(within(screen.getByTestId('project-chip')).getByRole('button'));
-    expect(screen.queryByTestId('asset-review-dialog')).toBeNull();
   });
 
   it('installs from the popup: installing, then lands in the project and closes', async () => {

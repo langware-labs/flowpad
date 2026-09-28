@@ -867,7 +867,6 @@ function ProjectMessageChip({
   projectId?: string | null;
 }) {
   const [reviewOpen, setReviewOpen] = useState(false);
-  const isAdvanced = useIsAdvanced();
   const { row, installed } = useLocalProject(typeId, entityRow);
   return (
     <span
@@ -876,13 +875,14 @@ function ProjectMessageChip({
       data-state={installed ? 'installed' : 'staged'}
     >
       {installed ? (
-        // Like any installed shared entity: Advanced reopens the review popup
-        // (preview, greyed install, Open); Standard / Vibe open the project.
+        // Reopens the review popup (preview, greyed install, Open) in every view
+        // mode. Other installed shared entities gate their popup to Advanced
+        // because it carries Uninstall; a project's popup has none.
         <ContextEntityChip
           typeId={typeId}
           inside={{ type: 'conversation', id: conversationId }}
           projectId={projectId}
-          onClick={isAdvanced ? () => setReviewOpen(true) : undefined}
+          onClick={() => setReviewOpen(true)}
         />
       ) : (
         <EntityChip
