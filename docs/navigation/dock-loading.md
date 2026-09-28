@@ -113,8 +113,8 @@ asserted in the unit matrix, where the loader is the only thing running.
 
 | Switch | Budget | Measured 2026-09-27 |
 |---|---|---|
-| Warm tab switch (terminal / document / plain shell) | ≤ 150 ms | 85 / 53 / 67 ms |
-| Project switch between visited projects | ≤ 300 ms | 95 ms |
+| Warm tab switch (terminal / document / plain shell) | ≤ 150 ms (CI: 400) | 85 / 53 / 67 ms |
+| Project switch between visited projects | ≤ 300 ms (CI: 550) | 86 ms |
 | Cold open of a large recording (3.9 MB screen), from its checkpoint | ≤ 1 s | 655–767 ms |
 | First open ever of that recording (makes the checkpoint) | reported | 957–1149 ms |
 
