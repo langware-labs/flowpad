@@ -23,7 +23,7 @@ from flow_sdk.builtin.agent_places import (
     set_place_override,
     version_state,
 )
-from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.trigger_arming import runs_here
 from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec, AgentSpec
@@ -43,7 +43,7 @@ def _document(agent: Agent) -> dict:
 
 async def _cloud_place(agent: Agent, node: str = "compute_node-11111111-2222-4333-8444-555555555555") -> Deployment:
     deployment = Deployment(
-        name=f"{agent.name} (e2b)", kind=KIND_AGENT, parent_type_id=str(agent.typeid),
+        name=f"{agent.name} (e2b)", parent_type_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": node},
     )
@@ -116,11 +116,11 @@ def test_a_hub_recorded_node_id_is_recognised_as_this_machine():
     """The hub records a node as ``compute_node-<uuid>``; the local id is bare.
     Unnormalized, every hub-created placement read as elsewhere — on its own box too."""
     here = Deployment(
-        name="here", kind=KIND_AGENT, target={"provider": "e2b", "scope": "machine"},
+        name="here", target={"provider": "e2b", "scope": "machine"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": f"compute_node-{ComputeNode._local_id()}"},
     )
     elsewhere = Deployment(
-        name="elsewhere", kind=KIND_AGENT, target={"provider": "e2b", "scope": "machine"},
+        name="elsewhere", target={"provider": "e2b", "scope": "machine"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
     )
     assert here.is_local is True

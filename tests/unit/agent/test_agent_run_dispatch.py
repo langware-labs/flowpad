@@ -15,7 +15,7 @@ class _FakeDeployment:
 
     def __init__(self, node_id: str, local: bool, launch=None):
         self.id = "dep-1"
-        self.kind = "runtime.agent"
+        self.element_type = "agent"
         self.parent_type_id = "agent-1"
         self.compute_node_id = node_id
         self.is_local = local
@@ -100,7 +100,6 @@ def test_upsert_change_detection_compares_like_for_like():
 
     payload = {
         "name": "probe (local)",
-        "kind": "runtime.agent",
         "target": {"provider": "local", "scope": "s", "location": "l"},
         "origin": {"kind": "local", "provider": "local", "external_id": "n"},
         "status": {"sync_state": "current", "provider_state": "configured"},

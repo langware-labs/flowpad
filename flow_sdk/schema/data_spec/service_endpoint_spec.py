@@ -54,6 +54,35 @@ def surface_of(kind: str) -> Literal["web", "api"]:
     return "web" if segments and segments[0] in _WEB_FAMILIES else "api"
 
 
+# ── what an endpoint is for ─────────────────────────────────────────────────
+
+#: A ``ServiceEndpoint``'s subkind — what it is FOR, a closed set (``docs/ontology.md``: a subkind is a
+#: variant within one type; the endpoint's kind, ``service_endpoint.<subkind>``, is derived). What it
+#: SPEAKS is the protocol's own kind, open and namespaced.
+#:
+#: * ``admin`` — administers the machine or a workload: the box's FlowPad app, its shell/fs MCP, a pgAdmin.
+#: * ``app``   — a UI people use: a web app.
+#: * ``agent`` — talks to an agent: its ``chat`` (``api.chat.openai``), an MCP-UI surface.
+#: * ``service`` — anything else the deployment exposes (a REST API, a database port).
+EndpointSubkind = Literal["admin", "app", "agent", "service"]
+ENDPOINT_SUBKINDS: tuple[str, ...] = ("admin", "app", "agent", "service")
+
+
+def default_subkind(protocol_kind: str) -> str:
+    """What an endpoint speaking *protocol_kind* is for, when its writer does not say."""
+    try:
+        kind = normalize_tag(protocol_kind) if protocol_kind else ""
+    except ValueError:
+        return "service"  # an ill-formed kind is refused by the protocol's own validation, not here
+    if kind == PROTOCOL_WORKSPACE:
+        return "admin"
+    if kind == PROTOCOL_API_CHAT_OPENAI:
+        return "agent"
+    if kind and surface_of(kind) == "web":
+        return "app"
+    return "service"
+
+
 # ── protocols ───────────────────────────────────────────────────────────────
 
 
@@ -209,6 +238,9 @@ Backend = Annotated[Union[StaticBackend, ProxyBackend, ChannelBackend], Field(di
 
 
 __all__ = [
+    "ENDPOINT_SUBKINDS",
+    "EndpointSubkind",
+    "default_subkind",
     "Backend",
     "ChannelBackend",
     "ChatOpenAIProtocol",

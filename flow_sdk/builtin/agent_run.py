@@ -85,7 +85,7 @@ async def dispatch_agent_run(
     base = {
         "deployment_id": deployment.id,
         "agent": agent_name,
-        "kind": deployment.kind,
+        "element": deployment.element_type,
         "prompt": prompt,
     }
     _emit(TAG_RUN_REQUESTED, node_id, base)
@@ -93,8 +93,8 @@ async def dispatch_agent_run(
     if not deployment.is_local:
         _emit(TAG_RUN_FAILED, node_id, {**base, "error": "no transport to a remote node"})
         return PromptResult.not_applicable(
-            f"agent {agent_name!r} is deployed on compute node {node_id} "
-            f"(kind {deployment.kind!r}), which cannot be reached from here yet. "
+            f"agent {agent_name!r} is deployed on compute node {node_id}, "
+            "which cannot be reached from here yet. "
             "Remote runs need the inbound event relay; running it locally instead "
             "would misreport where it executed."
         )
