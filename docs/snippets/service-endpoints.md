@@ -139,8 +139,9 @@ the hub, and the hub to the box.
 
 ## 5. What the hub serves itself
 
-A machine nothing deployed (a sandbox opened by hand) is its own `compute.node`
-placement: `workspace`, `shell-mcp`, `fs-mcp`. `compute_node/<id>/open-service/<name>`
+A machine nothing deployed (a sandbox opened by hand) is its own placement — one
+parented to the ComputeNode itself — serving `workspace`, `shell-mcp`, `fs-mcp` (all
+`admin`). `compute_node/<id>/open-service/<name>`
 resolves names through those endpoints only. The hub's builtin apps (the chatbot, …)
 are endpoints of `hub`-provider placements, read off the hub's disk; a custom domain
 (`WebDomain`) names an endpoint (`service_endpoint_id`).
