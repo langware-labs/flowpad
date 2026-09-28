@@ -354,6 +354,8 @@ async def _pack_attachment_entry(
     repo_cache: dict | None = None,
     transfers: dict | None = None,
     transfer_mode: str = _TRANSFER_MODE_COPY,
+    *,
+    mirror_repo_layout: bool = True,
 ) -> None:
     """Dispatch a single attachment entry to the correct FAMILY packer.
 
@@ -414,6 +416,7 @@ async def _pack_attachment_entry(
                 repo_cache,
                 transfers=transfers,
                 transfer_mode=transfer_mode,
+                mirror_repo_layout=mirror_repo_layout,
             )
 
 
@@ -709,8 +712,15 @@ async def _pack_file_backed_attachment(
     *,
     transfers: dict | None = None,
     transfer_mode: str = _TRANSFER_MODE_COPY,
+    mirror_repo_layout: bool = True,
 ) -> None:
     """Copy a file-backed asset's on-disk subtree into the bundle.
+
+    ``mirror_repo_layout=False`` (an offline export) ignores the sender's repo
+    entirely: no origin, always ``<main_subdir>/<leaf>``. A file handed to a
+    stranger has no shared checkout to mirror, and keying by the sender's
+    repo-relative path would nest the asset under that repo's folders on the
+    receiver (a shipped asset landed at ``flow_sdk/system_projects/…``).
 
     Bundle layout: ``attachment/<type>-@<id>/<in_bundle_rel>/…`` where
     ``in_bundle_rel`` is the asset's repo-relative ``rel_path`` when the asset
@@ -745,7 +755,9 @@ async def _pack_file_backed_attachment(
     # the receiver mirrors the sender's layout (else canonical main_subdir/leaf).
     # ``for_asset_path`` runs blocking git subprocesses — keep them off the loop.
     origin = (
-        await asyncio.to_thread(GitOrigin.for_asset_path, str(src_root), repo_cache) if src_root is not None else None
+        await asyncio.to_thread(GitOrigin.for_asset_path, str(src_root), repo_cache)
+        if src_root is not None and mirror_repo_layout
+        else None
     )
     if origin is not None and origins is not None:
         origins[_entry_key(entry_type, entry_id)] = origin.model_dump(mode="python")
@@ -1771,6 +1783,7 @@ async def pack_bundle(
     *,
     transfer_mode: str = _TRANSFER_MODE_COPY,
     create_bookmark: bool = False,
+    mirror_repo_layout: bool = True,
 ) -> Path:
     """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path.
 
@@ -1810,6 +1823,7 @@ async def pack_bundle(
                 repo_cache,
                 transfers=transfers,
                 transfer_mode=transfer_mode,
+                mirror_repo_layout=mirror_repo_layout,
             )
             await _collect_attachment_envelopes(entry, entities)
         if entities:
