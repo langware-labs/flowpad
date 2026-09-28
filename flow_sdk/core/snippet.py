@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import hashlib
+import json
 import logging
 import re
 import secrets
@@ -197,6 +199,33 @@ class SnippetStopRequest(DataSpec):
     run_id: str
 
 
+class SnippetCheckRequest(DataSpec):
+    """``POST /api/v1/snippet/check``. ``timeout_seconds`` bounds the check as it bounds a run:
+    the check imports the file's modules, and a module may hang on import."""
+
+    path: str
+    timeout_seconds: float = Field(default=30.0, gt=0, le=600)
+
+
+class SnippetDiagnostic(DataSpec):
+    """One problem the check found, in FILE coordinates: 1-based line and column, end exclusive.
+
+    ``kind`` says what kind of problem it is: ``syntax`` (the file cannot be read; nothing else is
+    reported), ``name`` (a name nothing binds), ``import`` (a module or name this interpreter cannot
+    import), ``check`` (the check itself could not finish, e.g. an import that hangs).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    line: int
+    col: int
+    end_line: int
+    end_col: int
+    severity: Literal["error", "warning"] = "error"
+    kind: Literal["syntax", "name", "import", "check"]
+    message: str
+
+
 def read_snippet(path: Path) -> Optional[SnippetDoc]:
     # Bytes, not ``read_text``: text mode translates CRLF to LF on read, and a
     # save would then silently convert the whole file.
@@ -258,6 +287,46 @@ def _terminal_path() -> str:
 #: Runs in flight by the caller's run id: the event ``stop_snippet`` sets, and
 #: the connection that started it.
 _RUNNING: dict[str, tuple[asyncio.Event, Optional[str]]] = {}
+
+
+#: A check's answer by (file, content): the editor re-checks after every save, and an unchanged
+#: file must not re-import its modules each time.
+_CHECKED: dict[tuple[str, str], list[SnippetDiagnostic]] = {}
+
+
+async def check_snippet(path: Path, *, timeout_seconds: float, env_path: Optional[str] = None) -> list[SnippetDiagnostic]:
+    """What would stop the file before it does its job — the problems a run would hit first.
+
+    Python only (a syntax error, a name nothing binds, an import this interpreter cannot satisfy);
+    other languages answer ``[]``. The check runs in a subprocess of the interpreter the runner
+    uses (``flow_sdk.snippet_launch --check``): it imports the file's modules to know they exist,
+    and that must neither touch this process nor answer for a different install. Never raises.
+    """
+    path = Path(path).expanduser().resolve()
+    if path.suffix.lower() != ".py" or not path.is_file():
+        return []
+    text = path.read_bytes()
+    key = (str(path), hashlib.sha256(text).hexdigest())
+    if key in _CHECKED:
+        return _CHECKED[key]
+    if env_path is None:
+        env_path = await asyncio.to_thread(_terminal_path)
+    said = await run_shell(
+        f"{shlex.quote(sys.executable)} -m flow_sdk.snippet_launch --check {shlex.quote(str(path))}",
+        timeout_seconds=timeout_seconds,
+        workdir=path.parent,
+        extra_env={"PATH": env_path},
+    )
+    try:
+        if not said.ok:
+            raise ValueError(said.stderr.strip() or said.detail)
+        found = [SnippetDiagnostic(**d) for d in json.loads(said.stdout)]
+    except (ValueError, TypeError) as exc:
+        reason = "did not finish in time" if said.timed_out else f"failed: {str(exc).splitlines()[-1] if str(exc) else said.detail}"
+        # Not cached: a hang or a crash may be passing, and the next save should ask again.
+        return [SnippetDiagnostic(line=1, col=1, end_line=1, end_col=2, severity="warning", kind="check", message=f"the check {reason}")]
+    _CHECKED[key] = found
+    return found
 
 
 def stop_snippet(run_id: str) -> bool:
