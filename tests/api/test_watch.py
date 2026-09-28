@@ -122,6 +122,11 @@ def _receive_ws_messages(ws, *, target=None, count=1):
                 ws._raise_on_close(frame)
                 assert frame["type"] == "websocket.send"
                 message = json.loads(frame["text"])
+                if message.get("message_type") == "tag_msg":
+                    # A bus event every connection receives (tags/ws_forward.py forwards
+                    # `ingest.*.sync.*`, `agent.status`, …): a background source syncing is
+                    # not an operation on any entity, let alone on our target.
+                    continue
                 if target is not None and message.get("to_entity") != target:
                     # CREATE broadcasts can arrive for background entities.
                     # Never filter an unexpected operation on our own target.
