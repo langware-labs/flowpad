@@ -32,6 +32,8 @@ export interface AskQuestion {
   fields: Shape;
   /** The answer is a secret (an API key): drawn masked. */
   secret?: boolean;
+  /** The answer is a file's content (a key file): drawn as a file picker. */
+  file?: boolean;
   /** The Wizard this question is one step of, when it is one. Empty for a
    *  question an op raised outside any wizard. */
   wizard_id?: string;

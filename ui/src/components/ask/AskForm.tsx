@@ -4,7 +4,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
-import { Input } from '@src/components/ui/input';
+import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
 
 /**
@@ -30,6 +30,8 @@ interface Question {
   fields: Shape;
   /** The answer is a secret (an API key): drawn masked. */
   secret?: boolean;
+  /** The answer is a file's content (a key file): drawn as a file picker. */
+  file?: boolean;
   /** How a person finds the value — the op's `setup.md`, markdown. */
   guide?: string;
 }
@@ -141,17 +143,14 @@ export function AskForm({
               {name}
             </label>
           ) : null}
-          <Input
+          <AskValueInput
             id={`ask-${name}`}
-            data-testid={`ask-input-${name || 'value'}`}
-            autoFocus
-            type={question.secret ? 'password' : 'text'}
-            autoComplete={question.secret ? 'off' : undefined}
+            testId={`ask-input-${name || 'value'}`}
+            secret={question.secret}
+            file={question.file}
             value={values[name] ?? ''}
-            onChange={(e) => setValues((prev) => ({ ...prev, [name]: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void submit();
-            }}
+            onChange={(value) => setValues((prev) => ({ ...prev, [name]: value }))}
+            onEnter={() => void submit()}
           />
         </div>
       ))}

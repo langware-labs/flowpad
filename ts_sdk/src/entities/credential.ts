@@ -20,6 +20,10 @@ import { IEntity, EntityMerge } from '../IEntity';
 export const CredentialRequirement = { MUST: 'MUST', OPTIONAL: 'OPTIONAL' } as const;
 export type CredentialRequirement = (typeof CredentialRequirement)[keyof typeof CredentialRequirement];
 
+/** What a variable's value IS: the value (`text`), or a file's content kept as a file (`file`) — the
+ *  variable then holds the file's path. */
+export type CredentialVarKind = 'text' | 'file';
+
 /** One environment variable a credential is made of, as the manifest declares it. */
 export interface CredentialVar {
   label?: string;
@@ -37,6 +41,8 @@ export interface CredentialVar {
   secret?: boolean;
   /** Where to obtain THIS value; differs per member within one credential. */
   help_url?: string;
+  /** Backend default is `text`. */
+  kind?: CredentialVarKind;
 }
 
 /**

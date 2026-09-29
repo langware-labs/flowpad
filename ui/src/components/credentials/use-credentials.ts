@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  recheckProjectReadiness,
   Credential,
   QueryRequest,
   credentialsService,
@@ -43,7 +44,11 @@ export function useCredentials(projectId: string | null, deploymentId: string | 
   });
 
   const qc = useQueryClient();
-  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: CREDENTIALS_STATUS_KEY }), [qc]);
+  // A value set or a credential changed may be what the project was waiting on: re-check it too.
+  const refresh = useCallback(
+    () => Promise.all([qc.invalidateQueries({ queryKey: CREDENTIALS_STATUS_KEY }), recheckProjectReadiness()]),
+    [qc],
+  );
 
   return { status: data ?? EMPTY_CREDENTIALS_STATUS, templates, ready: !isPending, refresh } as const;
 }
