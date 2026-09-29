@@ -26,23 +26,33 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from flow_sdk.core.capabilities.env_probe import with_node_fallback
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 logger = logging.getLogger(__name__)
 
+
 async def _spawn(command: str, *, cwd: str, env: dict, platform: str):
     if platform == "win32":
         return await asyncio.create_subprocess_exec(
-            "powershell", "-NoProfile", "-NonInteractive", "-Command", command,
-            cwd=cwd, env=env,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            command,
+            cwd=cwd,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
         )
     return await asyncio.create_subprocess_shell(
         command,
-        cwd=cwd, env=env,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
         stdin=asyncio.subprocess.DEVNULL,
         # Own process GROUP so a timeout can kill the whole tree.
         start_new_session=CAN_KILLPG,
@@ -91,6 +101,9 @@ async def run_shell(
     # the kill on a timeout drops the buffer — a step that printed and then hung
     # would report nothing at all. The caller's env still wins.
     env = {**os.environ, "PYTHONUNBUFFERED": "1", **flow_env(), **(extra_env or {})}
+    # A wizard's "is Node.js installed?" check must see a node a version manager
+    # installed, not only the one on the PATH this backend was launched with.
+    env["PATH"] = with_node_fallback(env.get("PATH", ""))
     t0 = time.monotonic()
     try:
         proc = await _spawn(command, cwd=str(workdir), env=env, platform=platform)

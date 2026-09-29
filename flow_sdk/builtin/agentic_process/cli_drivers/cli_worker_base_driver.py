@@ -57,6 +57,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_serialization import (
     quote_shell_arg,
 )
 from flow_sdk.builtin.compute_node import ComputeNode
+from flow_sdk.core.capabilities.env_probe import with_node_fallback
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.flowpad_types.vendors import default_vendor, vendor_or_none
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
@@ -1437,7 +1438,7 @@ def build_worker_spawn_env(
         )
     env = dict(os.environ if base_env is None else base_env)
     env.update(env_from_opts)
-    env["PATH"] = insert_capability_path_dir(folder, env.get("PATH"))
+    env["PATH"] = with_node_fallback(insert_capability_path_dir(folder, env.get("PATH")))
     return hide_flowpad_interpreter(env)
 
 

@@ -27,6 +27,7 @@ import psutil
 
 from flow_sdk import toplog
 from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
+from flow_sdk.core.capabilities.env_probe import with_node_fallback
 from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import ComputeNodeInfo
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize
@@ -119,6 +120,8 @@ def _build_interactive_pty_env(
     fallback = _python_fallback_path(env.get("PATH"))
     if fallback is not None:
         env["PATH"] = fallback
+    # Same for Node.js: one a version manager installed, when none is on PATH.
+    env["PATH"] = with_node_fallback(env.get("PATH", ""))
 
     if extra_env:
         env.update(extra_env)
