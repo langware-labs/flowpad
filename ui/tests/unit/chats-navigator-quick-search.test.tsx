@@ -98,6 +98,8 @@ describe('ChatsNavigator — session quick search', () => {
     expect(rows[0]).toContain('deploy new');
     expect(rows[1]).toContain('deploy old');
     expect(screen.queryByText('Today')).toBeNull();
+    // Detailed rows: a meta line under each.
+    expect(screen.getAllByTestId('chat-history-row-meta')).toHaveLength(2);
 
     fireEvent.change(input, { target: { value: 'nothing-matches' } });
     // The content search is still out → no premature "no match".
@@ -119,7 +121,7 @@ describe('ChatsNavigator — session quick search', () => {
       return {
         results: [
           { record_id: '22222222-2222-4222-8222-222222222222', record_type: 'claude_session', name: 'unrelated', modified_at: new Date().toISOString() },
-          { record_id: '44444444-4444-4444-8444-444444444444', record_type: 'claude_session', name: 'CLI analysis', fts_title: 'CLI analysis', modified_at: new Date(Date.now() - 400 * HOUR).toISOString() },
+          { record_id: '44444444-4444-4444-8444-444444444444', record_type: 'claude_session', name: 'CLI analysis', fts_title: 'CLI analysis', snippet: '…read about <mark>one cli</mark> and analyze\nhow it works…', modified_at: new Date(Date.now() - 400 * HOUR).toISOString() },
         ],
       };
     });
@@ -132,6 +134,10 @@ describe('ChatsNavigator — session quick search', () => {
     const rows = titles();
     expect(rows[0]).toContain('unrelated'); // latest first
     expect(rows[1]).toContain('CLI analysis');
+    // Search rows carry more than the one-liner: where it matched, highlighted.
+    const match = screen.getAllByTestId('chat-history-row-match')[0];
+    expect(match.textContent).toBe('…read about one cli and analyze how it works…');
+    expect(match.querySelector('mark')?.textContent).toBe('one cli');
   });
 
   it('scopes content hits by their transcript folder, not the index scope', async () => {
