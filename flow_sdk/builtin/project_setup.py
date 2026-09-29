@@ -75,6 +75,7 @@ async def project_sources(project: "Project") -> list["DataSource"]:
 def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequirementSpec:
     return SetupRequirementSpec(
         kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup, help_url=row.help_url,
+        setup_timeout_seconds=row.setup_timeout_seconds,
         vars=[
             SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
                          pattern=v.pattern, secret=v.secret, file=v.kind is CredentialVarKind.FILE,
@@ -91,7 +92,8 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
     setup = str(getattr(template, "setup", "") or "")
     return SetupRequirementSpec(
         kind=REQUIREMENT_PACK, name=str(template.name), title=template.title or str(template.name),
-        setup=setup, help_url=template.help_url or "", declared=False, satisfied=False, used_by=used_by,
+        setup=setup, setup_timeout_seconds=getattr(template, "setup_timeout_seconds", None),
+        help_url=template.help_url or "", declared=False, satisfied=False, used_by=used_by,
         vars=[
             SetupVarSpec(env_var=name, label=var.label, hint=var.hint, help_url=var.help_url,
                          pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE)
@@ -254,6 +256,9 @@ def compile_setup(
                     "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
                     "subkind": "ask", "output_spec_kind": "string",
                     "exe_data": {"prompt": _ask_prompt(req, var, ai=with_ai), "secret": var.secret, "file": var.file},
+                    # The credential's own guide rides the question: the person sees how to obtain the
+                    # value where they are asked for it.
+                    "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
                     # The goal's own check: a re-run (resume) asks nobody once the values are stored.
                     "completion_check": check,
                 }, bind=input_name(req.name, var.env_var))

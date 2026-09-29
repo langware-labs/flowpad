@@ -65,6 +65,8 @@ class Credential(Entity):
     setup_wizards: list[SetupStageSpec] = APIField(default_factory=list)
     #: How an agent obtains and stores the values (``CredentialSpec.setup``).
     setup: str = APIField(default="")
+    #: How long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).
+    setup_timeout_seconds: Optional[float] = APIField(default=None)
     lm_provider: str = APIField(default="")
     vars: dict[str, CredentialVarSpec] = APIField(default_factory=dict)
 

@@ -49,7 +49,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MANIFEST_FIELDS = ("title", "description", "icon_name", "help_url", "setup_wiki", "setup", "lm_provider", "vars")
+_MANIFEST_FIELDS = ("title", "description", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider", "vars")
 
 
 class CredentialError(ValueError):

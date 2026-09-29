@@ -63,6 +63,8 @@ class SetupRequirementSpec(DataSpec):
     vars: list[SetupVarSpec] = []
     #: pack: how an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI setup.
     setup: str = ""
+    #: pack: how long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).
+    setup_timeout_seconds: Optional[float] = None
     help_url: str = ""
     #: pack: declared in the project or user scope — else it is added from its shipped template.
     declared: bool = True

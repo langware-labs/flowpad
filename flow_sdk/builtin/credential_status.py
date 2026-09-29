@@ -174,6 +174,7 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
                 help_url=spec.help_url or "",
                 setup_wiki=getattr(spec, "setup_wiki", "") or "",
                 setup=getattr(spec, "setup", "") or "",
+                setup_timeout_seconds=getattr(spec, "setup_timeout_seconds", None),
                 scope=scope.scope,
                 project_id=scope.project_id,
                 environment=environment,

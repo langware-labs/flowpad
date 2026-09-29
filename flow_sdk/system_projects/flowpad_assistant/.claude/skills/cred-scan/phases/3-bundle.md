@@ -77,6 +77,11 @@ Field rules (`flow_sdk/schema/data_spec/credential_spec.py`):
   `"\"type\":\\s*\"service_account\""`.
 - `setup` is required: how to obtain each value, from the docs you read in phase
   1 — which console, which page, which button. No values, no example secrets.
+  The setup wizard shows it beside each question, and its *AI Assist* hands it to
+  an agent.
+- `setup_timeout_seconds` — only when following `setup` takes an agent longer
+  than the default 10 minutes (a key that takes long to issue). Leave it out
+  otherwise.
 - Never put a value, a default secret, or a `value_store` in the manifest.
 
 ## 3. Declare — this writes the folder AND indexes the row
