@@ -9,6 +9,7 @@ import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useIsBurning } from '@src/store/pending-actions-store';
 import { ChatPromptsPopover } from './ChatPromptsPopover';
+import { MatchSnippet, type MatchPart } from './matchSnippet';
 
 /**
  * One chat-history row in the Chats navigator. Pure presentation over the
@@ -17,17 +18,40 @@ import { ChatPromptsPopover } from './ChatPromptsPopover';
  * selects (URL-first, owned by the parent); star/trash are per-row side effects
  * revealed on hover.
  */
+/** Absolute last-active stamp for the detailed (search) row — the one-liner
+ *  already carries the relative time. */
+function formatWhen(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 interface ChatHistoryRowProps {
   entry: WorkerHistoryEntry;
   selected: boolean;
   /** True when this chat's process backs an open tab → stays bright (vs. dimmed). */
   hasOpenTab: boolean;
+  /** Search results: more than the one-liner — project · branch · size, and
+   *  where the query matched. */
+  detailed?: boolean;
+  /** Where the query matched (highlighted), when known. */
+  match?: MatchPart[];
   onSelect: () => void;
   onToggleFavorite: () => void;
   onDelete: () => void;
 }
 
-export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggleFavorite, onDelete }: ChatHistoryRowProps) {
+export function ChatHistoryRow({
+  entry,
+  selected,
+  hasOpenTab,
+  detailed = false,
+  match,
+  onSelect,
+  onToggleFavorite,
+  onDelete,
+}: ChatHistoryRowProps) {
   const { t } = useLingui();
   // Subscribe to the backing process so a rename (tab/process) re-renders this
   // row instead of leaving a stale title. Gate `enabled` on a cached hit so we
@@ -70,7 +94,8 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
         'group cursor-pointer border-b px-3 py-2 text-xs outline-none transition-[color,background-color,border-color,opacity] hover:bg-muted/50 focus-visible:bg-muted/50',
         selected && 'bg-muted',
         // Dim chats with no open tab (and not the active row); hover restores.
-        !selected && !hasOpenTab && RAIL_DIM_WHEN_CLOSED,
+        // Search results are never dimmed — they are what was asked for.
+        !selected && !hasOpenTab && !detailed && RAIL_DIM_WHEN_CLOSED,
       )}
       data-testid="chat-history-row"
       data-process-id={entry.agentic_process_id ?? undefined}
@@ -90,7 +115,9 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
           {busy && <Loader2 className="h-3 w-3 animate-spin text-emerald-500" />}
         </span>
         <WorkerIcon workerType={entry.worker_type} />
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground">{title}</span>
+        <span className={cn('min-w-0 flex-1 font-medium text-foreground', detailed ? 'line-clamp-2 break-words' : 'truncate')}>
+          {title}
+        </span>
         {/* Default: favorite marker + time-ago; swapped for the actions on hover. */}
         <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground group-hover:hidden">
           {fav && <Star className="h-3 w-3 fill-amber-400 text-amber-400" />}
@@ -153,6 +180,20 @@ export function ChatHistoryRow({ entry, selected, hasOpenTab, onSelect, onToggle
           </span>
         )}
       </div>
+      {detailed && (
+        <div className="ms-[18px] mt-0.5 flex min-w-0 flex-col gap-0.5 ps-3.5 text-[10px] text-muted-foreground">
+          <span className="truncate" data-testid="chat-history-row-meta">
+            {[entry.project_name, entry.git_branch, hasMsgs ? msgCountLabel : null, formatWhen(entry.last_active_time)]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+          {match && (
+            <span className="line-clamp-2 break-words text-[11px] leading-snug">
+              <MatchSnippet parts={match} />
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
