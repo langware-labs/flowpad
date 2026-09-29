@@ -401,6 +401,41 @@ class Wizard(Entity):
             )
         return ApiSuccessResponse(data=fresh)
 
+    @action.post(action_name="open")
+    async def open_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/open` — show this wizard's page blank, WITHOUT running it.
+
+        Settings → "Run setup again": the person reads what the wizard is for and presses its own
+        Start (`start` below). A run already in flight keeps its record.
+        """
+        from flow_sdk.server.builtin_triggers import show_wizard_fresh  # noqa: PLC0415
+
+        await show_wizard_fresh(self)
+        return ApiSuccessResponse(data={"opened": True})
+
+    @action.post(action_name="start")
+    async def start_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/start` — the wizard's own Start button: run it with the person present.
+
+        When the wizard's document says it ``requires_llm_source``, one is settled first (the chooser
+        opens when the box has none). Both verdicts come back in the body; ``llm_source`` is null for
+        a wizard with no such step. Unlike an unattended run, a question raised on the way is put to
+        the person watching. Awaits the whole run, and replaces a start already in flight for this
+        wizard (a second click means "start over"). Goes through `run`, so the trust gate holds: a
+        wizard not shipped with Flowpad is refused here and must be approved through `run`.
+        """
+        from flow_sdk.server.builtin_triggers import start_wizard  # noqa: PLC0415
+
+        source, result = await start_wizard(self, unattended=False)
+        if result.busy:
+            return ApiFailResponse(message=result.detail, status_code=409)
+        return ApiSuccessResponse(
+            data={
+                "llm_source": source.model_dump(mode="json") if source is not None else None,
+                "wizard": result.model_dump(mode="json"),
+            }
+        )
+
     @action.get(action_name="run-detail")
     async def run_detail_action(self) -> ApiResponse:
         """`GET /wizard/<id>/run-detail` — the last ``WizardResult`` WITH every

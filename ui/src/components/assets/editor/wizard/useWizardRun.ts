@@ -40,6 +40,7 @@ function answersOf(result: WizardResult | null | undefined): WizardStepAnswer[] 
  *  on a CliResult/PromptResult regardless of which one a step settled on. */
 interface OpAnswerShape {
   ran?: boolean;
+  cancelled?: boolean;
   executor?: string | null;
   steps?: Record<string, OpAnswerShape>;
 }
@@ -64,6 +65,14 @@ export function rungTrail(outcome: WizardStepAnswer | null | undefined): string[
   if (install.ran) trail.push('cli');
   if (install.executor) trail.push('agent');
   return trail;
+}
+
+/** Whether the PERSON said no: the step's own question was declined ("Install Claude Code?" →
+ *  Skip). A decision, not a failure — nothing broke, so the row must not read as an error. The
+ *  step is usually a nested wizard (ask, then install), so the decline sits on its `ask` answer. */
+export function declinedByUser(outcome: WizardStepAnswer | null | undefined): boolean {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  return Boolean(asShape?.cancelled || asShape?.steps?.ask?.cancelled);
 }
 
 /** The agent rung's own executor typeid (``agentic_process-<id>``), or ``null`` when the step

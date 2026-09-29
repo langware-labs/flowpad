@@ -128,6 +128,10 @@ class WizardSpec(DataSpec):
     #: For a first-run/onboarding wizard someone glances at and can set aside —
     #: never for one they are meant to sit and edit beside its own document.
     popup: bool = False
+    #: Settle an LLM source (`flow llm set auto`, the chooser when the box has none) BEFORE the steps
+    #: run. For a wizard whose agent fallbacks need one; its plain commands never do, so a source
+    #: that cannot be settled does not stop the run.
+    requires_llm_source: bool = False
     #: A CONVERSATIONAL wizard: one agent talks to the person for the whole run,
     #: and the caller supplies the prompt and payload at launch. It declares its
     #: driver here and has NO steps — there is nothing to sequence, because the

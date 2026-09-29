@@ -1,7 +1,7 @@
 import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { IEntity, EntityMerge } from '../../IEntity';
 import { ActionInfo } from '../../models/ActionInfo';
-import type { WizardResult } from '../../models/ReturnedValue';
+import type { ReturnedValue, WizardResult } from '../../models/ReturnedValue';
 
 /** One problem with a wizard document.
  *
@@ -205,5 +205,27 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     action.bodyParameters = target ? { target } : {};
     return await dataManager.callAction<Record<string, unknown>, WizardRunState>(action);
   }
-}
 
+  /**
+   * Show this wizard's page blank, WITHOUT running it: the last run is archived and the active tab is
+   * sent here. A run already in flight keeps its record.
+   */
+  async open(): Promise<{ opened: boolean }> {
+    return await dataManager.callAction<void, { opened: boolean }>(
+      new ActionInfo('open', Wizard.type, this.id, 'POST'),
+    );
+  }
+
+  /**
+   * Run this wizard from its own Start button, with the person watching — a question raised on the
+   * way is put to them. A wizard whose document requires an LLM source has one settled first
+   * (`llm_source` is null for one that does not). Resolves when the whole run has ended; its progress
+   * arrives through the run record. Replaces a start already in flight; refuses (409) when another
+   * run holds the wizard, and refuses a wizard not shipped with Flowpad (use `runFor` with approval).
+   */
+  async start(): Promise<{ llm_source: ReturnedValue | null; wizard: WizardResult }> {
+    return await dataManager.callAction<void, { llm_source: ReturnedValue | null; wizard: WizardResult }>(
+      new ActionInfo('start', Wizard.type, this.id, 'POST'),
+    );
+  }
+}

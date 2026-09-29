@@ -6,6 +6,7 @@
   "enabled": true,
   "icon": "Wand2",
   "popup": true,
+  "requires_llm_source": true,
   "steps": [
     {
       "id": "claude-code",

@@ -18,7 +18,7 @@ import { ExitCode } from '@sdk';
 
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
-const h = vi.hoisted(() => ({ callAction: vi.fn(), refreshByTypeId: vi.fn() }));
+const h = vi.hoisted(() => ({ callAction: vi.fn(), refreshByTypeId: vi.fn(), start: vi.fn() }));
 
 /** The form lists installed agents and looks up trigger rows. Neither is what
  *  these tests are about, and both would otherwise reach for a backend. */
@@ -91,6 +91,7 @@ const wizard = (runState: Record<string, unknown>, shipped = false) =>
     validateDocument: () => Promise.resolve({ ok: true, issues: [] }),
     runDetail: () => Promise.resolve({ result: runState.result ?? null }),
     resetRun: () => Promise.resolve({}),
+    start: h.start,
   }) as never;
 
 /** The wizard FOLDER. The viewer names `wizard.json` beneath it itself — the
@@ -121,6 +122,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   h.callAction.mockResolvedValue({ exit_code: 0, steps: {} });
   h.refreshByTypeId.mockResolvedValue(null);
+  h.start.mockResolvedValue({});
 });
 afterEach(cleanup);
 
@@ -204,6 +206,51 @@ describe('a settled run', () => {
     expect((await screen.findByTestId('wizard-step-build-detail')).textContent).toContain('the check still fails');
   });
 
+  it('copies a failed step\u2032s error text to the clipboard from the icon beside "View error"', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(settled)} />);
+    await waitFor(() => expect(screen.getByTestId('wizard-step-build')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('wizard-step-build-copy-error'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('the check still fails')));
+    // A step with nothing wrong has nothing to copy.
+    expect(screen.queryByTestId('wizard-step-version-copy-error')).toBeNull();
+  });
+
+  it('reads a declined install question as the person′s decision — a red cross and "Cancelled by user", never an error', async () => {
+    const declined = {
+      result: {
+        exit_code: 1,
+        detail: 'Install X?: cancelled.',
+        steps: {
+          version: { exit_code: 0, ran: false, detail: 'already satisfied' },
+          build: {
+            exit_code: 1,
+            ran: true,
+            detail: 'Install X?: cancelled.',
+            steps: { ask: { exit_code: 1, cancelled: true, detail: 'Install X?: cancelled.' } },
+          },
+        },
+      },
+    };
+    renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(declined)} />);
+    await waitFor(() => expect(screen.getByTestId('wizard-step-build')).toBeTruthy());
+
+    expect(screen.getByTestId('wizard-step-build-declined').textContent).toContain('Cancelled by user');
+    expect(screen.getByTestId('wizard-step-build').getAttribute('data-status')).toBe('declined');
+    // Not a failure: nothing to view, nothing to copy.
+    expect(screen.queryByTestId('wizard-step-build-view-error')).toBeNull();
+    expect(screen.queryByTestId('wizard-step-build-copy-error')).toBeNull();
+  });
+
+  it('trims a row\u2032s text with an ellipsis, and keeps "View error" pinned beside it', async () => {
+    renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(settled)} />);
+    await waitFor(() => expect(screen.getByTestId('wizard-step-build')).toBeTruthy());
+    expect(screen.getByTestId('wizard-step-build-summary').className).toContain('truncate');
+    expect(screen.getByTestId('wizard-step-build-view-error').parentElement?.className).toContain('shrink-0');
+  });
+
   it('never offers an answer form — a person is asked by an ask op, not by the viewer', () => {
     renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(settled)} />);
     expect(screen.queryByTestId('wizard-awaiting')).toBeNull();
@@ -241,6 +288,29 @@ describe('a fully finished run', () => {
 describe('a popup wizard', () => {
   const popupWizard = () => ({ ...wizard({}), popup: true, label: 'Finish setting up Flowpad' }) as never;
 
+  it('a run that fell short says so, and offers Restart setup beside a plain Go to homepage', async () => {
+    const short = {
+      result: { exit_code: ExitCode.NOT_YET, detail: 'Claude Code: cancelled.', ran: true, steps: {} },
+    };
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={{ ...wizard(short), popup: true } as never} />);
+    expect(screen.getByTestId('wizard-not-finished').textContent).toContain("didn't finish");
+    expect(screen.queryByTestId('wizard-finished')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('wizard-go-home'));
+    expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
+
+    fireEvent.click(screen.getByTestId('wizard-restart'));
+    await waitFor(() => expect(h.start).toHaveBeenCalledTimes(1));
+  });
+
+  it('a clean run shows the success message and no Restart', () => {
+    const ok = { result: { exit_code: ExitCode.OK, detail: '', ran: true, steps: {} } };
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={{ ...wizard(ok), popup: true } as never} />);
+    expect(screen.getByTestId('wizard-finished')).toBeTruthy();
+    expect(screen.queryByTestId('wizard-restart')).toBeNull();
+    expect(screen.queryByTestId('wizard-not-finished')).toBeNull();
+  });
+
   it('shows the ordinary page, not a popup, when the document does not ask for one', () => {
     renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
     expect(screen.queryByTestId('wizard-popup')).toBeNull();
@@ -262,6 +332,28 @@ describe('a popup wizard', () => {
     fireEvent.click(screen.getByTestId('wizard-minimize'));
     expect(minimize.toProcessChip).toHaveBeenCalledTimes(1);
     expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
+  });
+
+  it('offers no Run/Reset — a popup wizard has Start instead', () => {
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+    expect(screen.queryByTestId('wizard-run')).toBeNull();
+    expect(screen.queryByTestId('wizard-reset')).toBeNull();
+    expect(screen.getByTestId('wizard-start')).toBeTruthy();
+  });
+
+  it('Start calls the wizard′s own `start` action, which the backend waits for, then gets out of the way', async () => {
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-start'));
+    expect(h.start).toHaveBeenCalledTimes(1);
+    // Nothing left for it to do once the call is accepted — the run's own
+    // live state takes over, the same way it does for any other run.
+    await waitFor(() => expect(screen.queryByTestId('wizard-start')).toBeNull());
+  });
+
+  it('offers no Start once a run already exists — nothing left to wait for', () => {
+    const started = { ...popupWizard(), run_state: { result: { exit_code: ExitCode.NOT_YET, steps: {} } } } as never;
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={started} />);
+    expect(screen.queryByTestId('wizard-start')).toBeNull();
   });
 });
 
