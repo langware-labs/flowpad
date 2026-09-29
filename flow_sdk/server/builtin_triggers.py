@@ -330,8 +330,6 @@ async def _run_wizard_trigger(trigger: Trigger, changes: list[ChangeEvent]) -> N
         _log.warning("wizard trigger %r: %s Run it from the app to approve it.", trigger.uname, result.detail)
         return
     _log.info("wizard trigger %r: %s — %s", trigger.uname, "ok" if result.ok else "not done", result.detail)
-    if not result.ok:
-        await _tell_the_person_it_did_not_finish(wizard, result)
 
 
 LLM_SETUP_WIZARD = "llm-setup"
@@ -402,59 +400,75 @@ async def _navigate_to_wizard(wizard: "Wizard") -> None:
         _log.debug("llm setup: no live tab to show the wizard page on", exc_info=True)
 
 
-#: The setup run in flight, if any — the one a newer `run_llm_setup` replaces.
-_SETUP_RUN: "Optional[asyncio.Task]" = None
+async def show_wizard_fresh(wizard: "Wizard") -> None:
+    """Clear the wizard's last run and send the active tab to its page — steps blank, nothing
+    running. What `POST /wizard/<id>/open` does, and the first move of every setup run.
+
+    A run already in progress keeps its record (`reset_run` refuses), so this never blanks a page
+    that is showing live work.
+    """
+    from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
+    from flow_sdk.core.wizard.state import reset_run  # noqa: PLC0415
+
+    if reset_run(str(wizard.id)) is not None:
+        await _notify_wizard_watchers(str(wizard.id))
+    await _navigate_to_wizard(wizard)
+
+
+#: The started run in flight for each wizard (by id) — the one a newer `start_wizard` replaces.
+_STARTS: "dict[str, asyncio.Task]" = {}
 
 #: What a replaced run's activity node and its caller are told.
-SETUP_REPLACED = "replaced by a newer setup run"
+START_REPLACED = "replaced by a newer start"
 
 
-async def run_llm_setup(wizard: "Wizard", *, unattended: bool) -> "tuple[ReturnedValue, WizardResult]":
-    """Run first-run setup, stopping any setup run already in flight first.
+async def start_wizard(wizard: "Wizard", *, unattended: bool) -> "tuple[Optional[ReturnedValue], WizardResult]":
+    """Start a wizard, stopping a start already in flight for it first.
 
-    The newest run wins, for this wizard only: the first-run trigger and Settings →
-    "Run setup again" both land here, and a person who clicks the button while the
-    trigger's run is still going means "start over", not "already running". The old
+    The newest start wins, for this wizard only: the first-run trigger and the popup's Start button
+    both land here, and a person who clicks the button while the trigger's run is still going means
+    "start over", not "already running". The old
     run is cancelled — its shell commands' process groups killed (`run_shell`), its
     agent closed (`_prompt_and_wait`), its open question withdrawn (`ask_person`) —
-    and awaited until it has let go of the wizard's run lock, so `_run_llm_setup`'s
+    and awaited until it has let go of the wizard's run lock, so `_start_wizard`'s
     `reset_run` always clears the old run's progress before the new one shows.
 
-    A replaced caller answers ``busy`` with `SETUP_REPLACED` rather than raising:
+    A replaced caller answers ``busy`` with `START_REPLACED` rather than raising:
     the HTTP edge maps that to 409, and the trigger logs it.
     """
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult  # noqa: PLC0415
 
-    global _SETUP_RUN
-    previous = _SETUP_RUN
-    run = asyncio.ensure_future(_run_llm_setup(wizard, unattended=unattended, previous=previous))
-    _SETUP_RUN = run
+    key = str(wizard.id)
+    previous = _STARTS.get(key)
+    run = asyncio.ensure_future(_start_wizard(wizard, unattended=unattended, previous=previous))
+    _STARTS[key] = run
     try:
         return await run
     except asyncio.CancelledError:
         current = asyncio.current_task()
         if current is not None and current.cancelling():
             raise  # the caller itself is being cancelled — not a replacement
-        return CliResult.not_yet(SETUP_REPLACED, ran=False), WizardResult.held(
-            f"{wizard.name or LLM_SETUP_WIZARD} was {SETUP_REPLACED}."
+        return CliResult.not_yet(START_REPLACED, ran=False), WizardResult.held(
+            f"{wizard.name or 'The wizard'} was {START_REPLACED}."
         )
     finally:
-        if _SETUP_RUN is run:
-            _SETUP_RUN = None
+        if _STARTS.get(key) is run:
+            del _STARTS[key]
 
 
-async def _run_llm_setup(
+async def _start_wizard(
     wizard: "Wizard", *, unattended: bool, previous: "Optional[asyncio.Task]"
-) -> "tuple[ReturnedValue, WizardResult]":
-    """First-run setup: an LLM source, then the wizard that installs the tools.
+) -> "tuple[Optional[ReturnedValue], WizardResult]":
+    """Start a wizard: its LLM source first when its document says it needs one, then its steps.
 
-    The source is settled BEFORE the wizard and outside it (`_resolve_llm_source`).
-    Whatever it answers, the wizard runs next: only its agent fallbacks need a
-    source, and every plain install command works without one. The two answers
-    come back side by side, so a caller can say which of them fell short.
+    A wizard that declares ``requires_llm_source`` (first-run setup) has the source settled BEFORE
+    it and outside it (`_resolve_llm_source`). Whatever that answers, the wizard runs next: only its
+    agent fallbacks need a source, and every plain install command works without one. The two
+    answers come back side by side, so a caller can say which of them fell short. A wizard that
+    declares nothing has no source step: the first answer is ``None``.
 
     One function for both ways in — the trigger on the first tab after install,
-    and Settings → General — so the order cannot drift between them. Both also
+    and the popup's Start button — so the order cannot drift between them. Both also
     steer the active tab to the wizard's own page before running it: neither
     caller is "the person is already looking at the wizard", so without this
     the whole run is invisible behind whatever screen was already open.
@@ -475,24 +489,22 @@ async def _run_llm_setup(
     opened onto the last run's leftovers and only emptied later. A run already
     in progress keeps its record (`reset_run` refuses); `wizard.run` then
     answers "already running", as it always did. A previous SETUP run is never
-    that case: it is stopped first (see `run_llm_setup`), so only a run started
+    that case: it is stopped first (see `start_wizard`), so only a run started
     some other way — the wizard page's own Run button — still refuses here.
     """
-    from flow_sdk.core.wizard.execute import _notify_wizard_watchers  # noqa: PLC0415
-    from flow_sdk.core.wizard.state import reset_run  # noqa: PLC0415
-
     if previous is not None and not previous.done():
-        _log.info("llm setup: stopping the setup run already in flight")
-        previous.cancel(SETUP_REPLACED)
+        _log.info("wizard start: stopping the start already in flight")
+        previous.cancel(START_REPLACED)
         # Until it has unwound: its `execute_wizard` releases the run lock on the
         # way out, and `reset_run` below refuses while that lock is held.
         await asyncio.wait({previous})
-    if reset_run(str(wizard.id)) is not None:
-        await _notify_wizard_watchers(str(wizard.id))
-    await _navigate_to_wizard(wizard)
-    source = await _resolve_llm_source()
-    _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
-    await _navigate_to_wizard(wizard)
+    await show_wizard_fresh(wizard)
+    spec = wizard.spec()
+    source = None
+    if spec is not None and spec.requires_llm_source:
+        source = await _resolve_llm_source()
+        _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
+        await _navigate_to_wizard(wizard)
     return source, await wizard.run(unattended=unattended)
 
 
@@ -507,7 +519,7 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
 
     # A test backend is a fresh install every run, so this would fire on the first tab of
     # every suite, steer it to the wizard page and start installing tools on the runner.
-    # Settings → "Run setup again" calls `run_llm_setup` directly and is not gated.
+    # The popup's Start button (`POST /wizard/<id>/start`) calls `start_wizard` directly and is not gated.
     if os.environ.get(SKIP_FIRST_RUN_SETUP_ENV, "").lower() == "true":
         _log.info("llm setup trigger %r: skipped (%s=true)", trigger.uname, SKIP_FIRST_RUN_SETUP_ENV)
         return
@@ -516,7 +528,22 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
     if wizard is None:
         _log.warning("llm setup trigger %r names no wizard it can resolve; nothing to run", trigger.uname)
         return
-    source, result = await run_llm_setup(wizard, unattended=True)
+
+    # A live tab is watching: show the popup — its own steps blank, its
+    # explanation readable — and stop there. Racing an install question onto
+    # the screen the instant the popup opens leaves no time to read what any
+    # of this is for; a person presses the popup's own Start button when
+    # ready, which is `POST /wizard/<id>/start` — the SAME call this
+    # function makes below, so the two ways in cannot drift. A headless box
+    # (no tab, ever) has no Start to press, so it keeps running itself here,
+    # exactly as before.
+    from flow_sdk.server.routes.websocket import get_active_connection  # noqa: PLC0415
+
+    if get_active_connection() is not None:
+        await _navigate_to_wizard(wizard)
+        return
+
+    source, result = await start_wizard(wizard, unattended=True)
     if result.busy:
         # Replaced by a newer run (or held by one started from the wizard page):
         # that run reports for itself, so this one has nothing to tell the person.
@@ -526,39 +553,6 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
         _log.warning("llm setup trigger %r: %s", trigger.uname, result.detail)
         return
     _log.info("llm setup trigger %r: %s — %s", trigger.uname, "ok" if result.ok else "not done", result.detail)
-    if not (source.ok and result.ok):
-        await _tell_the_person_it_did_not_finish(wizard, result, also_missing=[] if source.ok else ["LLM source"])
-
-
-async def _tell_the_person_it_did_not_finish(
-    wizard: "Wizard", result: "WizardResult", *, also_missing: "list[str] | None" = None
-) -> None:
-    """A run nobody started ended short of its goal: say so, and where to look.
-
-    Unattended means nobody is watching the wizard's page, and its activity node is dropped
-    when the run ends — without this, a failed first-run setup leaves nothing but a log line.
-    The note names what is still missing by its step label, so "Git" is said rather than a
-    step id, and a click opens the wizard, whose page shows each step's answer.
-    """
-    from flow_sdk.notifications.desktop import notify_desktop  # noqa: PLC0415
-
-    spec = wizard.spec()
-    labels = {step.id: step.display_label for step in (spec.steps if spec else [])}
-    missing = [
-        *(also_missing or []),
-        *(labels.get(step_id, step_id) for step_id, answer in result.steps.items() if not answer.ok),
-    ]
-    body = f"Not done: {', '.join(missing)}." if missing else (result.detail or "")
-    try:
-        await notify_desktop(
-            "wizard_not_done",
-            title=f"{wizard.name or 'Setup'} did not finish",
-            body=body,
-            click_target={"view_type": "assets", "pointer": f"editor/wizard/typeid/{wizard.typeid}"},
-            level="warning",
-        )
-    except Exception:  # noqa: BLE001 — a notice that could not be sent never fails the run
-        _log.warning("wizard trigger: could not tell the person %r did not finish", wizard.name, exc_info=True)
 
 
 async def reconcile_wizard_triggers() -> None:
