@@ -2,27 +2,27 @@
  * Handing a project to a whole team, from the People & teams page.
  *
  * The page's other share control (`OrgSharePanel`) hands someone the
- * ORGANIZATION. This hands the team a piece of WORK: pick one project and
- * everyone in the team — including everyone in any team nested inside it — is
- * invited to it in one press, at `member`. The hub's assignment policy grants
- * them immediately, so nobody has to accept anything; explicit acceptance stays
- * the fallback the hub falls back to on its own.
+ * ORGANIZATION. This hands the team a piece of WORK: pick one project and the
+ * TEAM itself is granted it on the hub, at `member` — one group grant, not one
+ * invite per person — so everyone on the team, today and later, has it. The
+ * sharer's client also opens one invite conversation granted to the team, whose
+ * message carries the project's Install chip. Nobody has to accept anything.
  *
- * **What actually travels.** Sharing links the project to the hub
- * (`Project.share`), which carries its metadata — its `locale`, so a recipient
- * opens it in the language its author works in — and its shared context and
- * secret DECLARATIONS. Its published assets live in the project's hub-hosted
- * repository, which every member reaches with their own hub login, so linking
- * needs no git repository, remote or GitHub connection on the sender's side.
+ * **What actually travels.** The project must already be published — an
+ * unpublished one gets the publish popup instead of this dialog — and sharing is
+ * then one group grant (`Project.invite([], { teams })` → the `share` action).
+ * The published row carries its metadata — its `locale`, so a recipient opens it
+ * in the language its author works in — and its shared context and secret
+ * DECLARATIONS. Its published assets live in the project's hub-hosted
+ * repository, which every member reaches with their own hub login.
  *
- * **Nothing here re-implements the publish rules.** Whether a project may be
- * linked to the cloud is `assert_project_publishable`'s decision, made
- * server-side on the share call; a refusal is shown in the backend's own words.
+ * **Nothing here runs the publish rules.** They guard publishing (the popup's
+ * `ProjectCloudLinkButton`), not an invite to a Project that is already published.
  */
 import { TypeId, type Project } from '@sdk';
 import { FolderGit2, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Plural, Trans, useLingui } from '@lingui/react/macro';
+import { useCallback, useMemo, useState } from 'react';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import { Button } from '@src/components/ui/button';
@@ -37,10 +37,9 @@ import {
 import { useEntity } from '@src/hooks/entity-hooks';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-
-import { collectTeamRecipients, type TeamRecipients } from './team-recipients';
 
 /** The header control. Rendered where the hub says the caller may run this team. */
 export function ShareProjectButton({ teamId, teamName }: { teamId: string; teamName: string }) {
@@ -66,7 +65,7 @@ export function ShareProjectButton({ teamId, teamName }: { teamId: string; teamN
         selectedIds={[]}
         singleSelect
         confirmLabel={t`Choose`}
-        description={<Trans>Everyone in {teamName} will be invited to the project you pick.</Trans>}
+        description={<Trans>Everyone in {teamName} will get the project you pick.</Trans>}
         onConfirm={(_ids, items) => {
           const picked = items[0];
           if (!picked) return;
@@ -105,36 +104,43 @@ function ShareProjectDialog({
   const projectTypeId = useMemo(() => new TypeId('project', projectId), [projectId]);
   const { data: project } = useEntity<Project>(projectTypeId);
 
-  const [recipients, setRecipients] = useState<TeamRecipients | null>(null);
-  const [rosterError, setRosterError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
 
-  // One roster walk per opening. The dialog is the button press, so this is not
-  // work anybody pays for by rendering the page.
-  useEffect(() => {
-    let cancelled = false;
-    collectTeamRecipients(new TypeId('team', teamId))
-      .then((r) => {
-        if (!cancelled) setRecipients(r);
-      })
-      .catch((e) => {
-        if (!cancelled) setRosterError(errorMessage(e, t`Couldn't read this team's people.`));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [teamId, t]);
-
   const share = useCallback(async () => {
-    if (!project || !recipients?.emails.length || sharing) return;
+    if (!project || sharing) return;
     setSharing(true);
     try {
-      await project.share(recipients.emails);
-      notify.success({
-        title: t`${projectName} shared`,
-        message: t`Everyone in ${teamName} has been invited.`,
-        id: 'team-share-project',
-      });
+      // One group grant for the whole team; the backend also opens the team's
+      // invite conversation. The outcome is per team, never a throw.
+      const result = await project.invite([], { teams: [new TypeId('team', teamId)] });
+      const failed = result.failed_teams?.[0];
+      if (failed) {
+        notify.error({
+          title: t`Could not share ${projectName}`,
+          message: failed.message,
+          id: 'team-share-project',
+        });
+        return;
+      }
+      if (result.skipped_teams?.length) {
+        notify.info({
+          title: t`${projectName} is already shared`,
+          message: t`${teamName} already has access to ${projectName}.`,
+          id: 'team-share-project',
+        });
+      } else if (result.granted_teams?.some((g) => !g.conversation_id)) {
+        notify.warning({
+          title: t`${projectName} shared`,
+          message: t`${teamName} now has access, but the invite message wasn't sent.`,
+          id: 'team-share-project',
+        });
+      } else {
+        notify.success({
+          title: t`${projectName} shared`,
+          message: t`Everyone in ${teamName} now has access.`,
+          id: 'team-share-project',
+        });
+      }
       onClose();
     } catch (e) {
       // The backend explains a refusal in its own words, which are better than
@@ -147,11 +153,15 @@ function ShareProjectDialog({
     } finally {
       setSharing(false);
     }
-  }, [project, recipients, sharing, projectName, teamName, onClose, t]);
+  }, [project, sharing, teamId, projectName, teamName, onClose, t]);
 
-  const people = recipients?.emails.length ?? 0;
-  const checking = !recipients;
-  const canShare = !!project && !checking && people > 0 && !sharing;
+  const canShare = !!project && !sharing;
+
+  // Inviting needs the Project's hub row: an unpublished Project gets the publish
+  // popup INSTEAD of this dialog, and this dialog takes its place once published.
+  if (project && project.remote !== true) {
+    return <PublishProjectDialog project={project} open onOpenChange={(next) => !next && onClose()} />;
+  }
 
   return (
     <Dialog open onOpenChange={(next) => !next && onClose()}>
@@ -162,46 +172,12 @@ function ShareProjectDialog({
           </DialogTitle>
           <DialogDescription>
             <Trans>
-              Everyone in {teamName} is invited to this project and sees it in their own project list, in the language
-              the project is worked in. Its published skills and documents come with it, from the project's repository
-              on the hub.
+              Everyone in {teamName} gets this project and sees it in their own project list, in the language the
+              project is worked in. Its published skills and documents come with it, from the project's repository on
+              the hub.
             </Trans>
           </DialogDescription>
         </DialogHeader>
-
-        <div className="flex flex-col gap-3 text-sm">
-          {rosterError ? (
-            <p className="text-destructive" data-testid="team-share-project-roster-error">
-              {rosterError}
-            </p>
-          ) : !recipients ? (
-            <p className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <Trans>Reading this team's people…</Trans>
-            </p>
-          ) : (
-            <p data-testid="team-share-project-recipients">
-              <Plural value={people} one="# person will be invited." other="# people will be invited." />
-              {recipients.unreachable > 0 && (
-                <span className="text-muted-foreground">
-                  {' '}
-                  <Plural
-                    value={recipients.unreachable}
-                    one="# person on this team has no email address, so they can't be invited."
-                    other="# people on this team have no email address, so they can't be invited."
-                  />
-                </span>
-              )}
-            </p>
-          )}
-
-          {project && project.remote !== true && (
-            <p className="text-muted-foreground" data-testid="team-share-project-will-link">
-              <Trans>This project isn't in the cloud yet — sharing it links it there first.</Trans>
-            </p>
-          )}
-        </div>
-
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             <Trans>Cancel</Trans>
@@ -212,7 +188,7 @@ function ShareProjectDialog({
             data-testid="team-share-project-confirm"
             className="gap-1.5"
           >
-            {(sharing || checking) && <Loader2 className="h-4 w-4 animate-spin" />}
+            {sharing && <Loader2 className="h-4 w-4 animate-spin" />}
             {sharing ? <Trans>Sharing…</Trans> : <Trans>Share with team</Trans>}
           </Button>
         </DialogFooter>

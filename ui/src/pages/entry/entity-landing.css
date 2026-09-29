@@ -1,0 +1,153 @@
+/* The entity entry landings (entry-shell.tsx). They build on the entry-page look
+ * in message-landing.css (nl-*), which loads first; only what it lacks is here. */
+
+.el-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.el-title-icon {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.el-type-chip {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.el-header-muted {
+  background: #6b6b85;
+}
+
+.el-options-single {
+  grid-template-columns: minmax(280px, 520px);
+}
+
+.el-options-full {
+  grid-template-columns: 1fr;
+}
+
+.el-option {
+  display: flex;
+  flex-direction: column;
+}
+
+.el-option-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.el-grow {
+  flex: 1;
+}
+
+.el-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.el-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: #f0efff;
+  color: #4f46e5;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+/* Inside a card, `.nl-option code` would box each <code> a second time. */
+.nl-option .el-code code,
+.nl-option .el-ids code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.nl-option .el-code code {
+  color: inherit;
+  word-break: normal;
+}
+
+.el-code-copy {
+  margin-left: auto;
+  flex: none;
+  border: 0;
+  background: #fff;
+  color: #4f46e5;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.el-card {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+.el-card h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  color: #1a1a2e;
+}
+
+.el-card p {
+  margin: 0 0 18px;
+  line-height: 1.6;
+}
+
+.el-ids {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 20px;
+  font-size: 13px;
+}
+
+.el-ids td {
+  padding: 8px 10px;
+  border-top: 1px solid #e7e5ff;
+}
+
+.el-ids td:first-child {
+  width: 90px;
+  color: #888;
+}
+
+.nl-option .el-ids code {
+  color: #1a1a2e;
+  word-break: break-all;
+}
+
+.el-card .el-who {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  color: #888;
+}
+
+.el-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: #4f46e5;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}

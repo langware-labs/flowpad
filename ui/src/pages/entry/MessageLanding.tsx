@@ -1,12 +1,15 @@
 import { t } from '@lingui/core/macro';
+import { useCopied } from '@src/components/ui/copy-button';
 import { inboundParams } from '@src/navigation/inbound-link';
-import { ActionInfo, BodyStatus, dataManager, FlowMessage, navigator as sdkNavigator, TypeId } from '@sdk';
+import { ActionInfo, BodyStatus, FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Bot, Code, Sparkles, Terminal } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import './message-landing.css';
-import { LOCAL_API_PREFIX, LOCAL_PORT, OPEN_IN_ELECTRON, useOpenFlowpad } from './useOpenFlowpad';
+import { OpenInFlowpadActions } from './OpenInFlowpadActions';
+import { LOCAL_API_PREFIX } from './useOpenFlowpad';
+import { bounceToLoginOnce } from './login-bounce';
 import WrongAccountPanel from './WrongAccountPanel';
 
 const CopyIcon = () => (
@@ -39,7 +42,7 @@ type MessageMetadata = {
 const MessageLanding: React.FC = () => {
   const { messageId } = useParams<{ messageId: string }>();
   const [redirecting, setRedirecting] = useState(false);
-  const [planCopied, setPlanCopied] = useState(false);
+  const { copied: planCopied, copy: copyPlan } = useCopied(2000);
   // Set when loading the message 401s after a login attempt (someone opened a
   // message link they have no access to). The invitation email/account mismatch
   // is handled server-side via the dedicated /wrong_account route.
@@ -49,72 +52,22 @@ const MessageLanding: React.FC = () => {
   const hasApiKey = urlParams.has('flowpad-api-key');
 
   const msgLoginAttemptKey = messageId ? `login-attempt-msg-${messageId}` : null;
-  const hasAttemptedMsgLogin = msgLoginAttemptKey ? !!sessionStorage.getItem(msgLoginAttemptKey) : false;
 
   const typeId = !wrongAccount && messageId ? new TypeId(FlowMessage.type, messageId) : null;
   const { data: flowMessage, isLoading, notFound, error } = useEntity<FlowMessage>(typeId);
 
   useEffect(() => {
-    if (error?.response?.status !== 401) return;
     // Already came back from login with an api-key but still 401 → permissions issue, not auth.
-    if (hasApiKey) return;
-    if (hasAttemptedMsgLogin) {
-      setWrongAccount(true);
-      return;
-    }
-    if (msgLoginAttemptKey) sessionStorage.setItem(msgLoginAttemptKey, '1');
-    setRedirecting(true);
-    window.location.assign(sdkNavigator.getLoginWithCallbackUrl(window.location.href));
-  }, [error, hasApiKey, hasAttemptedMsgLogin, msgLoginAttemptKey]);
-
-  const handleCopy = async (text: string, setCopied: (v: boolean) => void) => {
-    try {
-      await window.navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* ignore */
-    }
-  };
+    if (error?.response?.status !== 401 || hasApiKey || !msgLoginAttemptKey) return;
+    if (bounceToLoginOnce(msgLoginAttemptKey) === 'exhausted') setWrongAccount(true);
+    else setRedirecting(true);
+  }, [error, hasApiKey, msgLoginAttemptKey]);
 
   const openAction = useMemo(() => {
     if (!messageId) return null;
     return new ActionInfo('open', FlowMessage.type, messageId, 'GET');
   }, [messageId]);
   const openTargetPath = openAction ? `${LOCAL_API_PREFIX}${openAction.actionUrl}` : '';
-
-  const openFlowpad = useOpenFlowpad({
-    port: LOCAL_PORT,
-    openTargetPath,
-    openInElectron: OPEN_IN_ELECTRON,
-    protocolTimeoutMs: 1500,
-  });
-
-  // Mint a fresh short-lived api-key, then hand off to the opener hook.
-  const handleOpenInFlowpad = async () => {
-    try {
-      const me = await dataManager.getCurrentUser();
-      const userId = me?.id;
-      if (!userId) {
-        openFlowpad(null);
-        return;
-      }
-      const userTypeId = new TypeId('user', userId);
-      const createKeyAction = new ActionInfo('api-keys', userTypeId.type, userTypeId.id, 'POST');
-      createKeyAction.bodyParameters = {
-        name: `flowpad-deeplink-${Date.now()}`,
-        description: t`Short-lived key for Open-in-FlowPad deep link`,
-        expires_in_days: 1,
-      };
-      const result = await dataManager.callAction<unknown, { api_key?: string; data?: { api_key?: string } }>(
-        createKeyAction,
-      );
-      const apiKey = result?.api_key || result?.data?.api_key;
-      openFlowpad(apiKey ?? null);
-    } catch {
-      openFlowpad(null);
-    }
-  };
 
   // Show spinner until we have a definitive outcome (accepted + loaded, wrong account, or error).
   if (isLoading || redirecting || (!wrongAccount && !flowMessage && !notFound && !error)) {
@@ -215,14 +168,7 @@ const MessageLanding: React.FC = () => {
               <Code className="nl-agent-icon" size={22} aria-label={t`Copilot`} />
             </h3>
             <p>{getAppPromoDesc}</p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button className="nl-btn" onClick={() => void handleOpenInFlowpad()}>
-                Open in FlowPad
-              </button>
-              <a className="nl-btn" href="https://flowpad.ai/">
-                Get FlowPad at flowpad.ai →
-              </a>
-            </div>
+            <OpenInFlowpadActions openTargetPath={openTargetPath} />
           </div>
 
           <div className="nl-option">
@@ -251,7 +197,7 @@ const MessageLanding: React.FC = () => {
           <div className="nl-plan-wrap">
             <div className="nl-plan-header">
               <span className="nl-plan-label">Plan</span>
-              <button className="nl-copy-btn" onClick={() => void handleCopy(specContent, setPlanCopied)}>
+              <button className="nl-copy-btn" onClick={() => void copyPlan(specContent)}>
                 <CopyIcon />
                 <span className="nl-copy-label">{planCopied ? 'Copied!' : 'Copy'}</span>
               </button>
