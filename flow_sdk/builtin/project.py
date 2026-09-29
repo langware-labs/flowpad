@@ -686,6 +686,31 @@ class Project(Entity):
             log.warning("project home page failed for %s: %s", self.id, exc)
             return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
+    # ── setup: is this project ready here, and the wizard that makes it so ─────────
+
+    @action.get(action_name="setup-requirements")
+    async def setup_requirements_action(self) -> "ApiResponse":
+        """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.
+        Every MUST value and needed connection counts; OPTIONAL values never do. Names only."""
+        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @action.post(action_name="setup")
+    async def setup_action(self) -> "ApiResponse":
+        """`POST /project/<id>/setup` — start the setup wizard here; its questions come to the app.
+        Answers at once with the run's address, which a screen claims to draw them in place."""
+        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"run": await start_setup(self)})
+
+    @action.get(action_name="setup-run")
+    async def setup_run_action(self) -> "ApiResponse":
+        """`GET /project/<id>/setup-run` — whether the setup is running, and its steps so far."""
+        from flow_sdk.builtin.project_setup import setup_run  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=setup_run(str(self.id)))
+
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:
         """Validate a ``brand`` block from ``string.json``, or ``None``.

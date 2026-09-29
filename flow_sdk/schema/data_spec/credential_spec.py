@@ -14,6 +14,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import (
     CredentialRequirement,
+    CredentialVarKind,
     Requirement,
     assert_value_free,
     is_valid_env_var,
@@ -56,6 +57,8 @@ class CredentialVarSpec(DataSpec):
     account_key: bool = False
     #: Masks the input. Defaults TRUE — the safe direction to be wrong in.
     secret: bool = True
+    #: ``text`` (the value) or ``file`` (a file's content, kept as a file; the variable holds its path).
+    kind: CredentialVarKind = CredentialVarKind.TEXT
     #: Where to get this particular value.
     help_url: str = ""
 

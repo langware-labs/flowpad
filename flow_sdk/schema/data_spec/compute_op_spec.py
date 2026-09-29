@@ -189,6 +189,8 @@ class AskOp(ExeData):
     prompt: str = ""
     #: The answer is a secret (an API key): it is masked where it is typed and never echoed.
     secret: bool = False
+    #: The answer is a file's content (a key file): the form offers a file picker and a paste box.
+    file: bool = False
     #: A plain-language paragraph under the heading: why it is being asked, and
     #: what each answer does. Not the op's `description` — that one is written for
     #: whoever reads the document, this one for whoever is looking at the window.

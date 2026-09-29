@@ -527,6 +527,7 @@ async def _ask(
         submit_label=spec.exe_data.submit_label,
         cancel_label=spec.exe_data.cancel_label,
         secret=spec.exe_data.secret,
+        file=spec.exe_data.file,
         wizard_id=wizard_id,
         guide=spec.setup or "",
     )
