@@ -1,5 +1,5 @@
 import type { TypeId } from '@sdk';
-import { PageId } from '@sdk';
+import { PageId, ViewType } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 function trimHubHost(hubHost: string): string {
@@ -16,12 +16,20 @@ export function hubProjectUrl(
   return `${trimHubHost(hubAppUrl)}${dockPath}`;
 }
 
+/** The hub page's own landing, as an app path. */
+export const HUB_HOME_PATH = '/dock/hub/home';
+
 /** Canonical cloud console home — `<hub base url>/dock/hub/home`, the hub's
  *  own landing page (see `home-loader.ts`'s hub-only redirect for the same
  *  path). Null when there is no hub host to anchor against. */
 export function hubHomeUrl(hubAppUrl: string | null | undefined): string | null {
   if (!hubAppUrl) return null;
-  return `${trimHubHost(hubAppUrl)}/dock/hub/home`;
+  return `${trimHubHost(hubAppUrl)}${HUB_HOME_PATH}`;
+}
+
+/** The hub page's generic view of any entity: `/dock/hub/entity/<type>/<id>`. */
+export function hubEntityDock(type: string, id: string): DockPointer {
+  return new DockPointer(ViewType.HUB_ENTITY, `${type}/${id}`, undefined, undefined, PageId.HUB);
 }
 
 /**

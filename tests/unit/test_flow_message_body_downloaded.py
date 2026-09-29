@@ -20,6 +20,7 @@ from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.flow_message import (
     Attachment,
     AttachmentType,
+    BodyStatus,
     FlowMessage,
 )
 from flow_sdk.fs_store import record_paths
@@ -210,6 +211,7 @@ async def test_header_only_body_unpacks_into_existing_message(records_root, tmp_
     fm = await FlowMessage(
         id=mint_uuid(), conversation_id=conv.id, text="Diagnostic report",
         is_read=True, attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=ref)],
+        body_status=BodyStatus.READY,
     ).save()
     zip_path = tmp_path / "partial.flowmsg"
     with zipfile.ZipFile(zip_path, "w") as archive:

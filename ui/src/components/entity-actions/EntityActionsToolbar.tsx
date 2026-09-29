@@ -4,6 +4,8 @@ import { compactEntityActionClassName } from '@src/components/entity-actions/act
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { agenticProcessShareSource, genericEntityShareSource, projectShareSource } from '@src/hooks/share-sources';
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { cn } from '@src/lib/utils';
@@ -54,7 +56,19 @@ export function EntityActionsToolbar({
   className,
 }: EntityActionsToolbarProps) {
   const [shareOpen, setShareOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const { canShare, isAgenticProcess } = useEntityShare(typeId);
+  // A Project's share invites people to it, which needs its hub row: an
+  // unpublished Project gets the publish popup BEFORE the share dialog.
+  const isProject = typeId.type === Project.type;
+  const { data: project } = useEntity<Project>(isProject ? typeId : null);
+  const openShare = () => {
+    if (isProject && project && project.remote !== true) {
+      setPublishOpen(true);
+      return;
+    }
+    setShareOpen(true);
+  };
 
   // The conversation share's prep: AgenticProcess shares its ClaudeTranscript
   // (claude_session) entity; a Project also grants membership (the message
@@ -82,7 +96,7 @@ export function EntityActionsToolbar({
       <CloudAssetPublishButton typeId={typeId} variant={variant} />
       <ShareButton
         variant={variant}
-        onClick={() => setShareOpen(true)}
+        onClick={openShare}
         disabled={!canShare}
         tooltip={canShare ? (variant === 'prominent' ? 'Share to a conversation' : 'Share') : 'Loading…'}
         testId="entity-actions-share"
@@ -102,6 +116,7 @@ export function EntityActionsToolbar({
       {trailing}
 
       {shareOpen && <ShareToConversationDialog open={shareOpen} onClose={handleClose} source={shareSource} />}
+      {project && <PublishProjectDialog project={project} open={publishOpen} onOpenChange={setPublishOpen} />}
     </div>
   );
 }
