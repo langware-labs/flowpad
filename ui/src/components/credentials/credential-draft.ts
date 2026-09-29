@@ -208,6 +208,7 @@ function fromRow(row: CredentialStatusRow, mode: 'edit' | 'values'): CredentialD
         help_url: v.help_url || undefined,
         secret: v.secret,
         required: v.required,
+        kind: v.kind,
       }),
     ),
   };
