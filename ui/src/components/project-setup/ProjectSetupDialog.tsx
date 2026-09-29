@@ -8,7 +8,7 @@ import {
   type ProjectReadiness,
   type ProjectSetupRun,
 } from '@sdk';
-import { AlertTriangle, CheckCircle2, Circle, KeyRound, Link2, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, KeyRound, Link2, Loader2, XCircle } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { AskForm } from '@src/components/ask/AskForm';
@@ -181,10 +181,16 @@ export function ProjectSetupDialog({
           <ul className="flex flex-col gap-1 border-t pt-3 text-xs" data-testid="project-setup-steps">
             {steps.map(([id, step]) => {
               const ok = step.exit_code === ExitCode.OK;
-              const Icon = ok ? CheckCircle2 : Circle;
+              const Icon = ok ? CheckCircle2 : XCircle;
+              // A failed step is marked by its row, not its text: red text on a dark dialog is unreadable.
               return (
-                <li key={id} className={`flex items-center gap-1.5 ${ok ? 'text-muted-foreground' : 'text-destructive'}`}>
-                  <Icon className="size-3.5 shrink-0" />
+                <li
+                  key={id}
+                  className={`flex items-start gap-1.5 ${
+                    ok ? 'text-muted-foreground' : 'rounded border-l-2 border-red-500 bg-red-500/15 px-2 py-1 text-foreground'
+                  }`}
+                >
+                  <Icon className="mt-px size-3.5 shrink-0" />
                   {step.detail || id}
                 </li>
               );
