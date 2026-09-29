@@ -21,7 +21,9 @@ store and the resolver agree on one spelling of each rule.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import BeforeValidator
 
 from flow_sdk._compat import StrEnum
 
@@ -82,6 +84,10 @@ def as_requirement(value: Any) -> Any:
     if isinstance(value, str) and value.strip().upper() in CredentialRequirement.__members__:
         return CredentialRequirement(value.strip().upper())
     return value
+
+
+#: A var's ``required`` field: the enum, reading a pre-enum bool on the way in.
+Requirement = Annotated[CredentialRequirement, BeforeValidator(as_requirement)]
 
 
 def is_valid_env_var(name: str) -> bool:

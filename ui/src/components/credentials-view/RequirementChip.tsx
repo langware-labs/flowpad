@@ -31,7 +31,7 @@ export function RequirementChip({
         className,
       )}
     >
-      {must ? 'MUST' : 'OPTIONAL'}
+      {required}
     </Badge>
   );
 }

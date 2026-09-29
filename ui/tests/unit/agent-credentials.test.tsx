@@ -30,7 +30,7 @@ vi.mock('@sdk', async (orig) => {
 });
 
 import { AgentCredentialsSection } from '@src/components/agent-resources/AgentCredentialsSection';
-import { CredentialChild } from '@src/components/assets/editor/agent-profile/CredentialChild';
+import { CredentialView } from '@src/components/credentials-view/CredentialView';
 
 function row(extra: Partial<CredentialStatusRow>): CredentialStatusRow {
   return {
@@ -85,7 +85,7 @@ describe('agent credentials', () => {
         { ...row({}).vars[0], env_var: 'OPENAI_ORG', label: 'Org', present: false, required: 'OPTIONAL' },
       ] }),
     ]);
-    render(<CredentialChild typeid="credential-1" onGone={() => undefined} />);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
     expect(screen.getByTestId('credential-child-scope')).toHaveTextContent('project');
     expect(screen.getByTestId('credential-child-store')).toHaveTextContent('the vault');
     expect(screen.getByTestId('credential-var-OPENAI_API_KEY')).toHaveTextContent('set');
@@ -95,21 +95,21 @@ describe('agent credentials', () => {
 
   it('Set values opens the one credential form with a values draft', async () => {
     creds.status = status([row({})]);
-    render(<CredentialChild typeid="credential-1" onGone={() => undefined} />);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
     await act(async () => fireEvent.click(screen.getByTestId('credential-child-set-values')));
     expect(screen.getByTestId('credential-dialog')).toHaveAttribute('data-mode', 'values');
   });
 
   it('a user credential the project overrides says so', () => {
     creds.status = status([row({ vars: [{ ...row({}).vars[0], shadowed_by: 'credential-9' }] })]);
-    render(<CredentialChild typeid="credential-1" onGone={() => undefined} />);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
     expect(screen.getByTestId('credential-child-state')).toHaveTextContent("overridden by the project's");
     expect(screen.getByTestId('credential-child-shadowed')).toBeInTheDocument();
   });
 
   it('a credential gone from the status says so', () => {
     creds.status = status([]);
-    render(<CredentialChild typeid="credential-404" onGone={() => undefined} />);
+    render(<CredentialView typeid="credential-404" onGone={() => undefined} />);
     expect(screen.getByTestId('credential-child-missing')).toBeInTheDocument();
   });
 });

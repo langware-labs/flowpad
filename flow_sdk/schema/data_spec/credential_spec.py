@@ -14,7 +14,7 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.schema.data_spec.credential_contract import (
     CredentialRequirement,
-    as_requirement,
+    Requirement,
     assert_value_free,
     is_valid_env_var,
 )
@@ -48,7 +48,7 @@ class CredentialVarSpec(DataSpec):
     placeholder: str = ""
     #: ``MUST`` (the app does not work without it) or ``OPTIONAL``. Defaults MUST —
     #: an unmarked variable stays required, the safe direction to be wrong in.
-    required: CredentialRequirement = CredentialRequirement.MUST
+    required: Requirement = CredentialRequirement.MUST
     #: Regex the value must match.
     pattern: str = ""
     advanced: bool = False
@@ -58,12 +58,6 @@ class CredentialVarSpec(DataSpec):
     secret: bool = True
     #: Where to get this particular value.
     help_url: str = ""
-
-    @field_validator("required", mode="before")
-    @classmethod
-    def _required_as_enum(cls, value: Any) -> Any:
-        """A bool from a manifest or row written before the enum reads as MUST / OPTIONAL."""
-        return as_requirement(value)
 
     @property
     def is_must(self) -> bool:

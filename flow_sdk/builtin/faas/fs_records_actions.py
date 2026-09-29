@@ -1652,8 +1652,7 @@ class FsRecordsActionsMixin:
         if _p is not None:
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-            from flow_sdk.fs_store.indexer.roots import deepest_project_id_for_path, load_project_mounts  # noqa: PLC0415
-            from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+            from flow_sdk.fs_store.indexer.roots import owning_project_id  # noqa: PLC0415
             from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
 
             _root_dir = _p.parent if _p.is_file() else _p
@@ -1661,10 +1660,7 @@ class FsRecordsActionsMixin:
             # owning Project's entity id — the one credentials, search and the scope
             # filters key on. The path-derived uuid5 is only the fallback for a folder
             # no Project row owns yet.
-            _root_pid = deepest_project_id_for_path(
-                canonical_posix_path(str(_root_dir)), await load_project_mounts(),
-                default=Project.derive_id_for_path(_root_dir),
-            )
+            _root_pid = await owning_project_id(_root_dir, default=Project.derive_id_for_path(_root_dir))
             custom_roots = (
                 FSRef(
                     _root_dir,
