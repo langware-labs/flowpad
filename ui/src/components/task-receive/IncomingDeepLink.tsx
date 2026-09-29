@@ -1,4 +1,4 @@
-import { isCompleteGitOrigin, type GitOrigin } from '@sdk';
+import { isCompleteGitOrigin, isInstallableOrigin, type GitOrigin } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -19,7 +19,9 @@ import { IncomingTaskDialog } from './IncomingTaskDialog';
  * were dropped unread.
  *
  * Params (all optional except `action`): `setup_git=1` + `git_origin` → clone
- * that repo into a fresh, indexed Project; `git_origin` + `task_id` → the task
+ * that repo into a fresh, indexed Project — or, with `project_id` (a shared hub
+ * project this box already holds as a file-less row), materialize THAT row in
+ * place so both ends keep one id; `git_origin` + `task_id` → the task
  * pull/clone flow; `conversation_id` → open that conversation; `task_id` alone
  * → the tasks dock.
  */
@@ -31,6 +33,7 @@ const DEEP_LINK_PARAMS = [
   'conversation_id',
   'task_id',
   'setup_git',
+  'project_id',
   'title',
   'sender_name',
   'git_origin',
@@ -48,6 +51,7 @@ export function IncomingDeepLink() {
     const convId = params.get('conversation_id') || '';
     const taskId = params.get('task_id') || '';
     const isGitSetup = params.get('setup_git') === '1';
+    const projectId = params.get('project_id') || undefined;
     const title = params.get('title') || 'Shared';
     const senderName = params.get('sender_name') || 'Someone';
     const gitOriginParam = params.get('git_origin');
@@ -55,7 +59,9 @@ export function IncomingDeepLink() {
     if (gitOriginParam) {
       try {
         const parsed = JSON.parse(gitOriginParam) as GitOrigin;
-        gitOrigin = isCompleteGitOrigin(parsed) ? parsed : null;
+        // A project's origin is its repo root (empty rel_path); the task branch
+        // below still requires an asset position.
+        gitOrigin = isInstallableOrigin(parsed) ? parsed : null;
       } catch {
         gitOrigin = null;
       }
@@ -68,11 +74,11 @@ export function IncomingDeepLink() {
     // indexed Project on THIS box. Checked before the task branch because a
     // git-setup link also carries a git_origin (but no task_id).
     if (isGitSetup && gitOrigin) {
-      setPendingProject({ gitOrigin, projectName: title, senderName });
+      setPendingProject({ gitOrigin, projectName: title, senderName, projectId });
       return;
     }
 
-    if (gitOrigin && taskId) {
+    if (gitOrigin && taskId && isCompleteGitOrigin(gitOrigin)) {
       setPendingTask({ taskId, taskTitle: title, senderName, gitOrigin });
       return;
     }

@@ -22,6 +22,9 @@ import MessageLanding from '@src/pages/entry/MessageLanding';
 import LaunchLanding from '@src/pages/entry/LaunchLanding';
 import OpenSandboxLanding from '@src/pages/entry/OpenSandboxLanding';
 import InstallLanding from '@src/pages/entry/InstallLanding';
+import EntityLanding from '@src/pages/entry/EntityLanding';
+import ProjectShareLanding from '@src/pages/entry/ProjectShareLanding';
+import { HubOnly } from '@src/pages/entry/entry-shell';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
 import { markdownRedirectTarget, skillsRedirectTarget } from '@src/navigation/dead-route-redirects';
@@ -186,6 +189,24 @@ export const router = createBrowserRouter(
       <Route path="compute_node/:nodeId" element={<OpenSandboxLanding />} />
       <Route path="launch" element={<LaunchLanding />} />
       <Route path="install" element={<InstallLanding />} />
+      {/* Project share landing: `Project.share` sets it as the invitation's `callback_override`. */}
+      <Route
+        path="project/:projectId"
+        element={
+          <HubOnly>
+            <ProjectShareLanding />
+          </HubOnly>
+        }
+      />
+      {/* Generic landing for the hub's post-accept `/<type>/<id>`; the static routes around it outrank it. */}
+      <Route
+        path=":entityType/:entityId"
+        element={
+          <HubOnly>
+            <EntityLanding />
+          </HubOnly>
+        }
+      />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route
         path="dock"
