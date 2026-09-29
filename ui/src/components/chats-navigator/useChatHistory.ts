@@ -288,16 +288,17 @@ export function useChatHistory(
       if (ra != null && rb != null && ra !== rb) return ra - rb;
       return delta;
     });
-    // Where each hit matched (search only): the instant match on the row's own
-    // title / last prompt first, else the content snippet from the index.
+    // Where each hit matched (search only): the last prompt, else the content
+    // snippet from the index. A title-only match is already visible in the
+    // title, so its line shows the last prompt as plain context instead.
     const matches = new Map<string, MatchPart[]>();
     if (q) {
       const snippetById = new Map(contentHits.map((h) => [h.record_id, h.snippet]));
       for (const e of sorted) {
         const parts =
-          partsAroundQuery(pickHistoryTitle(processFor(e), e), q) ??
           partsAroundQuery(e.last_prompt, q) ??
-          partsFromFtsSnippet(snippetById.get(e.worker_id));
+          partsFromFtsSnippet(snippetById.get(e.worker_id)) ??
+          (e.last_prompt ? [{ text: e.last_prompt.replace(/\s+/g, ' '), mark: false }] : null);
         if (parts) matches.set(e.worker_id, parts);
       }
     }

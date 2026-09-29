@@ -11,13 +11,6 @@ import { useIsBurning } from '@src/store/pending-actions-store';
 import { ChatPromptsPopover } from './ChatPromptsPopover';
 import { MatchSnippet, type MatchPart } from './matchSnippet';
 
-/**
- * One chat-history row in the Chats navigator. Pure presentation over the
- * shared `history-row` formatters (worker glyph, title, subline, time-ago) so it
- * stays consistent with the terminal HistoryModal + the chat dropdown. Click
- * selects (URL-first, owned by the parent); star/trash are per-row side effects
- * revealed on hover.
- */
 /** Absolute last-active stamp for the detailed (search) row — the one-liner
  *  already carries the relative time. */
 function formatWhen(iso: string | null | undefined): string | null {
@@ -27,6 +20,13 @@ function formatWhen(iso: string | null | undefined): string | null {
   return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * One chat-history row in the Chats navigator. Pure presentation over the
+ * shared `history-row` formatters (worker glyph, title, subline, time-ago) so it
+ * stays consistent with the terminal HistoryModal + the chat dropdown. Click
+ * selects (URL-first, owned by the parent); star/trash are per-row side effects
+ * revealed on hover.
+ */
 interface ChatHistoryRowProps {
   entry: WorkerHistoryEntry;
   selected: boolean;
