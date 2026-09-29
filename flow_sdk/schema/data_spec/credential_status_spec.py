@@ -58,7 +58,7 @@ class CredentialStatusRowSpec(DataSpec):
     icon_name: str = ""
     help_url: str = ""
     setup_wiki: str = ""
-    #: How an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI setup.
+    #: How an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI Assist.
     setup: str = ""
     #: How long an agent following ``setup`` gets; ``None`` = the default.
     setup_timeout_seconds: Optional[float] = None

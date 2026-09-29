@@ -211,3 +211,18 @@ def test_the_cli_reads_stdin_and_refuses_an_empty_value(posted):
 
     assert ok.exit_code == 0 and posted[0][2] == {"value": "sk-123"}
     assert empty.exit_code == ask_cmd.EXIT_REFUSED and len(posted) == 1
+
+
+async def test_a_question_raised_with_assist_now_starts_its_agent_and_waits_its_span(monkeypatch):
+    """What a terminal does when its person leaves the answer empty: the backend raises the question
+    with the assist already started, and waits the setup's span rather than the person's."""
+    from flow_sdk.core.compute import process_step
+
+    monkeypatch.setattr(process_step, "launch_step_process", _agent(answers="KEY-JSON", after=BRIEF * 2))
+
+    said = await ask.ask_person(
+        "ask-gcp-KEY", "Google Cloud: service-account key", "string", timeout=BRIEF, label="key",
+        guide="1. Create a key.", assist_agent="provisioner", setup_timeout=2.0, assist_now=True,
+    )
+
+    assert said.ok and said.value == "KEY-JSON"

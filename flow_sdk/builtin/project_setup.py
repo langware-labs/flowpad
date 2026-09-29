@@ -22,7 +22,6 @@ Values travel ask → the run's values → the environment of ``flow credentials
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -83,7 +82,7 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequir
             for v in row.vars if v.is_must
         ],
         satisfied=row.state == "connected", used_by=used_by,
-        note="" if row.setup.strip() else "no setup instructions: AI setup unavailable",
+        note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
     )
 
 
@@ -99,7 +98,7 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
                          pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE)
             for name, var in (template.vars or {}).items() if name in required
         ],
-        note="" if setup.strip() else "no setup instructions: AI setup unavailable",
+        note="" if setup.strip() else "no setup instructions: AI Assist unavailable",
     )
 
 
@@ -193,31 +192,10 @@ def _cli(*args: str) -> dict[str, dict[str, str]]:
     return {"commands": {p: _flow(*args, platform=p) for p in ("darwin", "linux", "win32")}}
 
 
-def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec, *, ai: bool) -> str:
+def _ask_prompt(req: SetupRequirementSpec, var: SetupVarSpec) -> str:
     lines = [f"{req.title or req.name}: {var.label or var.env_var}"]
     lines += [text for text in (var.hint, var.help_url or req.help_url) if text]
-    if ai:
-        lines.append("Leave it empty to let the AI set it up.")
     return "\n".join(lines)
-
-
-def _ai_prompt(req: SetupRequirementSpec, project_id: str, target: tuple[str, ...] = ()) -> str:
-    """The contract around the credential's own ``setup`` (which rides the op's ``setup``).
-
-    The store command is the one the checks run — this interpreter's ``flow``, so it reaches the same
-    install and instance — and it reads ``VAR=VALUE`` lines on stdin: a value on the command line is
-    visible to every process on the box and lands in the agent's own transcript."""
-    store = _flow("credentials", "set", req.name, "--project", project_id, *target, "--stdin", platform=sys.platform)
-    return (
-        f"Set up the credential {req.title or req.name!r} ({req.name}) for this project, "
-        f"{'in development' if not target else 'for deployment ' + target[-1]}, "
-        "following the instructions below. Where they say `flow credentials set …`, use the command below.\n"
-        f"Store the values by piping `VAR=VALUE` lines into:\n\n    {store}\n\n"
-        "That command is the only place a value goes. Produce each value inside the pipe that feeds it "
-        "(a generator, a file, a command's output) so it never passes through you: never print, echo or "
-        "repeat a value — not in a command line, your reply, a file or a log.\n"
-        "If a value needs the person (their account, a code sent to them), say exactly what they must do, and stop."
-    )
 
 
 def compile_setup(
@@ -246,13 +224,16 @@ def compile_setup(
                 "completion_check": _cli("connections", "test", req.name, *scopes),
             })
         elif req.kind == REQUIREMENT_PACK:
-            with_ai = ai and bool(req.setup.strip())
+            # AI Assist on each question: the provisioner follows the credential's own setup.md and
+            # answers the question — the person's other way to give the value, not a step of its own.
+            assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
             for var in req.missing:
                 add({
                     "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
                     "subkind": "ask", "output_spec_kind": "string",
-                    "exe_data": {"prompt": _ask_prompt(req, var, ai=with_ai), "secret": var.secret, "file": var.file},
+                    "exe_data": {"prompt": _ask_prompt(req, var), "secret": var.secret, "file": var.file,
+                                 "assist_agent": assist},
                     # The credential's own guide rides the question: the person sees how to obtain the
                     # value where they are asked for it.
                     "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
@@ -265,14 +246,6 @@ def compile_setup(
                 "subkind": "cli", "exe_data": _cli("credentials", "set", req.name, "--project", project_id, *target, "--from-inputs"),
                 "completion_check": check,
             })
-            if with_ai:
-                add({
-                    "name": f"ai-{req.name}", "label": f"AI setup: {req.title or req.name}",
-                    "description": f"{req.name} has every value it needs in {where}.",
-                    "subkind": "agent", "exe_data": {"agent": AI_AGENT, "prompt": _ai_prompt(req, project_id, target)},
-                    "setup": req.setup,
-                    "completion_check": check,
-                })
     wizard = WizardSpec.model_validate({
         "name": "project-setup", "description": "Set up this project's connections and credentials.",
         "icon": "KeyRound", "steps": steps,
