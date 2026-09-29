@@ -7,9 +7,9 @@
   "subkind": "cli",
   "exe_data": {
     "commands": {
-      "darwin": "curl -fsSL https://claude.ai/install-deliberately-wrong.sh | bash",
-      "linux": "curl -fsSL https://claude.ai/install-deliberately-wrong.sh | bash",
-      "win32": "irm https://claude.ai/install-deliberately-wrong.ps1 | iex"
+      "darwin": "curl -fsSL https://claude.ai/install.sh | bash",
+      "linux": "curl -fsSL https://claude.ai/install.sh | bash",
+      "win32": "irm https://claude.ai/install.ps1 | iex"
     },
     "timeout_seconds": 600
   },
