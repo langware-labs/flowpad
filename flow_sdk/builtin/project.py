@@ -229,6 +229,11 @@ class ProjectInviteRoleError(ValueError):
     """
 
 
+def project_share_landing_path(project_id: str) -> str:
+    """The app path a project invitation lands on — the SPA's ``project/:projectId`` route."""
+    return f"/project/{project_id}"
+
+
 # How many person invites a share keeps in flight at once. Each invite is a hub
 # write that may open a conversation and post into it, so a large team is
 # spread over a few parallel requests rather than one burst per member.
@@ -1404,6 +1409,9 @@ class Project(Entity):
                 request = {
                     field: recipient_key,
                     "invitation_targets": [{"typeid": project_ref, "role": person.role or PROJECT_DEFAULT_INVITE_ROLE}],
+                    # Set on the invitation rather than left to the hub's
+                    # fallback, so it holds whichever target the hub picks.
+                    "callback_override": project_share_landing_path(self.id),
                 }
                 if note and note.strip():
                     request["message"] = note.strip()

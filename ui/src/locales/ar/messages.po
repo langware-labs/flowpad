@@ -3894,6 +3894,7 @@ msgstr "Claude"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -4426,6 +4427,7 @@ msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -4957,8 +4959,13 @@ msgstr "تم نسخ {0} رابط{1}"
 msgid "Copied to Clipboard"
 msgstr "تم النسخ إلى الحافظة"
 
+#: src/pages/entry/entry-shell.tsx
+msgid "Copied!"
+msgstr "تم النسخ!"
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -4980,6 +4987,7 @@ msgstr "علامة تبويب Copilot"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Copy"
 msgstr "نسخ"
 
@@ -6261,6 +6269,7 @@ msgid "cursor"
 msgstr "المؤشر"
 
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Cursor"
 msgstr "المؤشر"
 
@@ -9210,6 +9219,10 @@ msgstr "تشخيصات Flowpad"
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
 
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
+msgstr "FlowPad تطبيق سطح مكتب مجاني ومفتوح المصدر للعمل على المشاريع مع وكلاء البرمجة لديك. افتح هذا المشروع وسيجهّزه FlowPad على جهازك."
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr ""
@@ -9518,6 +9531,10 @@ msgstr "جاري الإنشاء…"
 msgid "Generic options"
 msgstr "خيارات عامة"
 
+#: src/pages/entry/entry-shell.tsx
+msgid "Get FlowPad at flowpad.ai →"
+msgstr "احصل على FlowPad من flowpad.ai ←"
+
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
 msgstr "البدء — {stepsLeft} خطوة متبقية"
@@ -9697,6 +9714,10 @@ msgstr "العودة إلى صندوق التدفق الوارد"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
 msgstr "الانتقال إلى وحدة التحكم"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "Go to Home"
+msgstr "الانتقال إلى الصفحة الرئيسية"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
@@ -10314,6 +10335,7 @@ msgid "Id"
 msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "ID"
 msgstr "المعرف"
 
@@ -10892,11 +10914,23 @@ msgstr ""
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 msgstr ""
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "It lives in git under {repoPath}. Clone it, and open it in the FlowPad desktop app."
+msgstr "إنه موجود في git ضمن {repoPath}. انسخه وافتحه في تطبيق FlowPad لسطح المكتب."
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "It lives in git. Clone it, and open it in the FlowPad desktop app."
+msgstr "إنه موجود في git. انسخه وافتحه في تطبيق FlowPad لسطح المكتب."
+
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 msgid "It may be only partly removed."
 msgstr ""
+
+#: src/pages/entry/entry-shell.tsx
+msgid "It may have been deleted, or it wasn't shared with this account."
+msgstr "ربما تم حذفه، أو لم تتم مشاركته مع هذا الحساب."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "It runs again the next time the project opens."
@@ -11578,6 +11612,7 @@ msgstr "المحمّل"
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
+#: src/pages/entry/entry-shell.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Loading"
 msgstr "جارٍ التحميل"
@@ -13022,6 +13057,10 @@ msgstr "التشغيل التالي: {0}"
 msgid "no"
 msgstr ""
 
+#: src/pages/entry/entry-shell.tsx
+msgid "No {label} with this id was found"
+msgstr "لم يتم العثور على عنصر بهذا المعرّف"
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
 msgstr "لا يمكن الوصول إلى هذا المستودع. يمكن الاتصال بـ GitHub إذا كان خاصًا، أو التحقق من الرابط."
@@ -14129,6 +14168,7 @@ msgstr ""
 msgid "not fired yet"
 msgstr ""
 
+#: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "غير موجود"
@@ -14607,8 +14647,9 @@ msgid "Open {label}"
 msgstr "فتح {label}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
-msgstr ""
+msgstr "افتح {name}"
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
@@ -14846,6 +14887,10 @@ msgstr ""
 msgid "Open in Flowpad"
 msgstr ""
 
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "Open in FlowPad"
+msgstr "افتح في FlowPad"
+
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Open in new tab"
 msgstr "فتح في تبويب جديد"
@@ -14872,6 +14917,10 @@ msgstr "فتح في المحطة الطرفية"
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Open in Worktree"
 msgstr "فتح في بيئة العمل"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "Open in your browser"
+msgstr "افتح في المتصفح"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Open it now"
@@ -15004,6 +15053,14 @@ msgstr "فتح الطرفية في {workdir}"
 msgid "Open the {0} driver"
 msgstr ""
 
+#: src/pages/entry/entry-shell.tsx
+msgid "Open the {label} using one of these options:"
+msgstr "افتحه باستخدام أحد الخيارات التالية:"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "Open the {label}:"
+msgstr "فتح:"
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
 msgstr "فتح صفحة {PRIVACY_WIKI_PAGE}"
@@ -15108,6 +15165,10 @@ msgstr "فتح السجل النصي"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Open trigger"
 msgstr ""
+
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "Open with your favorite coding agent"
+msgstr "افتح باستخدام وكيل البرمجة المفضل لديك"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Open with:"
@@ -19406,7 +19467,7 @@ msgstr "علامة تبويب Shell"
 msgid "Shell unavailable"
 msgstr "القشرة غير متاحة"
 
-#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/useOpenFlowpad.ts
 msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr "مفتاح قصير الأجل لرابط Open-in-FlowPad العميق"
 
@@ -19703,6 +19764,10 @@ msgstr "تسجيل الدخول عبر {account}"
 msgid "Sign in with a provider"
 msgstr ""
 
+#: src/pages/entry/entry-shell.tsx
+msgid "Sign in with another account"
+msgstr "تسجيل الدخول بحساب آخر"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "تسجيل الدخول عبر {account} يسمح لـ {name} بكتابة الأكواد وتشغيلها نيابةً عنك. تُفتح نافذة متصفح لتسجيل الدخول — لا يطّلع FlowPad على كلمة مرورك أبدًا."
@@ -19738,6 +19803,11 @@ msgstr "لم يتم تأكيد تسجيل الدخول"
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "تم تسجيل الدخول"
+
+#. placeholder {0}: currentUser.email
+#: src/pages/entry/entry-shell.tsx
+msgid "Signed in as {0}."
+msgstr "تم تسجيل الدخول باسم {0}."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed in as {loggedInUser}"
@@ -19988,6 +20058,10 @@ msgstr "شيء آخر يستخدم هذا المنفذ، وليس تطبيقك."
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
 msgstr "حدث خطأ ما"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "Something went wrong opening this link. Try again in a moment."
+msgstr "حدث خطأ أثناء فتح هذا الرابط. حاول مرة أخرى بعد قليل."
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Something went wrong while loading this page."
@@ -22515,6 +22589,7 @@ msgstr "خطوتان سريعتان في متصفحك:"
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Type"
 msgstr "النوع"
 
@@ -23240,6 +23315,10 @@ msgstr "عرض"
 msgid "View {label} (read-only)"
 msgstr "عرض {label} (للقراءة فقط)"
 
+#: src/pages/entry/entry-shell.tsx
+msgid "View {name} on FlowPad. Nothing to install."
+msgstr "اعرض {name} على FlowPad. لا حاجة لتثبيت أي شيء."
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "View callback source"
 msgstr "عرض مصدر الاستدعاء"
@@ -23684,6 +23763,14 @@ msgstr "معالج"
 msgid "Wizard close failed"
 msgstr "فشل إغلاق المعالج"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "Work on it in the FlowPad desktop app with your coding agents."
+msgstr "اعمل عليه في تطبيق FlowPad لسطح المكتب مع وكلاء البرمجة لديك."
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "Work on it on your machine"
+msgstr "اعمل عليه على جهازك"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/workers/WorkerTypeSelect.tsx
@@ -23861,6 +23948,10 @@ msgstr "لم تتم إضافتك بعد إلى أي منظمة. تُنشأ ال�
 #: src/notifications/ingest.ts
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."
 msgstr "لا تتوفر الصلاحية اللازمة لتنفيذ هذا الإجراء. يرجى التواصل مع المسؤول إذا كان هذا يبدو غير صحيح"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "You have access to this {label}."
+msgstr "لديك حق الوصول إلى هذا العنصر."
 
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"

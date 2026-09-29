@@ -168,6 +168,20 @@ export function isCompleteGitOrigin(o: GitOrigin | null | undefined): o is GitOr
   return !!o && !!o.owner && !!o.name && isSafeRelPath(o.rel_path);
 }
 
+/** A GitOrigin a checkout can be made from: a repo, at its root or at a safe path
+ *  inside it. A PROJECT's origin is the repository itself, so its `rel_path` is
+ *  empty — `isCompleteGitOrigin` is the test for an ASSET inside a repo and
+ *  rejects exactly that shape. Only a path pointing outside the checkout
+ *  disqualifies here. */
+export function isInstallableOrigin(o: GitOrigin | null | undefined): o is GitOrigin {
+  return !!o && !!o.owner && !!o.name && (!o.rel_path || isSafeRelPath(o.rel_path));
+}
+
+/** The shell command that checks this origin out: `git clone [-b <branch>] <url>`. */
+export function gitCloneCommand(o: GitOrigin): string {
+  return `git clone ${o.branch ? `-b ${o.branch} ` : ''}${gitOriginCloneUrl(o)}`;
+}
+
 /** Read a (possibly absent) git-kind origin off any entity. `origin` is the
  *  entity field; `git_origin` is the hub's wire name for the same value. */
 export function gitOriginOf(

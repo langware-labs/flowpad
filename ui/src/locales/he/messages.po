@@ -3894,6 +3894,7 @@ msgstr "Claude"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -4426,6 +4427,7 @@ msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -4957,8 +4959,13 @@ msgstr "הועתקו {0} קישור{1}"
 msgid "Copied to Clipboard"
 msgstr "הועתק ללוח"
 
+#: src/pages/entry/entry-shell.tsx
+msgid "Copied!"
+msgstr "הועתק!"
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -4980,6 +4987,7 @@ msgstr "כרטיסיית Copilot"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Copy"
 msgstr "העתק"
 
@@ -6261,6 +6269,7 @@ msgid "cursor"
 msgstr "סמן"
 
 #: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/ProjectShareLanding.tsx
 msgid "Cursor"
 msgstr "Cursor"
 
@@ -9210,6 +9219,10 @@ msgstr "אבחון Flowpad"
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad מאתחל את המאגר, ולאחר מכן מציע את ההתקנה בענף ביקורת נפרד."
 
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine."
+msgstr "FlowPad היא אפליקציית דסקטופ חינמית בקוד פתוח לעבודה על פרויקטים עם סוכני הקוד שלך. פתחו את הפרויקט הזה ו-FlowPad יגדיר אותו במחשב שלך."
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "FlowPad stops, upgrades to the latest release and starts again on {upgradeTargetName}. Anyone working in it is interrupted for a minute or two, and a paused sandbox is woken to do it."
 msgstr ""
@@ -9518,6 +9531,10 @@ msgstr "מייצר קישור…"
 msgid "Generic options"
 msgstr "אפשרויות כלליות"
 
+#: src/pages/entry/entry-shell.tsx
+msgid "Get FlowPad at flowpad.ai →"
+msgstr "הורידו את FlowPad ב-flowpad.ai ←"
+
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
 msgstr "תחילת העבודה — נותרו {stepsLeft} שלבים"
@@ -9697,6 +9714,10 @@ msgstr "חזור לתיבת הזרם הנכנס"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Go to Console"
 msgstr "עבור לקונסול"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "Go to Home"
+msgstr "מעבר לדף הבית"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
@@ -10314,6 +10335,7 @@ msgid "Id"
 msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "ID"
 msgstr "מזהה"
 
@@ -10892,11 +10914,23 @@ msgstr ""
 msgid "It is no longer one of the endpoints the hub lists for you — or this machine is signed out of the hub."
 msgstr ""
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "It lives in git under {repoPath}. Clone it, and open it in the FlowPad desktop app."
+msgstr "הוא נמצא ב-git תחת {repoPath}. שכפלו אותו ופתחו אותו באפליקציית FlowPad למחשב."
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "It lives in git. Clone it, and open it in the FlowPad desktop app."
+msgstr "הוא נמצא ב-git. שכפלו אותו ופתחו אותו באפליקציית FlowPad למחשב."
+
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 msgid "It may be only partly removed."
 msgstr ""
+
+#: src/pages/entry/entry-shell.tsx
+msgid "It may have been deleted, or it wasn't shared with this account."
+msgstr "ייתכן שהוא נמחק, או שהוא לא שותף עם החשבון הזה."
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "It runs again the next time the project opens."
@@ -11578,6 +11612,7 @@ msgstr "טעון"
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
 #: src/components/icons/FusionSpinner.tsx
+#: src/pages/entry/entry-shell.tsx
 #: src/pages/entry/MessageLanding.tsx
 msgid "Loading"
 msgstr "טוען"
@@ -13022,6 +13057,10 @@ msgstr "הבא: {0}"
 msgid "no"
 msgstr ""
 
+#: src/pages/entry/entry-shell.tsx
+msgid "No {label} with this id was found"
+msgstr "לא נמצא פריט עם המזהה הזה"
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
 msgstr "אין גישה למאגר הזה. יש לחבר את חשבון ה-GitHub אם המאגר פרטי, או לבדוק את כתובת ה-URL."
@@ -14129,6 +14168,7 @@ msgstr ""
 msgid "not fired yet"
 msgstr ""
 
+#: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "לא נמצא"
@@ -14607,8 +14647,9 @@ msgid "Open {label}"
 msgstr "פתח {label}"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Open {name}"
-msgstr ""
+msgstr "פתיחת {name}"
 
 #: src/components/agents/AgentIntroCard.tsx
 msgid "Open {title}"
@@ -14846,6 +14887,10 @@ msgstr ""
 msgid "Open in Flowpad"
 msgstr ""
 
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "Open in FlowPad"
+msgstr "פתיחה ב-FlowPad"
+
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Open in new tab"
 msgstr "פתח בכרטיסייה חדשה"
@@ -14872,6 +14917,10 @@ msgstr "פתיחה בטרמינל"
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Open in Worktree"
 msgstr "פתח ב-Worktree"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "Open in your browser"
+msgstr "פתיחה בדפדפן"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Open it now"
@@ -15004,6 +15053,14 @@ msgstr "פתח טרמינל ב-{workdir}"
 msgid "Open the {0} driver"
 msgstr ""
 
+#: src/pages/entry/entry-shell.tsx
+msgid "Open the {label} using one of these options:"
+msgstr "אפשר לפתוח אותו באחת מהדרכים הבאות:"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "Open the {label}:"
+msgstr "פתיחה:"
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open the {PRIVACY_WIKI_PAGE} page"
 msgstr "פתחו את דף {PRIVACY_WIKI_PAGE}"
@@ -15108,6 +15165,10 @@ msgstr "פתח תמליל"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Open trigger"
 msgstr ""
+
+#: src/pages/entry/ProjectShareLanding.tsx
+msgid "Open with your favorite coding agent"
+msgstr "פתיחה עם סוכן הקוד המועדף עליך"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Open with:"
@@ -19406,7 +19467,7 @@ msgstr "כרטיסיית Shell"
 msgid "Shell unavailable"
 msgstr "shell לא זמין"
 
-#: src/pages/entry/MessageLanding.tsx
+#: src/pages/entry/useOpenFlowpad.ts
 msgid "Short-lived key for Open-in-FlowPad deep link"
 msgstr "מפתח קצר-טווח לקישור העמוק של Open-in-FlowPad"
 
@@ -19703,6 +19764,10 @@ msgstr "התחברו עם {account}"
 msgid "Sign in with a provider"
 msgstr ""
 
+#: src/pages/entry/entry-shell.tsx
+msgid "Sign in with another account"
+msgstr "התחברות עם חשבון אחר"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
 msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} לכתוב ולהריץ קוד בשבילך. חלון דפדפן נפתח להזדהות — FlowPad אף פעם לא רואה את הסיסמה שלך."
@@ -19738,6 +19803,11 @@ msgstr "ההתחברות לא אושרה"
 #: src/pages/flow-page/content-panel/user-dropdown/user-menu-header.tsx
 msgid "Signed in"
 msgstr "התחברת"
+
+#. placeholder {0}: currentUser.email
+#: src/pages/entry/entry-shell.tsx
+msgid "Signed in as {0}."
+msgstr "מחובר בתור {0}."
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "signed in as {loggedInUser}"
@@ -19988,6 +20058,10 @@ msgstr "משהו משתמש בפורט הזה, אך זו לא האפליקציה
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
 msgstr "משהו השתבש"
+
+#: src/pages/entry/entry-shell.tsx
+msgid "Something went wrong opening this link. Try again in a moment."
+msgstr "משהו השתבש בפתיחת הקישור. נסו שוב בעוד רגע."
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Something went wrong while loading this page."
@@ -22515,6 +22589,7 @@ msgstr "שני צעדים מהירים בדפדפן:"
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/pages/discover-page/DiscoverToolbar.tsx
+#: src/pages/entry/entry-shell.tsx
 msgid "Type"
 msgstr "סוג"
 
@@ -23240,6 +23315,10 @@ msgstr "הצג"
 msgid "View {label} (read-only)"
 msgstr "הצג {label} (קריאה בלבד)"
 
+#: src/pages/entry/entry-shell.tsx
+msgid "View {name} on FlowPad. Nothing to install."
+msgstr "צפייה ב-{name} ב-FlowPad, בלי להתקין כלום."
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "View callback source"
 msgstr "צפה בקוד callback"
@@ -23684,6 +23763,14 @@ msgstr "אשף"
 msgid "Wizard close failed"
 msgstr "סגירת האשף נכשלה"
 
+#: src/pages/entry/EntityLanding.tsx
+msgid "Work on it in the FlowPad desktop app with your coding agents."
+msgstr "עבדו עליו באפליקציית FlowPad למחשב עם סוכני הקוד שלכם."
+
+#: src/pages/entry/EntityLanding.tsx
+msgid "Work on it on your machine"
+msgstr "עבודה עליו במחשב שלך"
+
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/workers/WorkerTypeSelect.tsx
@@ -23861,6 +23948,10 @@ msgstr "עדיין אינכם משויכים לארגון. ארגונים מוג
 #: src/notifications/ingest.ts
 msgid "You don't have permission for this action. Contact your admin if this seems wrong."
 msgstr "אין לך הרשאה לפעולה זו. יש לפנות למנהל המערכת אם זה נראה שגוי."
+
+#: src/pages/entry/entry-shell.tsx
+msgid "You have access to this {label}."
+msgstr "יש לך גישה לפריט הזה."
 
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
