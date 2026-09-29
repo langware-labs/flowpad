@@ -90,7 +90,7 @@ msgstr ".env.local is not ignored by git here, so a value written there would be
 msgid "· pick a branch"
 msgstr "· pick a branch"
 
-#. placeholder {0}: wizard.name
+#. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
 msgstr "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
@@ -9613,6 +9613,10 @@ msgstr "Go back to stream inbox"
 msgid "Go to Console"
 msgstr "Go to Console"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Go to homepage"
+msgstr "Go to homepage"
+
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Go to Homepage"
@@ -12294,6 +12298,10 @@ msgstr "Metrics"
 #: src/components/cron-view/CronForm.tsx
 msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Minimize — it keeps running in the background"
+msgstr "Minimize — it keeps running in the background"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Minimize the process"
@@ -19062,6 +19070,10 @@ msgstr "Setup failed"
 msgid "Setup finished"
 msgstr "Setup finished"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Setup finished — everything is installed."
+msgstr "Setup finished — everything is installed."
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
 msgstr "Setup git"
@@ -20651,6 +20663,11 @@ msgstr "Takes ~4 seconds"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #~ msgid "takes effect after a restart"
 #~ msgstr "takes effect after a restart"
+
+#. placeholder {0}: Math.round(stuckMs / 1000)
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Taking longer than usual ({0}s with no update) — it may be stuck."
+msgstr "Taking longer than usual ({0}s with no update) — it may be stuck."
 
 #: src/components/voice/CallControls.tsx
 msgid "Talk to the agent from this browser."
@@ -23108,6 +23125,10 @@ msgstr "View current file"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "View diagnosis"
 msgstr "View diagnosis"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "View error"
+msgstr "View error"
 
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx

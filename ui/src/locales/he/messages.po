@@ -90,7 +90,7 @@ msgstr ""
 msgid "· pick a branch"
 msgstr "· בחר ענף"
 
-#. placeholder {0}: wizard.name
+#. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
 msgstr ""
@@ -9613,6 +9613,10 @@ msgstr "חזור לתיבת הזרם הנכנס"
 msgid "Go to Console"
 msgstr "עבור לקונסול"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Go to homepage"
+msgstr ""
+
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Go to Homepage"
@@ -12294,6 +12298,10 @@ msgstr "מטריקות"
 #: src/components/cron-view/CronForm.tsx
 msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "דקה שעה יום חודש יום שבוע — או \"30s\" / \"5m\" לקביעת מרווח"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Minimize — it keeps running in the background"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Minimize the process"
@@ -19062,6 +19070,10 @@ msgstr "ההגדרה נכשלה"
 msgid "Setup finished"
 msgstr ""
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Setup finished — everything is installed."
+msgstr ""
+
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
 msgstr "הגדרת Git"
@@ -20651,6 +20663,11 @@ msgstr "לוקח ~4 שניות"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 #~ msgid "takes effect after a restart"
 #~ msgstr ""
+
+#. placeholder {0}: Math.round(stuckMs / 1000)
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Taking longer than usual ({0}s with no update) — it may be stuck."
+msgstr ""
 
 #: src/components/voice/CallControls.tsx
 msgid "Talk to the agent from this browser."
@@ -23108,6 +23125,10 @@ msgstr "הצגת הקובץ הנוכחי"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "View diagnosis"
 msgstr "צפה בדיאגנוזה"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "View error"
+msgstr ""
 
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx

@@ -94,6 +94,23 @@ class Wizard(Entity):
 
     @computed_field
     @property
+    def label(self) -> str:
+        """A friendlier name than `name`, when the document sets one — same
+        split as a step's own `id`/`label`. Read fresh from the document, like
+        `agent`, since a label is cosmetic and does not need indexing."""
+        spec = self.spec()
+        return (spec.label if spec is not None else "") or self.name
+
+    @computed_field
+    @property
+    def popup(self) -> bool:
+        """Whether this wizard shows as a dismissible overlay instead of a
+        full editor page — see `WizardSpec.popup`."""
+        spec = self.spec()
+        return bool(spec.popup) if spec is not None else False
+
+    @computed_field
+    @property
     def agent(self) -> str:
         """The agent that drives this CONVERSATIONAL wizard, or "".
 

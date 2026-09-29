@@ -14,6 +14,8 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { ExitCode } from '@sdk';
+
 import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const h = vi.hoisted(() => ({ callAction: vi.fn(), refreshByTypeId: vi.fn() }));
@@ -57,12 +59,22 @@ const side = vi.hoisted(() => ({
 /** The trigger section links into the Events dock, so the form now reads dock
  *  navigation — which is URL-first and needs a Router the unit tier has not
  *  got. The link target has its own test. */
+const nav = vi.hoisted(() => ({ openDock: vi.fn(), goHome: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),
+  useDockNavigation: () => ({ navigation: nav, currentDock: null }),
 }));
 
 vi.mock('@src/navigation/useSideWindows', () => ({
   useSideWindows: () => ({ ...side, active: side.windows[side.windows.length - 1] ?? null }),
+}));
+
+/** The real animation reads layout (`getBoundingClientRect`) and drives the
+ *  DOM directly — nothing a jsdom render needs, and not what these tests are
+ *  about. What matters here is only that minimizing CALLS it, on the dialog's
+ *  own content node. */
+const minimize = vi.hoisted(() => ({ toProcessChip: vi.fn() }));
+vi.mock('@src/lib/minimize-to-element', () => ({
+  animateMinimizeToProcessChip: minimize.toProcessChip,
 }));
 
 import { WizardViewer } from '@src/components/assets/editor/wizard/WizardViewer';
@@ -164,35 +176,31 @@ describe('a settled run', () => {
     expect(screen.queryByText(settled.result.detail)).toBeNull();
   });
 
-  it('says nothing inline — a row′s own answer is read on hover, not printed permanently', async () => {
+  it('says nothing inline — a failed row′s own answer is read via "View error", not printed permanently', async () => {
     renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(settled)} />);
     await waitFor(() => expect(screen.getByTestId('wizard-step-build')).toBeTruthy());
 
-    // A row's own detail is a tooltip now, not always-visible text: a slow,
-    // all-passing wizard used to print every step's own "already satisfied"
-    // line permanently, drowning the one row that actually needed reading — a
-    // failure — among five that did not.
+    // A failed row's own detail is behind "View error" now, not always-visible
+    // text: a slow, all-passing wizard used to print every step's own
+    // "already satisfied" line permanently, drowning the one row that
+    // actually needed reading — a failure — among five that did not.
     expect(screen.getByTestId('wizard-step-version').textContent).not.toContain('already satisfied');
     expect(screen.getByTestId('wizard-step-build').textContent).not.toContain('the check still fails');
-    // A step no run reached has no answer, so it offers nothing to hover.
-    expect(screen.getByTestId('wizard-step-deploy').querySelector('.cursor-help')).toBeNull();
+    // A step no run reached has no answer, so it offers no "View error".
+    expect(screen.queryByTestId('wizard-step-deploy-view-error')).toBeNull();
   });
 
-  it('shows a satisfied step′s own answer on hover', async () => {
-    const user = userEvent.setup();
+  it('never offers "View error" for a satisfied step — there is nothing wrong to read', () => {
     renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(settled)} />);
-    await waitFor(() => expect(screen.getByTestId('wizard-step-version')).toBeTruthy());
-
-    await user.hover(screen.getByTestId('wizard-step-version').querySelector('.cursor-help')!);
-    expect((await screen.findByTestId('wizard-step-version-detail')).textContent).toContain('already satisfied');
+    expect(screen.queryByTestId('wizard-step-version-view-error')).toBeNull();
   });
 
-  it('shows a failed step′s own answer on hover', async () => {
+  it('shows a failed step′s own answer behind "View error"', async () => {
     const user = userEvent.setup();
     renderWizard(<WizardViewer fsRef={fsRefTwo()} wizard={wizard(settled)} />);
     await waitFor(() => expect(screen.getByTestId('wizard-step-build')).toBeTruthy());
 
-    await user.hover(screen.getByTestId('wizard-step-build').querySelector('.cursor-help')!);
+    await user.hover(screen.getByTestId('wizard-step-build-view-error'));
     expect((await screen.findByTestId('wizard-step-build-detail')).textContent).toContain('the check still fails');
   });
 
@@ -202,6 +210,58 @@ describe('a settled run', () => {
     expect(screen.queryByTestId('wizard-answers')).toBeNull();
     // Run is always Run; there is no parked run to Continue.
     expect(screen.getByTestId('wizard-run').textContent).toContain('Run');
+  });
+});
+
+describe('a fully finished run', () => {
+  const finished = { result: { exit_code: ExitCode.OK, detail: '', ran: true, steps: {} } };
+
+  it('says everything succeeded, and offers to go home', () => {
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(finished)} />);
+    expect(screen.getByTestId('wizard-finished')).toBeTruthy();
+    expect(screen.getByTestId('wizard-go-home')).toBeTruthy();
+  });
+
+  it('sends "Go to homepage" straight to the app home, same as the real Home button', () => {
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(finished)} />);
+    fireEvent.click(screen.getByTestId('wizard-go-home'));
+    expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
+  });
+
+  it('says nothing about being finished while the run is still going, or has not run at all', () => {
+    const stillGoing = { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', ran: false, steps: {} } };
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(stillGoing)} />);
+    expect(screen.queryByTestId('wizard-finished')).toBeNull();
+    cleanup();
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    expect(screen.queryByTestId('wizard-finished')).toBeNull();
+  });
+});
+
+describe('a popup wizard', () => {
+  const popupWizard = () => ({ ...wizard({}), popup: true, label: 'Finish setting up Flowpad' }) as never;
+
+  it('shows the ordinary page, not a popup, when the document does not ask for one', () => {
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    expect(screen.queryByTestId('wizard-popup')).toBeNull();
+    expect(screen.getByTestId('wizard-viewer-shell')).toBeTruthy();
+  });
+
+  it('shows as a dialog, with the document′s own label as its title, when it does', () => {
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+    expect(screen.getByTestId('wizard-popup')).toBeTruthy();
+    // Twice on purpose: the visible `<h2>` and Radix's own required (sr-only)
+    // accessible name for the dialog.
+    expect(screen.getAllByText('Finish setting up Flowpad')).toHaveLength(2);
+    // The full-page shell (side-drawer machinery) is not what a popup renders.
+    expect(screen.queryByTestId('wizard-viewer-shell')).toBeNull();
+  });
+
+  it('minimizing flies the dialog into the footer chip and leaves — nothing to pause, the run is server-side', () => {
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+    fireEvent.click(screen.getByTestId('wizard-minimize'));
+    expect(minimize.toProcessChip).toHaveBeenCalledTimes(1);
+    expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
   });
 });
 

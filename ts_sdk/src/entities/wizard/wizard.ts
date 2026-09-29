@@ -58,6 +58,14 @@ export interface IWizard extends IEntity {
   asset_ref?: string;
   enabled?: boolean;
   description?: string;
+  /** A friendlier name than `name`, when the document sets one — same split as
+   *  a step's own `id`/`label`. Falls back to `name` when the document does not
+   *  set one, so most wizards need no second string. */
+  label?: string;
+  /** Show this wizard as a dismissible overlay instead of a full editor page.
+   *  Set on the document (`WizardSpec.popup`) for a first-run/onboarding
+   *  wizard someone glances at and can set aside. */
+  popup?: boolean;
   /** The agent driving this CONVERSATIONAL wizard, declared in the document.
    *
    *  Non-empty means the wizard is a conversation: it has no steps, it is
@@ -100,6 +108,8 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   asset_ref?: string;
   enabled?: boolean;
   description?: string;
+  label?: string;
+  popup?: boolean;
   /** The agent driving this CONVERSATIONAL wizard, declared in the document.
    *
    *  Non-empty means the wizard is a conversation: it has no steps, it is
@@ -122,6 +132,8 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     this.description = entity.description;
     // A computed field on the backend: re-read on every fetch, never written
     // from here. The UI mirrors it, the backend owns it.
+    this.label = entity.label;
+    this.popup = entity.popup;
     this.agent = entity.agent;
     this.shipped = entity.shipped;
     this.run_state = entity.run_state;

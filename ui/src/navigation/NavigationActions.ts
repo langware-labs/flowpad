@@ -819,7 +819,10 @@ export class NavigationActions {
   /** The link as a tab of `process`'s vibe workspace — the process opens in vibe mode showing it. */
   async openLinkInVibe(link: string, source: Shell | null, process: AgenticProcess): Promise<void> {
     try {
-      const dock = placeDockInProject(await this.resolveLinkDock(link, source), process.project_id ?? source?.project_id);
+      const dock = placeDockInProject(
+        await this.resolveLinkDock(link, source),
+        process.project_id ?? source?.project_id,
+      );
       this.openDock(dock.withViewMode(ViewMode.Vibe).withHost(process.typeId.toString()));
     } catch (error) {
       notifyLinkError(error);
@@ -895,8 +898,6 @@ export class NavigationActions {
       cwd?: string;
       /** Typed AND submitted once the terminal attaches. */
       startCommand?: string;
-      /** Typed and left at the prompt — the user presses Enter. */
-      prefillCommand?: string;
       skipPermissions?: boolean;
       viewMode?: string;
       host?: string;
@@ -1012,8 +1013,6 @@ export class NavigationActions {
     cwd?: string;
     /** Typed AND submitted once the terminal attaches. */
     startCommand?: string;
-    /** Typed and left at the prompt — the user presses Enter. */
-    prefillCommand?: string;
     computeNode?: ComputeNode;
     skipNavigate?: boolean;
     projectId?: string;
