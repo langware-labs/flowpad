@@ -100,6 +100,22 @@ def is_system_project_path(path: str | Path) -> bool:
     return p.parent.name == SYSTEM_PROJECTS_DIRNAME and p.parent.parent.name == "flow_sdk"
 
 
+def is_running_install_path(path: str | Path) -> bool:
+    """True when ``path`` lies inside THIS running SDK's ``system_projects`` folder.
+
+    Stricter than :func:`is_system_project_path`, which matches any install by shape. When a
+    name resolves to several shipped-looking copies — this install's, plus a repo checkout or
+    an older install someone opened as a project — the running one is the copy to use: it is
+    the code this backend actually is. Compared the way the OS compares paths.
+    """
+    root = os.path.normcase(str(system_projects_root().resolve()))
+    try:
+        candidate = os.path.normcase(str(Path(path).resolve()))
+    except OSError:
+        return False
+    return candidate == root or candidate.startswith(root + os.sep)
+
+
 def _active_server_json_path() -> Path:
     """Per-instance server.json path. InstanceSettings handles the dev/prod split."""
     return _server_json_path()
