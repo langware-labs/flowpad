@@ -3776,6 +3776,10 @@ msgstr ""
 msgid "Choose a document from the sidebar to view its contents"
 msgstr "בחר מסמך מהסרגל הצדדי כדי לצפות בתוכנו"
 
+#: src/components/credentials/FileValueInput.tsx
+msgid "Choose a file instead"
+msgstr ""
+
 #: src/components/install/AddAssetDialog.tsx
 msgid "Choose a project"
 msgstr ""
@@ -3810,6 +3814,10 @@ msgstr "בחרו תמונת פרופיל"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Choose branch"
+msgstr ""
+
+#: src/components/credentials/FileValueInput.tsx
+msgid "Choose file"
 msgstr ""
 
 #: src/components/quick-create/ScopeSelection.tsx
@@ -4856,6 +4864,7 @@ msgid "context tokens"
 msgstr "אסימוני Context"
 
 #: src/components/GitHubConnectionDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/survey/SurveyView.tsx
 msgid "Continue"
 msgstr "המשך"
@@ -8201,6 +8210,10 @@ msgstr "הכול כבר מעודכן."
 msgid "Everything is in place."
 msgstr ""
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Everything is set up."
+msgstr ""
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
 msgstr ""
@@ -8837,6 +8850,10 @@ msgstr "קובץ"
 #: src/components/assets/editor/DocumentSaveNotice.tsx
 msgid "File changed outside this editor. Your edits are preserved."
 msgstr "הקובץ השתנה מחוץ לעורך הזה. העריכות שלכם נשמרו בטיוטה."
+
+#: src/components/credentials/FileValueInput.tsx
+msgid "File content"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "File mtime is newer than DB updated_date"
@@ -15435,6 +15452,10 @@ msgstr "הדביקו מפתח API"
 msgid "Paste code from browser"
 msgstr "יש להדביק כאן את הקוד מהדפדפן"
 
+#: src/components/credentials/FileValueInput.tsx
+msgid "Paste instead"
+msgstr ""
+
 #: src/pages/discover-page/CommandBlock.tsx
 msgid "Paste into a terminal on a machine running Flowpad and signed in. Or use Install."
 msgstr ""
@@ -19039,6 +19060,10 @@ msgstr "הגדר"
 msgid "Set up (runs an agentic process)"
 msgstr "הגדר (מפעיל תהליך אגנטי)"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Set up {projectName}"
+msgstr ""
+
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "Set up {title}"
 msgstr ""
@@ -20120,6 +20145,7 @@ msgid "Star chat"
 msgstr "סימון כוכב"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
@@ -23511,6 +23537,10 @@ msgstr ""
 msgid "What this project has published, and what it could."
 msgstr ""
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What to look at"
 msgstr "מה לבדוק"
@@ -23702,6 +23732,7 @@ msgid "Working Tree"
 msgstr "עץ עבודה"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
