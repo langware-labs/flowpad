@@ -16,6 +16,7 @@ machine itself is ``flow_sdk/core/compute_op/runner.py`` and has no I/O, which i
 what lets the whole block be driven in a REPL and inside a container with nothing
 indexed.
 """
+
 import logging
 import uuid
 from pathlib import Path
@@ -32,6 +33,7 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
     CliOp,
     OpSubkind,
     PromptOp,
+    Rung,
     exe_data_by_subkind,
 )
 from flow_sdk.schema.types import EntityType
@@ -62,10 +64,19 @@ class ComputeOp(Entity):
     description: str = APIField(default="")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
     subkind: OpSubkind = APIField(default=OpSubkind.CLI, description="Who does the work: cli, prompt, agent or ask.")
-    exe_data: Union[CliOp, PromptOp, AgentOp, AskOp] = APIField(default=None, description="The one call, shaped by the subkind.")
+    exe_data: Union[CliOp, PromptOp, AgentOp, AskOp] = APIField(
+        default=None, description="The one call, shaped by the subkind."
+    )
     output_spec_kind: Optional[str] = APIField(default=None, description="The kind this op returns.")
-    completion_check: Optional[CliOp] = APIField(default=None, description="When this op is already done; absent means it always runs.")
-    not_applicable_codes: list[int] = APIField(default_factory=list, description="Completion-check exit codes that mean \"not this machine\".")
+    completion_check: Optional[CliOp] = APIField(
+        default=None, description="When this op is already done; absent means it always runs."
+    )
+    attempts: list[Rung] = APIField(
+        default_factory=list, description="Further rungs (cli/prompt/agent) tried in order at the same goal."
+    )
+    not_applicable_codes: list[int] = APIField(
+        default_factory=list, description='Completion-check exit codes that mean "not this machine".'
+    )
     setup: str = APIField(default="", description="How a person does this by hand (setup.md).")
 
     _api_visible: ClassVar[bool] = True
@@ -173,7 +184,10 @@ class ComputeOp(Entity):
         async def go(node) -> "ReturnedValue":
             node.label(spec.display_label)
             answer = await run_op(
-                spec, subject=subject or str(self.typeid), trusted=True, workdir=workdir,
+                spec,
+                subject=subject or str(self.typeid),
+                trusted=True,
+                workdir=workdir,
                 on_status=lambda text: node.current(text),
             )
             node.current(answer.detail)

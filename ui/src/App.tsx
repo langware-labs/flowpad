@@ -35,7 +35,6 @@ import { useSyncOsBadge } from '@src/hooks/useStreamInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
-import { IncomingSharedProjects } from '@src/components/task-receive/use-incoming-shared-projects';
 import { UiTagEmitter } from '@src/tags/ui.onTag';
 import { TagHighlightObserver } from '@src/tags/highlight.onTag';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
@@ -44,6 +43,7 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { queryClient } from '@sdk/lazy';
 import { PrimaryContentProvider } from '@sdk/react/primary-content';
 import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
+import { AskModalRoot } from '@src/components/ask/AskModal';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
@@ -152,12 +152,13 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <WikiModalRoot />
         <RunPreviewRoot />
         <FilePreviewRoot />
+        {/* A ComputeOp `ask` raised on this live tab — see `use-ui-command-listener`.
+            Mounted at the root like every other global overlay, so it opens over
+            whatever page is showing rather than replacing it. */}
+        <AskModalRoot />
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
         {!isHubOnly() && <AddAssetDialogRoot />}
-        {/* A project somebody shared arrives as a row with no files; this offers
-            to install it. Desktop only, same reason as above. */}
-        {!isHubOnly() && <IncomingSharedProjects />}
         <GitHubDeviceFlowModal />
         <OAuthCodeFlowModal />
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);

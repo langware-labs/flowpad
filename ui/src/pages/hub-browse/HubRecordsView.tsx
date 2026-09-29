@@ -2,6 +2,7 @@ import { PageId, QueryRequest, ViewType } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
+import { hubEntityDock } from '@src/lib/hub-page-url';
 import { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 
@@ -62,7 +63,7 @@ export function HubRecordsView({ type }: { type?: string }) {
     if (type === 'conversation') {
       navigation.openPage(PageId.HUB, ViewType.CONVERSATION, row.id);
     } else {
-      navigation.openPage(PageId.HUB, ViewType.HUB_ENTITY, `${type}/${row.id}`);
+      navigation.openDock(hubEntityDock(type, row.id));
     }
   };
 

@@ -1,0 +1,23 @@
+{
+  "type": "compute_op",
+  "id": "9abd6744-6274-4121-b54b-8f030080957d",
+  "name": "ask-install-tree",
+  "label": "Install tree?",
+  "description": "Asks the person whether to install tree, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "tree is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "command -v tree >/dev/null 2>&1 && echo '{}'",
+      "linux": "command -v tree >/dev/null 2>&1 && echo '{}'"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

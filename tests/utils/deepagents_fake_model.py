@@ -27,12 +27,33 @@ class ScriptedChatModel(FakeMessagesListChatModel):
         return self
 
 
-def scripted(model: str) -> ScriptedChatModel:
+class OpenAIInvalidRequestError(RuntimeError):
+    """Same class NAME as the real OpenAI client's — ``runner._error_kind`` classifies on it —
+    so a test raising this exercises the same ``kind="model"`` branch production hits."""
+
+
+class RejectingChatModel(ScriptedChatModel):
+    """Raises on every call, exactly the shape a gateway sends for a model an endpoint's chain
+    refuses (``OpenAIInvalidRequestError: ... 'model X not allowed by endpoint Y budget'``) —
+    proves the runner's fallback-and-retry, not the real gateway's wire format. Built fresh once
+    per model-factory call (see ``run_turn``'s retry loop), so "every call" and "the first call"
+    are the same thing here: the run never invokes the SAME rejected model twice."""
+
+    def _generate(self, *args: Any, **kwargs: Any):  # noqa: ANN001, ANN201, D102
+        raise OpenAIInvalidRequestError("Error code: 400 - model rejected-model not allowed by endpoint Test budget")
+
+
+def _scripted_responses() -> list[AIMessage]:
     turns = json.loads(Path(os.environ["DEEPAGENTS_FAKE_SCRIPT"]).read_text(encoding="utf-8"))
     responses = []
     for index, turn in enumerate(turns):
         calls = [
-            {"name": call["name"], "args": call.get("args") or {}, "id": call.get("id") or f"call_{index}_{n}", "type": "tool_call"}
+            {
+                "name": call["name"],
+                "args": call.get("args") or {},
+                "id": call.get("id") or f"call_{index}_{n}",
+                "type": "tool_call",
+            }
             for n, call in enumerate(turn.get("tool_calls") or [])
         ]
         responses.append(
@@ -43,4 +64,18 @@ def scripted(model: str) -> ScriptedChatModel:
                 response_metadata={"finish_reason": turn["finish_reason"]} if "finish_reason" in turn else {},
             )
         )
-    return ScriptedChatModel(responses=responses)
+    return responses
+
+
+def scripted(model: str) -> ScriptedChatModel:
+    return ScriptedChatModel(responses=_scripted_responses())
+
+
+def scripted_rejecting(model: str) -> ScriptedChatModel:
+    """Like :func:`scripted`, except the model named ``rejected-model`` raises instead of
+    answering — the runner's fallback-and-retry (``_fallback_model``/``_model_rejected`` in
+    ``deepagents/runner.py``) is what is meant to get past it and complete the script on
+    whatever model it retries with."""
+    if model == "rejected-model":
+        return RejectingChatModel(responses=[])
+    return ScriptedChatModel(responses=_scripted_responses())

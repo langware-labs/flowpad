@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ActivityProgressSpec } from '@sdk/activity';
-import { isTerminal } from '@sdk/activity';
+import { deepestRunning, isTerminal } from '@sdk/activity';
 import { ExitCode, type Wizard, type WizardResult, type WizardRunDetail } from '@sdk';
 
-import { useActivitySpec } from '@src/store/activity-store';
+import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 
 /** ONE step's answer — the op's own result (a `CliResult`, a `PromptResult`, an
  *  `AskResult`, a nested `WizardResult`) — with the step it belongs to. */
@@ -36,6 +36,46 @@ function answersOf(result: WizardResult | null | undefined): WizardStepAnswer[] 
   return Object.entries(result?.steps ?? {}).map(([step_id, answer]) => ({ ...answer, step_id }));
 }
 
+/** Shape of ONE op's own answer — just the fields `rungTrail` reads, present
+ *  on a CliResult/PromptResult regardless of which one a step settled on. */
+interface OpAnswerShape {
+  ran?: boolean;
+  executor?: string | null;
+  steps?: Record<string, OpAnswerShape>;
+}
+
+/** Which rungs a step's goal actually went through, oldest first — derived
+ *  from the SAME durable answer already shown, never a new fetch or a live
+ *  subscription. Persists after a run ends, which is the point: "validated"
+ *  alone means the check already passed and nothing else ran; "validated,
+ *  cli" means the base command is what got there; "validated, cli, agent"
+ *  means the command alone did not and the agent fallback was reached
+ *  (whether or not it, in turn, succeeded — the step's own icon says that).
+ *
+ * A step here is usually itself a nested wizard (ask, then install) — the
+ * ladder belongs to "install", the goal these rungs are all attempts AT, not
+ * to "ask", which is a different question entirely.
+ */
+export function rungTrail(outcome: WizardStepAnswer | null | undefined): string[] {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  const install = asShape?.steps?.install ?? asShape ?? null;
+  if (!install) return [];
+  const trail = ['validation'];
+  if (install.ran) trail.push('cli');
+  if (install.executor) trail.push('agent');
+  return trail;
+}
+
+/** The agent rung's own executor typeid (``agentic_process-<id>``), or ``null`` when the step
+ *  never reached that rung — the process to resolve for "which harness, which model actually
+ *  ran" (see {@link AgentRungLabel} in `WizardViewer.tsx`). Same extraction as {@link rungTrail},
+ *  kept separate so a caller that only wants the id is not forced through the whole trail. */
+export function agentExecutorOf(outcome: WizardStepAnswer | null | undefined): string | null {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  const install = asShape?.steps?.install ?? asShape ?? null;
+  return install?.executor ?? null;
+}
+
 /** One step, as the debugger sees it: what it is doing now, and what it answered. */
 export interface WizardRunStep {
   step_id: string;
@@ -48,11 +88,11 @@ export interface WizardRunStep {
  *
  * They are genuinely different sources and neither subsumes the other:
  *
- * * **Live** is the Activity tree — present only while a run is in flight, and
- *   only for a run started from THIS viewer. A trigger-fired run is
- *   instance-scoped by design (so it reaches the footer chip), so it produces no
- *   rows here at all. A debugger that pretended live was complete would show an
- *   empty list for the runs people most want to inspect.
+ * * **Live** is the Activity tree — present only while a run is in flight. A
+ *   trigger-fired run is instance-scoped by design (so it reaches the footer
+ *   chip too), but this hook watches BOTH scopes for the same path (see
+ *   `pickLiveActivity`), so an unattended run shows up here just as well as one
+ *   started from this viewer.
  * * **Durable** is `run.json`, stamped when a run settles. It is the only
  *   record of an unattended run, and the only place step output exists.
  *
@@ -61,12 +101,18 @@ export interface WizardRunStep {
  * terminal EDGE and on demand — never polled.
  */
 export function useWizardRun(wizard: Wizard) {
-  // BOTH halves of the address come from the backend: the path is a computed
-  // field (re-deriving its slug convention here is how a viewer ends up
-  // subscribed to a tree nothing writes to), and the subject is the wizard's
-  // own typeid — `run_action` scopes the run to it so the tree reaches this
-  // viewer's watchers rather than every connection.
-  const root = useActivitySpec(wizard.activity_path ?? '', wizard.typeId.toString());
+  // The path is a computed field (re-deriving its slug convention here is how
+  // a viewer ends up subscribed to a tree nothing writes to) — but the SUBJECT
+  // differs by who started the run. `run_action` scopes an attended run to the
+  // wizard's own typeid, so the tree reaches this viewer's watchers. An
+  // unattended run (the first-run trigger) scopes to NOTHING on purpose — see
+  // `Wizard.run` — so it reaches the footer chip instead, whether or not this
+  // page is even open. Both land under the SAME path, which already carries
+  // this wizard's own id, so listening for both here can never cross-show a
+  // different wizard's run: whichever one is actually live wins.
+  const scoped = useActivitySpec(wizard.activity_path ?? '', wizard.typeId.toString());
+  const unattended = useActivitySpec(wizard.activity_path ?? '', undefined);
+  const root = pickLiveActivity(scoped, unattended);
   const [detail, setDetail] = useState<WizardRunDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   // Refs, not state: this tracks an EDGE, and putting it in state would make
@@ -106,10 +152,7 @@ export function useWizardRun(wizard: Wizard) {
   // `strip_heavy` removes on its way to the entity — the step's OUTPUT —
   // matched per step.
   const recordedResult = wizard.run_state?.result;
-  const recorded = useMemo(
-    () => (recordedResult ? answersOf(recordedResult) : NO_ANSWERS),
-    [recordedResult],
-  );
+  const recorded = useMemo(() => (recordedResult ? answersOf(recordedResult) : NO_ANSWERS), [recordedResult]);
   const detailed = detail?.result?.steps;
   const outcomes: WizardStepAnswer[] = useMemo(() => {
     if (!detailed) return recorded;
@@ -118,7 +161,14 @@ export function useWizardRun(wizard: Wizard) {
       // Only the stripped fields are taken back: everything else on the
       // entity's answer is fresher than this fetch.
       return from
-        ? { ...o, stdout: from.stdout, stderr: from.stderr, text: from.text, value: from.value, check: from.check ?? o.check }
+        ? {
+            ...o,
+            stdout: from.stdout,
+            stderr: from.stderr,
+            text: from.text,
+            value: from.value,
+            check: from.check ?? o.check,
+          }
         : o;
     });
   }, [recorded, detailed]);
@@ -130,11 +180,20 @@ export function useWizardRun(wizard: Wizard) {
     (stepIds: string[]): { steps: WizardRunStep[]; orphaned: WizardStepAnswer[] } => {
       const byId = new Map(outcomes.map((o) => [o.step_id, o]));
       const children = root?.children ?? [];
-      const steps = stepIds.map((step_id) => ({
-        step_id,
-        live: children.find((child) => child.name === step_id) ?? null,
-        outcome: byId.get(step_id) ?? null,
-      }));
+      const steps = stepIds.map((step_id) => {
+        const node = children.find((child) => child.name === step_id) ?? null;
+        // A step here is usually itself a nested wizard (ask, then install),
+        // so ITS own `current` is never set — only `label` is. The granular
+        // phase text ("checking…", "…: cli", "…: agent") is written on
+        // whichever descendant is actually doing the work right now, so surface
+        // THAT node instead of the one that merely carries this step's name.
+        const active = node ? deepestRunning(node) : null;
+        return {
+          step_id,
+          live: active ?? node,
+          outcome: byId.get(step_id) ?? null,
+        };
+      });
       const known = new Set(stepIds);
       return { steps, orphaned: outcomes.filter((o) => !known.has(o.step_id)) };
     },
@@ -143,8 +202,5 @@ export function useWizardRun(wizard: Wizard) {
 
   // Memoized as a whole: an unstable object here would defeat every
   // `useCallback` downstream that lists it as a dependency.
-  return useMemo(
-    () => ({ live, join, loadDetail, loadingDetail }),
-    [live, join, loadDetail, loadingDetail],
-  );
+  return useMemo(() => ({ live, join, loadDetail, loadingDetail }), [live, join, loadDetail, loadingDetail]);
 }

@@ -18,10 +18,10 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from flow_sdk.core.compute_op.ask import answer as deliver_answer
-from flow_sdk.core.compute_op.ask import cancel as decline
-from flow_sdk.core.compute_op.ask import ask_person, open_questions, pending, serve_here
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
+from flow_sdk.core.compute_op.ask import answer as deliver_answer
+from flow_sdk.core.compute_op.ask import ask_person, open_questions, pending, serve_here
+from flow_sdk.core.compute_op.ask import cancel as decline
 from flow_sdk.responses.response import ApiSuccessResponse
 
 router = APIRouter(prefix="/api/v1/ask")
@@ -39,8 +39,7 @@ def _fail(message: str, status_code: int) -> JSONResponse:
     dispatcher reads its ``status_code``. A 422 arriving as a 200 is a 422 the
     browser never handles.
     """
-    return JSONResponse(status_code=status_code,
-                        content={"status": "FAIL", "message": message, "data": None})
+    return JSONResponse(status_code=status_code, content={"status": "FAIL", "message": message, "data": None})
 
 
 class AnswerRequest(BaseModel):
@@ -56,10 +55,16 @@ class AskRequest(BaseModel):
     prompt: str
     shape: Any = None
     #: Already the op's shortest deadline; this route waits exactly that long.
-    timeout: float
+    #: ``None`` is an ``until_answered`` op's: no deadline.
+    timeout: Optional[float]
     label: str
+    detail: str = ""
+    submit_label: str = ""
+    cancel_label: str = ""
     #: The answer is a secret: the window masks it.
     secret: bool = False
+    #: The Wizard entity this question is a step of, when it is one.
+    wizard_id: str = ""
     #: How a person finds the value (the op's ``setup.md``).
     guide: str = ""
 
@@ -68,8 +73,19 @@ class AskRequest(BaseModel):
 async def ask_for_another_process(body: AskRequest):
     """Raise the question here, wait the caller's bounded time, answer with the
     ``AskResult``. The answer routes below resolve it like any local question."""
-    said = await ask_person(body.op, body.prompt, body.shape, timeout=body.timeout, label=body.label,
-                            secret=body.secret, guide=body.guide)
+    said = await ask_person(
+        body.op,
+        body.prompt,
+        body.shape,
+        timeout=body.timeout,
+        label=body.label,
+        detail=body.detail,
+        submit_label=body.submit_label,
+        cancel_label=body.cancel_label,
+        secret=body.secret,
+        wizard_id=body.wizard_id,
+        guide=body.guide,
+    )
     return ApiSuccessResponse(data=said.model_dump(mode="json"))
 
 

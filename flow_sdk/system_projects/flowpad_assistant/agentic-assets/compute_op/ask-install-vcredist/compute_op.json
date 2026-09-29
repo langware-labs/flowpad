@@ -1,0 +1,22 @@
+{
+  "type": "compute_op",
+  "id": "b73583ab-d624-4518-969e-ba9704912dd2",
+  "name": "ask-install-vcredist",
+  "label": "Install the Visual C++ Runtime?",
+  "description": "Asks the person whether to install the Microsoft Visual C++ Runtime, only on Windows and only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "Search needs one Microsoft component",
+    "detail": "Microsoft Visual C++ Runtime (about 25 MB, installed once for all apps) isn't on this computer. Windows will ask for permission to install it.",
+    "submit_label": "Install",
+    "cancel_label": "Not now",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "win32": "$d = Join-Path $env:SystemRoot 'System32'; if ((Test-Path (Join-Path $d 'msvcp140.dll')) -and (Test-Path (Join-Path $d 'vcruntime140_1.dll'))) { '{}'; exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

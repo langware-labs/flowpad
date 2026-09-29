@@ -1,0 +1,32 @@
+{
+  "type": "compute_op",
+  "id": "c3e95acd-2de9-4184-bac7-bedde115cdae",
+  "name": "figlet-on-path",
+  "label": "figlet",
+  "description": "figlet is on the PATH and runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "brew install figlet-deliberately-wrong",
+      "linux": "apt-get update && apt-get install -y figlet-deliberately-wrong"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install figlet (http://www.figlet.org/) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
+  "completion_check": {
+    "commands": {
+      "darwin": "command -v figlet >/dev/null 2>&1",
+      "linux": "command -v figlet >/dev/null 2>&1"
+    },
+    "timeout_seconds": 30
+  }
+}

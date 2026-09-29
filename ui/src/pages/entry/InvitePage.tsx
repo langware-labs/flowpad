@@ -1,6 +1,7 @@
-import { navigator as sdkNavigator, redeemInviteLink } from '@sdk';
+import { redeemInviteLink } from '@sdk';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router';
+import { bounceToLoginOnce } from './login-bounce';
 import WrongAccountPanel from './WrongAccountPanel';
 import { errorDetail } from '@src/lib/error-message';
 
@@ -72,14 +73,7 @@ const InvitePage: React.FC = () => {
         const detail = errorDetail(err) || undefined;
 
         if (status === 401) {
-          // Came back from login and still 401 → signed in as someone the hub
-          // won't accept, not signed out. Bouncing again would loop.
-          if (sessionStorage.getItem(loginAttemptKey)) {
-            setWrongAccount(true);
-            return;
-          }
-          sessionStorage.setItem(loginAttemptKey, '1');
-          window.location.assign(sdkNavigator.getLoginWithCallbackUrl(window.location.href));
+          if (bounceToLoginOnce(loginAttemptKey) === 'exhausted') setWrongAccount(true);
           return;
         }
         setError({ status, detail });

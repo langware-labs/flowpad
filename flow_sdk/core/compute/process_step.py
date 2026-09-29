@@ -24,6 +24,7 @@ caller can link to it, or prompt that same process again.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from pathlib import Path
@@ -67,7 +68,9 @@ def _progress_for(process_id: str, worker_status: Any) -> ProcessProgress:
     try:
         from flow_sdk.activity.progress_monitor import monitor  # noqa: PLC0415
         from flow_sdk.builtin.agentic_process.activity_bridge import (  # noqa: PLC0415
-            PROCESS_ACTIVITY_PATH, _state_for, subject_for,
+            PROCESS_ACTIVITY_PATH,
+            _state_for,
+            subject_for,
         )
 
         state = _state_for(worker_status)
@@ -176,19 +179,29 @@ async def _prompt_and_wait(
     try:
         await process.wait(
             timeout=timeout_seconds,
-            on_status=(
-                (lambda ws: on_status(_progress_for(process_id, ws)))
-                if on_status is not None else None
-            ),
+            on_status=((lambda ws: on_status(_progress_for(process_id, ws))) if on_status is not None else None),
         )
     except TimeoutError:
         return PromptResult.not_yet(
             f"The agent did not finish within {timeout_seconds:.0f}s.",
-            timed_out=True, executor=executor, duration_s=time.monotonic() - started,
+            timed_out=True,
+            executor=executor,
+            duration_s=time.monotonic() - started,
         )
+    except asyncio.CancelledError:
+        # A cancelled caller must not leave the agent working — `run_shell` kills
+        # its process group on cancel for the same reason. Shielded, so the close
+        # itself is not cut short by the cancellation it is answering.
+        try:
+            await asyncio.shield(process.close())
+        except Exception:  # noqa: BLE001 — being cancelled already decided the outcome
+            logger.warning("could not close agent %s after its step was cancelled", executor, exc_info=True)
+        raise
     except Exception as exc:  # noqa: BLE001
         return PromptResult.not_yet(
-            f"The agent run failed: {exc}", executor=executor, duration_s=time.monotonic() - started,
+            f"The agent run failed: {exc}",
+            executor=executor,
+            duration_s=time.monotonic() - started,
         )
 
     # HOW the agent stopped, read the one way AgenticProcess.run reads it: an

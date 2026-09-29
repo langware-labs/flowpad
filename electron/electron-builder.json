@@ -29,6 +29,7 @@
     "!build/**",
     "!scripts/**",
     "!*.md",
+    "!**/*.md",
     "!*.ts",
     "!tsconfig.json",
     "!**/__pycache__/**",

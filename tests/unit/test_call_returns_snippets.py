@@ -13,6 +13,7 @@ The only things injected are names and a platform: the snippets spell
 ``darwin`` commands, and pinning ``run_op`` to that key lets the same fence run
 on a Linux CI box (only ``win32`` is spawned differently).
 """
+
 from __future__ import annotations
 
 import ast
@@ -93,14 +94,26 @@ def with_assertions(fence: str) -> "tuple[str, int]":
 
 def _scope(tmp_path: Path) -> dict:
     return {
-        "ComputeOpSpec": ComputeOpSpec, "CliOp": CliOp, "PromptOp": PromptOp,
-        "AgentOp": AgentOp, "AskOp": AskOp, "CHECK_TIMEOUT": CHECK_TIMEOUT,
-        "ReturnedValue": ReturnedValue, "CliResult": CliResult, "PromptResult": PromptResult,
-        "AskResult": AskResult, "WizardResult": WizardResult, "ExitCode": ExitCode,
-        "OpNotReached": OpNotReached, "ValidationError": ValidationError,
-        "DataSpec": DataSpec, "ClassVar": ClassVar,
-        "WizardSpec": WizardSpec, "WizardStepSpec": WizardStepSpec,
-        "Resolved": Resolved, "run_wizard": run_wizard,
+        "ComputeOpSpec": ComputeOpSpec,
+        "CliOp": CliOp,
+        "PromptOp": PromptOp,
+        "AgentOp": AgentOp,
+        "AskOp": AskOp,
+        "CHECK_TIMEOUT": CHECK_TIMEOUT,
+        "ReturnedValue": ReturnedValue,
+        "CliResult": CliResult,
+        "PromptResult": PromptResult,
+        "AskResult": AskResult,
+        "WizardResult": WizardResult,
+        "ExitCode": ExitCode,
+        "OpNotReached": OpNotReached,
+        "ValidationError": ValidationError,
+        "DataSpec": DataSpec,
+        "ClassVar": ClassVar,
+        "WizardSpec": WizardSpec,
+        "WizardStepSpec": WizardStepSpec,
+        "Resolved": Resolved,
+        "run_wizard": run_wizard,
         "run_op": functools.partial(runner.run_op, platform="darwin"),
         "tmp": tmp_path,
     }
@@ -150,8 +163,14 @@ async def test_every_fence_runs_as_written(index, tmp_path):
 
 
 _CLASSES = {
-    **{name: getattr(compute_op_spec, name) for name in ("ExeData", "CliOp", "PromptOp", "AgentOp", "AskOp", "ComputeOpSpec")},
-    **{name: getattr(returned_value_spec, name) for name in ("ReturnedValue", "CliResult", "PromptResult", "AskResult", "WizardResult")},
+    **{
+        name: getattr(compute_op_spec, name)
+        for name in ("ExeData", "CliOp", "PromptOp", "AgentOp", "AskOp", "Rung", "ComputeOpSpec")
+    },
+    **{
+        name: getattr(returned_value_spec, name)
+        for name in ("ReturnedValue", "CliResult", "PromptResult", "AskResult", "WizardResult")
+    },
 }
 
 

@@ -93,6 +93,25 @@ export function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.trim().length > 0;
 }
 
+/** One person a ``share`` invites: a bare ``idOrEmail``, or ``{idOrEmail, role?}``. */
+export type ShareInvitee = string | { idOrEmail: string; role?: string };
+
+/**
+ * ``users`` as the ``share`` action's ``recipients`` wire list — trimmed, blanks
+ * dropped, a role only when there is one (``ShareRequestSpec`` in
+ * ``flow_sdk/app/actions/share_action.py`` validates it).
+ */
+export function shareRecipients(users: ShareInvitee[]): (string | { idOrEmail: string; role: string })[] {
+  const recipients: (string | { idOrEmail: string; role: string })[] = [];
+  for (const u of users) {
+    const { idOrEmail, role } = typeof u === 'string' ? { idOrEmail: u, role: undefined } : u;
+    const trimmed = idOrEmail.trim();
+    if (!trimmed) continue;
+    recipients.push(role ? { idOrEmail: trimmed, role } : trimmed);
+  }
+  return recipients;
+}
+
 export function getProxy<T extends Manageable & { [key: string | symbol]: any }>(target: T) {
   return new Proxy(target, {
     get(target, property, receiver) {
@@ -983,24 +1002,27 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * or a hub user id, for a contact the address book knows only by id (the
    * hub never discloses other people's emails, so those contacts have no
    * email to invite by); the backend decides which by shape. ``role`` is
-   * optional; only a Project invite honours it (``member`` | ``admin``,
+   * optional; only a Project invite honours it (one of the roles the
+   * ``share-roles`` action returns — ``membershipService.fetchShareRoles`` —
    * default ``member``) — other types ignore it.
    *
    * On the wire, ``recipients`` mirrors ``users`` exactly (bare string or
    * ``{idOrEmail, role}``) — the local backend's ``share`` action validates it.
    */
-  public async share(users: (string | { idOrEmail: string; role?: string })[] = []): Promise<T> {
+  public async share(users: ShareInvitee[] = []): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    const recipients: (string | { idOrEmail: string; role: string })[] = [];
-    for (const u of users) {
-      const { idOrEmail, role } = typeof u === 'string' ? { idOrEmail: u, role: undefined } : u;
-      const trimmed = idOrEmail.trim();
-      if (!trimmed) continue;
-      recipients.push(role ? { idOrEmail: trimmed, role } : trimmed);
-    }
+    const recipients = shareRecipients(users);
     info.bodyParameters = recipients.length ? { ...this.toJSON(), recipients } : {};
     // Not one fixed shape — a full entity or a bare receipt, depending on entity type — hence a guarded dict, not a named response type.
     const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
+    return this.adoptShareResponse(response);
+  }
+
+  /**
+   * Adopt the ``share`` action's answer: the backend's canonical entity when it
+   * returned this one, else ``this`` unchanged.
+   */
+  protected adoptShareResponse(response: Record<string, unknown> | null | undefined): T {
     if (
       response &&
       'id' in response &&

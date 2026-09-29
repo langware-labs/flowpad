@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "a1164461-fd72-4e3b-9bd7-1895bdc67c66",
+  "name": "ask-install-claude-code",
+  "label": "Install Claude Code?",
+  "description": "Asks the person whether to install Claude Code, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "Claude Code is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "PATH=\"$HOME/.local/bin:$PATH\" claude --version >/dev/null 2>&1 && echo '{}'",
+      "linux": "PATH=\"$HOME/.local/bin:$PATH\" claude --version >/dev/null 2>&1 && echo '{}'",
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:USERPROFILE + '\\.local\\bin'; claude --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

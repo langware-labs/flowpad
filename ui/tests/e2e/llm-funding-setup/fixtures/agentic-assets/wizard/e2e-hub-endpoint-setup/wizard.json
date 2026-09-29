@@ -1,0 +1,30 @@
+{
+  "name": "e2e-hub-endpoint-setup",
+  "description": "E2E fixture: three tiny steps that mirror llm-setup's own shape (a tool already on the machine, a correct install, a deliberately-broken one that falls to the agent) \u2014 against a box bound to a hub LLMEndpoint, so the agent step proves that endpoint's own model wins.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "git",
+      "label": "Git",
+      "kind": "wizard",
+      "ref": "llm-setup-git",
+      "on_fail": "continue"
+    },
+    {
+      "id": "tree",
+      "label": "tree",
+      "kind": "wizard",
+      "ref": "e2e-hub-endpoint-tree",
+      "on_fail": "continue"
+    },
+    {
+      "id": "figlet",
+      "label": "figlet",
+      "kind": "wizard",
+      "ref": "e2e-hub-endpoint-figlet",
+      "on_fail": "continue"
+    }
+  ]
+}
