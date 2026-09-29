@@ -18,9 +18,9 @@ interface ChatsFilterBarProps {
 
 /**
  * The Chats navigator "New" launcher row below the title — one icon per vendor
- * that starts a fresh chat (Claude/Codex/Copilot). Search lives in the shared
- * NavigatorPanel header (the magnifier icon), and the scope filter in the title
- * row (`header.headerRight`), like every other navigator.
+ * that starts a fresh chat (Claude/Codex/Copilot). The scope filter lives in
+ * the title row (`header.headerRight`), like every other navigator; the panel
+ * header carries no search of its own — the quick search below replaces it.
  *
  * The trailing magnifier is a session QUICK search: it swaps the whole row for
  * a text line that filters the chat list below (sessions only, same rows,
