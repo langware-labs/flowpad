@@ -2,90 +2,61 @@ import { t } from '@lingui/core/macro';
 import { ActionInfo, dataManager, TypeId } from '@sdk';
 import { useCallback } from 'react';
 
-/** Port the local FlowPad desktop backend listens on (flow_sdk `flow start`). */
-export const LOCAL_PORT = 9007;
 /**
  * Mirrors `API_PREFIX` from ts_sdk/src/config/SDKConfig.ts ('/api/v1'). The
  * constant is not re-exported through the @sdk barrel (config/index.ts), so
  * keep the literal here — it must match the desktop backend's API prefix.
  */
 export const LOCAL_API_PREFIX = '/api/v1';
-/** Prefer the flowpad:// custom-protocol handoff (Electron/desktop app). */
-export const OPEN_IN_ELECTRON = true;
-
-export type UseOpenFlowpadOptions = {
-  port: number | string;
-  openTargetPath: string;
-  openInElectron: boolean;
-  protocolTimeoutMs?: number;
-};
-
-export type OpenFlowpadUrls = {
-  localUrl: string;
-  protocolUrl: string;
-};
 
 /**
- * Build the localhost + flowpad:// protocol URLs for the deep link. With an
- * api-key we route through /auth/login_callback so the desktop app logs the
- * user in before following `next`; without one we hit the target path directly.
+ * The flowpad:// deep link. With an api-key it routes through
+ * /auth/login_callback so the desktop app logs the user in before following
+ * `next`; without one it hits the target path directly.
  */
-export function buildOpenUrls(apiKey: string | null, port: number | string, openTargetPath: string): OpenFlowpadUrls {
+export function buildProtocolUrl(apiKey: string | null, openTargetPath: string): string {
   if (apiKey) {
     const query = new URLSearchParams({
       'flowpad-api-key': apiKey,
       next: openTargetPath,
     }).toString();
-    return {
-      localUrl: `http://localhost:${port}/auth/login_callback?${query}`,
-      protocolUrl: `flowpad://auth/login_callback?${query}`,
-    };
+    return `flowpad://auth/login_callback?${query}`;
   }
-  return {
-    localUrl: `http://localhost:${port}${openTargetPath}`,
-    protocolUrl: `flowpad://${openTargetPath.replace(/^\//, '')}`,
-  };
+  return `flowpad://${openTargetPath.replace(/^\//, '')}`;
 }
 
 /**
- * Returns an opener that tries the custom protocol first (if openInElectron),
- * falling back to localhost when the OS doesn't hand the URL off (no
- * blur/pagehide within the timeout).
+ * How long after the deep link is fired the browser has to show it is handing
+ * off (its "Open FlowPad?" prompt, or the app taking focus) before we conclude
+ * nothing opened. Counted from the navigation, not from the click: minting the
+ * api-key first takes seconds, and the prompt only appears once we navigate.
  */
-export function useOpenFlowpad({
-  port,
-  openTargetPath,
-  openInElectron,
-  protocolTimeoutMs = 1500,
-}: UseOpenFlowpadOptions) {
-  return useCallback(
-    (apiKey: string | null) => {
-      const { localUrl, protocolUrl } = buildOpenUrls(apiKey, port, openTargetPath);
+const HANDOFF_WINDOW_MS = 1500;
 
-      if (!openInElectron) {
-        window.location.href = localUrl;
-        return;
-      }
-
-      let browserLostFocus = false;
-      const markAsOpened = () => {
-        browserLostFocus = true;
-      };
-      window.addEventListener('blur', markAsOpened, { once: true });
-      window.addEventListener('pagehide', markAsOpened, { once: true });
-
-      window.location.href = protocolUrl;
-
-      window.setTimeout(() => {
-        window.removeEventListener('blur', markAsOpened);
-        window.removeEventListener('pagehide', markAsOpened);
-        if (!browserLostFocus) {
-          window.location.href = localUrl;
-        }
-      }, protocolTimeoutMs);
-    },
-    [port, openTargetPath, openInElectron, protocolTimeoutMs],
-  );
+/**
+ * Fire the deep link and report whether the browser appears to have handed it
+ * off: the page lost focus, was hidden, or is still unfocused when the window
+ * ends. `false` means nothing reacted, i.e. no app is registered for `flowpad://`.
+ */
+export function fireDeepLink(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const finish = (handedOff: boolean) => {
+      window.clearTimeout(timer);
+      window.removeEventListener('blur', onHandoff);
+      window.removeEventListener('pagehide', onHandoff);
+      document.removeEventListener('visibilitychange', onVisibility);
+      resolve(handedOff);
+    };
+    const onHandoff = () => finish(true);
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') finish(true);
+    };
+    const timer = window.setTimeout(() => finish(!document.hasFocus()), HANDOFF_WINDOW_MS);
+    window.addEventListener('blur', onHandoff);
+    window.addEventListener('pagehide', onHandoff);
+    document.addEventListener('visibilitychange', onVisibility);
+    window.location.href = url;
+  });
 }
 
 /**
@@ -98,21 +69,22 @@ export function useOpenFlowpad({
  *
  * Without a user or when minting fails, the link still opens, just without the
  * login hop — the desktop then uses whatever session it already has.
+ *
+ * Resolves `true` when the browser handed the link off (prompt shown or app
+ * opened), `false` when nothing reacted — the caller then says what to do. The
+ * page never navigates away either way.
  */
-export function useOpenInFlowpad(openTargetPath: string): () => Promise<void> {
-  const openFlowpad = useOpenFlowpad({
-    port: LOCAL_PORT,
-    openTargetPath,
-    openInElectron: OPEN_IN_ELECTRON,
-    protocolTimeoutMs: 1500,
-  });
+export function useOpenInFlowpad(openTargetPath: string): () => Promise<boolean> {
+  const openFlowpad = useCallback(
+    (apiKey: string | null) => fireDeepLink(buildProtocolUrl(apiKey, openTargetPath)),
+    [openTargetPath],
+  );
   return useCallback(async () => {
     try {
       const me = await dataManager.getCurrentUser();
       const userId = me?.id;
       if (!userId) {
-        openFlowpad(null);
-        return;
+        return openFlowpad(null);
       }
       const userTypeId = new TypeId('user', userId);
       const createKeyAction = new ActionInfo('api-keys', userTypeId.type, userTypeId.id, 'POST');
@@ -125,9 +97,9 @@ export function useOpenInFlowpad(openTargetPath: string): () => Promise<void> {
         createKeyAction,
       );
       const apiKey = result?.api_key || result?.data?.api_key;
-      openFlowpad(apiKey ?? null);
+      return openFlowpad(apiKey ?? null);
     } catch {
-      openFlowpad(null);
+      return openFlowpad(null);
     }
   }, [openFlowpad]);
 }

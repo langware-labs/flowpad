@@ -94,15 +94,28 @@ export const LandingCard: React.FC<{ title: ReactNode; text: ReactNode; children
  * The landing itself: header, the browser card, and — when the page has
  * something to take to a machine — the `desktopCard` it passes in.
  */
-export const EntityLandingView: React.FC<{ typeId: TypeId; model: EntityLandingModel; desktopCard?: ReactNode }> = ({
-  typeId,
-  model,
-  desktopCard,
-}) => {
+export const EntityLandingView: React.FC<{
+  typeId: TypeId;
+  model: EntityLandingModel;
+  desktopCard?: ReactNode;
+  /** Hide the "Open in your browser" card; kept anyway when there is no desktop card to show instead. */
+  hideBrowserCard?: boolean;
+}> = ({ typeId, model, desktopCard, hideBrowserCard = false }) => {
   const { t } = useLingui();
   const TypeIcon = iconForType(typeId.type);
   const label = typeNoun(typeId.type);
   const name = model.displayName;
+  const desktopOnly = hideBrowserCard && !!desktopCard;
+  const sectionLabel = desktopOnly
+    ? t`To open the ${label}:`
+    : desktopCard
+      ? t`Open the ${label} using one of these options:`
+      : t`Open the ${label}:`;
+  const optionsClass = desktopOnly
+    ? 'nl-options el-options-full'
+    : desktopCard
+      ? 'nl-options'
+      : 'nl-options el-options-single';
 
   return (
     <div className="nl-page">
@@ -124,26 +137,26 @@ export const EntityLandingView: React.FC<{ typeId: TypeId; model: EntityLandingM
           </p>
         )}
 
-        <p className="nl-section-label">
-          {desktopCard ? t`Open the ${label} using one of these options:` : t`Open the ${label}:`}
-        </p>
+        <p className="nl-section-label">{sectionLabel}</p>
 
-        <div className={desktopCard ? 'nl-options' : 'nl-options el-options-single'}>
-          <LandingCard
-            title={
-              <>
-                <Globe className="nl-agent-icon" size={20} aria-hidden />
-                <span>{t`Open in your browser`}</span>
-              </>
-            }
-            text={t`View ${name} on FlowPad. Nothing to install.`}
-          >
-            <div className="el-buttons">
-              <a className="nl-btn" href={model.hubUrl}>
-                {t`Open ${name}`}
-              </a>
-            </div>
-          </LandingCard>
+        <div className={optionsClass}>
+          {!desktopOnly && (
+            <LandingCard
+              title={
+                <>
+                  <Globe className="nl-agent-icon" size={20} aria-hidden />
+                  <span>{t`Open in your browser`}</span>
+                </>
+              }
+              text={t`View ${name} on FlowPad. Nothing to install.`}
+            >
+              <div className="el-buttons">
+                <a className="nl-btn" href={model.hubUrl}>
+                  {t`Open ${name}`}
+                </a>
+              </div>
+            </LandingCard>
+          )}
           {desktopCard}
         </div>
 

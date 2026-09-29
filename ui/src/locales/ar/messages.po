@@ -2140,6 +2140,10 @@ msgstr "مثبّت بالفعل عالمياً — يجب إلغاء التثب�
 msgid "Already installed in a project — uninstall first"
 msgstr "مثبّت بالفعل في المشروع — يجب إلغاء التثبيت أولاً"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Already installed?"
+msgstr "مثبّت بالفعل؟"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Already launched in this project"
 msgstr ""
@@ -7359,6 +7363,10 @@ msgstr "هل يعمل هذا المصدر فعلًا؟"
 msgid "Domains accessible from sandbox"
 msgstr "النطاقات التي يمكن الوصول إليها من البيئة المعزولة"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Don't have FlowPad yet?"
+msgstr "ليس لديك FlowPad بعد؟"
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
 msgstr "تم"
@@ -9167,6 +9175,14 @@ msgstr "تشخيص Flowpad"
 msgid "Flowpad diagnostics"
 msgstr "تشخيصات Flowpad"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#~ msgid "FlowPad didn't open?"
+#~ msgstr "لم يُفتح FlowPad؟"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad didn't open? Install it, then come back to this page."
+msgstr "لم يُفتح FlowPad؟ ثبّته ثم عُد إلى هذه الصفحة."
+
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "يقوم Flowpad بتهيئة المستودع، ثم يقترح التثبيت على فرع مراجعة منفصل."
@@ -9479,8 +9495,13 @@ msgid "Generic options"
 msgstr "خيارات عامة"
 
 #: src/pages/entry/entry-shell.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "احصل على FlowPad من flowpad.ai ←"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Get it at flowpad.ai"
+msgstr "احصل عليه من flowpad.ai"
 
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
@@ -14800,7 +14821,7 @@ msgstr ""
 msgid "Open in Flowpad"
 msgstr ""
 
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "افتح في FlowPad"
 
@@ -22136,6 +22157,10 @@ msgstr ""
 msgid "To"
 msgstr "إلى"
 
+#: src/pages/entry/entry-shell.tsx
+msgid "To open the {label}:"
+msgstr "للفتح:"
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
 msgstr ""
@@ -22451,6 +22476,7 @@ msgstr "المشغّلات"
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "إعادة المحاولة"

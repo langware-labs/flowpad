@@ -2140,6 +2140,10 @@ msgstr "Already installed globally — uninstall first"
 msgid "Already installed in a project — uninstall first"
 msgstr "Already installed in a project — uninstall first"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Already installed?"
+msgstr "Already installed?"
+
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Already launched in this project"
 msgstr "Already launched in this project"
@@ -7359,6 +7363,10 @@ msgstr "Does this source actually work?"
 msgid "Domains accessible from sandbox"
 msgstr "Domains accessible from sandbox"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Don't have FlowPad yet?"
+msgstr "Don't have FlowPad yet?"
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
 msgstr "done"
@@ -9167,6 +9175,14 @@ msgstr "Flowpad Diagnosis"
 msgid "Flowpad diagnostics"
 msgstr "Flowpad diagnostics"
 
+#: src/pages/entry/OpenInFlowpadActions.tsx
+#~ msgid "FlowPad didn't open?"
+#~ msgstr "FlowPad didn't open?"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "FlowPad didn't open? Install it, then come back to this page."
+msgstr "FlowPad didn't open? Install it, then come back to this page."
+
 #: src/components/git/CreatePrivateRepoForm.tsx
 msgid "Flowpad initializes the repository, then proposes the install on a separate review branch."
 msgstr "Flowpad initializes the repository, then proposes the install on a separate review branch."
@@ -9479,8 +9495,13 @@ msgid "Generic options"
 msgstr "Generic options"
 
 #: src/pages/entry/entry-shell.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Get FlowPad at flowpad.ai →"
 msgstr "Get FlowPad at flowpad.ai →"
+
+#: src/pages/entry/OpenInFlowpadActions.tsx
+msgid "Get it at flowpad.ai"
+msgstr "Get it at flowpad.ai"
 
 #: src/journey/JourneyBadge.tsx
 msgid "Getting started — {stepsLeft} steps left"
@@ -14800,7 +14821,7 @@ msgstr "Open in Finder/Explorer"
 msgid "Open in Flowpad"
 msgstr "Open in Flowpad"
 
-#: src/pages/entry/ProjectShareLanding.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 msgid "Open in FlowPad"
 msgstr "Open in FlowPad"
 
@@ -22136,6 +22157,10 @@ msgstr "to"
 msgid "To"
 msgstr "To"
 
+#: src/pages/entry/entry-shell.tsx
+msgid "To open the {label}:"
+msgstr "To open the {label}:"
+
 #: src/components/token-plan/token-plan-math.ts
 msgid "today"
 msgstr "today"
@@ -22451,6 +22476,7 @@ msgstr "Triggers"
 #: src/components/terminal/TerminalPanel.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-display/WebDebugComponent.tsx
+#: src/pages/entry/OpenInFlowpadActions.tsx
 #: src/pages/keychain-approval.tsx
 msgid "Try again"
 msgstr "Try again"
