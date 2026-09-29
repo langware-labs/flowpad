@@ -1668,6 +1668,7 @@ class AgenticProcess(Entity):
                 # error type every other spawn path raises.
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
                     WorkerSpawnError,
+                    hide_flowpad_interpreter,
                     insert_capability_path_dir,
                     no_worker_message,
                     worker_bin_folder,
@@ -1689,6 +1690,7 @@ class AgenticProcess(Entity):
                 folder = worker_bin_folder(self.driver.name)
                 if folder and "PATH" in spawn_env:
                     spawn_env["PATH"] = insert_capability_path_dir(folder, spawn_env["PATH"])
+                hide_flowpad_interpreter(spawn_env)  # an install agent must not see our python
                 if _shell_compute_is_local(shell):
                     await apply_worker_secret_env(spawn_env, self)
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
