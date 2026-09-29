@@ -5739,6 +5739,8 @@ msgid "Could not sign the sandbox out"
 msgstr "تعذّر تسجيل الخروج من Sandbox"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
@@ -17652,6 +17654,7 @@ msgstr "الردود"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/journey/JourneyTray.tsx
@@ -17674,8 +17677,8 @@ msgid "Restart session"
 msgstr "إعادة تشغيل الجلسة"
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-msgid "Restart setup"
-msgstr ""
+#~ msgid "Restart setup"
+#~ msgstr ""
 
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
@@ -19295,8 +19298,8 @@ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-msgid "Setup could not start"
-msgstr ""
+#~ msgid "Setup could not start"
+#~ msgstr ""
 
 #: src/components/account/settings-section.tsx
 #: src/components/account/settings-section.tsx
@@ -19304,8 +19307,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-msgid "Setup didn't finish successfully."
-msgstr ""
+#~ msgid "Setup didn't finish successfully."
+#~ msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
@@ -19316,8 +19319,8 @@ msgstr "فشل الإعداد"
 #~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardViewer.tsx
-msgid "Setup finished — everything is installed."
-msgstr ""
+#~ msgid "Setup finished — everything is installed."
+#~ msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"

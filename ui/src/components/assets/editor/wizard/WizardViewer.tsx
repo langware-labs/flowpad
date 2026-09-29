@@ -217,14 +217,14 @@ function WizardViewerBody({
   // A run that settled OK, not one merely mid-run: `on_step`'s own partial
   // writes are always NOT_YET (see `_report_progress`), so this is only true
   // once the REAL final result lands.
-  const finished = !conversational && isOk(state.result);
+  const finished = !conversational && isOk(state.result) && Boolean(wizard.success_message);
   // The shared 1s clock — one subscription for the whole row list, not one
   // per row (`useActivity`'s own reason: a hook cannot be called inside a
   // `.map`). Only stuck-detection reads it; that math happens per row below,
   // as plain arithmetic against each row's own `live` node.
   const now = useClock();
 
-  // A first-run/onboarding wizard is a popup, not a page — see
+  // A wizard that asks to be a popup (a glanceable one, like first-run setup) is a dialog, not a page — see
   // `WizardSpec.popup`. The dialog's own content node is the minimize
   // animation's source; `[data-minimize-anchor="process-chip"]` (the footer's
   // chip) is its target, resolved by the animation itself.
@@ -351,21 +351,20 @@ function WizardViewerBody({
     await call('run', { approved: true });
   }, [call, revealRunDetail]);
 
-  // A POPUP wizard's own "Start": first-run setup, not the plain per-wizard
-  // `run` action above — the LLM-source chooser only lives in front of THAT
-  // sequence (`run_llm_setup`/`POST /wizard/<id>/start`), never inside a
-  // single wizard's own run. The backend already waits for exactly this call
-  // instead of racing itself onto the screen (`_run_llm_setup_trigger`); this
-  // button is the OTHER half of that same design, not a separate one.
+  // A POPUP wizard's own "Start" — the wizard's `start` action, not the plain `run` above: it is
+  // the person pressing Start, so a question raised on the way is put to them, and a wizard that
+  // declares `requires_llm_source` has one settled first (`start_wizard`/`POST /wizard/<id>/start`).
+  // The backend already waits for exactly this call instead of racing itself onto the screen
+  // (the trigger in `builtin_triggers.py`); this button is the OTHER half of that same design, not a separate one.
   const [starting, setStarting] = useState(false);
-  const startSetup = useCallback(async () => {
+  const startWizard = useCallback(async () => {
     setStarting(true);
     try {
       // Settle an LLM source, then run the wizard. Resolves when the whole run has ended — its
       // progress arrives through the run record, not this reply.
       await wizard.start();
     } catch (e) {
-      notify.error({ title: t`Setup could not start`, message: errorMessage(e, t`Setup could not start`) });
+      notify.error({ title: t`Could not start`, message: errorMessage(e, t`Could not start`) });
       setStarting(false);
     }
     // On success, `starting` stays true: there is nothing left for this button
@@ -375,7 +374,8 @@ function WizardViewerBody({
   const notYetStarted = isPopup && !starting && !runView.live && !state.result;
   // A settled run that fell short — a step failed, or the person declined one. Popup only: the
   // generic page has its own Run button.
-  const notFinished = isPopup && !conversational && !runView.live && Boolean(state.result) && !isOk(state.result);
+  const notFinished =
+    !conversational && !runView.live && Boolean(state.result) && !isOk(state.result) && Boolean(wizard.failure_message);
 
   const main = (
     <div className="flex flex-col gap-5 p-4" data-testid="wizard-viewer">
@@ -633,14 +633,14 @@ function WizardViewerBody({
 
       {/* Below the steps, centred — the last thing read, after the list of what
           will be checked. A POPUP wizard's only button, and only before anything has
-          run: the backend (`_run_llm_setup_trigger`) deliberately waits for this
+          run: the backend (the trigger in `builtin_triggers.py`) deliberately waits for this
           instead of racing an install question onto the screen before there was
           time to read what any of it is for. Once started (by this click, or
           because a headless box already ran it before anyone was watching) there
           is nothing left to offer — Reset/Run are the generic editor page's job. */}
       {!conversational && notYetStarted ? (
         <div className="flex justify-center">
-          <Button onClick={() => void startSetup()} disabled={starting} data-testid="wizard-start">
+          <Button onClick={() => void startWizard()} disabled={starting} data-testid="wizard-start">
             {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             <Trans>Start</Trans>
           </Button>
@@ -652,12 +652,10 @@ function WizardViewerBody({
           className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center"
           data-testid="wizard-not-finished"
         >
-          <p className="text-sm">
-            <Trans>Setup didn't finish successfully.</Trans>
-          </p>
+          <p className="text-sm">{wizard.failure_message}</p>
           <div className="flex items-center gap-2">
-            <Button onClick={() => void startSetup()} data-testid="wizard-restart">
-              <Trans>Restart setup</Trans>
+            <Button onClick={() => void startWizard()} data-testid="wizard-restart">
+              {wizard.restart_label || <Trans>Restart</Trans>}
             </Button>
             <Button variant="ghost" onClick={() => navigation.goHome({ homePage: true })} data-testid="wizard-go-home">
               <Trans>Go to homepage</Trans>
@@ -676,9 +674,7 @@ function WizardViewerBody({
           data-testid="wizard-finished"
         >
           <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
-          <p className="flex-1 text-sm">
-            <Trans>Setup finished — everything is installed.</Trans>
-          </p>
+          <p className="flex-1 text-sm">{wizard.success_message}</p>
           <Button size="sm" onClick={() => navigation.goHome({ homePage: true })} data-testid="wizard-go-home">
             <Trans>Go to homepage</Trans>
           </Button>
@@ -723,7 +719,7 @@ function WizardViewerBody({
 
   // A popup wizard skips the side-drawer machinery below: `Run detail` is
   // Advanced-only and this presentation is for the quick, glanceable
-  // first-run case, not for sitting beside a document editing it.
+  // glance-and-set-aside case, not for sitting beside a document editing it.
   if (isPopup) {
     return (
       // Non-modal on purpose. A modal Radix dialog blocks the rest of the page

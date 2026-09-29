@@ -44,6 +44,10 @@ export interface WizardDoc {
   icon?: string;
   /** Show this wizard as a dismissible overlay instead of a full editor page. */
   popup?: boolean;
+  requires_llm_source?: boolean;
+  success_message?: string;
+  failure_message?: string;
+  restart_label?: string;
   /** Non-empty ⇒ a CONVERSATIONAL wizard: one agent, no steps. */
   agent?: string;
   /** What the wizard returns, in authoring form. */

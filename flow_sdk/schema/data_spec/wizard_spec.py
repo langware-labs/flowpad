@@ -124,14 +124,21 @@ class WizardSpec(DataSpec):
     version: int = 1
     enabled: bool = True
     icon: str = "Wand2"
-    #: Show this wizard as a dismissible overlay instead of a full editor page.
-    #: For a first-run/onboarding wizard someone glances at and can set aside —
-    #: never for one they are meant to sit and edit beside its own document.
+    #: Show this wizard as a dismissible overlay instead of a full editor page, started from its own
+    #: Start button. For a wizard someone glances at and can set aside — never for one they are
+    #: meant to sit and edit beside its own document.
     popup: bool = False
     #: Settle an LLM source (`flow llm set auto`, the chooser when the box has none) BEFORE the steps
     #: run. For a wizard whose agent fallbacks need one; its plain commands never do, so a source
     #: that cannot be settled does not stop the run.
     requires_llm_source: bool = False
+    #: Said under the steps when a run passes, beside a "Go to homepage" button. Empty says nothing.
+    success_message: str = ""
+    #: Said when a run ended short (a step failed, or the person declined one), beside a restart
+    #: button and "Go to homepage". Empty says nothing.
+    failure_message: str = ""
+    #: The label of that restart button.
+    restart_label: str = "Restart"
     #: A CONVERSATIONAL wizard: one agent talks to the person for the whole run,
     #: and the caller supplies the prompt and payload at launch. It declares its
     #: driver here and has NO steps — there is nothing to sequence, because the

@@ -111,6 +111,27 @@ class Wizard(Entity):
 
     @computed_field
     @property
+    def success_message(self) -> str:
+        """What the page says when a run passes — see `WizardSpec.success_message`."""
+        spec = self.spec()
+        return spec.success_message if spec is not None else ""
+
+    @computed_field
+    @property
+    def failure_message(self) -> str:
+        """What the page says when a run ended short — see `WizardSpec.failure_message`."""
+        spec = self.spec()
+        return spec.failure_message if spec is not None else ""
+
+    @computed_field
+    @property
+    def restart_label(self) -> str:
+        """The restart button's label — see `WizardSpec.restart_label`."""
+        spec = self.spec()
+        return spec.restart_label if spec is not None else "Restart"
+
+    @computed_field
+    @property
     def agent(self) -> str:
         """The agent that drives this CONVERSATIONAL wizard, or "".
 
@@ -408,7 +429,7 @@ class Wizard(Entity):
         Settings → "Run setup again": the person reads what the wizard is for and presses its own
         Start (`start` below). A run already in flight keeps its record.
         """
-        from flow_sdk.server.builtin_triggers import show_wizard_fresh  # noqa: PLC0415
+        from flow_sdk.core.wizard.start import show_wizard_fresh  # noqa: PLC0415
 
         await show_wizard_fresh(self)
         return ApiSuccessResponse(data={"opened": True})
@@ -424,7 +445,7 @@ class Wizard(Entity):
         wizard (a second click means "start over"). Goes through `run`, so the trust gate holds: a
         wizard not shipped with Flowpad is refused here and must be approved through `run`.
         """
-        from flow_sdk.server.builtin_triggers import start_wizard  # noqa: PLC0415
+        from flow_sdk.core.wizard.start import start_wizard  # noqa: PLC0415
 
         source, result = await start_wizard(self, unattended=False)
         if result.busy:

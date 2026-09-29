@@ -101,15 +101,15 @@ def test_open_action_shows_the_wizard_blank_without_running_it(tmp_path, monkeyp
     """`POST /wizard/<id>/open` — Settings' "Run setup again": the page, cleared, and nothing runs."""
     import asyncio
 
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.responses.response import ApiSuccessResponse
-    from flow_sdk.server import builtin_triggers
 
     shown = []
 
     async def _show(wizard):
         shown.append(wizard)
 
-    monkeypatch.setattr(builtin_triggers, "show_wizard_fresh", _show)
+    monkeypatch.setattr(wizard_start, "show_wizard_fresh", _show)
     wizard = _folder_wizard(tmp_path, monkeypatch)
     response = asyncio.run(wizard.open_action())
     assert isinstance(response, ApiSuccessResponse) and response.data == {"opened": True}
@@ -121,9 +121,9 @@ def test_start_action_settles_a_source_then_runs_this_wizard_with_the_person_pre
     `unattended`, so a question raised on the way is put to the person watching."""
     import asyncio
 
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.responses.response import ApiSuccessResponse
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server import builtin_triggers
 
     seen = {}
 
@@ -131,7 +131,7 @@ def test_start_action_settles_a_source_then_runs_this_wizard_with_the_person_pre
         seen.update(wizard=wizard, unattended=unattended)
         return CliResult.satisfied("funded"), WizardResult.satisfied("stubbed")
 
-    monkeypatch.setattr(builtin_triggers, "start_wizard", _run)
+    monkeypatch.setattr(wizard_start, "start_wizard", _run)
     wizard = _folder_wizard(tmp_path, monkeypatch)
     response = asyncio.run(wizard.start_action())
     assert isinstance(response, ApiSuccessResponse)
@@ -144,8 +144,8 @@ def test_a_wizard_that_declares_no_llm_source_is_started_without_settling_one(tm
     start does: a wizard without it never opens the chooser, and its first answer is `None`."""
     import asyncio
 
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server import builtin_triggers
 
     asked = []
 
@@ -159,11 +159,11 @@ def test_a_wizard_that_declares_no_llm_source_is_started_without_settling_one(tm
     async def _run(_self, **_kwargs):
         return WizardResult.satisfied("stubbed")
 
-    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _source)
-    monkeypatch.setattr(builtin_triggers, "show_wizard_fresh", _fresh)
+    monkeypatch.setattr(wizard_start, "_resolve_llm_source", _source)
+    monkeypatch.setattr(wizard_start, "show_wizard_fresh", _fresh)
     monkeypatch.setattr(Wizard, "run", _run)
     wizard = _folder_wizard(tmp_path, monkeypatch)  # declares nothing about an LLM source
-    source, result = asyncio.run(builtin_triggers.start_wizard(wizard, unattended=False))
+    source, result = asyncio.run(wizard_start.start_wizard(wizard, unattended=False))
     assert source is None and result.ok and asked == []
 
     # …and the action says so: no source verdict in the body.
@@ -174,14 +174,14 @@ def test_a_wizard_that_declares_no_llm_source_is_started_without_settling_one(tm
 def test_start_action_answers_409_when_another_run_holds_the_slot(tmp_path, monkeypatch):
     import asyncio
 
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.responses.response import ApiFailResponse
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server import builtin_triggers
 
     async def _run(wizard, *, unattended):
         return CliResult.not_yet("x", ran=False), WizardResult.held("already running")
 
-    monkeypatch.setattr(builtin_triggers, "start_wizard", _run)
+    monkeypatch.setattr(wizard_start, "start_wizard", _run)
     wizard = _folder_wizard(tmp_path, monkeypatch)
     response = asyncio.run(wizard.start_action())
     assert isinstance(response, ApiFailResponse) and response.status_code == 409

@@ -63,9 +63,15 @@ export interface IWizard extends IEntity {
    *  set one, so most wizards need no second string. */
   label?: string;
   /** Show this wizard as a dismissible overlay instead of a full editor page.
-   *  Set on the document (`WizardSpec.popup`) for a first-run/onboarding
-   *  wizard someone glances at and can set aside. */
+   *  Set on the document (`WizardSpec.popup`) for a wizard someone glances
+   *  at and can set aside; it is started from its own Start button. */
   popup?: boolean;
+  /** Said under the steps when a run passes; empty says nothing. From the document. */
+  success_message?: string;
+  /** Said when a run ended short (a failed or declined step); empty says nothing. */
+  failure_message?: string;
+  /** The label of the restart button beside `failure_message`. */
+  restart_label?: string;
   /** The agent driving this CONVERSATIONAL wizard, declared in the document.
    *
    *  Non-empty means the wizard is a conversation: it has no steps, it is
@@ -110,6 +116,9 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   description?: string;
   label?: string;
   popup?: boolean;
+  success_message?: string;
+  failure_message?: string;
+  restart_label?: string;
   /** The agent driving this CONVERSATIONAL wizard, declared in the document.
    *
    *  Non-empty means the wizard is a conversation: it has no steps, it is
@@ -134,6 +143,9 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     // from here. The UI mirrors it, the backend owns it.
     this.label = entity.label;
     this.popup = entity.popup;
+    this.success_message = entity.success_message;
+    this.failure_message = entity.failure_message;
+    this.restart_label = entity.restart_label;
     this.agent = entity.agent;
     this.shipped = entity.shipped;
     this.run_state = entity.run_state;
