@@ -2,6 +2,7 @@ import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import type { ChatBucket } from './useChatHistory';
 import { Trans } from '@lingui/react/macro';
 import { ChatHistoryRow } from './ChatHistoryRow';
+import type { MatchPart } from './matchSnippet';
 
 /**
  * The Chats navigator's customBody: a time-bucketed list of chat rows. The
@@ -14,6 +15,8 @@ interface ChatsListProps {
   isLoading: boolean;
   /** Quick search is active → one flat, latest-first list (no bucket headers). */
   searching?: boolean;
+  /** Search only: where each row matched (worker_id → highlighted parts). */
+  matches?: Map<string, MatchPart[]>;
   /** The session-content search is still in flight → say so, don't claim "no match". */
   isSearchingContent?: boolean;
   /** Active process id (from the URL/context) → highlighted row. */
@@ -29,6 +32,7 @@ export function ChatsList({
   buckets,
   isLoading,
   searching = false,
+  matches,
   isSearchingContent = false,
   activeProcessId,
   openProcessIds,
@@ -71,6 +75,8 @@ export function ChatsList({
                   key={entry.agentic_process_id ?? entry.worker_id}
                   entry={entry}
                   selected={!!activeProcessId && entry.agentic_process_id === activeProcessId}
+                  detailed={searching}
+                  match={matches?.get(entry.worker_id)}
                   hasOpenTab={!!entry.agentic_process_id && openProcessIds.has(entry.agentic_process_id)}
                   onSelect={() => onSelect(entry)}
                   onToggleFavorite={() => onToggleFavorite(entry)}

@@ -7,6 +7,7 @@ import { toMs } from '@src/utils/process-recency';
 import { useMultiTypeSearch } from '@src/components/spotlight/useMultiTypeSearch';
 import { terminalProfile } from '@src/components/spotlight/profiles';
 import type { SearchResult } from '@src/hooks/use-record-search';
+import { partsAroundQuery, partsFromFtsSnippet, type MatchPart } from './matchSnippet';
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 
@@ -227,7 +228,7 @@ export function useChatHistory(
   // StrictMode/concurrent double-invocation.
   const prevRankRef = useRef<Map<string, number>>(new Map());
 
-  const { buckets, order } = useMemo(() => {
+  const { buckets, order, matches } = useMemo(() => {
     const bySession = new Map<string, AgenticProcess>();
     for (const p of liveProcesses ?? []) {
       if (p.session_id) bySession.set(p.session_id, p);
@@ -287,7 +288,20 @@ export function useChatHistory(
       if (ra != null && rb != null && ra !== rb) return ra - rb;
       return delta;
     });
-    return { buckets: bucketize(sorted, ts), order: sorted.map((e) => e.worker_id) };
+    // Where each hit matched (search only): the instant match on the row's own
+    // title / last prompt first, else the content snippet from the index.
+    const matches = new Map<string, MatchPart[]>();
+    if (q) {
+      const snippetById = new Map(contentHits.map((h) => [h.record_id, h.snippet]));
+      for (const e of sorted) {
+        const parts =
+          partsAroundQuery(pickHistoryTitle(processFor(e), e), q) ??
+          partsAroundQuery(e.last_prompt, q) ??
+          partsFromFtsSnippet(snippetById.get(e.worker_id));
+        if (parts) matches.set(e.worker_id, parts);
+      }
+    }
+    return { buckets: bucketize(sorted, ts), order: sorted.map((e) => e.worker_id), matches };
   }, [entries, contentHits, filters, liveProcesses, sortStabilityMs]);
 
   useEffect(() => {
@@ -297,5 +311,5 @@ export function useChatHistory(
   const total = useMemo(() => buckets.reduce((n, b) => n + b.entries.length, 0), [buckets]);
 
   // `total` is what is displayed; `fetchedCount` is pre-filter, for paging.
-  return { buckets, total, fetchedCount, isLoading, isSearchingContent, refetch };
+  return { buckets, matches, total, fetchedCount, isLoading, isSearchingContent, refetch };
 }
