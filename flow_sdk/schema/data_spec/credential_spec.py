@@ -7,7 +7,7 @@ live — each Deployment does (``DeploymentSecretsSpec``). See ``credential_cont
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
@@ -92,6 +92,11 @@ class CredentialSpec(DataSpec):
     #: (``credential_service.save_credential``); a pack read from disk without it still loads —
     #: ``flow project setup`` reports it, and offers no AI setup for it.
     setup: Text = ""
+    #: How long following ``setup`` may take once an agent runs it (the ask's AI Assist): the question
+    #: waits this long from the moment the agent starts, and the agent is stopped at it. Unset: the
+    #: default ``SETUP_TIMEOUT`` (``compute_op_spec``). A slow console (a key that takes minutes to
+    #: issue) declares its own.
+    setup_timeout_seconds: Optional[float] = Field(default=None, gt=0)
     #: The LLM provider this credential's single key funds. Its value always lives in the vault
     #: entry the funding resolver reads (``lm_api.<provider>``), whatever a deployment says.
     lm_provider: str = ""

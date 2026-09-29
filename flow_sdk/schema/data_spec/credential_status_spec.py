@@ -60,6 +60,8 @@ class CredentialStatusRowSpec(DataSpec):
     setup_wiki: str = ""
     #: How an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI setup.
     setup: str = ""
+    #: How long an agent following ``setup`` gets; ``None`` = the default.
+    setup_timeout_seconds: Optional[float] = None
     scope: str
     project_id: Optional[str] = None
     #: The environment of the deployment these presences were read for.

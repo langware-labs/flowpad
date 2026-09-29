@@ -71,6 +71,8 @@ export interface ICredential extends IEntity {
   setup_wiki?: string;
   /** How an agent obtains and stores the values (`flow project setup`'s AI setup). */
   setup?: string;
+  /** How long an agent following `setup` gets (seconds); unset = the default. */
+  setup_timeout_seconds?: number | null;
   /** The LLM API provider this credential's single key funds, if any. */
   lm_provider?: string;
   vars?: Record<string, CredentialVar>;
@@ -94,6 +96,7 @@ export class Credential extends APIEntity<Credential> implements ICredential {
   help_url: string = '';
   setup_wiki: string = '';
   setup: string = '';
+  setup_timeout_seconds: number | null = null;
   lm_provider: string = '';
   vars: Record<string, CredentialVar> = {};
   manifest_schema: number = 2;

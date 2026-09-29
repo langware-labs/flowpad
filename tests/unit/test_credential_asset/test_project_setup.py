@@ -22,6 +22,7 @@ from flow_sdk.builtin import credential_service, project_setup
 from flow_sdk.builtin.credential_service import CredentialError, save_credential
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.commands import credentials_cmd, project_cmd
+from flow_sdk.schema.data_spec.compute_op_spec import SETUP_TIMEOUT
 from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_OAUTH, REQUIREMENT_PACK
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult, PromptResult
 
@@ -147,6 +148,8 @@ async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, 
     assert {s.on_fail for s in wizard.steps} == {"continue"}, "one credential nobody can provide stops nothing"
     ask = ops["ask-telegram-TELEGRAM_BOT_TOKEN"]
     assert ask.exe_data.secret
+    assert ask.setup == reqs[1].setup and ask.setup.strip(), "the credential's guide rides the question"
+    assert ask.setup_timeout() == SETUP_TIMEOUT, "no declared span: the default"
     assert ask.completion_check == ops["store-telegram"].completion_check, "a resumed run asks nobody once stored"
     assert wizard.steps[1].bind == "telegram__TELEGRAM_BOT_TOKEN"
     store, ai = ops["store-telegram"], ops["ai-telegram"]
@@ -158,6 +161,19 @@ async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, 
 
     no_ai, _ = project_setup.compile_setup(project.id, reqs, ai=False)
     assert "ai-telegram" not in [s.id for s in no_ai.steps]
+
+
+async def test_a_credentials_own_setup_timeout_rides_its_questions(project, templates):
+    await save_credential(
+        manifest={"name": "slow-key", "setup": "Request a key; it takes a while to issue.", "setup_timeout_seconds": 1500,
+                  "vars": {"SLOW_KEY": {}}},
+        scope="project", project_id=project.id,
+    )
+    reqs = await project_setup.collect_requirements(project)
+
+    _wizard, ops = project_setup.compile_setup(project.id, reqs)
+
+    assert ops["ask-slow-key-SLOW_KEY"].setup_timeout() == 1500
 
 
 async def test_a_deployment_setup_stores_and_checks_where_that_deployment_keeps_values(project, templates, monkeypatch):
