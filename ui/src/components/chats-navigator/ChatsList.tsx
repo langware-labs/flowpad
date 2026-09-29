@@ -14,6 +14,8 @@ interface ChatsListProps {
   isLoading: boolean;
   /** Quick search is active → one flat, latest-first list (no bucket headers). */
   searching?: boolean;
+  /** The session-content search is still in flight → say so, don't claim "no match". */
+  isSearchingContent?: boolean;
   /** Active process id (from the URL/context) → highlighted row. */
   activeProcessId: string | null;
   /** Process ids that back an open tab → bright; others dim until hovered. */
@@ -27,6 +29,7 @@ export function ChatsList({
   buckets,
   isLoading,
   searching = false,
+  isSearchingContent = false,
   activeProcessId,
   openProcessIds,
   onSelect,
@@ -42,6 +45,10 @@ export function ChatsList({
         {isLoading && empty ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
             <Trans>Loading chats…</Trans>
+          </div>
+        ) : empty && isSearchingContent ? (
+          <div className="p-4 text-center text-xs text-muted-foreground">
+            <Trans>Searching inside sessions…</Trans>
           </div>
         ) : empty && searching ? (
           <div className="p-4 text-center text-xs text-muted-foreground">
@@ -72,6 +79,11 @@ export function ChatsList({
               ))}
             </div>
           ))
+        )}
+        {!empty && isSearchingContent && (
+          <div className="px-3 py-2 text-center text-[10px] text-muted-foreground">
+            <Trans>Searching inside sessions…</Trans>
+          </div>
         )}
       </div>
     </div>

@@ -59,7 +59,7 @@ export function ChatsNavigator() {
   );
 
   const filters = useMemo(() => ({ scope, search }), [scope, search]);
-  const { buckets, total, isLoading, refetch } = useChatHistory(filters);
+  const { buckets, total, isLoading, isSearchingContent, refetch } = useChatHistory(filters);
 
   // Active row = the process the Shell URL currently targets (URL-first).
   const activeProcessId =
@@ -189,6 +189,7 @@ export function ChatsNavigator() {
           buckets={buckets}
           isLoading={isLoading}
           searching={searching}
+          isSearchingContent={searching && isSearchingContent}
           activeProcessId={activeProcessId}
           openProcessIds={openProcessIds}
           onSelect={handleSelect}
@@ -203,6 +204,7 @@ export function ChatsNavigator() {
       searchOpen,
       search,
       searching,
+      isSearchingContent,
       handleSearchOpenChange,
       scope,
       project,
