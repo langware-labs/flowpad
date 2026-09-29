@@ -262,25 +262,33 @@ describe('a settled run', () => {
 
 describe('a fully finished run', () => {
   const finished = { result: { exit_code: ExitCode.OK, detail: '', ran: true, steps: {} } };
+  // The wizard's own document says what to tell the person — the page has no wording of its own.
+  const withMessage = (state: Record<string, unknown>) =>
+    ({ ...(wizard(state) as Record<string, unknown>), success_message: 'All done.' }) as never;
 
   it('says everything succeeded, and offers to go home', () => {
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(finished)} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={withMessage(finished)} />);
     expect(screen.getByTestId('wizard-finished')).toBeTruthy();
     expect(screen.getByTestId('wizard-go-home')).toBeTruthy();
   });
 
   it('sends "Go to homepage" straight to the app home, same as the real Home button', () => {
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(finished)} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={withMessage(finished)} />);
     fireEvent.click(screen.getByTestId('wizard-go-home'));
     expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
   });
 
   it('says nothing about being finished while the run is still going, or has not run at all', () => {
     const stillGoing = { result: { exit_code: ExitCode.NOT_YET, detail: 'still running', ran: false, steps: {} } };
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(stillGoing)} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={withMessage(stillGoing)} />);
     expect(screen.queryByTestId('wizard-finished')).toBeNull();
     cleanup();
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={withMessage({})} />);
+    expect(screen.queryByTestId('wizard-finished')).toBeNull();
+  });
+
+  it('says nothing of its own when the wizard declares no success message', () => {
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard(finished)} />);
     expect(screen.queryByTestId('wizard-finished')).toBeNull();
   });
 });
@@ -292,8 +300,16 @@ describe('a popup wizard', () => {
     const short = {
       result: { exit_code: ExitCode.NOT_YET, detail: 'Claude Code: cancelled.', ran: true, steps: {} },
     };
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={{ ...wizard(short), popup: true } as never} />);
-    expect(screen.getByTestId('wizard-not-finished').textContent).toContain("didn't finish");
+    renderWizard(
+      <WizardViewer
+        fsRef={fsRef()}
+        wizard={
+          { ...wizard(short), popup: true, failure_message: 'It stopped.', restart_label: 'Restart setup' } as never
+        }
+      />,
+    );
+    expect(screen.getByTestId('wizard-not-finished').textContent).toContain('It stopped.');
+    expect(screen.getByTestId('wizard-restart').textContent).toBe('Restart setup');
     expect(screen.queryByTestId('wizard-finished')).toBeNull();
 
     fireEvent.click(screen.getByTestId('wizard-go-home'));
@@ -303,9 +319,17 @@ describe('a popup wizard', () => {
     await waitFor(() => expect(h.start).toHaveBeenCalledTimes(1));
   });
 
+  it('a run that fell short says nothing of its own when the wizard declares no failure message', () => {
+    const short = { result: { exit_code: ExitCode.NOT_YET, detail: 'x', ran: true, steps: {} } };
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={{ ...wizard(short), popup: true } as never} />);
+    expect(screen.queryByTestId('wizard-not-finished')).toBeNull();
+  });
+
   it('a clean run shows the success message and no Restart', () => {
     const ok = { result: { exit_code: ExitCode.OK, detail: '', ran: true, steps: {} } };
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={{ ...wizard(ok), popup: true } as never} />);
+    renderWizard(
+      <WizardViewer fsRef={fsRef()} wizard={{ ...wizard(ok), popup: true, success_message: 'All done.' } as never} />,
+    );
     expect(screen.getByTestId('wizard-finished')).toBeTruthy();
     expect(screen.queryByTestId('wizard-restart')).toBeNull();
     expect(screen.queryByTestId('wizard-not-finished')).toBeNull();

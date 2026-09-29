@@ -141,7 +141,7 @@ async def test_a_ready_tab_runs_the_shipped_wizard_through_its_declared_trigger(
         # 3. THE EVENT. What the callback then does — the LLM source, then the
         #    wizard — is `start_wizard`'s own test; here only that it is reached,
         #    with the wizard the trigger belongs to.
-        from flow_sdk.server import builtin_triggers
+        from flow_sdk.core.wizard import start as wizard_start
 
         reached: list = []
 
@@ -151,7 +151,7 @@ async def test_a_ready_tab_runs_the_shipped_wizard_through_its_declared_trigger(
 
             return CliResult.satisfied("funded"), WizardResult.satisfied("stubbed")
 
-        monkeypatch.setattr(builtin_triggers, "start_wizard", _setup)
+        monkeypatch.setattr(wizard_start, "start_wizard", _setup)
         emit_tag("app.tab.ready", target_of("compute_node", "n-1"), {"connection_id": "c-1"})
         await _settle()
 

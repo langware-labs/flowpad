@@ -206,3 +206,20 @@ def test_a_friendlier_label_and_the_popup_presentation_reach_the_ui():
     plain = Wizard(name="llm-setup-python", asset_ref=str(WIZARDS / "llm-setup-python"))
     assert plain.label == "llm-setup-python"
     assert plain.popup is False
+
+
+def test_the_wizards_own_document_carries_what_its_page_says_and_needs():
+    """The page has no wording of its own: what a run's end says, the restart button's label and
+    whether an LLM source comes first are all read from the document, so another wizard gets none of
+    first-run setup's words unless its own file says them."""
+    from flow_sdk.builtin.wizard import Wizard
+
+    setup = Wizard(name="llm-setup", asset_ref=str(LLM_SETUP))
+    assert setup.success_message and setup.failure_message
+    assert setup.restart_label == "Restart setup"
+    assert setup.spec().requires_llm_source is True
+
+    plain = Wizard(name="llm-setup-python", asset_ref=str(WIZARDS / "llm-setup-python"))
+    assert plain.success_message == "" and plain.failure_message == ""
+    assert plain.restart_label == "Restart"
+    assert plain.spec().requires_llm_source is False

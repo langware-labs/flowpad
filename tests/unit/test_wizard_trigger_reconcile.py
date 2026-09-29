@@ -231,7 +231,7 @@ def test_the_llm_source_is_settled_in_process_for_the_box(monkeypatch):
 
     from flow_sdk.cli.commands import llm_cmd
     from flow_sdk.core.compute import exec as compute_exec
-    from flow_sdk.server.builtin_triggers import _resolve_llm_source
+    from flow_sdk.core.wizard.start import _resolve_llm_source
 
     seen: dict = {}
 
@@ -259,7 +259,7 @@ def test_nothing_chosen_is_not_ok_and_does_not_raise(monkeypatch):
     import typer
 
     from flow_sdk.cli.commands import llm_cmd
-    from flow_sdk.server.builtin_triggers import _resolve_llm_source
+    from flow_sdk.core.wizard.start import _resolve_llm_source
 
     def _skipped(**_kwargs):
         raise typer.Exit(4)
@@ -277,9 +277,9 @@ async def test_run_setup_clears_the_last_run_before_the_llm_source(monkeypatch):
     last run's answers sitting there while the chooser is open."""
     from flow_sdk.config import system_projects_root
     from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.core.wizard.state import read_result, record_result
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server import builtin_triggers
 
     shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
     record = await index_path("wizard", shipped, write=False)
@@ -294,10 +294,10 @@ async def test_run_setup_clears_the_last_run_before_the_llm_source(monkeypatch):
     async def _wizard(spec, **kwargs):
         return WizardResult.satisfied("stubbed")
 
-    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_start, "_resolve_llm_source", _resolve_source)
     monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
     try:
-        await builtin_triggers.start_wizard(wizard, unattended=False)
+        await wizard_start.start_wizard(wizard, unattended=False)
         assert seen_at_source == [None], "the last run's answer was still there while the source was settled"
     finally:
         await _cleanup(wizard)
@@ -313,11 +313,11 @@ async def test_a_new_setup_run_stops_the_one_in_flight_and_starts_clean(monkeypa
 
     from flow_sdk.config import system_projects_root
     from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.core.wizard import state
     from flow_sdk.core.wizard.state import read_result
     from flow_sdk.instances.atomic import write_json_atomic
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server import builtin_triggers
 
     shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
     record = await index_path("wizard", shipped, write=False)
@@ -351,17 +351,17 @@ async def test_a_new_setup_run_stops_the_one_in_flight_and_starts_clean(monkeypa
                 raise
         return WizardResult.satisfied("new run")
 
-    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_start, "_resolve_llm_source", _resolve_source)
     monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
     try:
-        old = asyncio.ensure_future(builtin_triggers.start_wizard(wizard, unattended=True))
+        old = asyncio.ensure_future(wizard_start.start_wizard(wizard, unattended=True))
         await old_started.wait()
 
-        _source, new_result = await builtin_triggers.start_wizard(wizard, unattended=False)
+        _source, new_result = await wizard_start.start_wizard(wizard, unattended=False)
         _old_source, old_result = await old
 
         assert old_cancelled == [True], "the old run was not stopped"
-        assert old_result.busy and builtin_triggers.START_REPLACED in old_result.detail
+        assert old_result.busy and wizard_start.START_REPLACED in old_result.detail
         assert new_result.ok, new_result.detail
         assert seen_at_source[-1] is None, "the old run's progress was still there when the new run started"
         assert read_result(str(wizard.id)).detail == "new run"
@@ -379,8 +379,8 @@ async def test_run_setup_re_steers_to_the_wizard_after_the_llm_source_settles(mo
     settles and right before the wizard actually starts, not just once up front."""
     from flow_sdk.config import system_projects_root
     from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server import builtin_triggers
 
     shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
     record = await index_path("wizard", shipped, write=False)
@@ -398,11 +398,11 @@ async def test_run_setup_re_steers_to_the_wizard_after_the_llm_source_settles(mo
         order.append("wizard")
         return WizardResult.satisfied("stubbed")
 
-    monkeypatch.setattr(builtin_triggers, "_navigate_to_wizard", _navigate)
-    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_start, "navigate_to_wizard", _navigate)
+    monkeypatch.setattr(wizard_start, "_resolve_llm_source", _resolve_source)
     monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
     try:
-        await builtin_triggers.start_wizard(wizard, unattended=False)
+        await wizard_start.start_wizard(wizard, unattended=False)
         assert order == ["navigate", "llm source", "navigate", "wizard"], (
             "must steer again AFTER the source settles (the chooser may have navigated away), not just once before it"
         )
@@ -417,8 +417,8 @@ async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monke
     still runs (its plain commands need none)."""
     from flow_sdk.config import system_projects_root
     from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server import builtin_triggers
     from flow_sdk.server.builtin_triggers import _run_llm_setup_trigger
 
     order: list[str] = []
@@ -431,7 +431,7 @@ async def test_first_run_setup_settles_the_llm_source_then_runs_the_wizard(monke
         order.append("wizard")
         return WizardResult.satisfied("stubbed")
 
-    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_start, "_resolve_llm_source", _resolve_source)
     monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
 
     shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"
@@ -457,8 +457,8 @@ async def test_a_live_tab_gets_the_popup_and_waits_for_start_instead_of_racing_a
     and so takes this same function's other branch."""
     from flow_sdk.config import system_projects_root
     from flow_sdk.core.wizard import execute as wizard_execute
+    from flow_sdk.core.wizard import start as wizard_start
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
-    from flow_sdk.server import builtin_triggers
     from flow_sdk.server.builtin_triggers import _run_llm_setup_trigger
     from flow_sdk.server.routes import websocket as ws_routes
 
@@ -478,8 +478,8 @@ async def test_a_live_tab_gets_the_popup_and_waits_for_start_instead_of_racing_a
         navigated.append(str(wizard.id))
 
     monkeypatch.setattr(ws_routes, "get_active_connection", lambda: ("conn-1", object()))
-    monkeypatch.setattr(builtin_triggers, "_resolve_llm_source", _resolve_source)
-    monkeypatch.setattr(builtin_triggers, "_navigate_to_wizard", _navigate)
+    monkeypatch.setattr(wizard_start, "_resolve_llm_source", _resolve_source)
+    monkeypatch.setattr(wizard_start, "navigate_to_wizard", _navigate)
     monkeypatch.setattr(wizard_execute, "run_wizard", _wizard)
 
     shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "wizard" / "llm-setup"

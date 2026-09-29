@@ -7,6 +7,9 @@
   "icon": "Wand2",
   "popup": true,
   "requires_llm_source": true,
+  "success_message": "Setup finished — everything is installed.",
+  "failure_message": "Setup didn't finish successfully.",
+  "restart_label": "Restart setup",
   "steps": [
     {
       "id": "claude-code",
