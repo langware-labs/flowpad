@@ -1,15 +1,17 @@
 import { Trans, useLingui } from '@lingui/react/macro';
 import { CredentialsSubview, PageId, ViewType } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { ConnectionsManager } from '@src/components/connections-manager';
+import { CREDENTIAL_DEPLOYMENT_OPTION, ConnectionsManager } from '@src/components/connections-manager';
+import { useCredentials } from '@src/components/credentials/use-credentials';
 import { ProjectSelector } from '@src/components/project-selector';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { ChevronDown, KeyRound } from 'lucide-react';
+import { ChevronDown, FileKey, KeyRound } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 import { credentialsPointer, credentialsTabs, parseCredentialsPointer } from './credentials-pointer';
@@ -53,6 +55,14 @@ export const CredentialsView: React.FC = () => {
     [projects, projectId],
   );
 
+  // The env files the table reads, as chips — only those on disk. Same query key
+  // as the table's, so this is the cached status, not a second fetch.
+  const { status } = useCredentials(
+    selected?.id ?? null,
+    currentDock?.options?.[CREDENTIAL_DEPLOYMENT_OPTION] || null,
+  );
+  const envFiles = status.files.filter((file) => file.exists && file.path);
+
   const go = (nextTab: CredentialsSubview, nextProjectId?: string) => {
     navigation.openPage(
       currentDock?.page ?? PageId.DESK,
@@ -75,6 +85,21 @@ export const CredentialsView: React.FC = () => {
         <h2 className="text-sm font-semibold">
           <Trans>Credentials</Trans>
         </h2>
+
+        {envFiles.map((file) => (
+          <Button
+            key={file.path}
+            variant="outline"
+            size="sm"
+            className="h-6 gap-1 rounded-full px-2 font-mono text-[11px] font-normal"
+            title={file.path ?? undefined}
+            onClick={() => navigation.openMachinePath(file.path!, LOCAL_COMPUTE_NODE)}
+            data-testid={`credentials-env-file-${file.scope}`}
+          >
+            <FileKey className="h-3 w-3" />
+            {file.path!.split(/[\\/]/).pop()}
+          </Button>
+        ))}
 
         <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
             <PopoverTrigger asChild>
