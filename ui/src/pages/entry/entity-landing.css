@@ -31,6 +31,10 @@
   grid-template-columns: minmax(280px, 520px);
 }
 
+.el-options-full {
+  grid-template-columns: 1fr;
+}
+
 .el-option {
   display: flex;
   flex-direction: column;

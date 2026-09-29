@@ -4,22 +4,16 @@ import { Bot, Code, Sparkles, Terminal } from 'lucide-react';
 import React from 'react';
 import { useParams } from 'react-router';
 import { entityLandingModel, parseEntityLandingParams } from './entity-landing-model';
-import {
-  CloneLine,
-  EntityLandingGate,
-  EntityLandingView,
-  EntityNotFound,
-  GetFlowpadLink,
-  LandingCard,
-} from './entry-shell';
+import { EntityLandingGate, EntityLandingView, EntityNotFound, LandingCard } from './entry-shell';
 import { projectHubPath, projectOpenTargetPath } from './project-share-landing';
-import { useOpenInFlowpad } from './useOpenFlowpad';
+import { OpenInFlowpadActions } from './OpenInFlowpadActions';
 
 /**
  * `/project/<id>` — where a project share's invitation lands (`Project.share`
- * sets it as the `callback_override`). The generic landing, with the hub's
- * project page for the browser and "Open in FlowPad", which hands the desktop
- * the link that sets this shared project up on the recipient's machine.
+ * sets it as the `callback_override`). The generic landing, desktop-only:
+ * "Open in FlowPad" hands the desktop the link that sets this shared project up
+ * on the recipient's machine. The browser card returns only when the project
+ * has no git origin to open.
  */
 const ProjectShareLanding: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -34,6 +28,7 @@ const ProjectShareLanding: React.FC = () => {
           <EntityLandingView
             typeId={typeId}
             model={model}
+            hideBrowserCard
             desktopCard={
               model.gitOrigin ? (
                 <OpenInFlowpadCard projectId={typeId.id} name={model.displayName} gitOrigin={model.gitOrigin} />
@@ -52,7 +47,6 @@ const OpenInFlowpadCard: React.FC<{ projectId: string; name: string; gitOrigin: 
   gitOrigin,
 }) => {
   const { t } = useLingui();
-  const openInFlowpad = useOpenInFlowpad(projectOpenTargetPath({ id: projectId, name, gitOrigin }));
   return (
     <LandingCard
       title={
@@ -66,13 +60,7 @@ const OpenInFlowpadCard: React.FC<{ projectId: string; name: string; gitOrigin: 
       }
       text={t`FlowPad is a free, open-source desktop app for working on projects with your coding agents. Open this one and FlowPad sets it up on your machine.`}
     >
-      <div className="el-buttons">
-        <button type="button" className="nl-btn" onClick={() => void openInFlowpad()}>
-          {t`Open in FlowPad`}
-        </button>
-        <GetFlowpadLink />
-      </div>
-      <CloneLine origin={gitOrigin} />
+      <OpenInFlowpadActions openTargetPath={projectOpenTargetPath({ id: projectId, name, gitOrigin })} />
     </LandingCard>
   );
 };
