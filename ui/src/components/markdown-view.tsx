@@ -1,3 +1,4 @@
+import { CodeBlockRunButton } from '@src/components/code-block-run-button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import React, { useRef } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -22,10 +23,14 @@ function extractLanguage(children: React.ReactNode): string {
 }
 
 /**
- * Code block with a calm header (language label) + a Copy button. Theme-aware
+ * Code block with a calm header (language label) + Run (for a shell or script
+ * block — see `CodeBlockRunButton`) + a Copy button. Theme-aware
  * via semantic tokens. `codeChrome={false}` falls back to a bare <pre> (the
  * review-diff viewer keeps the minimal look).
  */
+const headerButtonClass =
+  'rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground';
+
 function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeChrome: boolean }) {
   const preRef = useRef<HTMLPreElement>(null);
   const { t } = useLingui();
@@ -49,13 +54,20 @@ function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeCh
         <span className="font-mono text-[11px] uppercase tracking-wide text-muted-foreground">
           {language || t`code`}
         </span>
-        <CopyButton
-          value={() => preRef.current?.textContent ?? ''}
-          title={t`Copy code`}
-          label={t`Copy`}
-          copiedLabel={t`Copied`}
-          className="rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        />
+        <div className="flex items-center gap-1">
+          <CodeBlockRunButton
+            language={language}
+            code={() => preRef.current?.textContent ?? ''}
+            className={headerButtonClass}
+          />
+          <CopyButton
+            value={() => preRef.current?.textContent ?? ''}
+            title={t`Copy code`}
+            label={t`Copy`}
+            copiedLabel={t`Copied`}
+            className={headerButtonClass}
+          />
+        </div>
       </div>
       <pre
         ref={preRef}
