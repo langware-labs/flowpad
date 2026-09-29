@@ -7,7 +7,8 @@ import { Bot, Code, Sparkles, Terminal } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import './message-landing.css';
-import { LOCAL_API_PREFIX, useOpenInFlowpad } from './useOpenFlowpad';
+import { OpenInFlowpadActions } from './OpenInFlowpadActions';
+import { LOCAL_API_PREFIX } from './useOpenFlowpad';
 import { bounceToLoginOnce } from './login-bounce';
 import WrongAccountPanel from './WrongAccountPanel';
 
@@ -67,8 +68,6 @@ const MessageLanding: React.FC = () => {
     return new ActionInfo('open', FlowMessage.type, messageId, 'GET');
   }, [messageId]);
   const openTargetPath = openAction ? `${LOCAL_API_PREFIX}${openAction.actionUrl}` : '';
-
-  const handleOpenInFlowpad = useOpenInFlowpad(openTargetPath);
 
   // Show spinner until we have a definitive outcome (accepted + loaded, wrong account, or error).
   if (isLoading || redirecting || (!wrongAccount && !flowMessage && !notFound && !error)) {
@@ -169,14 +168,7 @@ const MessageLanding: React.FC = () => {
               <Code className="nl-agent-icon" size={22} aria-label={t`Copilot`} />
             </h3>
             <p>{getAppPromoDesc}</p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <button className="nl-btn" onClick={() => void handleOpenInFlowpad()}>
-                Open in FlowPad
-              </button>
-              <a className="nl-btn" href="https://flowpad.ai/">
-                Get FlowPad at flowpad.ai →
-              </a>
-            </div>
+            <OpenInFlowpadActions openTargetPath={openTargetPath} />
           </div>
 
           <div className="nl-option">
