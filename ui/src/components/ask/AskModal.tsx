@@ -8,8 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { Input } from '@src/components/ui/input';
 import { Button } from '@src/components/ui/button';
+import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useAskModalStore } from './ask-modal-store';
 import { fieldsOf, useAskQuestion } from './use-ask-question';
@@ -93,17 +93,14 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
                     {name}
                   </label>
                 ) : null}
-                <Input
+                <AskValueInput
                   id={`ask-modal-${name}`}
-                  data-testid={`ask-modal-input-${name || 'value'}`}
-                  autoFocus
-                  type={question.secret ? 'password' : 'text'}
-                  autoComplete={question.secret ? 'off' : undefined}
+                  testId={`ask-modal-input-${name || 'value'}`}
+                  secret={question.secret}
+                  file={question.file}
                   value={values[name] ?? ''}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [name]: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void submit();
-                  }}
+                  onChange={(value) => setValues((prev) => ({ ...prev, [name]: value }))}
+                  onEnter={() => void submit()}
                 />
               </div>
             ))}

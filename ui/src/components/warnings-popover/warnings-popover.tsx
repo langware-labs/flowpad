@@ -4,7 +4,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { useWarnings } from '@sdk/react/hooks';
+import { useContext, useWarnings } from '@sdk/react/hooks';
+import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
 import { notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
 import { DiagnoseIconButton } from '@src/notifications/diagnose/DiagnoseIconButton';
@@ -219,6 +220,7 @@ export function WarningsPopover() {
   const dismissAlert = useAlertStore((s) => s.dismiss);
   const dismissAllAlerts = useAlertStore((s) => s.dismissAll);
   const { navigation } = useDockNavigation();
+  const { project } = useContext();
   const [open, setOpen] = useState(false);
 
   const handleOpenChange = useCallback((isOpen: boolean) => {
@@ -235,6 +237,8 @@ export function WarningsPopover() {
         // Both harness warnings open the login modal — it shows install links
         // for missing CLIs and the device-login flow for logged-out ones.
         openHarnessLoginModal();
+      } else if (warning.id === WARNING_IDS.PROJECT_SETUP_REQUIRED && project) {
+        openProjectSetup({ projectId: String(project.id), projectName: project.name ?? '' });
       } else if (warning.onClick) {
         warning.onClick();
       } else if (warning.wikiPage) {
@@ -250,7 +254,7 @@ export function WarningsPopover() {
       }
       setOpen(false);
     },
-    [navigation],
+    [navigation, project],
   );
 
   const total = warnings.length + alerts.length;
