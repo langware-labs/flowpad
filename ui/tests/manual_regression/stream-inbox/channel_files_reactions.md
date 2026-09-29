@@ -1,3 +1,6 @@
+---
+id: 871d15b9-44ab-48da-a882-66a0e31df494
+---
 # Channel files, quotes and reactions — in the browser
 
 precondition: as `channel_matrix.md` — an isolated instance (`scripts/instance_ctl.sh launch <name>`) and the

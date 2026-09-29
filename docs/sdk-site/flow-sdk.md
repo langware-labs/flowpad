@@ -1,3 +1,6 @@
+---
+id: 6ab6265e-6014-4ff6-ab56-dd672a1b83c3
+---
 # Flow SDK: Agentic orchestration SDK. Git-native agents you own.
 
 Flow is a git- and file-system-native library for managing and processing data with agents. Build agents and harnesses in a few lines of Python that run on any vendor's models, on your own machines or on-prem, and grow into enterprise-grade agents that keep learning from your data.
