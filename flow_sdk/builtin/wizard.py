@@ -46,6 +46,13 @@ class Wizard(Entity):
 
     _api_visible: ClassVar[bool] = True
 
+    @classmethod
+    async def by_name(cls, name: str) -> Optional["Wizard"]:
+        """The wizard named ``name``, or None — this install's copy when a project shadows it."""
+        from flow_sdk.builtin.shipped_lookup import by_name_preferring_this_install  # noqa: PLC0415
+
+        return await by_name_preferring_this_install(cls, name)
+
     @property
     def folder(self) -> Optional[Path]:
         return Path(self.asset_ref) if self.asset_ref else None
