@@ -34,7 +34,8 @@ import uuid
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.schema.data_spec.returned_value_spec import AskResult
@@ -78,6 +79,22 @@ class Question:
     run: str = ""
     #: How a person finds the value — the op's ``setup.md``, markdown. Drawn beside the fields.
     guide: str = ""
+    #: The agent the person can hand this question to (``AskOp.assist_agent``). Empty: no AI Assist.
+    assist_agent: str = ""
+    #: How long the question waits once that agent starts, and how long the agent gets.
+    setup_timeout: float = 0.0
+    #: Where the agent works — the asking op's working directory.
+    workdir: str = ""
+    #: The assist, once started: ``running`` / ``failed`` / ``done``, what it last said, and its process.
+    assist_state: str = ""
+    assist_detail: str = ""
+    assist_process: str = ""
+    #: When the wait ends, in loop time — ``None`` while nobody waits, or for an op with no deadline.
+    #: Moved only forward, by :func:`extend`.
+    deadline: Optional[float] = None
+    #: The asking step's status line (its row in the wizard) — where the assist reports as it works.
+    _say: Optional[Callable[[str], None]] = field(repr=False, default=None)
+    _assist_task: "Optional[asyncio.Task]" = field(repr=False, default=None)
     _future: "asyncio.Future" = field(repr=False, default=None)  # type: ignore[assignment]
 
     def to_payload(self) -> dict:
@@ -97,7 +114,14 @@ class Question:
             "wizard_id": self.wizard_id,
             "run": self.run,
             "guide": self.guide,
+            "assist_available": bool(self.assist_agent),
+            "assist": self.assist_payload(),
         }
+
+    def assist_payload(self) -> Optional[dict]:
+        if not self.assist_state:
+            return None
+        return {"state": self.assist_state, "detail": self.assist_detail, "process": self.assist_process}
 
 
 #: The wizard run the current task is executing, set by ``execute_wizard`` for the length of a
@@ -151,6 +175,10 @@ def open_question(
     file: bool = False,
     wizard_id: str = "",
     guide: str = "",
+    assist_agent: str = "",
+    setup_timeout: float = 0.0,
+    workdir: str = "",
+    say: Optional[Callable[[str], None]] = None,
 ) -> Question:
     """Register a question and return it. The caller then awaits ``wait_for``."""
     from flow_sdk.schema.data_spec.compute_op_spec import fields_of_kind  # noqa: PLC0415
@@ -170,6 +198,10 @@ def open_question(
         wizard_id=wizard_id,
         run=ASKING_RUN.get(),
         guide=guide,
+        assist_agent=assist_agent,
+        setup_timeout=setup_timeout,
+        workdir=workdir,
+        _say=say,
         _future=asyncio.get_event_loop().create_future(),
     )
     _PENDING[question.id] = question
@@ -232,10 +264,40 @@ async def wait_for(question: Question, *, timeout: Optional[float]) -> Any:
     nobody is waiting for is refused rather than silently dropped into a future
     that has already been abandoned.
     """
+    loop = asyncio.get_running_loop()
+    question.deadline = None if timeout is None else loop.time() + timeout
+    answered = False
     try:
-        return await asyncio.wait_for(asyncio.shield(question._future), timeout)
+        while True:
+            left = None if question.deadline is None else question.deadline - loop.time()
+            if left is not None and left <= 0:
+                raise TimeoutError
+            try:
+                value = await asyncio.wait_for(asyncio.shield(question._future), left)
+            except TimeoutError:
+                # The deadline moved while we waited (an assist started): wait out the rest of it.
+                if question.deadline is not None and question.deadline > loop.time():
+                    continue
+                raise
+            answered = True
+            return value
     finally:
         _PENDING.pop(question.id, None)
+        task = question._assist_task
+        if not answered and task is not None and not task.done():
+            # Nobody waits for the answer any more (cancelled, timed out): the agent stops too.
+            task.cancel()
+
+
+def extend(question_id: str, seconds: float) -> bool:
+    """Wait at least ``seconds`` more from now. Never shortens, and a question with no deadline keeps
+    none. False when nothing is waiting under that id."""
+    question = _PENDING.get(question_id)
+    if question is None:
+        return False
+    if question.deadline is not None:
+        question.deadline = max(question.deadline, asyncio.get_running_loop().time() + seconds)
+    return True
 
 
 #: How long an ``until_answered`` ask keeps checking for SOMEONE to show the
@@ -263,6 +325,10 @@ async def ask_person(
     file: bool = False,
     wizard_id: str = "",
     guide: str = "",
+    assist_agent: str = "",
+    setup_timeout: float = 0.0,
+    workdir: str = "",
+    say: Optional[Callable[[str], None]] = None,
 ) -> "AskResult":
     """Raise one question here and answer with what the person did.
 
@@ -285,6 +351,10 @@ async def ask_person(
         file=file,
         wizard_id=wizard_id,
         guide=guide,
+        assist_agent=assist_agent,
+        setup_timeout=setup_timeout,
+        workdir=workdir,
+        say=say,
     )
     shown = await raise_question(question)
     if timeout is None and not shown:
@@ -304,6 +374,7 @@ async def ask_person(
         # was asked, so nothing ran; the next attempt asks again.
         forget(question.id)
         return AskResult.not_yet(f"{label}: nobody could be shown the question.", ran=False)
+    started = asyncio.get_running_loop().time()
     try:
         value = await wait_for(question, timeout=timeout)
     except asyncio.CancelledError:
@@ -316,7 +387,9 @@ async def ask_person(
     except Cancelled:
         return AskResult.not_yet(f"{label}: cancelled.", cancelled=True)
     except TimeoutError:
-        return AskResult.not_yet(f"{label}: no answer within {timeout:g}s.", timed_out=True)
+        # The span actually waited: an assist extends the deadline past ``timeout``.
+        waited = asyncio.get_running_loop().time() - started
+        return AskResult.not_yet(f"{label}: no answer within {waited:.0f}s.", timed_out=True)
     return AskResult.satisfied(f"{label}: answered.", value=value)
 
 
@@ -334,6 +407,10 @@ async def ask_through_backend(
     file: bool = False,
     wizard_id: str = "",
     guide: str = "",
+    assist_agent: str = "",
+    setup_timeout: float = 0.0,
+    workdir: str = "",
+    say: Optional[Callable[[str], None]] = None,
 ) -> "AskResult":
     """:func:`ask_person`, run by the backend for a process that is not it.
 
@@ -358,6 +435,9 @@ async def ask_through_backend(
         "file": file,
         "wizard_id": wizard_id,
         "guide": guide,
+        "assist_agent": assist_agent,
+        "setup_timeout": setup_timeout,
+        "workdir": workdir,
     }
     try:
         async with flow_service() as lease:
@@ -367,3 +447,112 @@ async def ask_through_backend(
     if not said.success or not isinstance(said.data, dict):
         return AskResult.not_yet(f"{label}: the backend did not ask — {said.message or said.status}", ran=False)
     return AskResult.model_validate(said.data)
+
+
+# ── AI Assist: an agent answers the same question ─────────────────────────────
+
+
+class AssistRefused(ValueError):
+    """An assist that cannot start: no agent for this question, it is settled, or one already works on it."""
+
+
+def assist(question_id: str, *, launch: Any = None) -> dict:
+    """Hand the question to its ``assist_agent``: the agent follows the op's guide and answers THIS
+    question through ``flow ask answer`` — the route a person's answer takes — so the asking op returns
+    the same ``AskResult`` whoever answered. From now, the question waits ``setup_timeout`` (the
+    setup's own span, not a person's) and the agent is stopped at it. The person can still answer or
+    cancel meanwhile; the first answer wins. Returns the assist's state."""
+    question = _PENDING.get(question_id)
+    if question is None:
+        raise AssistRefused("that question is no longer waiting")
+    if not question.assist_agent:
+        raise AssistRefused("this question has no AI Assist")
+    if question.assist_state == "running":
+        raise AssistRefused("AI Assist is already working on it")
+    extend(question_id, question.setup_timeout)
+    question.assist_state, question.assist_detail, question.assist_process = "running", "starting the agent", ""
+    question._assist_task = asyncio.create_task(_run_assist(question, launch))
+    return question.assist_payload() or {}
+
+
+def assist_prompt(question: Question) -> str:
+    """The contract around the op's guide (which rides the agent op's ``setup``): where the value goes,
+    and that it never passes through the agent's words."""
+    from flow_sdk.core.flow_command import flow_command  # noqa: PLC0415
+
+    if question.file:
+        how = (
+            "The answer is a FILE's content. Produce the file (a download, a generated key) and deliver it with:\n\n"
+            f"    {flow_command('ask', 'answer', question.id, '--file', '<path to the file>')}\n\n"
+            "then delete the file."
+        )
+    else:
+        how = (
+            "Deliver the value by piping it into:\n\n"
+            f"    {flow_command('ask', 'answer', question.id, '--stdin')}"
+        )
+    return (
+        f"A person is being asked: {question.prompt}\n"
+        "They handed the question to you. Obtain the value by following the instructions below, "
+        f"and answer the question with it.\n{how}\n\n"
+        "That command is the only place the value goes. Produce it inside the pipe or file that feeds it, so it "
+        "never passes through you: never print, echo or repeat a value — not in a command line, your reply, a "
+        "file you keep or a log. If the command refuses the value, fix it and answer again.\n"
+        "If obtaining it needs the person (their sign-in, a code sent to them), say exactly what they must do, "
+        "and stop — the question stays open for them."
+    )
+
+
+async def _run_assist(question: Question, launch: Any) -> None:
+    from flow_sdk.core.compute_op.runner import run_op  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec  # noqa: PLC0415
+
+    def status(text: str) -> None:
+        if not text:
+            return
+        question.assist_detail = text
+        if question._say is not None:
+            question._say(f"AI Assist: {text}")
+
+    if launch is None:
+        from flow_sdk.core.compute.process_step import launch_step_process as launch  # noqa: PLC0415
+
+    async def tracked(**kwargs: Any) -> Any:
+        """``launch``, noting the agent's process as soon as it reports, so the form can link to it."""
+        inner = kwargs.get("on_status")
+
+        def on_status(progress: Any) -> None:
+            question.assist_process = getattr(progress, "executor", "") or question.assist_process
+            if inner is not None:
+                inner(progress)
+
+        return await launch(**{**kwargs, "on_status": on_status})
+
+    spec = ComputeOpSpec.model_validate({
+        "name": f"{question.op_name}-assist",
+        "label": f"AI Assist: {question.prompt.splitlines()[0] if question.prompt else question.op_name}",
+        "subkind": "agent",
+        "exe_data": {
+            "agent": question.assist_agent, "prompt": assist_prompt(question),
+            "timeout_seconds": question.setup_timeout,
+        },
+        "setup": question.guide,
+    })
+    try:
+        said = await run_op(
+            spec, trusted=True, workdir=Path(question.workdir) if question.workdir else None,
+            on_status=status, launch=tracked,
+        )
+        detail = said.detail
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — a crashed assist leaves the question to the person
+        detail = f"AI Assist could not run: {exc}"
+    if question._future.done() or question.id not in _PENDING:
+        question.assist_state = "done"
+        return
+    # Finished without answering: the question stays open, for the person or another try.
+    question.assist_state = "failed"
+    question.assist_detail = detail or "AI Assist finished without answering."
+    if question._say is not None:
+        question._say(question.assist_detail)

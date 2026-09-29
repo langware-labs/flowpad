@@ -8,6 +8,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock('@sdk/client', () => ({ default: { get: h.get, post: h.post } }));
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: null }),
+}));
 
 import { Project, type ProjectReadiness } from '@sdk/entities/project';
 import { ProjectSetupDialog } from '@src/components/project-setup/ProjectSetupDialog';

@@ -39,6 +39,7 @@ _FLOW_VERBS = frozenset(
     {
         "agent",
         "app",
+        "ask",
         "artifact",
         "asset",
         "auth",

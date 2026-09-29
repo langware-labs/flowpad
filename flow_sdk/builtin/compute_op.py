@@ -78,6 +78,9 @@ class ComputeOp(Entity):
         default_factory=list, description='Completion-check exit codes that mean "not this machine".'
     )
     setup: str = APIField(default="", description="How a person does this by hand (setup.md).")
+    setup_timeout_seconds: Optional[float] = APIField(
+        default=None, description="How long an agent following setup gets (AI Assist); unset = the default."
+    )
 
     _api_visible: ClassVar[bool] = True
 

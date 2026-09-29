@@ -22,11 +22,11 @@ Values travel ask → the run's values → the environment of ``flow credentials
 from __future__ import annotations
 
 import asyncio
-import shlex
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from flow_sdk.core.flow_command import flow_command
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
 from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.project_setup_spec import (
@@ -186,10 +186,7 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
 
 def _flow(*args: str, platform: str) -> str:
     """This interpreter's ``flow`` — the checks must reach the same install and instance the CLI runs in."""
-    if platform == "win32":
-        quoted = " ".join("'" + a.replace("'", "''") + "'" for a in args)
-        return f"& '{sys.executable}' -m flow_sdk.cli.flow_cli {quoted}"
-    return " ".join([shlex.quote(sys.executable), "-m", "flow_sdk.cli.flow_cli", *map(shlex.quote, args)])
+    return flow_command(*args, platform=platform)
 
 
 def _cli(*args: str) -> dict[str, dict[str, str]]:

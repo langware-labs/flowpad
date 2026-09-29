@@ -1905,6 +1905,18 @@ msgstr "الوكلاء"
 msgid "Agents in {projectName} with a deployment"
 msgstr ""
 
+#: src/components/ask/AskAssist.tsx
+msgid "AI Assist"
+msgstr ""
+
+#: src/components/ask/AskForm.tsx
+msgid "AI Assist answered it."
+msgstr ""
+
+#: src/components/ask/AskAssist.tsx
+msgid "AI Assist is working on it — you can still answer yourself."
+msgstr ""
+
 #: src/components/ai-config-view/ai-config-view.tsx
 #: src/types/ViewType.ts
 msgid "AI Configuration"
@@ -11291,6 +11303,10 @@ msgstr "نوع العدسة \"{0}/{1}\" غير مدعوم."
 #: src/components/assets/editor/task/AnalyzeStatusButton.tsx
 msgid "Let an agent assess progress and fill in missing fields"
 msgstr "يمكن لوكيل تقييم التقدم وملء الحقول الناقصة"
+
+#: src/components/ask/AskAssist.tsx
+msgid "Let an agent follow the steps above and answer for you."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Let anyone with the link view this agent — its files stay private"
@@ -22481,6 +22497,10 @@ msgstr "المشغّلات"
 msgid "Try again"
 msgstr "إعادة المحاولة"
 
+#: src/components/ask/AskAssist.tsx
+msgid "Try AI Assist again"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
@@ -23398,6 +23418,10 @@ msgstr "يمسح نظام الملفات ويعرض الأعداد والأحج�
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Watch"
 msgstr "المراقبة"
+
+#: src/components/ask/AskAssist.tsx
+msgid "Watch the agent"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "Watchers register patterns via <0>Shell.addTrigger</0>; matched lines appear here."
