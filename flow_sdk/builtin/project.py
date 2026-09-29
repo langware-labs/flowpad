@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import logging
 import ntpath
 import os
@@ -16,6 +17,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    PrivateAttr,
     TypeAdapter,
     computed_field,
     model_validator,
@@ -47,10 +49,19 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.share_result_spec import (
+    ShareFailedSpec,
+    ShareFailedTeamSpec,
+    ShareGrantedTeamSpec,
+    ShareInvitedSpec,
+    ShareResultSpec,
+    ShareSkippedSpec,
+    ShareSkippedTeamSpec,
+)
 
 if TYPE_CHECKING:
-    from flow_sdk.app.actions.share_action import ShareInvitee
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
+    from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 log = logging.getLogger(__name__)
 
@@ -219,8 +230,8 @@ class HelpdeskConfig(BaseModel):
 
 # Roles a project invite may carry. The hub's ``can_assign`` is the authority
 # (strictly below the inviter's rank); this only rejects anything else up front.
-ProjectInviteRole = Literal["member", "admin"]
-PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("member", "admin")
+ProjectInviteRole = Literal["member", "admin", "editor"]
+PROJECT_INVITE_ROLES: tuple[ProjectInviteRole, ...] = ("member", "admin", "editor")
 PROJECT_DEFAULT_INVITE_ROLE: ProjectInviteRole = "member"
 
 
@@ -235,6 +246,106 @@ class ProjectInviteRoleError(ValueError):
     """
 
 
+def project_share_landing_path(project_id: str) -> str:
+    """The app path a project invitation lands on — the SPA's ``project/:projectId`` route."""
+    return f"/project/{project_id}"
+
+
+# How many person invites a share keeps in flight at once. Each invite is a hub
+# write that may open a conversation and post into it, so a large team is
+# spread over a few parallel requests rather than one burst per member.
+_SHARE_INVITE_CONCURRENCY = 4
+
+
+@dataclasses.dataclass
+class _SharePerson:
+    """One person a share is about to address — ``Project.share``'s working row.
+
+    Process-local merge state, never serialized: what travels is the
+    ``ShareResultSpec`` built from it.
+    """
+
+    user_id: Optional[str] = None
+    email: Optional[str] = None
+    role: Optional[str] = None
+
+    def identity(self) -> dict[str, Optional[str]]:
+        return {"user_id": self.user_id, "email": self.email}
+
+
+def _merge_share_people(people: list[_SharePerson]) -> list[_SharePerson]:
+    """One entry per person, keyed by hub user id, falling back to email.
+
+    Earlier entries win their role; a later entry only fills in what an earlier
+    one lacked, so the invite goes by the stable key and nobody is invited twice.
+    """
+    merged: list[_SharePerson] = []
+    by_user_id: dict[str, _SharePerson] = {}
+    by_email: dict[str, _SharePerson] = {}
+    for person in people:
+        found = (person.user_id and by_user_id.get(person.user_id)) or (
+            person.email and by_email.get(person.email)
+        )
+        if not found:
+            found = _SharePerson(**person.identity(), role=person.role)
+            merged.append(found)
+        else:
+            found.user_id = found.user_id or person.user_id
+            found.email = found.email or person.email
+            found.role = found.role or person.role
+        if found.user_id:
+            by_user_id[found.user_id] = found
+        if found.email:
+            by_email[found.email] = found
+    return merged
+
+
+def _share_team_ref(value: str) -> Optional[str]:
+    """The ``team-<uuid>`` typeid a share names, or None for anything else
+    (ignored). ``ShareRequestSpec`` already validates this shape on the wire."""
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
+
+    text = (value or "").strip()
+    if text.startswith("team-") and is_valid_uuid(text.removeprefix("team-")):
+        return text
+    return None
+
+
+def _invite_credentials(invitees: Optional[List["ShareInvitee"]]):
+    """The stored cloud credentials a project invite is sent with, after its roles check.
+
+    Roles are validated up front, before any hub call, so a bad role fails the
+    whole share rather than landing some invites and rejecting others partway
+    through.
+    """
+    from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+
+    for inv in invitees or []:
+        if inv.role is not None and inv.role not in PROJECT_INVITE_ROLES:
+            raise ProjectInviteRoleError(
+                f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.role!r}"
+            )
+    creds = load_credentials()
+    if not creds or not creds.api_key:
+        raise RuntimeError("Cloud login required")
+    return creds
+
+
+def _hub_status_of(exc: ValueError) -> Optional[int]:
+    """The HTTP status ``FlowpadClient._unwrap`` put in its message, if any."""
+    match = re.search(r"status (\d{3})", str(exc))
+    return int(match.group(1)) if match else None
+
+
+def _invite_message_text(project_name: str, note: Optional[str]) -> str:
+    """The invite message: a generic line naming the project, then the sharer's
+    note after a blank line when there is one. Same wording the hub used when it
+    authored this message, so receivers see no change."""
+    text = f'I invited you to project "{project_name}".'
+    note = (note or "").strip()
+    return f"{text}\n\n{note}" if note else text
+
+
 class Project(Entity):
     @classmethod
     async def get_last_active(cls) -> Optional["Project"]:
@@ -247,6 +358,10 @@ class Project(Entity):
                 if project is not None:
                     return project
         return None
+
+    # What the last ``share()`` with invitees or teams did, per person. Process
+    # state, never a field: it is not persisted and never travels with the row.
+    _last_share_result: Optional[ShareResultSpec] = PrivateAttr(default=None)
 
     type: str = APIField(default=BuiltinEntityType.PROJECT.value)
     name: str | None = APIField(default=None, description="Display name of the project")
@@ -1133,31 +1248,37 @@ class Project(Entity):
                 "the account that owns it, or give this folder a new project id."
             ) from unreachable
 
-    async def share(self, invitees: Optional[List["ShareInvitee"]] = None) -> "Project":
-        """Publish this project to the hub, then invite each recipient — by
-        email or hub user id (for a contact known only by id) — as one
-        ``MembershipRequest`` per person via
-        ``POST /graph/project/<id>/members``. ``role`` is optional per
-        recipient (default ``member``).
+    async def share(
+        self,
+        invitees: Optional[List["ShareInvitee"]] = None,
+        *,
+        teams: Optional[List[str]] = None,
+        note: Optional[str] = None,
+    ) -> "Project":
+        """Publish this project to the hub, then invite people and whole teams.
+
+        Each new invitee gets ONE ``MembershipRequest`` via
+        ``POST /graph/project/<id>/members`` — by hub user id when known, else by
+        email — whose second target is a 1:1 invite conversation this client
+        opens; the invite message (carrying ``note``) is posted there once the
+        invite lands. ``role`` is optional per invitee (default ``member``).
+
+        ``teams`` are ``team-<uuid>`` typeids (a bare uuid means a team). Each is
+        granted on the hub as ONE group principal — never expanded into people —
+        and gets one invite conversation granted to the whole team.
+
+        People merge into one set keyed by user id, then email; the sharer,
+        anyone already on the project's roster (any status, including through a
+        team) and any team already granted are skipped. Person invites run with
+        bounded concurrency, and one recipient's failure does not stop the
+        others: the outcome is kept on ``last_share_result``. ``invite`` is the same invite step without the
+        publish, for a project whose hub row already exists.
         """
-        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
-        from flow_sdk.builtin.user import recipient_user_id as parse_recipient_user_id  # noqa: PLC0415
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
         from flow_sdk.core.entity.parent_share import parent_share_typeid  # noqa: PLC0415
         from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
-        # Validated up front, before any hub call, so a bad role fails the
-        # whole share rather than landing some invites and rejecting others
-        # partway through.
-        for inv in invitees or []:
-            if inv.role is not None and inv.role not in PROJECT_INVITE_ROLES:
-                raise ProjectInviteRoleError(
-                    f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.role!r}"
-                )
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            raise RuntimeError("Cloud login required")
+        creds = _invite_credentials(invitees)
 
         parent_tid = parent_share_typeid(self)
         if parent_tid is not None:
@@ -1181,6 +1302,7 @@ class Project(Entity):
         if shared_context_origins:
             body["shared_context_origins"] = shared_context_origins
 
+        self._last_share_result = None
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             # Idempotent, restoring the contract of the ``Entity.share`` this
             # overrides (``entity_model.py`` passes the same flag): a 409 means the
@@ -1197,47 +1319,214 @@ class Project(Entity):
             # so only this line distinguishes "I published it" from "it was
             # shared to me" — which is what the push-to-cloud gate needs.
             self.hub_published_at = _now_iso()
-            if not invitees:
-                return self
-            # A grant is idempotent in intent, but inviting someone who already
-            # holds a role is a 400 on the hub ("User has already accepted; use
-            # change_role…"). Left alone, re-sharing a project — or sending the
-            # note after the grant already landed — fails the whole share with
-            # hub_publish_failed. Read the roster once and invite only who is
-            # missing: an existing member already HAS what this call grants.
-            already_emails, already_user_ids = await self._hub_member_identities(client)
+            if invitees or teams:
+                await self._send_invites(client, creds, invitees, teams, note)
+        return self
 
-            for inv in invitees:
-                role = inv.role or PROJECT_DEFAULT_INVITE_ROLE
-                if inv.email:
-                    email = normalize_email(inv.email)
-                    if not email or email in already_emails:
-                        continue
-                    field, recipient_key = "recipient_email", email
-                elif inv.user_id:
-                    user_id = parse_recipient_user_id(inv.user_id)
-                    if not user_id or user_id in already_user_ids:
-                        continue
-                    field, recipient_key = "recipient_user_id", user_id
+    async def invite(
+        self,
+        invitees: Optional[List["ShareInvitee"]] = None,
+        *,
+        teams: Optional[List[str]] = None,
+        note: Optional[str] = None,
+    ) -> "Project":
+        """Invite people and whole teams to this ALREADY-PUBLISHED project.
+
+        ``share``'s invite step without its publish: an invite is a membership
+        grant on the hub row, so it neither re-publishes the project nor needs
+        what publishing needs (a clean tree, a pushed branch, GitHub). The hub
+        row must already exist. The per-person outcome is kept on
+        ``last_share_result``.
+        """
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+        creds = _invite_credentials(invitees)
+        self._last_share_result = None
+        if invitees or teams:
+            async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+                await self._send_invites(client, creds, invitees, teams, note)
+        return self
+
+    async def _send_invites(
+        self,
+        client,
+        creds,
+        invitees: Optional[List["ShareInvitee"]],
+        teams: Optional[List[str]],
+        note: Optional[str],
+    ) -> None:
+        """Invite each new person and grant each new team; the outcome lands on ``last_share_result``.
+
+        A PERSON gets a project invite whose second target is a fresh 1:1 invite
+        conversation, then the invite message in it. A TEAM is granted on the hub
+        as ONE group principal (no expansion into people), then gets one invite
+        conversation granted to the whole team, so its current and future members
+        all read it. The sharing client, not the hub, writes both conversations.
+        """
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+        from flow_sdk.builtin.user import recipient_user_id as parse_recipient_user_id  # noqa: PLC0415
+
+        people: list[_SharePerson] = []
+        for inv in invitees or []:
+            if inv.user_id:
+                user_id = parse_recipient_user_id(inv.user_id)
+                if user_id:
+                    people.append(_SharePerson(user_id=user_id, role=inv.role))
+            elif email := normalize_email(inv.email or ""):
+                people.append(_SharePerson(email=email, role=inv.role))
+        people = _merge_share_people(people)
+
+        # A grant is idempotent in intent, but inviting someone who already
+        # holds a role is a 400 on the hub, a pending invitee already has their
+        # invitation, and a team already granted must not get a second
+        # conversation. Read the roster once and act only on who is missing.
+        roster, granted_groups = await self._hub_roster_statuses(client)
+        sharer = creds.user if isinstance(creds.user, dict) else {}
+        sharer_id = str(sharer.get("id") or "").strip()
+        sharer_email = normalize_email(str(sharer.get("email") or ""))
+
+        skipped: list[ShareSkippedSpec] = []
+        to_send: list[_SharePerson] = []
+        for person in people:
+            if (sharer_id and person.user_id == sharer_id) or (
+                sharer_email and person.email == sharer_email
+            ):
+                skipped.append(ShareSkippedSpec(**person.identity(), reason="self"))
+                continue
+            status = roster.get(person.user_id or "") or roster.get(person.email or "")
+            if status is not None:
+                reason = "already_invited" if status == "pending" else "already_member"
+                skipped.append(ShareSkippedSpec(**person.identity(), reason=reason))
+                continue
+            to_send.append(person)
+
+        new_teams: list[str] = []
+        skipped_teams: list[ShareSkippedTeamSpec] = []
+        for team in teams or []:
+            team_ref = _share_team_ref(team)
+            if team_ref is None:
+                continue
+            if team_ref in new_teams or any(t.team == team_ref for t in skipped_teams):
+                continue
+            if team_ref in granted_groups:
+                skipped_teams.append(
+                    ShareSkippedTeamSpec(team=team_ref, name=granted_groups[team_ref], reason="already_granted")
+                )
+                continue
+            new_teams.append(team_ref)
+
+        project_ref = f"project-{self.id}"
+        project_name = self.name or "project"
+        message_text = _invite_message_text(project_name, note)
+        gate = asyncio.Semaphore(_SHARE_INVITE_CONCURRENCY)
+
+        async def send_person(person: _SharePerson):
+            async with gate:
+                try:
+                    conversation = await Conversation.open_invite_conversation(project_name, client)
+                except Exception as exc:  # noqa: BLE001 — reported per person, never stops the rest
+                    status = _hub_status_of(exc) if isinstance(exc, ValueError) else None
+                    return ShareFailedSpec(**person.identity(), status=status, message=str(exc))
+                if person.user_id:
+                    field, recipient_key = "recipient_user_id", person.user_id
                 else:
-                    continue
+                    field, recipient_key = "recipient_email", person.email
+                # Two invitations, one target each: the project invite is the one
+                # the hub emails, so its link lands on the project; the conversation
+                # invite sends no email. One invitation carrying both would land the
+                # email on the conversation, and removing a pending member from the
+                # project would leave its invitation linked (hub remove_member).
+                request = {
+                    field: recipient_key,
+                    "invitation_targets": [{"typeid": project_ref, "role": person.role or PROJECT_DEFAULT_INVITE_ROLE}],
+                    # Set on the invitation rather than left to the hub's
+                    # fallback, so it holds whichever target the hub picks.
+                    "callback_override": project_share_landing_path(self.id),
+                }
+                if note and note.strip():
+                    request["message"] = note.strip()
+                try:
+                    await client.post(f"/graph/project/{self.id}/members", request)
+                except ValueError as exc:  # any non-200 (``FlowpadClient._unwrap``)
+                    await conversation.discard_invite_conversation(client)
+                    return ShareFailedSpec(**person.identity(), status=_hub_status_of(exc), message=str(exc))
+                conversation_ref = f"conversation-{conversation.id}"
+                try:
+                    await client.post(
+                        f"/graph/conversation/{conversation.id}/members",
+                        {
+                            field: recipient_key,
+                            "invitation_targets": [{"typeid": conversation_ref, "role": "member"}],
+                            "notify_by_email": False,
+                        },
+                    )
+                except ValueError as exc:  # the project invite landed; only the message can't reach them
+                    logging.warning("[project.share] invite conversation for %s refused: %s", recipient_key, exc)
+                    await conversation.discard_invite_conversation(client)
+                    return ShareInvitedSpec(**person.identity(), conversation_id=None)
+                try:
+                    await conversation.post_invite_message(message_text, project_ref)
+                except Exception as exc:  # noqa: BLE001 — the invite landed; only the message is missing
+                    logging.warning("[project.share] invite message to %s failed: %s", recipient_key, exc)
+                return ShareInvitedSpec(**person.identity(), conversation_id=conversation.id)
+
+        async def grant_team(team_ref: str):
+            try:
                 await client.post(
                     f"/graph/project/{self.id}/members",
                     {
-                        field: recipient_key,
-                        "invitation_targets": [
-                            {"typeid": f"project-{self.id}", "role": role},
-                        ],
+                        "principal": team_ref,
+                        "invitation_targets": [{"typeid": project_ref, "role": PROJECT_DEFAULT_INVITE_ROLE}],
                     },
                 )
-        return self
+            except ValueError as exc:
+                return ShareFailedTeamSpec(team=team_ref, status=_hub_status_of(exc), message=str(exc))
+            # The grant landed. Everything below only delivers the invite
+            # message, so a failure is reported as a grant with no conversation.
+            try:
+                conversation = await Conversation.open_invite_conversation(project_name, client)
+                await client.post(
+                    f"/graph/conversation/{conversation.id}/members",
+                    {
+                        "principal": team_ref,
+                        "invitation_targets": [{"typeid": f"conversation-{conversation.id}", "role": "member"}],
+                    },
+                )
+                await conversation.post_invite_message(message_text, project_ref)
+            except Exception as exc:  # noqa: BLE001
+                logging.warning("[project.share] team invite conversation for %s failed: %s", team_ref, exc)
+                return ShareGrantedTeamSpec(team=team_ref, conversation_id=None)
+            return ShareGrantedTeamSpec(team=team_ref, conversation_id=conversation.id)
 
-    async def _hub_member_identities(self, client) -> tuple[set[str], set[str]]:
-        """(``emails``, ``user_ids``) already on this project's hub roster (any status).
+        person_outcomes = await asyncio.gather(*(send_person(p) for p in to_send))
+        # Teams run one at a time: a share names a handful of them, and each
+        # costs a grant plus its conversation.
+        team_outcomes = [await grant_team(team_ref) for team_ref in new_teams]
 
-        An unreadable roster returns two empty sets, which falls through to
-        inviting everyone — the behaviour before this read existed — so a roster
-        outage can only cost a redundant invite, never a missing one.
+        self._last_share_result = ShareResultSpec(
+            invited=[o for o in person_outcomes if isinstance(o, ShareInvitedSpec)],
+            skipped=skipped,
+            failed=[o for o in person_outcomes if isinstance(o, ShareFailedSpec)],
+            granted_teams=[o for o in team_outcomes if isinstance(o, ShareGrantedTeamSpec)],
+            skipped_teams=skipped_teams,
+            failed_teams=[o for o in team_outcomes if isinstance(o, ShareFailedTeamSpec)],
+        )
+
+    @property
+    def last_share_result(self) -> Optional[ShareResultSpec]:
+        """Per-person outcome of the last ``share()``/``invite()`` that invited anyone, else ``None``."""
+        return self._last_share_result
+
+    async def _hub_roster_statuses(self, client) -> tuple[dict[str, str], dict[str, Optional[str]]]:
+        """Who is already on this project's hub roster.
+
+        Returns ``({user_id or email: status}, {group typeid: name})``. People
+        who reach the project through a granted team come back as ordinary user
+        rows, so they are skipped as ``already_member`` like direct members.
+
+        An unreadable roster returns empty maps, which falls through to inviting
+        everyone, the behaviour before this read existed.
         """
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
 
@@ -1245,20 +1534,27 @@ class Project(Entity):
             rows = await client.get(f"/graph/project/{self.id}/members")
         except Exception:  # noqa: BLE001 — degrade to the old invite-everyone path
             logging.warning("[project.share] roster read failed for %s; inviting all", self.id)
-            return set(), set()
-        emails: set[str] = set()
-        user_ids: set[str] = set()
+            return {}, {}
+        statuses: dict[str, str] = {}
+        groups: dict[str, Optional[str]] = {}
         for row in rows if isinstance(rows, list) else []:
             if not isinstance(row, dict):
                 continue
+            row_type = row.get("type") or "user"
+            if row_type in ("team", "organization"):
+                group_id = row.get("id") or row.get("user_id")
+                if isinstance(group_id, str) and group_id.strip():
+                    groups[f"{row_type}-{group_id.strip()}"] = row.get("name") or row.get("user_name")
+                continue
+            status = str(row.get("status") or "approved").lower()
             for key in ("user_email", "email", "recipient_email"):
                 email = normalize_email(row.get(key) or "")
                 if email:
-                    emails.add(email)
+                    statuses[email] = status
             user_id = row.get("user_id")
             if isinstance(user_id, str) and user_id.strip():
-                user_ids.add(user_id.strip())
-        return emails, user_ids
+                statuses[user_id.strip()] = status
+        return statuses, groups
 
     async def setup_from_git_origin(self) -> "Project":
         """Materialize this shared project into a local Git worktree.

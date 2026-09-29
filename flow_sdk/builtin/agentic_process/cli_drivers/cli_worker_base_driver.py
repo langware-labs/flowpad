@@ -522,10 +522,55 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         if supplied and Path(supplied).expanduser().resolve() != Path(configured_root).resolve():
             raise ValueError(f"Worker {key} must match Flowpad's configured session store")
         env[key] = configured_root
-    pinned = flow_cli_env_path(env.get("PATH"))
-    if pinned:
-        env["PATH"] = pinned
+    if (getattr(process, "context_data", None) or {}).get("compute_op"):
+        # An install step's agent (a compute op's agent rung) answers "is X installed?" by what
+        # its shell finds, and the caller re-checks from a shell with NO Flowpad on PATH. Pinned
+        # first, this backend's venv bin dir hands the agent Flowpad's own `python` — on a box
+        # with no Python it reported "already installed" and never installed anything. So the
+        # agent sees the machine the check sees. It still has `flow` via the user's install.
+        # The marker carries the decision to the spawn step, which re-inserts the harness's own
+        # bin folder — for deepagents that folder IS this venv's (see `hide_flowpad_interpreter`).
+        env[HIDE_FLOWPAD_PYTHON_ENV] = "1"
+        env["PATH"] = path_without_flowpad_interpreter(env.get("PATH", os.environ.get("PATH", "")))
+    else:
+        pinned = flow_cli_env_path(env.get("PATH"))
+        if pinned:
+            env["PATH"] = pinned
     return env
+
+
+#: Set by :func:`apply_worker_env` on a worker that must not see Flowpad's own interpreter; read
+#: by the spawn steps, which only get the env, not the process.
+HIDE_FLOWPAD_PYTHON_ENV = "FLOWPAD_HIDE_OWN_PYTHON"
+
+
+def hide_flowpad_interpreter(env: dict[str, str]) -> dict[str, str]:
+    """Drop this backend's interpreter dirs from ``env["PATH"]`` when the worker asked for it.
+
+    Called AFTER a spawn step puts the harness's bin folder first. For every harness but one
+    that folder is the vendor's own (npm, ~/.local/bin) and is kept. For deepagents it is this
+    venv's bin dir — the harness runs in-process — and re-adding it would hand an install
+    agent Flowpad's `python` again. deepagents spawns by absolute interpreter path
+    (``deepagents/cli.py``), so nothing needs that dir on PATH to start. Mutates and returns.
+    """
+    if env.get(HIDE_FLOWPAD_PYTHON_ENV) == "1" and "PATH" in env:
+        env["PATH"] = path_without_flowpad_interpreter(env["PATH"])
+    return env
+
+
+def path_without_flowpad_interpreter(path: str | None) -> str:
+    """*path* minus every directory that holds the interpreter this backend runs on.
+
+    That is the venv's bin dir (``python``, ``pip``, every console script of the backend's own
+    dependencies) and the base interpreter it was built from. Entries are compared the way the
+    OS compares them — case-insensitively on Windows — so a differently-cased copy still goes.
+    """
+    exe = Path(sys.executable)
+    base = Path(sys.base_prefix)
+    own = {exe.parent, base, base / "Scripts", base / "bin", Path(sys.prefix) / "Scripts", Path(sys.prefix) / "bin"}
+    drop = {os.path.normcase(os.path.normpath(str(d))) for d in own}
+    kept = [p for p in (path or "").split(os.pathsep) if p and os.path.normcase(os.path.normpath(p)) not in drop]
+    return os.pathsep.join(kept)
 
 
 async def resolve_worker_language(process: "AgenticProcess") -> str | None:
@@ -599,6 +644,15 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
     if api_auth is not None:
         for key, value in api_auth.env.items():
             env[key] = value
+        # Stamp what actually resolved — the tier ('sm'/'md'/'lg') or a models_allow fallback
+        # both collapse into one concrete slug here, and this is the one place that slug is
+        # known. Skipped when unchanged so a restart on an unmodified spawn writes nothing.
+        if api_auth.model_slug and getattr(process, "resolved_model_slug", None) != api_auth.model_slug:
+            process.resolved_model_slug = api_auth.model_slug
+            try:
+                await process.save()
+            except Exception:
+                logger.exception("AgenticProcess %s: failed to persist resolved_model_slug", process.id)
     return env
 
 
@@ -1384,7 +1438,7 @@ def build_worker_spawn_env(
     env = dict(os.environ if base_env is None else base_env)
     env.update(env_from_opts)
     env["PATH"] = insert_capability_path_dir(folder, env.get("PATH"))
-    return env
+    return hide_flowpad_interpreter(env)
 
 
 def resolve_worker_argv0(worker_type: str, argv: list[str], env: dict[str, str]) -> list[str]:
@@ -1886,6 +1940,9 @@ __all__ = [
     "get_driver",
     "latch_spawn_failure",
     "prepend_path_dir",
+    "path_without_flowpad_interpreter",
+    "hide_flowpad_interpreter",
+    "HIDE_FLOWPAD_PYTHON_ENV",
     "insert_capability_path_dir",
     "resolve_worker_argv0",
     "restart_payload_from_cli_options",

@@ -853,9 +853,7 @@ async def _get_or_create_local(cls, *, name: str, owner: Optional[Entity]):
                 return existing
         raise save_error
     await entity.set_visitor_role("owner")
-    logging.info(
-        "Created @local %s: %s with owner: %s", entity_type, entity.id, owner.id if owner else "None"
-    )
+    logging.info("Created @local %s: %s with owner: %s", entity_type, entity.id, owner.id if owner else "None")
     return entity
 
 
@@ -1108,9 +1106,9 @@ async def _seed_project_namespaces() -> None:
     converges — after the first boot it writes nothing and only fills the map, which
     is what a synchronous kind loader reads.
     """
+    from flow_sdk.assets.project_manifest import manifest_path  # noqa: PLC0415
     from flow_sdk.builtin.project_manifest import ensure_project_namespace  # noqa: PLC0415
     from flow_sdk.fs_store.operations.all_projects import get_cached_projects, is_inside_any  # noqa: PLC0415
-    from flow_sdk.assets.project_manifest import manifest_path  # noqa: PLC0415
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
     projects = await get_cached_projects()
@@ -1120,10 +1118,13 @@ async def _seed_project_namespaces() -> None:
     # declares its namespace is still read, so a deliberate nested project keeps it.
     mounts = {canonical_posix_path(p.fs_storage_mount_path) for p in projects if p.fs_storage_mount_path}
     projects = [
-        p for p in projects
-        if not (p.fs_storage_mount_path
-                and is_inside_any(canonical_posix_path(p.fs_storage_mount_path), mounts)
-                and not manifest_path(Path(p.fs_storage_mount_path)).exists())
+        p
+        for p in projects
+        if not (
+            p.fs_storage_mount_path
+            and is_inside_any(canonical_posix_path(p.fs_storage_mount_path), mounts)
+            and not manifest_path(Path(p.fs_storage_mount_path)).exists()
+        )
     ]
 
     def _sweep() -> None:
@@ -1579,6 +1580,127 @@ async def onboarding_reset() -> ApiSuccessResponse[dict]:
     )
 
 
+@router.post("/api/v1/onboarding/setup")
+async def onboarding_setup():
+    """Run first-run setup again, from the top: an LLM source, then the ``llm-setup``
+    wizard. Settings → General's "Run setup again"; the same function the first-run
+    trigger calls, so both run it in the same order. Answers both verdicts."""
+    from fastapi.responses import JSONResponse  # noqa: PLC0415
+
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+    from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD, run_llm_setup  # noqa: PLC0415
+
+    wizard = await Wizard.get_one({"name": LLM_SETUP_WIZARD})
+    if wizard is None:
+        return JSONResponse(
+            status_code=404,
+            content={"status": "FAIL", "message": f"The {LLM_SETUP_WIZARD} wizard is not installed.", "data": None},
+        )
+    source, result = await run_llm_setup(wizard, unattended=False)
+    if result.busy:
+        # Already running (the first-run trigger, or a second click): HTTP's own 409.
+        return JSONResponse(status_code=409, content={"status": "FAIL", "message": result.detail, "data": None})
+    return ApiSuccessResponse[dict](
+        data={"llm_source": source.model_dump(mode="json"), "wizard": result.model_dump(mode="json")}
+    )
+
+
+#: The `llm-setup` wizard's own 6 tools, by the binary name each one's
+#: `completion_check` actually looks for on PATH — never the wizard step id,
+#: which is a different spelling (``claude-code`` the step, ``claude`` the
+#: binary; ``python`` the step, ``python3``/``python`` the two names its check
+#: tries either of).
+_DEBUG_TOOL_BINARIES = ["jq", "rg", "claude", "python3", "python", "git", "node"]
+
+
+def _brew_formula_of(resolved: Path) -> Optional[str]:
+    """The Homebrew formula that owns *resolved*, when it is a Homebrew symlink
+    into a Cellar — parsed from the REALPATH rather than a hardcoded name table,
+    since a formula's name does not always match the binary it installs
+    (``ripgrep`` -> ``rg``) and a versioned one doesn't match at all
+    (``python@3.12``). ``None`` means: not Homebrew's, remove the file itself.
+    """
+    parts = resolved.parts
+    if "Cellar" in parts:
+        i = parts.index("Cellar")
+        if i + 1 < len(parts):
+            return parts[i + 1]
+    return None
+
+
+@router.post("/api/v1/onboarding/debug/remove-tools")
+async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
+    """DEBUG ONLY — temporary, for testing the `llm-setup` wizard end to end.
+
+    ACTUALLY UNINSTALLS every one of its 6 tools found on this box — `brew
+    uninstall --force` for anything Homebrew manages, deleting the file
+    directly for anything else (e.g. Claude Code's own curl-installed binary).
+
+    A binary on a read-only system volume (Apple's own `/usr/bin/git`) cannot
+    be removed this way at all — that is reported in `not_found` alongside the
+    OS error, not silently skipped.
+
+    Then runs the wizard CHECK-ONLY right here — the icons in the wizard's own
+    page are its LAST COMPLETED run's record (`run_state`), never a live
+    filesystem check, so removing a binary alone would leave them exactly as
+    green as before until something re-runs the wizard. Check-only is that
+    something: it reports what is genuinely true right now, WITHOUT asking to
+    install anything — the actual install flow, with its live per-step
+    progress, is still `Run setup again`'s job, one click away.
+
+    Remove this route and its button once the wizard work is done — see
+    FLOWPAD-2171.
+    """
+    combined_path = os.environ.get("PATH", "") + os.pathsep + str(Path.home() / ".local" / "bin")
+    removed: List[str] = []
+    not_found: List[str] = []
+    for name in _DEBUG_TOOL_BINARIES:
+        found = shutil.which(name, path=combined_path)
+        if not found:
+            not_found.append(name)
+            continue
+        path = Path(found)
+        formula = _brew_formula_of(path.resolve())
+        try:
+            if formula:
+                proc = await asyncio.create_subprocess_exec(
+                    "brew",
+                    "uninstall",
+                    "--force",
+                    formula,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _stdout, stderr = await proc.communicate()
+                if proc.returncode != 0:
+                    not_found.append(f"{name} (brew uninstall {formula} failed: {stderr.decode().strip()[:200]})")
+                    continue
+                removed.append(f"{name} (brew: {formula})")
+            else:
+                path.unlink()
+                removed.append(name)
+        except OSError as exc:
+            not_found.append(f"{name} ({exc})")
+
+    # Re-sweep, or the in-memory capability values still point at the binaries just
+    # removed: `resolve_builtin_worker_type` would keep picking Claude Code, and the
+    # wizard's agent rung would spawn a `claude` that is gone instead of falling back
+    # to the bootstrap worker (deepagents). A swept "absent" is authoritative.
+    from flow_sdk.core.capabilities.discovery import run_discovery  # noqa: PLC0415
+
+    await run_discovery()
+
+    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
+    from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD  # noqa: PLC0415
+
+    wizard = await Wizard.get_one({"name": LLM_SETUP_WIZARD})
+    wizard_result = None
+    if wizard is not None:
+        result = await wizard.run(check_only=True)
+        wizard_result = result.model_dump(mode="json")
+    return ApiSuccessResponse[dict](data={"removed": removed, "not_found": not_found, "wizard": wizard_result})
+
+
 # ---------------------------------------------------------------------------
 # File system setup (migrated from desktop_loader.py:init_desktop_entities)
 # ---------------------------------------------------------------------------
@@ -1846,6 +1968,14 @@ _BOOTSTRAP_CACHE_TTL = 30.0  # seconds
 # fires within a few hundred ms; the deferral only reorders background work.
 first_bootstrap_served: asyncio.Event = asyncio.Event()
 
+#: Set once the system-content index has landed and the wizard triggers are
+#: reconciled — i.e. once a tag emitted NOW would find its subscribers armed.
+#: `app.ready` waits for the same thing (`_app_ready_signal`); `app.tab.ready`
+#: waits on this event directly, because it is emitted per TAB, long after that
+#: coroutine has finished. The bus has no durability: an unarmed subscriber at
+#: emit time never hears the event at all.
+system_content_ready: asyncio.Event = asyncio.Event()
+
 
 def invalidate_bootstrap_cache(*, reset_local_entities: bool = False) -> None:
     """Refresh responses; only a database replacement resets lifecycle identity."""
@@ -2018,12 +2148,18 @@ async def initialize_bootstrap() -> BootstrapInfo:
             info_available=True,
             types=build_all_type_payloads(),
             icon_packs=icon_registry.payload(),
-            user=entity_to_dict(user), domain=None, visitor=None,
+            user=entity_to_dict(user),
+            domain=None,
+            visitor=None,
             default_project=project_to_dict(project),
             default_workspace=entity_to_dict(workspace),
             default_compute_node=entity_to_dict(compute_node),
-            env=EnvInfo(env_name="desktop", cloud_api_url=settings.cloud_api_url,
-                        version=__version__, instance_name=settings.instance_name),
+            env=EnvInfo(
+                env_name="desktop",
+                cloud_api_url=settings.cloud_api_url,
+                version=__version__,
+                instance_name=settings.instance_name,
+            ),
             desktop_info=get_desktop_bootstrap_info(),
             records_root=str(settings.records_root),
             supported_locales=get_supported_locales(),
@@ -2136,9 +2272,13 @@ async def _build_info() -> DeferredInfo:
         _optional_info("sniffer", _sniffer_status(user)),
         _optional_info("stream inbox repair", recompute_unread("info", user.typeid)),
     )
-    fields = dict(desktop_info=desktop, scan_info=scan, harness_state=harness,
-                  capabilities_summary=capabilities.model_dump(mode="json") if capabilities is not None else None,
-                  notice=notice)
+    fields = dict(
+        desktop_info=desktop,
+        scan_info=scan,
+        harness_state=harness,
+        capabilities_summary=capabilities.model_dump(mode="json") if capabilities is not None else None,
+        notice=notice,
+    )
     if sandbox is not None:
         available, node = sandbox
         fields.update(sandbox_available=available, sandbox_compute_node=entity_to_dict(node) if node else None)

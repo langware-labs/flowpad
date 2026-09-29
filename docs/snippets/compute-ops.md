@@ -58,6 +58,14 @@ An op run anywhere else — a script, a worker — hands the question to the bac
 the deadline has passed. With no backend to ask through, it answers `NOT_YET`
 with `ran=False` and says so.
 
+An op that is install-time infrastructure — the machine cannot proceed without
+it, and giving up only means asking again next boot — sets
+`"until_answered": true` in its `exe_data` and waits with no deadline. The
+price of that is one rule: a question that could not be shown to anyone (no
+live tab, no browser — a headless sandbox) is dropped at once and answers
+`NOT_YET` with `ran=False`, because an unbounded wait with nobody to answer
+never ends.
+
 `approved=True` is not optional. An op that is not a system op answers
 `REFUSED` unapproved — before it puts a question to anyone.
 
@@ -80,42 +88,71 @@ An ask op does not store the answer: storing it is the caller's `cli` op, with
 the value passed in `env` — never templated into a command line. After a valid
 answer an ask op is NOT re-checked: a person verified it.
 
-## 3. A fallback is two ops, and a retry is the caller's
+## 3. A ladder of `attempts`, any kind but `ask`, one check the whole way down
 
-There is no ladder inside an op. "Try the command, then the agent" is two ops
-with the same check — when the first reached the goal, the second's check holds
-and it does nothing:
+"Try the command, then the agent" is ONE op: a cli call, then `attempts` —
+further rungs, in order, tried while the completion check still fails. Each
+rung names its own `subkind` and `exe_data`, same shape as the op's own —
+cli, prompt or agent, in any mix, as many as are named. The check runs before
+anything, after the op's own call, and after every rung — it is the only
+verdict, never a rung's own exit code:
 
 ```jsonc
 { "name": "ripgrep-on-path",
   "subkind": "cli",
   "exe_data": {"commands": {"linux": "apt-get install -y ripgrep"}},
+  "attempts": [
+    {"subkind": "agent",
+     "exe_data": {"agent": "provisioner", "prompt": "Install ripgrep on this machine.", "retries": 1}}
+  ],
   "completion_check": {"commands": {"linux": "command -v rg"}} }
 ```
 
-```jsonc
-{ "name": "ripgrep-on-path-agent",
-  "subkind": "agent",
-  "exe_data": {"agent": "provisioner", "timeout_seconds": 600},
-  "completion_check": {"commands": {"linux": "command -v rg"}} }
+```
+check       holds?             → done, nothing ran
+command     check holds after? → done, attempts[0] never starts
+attempts[0] check holds after? → done
+  retries   the SAME session, told what the check printed, while it still fails
+attempts[1] (none here — as many rungs run as are named)
 ```
 
-A wizard sequences them (`on_fail: continue` on the first), or Python does. An
-agent's answer names its process in `executor`; a caller that wants a second
-turn in the SAME session runs the next op with `executor=answer.executor`. A turn
-that ran out of time is `timed_out` — that process is busy, not done, so it is
-not prompted again on top of itself.
+`attempts` needs a `completion_check` — nothing else could say a rung missed —
+and no rung may be `ask`: a person belongs at the wizard level, where declining
+(Skip) stops only the one step asking, which nothing inside an op can express.
+Past that, a rung's kind and position are the author's: an agent can come
+before a cli rung, two cli rungs can differ by platform fallback, or several
+agents can chain. The answer is the last rung's own (`PromptResult` once an
+agent ran), its `detail` saying what the attempt before it said.
 
-**What the sequencing wizard then answers.** The shared check is what makes the
-pair one goal: a wizard counts goals, not attempts, so the cheap rung missing
-does not fail the run once the second rung reaches that same goal — the miss
-stays on its own step. See
-[wizards](wizards.md#3-a-fallback-is-two-steps-with-the-same-check). In Python
-the same pair is two `run_op` calls and the second answer is the one you keep.
+`retries` on an agent rung is further turns in its own session, not new
+processes: the prompt carries only the check's command, exit code and output
+tail — the task is already in the session. A turn that ran out of time is
+`timed_out` — that process is busy, not done, so it is not prompted again on
+top of itself, and the next `attempts` entry (if any) runs instead.
+
+A fresh rung (agent or prompt) is not blind to the ones before it: its own
+prompt is prefixed with what every EARLIER rung tried and reported ("Earlier
+attempts at this same goal: …"), so a third rung does not waste a turn
+rediscovering what the first two already found out. A within-session retry
+gets none of this — the process it continues already remembers its own turns.
+
+A caller can still continue an agent by hand: its answer names its process in
+`executor`, and `run_op(spec, …, executor=answer.executor)`
+(`flow_sdk/core/compute_op/runner.py`) runs the next op in that SAME session —
+the entity's `ComputeOp.run()` takes no `executor`. See
+[call-returns](call-returns.md) for the worked example.
+
+**Two ops sharing one check still work as a fallback in a wizard** — a wizard
+counts goals, not attempts, so a step that missed and a later step that reached
+the SAME check do not fail the run. See
+[wizards](wizards.md#3-a-fallback-is-two-steps-with-the-same-check). Reach for
+that shape (not `attempts`) when a rung needs its OWN check, or when a person
+must be asked before either one runs.
 
 ---
 
 ## What a cancel and a silence answer
+
 
 | what happened | exit code | `value` | told apart by |
 | --- | --- | --- | --- |

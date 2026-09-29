@@ -1,0 +1,1 @@
+Install Claude Code with Anthropic's native installer (the same commands the Claude CLI capability uses). It fetches a signed binary into `~/.local/bin` and needs nothing preinstalled — no Node.js, no npm, no Homebrew.

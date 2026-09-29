@@ -76,7 +76,8 @@ def test_share_invites_under_own_id():
     """share(recipients) targets project-<self.id> — no /join, no cloud id."""
     import inspect
 
-    src = inspect.getsource(Project.share)
+    # ``share`` publishes, then sends its invites through ``_send_invites``.
+    src = inspect.getsource(Project.share) + inspect.getsource(Project._send_invites)
     assert "/join" not in src, "projects derive the roster from role edges — no /join"
     assert "cloud_id" not in src, "no cloud id"
     assert "project-{self.id}" in src and "/members" in src

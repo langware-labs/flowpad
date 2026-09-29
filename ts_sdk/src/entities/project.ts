@@ -1,5 +1,12 @@
 import type { AssetScanResult } from '../process/asset-descriptor';
-import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import {
+  APIEntity,
+  dataManager,
+  isNonEmptyString,
+  registerEntity,
+  shareRecipients,
+  type ShareInvitee,
+} from '../APIEntity';
 import type { IEntity } from '../IEntity';
 import { getRaw } from '../client';
 import { QueryRequest } from '../FlowSync/query';
@@ -28,8 +35,38 @@ import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
 import { Wiki } from './wiki';
+import type { ShareResult } from './members';
 import type { IProject, ProjectContextDirInfo, ProjectCustomization, ProjectMember } from './project-types';
 export type * from './project-types';
+
+/** Who a Project share invites beyond the bare people list. */
+export interface ProjectInviteOptions {
+  /** Teams (``team-<uuid>``) the backend grants on the hub as one group principal each. */
+  teams?: TypeId[];
+  /** The sharer's personal note, carried in every invite and its message. */
+  note?: string;
+}
+
+/**
+ * The error a project share throws when NOTHING landed — no person invited and
+ * no team granted — while at least one recipient failed: the backend's own
+ * sentence for the first failure. Null otherwise, including a partial failure,
+ * which the caller reads per recipient from the result.
+ * `Project.share` throws it; a caller of `Project.invite` can throw the same one.
+ */
+export function inviteFailure(result: ShareResult): Error | null {
+  const { invited, failed, granted_teams: granted = [], failed_teams: failedTeams = [] } = result;
+  // Only a share where NOTHING landed is an error. A partial failure is
+  // reported per recipient in the result (the members popover renders it).
+  if (invited.length || granted.length) return null;
+  if (!failed.length && !failedTeams.length) return null;
+  const who = [
+    ...failed.map((r) => r.email ?? r.user_id ?? '?'),
+    ...failedTeams.map((t) => t.name ?? t.team),
+  ].join(', ');
+  const message = failed[0]?.message ?? failedTeams[0]?.message;
+  return new Error(`Could not invite ${who}: ${message}`);
+}
 
 export interface ResolveProjectResult {
   project_id: string;
@@ -341,6 +378,61 @@ export class Project extends APIEntity<Project> {
     const parts = this.name.replace(/\\/g, '/').split('/').filter(Boolean);
     if (parts.length <= 1) return null;
     return parts[parts.length - 1] || null;
+  }
+
+  /**
+   * Invite people to this Project — or, with nobody to invite, publish it.
+   *
+   * With recipients this is {@link invite}; when the backend could not invite
+   * someone, this throws with the backend's own sentence (``invite`` returns every
+   * per-person outcome instead).
+   */
+  override async share(users: ShareInvitee[] = []): Promise<Project> {
+    if (!shareRecipients(users).length) return super.share();
+    const failure = inviteFailure(await this.invite(users));
+    if (failure) throw failure;
+    return this;
+  }
+
+  /**
+   * Invite people and whole teams to this Project through the ``share`` action,
+   * and return what happened to each person.
+   *
+   * One ``POST project/<id>/share`` carrying ONLY the share keys
+   * (``ShareRequestSpec``: ``recipients``, ``teams``, ``note``). The backend's
+   * ``Project.share`` (``flow_sdk/builtin/project.py``) owns the whole
+   * orchestration — one hub group grant plus one team conversation per new team,
+   * de-duping, skipping the sharer and anyone (or any team) already on the
+   * roster, one membership invite plus a 1:1 invite conversation per new
+   * person — and answers the canonical Project plus
+   * its ``share_result``. ``users`` are emails or hub user ids (bare or
+   * ``user-<uuid>``), optionally with a role; the backend decides which by shape.
+   *
+   * On a Project that already has its hub row (``remote``) the action only
+   * invites — a membership grant, with no publish gate (a dirty tree still
+   * invites) and no re-publish. On an unpublished one it publishes first.
+   */
+  async invite(users: ShareInvitee[] = [], opts: ProjectInviteOptions = {}): Promise<ShareResult> {
+    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
+    const note = opts.note?.trim();
+    info.bodyParameters = {
+      recipients: shareRecipients(users),
+      ...(opts.teams?.length ? { teams: opts.teams.map((team) => team.toString()) } : {}),
+      ...(note ? { note } : {}),
+    };
+    const response = await dataManager.callAction<unknown, Record<string, unknown>>(info);
+    const { share_result: shareResult, ...entity } = response ?? {};
+    this.adoptShareResponse(entity);
+    return (
+      (shareResult as ShareResult | undefined) ?? {
+        invited: [],
+        skipped: [],
+        failed: [],
+        granted_teams: [],
+        skipped_teams: [],
+        failed_teams: [],
+      }
+    );
   }
 
   /**

@@ -53,7 +53,7 @@ def _clean_pushed_checkout(tmp_path: Path, root: Path) -> None:
 def linking(monkeypatch):
     state = {"key": "hub-key", "shared": 0}
 
-    async def _share(self: Project, invitees=None) -> Project:  # noqa: ARG001
+    async def _share(self: Project, invitees=None, *, teams=None, note=None) -> Project:  # noqa: ARG001
         state["shared"] += 1
         self.remote = True
         self.hub_published_at = PUBLISHED_AT

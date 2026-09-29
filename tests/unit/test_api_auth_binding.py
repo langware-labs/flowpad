@@ -521,6 +521,100 @@ async def test_deepagents_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth.model_slug == "z-ai/glm-5.3-flash"
 
 
+async def test_deepagents_falls_back_to_a_models_allow_slug(env) -> None:
+    """A hub endpoint's ``filters.models_allow`` can rule out the tier's default slug — a team
+    scoped to one Anthropic model while deepagents' ``sm`` tier names a z-ai one. The binding
+    must fall back to a model that endpoint actually permits, rather than hand the worker a
+    slug the endpoint is guaranteed to refuse at call time ("model not allowed by endpoint")."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMFilters
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
+
+    set_api_key("fp-hub-key")
+    endpoint = LLMEndpoint.projection("hub", "course-ep", name="AI Course budget", provider="openrouter")
+    endpoint.filters = LLMFilters(models_allow=["anthropic/claude-haiku-4.5"])
+    source = LLMSource(
+        endpoint_typeid=str(endpoint.typeid),
+        name=endpoint.name,
+        rank=0,
+        eligible=True,
+        auto=True,
+        authority=LLMSourceAuthority.CACHED,
+    )
+
+    auth = await binding_for_candidate("deepagents", Candidate(endpoint, source), tier="sm")
+    assert auth is not None
+    assert auth.model_slug == "anthropic/claude-haiku-4.5"
+
+
+async def test_deepagents_keeps_its_tier_slug_when_a_wildcard_allows_it(env) -> None:
+    """A glob allow-pattern that already covers the tier's default must not trigger the
+    fallback — only a slug the endpoint actually refuses should be swapped out."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMFilters
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
+
+    set_api_key("fp-hub-key")
+    endpoint = LLMEndpoint.projection("hub", "wide-ep", name="wide budget", provider="openrouter")
+    endpoint.filters = LLMFilters(models_allow=["z-ai/*"])
+    source = LLMSource(
+        endpoint_typeid=str(endpoint.typeid),
+        name=endpoint.name,
+        rank=0,
+        eligible=True,
+        auto=True,
+        authority=LLMSourceAuthority.CACHED,
+    )
+
+    auth = await binding_for_candidate("deepagents", Candidate(endpoint, source), tier="sm")
+    assert auth is not None
+    assert auth.model_slug == "z-ai/glm-5.3-flash"
+
+
+def test_model_within_allowance_pure() -> None:
+    """The matcher itself: no restriction, a matching glob, and a ruled-out slug that falls
+    back to the first literal (non-glob) entry — the three cases the binding above relies on."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _model_within_allowance
+
+    assert _model_within_allowance("z-ai/glm-5.3-flash", []) == "z-ai/glm-5.3-flash"
+    assert _model_within_allowance("z-ai/glm-5.3-flash", ["z-ai/*"]) == "z-ai/glm-5.3-flash"
+    assert _model_within_allowance("z-ai/glm-5.3-flash", ["anthropic/claude-haiku-4.5"]) == "anthropic/claude-haiku-4.5"
+    # All-glob allow list with no literal entry: nothing to fall back to, so pass through.
+    assert _model_within_allowance("z-ai/glm-5.3-flash", ["anthropic/*"]) == "z-ai/glm-5.3-flash"
+
+
+async def test_apply_worker_secret_env_stamps_the_resolved_model_slug(env) -> None:
+    """The concrete model a spawn actually resolves to lands on the process itself.
+
+    A wizard step (or a transcript header) that wants to say what really ran — not the
+    tier requested, not the vendor default — has to read it from somewhere real; this is
+    the one place ``WorkerApiAuth.model_slug`` is computed, so it is the one place that
+    persists it."""
+    from flow_sdk.api.api_types.identifier import mint_uuid
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import apply_worker_secret_env
+    from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    await _set_harness_api("deepagents")
+
+    process = AgenticProcess(
+        id=mint_uuid(),
+        worker_type=WorkerType.DEEPAGENTS,
+        workdir="/tmp",
+        pty_mode=False,
+        load_flowpad_assistant=False,
+    )
+    assert process.resolved_model_slug is None
+    await apply_worker_secret_env({}, process)
+    assert process.resolved_model_slug == "z-ai/glm-5.3-flash"
+
+
 async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
     """Nothing stored, nothing bound: every other harness answers ``None`` here ("use your device
     login"). This one has no account of its own, so ``None`` would mean a worker spawned with no

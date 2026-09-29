@@ -276,6 +276,15 @@ async def materialize_flow_message(
             fm = await fm.save(someone_typeid, notify=False)
         if remote:
             await _adopt_header_session_snapshot(fm, someone_typeid)
+            # A project shared with a TEAM reaches its members with no invitation
+            # to mirror it; the invite message is the first word of it, so mirror
+            # any project it references before the chip renders.
+            try:
+                from flow_sdk.app.actions.membership_sync import mirror_referenced_projects  # noqa: PLC0415
+
+                await mirror_referenced_projects(fm.attachment, someone_typeid)
+            except Exception as e:  # noqa: BLE001 — never block a message's arrival
+                logger.warning("[materialize_fm] mirroring referenced projects failed: %s", e)
 
     # Emit the explicit local CREATE that drives entity-event subscribers
     # (TS SDK ``conv.on('message')``).

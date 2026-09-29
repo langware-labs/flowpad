@@ -1,3 +1,6 @@
+---
+id: 6d40252b-4a14-44c9-b10a-d88c0a8c1aff
+---
 Install cowsay so that `command -v cowsay` answers.
 
 `pip install --user` exits 0 and puts the script in `~/.local/bin`, which is not

@@ -198,6 +198,12 @@ export class LlmSourcesService {
   select(harness: string, source: LLMSourceRef): Promise<LLMFundingStatus> {
     return apiClient.post(`${this.base}/select`, { harness, ...source });
   }
+
+  /** Decline to choose now — the chooser's Skip. Releases a `flow llm set auto` that is waiting
+   *  for a choice; nothing is written, so the box stays unfunded until someone picks a source. */
+  skip(): Promise<{ skipped: boolean }> {
+    return apiClient.post(`${this.base}/skip`, {});
+  }
 }
 
 /** Ready-to-use singleton wired to the local compute node. */

@@ -1,0 +1,30 @@
+{
+  "name": "e2e-global-default-setup",
+  "description": "E2E fixture: three tiny steps that mirror llm-setup's own shape (a tool already on the machine, a correct install, a deliberately-broken one that falls to the agent) \u2014 against a box with NO hub LLMEndpoint of its own, so the agent step proves the global default wins.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "git",
+      "label": "Git",
+      "kind": "wizard",
+      "ref": "llm-setup-git",
+      "on_fail": "continue"
+    },
+    {
+      "id": "cowsay",
+      "label": "cowsay",
+      "kind": "wizard",
+      "ref": "e2e-global-default-cowsay",
+      "on_fail": "continue"
+    },
+    {
+      "id": "sl",
+      "label": "sl",
+      "kind": "wizard",
+      "ref": "e2e-global-default-sl",
+      "on_fail": "continue"
+    }
+  ]
+}

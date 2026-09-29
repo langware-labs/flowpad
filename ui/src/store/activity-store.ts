@@ -185,7 +185,9 @@ export function getActivity(path: string, subject_entity?: string | null): Activ
 /** Snapshot hydration is lazy; live events continue through the existing sequence guard. */
 function useActivityHydration(): void {
   const { data } = useLazyAsset(LazyAsset.Activities, undefined, { priority: 'background' });
-  useEffect(() => { for (const row of data ?? []) handleActivitySnapshot(row); }, [data]);
+  useEffect(() => {
+    for (const row of data ?? []) handleActivitySnapshot(row);
+  }, [data]);
 }
 
 /** Every live root, most recently updated first. */
@@ -201,6 +203,23 @@ export function useActivitySpec(path: string, subject_entity?: string | null): A
   // is not needed when the store is already keyed by address.
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return getActivity(path, subject_entity);
+}
+
+/**
+ * Whichever of two same-PATH candidates is actually live right now — an attended
+ * run's own scoped node, and the unscoped node an unattended (trigger-fired) run
+ * broadcasts instead (see `Wizard.run`'s `subject_entity=None if unattended`).
+ * Both address the same wizard by construction (the path already carries its id),
+ * so this never crosses two different wizards' runs; it only picks between "this
+ * one, started by hand" and "this one, started automatically".
+ */
+export function pickLiveActivity(
+  scoped: ActivityProgressSpec | null,
+  unattended: ActivityProgressSpec | null,
+): ActivityProgressSpec | null {
+  if (scoped && !isTerminal(scoped)) return scoped;
+  if (unattended && !isTerminal(unattended)) return unattended;
+  return scoped ?? unattended;
 }
 
 /** How many activities are live — for a caller that needs the count and not the rows. */
