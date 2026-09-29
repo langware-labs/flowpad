@@ -374,8 +374,8 @@ from the command line, for the project in the working directory:
 ```bash
 flow credentials declare credential.json  # declare one in this folder's project (created if none)
 flow project setup --dry-run    # what the project needs, and what already holds
-flow project setup              # walk it: sign in, type keys, or leave one empty for the AI
-flow project setup --no-ai      # never hand a value to the AI setup
+flow project setup              # walk it: sign in, type keys, or leave one empty for AI Assist
+flow project setup --no-ai      # never hand a value to AI Assist
 flow credentials check telegram # exit 0 when every development value is present
 flow credentials set telegram TELEGRAM_BOT_TOKEN=123456:abc  # store one (declares it from its template)
 flow credentials set telegram --stdin  # the same, VAR=VALUE lines on stdin: how an agent stores one
@@ -398,15 +398,18 @@ memory and never written, and runs it with the stock runner:
 | requirement | steps (each `on_fail: continue`)                                                                  | check                                   |
 | ----------- | ------------------------------------------------------------------------------------------------- | --------------------------------------- |
 | connection  | `flow connections connect <provider>` — consent is a person's click, so there is no AI rung        | `flow connections test <p> --scope …`   |
-| credential  | an `ask` per missing value (masked when `secret`), then `flow credentials set <name> --from-inputs` | `flow credentials check <name>`         |
-|             | **AI setup**: the `provisioner` agent following the credential's own `setup` instructions         | the same check — so it skips itself when the key step got there |
+| credential  | an `ask` per missing value (masked when `secret`, a file picker when `kind: "file"`), carrying the credential's `setup` as its guide and **AI Assist**; then `flow credentials set <name> --from-inputs` | `flow credentials check <name>`         |
 
-Every `CredentialSpec` carries `setup`: how to obtain its values and store them, written for an
-agent to follow and ending in `flow credentials set <name> --stdin`. The AI rung is told the same:
-pipe `VAR=VALUE` lines into the store command, producing each value inside the pipe — a value on a
-command line is visible to every process on the box and lands in the agent's own transcript. Authoring refuses a credential without it; a
-pack written before it existed still loads, and setup reports it as having no AI setup. Leaving a
-question empty is how a person hands that credential to the AI. Values travel ask → the run →
+Every `CredentialSpec` carries `setup`: how to obtain its values, written for a person and an
+agent alike. Each question shows it as its guide, and **AI Assist** hands the question to the
+`provisioner` agent, which follows it and answers the SAME question with
+`flow ask answer <id> --stdin` (or `--file <path>`), producing the value inside the pipe — a value on
+a command line is visible to every process on the box and lands in the agent's own transcript. The
+step gets the same answer whoever gave it. Once the agent starts, the question waits the setup's own
+span — `setup_timeout_seconds` on the credential, else 10 minutes — not a person's minute. Authoring
+refuses a credential without `setup`; a pack written before it existed still loads, and setup
+reports it as having no AI Assist. In the app it is a button beside the question; at a terminal,
+leaving the question empty is how a person asks for it. Values travel ask → the run →
 the environment of `flow credentials set`; nothing prints them, and the CLI log keeps names only.
 Running it again is the resume: whatever holds is skipped. The environment is `development`.
 `flow credentials delete <name>` removes a credential and its values from every store, and

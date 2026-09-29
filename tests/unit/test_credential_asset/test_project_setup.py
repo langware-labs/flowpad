@@ -24,8 +24,7 @@ from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.cli.commands import credentials_cmd, project_cmd
 from flow_sdk.schema.data_spec.compute_op_spec import SETUP_TIMEOUT
 from flow_sdk.schema.data_spec.project_setup_spec import REQUIREMENT_GAP, REQUIREMENT_OAUTH, REQUIREMENT_PACK
-from flow_sdk.schema.data_spec.returned_value_spec import CliResult, PromptResult
-
+from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from tests.unit.test_credential_asset._shipped import shipped_credential_folders
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
@@ -80,9 +79,10 @@ async def test_a_pack_without_setup_still_loads_and_is_reported_as_having_no_ai_
     (req,) = await project_setup.collect_requirements(project)
 
     assert (req.kind, req.name, req.setup) == (REQUIREMENT_PACK, "legacy", "")
-    assert "AI setup unavailable" in req.note
-    wizard, _ops = project_setup.compile_setup(project.id, [req])
-    assert [s.id for s in wizard.steps] == ["ask-legacy-LEGACY_KEY", "store-legacy"], "no AI rung without instructions"
+    assert "AI Assist unavailable" in req.note
+    wizard, ops = project_setup.compile_setup(project.id, [req])
+    assert [s.id for s in wizard.steps] == ["ask-legacy-LEGACY_KEY", "store-legacy"]
+    assert ops["ask-legacy-LEGACY_KEY"].exe_data.assist_agent == "", "no AI Assist without instructions"
 
 
 async def test_a_value_that_does_not_match_its_pattern_is_refused(project):
@@ -136,15 +136,15 @@ async def test_a_credential_with_its_values_is_ready(project, templates, monkeyp
 # ── compile ──────────────────────────────────────────────────────────────────
 
 
-async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, templates, monkeypatch):
+async def test_a_credential_compiles_to_asks_with_ai_assist_then_a_store_on_one_check(project, templates, monkeypatch):
     _sources(monkeypatch, "telegram", "gdrive")
     reqs = await project_setup.collect_requirements(project)
 
     wizard, ops = project_setup.compile_setup(project.id, reqs)
 
     assert [s.id for s in wizard.steps] == [
-        "connect-google", "ask-telegram-TELEGRAM_BOT_TOKEN", "store-telegram", "ai-telegram",
-    ]
+        "connect-google", "ask-telegram-TELEGRAM_BOT_TOKEN", "store-telegram",
+    ], "AI Assist is the question's, not a step of its own"
     assert {s.on_fail for s in wizard.steps} == {"continue"}, "one credential nobody can provide stops nothing"
     ask = ops["ask-telegram-TELEGRAM_BOT_TOKEN"]
     assert ask.exe_data.secret
@@ -152,15 +152,14 @@ async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, 
     assert ask.setup_timeout() == SETUP_TIMEOUT, "no declared span: the default"
     assert ask.completion_check == ops["store-telegram"].completion_check, "a resumed run asks nobody once stored"
     assert wizard.steps[1].bind == "telegram__TELEGRAM_BOT_TOKEN"
-    store, ai = ops["store-telegram"], ops["ai-telegram"]
-    assert store.completion_check == ai.completion_check, "the AI rung skips itself when the key step got there"
+    assert ask.exe_data.assist_agent == "provisioner"
+    store = ops["store-telegram"]
     assert "credentials check telegram --project" in store.completion_check.command_for("linux")
-    assert ai.exe_data.agent == "provisioner" and ai.setup == reqs[1].setup
     assert "credentials test" not in ops["connect-google"].completion_check.command_for("linux")
     assert "connections test google --scope" in ops["connect-google"].completion_check.command_for("linux")
 
-    no_ai, _ = project_setup.compile_setup(project.id, reqs, ai=False)
-    assert "ai-telegram" not in [s.id for s in no_ai.steps]
+    _no_ai, plain = project_setup.compile_setup(project.id, reqs, ai=False)
+    assert plain["ask-telegram-TELEGRAM_BOT_TOKEN"].exe_data.assist_agent == ""
 
 
 async def test_a_credentials_own_setup_timeout_rides_its_questions(project, templates):
@@ -182,10 +181,9 @@ async def test_a_deployment_setup_stores_and_checks_where_that_deployment_keeps_
 
     _wizard, ops = project_setup.compile_setup(project.id, reqs, deployment_id="d-1")
 
-    for name in ("store-telegram", "ai-telegram"):
+    for name in ("ask-telegram-TELEGRAM_BOT_TOKEN", "store-telegram"):
         assert "--deployment d-1" in ops[name].completion_check.command_for("linux")
     assert "--deployment d-1" in ops["store-telegram"].exe_data.command_for("linux")
-    assert "--deployment d-1 --stdin" in ops["ai-telegram"].exe_data.prompt
 
 
 # ── run: `flow project setup`, its shell bridged into the real CLI ───────────
@@ -239,7 +237,7 @@ async def test_a_typed_key_is_stored_never_printed_and_a_rerun_skips_it(project,
     assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN, "declared from its template, value in the project"
     assert TOKEN not in out.out + out.err, "a value is never printed"
     assert cli["asked"] == [(cli["asked"][0][0], True)] and "Telegram" in cli["asked"][0][0]
-    assert "Bot token: answered" in out.out and "✓  Store Telegram bot: done" in out.out and "AI setup: Telegram bot: already done" in out.out
+    assert "Bot token: answered" in out.out and "✓  Store Telegram bot: done" in out.out
     assert all(TOKEN not in " ".join(argv) for argv in cli["ran"]), "the value travels as env, never argv"
 
     cli["asked"].clear()
@@ -249,54 +247,48 @@ async def test_a_typed_key_is_stored_never_printed_and_a_rerun_skips_it(project,
     assert again == 0 and result["ok"] and cli["asked"] == [], "a re-run asks nothing"
 
 
-async def test_an_empty_answer_hands_the_credential_to_the_ai_setup(project, templates, cli, monkeypatch, capsys):
+async def test_an_empty_answer_hands_the_question_to_ai_assist(project, templates, cli, monkeypatch, capsys):
+    """At a terminal there is no button: an empty answer is the person's "AI Assist, please". The agent's
+    answer becomes this question's answer, and the store step stores it like a typed one."""
     _sources(monkeypatch, "telegram")
-    prompts: list[dict] = []
+    handed: list = []
 
-    async def agent(**call):
-        """The provisioner, doing what its instructions say: pipe the value into the store command."""
-        prompts.append(call)
-        stored = await asyncio.to_thread(cli["invoke"], ["credentials", "set", "telegram", "--project", project.id,
-                                                          "--stdin"], {}, f"TELEGRAM_BOT_TOKEN={TOKEN}\n")
-        assert stored.ok, stored.stdout
-        return PromptResult.satisfied("stored it", text="Stored the bot token.")
+    async def assist(question):
+        handed.append(question)
+        return TOKEN
 
-    monkeypatch.setattr(project_cmd, "_launch", agent)
+    monkeypatch.setattr(project_cmd, "_assist", assist)
 
     code = await project_cmd._run(project.id, dry_run=False, ai=True, as_json=False)
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
+    out = captured.out
 
     assert code == 0, out
-    (call,) = prompts
-    assert call["agent"] == "provisioner"
-    assert "@BotFather" in call["prompt"], "the credential's own setup instructions"
-    assert "never print" in call["prompt"].lower() and f"--project {project.id} --stdin" in call["prompt"]
-    assert "VAR=<value>" not in call["prompt"], "the store command never takes a value as an argument"
-    assert all(TOKEN not in " ".join(argv) for argv in cli["ran"]), "the agent's value never reached an argv"
-    assert "·  Telegram bot: Bot token: left empty" in out
-    # A failed call lends its own last words to the line, so the person reads the store
-    # command's refusal rather than the runner's generic sentence. That sentence is still
-    # right for a call that SUCCEEDED without reaching its goal, which this is not.
-    assert '✗  Store Telegram bot: {"ok": false, "error_code": "NO_VALUE"' in out
-    assert "the cli call ran" not in out, "the generic sentence is back over the call's own reason"
-    assert "✓  AI setup: Telegram bot: done" in out
+    (question,) = handed
+    assert question.assist_agent == "provisioner"
+    assert "@BotFather" in question.guide, "the credential's own setup instructions"
+    assert question.setup_timeout == SETUP_TIMEOUT
+    assert "Leave it empty for AI Assist" in cli["asked"][0][0]
+    assert "AI Assist is working on it" in captured.err
+    assert "✓  Telegram bot: Bot token: answered" in out and "✓  Store Telegram bot: done" in out
+    assert TOKEN not in out + captured.err, "a value is never printed"
     assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN
 
 
 async def test_without_ai_an_empty_answer_leaves_it_missing_and_says_so(project, templates, cli, monkeypatch, capsys):
     _sources(monkeypatch, "telegram")
 
-    async def never(**_call):
-        raise AssertionError("--no-ai launched an agent")
+    async def never(_question):
+        raise AssertionError("--no-ai handed a question to AI Assist")
 
-    monkeypatch.setattr(project_cmd, "_launch", never)
+    monkeypatch.setattr(project_cmd, "_assist", never)
 
     code = await project_cmd._run(project.id, dry_run=False, ai=False, as_json=False)
     out = capsys.readouterr().out
 
     assert code == 1
-    assert "AI setup" not in out and "Not set up yet: telegram" in out
-    assert "Leave it empty" not in cli["asked"][0][0], "no AI rung, so no offer of one"
+    assert "AI Assist" not in out and "Not set up yet: telegram" in out
+    assert "Leave it empty" not in cli["asked"][0][0], "no AI Assist, so no offer of one"
 
 
 async def test_dry_run_lists_and_changes_nothing(project, templates, cli, monkeypatch, capsys):

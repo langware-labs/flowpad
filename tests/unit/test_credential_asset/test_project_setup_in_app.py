@@ -21,6 +21,7 @@ from flow_sdk.builtin.credential_service import CredentialError, save_credential
 from flow_sdk.builtin.credential_status import credentials_status
 from flow_sdk.core.compute_op import ask
 from flow_sdk.core.compute_op.ask import open_questions
+from flow_sdk.schema.data_spec.compute_op_spec import SETUP_TIMEOUT
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -136,6 +137,22 @@ def served_here(monkeypatch):
     monkeypatch.setattr(ask, "_SERVED_HERE", True)
 
 
+async def test_with_ai_the_question_offers_ai_assist(project, templates, served_here):
+    await save_credential(manifest=GCP, scope="project", project_id=project.id)
+
+    await project_setup.start_setup(project, ai=True)
+    try:
+        for _ in range(200):
+            if open_questions():
+                break
+            await asyncio.sleep(0.01)
+        (question,) = open_questions()
+        assert question.to_payload()["assist_available"] is True
+        assert question.setup_timeout == SETUP_TIMEOUT
+    finally:
+        project_setup._RUNS.pop(str(project.id)).cancel()
+
+
 async def test_the_setup_asks_in_the_app_with_a_file_block_for_a_file_value(project, templates, served_here):
     await save_credential(manifest=GCP, scope="project", project_id=project.id)
 
@@ -151,6 +168,8 @@ async def test_the_setup_asks_in_the_app_with_a_file_block_for_a_file_value(proj
             "the question names the run, so the setup screen can claim it"
         )
         assert (payload["file"], payload["secret"]) == (True, True)
+        assert payload["guide"] == GCP["setup"], "the credential's guide is drawn with the question"
+        assert payload["assist_available"] is False, "ai=False: no AI Assist offered"
         assert project_setup.setup_run(str(project.id))["running"] is True
         assert await project_setup.start_setup(project, ai=False) == address, "a second start joins the run"
     finally:

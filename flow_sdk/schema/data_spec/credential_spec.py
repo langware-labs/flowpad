@@ -90,7 +90,7 @@ class CredentialSpec(DataSpec):
     #: follows too: where each value is created, what to click, and the
     #: ``flow credentials set <name> --stdin`` it is piped into. Authoring requires it
     #: (``credential_service.save_credential``); a pack read from disk without it still loads —
-    #: ``flow project setup`` reports it, and offers no AI setup for it.
+    #: ``flow project setup`` reports it, and offers no AI Assist for it.
     setup: Text = ""
     #: How long following ``setup`` may take once an agent runs it (the ask's AI Assist): the question
     #: waits this long from the moment the agent starts, and the agent is stopped at it. Unset: the

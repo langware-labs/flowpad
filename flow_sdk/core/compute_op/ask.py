@@ -329,6 +329,7 @@ async def ask_person(
     setup_timeout: float = 0.0,
     workdir: str = "",
     say: Optional[Callable[[str], None]] = None,
+    assist_now: bool = False,
 ) -> "AskResult":
     """Raise one question here and answer with what the person did.
 
@@ -374,6 +375,12 @@ async def ask_person(
         # was asked, so nothing ran; the next attempt asks again.
         forget(question.id)
         return AskResult.not_yet(f"{label}: nobody could be shown the question.", ran=False)
+    if assist_now and assist_agent:
+        # Asked on the person's behalf by a terminal that handed it straight to AI Assist: the agent
+        # starts at once, and the wait is the setup's own span from here.
+        if timeout is not None:
+            timeout = max(timeout, setup_timeout)
+        assist(question.id)
     started = asyncio.get_running_loop().time()
     try:
         value = await wait_for(question, timeout=timeout)
@@ -411,6 +418,7 @@ async def ask_through_backend(
     setup_timeout: float = 0.0,
     workdir: str = "",
     say: Optional[Callable[[str], None]] = None,
+    assist_now: bool = False,
 ) -> "AskResult":
     """:func:`ask_person`, run by the backend for a process that is not it.
 
@@ -438,6 +446,7 @@ async def ask_through_backend(
         "assist_agent": assist_agent,
         "setup_timeout": setup_timeout,
         "workdir": workdir,
+        "assist_now": assist_now,
     }
     try:
         async with flow_service() as lease:
@@ -497,7 +506,9 @@ def assist_prompt(question: Question) -> str:
         f"and answer the question with it.\n{how}\n\n"
         "That command is the only place the value goes. Produce it inside the pipe or file that feeds it, so it "
         "never passes through you: never print, echo or repeat a value — not in a command line, your reply, a "
-        "file you keep or a log. If the command refuses the value, fix it and answer again.\n"
+        "file you keep or a log. If the command refuses the value, fix it and answer again. Where the "
+        "instructions say to store the value some other way (`flow credentials set …`), answer the question "
+        "instead: whoever asked stores it.\n"
         "If obtaining it needs the person (their sign-in, a code sent to them), say exactly what they must do, "
         "and stop — the question stays open for them."
     )

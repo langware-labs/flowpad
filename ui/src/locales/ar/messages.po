@@ -18243,8 +18243,12 @@ msgid "Say hi…"
 msgstr "مرحبًا…"
 
 #: src/components/credentials/CredentialDialog.tsx
-msgid "Say how to get these values — the AI setup follows it"
+msgid "Say how to get these values — AI Assist follows it"
 msgstr ""
+
+#: src/components/credentials/CredentialDialog.tsx
+#~ msgid "Say how to get these values — the AI setup follows it"
+#~ msgstr ""
 
 #. placeholder {0}: postScanResult.grand_total.toLocaleString()
 #: src/pages/home-landing/HomeLanding.tsx

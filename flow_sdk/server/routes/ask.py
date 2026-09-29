@@ -19,8 +19,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
-from flow_sdk.core.compute_op.ask import answer as deliver_answer
 from flow_sdk.core.compute_op.ask import AssistRefused, ask_person, assist, open_questions, pending, serve_here
+from flow_sdk.core.compute_op.ask import answer as deliver_answer
 from flow_sdk.core.compute_op.ask import cancel as decline
 from flow_sdk.responses.response import ApiSuccessResponse
 
@@ -73,6 +73,8 @@ class AskRequest(BaseModel):
     assist_agent: str = ""
     setup_timeout: float = 0.0
     workdir: str = ""
+    #: Start the assist as soon as the question is raised — a terminal whose person left it empty.
+    assist_now: bool = False
 
 
 @router.post("")
@@ -95,6 +97,7 @@ async def ask_for_another_process(body: AskRequest):
         assist_agent=body.assist_agent,
         setup_timeout=body.setup_timeout,
         workdir=body.workdir,
+        assist_now=body.assist_now,
     )
     return ApiSuccessResponse(data=said.model_dump(mode="json"))
 
