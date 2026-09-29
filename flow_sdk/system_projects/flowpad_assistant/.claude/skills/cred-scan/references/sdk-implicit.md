@@ -14,7 +14,7 @@ there too).
 | cohere | `cohere` | `CO_API_KEY` | https://dashboard.cohere.com/api-keys |
 | groq | `groq` | `GROQ_API_KEY` | https://console.groq.com/keys |
 | aws | `boto3`, `aws-sdk`, `@aws-sdk/*`, `aws-sdk-go` | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` (or `AWS_PROFILE`) | https://console.aws.amazon.com/iam/ |
-| gcp | `google-cloud-*`, `@google-cloud/*` | `GOOGLE_APPLICATION_CREDENTIALS` (a path to a service-account JSON) | https://console.cloud.google.com/iam-admin/serviceaccounts |
+| gcp | `google-cloud-*`, `@google-cloud/*` | `GOOGLE_APPLICATION_CREDENTIALS` (a service-account JSON — declare it `"kind": "file"`) | https://console.cloud.google.com/iam-admin/serviceaccounts |
 | firebase | `firebase-admin` | `GOOGLE_APPLICATION_CREDENTIALS` | https://console.firebase.google.com/ |
 | azure | `azure-identity`, `@azure/identity` | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET` | https://portal.azure.com/ |
 | stripe | `stripe` | `STRIPE_API_KEY` (the library reads none by default — most code passes `STRIPE_SECRET_KEY`; check the call) | https://dashboard.stripe.com/apikeys |

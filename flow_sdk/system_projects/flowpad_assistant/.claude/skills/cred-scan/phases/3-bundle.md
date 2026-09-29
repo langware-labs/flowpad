@@ -70,6 +70,11 @@ Field rules (`flow_sdk/schema/data_spec/credential_spec.py`):
   run. `secret` defaults true — set `false` for account ids and config;
   `account_key: true` for account ids; `advanced: true` for deploy-only;
   `pattern` only when you know the real shape.
+- a variable whose value is a FILE's path (`GOOGLE_APPLICATION_CREDENTIALS`, a
+  `credential_files` hit) is `"kind": "file"`: the person gives the file's content
+  (the setup wizard shows a file picker), Flowpad keeps it as a private file and
+  sets the variable to its path. Pair it with a `pattern` on the content, e.g.
+  `"\"type\":\\s*\"service_account\""`.
 - `setup` is required: how to obtain each value, from the docs you read in phase
   1 — which console, which page, which button. No values, no example secrets.
 - Never put a value, a default secret, or a `value_store` in the manifest.

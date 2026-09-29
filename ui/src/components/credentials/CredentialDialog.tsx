@@ -36,6 +36,7 @@ import {
   type DraftVar,
 } from './credential-draft';
 import { EnvLocalBlockedNotice } from './EnvLocalBlockedNotice';
+import { FileValueInput } from './FileValueInput';
 import { SecretValueInput } from './SecretValueInput';
 
 /** The wiki page the scope and storage info icons open, one section each. */
@@ -227,7 +228,17 @@ export function CredentialDialog({
                         data-testid={`credential-var-name-${index}`}
                       />
                     )}
-                    {asksValues(d) ? (
+                    {asksValues(d) && v.base.kind === 'file' ? (
+                      <div className="min-w-0 flex-1">
+                        <FileValueInput
+                          id={`credential-var-value-${index}`}
+                          testId={`credential-var-value-${index}`}
+                          secret={v.secret}
+                          value={v.value}
+                          onChange={(value) => updateVar(v.id, { value })}
+                        />
+                      </div>
+                    ) : asksValues(d) ? (
                       <SecretValueInput
                         className="min-w-0 flex-1"
                         secret={v.secret}
