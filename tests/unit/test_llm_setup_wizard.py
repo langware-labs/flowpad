@@ -91,13 +91,13 @@ class Machine:
     documents' own claim, not the test's. A command it does not know fails the
     test, which is what catches an op that runs something it should not.
 
-    An install command the documents deliberately broke (a package id that does
-    not exist) fails and installs nothing, as it would for real. An agent
+    The install command of a tool in ``failing`` fails and installs nothing, as
+    a broken installer would for real. An agent
     installs the tool it was launched for — when the box has an LLM source to
     run it on.
     """
 
-    def __init__(self, platform: str, installed: set[str]):
+    def __init__(self, platform: str, installed: set[str], failing: tuple[str, ...] = ()):
         self.installed = set(installed)
         self.ran: list[str] = []
         self.agents: list[str] = []
@@ -111,7 +111,7 @@ class Machine:
             # An ask op's check prints the value it returns: the empty confirm.
             self.checks[question.completion_check.command_for(platform)] = (tool, True)
             command = install.exe_data.command_for(platform)
-            if "deliberately" in command.lower():
+            if tool in failing:
                 self.broken.add(command)
             else:
                 self.installs.setdefault(command, set()).add(tool)
@@ -248,11 +248,10 @@ async def test_a_missing_tool_is_installed_only_after_send(platform):
 
     assert result.exit_code is ExitCode.OK
     assert machine.installed == EVERYTHING
-    # node's own command is deliberately broken (see its setup.md), so the
-    # agent installs it — not the bundled `brew install node` / winget command,
-    # so npm is not brought along for free the way a working one would.
-    assert machine.agents == ["node"]
-    assert asked == ["ask-install-node", "ask-install-npm"]
+    assert machine.agents == [], "the plain command worked — the agent is never called"
+    # Where npm ships with node (brew, winget) its check then holds and nobody
+    # is asked; on apt it is its own package, so it is its own question.
+    assert asked == (["ask-install-node", "ask-install-npm"] if platform == "linux" else ["ask-install-node"])
 
 
 @PLATFORMS
@@ -418,11 +417,11 @@ async def test_a_live_tab_connecting_during_the_grace_window_is_still_shown(monk
 
 @PLATFORMS
 async def test_a_failed_install_command_falls_back_to_the_agent(platform):
-    """claude-code's and node's install commands are broken on purpose (see
-    their setup.md). The command fails, the agent reaches the same goal, and
-    the run is a success — a rung covered by a later one is not a failure."""
+    """claude-code's and node's install commands fail. The agent reaches the
+    same goal, and the run is a success — a rung covered by a later one is not
+    a failure."""
     broken = ("claude-code", "node")
-    machine = Machine(platform, EVERYTHING - set(broken))
+    machine = Machine(platform, EVERYTHING - set(broken), failing=broken)
     result, asked = await _run(machine, platform, {f"ask-install-{tool}": "yes" for tool in broken})
 
     assert result.exit_code is ExitCode.OK, result.detail
@@ -440,7 +439,7 @@ async def test_with_no_llm_source_the_plain_installs_still_run(platform):
     """A person who never picks a source still gets every tool whose command
     works. Only the agent rung needs the source, so a tool whose command failed
     stays missing and the run says so."""
-    machine = Machine(platform, EVERYTHING - {LLM, "claude-code", "git"})
+    machine = Machine(platform, EVERYTHING - {LLM, "claude-code", "git"}, failing=("claude-code",))
     result, asked = await _run(machine, platform, {"ask-install-claude-code": "yes", "ask-install-git": "yes"})
 
     assert result.exit_code is ExitCode.NOT_YET
