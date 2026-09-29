@@ -12,6 +12,7 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { isHubOnly } from '../utils/hub-runtime';
+import type { CredentialRequirement } from '../entities/credential';
 
 export type CredentialScopeName = 'user' | 'project';
 /** A store a form can choose: the scope's env file, or the vault. */
@@ -35,7 +36,9 @@ export interface CredentialVarStatus {
   pattern: string;
   help_url: string;
   secret: boolean;
-  required: boolean;
+  /** What this deployment needs: the var's own requirement, raised to `MUST` when the deployment
+   *  requires it. Read through `isRequired` — never for truth. */
+  required: CredentialRequirement;
   /** The store the chosen deployment keeps this variable in. */
   store: CredentialValueStore;
   /** A value exists in that store. */
@@ -147,7 +150,7 @@ export interface CredentialManifestVar {
   label?: string;
   hint?: string;
   placeholder?: string;
-  required?: boolean;
+  required?: CredentialRequirement;
   pattern?: string;
   advanced?: boolean;
   account_key?: boolean;

@@ -22,6 +22,9 @@ that only appear in vendored code. Say how many you dropped and why, in one line
 
 ## 2. Tier — the strongest evidence wins
 
+Two tiers are saved on the credential as its `required` (phase 3): MUST as
+`"MUST"`, USEFUL as `"OPTIONAL"`. EXTRA stays in the report.
+
 | Tier | Meaning | Evidence that puts a var here |
 | --- | --- | --- |
 | **MUST** | The app will not start or its core path fails without it | `hard` · `schema` · `infra-hard` · `template` (empty, uncommented) · a `read` that feeds a client built at startup · an `sdk` var for a client the main path constructs · docs saying "required" |

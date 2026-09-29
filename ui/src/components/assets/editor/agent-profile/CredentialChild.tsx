@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertTriangle, Check, CircleDashed, ExternalLink, Pencil, Trash2 } from 'lucide-react';
-import { credentialsService, dataContext } from '@sdk';
+import { credentialsService, dataContext, isRequired, requirementOf } from '@sdk';
 import { credentialIcon, useCredentialState } from '@src/components/agent-resources/AgentCredentialsSection';
 import { buildCredentialRows } from '@src/components/credentials-view/credential-rows';
+import { RequirementChip } from '@src/components/credentials-view/RequirementChip';
 import { CredentialDialog } from '@src/components/credentials/CredentialDialog';
 import { editDraft, valuesDraft, type CredentialDraft } from '@src/components/credentials/credential-draft';
 import { useCredentials } from '@src/components/credentials/use-credentials';
@@ -134,19 +135,22 @@ export function CredentialChild({ typeid, onGone }: { typeid: string; onGone: ()
               <li key={v.env_var} className="flex items-center gap-3 px-3 py-2" data-testid={`credential-var-${v.env_var}`} data-present={v.present || undefined}>
                 {v.present ? (
                   <Check className="h-4 w-4 shrink-0 text-green-600" />
-                ) : v.required ? (
+                ) : isRequired(v) ? (
                   <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
                 ) : (
                   <CircleDashed className="h-4 w-4 shrink-0 text-muted-foreground" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <div className="font-mono text-[13px]">{v.env_var}</div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[13px]">{v.env_var}</span>
+                    <RequirementChip required={requirementOf(v)} testId={`credential-var-required-${v.env_var}`} />
+                  </div>
                   {v.label && v.label !== v.env_var && <div className="text-xs text-muted-foreground">{v.label}</div>}
                 </div>
                 <span className="text-xs text-muted-foreground">
                   {v.present ? (
                     <Trans>set</Trans>
-                  ) : v.required ? (
+                  ) : isRequired(v) ? (
                     <Trans>missing</Trans>
                   ) : (
                     <Trans>optional · not set</Trans>

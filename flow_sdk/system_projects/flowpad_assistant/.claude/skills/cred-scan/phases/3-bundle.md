@@ -53,8 +53,8 @@ that already exists):
   "icon_name": "CreditCard",
   "help_url": "https://dashboard.stripe.com/apikeys",
   "vars": {
-    "STRIPE_API_KEY": {"label": "Secret key", "placeholder": "sk_test_…", "required": true},
-    "STRIPE_WEBHOOK_SECRET": {"label": "Webhook signing secret", "required": false,
+    "STRIPE_API_KEY": {"label": "Secret key", "placeholder": "sk_test_…", "required": "MUST"},
+    "STRIPE_WEBHOOK_SECRET": {"label": "Webhook signing secret", "required": "OPTIONAL",
                               "hint": "Only for receiving webhooks — app/hooks.py."}
   },
   "setup": "## Stripe\n\n1. Open https://dashboard.stripe.com/apikeys (Developers → API keys) and sign in.\n2. Under *Secret key*, reveal and copy it into STRIPE_SECRET_KEY — use the test-mode key for development.\n3. Only to receive webhooks: Developers → Webhooks → your endpoint → *Signing secret* → STRIPE_WEBHOOK_SECRET."
@@ -64,9 +64,12 @@ that already exists):
 Field rules (`flow_sdk/schema/data_spec/credential_spec.py`):
 
 - `name` — kebab-case, `^[A-Za-z0-9][A-Za-z0-9_.-]*$`; the folder name.
-- per var: `required` = tier is MUST; `secret` defaults true — set `false` for
-  account ids and config; `account_key: true` for account ids; `advanced: true`
-  for deploy-only; `pattern` only when you know the real shape.
+- per var: `required` is the tier as saved — `"MUST"` for MUST, `"OPTIONAL"` for
+  USEFUL (it defaults to `"MUST"`, so write `"OPTIONAL"` explicitly). The
+  Connections table and the credential editor chip it, so the tier survives the
+  run. `secret` defaults true — set `false` for account ids and config;
+  `account_key: true` for account ids; `advanced: true` for deploy-only;
+  `pattern` only when you know the real shape.
 - `setup` is required: how to obtain each value, from the docs you read in phase
   1 — which console, which page, which button. No values, no example secrets.
 - Never put a value, a default secret, or a `value_store` in the manifest.

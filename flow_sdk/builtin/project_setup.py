@@ -74,7 +74,7 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequir
         vars=[
             SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
                          pattern=v.pattern, secret=v.secret, present=v.present)
-            for v in row.vars if v.required
+            for v in row.vars if v.is_must
         ],
         satisfied=row.state == "connected", used_by=used_by,
         note="" if row.setup.strip() else "no setup instructions: AI setup unavailable",

@@ -12,13 +12,22 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 
+/**
+ * How much a project needs one variable (`flow_sdk` `CredentialRequirement`).
+ * `MUST`: the app does not work without it. `OPTIONAL`: it turns a feature, an
+ * integration or a deployment on.
+ */
+export const CredentialRequirement = { MUST: 'MUST', OPTIONAL: 'OPTIONAL' } as const;
+export type CredentialRequirement = (typeof CredentialRequirement)[keyof typeof CredentialRequirement];
+
 /** One environment variable a credential is made of, as the manifest declares it. */
 export interface CredentialVar {
   label?: string;
   hint?: string;
   placeholder?: string;
-  /** Backend default is TRUE — see `isRequired`, never read this raw. */
-  required?: boolean;
+  /** Backend default is `MUST` — see `isRequired`, never read this raw. A manifest or row
+   *  written before the enum may still carry a boolean. */
+  required?: CredentialRequirement | boolean;
   /** Regex the value must match. */
   pattern?: string;
   advanced?: boolean;
@@ -31,12 +40,18 @@ export interface CredentialVar {
 }
 
 /**
- * `required` and `secret` both default TRUE on the backend, and a manifest that
- * accepts the default sends NOTHING. Reading `v.secret` directly would treat
- * the common case as `false` — the unsafe direction for a secret.
+ * `required` defaults `MUST` and `secret` defaults TRUE on the backend, and a
+ * manifest that accepts the default sends NOTHING. Reading `v.secret` directly
+ * would treat the common case as `false` — the unsafe direction for a secret;
+ * reading `v.required` for truth would treat `'OPTIONAL'` (a non-empty string) as
+ * required.
  */
-export function isRequired(v: CredentialVar | undefined): boolean {
-  return v?.required !== false;
+export function requirementOf(v: { required?: CredentialRequirement | boolean } | undefined): CredentialRequirement {
+  const r = v?.required;
+  return r === false || r === CredentialRequirement.OPTIONAL ? CredentialRequirement.OPTIONAL : CredentialRequirement.MUST;
+}
+export function isRequired(v: { required?: CredentialRequirement | boolean } | undefined): boolean {
+  return requirementOf(v) === CredentialRequirement.MUST;
 }
 export function isSecret(v: CredentialVar | undefined): boolean {
   return v?.secret !== false;

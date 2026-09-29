@@ -12,7 +12,12 @@ from typing import Any, ClassVar
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
-from flow_sdk.schema.data_spec.credential_contract import assert_value_free, is_valid_env_var
+from flow_sdk.schema.data_spec.credential_contract import (
+    CredentialRequirement,
+    as_requirement,
+    assert_value_free,
+    is_valid_env_var,
+)
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec, unique_stages
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -41,7 +46,9 @@ class CredentialVarSpec(DataSpec):
     #: What this variable is for — shown under the input.
     hint: str = ""
     placeholder: str = ""
-    required: bool = True
+    #: ``MUST`` (the app does not work without it) or ``OPTIONAL``. Defaults MUST —
+    #: an unmarked variable stays required, the safe direction to be wrong in.
+    required: CredentialRequirement = CredentialRequirement.MUST
     #: Regex the value must match.
     pattern: str = ""
     advanced: bool = False
@@ -51,6 +58,16 @@ class CredentialVarSpec(DataSpec):
     secret: bool = True
     #: Where to get this particular value.
     help_url: str = ""
+
+    @field_validator("required", mode="before")
+    @classmethod
+    def _required_as_enum(cls, value: Any) -> Any:
+        """A bool from a manifest or row written before the enum reads as MUST / OPTIONAL."""
+        return as_requirement(value)
+
+    @property
+    def is_must(self) -> bool:
+        return self.required is CredentialRequirement.MUST
 
 
 class CredentialSpec(DataSpec):

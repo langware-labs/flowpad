@@ -100,7 +100,7 @@ class Credential(Entity):
     def required_var_names(self) -> list[str]:
         """The variables that must have a value for the credential to be connected
         (a deployment may require more: ``Placement.required``)."""
-        return [name for name, spec in (self.vars or {}).items() if spec.required]
+        return [name for name, spec in (self.vars or {}).items() if spec.is_must]
 
     @property
     def credentials(self) -> SecretRequirements:
