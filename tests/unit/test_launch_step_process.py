@@ -171,3 +171,41 @@ async def test_only_a_change_in_what_the_agent_reports_counts_as_a_sign_of_life(
     # Five polls, two distinct reports: the repeats said nothing.
     assert [p.counters["tokens"] for p in said if p.text == "working"][-2:] == ["a", "b"]
     assert sum(1 for p in said if p.text == "working") == 2
+
+
+@pytest.mark.asyncio
+async def test_the_agents_transcript_growing_is_a_sign_of_life_even_when_its_report_is_unchanged(monkeypatch, tmp_path):
+    """The counters can sit still through a long tool call while the agent's transcript keeps
+    growing — that is real activity, so it must reach the row."""
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.core.compute import process_step
+
+    process = _Process()
+    signatures = iter([(10, 1), (10, 1), (25, 2), (25, 2)])
+    process.wait = None
+
+    async def wait(timeout=None, on_status=None):
+        for _ in range(4):
+            on_status("working")
+
+    process.wait = wait
+
+    async def get_by_typeid(typeid):
+        return process
+
+    monkeypatch.setattr(AgenticProcess, "get_by_typeid", staticmethod(get_by_typeid))
+    monkeypatch.setattr(
+        process_step, "_progress_for", lambda _pid, _ws: process_step.ProcessProgress(text="working", counters={})
+    )
+    monkeypatch.setattr(process_step, "_transcript_signature", lambda _p: next(signatures))
+    said = []
+    await process_step.launch_step_process(
+        agent="provisioner",
+        prompt="go",
+        name="x",
+        workdir=Path(tmp_path),
+        executor="agentic_process-proc-1",
+        on_status=said.append,
+    )
+    # Four polls, the transcript moved once between the second and third: two updates, not four.
+    assert len(said) == 2
