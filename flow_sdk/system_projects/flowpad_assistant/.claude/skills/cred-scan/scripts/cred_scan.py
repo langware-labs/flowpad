@@ -110,10 +110,21 @@ SDK_IMPLICIT: dict[str, tuple[str, list[str], str]] = {
     "@octokit/rest": ("github", ["GITHUB_TOKEN"], "https://github.com/settings/tokens"),
 }
 
+#: Each dependency token as the matcher its scan uses, built once: a scoped
+#: prefix (``@aws-sdk/``) is a substring; a bare name must stand alone on the line.
+_DEP_MATCHERS = [
+    (token, (lambda low, t=token.lower(): t in low) if token.endswith(("/", "-")) else re.compile(
+        r"(^|[\s\"'/=<>~^\[,])" + re.escape(token.lower()) + r"($|[\s\"'=<>~^\[\],;:!@])").search)
+    for token in SDK_IMPLICIT
+]
+
 DEP_FILES = {
     "package.json", "requirements.txt", "requirements-dev.txt", "pyproject.toml", "Pipfile",
     "setup.py", "setup.cfg", "go.mod", "Gemfile", "Cargo.toml", "composer.json",
 }
+
+#: A substring every SECRET_PATTERNS match contains — lines with none are skipped unscanned.
+SECRET_MARKERS = ("sk-", "gh", "AKIA", "xox", "_live_", "AIza", "-----BEGIN", "://")
 
 #: Hardcoded-secret shapes. Only the KIND is reported.
 SECRET_PATTERNS = [
@@ -266,6 +277,9 @@ def scan_env_file(inv: Inventory, path: Path, lines: list[str]) -> None:
 def scan_code(inv: Inventory, path: Path, lines: list[str], test: bool) -> None:
     source = "test" if test else "code"
     for i, line in enumerate(lines, 1):
+        low = line.lower()
+        if "env" not in low and "_server" not in low:
+            continue  # every reader below names env (getenv, process.env, ENV[, env::var…) or $_SERVER
         hits: list[tuple[str, str]] = []
         for m in PY_INDEX.finditer(line):
             hits.append((m.group(1), "hard"))
@@ -345,7 +359,7 @@ def scan_zod(inv: Inventory, path: Path, lines: list[str]) -> None:
 
 def scan_shellish(inv: Inventory, path: Path, lines: list[str], source: str) -> None:
     for i, line in enumerate(lines, 1):
-        if line.lstrip().startswith("#"):
+        if "$" not in line or line.lstrip().startswith("#"):
             continue
         for m in SHELL_REF.finditer(line):
             op = m.group(2) or ""
@@ -426,14 +440,10 @@ def scan_deps(inv: Inventory, path: Path, lines: list[str]) -> None:
         low = line.strip().lower()
         if not low or low.startswith("#"):
             continue
-        for token, (service, names, help_url) in SDK_IMPLICIT.items():
-            t = token.lower()
-            if t.endswith(("/", "-")):
-                found = t in low
-            else:
-                found = re.search(r"(^|[\s\"'/=<>~^\[,])" + re.escape(t) + r"($|[\s\"'=<>~^\[\],;:!@])", low) is not None
-            if not found:
+        for token, matches in _DEP_MATCHERS:
+            if not matches(low):
                 continue
+            service, names, help_url = SDK_IMPLICIT[token]
             sdk = inv.sdks.setdefault(service, {"service": service, "vars": names, "help_url": help_url,
                                                 "evidence": []})
             if len(sdk["evidence"]) < 5:
@@ -464,7 +474,7 @@ def scan_secrets(inv: Inventory, path: Path, lines: list[str]) -> None:
     if path.name.endswith((".min.js", ".map", ".lock")) or path.name in {"package-lock.json", "SOURCES.txt"}:
         return
     for i, line in enumerate(lines, 1):
-        if len(line) > MAX_SECRET_LINE:
+        if len(line) > MAX_SECRET_LINE or not any(marker in line for marker in SECRET_MARKERS):
             continue
         for kind, pattern in SECRET_PATTERNS:
             m = pattern.search(line)

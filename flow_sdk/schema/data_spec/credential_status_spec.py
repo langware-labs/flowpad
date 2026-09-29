@@ -4,11 +4,11 @@ Names and presence only — no value ever appears in these shapes.
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict
 
-from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT, CredentialRequirement, as_requirement
+from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT, CredentialRequirement, Requirement
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
@@ -24,7 +24,7 @@ class CredentialVarStatusSpec(DataSpec):
     secret: bool = True
     #: What THIS deployment needs: the var's own ``required``, raised to ``MUST`` when the
     #: deployment requires it beyond the credential (``DeploymentSecretsSpec.require``).
-    required: CredentialRequirement = CredentialRequirement.MUST
+    required: Requirement = CredentialRequirement.MUST
     #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type.
     store: str = "env"
     #: A value exists in that store.
@@ -36,12 +36,6 @@ class CredentialVarStatusSpec(DataSpec):
     warning: Optional[str] = None
     #: The typeid of the project credential overriding this user one, if any.
     shadowed_by: Optional[str] = None
-
-    @field_validator("required", mode="before")
-    @classmethod
-    def _required_as_enum(cls, value: Any) -> Any:
-        """A bool from a manifest or row written before the enum reads as MUST / OPTIONAL."""
-        return as_requirement(value)
 
     @property
     def is_must(self) -> bool:

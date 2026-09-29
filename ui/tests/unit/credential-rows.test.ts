@@ -108,19 +108,17 @@ describe('buildCredentialRows', () => {
     expect(r.missing).toEqual(['TOKEN']);
   });
 
-  it('a credential is MUST when any variable is, OPTIONAL when none is — and reads a pre-enum boolean', () => {
-    const [must, optional, legacy] = buildCredentialRows(
+  it('a credential is MUST when any variable is, OPTIONAL when none is', () => {
+    const [must, optional] = buildCredentialRows(
       status({
         credentials: [
           row({ name: 'a-must', scope: 'project', vars: [v('A'), v('B', { required: 'OPTIONAL' })] }),
           row({ name: 'b-optional', scope: 'project', vars: [v('C', { required: 'OPTIONAL' })] }),
-          // A row stored before the enum still says `false`; it must not read as required.
-          row({ name: 'c-legacy', scope: 'project', vars: [v('D', { required: false as never })] }),
         ],
       }),
     );
 
-    expect([must.required, optional.required, legacy.required]).toEqual(['MUST', 'OPTIONAL', 'OPTIONAL']);
+    expect([must.required, optional.required]).toEqual(['MUST', 'OPTIONAL']);
     expect(must.vars.map((x) => x.required)).toEqual(['MUST', 'OPTIONAL']);
   });
 

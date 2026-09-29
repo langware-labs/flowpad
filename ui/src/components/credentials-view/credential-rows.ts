@@ -6,13 +6,13 @@
  */
 import {
   CredentialRequirement,
-  isRequired,
-  requirementOf,
   type CredentialScopeName,
   type CredentialStatusRow,
   type CredentialsStatus,
   type CredentialValueStore,
 } from '@sdk';
+
+const { MUST } = CredentialRequirement;
 
 export type CredentialRowState = 'connected' | 'needs-values';
 
@@ -70,14 +70,9 @@ export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] 
         scope: row.scope,
         store: row.value_store,
         state: row.state === 'connected' ? 'connected' : 'needs-values',
-        vars: row.vars.map((v) => ({
-          envVar: v.env_var,
-          required: requirementOf(v),
-          present: v.present,
-          warning: v.warning,
-        })),
-        required: row.vars.some(isRequired) ? CredentialRequirement.MUST : CredentialRequirement.OPTIONAL,
-        missing: row.vars.filter((v) => isRequired(v) && !v.present).map((v) => v.env_var),
+        vars: row.vars.map((v) => ({ envVar: v.env_var, required: v.required, present: v.present, warning: v.warning })),
+        required: row.vars.some((v) => v.required === MUST) ? MUST : CredentialRequirement.OPTIONAL,
+        missing: row.vars.filter((v) => v.required === MUST && !v.present).map((v) => v.env_var),
         shadowed: row.vars.length > 0 && row.vars.every((v) => !!v.shadowed_by),
         envPath: envFile(row),
         source: row,

@@ -142,28 +142,10 @@ async def index_one(
     own labels when the caller has them; otherwise the path is classified and
     the deepest project mount owning it wins, as in the walk."""
     from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.roots import (  # noqa: PLC0415
-        classify_path,
-        deepest_project_id_for_path,
-        load_project_mounts,
-    )
-    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import owning_project_id, scope_for  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     info = resolved.info
-    if not project_id:
-        try:
-            project_id = deepest_project_id_for_path(canonical_posix_path(resolved.root), await load_project_mounts())
-        except OSError:
-            project_id = None
-    if not scope:
-        scope = classify_path(resolved.root)
-        # ``classify_path`` knows only the server cwd as a project, so an asset in
-        # a workspace project (which lives under the user home) classifies as
-        # ``user``. A project that owns the path is authoritative; shipped
-        # ``system`` content stays system.
-        if project_id and scope != "system":
-            scope = "project"
     ref = FSRef(
         resolved.root,
         record_type=RecordType(resolved.type_name),
@@ -174,8 +156,11 @@ async def index_one(
     record = info.record_for(ref, resolved.id)
     if record is None:
         return None
+    project_id = project_id or await owning_project_id(resolved.root)
     if project_id:
         object.__setattr__(record, "project_id", project_id)
+    if not scope:
+        object.__setattr__(record, "scope", scope_for(resolved.root, project_id))
     if not getattr(record, "parent_type_id", None):
         parent_type_id = _enclosing_repo_asset_typeid(resolved.root)
         if parent_type_id:

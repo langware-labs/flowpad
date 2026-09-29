@@ -51,7 +51,7 @@ import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentProfileEditor } from './agent-profile/AgentProfileEditor';
 import { AgentChildView } from './agent-profile/AgentChildView';
-import { CredentialChild } from './agent-profile/CredentialChild';
+import { CredentialView } from '@src/components/credentials-view/CredentialView';
 import { useNestedHost } from './nested-host';
 import { useAssetReadOnly, useHostReadOnlyOccurrence, useReadOnlyOccurrenceType } from './read-only';
 import { SubAgentAssetEditor } from './subagent/SubAgentAssetEditor';
@@ -562,7 +562,7 @@ export function AssetEditorRouter({ pointer, fragment, hubReflect = false, wikiL
           typeLabel="credential"
           resolvedEntity={typeIdEntity as Credential | undefined}
           render={(credential) => (
-            <CredentialChild
+            <CredentialView
               typeid={credential.typeId.toString()}
               onGone={() => navigation.openDock(DockPointer.forAssetList(Credential.type))}
             />

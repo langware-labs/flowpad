@@ -30,11 +30,10 @@ import pytest
 
 from flow_sdk.builtin.credential import Credential
 from flow_sdk.builtin.credential_service import declare_credential
-from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
-from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.indexer import reset_shared_indexer
 from flow_sdk.instance_settings import get_instance_settings
+from tests.unit.test_fs_store._index_handler_fakes import FakeRequestInfo, _Handler
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -45,32 +44,6 @@ MANIFEST = {
     "vars": {"SENTRY_DSN": {"label": "DSN", "required": False}},
     "setup": "Sentry → Settings → Projects → Client Keys (DSN).",
 }
-
-
-class _Params:
-    def __init__(self, params: dict):
-        self._p = params
-
-    def get(self, key, default=None):
-        return self._p.get(key, default)
-
-
-class _RequestInfo:
-    def __init__(self, params: dict):
-        self.request = type("R", (), {"query_params": _Params(params)})()
-
-
-class _Handler(FsRecordsActionsMixin):
-    """The compute node's fs-records mixin, as the route mounts it."""
-
-    def __init__(self):
-        self.typeid = "test-compute-node"
-
-    def _start_activity(self, job_name: str, timeout_seconds: int = 600):
-        return InProcessActivity(job_name=job_name, entity_id=self.typeid, timeout_seconds=timeout_seconds)
-
-    def _complete_activity(self, job_name: str) -> None:
-        pass
 
 
 @pytest.fixture(autouse=True)
@@ -107,13 +80,9 @@ def _edited(folder: Path) -> None:
         os.utime(f, (later, later))
 
 
-async def _index(path: Path) -> None:
-    resp = await _Handler()._handle_fs_records_index(_RequestInfo({"type": "credential", "path": str(path)}))
-    data = resp.data
-    # A folder named directly is indexed in place (``total_*``); a directory is walked (``indexed``/``errors``).
-    errors, indexed = data.get("total_errors", data.get("errors")), data.get("total_indexed", data.get("indexed"))
-    assert errors == 0, data
-    assert indexed and indexed >= 1, f"nothing was re-indexed at {path}: {data}"
+async def _index(path: Path) -> dict:
+    resp = await _Handler()._handle_fs_records_index(FakeRequestInfo({"type": "credential", "path": str(path)}))
+    return resp.data
 
 
 async def _assert_still_the_projects(project: Project) -> None:
@@ -124,12 +93,14 @@ async def _assert_still_the_projects(project: Project) -> None:
 async def test_indexing_the_project_keeps_the_credential_the_projects(declared):
     project, folder = declared
     _edited(folder)
-    await _index(Path(project.fs_storage_mount_path))
+    walked = await _index(Path(project.fs_storage_mount_path))  # a directory is walked
+    assert (walked["indexed"], walked["errors"]) == (1, 0), walked
     await _assert_still_the_projects(project)
 
 
 async def test_indexing_the_credential_folder_keeps_it_the_projects(declared):
     project, folder = declared
     _edited(folder)
-    await _index(folder)
+    direct = await _index(folder)  # the asset's own folder is indexed in place
+    assert (direct["total_indexed"], direct["total_errors"]) == (1, 0), direct
     await _assert_still_the_projects(project)

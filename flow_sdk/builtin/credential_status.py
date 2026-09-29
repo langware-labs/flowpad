@@ -17,7 +17,7 @@ from flow_sdk.builtin.credential_resolver import (
     placement_for_deployment,
 )
 from flow_sdk.builtin.credential_store import CredentialScope, project_scope, secret_store_ref, user_scope
-from flow_sdk.schema.data_spec.credential_contract import VALUE_STORE_ENV, VALUE_STORE_VAULT, CredentialRequirement, vault_name
+from flow_sdk.schema.data_spec.credential_contract import VALUE_STORE_ENV, VALUE_STORE_VAULT, as_requirement, vault_name
 from flow_sdk.schema.data_spec.credential_status_spec import (
     CredentialsStatusSpec,
     CredentialStatusRowSpec,
@@ -137,7 +137,7 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
                     pattern=var.pattern,
                     help_url=var.help_url,
                     secret=var.secret,
-                    required=CredentialRequirement.MUST if env_var in required else CredentialRequirement.OPTIONAL,
+                    required=as_requirement(env_var in required),
                     store=store,
                     present=present,
                     found_in=found_in,

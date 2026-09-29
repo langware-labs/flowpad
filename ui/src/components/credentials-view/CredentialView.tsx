@@ -1,10 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertTriangle, Check, CircleDashed, ExternalLink, Pencil, Trash2 } from 'lucide-react';
-import { credentialsService, dataContext, isRequired, requirementOf } from '@sdk';
+import { credentialsService, dataContext, isRequired } from '@sdk';
 import { credentialIcon, useCredentialState } from '@src/components/agent-resources/AgentCredentialsSection';
-import { buildCredentialRows } from '@src/components/credentials-view/credential-rows';
-import { RequirementChip } from '@src/components/credentials-view/RequirementChip';
+import { buildCredentialRows } from './credential-rows';
+import { RequirementChip } from './RequirementChip';
 import { CredentialDialog } from '@src/components/credentials/CredentialDialog';
 import { editDraft, valuesDraft, type CredentialDraft } from '@src/components/credentials/credential-draft';
 import { useCredentials } from '@src/components/credentials/use-credentials';
@@ -17,12 +17,13 @@ import { notify } from '@src/notifications';
 import { MarkdownView } from '@src/components/markdown-view';
 
 /**
- * One credential, nested in the agent editor (`…/child/credential/<credential typeid>`): what it
- * is, where its values live, and which of its variables are set — read from the same status the
- * resources menu and the Connections screen read (`credentialsService.status`), picked by the URL's
- * typeid. Values are never shown; Set values and Edit open the one credential form.
+ * One credential — the credential editor (its asset row) and the view an agent nests for it
+ * (`…/child/credential/<credential typeid>`): what it is, where its values live, and which of its
+ * variables are set — read from the same status the resources menu and the Connections screen read
+ * (`credentialsService.status`), picked by typeid. Values are never shown; Set values and Edit open
+ * the one credential form.
  */
-export function CredentialChild({ typeid, onGone }: { typeid: string; onGone: () => void }) {
+export function CredentialView({ typeid, onGone }: { typeid: string; onGone: () => void }) {
   const { t } = useLingui();
   const stateOf = useCredentialState();
   const projectId = dataContext.project?.typeId?.id ?? null;
@@ -143,7 +144,7 @@ export function CredentialChild({ typeid, onGone }: { typeid: string; onGone: ()
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[13px]">{v.env_var}</span>
-                    <RequirementChip required={requirementOf(v)} testId={`credential-var-required-${v.env_var}`} />
+                    <RequirementChip required={v.required} testId={`credential-var-required-${v.env_var}`} />
                   </div>
                   {v.label && v.label !== v.env_var && <div className="text-xs text-muted-foreground">{v.label}</div>}
                 </div>
