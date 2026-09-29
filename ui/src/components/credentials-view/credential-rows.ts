@@ -4,13 +4,21 @@
  * Pure (no React, no calls) so the rules are testable without a render. Every
  * decision about presence is the backend's; this only shapes it for the table.
  */
-import type { CredentialScopeName, CredentialStatusRow, CredentialsStatus, CredentialValueStore } from '@sdk';
+import {
+  CredentialRequirement,
+  isRequired,
+  requirementOf,
+  type CredentialScopeName,
+  type CredentialStatusRow,
+  type CredentialsStatus,
+  type CredentialValueStore,
+} from '@sdk';
 
 export type CredentialRowState = 'connected' | 'needs-values';
 
 export interface CredentialRowVar {
   envVar: string;
-  required: boolean;
+  required: CredentialRequirement;
   present: boolean;
   warning: 'missing' | 'wrong-store' | 'unreachable' | null;
 }
@@ -26,6 +34,8 @@ export interface CredentialRow {
   store: CredentialValueStore;
   state: CredentialRowState;
   vars: CredentialRowVar[];
+  /** `MUST` when the project cannot work without at least one of its variables — the table's chip. */
+  required: CredentialRequirement;
   /** Required variables with no value in this credential's store. */
   missing: string[];
   /** Every variable is overridden by a project credential of the same name. */
@@ -60,8 +70,14 @@ export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] 
         scope: row.scope,
         store: row.value_store,
         state: row.state === 'connected' ? 'connected' : 'needs-values',
-        vars: row.vars.map((v) => ({ envVar: v.env_var, required: v.required, present: v.present, warning: v.warning })),
-        missing: row.vars.filter((v) => v.required && !v.present).map((v) => v.env_var),
+        vars: row.vars.map((v) => ({
+          envVar: v.env_var,
+          required: requirementOf(v),
+          present: v.present,
+          warning: v.warning,
+        })),
+        required: row.vars.some(isRequired) ? CredentialRequirement.MUST : CredentialRequirement.OPTIONAL,
+        missing: row.vars.filter((v) => isRequired(v) && !v.present).map((v) => v.env_var),
         shadowed: row.vars.length > 0 && row.vars.every((v) => !!v.shadowed_by),
         envPath: envFile(row),
         source: row,

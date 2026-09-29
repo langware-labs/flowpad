@@ -20,7 +20,7 @@ import type {
   LocalValueStore,
   SaveCredentialRequest,
 } from '@sdk';
-import { isRequired, isSecret } from '@sdk';
+import { CredentialRequirement, isRequired, isSecret } from '@sdk';
 import { MAX_ENV_VAR_VALUE_LENGTH } from '@src/constants/validation';
 
 export type DraftMode = 'custom' | 'template' | 'pack' | 'edit' | 'values';
@@ -285,7 +285,7 @@ export function toSaveRequest(d: CredentialDraft, projectId: string | null, depl
       pattern: v.pattern || undefined,
       help_url: v.helpUrl || undefined,
       secret: v.secret,
-      required: v.required,
+      required: v.required ? CredentialRequirement.MUST : CredentialRequirement.OPTIONAL,
     };
   }
   return {

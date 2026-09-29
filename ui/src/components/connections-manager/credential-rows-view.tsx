@@ -11,6 +11,7 @@ import { MoreOnHover } from './more-on-hover';
 import { SignInMethodIcon } from './sign-in-method';
 import { credentialEnvFileName } from '@sdk';
 import type { CredentialRow } from '@src/components/credentials-view/credential-rows';
+import { RequirementChip } from '@src/components/credentials-view/RequirementChip';
 
 /** Same cap the OAuth scope chips use — one chip and a count. */
 const VARS_SHOWN = 1;
@@ -59,6 +60,7 @@ export function CredentialConnectionRows({
                 <span className="truncate" title={row.description}>
                   {row.title}
                 </span>
+                <RequirementChip required={row.required} testId={`connection-required-${testKey}`} />
               </div>
             </TableCell>
 
@@ -80,7 +82,7 @@ export function CredentialConnectionRows({
               <MoreOnHover
                 lines={row.vars.map(
                   (v) =>
-                    `${v.envVar}${v.required ? '' : t` (optional)`}${v.present ? '' : t` — not set`}${v.warning === 'wrong-store' ? t` (value is in the other store)` : ''}`,
+                    `${v.envVar} · ${v.required}${v.present ? '' : t` — not set`}${v.warning === 'wrong-store' ? t` (value is in the other store)` : ''}`,
                 )}
               >
                 <div className="flex items-center gap-1">

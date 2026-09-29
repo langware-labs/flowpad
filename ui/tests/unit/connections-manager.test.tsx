@@ -345,7 +345,7 @@ const TWILIO_TEMPLATE = {
   scope: 'system',
   // Every shipped template carries one, and a credential without it cannot be saved.
   setup: 'Open the Twilio console and copy the Account SID.',
-  vars: { TWILIO_SID: { label: 'Account SID', required: true } },
+  vars: { TWILIO_SID: { label: 'Account SID', required: 'MUST' } },
   varNames: ['TWILIO_SID'],
 };
 
@@ -372,7 +372,7 @@ const credential = (over: Record<string, unknown> = {}) => ({
   vars: [
     {
       env_var: 'TWILIO_SID', label: 'SID', hint: '', placeholder: '', pattern: '', help_url: '',
-      secret: false, required: true, present: true, found_in: 'env', warning: null, shadowed_by: null,
+      secret: false, required: 'MUST', present: true, found_in: 'env', warning: null, shadowed_by: null,
     },
   ],
   ...over,
@@ -539,6 +539,14 @@ describe('ConnectionsManager — credential rows', () => {
     expect(method.dataset.method).toBe('api_key');
     expect(method.getAttribute('aria-label')).toMatch(/vault/i);
     expect(screen.getByTestId('connection-scope-user-twilio').textContent).toMatch(/all projects/i);
+  });
+
+  it('chips each credential MUST or OPTIONAL — the manifest\'s own word', () => {
+    render(<ConnectionsManager projectTypeId={PROJECT} />);
+
+    const chip = screen.getByTestId('connection-required-user-twilio');
+    expect(chip.textContent).toBe('MUST');
+    expect(chip.dataset.required).toBe('MUST');
   });
 
   it('a credential missing values offers to set them, and asks only for values', async () => {

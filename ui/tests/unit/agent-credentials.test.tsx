@@ -37,7 +37,7 @@ function row(extra: Partial<CredentialStatusRow>): CredentialStatusRow {
     typeid: 'credential-1', name: 'openai', title: 'OpenAI', description: '', icon_name: '', help_url: '', setup_wiki: '',
     setup: 'Create a key at platform.openai.com', scope: 'user', project_id: null, environment: 'development',
     value_store: 'env', default_value_store: 'env', environments: {}, lm_provider: '', state: 'connected',
-    vars: [{ env_var: 'OPENAI_API_KEY', label: 'API key', hint: '', placeholder: '', pattern: '', help_url: '', secret: true, required: true, present: true, found_in: 'env', warning: null, shadowed_by: null }],
+    vars: [{ env_var: 'OPENAI_API_KEY', label: 'API key', hint: '', placeholder: '', pattern: '', help_url: '', secret: true, required: 'MUST', present: true, found_in: 'env', warning: null, shadowed_by: null }],
     ...extra,
   } as CredentialStatusRow;
 }
@@ -82,7 +82,7 @@ describe('agent credentials', () => {
     creds.status = status([
       row({ scope: 'project', value_store: 'vault', state: 'partial', vars: [
         row({}).vars[0],
-        { ...row({}).vars[0], env_var: 'OPENAI_ORG', label: 'Org', present: false, required: false },
+        { ...row({}).vars[0], env_var: 'OPENAI_ORG', label: 'Org', present: false, required: 'OPTIONAL' },
       ] }),
     ]);
     render(<CredentialChild typeid="credential-1" onGone={() => undefined} />);
