@@ -46,7 +46,9 @@ export function useCredentials(projectId: string | null, deploymentId: string | 
   const qc = useQueryClient();
   // A value set or a credential changed may be what the project was waiting on: re-check it too.
   const refresh = useCallback(
-    () => Promise.all([qc.invalidateQueries({ queryKey: CREDENTIALS_STATUS_KEY }), recheckProjectReadiness()]),
+    async () => {
+      await Promise.all([qc.invalidateQueries({ queryKey: CREDENTIALS_STATUS_KEY }), recheckProjectReadiness()]);
+    },
     [qc],
   );
 
