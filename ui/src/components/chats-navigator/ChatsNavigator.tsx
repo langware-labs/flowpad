@@ -45,13 +45,21 @@ export function ChatsNavigator() {
     title: string;
   } | null>(null);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
+  // Session quick search (the magnifier on the "New" row). Closing clears it.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const handleSearchOpenChange = useCallback((open: boolean) => {
+    setSearchOpen(open);
+    if (!open) setSearch('');
+  }, []);
+  const searching = searchOpen && search.trim().length > 0;
 
   const scope = useMemo<ScopeFilter>(
     () => currentDock?.scopeFilter ?? defaultScopeFilter(project?.id ?? null),
     [currentDock, project?.id],
   );
 
-  const filters = useMemo(() => ({ scope, search: '' }), [scope]);
+  const filters = useMemo(() => ({ scope, search }), [scope, search]);
   const { buckets, total, isLoading, refetch } = useChatHistory(filters);
 
   // Active row = the process the Shell URL currently targets (URL-first).
@@ -166,7 +174,16 @@ export function ChatsNavigator() {
             onScopeChange={handleScopeChange}
           />
         ),
-        filterBar: <ChatsFilterBar onNewChat={handleNewChat} onResumeById={() => setResumeByIdOpen(true)} />,
+        filterBar: (
+          <ChatsFilterBar
+            onNewChat={handleNewChat}
+            onResumeById={() => setResumeByIdOpen(true)}
+            searchOpen={searchOpen}
+            search={search}
+            onSearchChange={setSearch}
+            onSearchOpenChange={handleSearchOpenChange}
+          />
+        ),
       },
       search: {
         recordTypes: terminalProfile.allowedEntityTypes ?? [],
@@ -178,6 +195,7 @@ export function ChatsNavigator() {
         <ChatsList
           buckets={buckets}
           isLoading={isLoading}
+          searching={searching}
           activeProcessId={activeProcessId}
           openProcessIds={openProcessIds}
           onSelect={handleSelect}
@@ -189,6 +207,10 @@ export function ChatsNavigator() {
     [
       total,
       handleNewChat,
+      searchOpen,
+      search,
+      searching,
+      handleSearchOpenChange,
       scope,
       project,
       handleScopeChange,

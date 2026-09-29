@@ -4249,6 +4249,8 @@ msgstr "Close details"
 msgid "Close panel"
 msgstr "Close panel"
 
+#: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/top-nav-bar/AddressSearchField.tsx
@@ -13416,6 +13418,7 @@ msgstr "No matches."
 msgid "No matching conversations"
 msgstr "No matching conversations"
 
+#: src/components/chats-navigator/ChatsList.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "No matching sessions"
@@ -18384,10 +18387,14 @@ msgstr "Search records..."
 msgid "Search rules…"
 msgstr "Search rules…"
 
+#: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/spotlight/profiles.ts
 msgid "Search sessions"
 msgstr "Search sessions"
 
+#: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/spotlight/profiles.ts
 msgid "Search sessions…"
 msgstr "Search sessions…"
