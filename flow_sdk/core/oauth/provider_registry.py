@@ -43,6 +43,7 @@ SLACK = "slack"
 GOOGLE = "google"
 ATLASSIAN = "atlassian"
 LINEAR = "linear"
+ZOOM = "zoom"
 GITLAB = "gitlab"
 MICROSOFT = "microsoft"
 
@@ -425,6 +426,27 @@ _PROVIDERS: dict[str, LocalOAuthProvider] = {
             headers=(("Content-Type", "application/json"),),
             identity_fields=("data.viewer.email", "data.viewer.name"),
             account_key_fields=("data.viewer.id",),
+        ),
+        hub_required=True,
+    ),
+    ZOOM: LocalOAuthProvider(
+        name=ZOOM,
+        display_name="Zoom",
+        user_credentials_name="zoom_credentials",
+        icon="Zoom",
+        # Hub-run code flow, like Slack and Linear: the hub holds the client
+        # secret (Zoom's token endpoint wants it as HTTP Basic) and the
+        # registered callbacks. The app's scopes are ticked in the Zoom console.
+        kind=OAuthFlowKind.CODE,
+        endpoints=None,
+        scopes=(),
+        token_shape=TokenShape.BEARER_STRING,
+        # `/users/me` needs `user:read:user` and names the person who consented.
+        probe=OAuthProbeSpec(
+            method="GET",
+            url="https://api.zoom.us/v2/users/me",
+            identity_fields=("email", "display_name"),
+            account_key_fields=("id",),
         ),
         hub_required=True,
     ),
