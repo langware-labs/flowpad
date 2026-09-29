@@ -8,6 +8,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
+import type { AssistState } from './AskAssist';
 
 /**
  * A question a ComputeOp put to a person — the data and actions behind it,
@@ -39,6 +40,9 @@ export interface AskQuestion {
   wizard_id?: string;
   /** How a person finds the value — the op's `setup.md`, markdown. */
   guide?: string;
+  /** The op names an agent that can answer instead (AI Assist). */
+  assist_available?: boolean;
+  assist?: AssistState | null;
 }
 
 /** The field names to draw. An object shape is its keys; anything else is one
@@ -103,6 +107,8 @@ export function useAskQuestion(questionId: string | undefined) {
   }, [question, values, send]);
 
   const cancel = useCallback(() => send('/cancel'), [send]);
+  /** The question settled while AI Assist worked on it: the agent answered. */
+  const agentAnswered = useCallback(() => setSettledKind('answered'), []);
 
   // This question is one step of a Wizard that is still running the next one
   // right now — the answer just unblocked it. Opening the wizard's own editor
@@ -148,6 +154,7 @@ export function useAskQuestion(questionId: string | undefined) {
     settledMessage,
     submit,
     cancel,
+    agentAnswered,
     wizardId,
     openWizard,
     runningNow,

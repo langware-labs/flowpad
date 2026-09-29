@@ -12,6 +12,7 @@ import { Button } from '@src/components/ui/button';
 import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useAskModalStore } from './ask-modal-store';
+import { AskAssist } from './AskAssist';
 import { fieldsOf, useAskQuestion } from './use-ask-question';
 
 /**
@@ -33,7 +34,7 @@ export function AskModalRoot() {
 }
 
 function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChange: (open: boolean) => void }) {
-  const { question, values, setValues, error, busy, settledKind, settledMessage, submit, cancel } =
+  const { question, values, setValues, error, busy, settledKind, settledMessage, submit, cancel, agentAnswered } =
     useAskQuestion(questionId);
 
   // Settled, however it got there: nothing left for THIS dialog to say — the
@@ -85,6 +86,13 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
                 <MarkdownView value={question.guide} compact />
               </div>
             ) : null}
+
+            <AskAssist
+              questionId={questionId}
+              available={question.assist_available}
+              initial={question.assist}
+              onAnswered={agentAnswered}
+            />
 
             {fieldsOf(question.fields).map((name) => (
               <div key={name} className="flex flex-col gap-1">

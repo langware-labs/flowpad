@@ -6,6 +6,7 @@ import { getHistoryPosition } from '@src/navigation/history-position-store';
 import { Button } from '@src/components/ui/button';
 import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
+import { AskAssist } from './AskAssist';
 import { fieldsOf, useAskQuestion } from './use-ask-question';
 
 /**
@@ -39,6 +40,7 @@ export default function AskView() {
     settledMessage,
     submit,
     cancel,
+    agentAnswered,
     wizardId,
     openWizard,
     runningNow,
@@ -102,6 +104,16 @@ export default function AskView() {
           {question.guide ? (
             <div className="mt-2 rounded border bg-muted/30 p-3 text-sm" data-testid="ask-guide">
               <MarkdownView value={question.guide} compact />
+            </div>
+          ) : null}
+          {questionId ? (
+            <div className="mt-2">
+              <AskAssist
+                questionId={questionId}
+                available={question.assist_available}
+                initial={question.assist}
+                onAnswered={agentAnswered}
+              />
             </div>
           ) : null}
           {wizardId && (
