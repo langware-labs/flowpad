@@ -18391,8 +18391,8 @@ msgid "Search Calibration"
 msgstr "כיול חיפוש"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-msgid "Search chats…"
-msgstr "חיפוש שיחות…"
+#~ msgid "Search chats…"
+#~ msgstr "חיפוש שיחות…"
 
 #: src/components/docs-viewer/DocsNavigator.tsx
 msgid "Search docs…"

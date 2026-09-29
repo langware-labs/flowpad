@@ -18391,8 +18391,8 @@ msgid "Search Calibration"
 msgstr "Search Calibration"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
-msgid "Search chats…"
-msgstr "Search chats…"
+#~ msgid "Search chats…"
+#~ msgstr "Search chats…"
 
 #: src/components/docs-viewer/DocsNavigator.tsx
 msgid "Search docs…"

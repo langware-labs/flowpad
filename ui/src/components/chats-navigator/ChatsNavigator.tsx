@@ -17,7 +17,6 @@ import type { WorkerHistoryEntry, WorkerType } from '@src/hooks/useWorkerHistory
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
-import { terminalProfile } from '@src/components/spotlight/profiles';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
@@ -184,12 +183,6 @@ export function ChatsNavigator() {
             onSearchOpenChange={handleSearchOpenChange}
           />
         ),
-      },
-      search: {
-        recordTypes: terminalProfile.allowedEntityTypes ?? [],
-        scope,
-        routeViaTerminal: true,
-        placeholder: t`Search chats…`,
       },
       customBody: (
         <ChatsList
