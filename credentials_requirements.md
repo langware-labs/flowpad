@@ -1,3 +1,6 @@
+---
+id: e42c4585-3e51-4cb2-924e-1bbf807b83c0
+---
 <!-- TEMPORARY working doc (untracked). The mega plan, approved 2026-09-27. Deleted when Part D closes, after its
      still-true takeaways move into the architecture docs. Each part's step 4 updates §Status. -->
 
