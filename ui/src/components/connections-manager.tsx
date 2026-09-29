@@ -67,7 +67,7 @@ import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 
 /** The URL option naming the deployment whose values the table shows; absent means this computer. */
-const CREDENTIAL_DEPLOYMENT_OPTION = 'deployment';
+export const CREDENTIAL_DEPLOYMENT_OPTION = 'deployment';
 
 export interface ConnectionsManagerProps {
   /**
