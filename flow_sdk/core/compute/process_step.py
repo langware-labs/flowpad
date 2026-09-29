@@ -89,6 +89,20 @@ def _progress_for(process_id: str, worker_status: Any) -> ProcessProgress:
     return ProcessProgress(text=text, counters=counters, blocked=blocked)
 
 
+def _transcript_signature(process: Any) -> Any:
+    """A value that changes whenever the agent's transcript can have changed, or ``None`` when it has
+    none yet. Never raises: a sign of life is never worth a failure."""
+    try:
+        from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
+        from flow_sdk.transcript_analyzer.resolver import transcript_change_signature  # noqa: PLC0415
+
+        path = transcript_path(process)
+        return transcript_change_signature(path) if path is not None else None
+    except Exception:  # noqa: BLE001
+        logger.debug("could not read the transcript signature for %s", getattr(process, "id", "?"), exc_info=True)
+        return None
+
+
 async def launch_step_process(
     *,
     agent: str,
@@ -177,13 +191,22 @@ async def _prompt_and_wait(
         return taken
 
     # `wait` polls every 2s and reports each time, so passing that straight on would stamp the row
-    # "alive" on every poll whether or not the agent did anything. Only a CHANGE in what the agent
-    # reports (its state, what it is on, its token and tool counters) is a sign of life.
+    # "alive" on every poll whether or not the agent did anything. Only a CHANGE is a sign of life:
+    # what the agent reports (its state, what it is on, its token and tool counters), or its
+    # transcript file growing — the agent's own record of everything it does, which moves when it
+    # makes a tool call or gets a result even while its counters sit still.
     last_seen: list[str] = []
 
     def observe(worker_status: Any) -> None:
         progress = _progress_for(process_id, worker_status)
-        seen = repr((progress.text, sorted(progress.counters.items(), key=repr)))
+        seen = repr(
+            (
+                progress.text,
+                sorted(progress.counters.items(), key=repr),
+                str(getattr(worker_status, "value", worker_status)),
+                _transcript_signature(process),
+            )
+        )
         if last_seen and last_seen[0] == seen:
             return
         last_seen[:] = [seen]
