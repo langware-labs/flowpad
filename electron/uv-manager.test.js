@@ -11,6 +11,7 @@ const UvManager = require('./uv-manager');
 const {
   needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine,
   pythonVersionFromPyproject, getPythonVersion, tryPythonVersion, upgradeCommand,
+  pythonFloor, maxPythonVersion,
 } = UvManager;
 
 const IS_WIN = process.platform === 'win32';
@@ -285,6 +286,29 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     const res = await m._uvToolInstallForce(['tool', 'install', 'flowpad']);
     ok(uv === 2 && quarantines === 1 && drains === 2 && res && typeof res === 'object',
       '_uvToolInstallForce: quarantines the corrupt env once, then rebuilds and succeeds');
+  }
+
+  // ── upgrade() pins the higher of bundled Python and the release's floor ─────
+  eq(pythonFloor('>=3.12,<3.14'), '3.12', 'pythonFloor: floor of a range');
+  eq(pythonFloor(null), null, 'pythonFloor: missing requires_python → null');
+  eq(maxPythonVersion('3.11', '3.12'), '3.12', 'maxPythonVersion: newer wins');
+  eq(maxPythonVersion('3.12', '3.9'), '3.12', 'maxPythonVersion: numeric, not lexical');
+  eq(maxPythonVersion('3.11', null), '3.11', 'maxPythonVersion: null loses');
+  {
+    const bundled = tryPythonVersion();
+    const m = new UvManager(silentLog);
+    let seen = null;
+    m._uvToolInstallForce = async (args) => { seen = args; };
+    m._ensureShimOnPath = async () => {};
+    m._resolveFlowBin = async () => null;
+    m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: '>=99.1' });
+    await m.upgrade();
+    eq(seen, ['tool', 'install', 'flowpad@latest', '--python', '99.1', '--force'],
+      'upgrade: release needs newer Python than the bundle → pin the release floor');
+    m._getLatestPypiInfo = async () => null; // PyPI unreachable
+    await m.upgrade();
+    eq(seen, ['tool', 'install', 'flowpad@latest', '--python', bundled, '--force'],
+      'upgrade: no PyPI answer → bundled pin');
   }
 
   // ── _uvToolInstallForce compiles bytecode in the install, not on first boot ─
