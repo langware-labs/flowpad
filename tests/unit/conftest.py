@@ -384,6 +384,20 @@ def _clean_activity_monitor():
     monitor.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_captured_terminal_path(monkeypatch):
+    """Start every unit test with no terminal PATH captured.
+
+    A test that runs a real capability sweep leaves the machine's own terminal PATH
+    in ``discovery._TERMINAL_PATH``, and every command, terminal and worker env built
+    after it then carries this machine's extra dirs — so a later test comparing an
+    exact PATH passes alone and fails in the suite.
+    """
+    from flow_sdk.core.capabilities import discovery
+
+    monkeypatch.setattr(discovery, "_TERMINAL_PATH", None)
+
+
 @pytest.fixture
 def isolated_kinds(monkeypatch):
     """The kinds a test's shapes register live for that test only. A docs page run in order declares

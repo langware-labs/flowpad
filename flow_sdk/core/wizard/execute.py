@@ -25,6 +25,8 @@ address is only an address.
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.core.wizard.runner import run_wizard
@@ -32,9 +34,9 @@ from flow_sdk.core.wizard.state import record_result, reset_run, run_dir, run_ke
 from flow_sdk.schema.data_spec.returned_value_spec import WizardResult
 
 if TYPE_CHECKING:  # pragma: no cover
-    from pathlib import Path
-
     from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
+
+logger = logging.getLogger(__name__)
 
 #: The one sentence a busy wizard answers with. The HTTP edge maps a
 #: ``ran=False`` NOT_YET to 409; this is what a person reads.
@@ -196,8 +198,6 @@ def activity_path_for(wizard_id: str, asset_ref: str, target: str = "") -> str:
 
 
 def _slug(asset_ref: str) -> str:
-    from pathlib import Path  # noqa: PLC0415
-
     return Path(asset_ref).name if asset_ref else ""
 
 
@@ -210,7 +210,7 @@ async def _resolve_op(name: str):
     from flow_sdk.builtin.compute_op import ComputeOp  # noqa: PLC0415
     from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
 
-    row = await ComputeOp.by_name(name)
+    row = await _by_name(ComputeOp, name)
     if row is None:
         return None
     spec = row.spec()
@@ -222,8 +222,31 @@ async def _resolve_wizard(name: str):
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
     from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
 
-    row = await Wizard.get_one({"name": name})
+    row = await _by_name(Wizard, name)
     if row is None:
         return None
     spec = row.spec()
     return None if spec is None else Resolved(spec, row.is_system())
+
+
+async def _by_name(entity_cls, name: str):
+    """The row named *name* — this install's own when another copy shares the name.
+
+    A second Flowpad checkout registered as a project carries its own copy of
+    every shipped wizard and op, and on another branch one may hold a different
+    id — two rows, one name. The callee a shipped wizard means is the one shipped
+    with THIS running install. Anything still ambiguous answers "not found"
+    rather than raising: a run answers for its steps, it does not crash on them.
+    """
+    from flow_sdk.config import system_projects_root  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+    rows = await entity_cls.get_all(QueryFilter.parse({"name": name}, entity_cls.get_type()))
+    if len(rows) > 1:
+        root = system_projects_root().resolve()
+        ours = [r for r in rows if r.asset_ref and Path(r.asset_ref).resolve().is_relative_to(root)]
+        rows = ours or rows
+    if len(rows) > 1:
+        logger.warning("%s %r is ambiguous: %s", entity_cls.get_type(), name, [r.asset_ref for r in rows])
+        return None
+    return rows[0] if rows else None

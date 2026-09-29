@@ -120,8 +120,6 @@ def capture_terminal_path() -> str:
     so a terminal PATH alone can miss a toolchain the backend was launched with.
 
     Falls back to this process's PATH on any failure — degraded, never empty.
-    Either way a Node.js a version manager installed is added when no `node`
-    resolves (see ``with_node_fallback``).
     """
     fallback = os.environ.get("PATH", "")
     if sys.platform == "win32":
@@ -141,71 +139,10 @@ def capture_terminal_path() -> str:
         if out.returncode == 0 and out.stdout.strip():
             terminal = out.stdout.strip().splitlines()[-1]
             entries = dict.fromkeys(e for e in (terminal + os.pathsep + fallback).split(os.pathsep) if e)
-            return with_node_fallback(os.pathsep.join(entries))
+            return os.pathsep.join(entries)
     except Exception:
         pass
-    return with_node_fallback(fallback)
-
-
-def _version_key(name: str) -> tuple[int, ...]:
-    """``v24.13.1`` → ``(24, 13, 1)``; anything else sorts below every version."""
-    try:
-        return tuple(int(part) for part in name.lstrip("v").split("."))
-    except ValueError:
-        return ()
-
-
-def node_manager_bins() -> list[str]:
-    """Bin dirs holding a `node` that a version manager installed, best first.
-
-    Volta first: its `node` is a shim that already picks the person's chosen
-    version. Then every nvm/fnm install, newest version first. A version
-    manager only puts its node on PATH from the person's shell dotfiles, and
-    that can fail even in a terminal — nvm whose `default` alias names a
-    version that is not installed activates nothing — so the installs are read
-    off the disk instead. Unix only: Windows' nvm/volta put their dir on the
-    registry PATH, which ``_windows_registry_path`` already reads.
-    """
-    if sys.platform == "win32":
-        return []
-    home = os.path.expanduser("~")
-    volta = os.path.join(os.environ.get("VOLTA_HOME") or os.path.join(home, ".volta"), "bin")
-    shims = [volta] if os.path.isfile(os.path.join(volta, "node")) else []
-    roots = [
-        # nvm: $NVM_DIR/versions/node/v24.13.1/bin
-        (os.path.join(os.environ.get("NVM_DIR") or os.path.join(home, ".nvm"), "versions", "node"), "bin"),
-    ]
-    fnm_dirs = [os.environ.get("FNM_DIR") or ""] + [
-        os.path.join(home, ".local", "share", "fnm"),
-        os.path.join(home, "Library", "Application Support", "fnm"),
-        os.path.join(home, ".fnm"),
-    ]
-    # fnm: $FNM_DIR/node-versions/v24.13.1/installation/bin
-    roots += [(os.path.join(d, "node-versions"), os.path.join("installation", "bin")) for d in fnm_dirs if d]
-    versioned: list[tuple[tuple[int, ...], str]] = []
-    for root, bin_rel in roots:
-        try:
-            names = os.listdir(root)
-        except OSError:
-            continue
-        for name in names:
-            bin_dir = os.path.join(root, name, bin_rel)
-            if os.path.isfile(os.path.join(bin_dir, "node")):
-                versioned.append((_version_key(name), bin_dir))
-    versioned.sort(key=lambda item: item[0], reverse=True)
-    return shims + list(dict.fromkeys(bin_dir for _, bin_dir in versioned))
-
-
-def with_node_fallback(path: str) -> str:
-    """``path``, plus the best version-manager Node.js dir at the END when no
-    `node` resolves on it — so a node already on PATH keeps winning, and one
-    only a version manager knows about is still found. Idempotent."""
-    if shutil.which("node", path=path):
-        return path
-    bins = node_manager_bins()
-    if not bins:
-        return path
-    return os.pathsep.join(e for e in (path, bins[0]) if e)
+    return fallback
 
 
 def probe(executables: list[str]) -> dict:

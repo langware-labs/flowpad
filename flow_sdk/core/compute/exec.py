@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from flow_sdk.core.capabilities.env_probe import with_node_fallback
+from flow_sdk.core.capabilities.discovery import terminal_path
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
@@ -99,11 +99,17 @@ async def run_shell(
     platform = platform or sys.platform
     # Unbuffered Python: stdout is a pipe here, so Python block-buffers it, and
     # the kill on a timeout drops the buffer — a step that printed and then hung
-    # would report nothing at all. The caller's env still wins.
-    env = {**os.environ, "PYTHONUNBUFFERED": "1", **flow_env(), **(extra_env or {})}
-    # A wizard's "is Node.js installed?" check must see a node a version manager
-    # installed, not only the one on the PATH this backend was launched with.
-    env["PATH"] = with_node_fallback(env.get("PATH", ""))
+    # would report nothing at all. PATH is the one a terminal would have, so a
+    # check sees a tool the person installed through their dotfiles (nvm, pyenv,
+    # Homebrew) and not only what this backend was launched with. The caller's
+    # env still wins.
+    env = {
+        **os.environ,
+        "PATH": terminal_path(),
+        "PYTHONUNBUFFERED": "1",
+        **flow_env(),
+        **(extra_env or {}),
+    }
     t0 = time.monotonic()
     try:
         proc = await _spawn(command, cwd=str(workdir), env=env, platform=platform)

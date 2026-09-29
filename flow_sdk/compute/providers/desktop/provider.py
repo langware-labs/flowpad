@@ -27,7 +27,7 @@ import psutil
 
 from flow_sdk import toplog
 from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
-from flow_sdk.core.capabilities.env_probe import with_node_fallback
+from flow_sdk.core.capabilities.discovery import terminal_path
 from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import ComputeNodeInfo
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize
@@ -112,6 +112,11 @@ def _build_interactive_pty_env(
         env["COLORTERM"] = "truecolor"
     env["FLOWPAD_PTY_SESSION_ID"] = session_id
 
+    # The same PATH the wizard's checks run against, so a `node`/`npm` it found
+    # (nvm, Homebrew, …) is the one this terminal runs — a CLI spawned here
+    # directly runs no dotfiles and has nothing else to find it by.
+    env["PATH"] = terminal_path(env.get("PATH"))
+
     # Fallback Python for the in-app terminal: when the machine has no real
     # `python` on PATH, resolve it to THIS backend's venv (the uv-managed
     # interpreter). An installed Python is left in charge. On Windows the Store
@@ -120,8 +125,6 @@ def _build_interactive_pty_env(
     fallback = _python_fallback_path(env.get("PATH"))
     if fallback is not None:
         env["PATH"] = fallback
-    # Same for Node.js: one a version manager installed, when none is on PATH.
-    env["PATH"] = with_node_fallback(env.get("PATH", ""))
 
     if extra_env:
         env.update(extra_env)

@@ -45,6 +45,42 @@ _VALUES: dict[str, CapabilityValue] = {}
 _DISCOVERED_ONCE = asyncio.Event()
 _DISCOVERY_LOCK = asyncio.Lock()
 
+# The PATH a terminal would have, as the last sweep's probe captured it. The
+# sweep already pays for the login shell; keeping its answer is what lets a
+# command Flowpad runs see what the person's own terminal sees.
+_TERMINAL_PATH: str | None = None
+
+
+def terminal_path(base: str | None = None) -> str:
+    """*base* (default: this process's PATH), extended with every dir a
+    terminal would add — as of the last sweep.
+
+    The ONE answer to "where does `node` (or any tool) live", for everything
+    Flowpad runs: a wizard's check (`run_shell`), the in-app terminal and a
+    worker all resolve through it, so what a check found installed is what the
+    person then runs — never a "node: command not found" after it said yes.
+
+    A backend launched from the Dock/Finder/Start Menu inherits a minimal PATH,
+    without the dirs the person's dotfiles add (nvm/fnm/volta/asdf/mise, pyenv,
+    Homebrew, ~/.cargo/bin). A command run against it reports a tool the person
+    can run in any terminal as missing; one run against this does not. No
+    per-tool knowledge: whatever the terminal resolves, this resolves.
+
+    Appended, never prepended: what already resolved keeps resolving to the
+    same binary — a dev backend's own venv `flow` is not shadowed by an
+    installed one the terminal happens to list first.
+    """
+    own = os.environ.get("PATH", "") if base is None else base
+    # One entry per DIRECTORY, not per spelling: on Windows `C:\Tools`,
+    # `c:\tools` and `C:\Tools\` are one dir, and the registry PATH the probe
+    # reads repeats most of the process's own — adding them again would only
+    # grow a PATH that Windows caps.
+    entries: dict[str, str] = {}
+    for entry in (own + os.pathsep + (_TERMINAL_PATH or "")).split(os.pathsep):
+        if entry:
+            entries.setdefault(os.path.normcase(os.path.normpath(entry)), entry)
+    return os.pathsep.join(entries.values())
+
 
 def get_capability_value(kind: str) -> CapabilityValue | None:
     """The last discovered value for ``kind`` (None = never discovered)."""
@@ -205,6 +241,11 @@ async def _run_discovery_inner(kinds: list[str] | None) -> dict[str, CapabilityV
                 if isinstance(candidate, CliCapabilityRunner):
                     cli_executables.add(candidate.executable)
     probe = await _run_env_probe(sorted(cli_executables))
+    if not probe.get("fallback"):
+        # A probe that fell back only knows this process's PATH, which
+        # `terminal_path` already answers with — never let it replace a real capture.
+        global _TERMINAL_PATH
+        _TERMINAL_PATH = probe.get("path") or _TERMINAL_PATH
 
     discovered: dict[str, CapabilityValue] = {}
     concrete = [r for r in runners if not isinstance(r, CapabilityReferenceRunner)]
