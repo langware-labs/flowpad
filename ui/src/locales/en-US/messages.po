@@ -17655,6 +17655,7 @@ msgstr "responses"
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/journey/JourneyTray.tsx
@@ -22031,6 +22032,10 @@ msgstr "This sandbox hasn't been started yet"
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox loads code from a private repository."
 msgstr "This sandbox loads code from a private repository."
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "This seems stuck. Restart to stop what is running and start over from the first step."
+#~ msgstr "This seems stuck. Restart to stop what is running and start over from the first step."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx

@@ -176,11 +176,21 @@ async def _prompt_and_wait(
     if not taken.ok:
         return taken
 
+    # `wait` polls every 2s and reports each time, so passing that straight on would stamp the row
+    # "alive" on every poll whether or not the agent did anything. Only a CHANGE in what the agent
+    # reports (its state, what it is on, its token and tool counters) is a sign of life.
+    last_seen: list[str] = []
+
+    def observe(worker_status: Any) -> None:
+        progress = _progress_for(process_id, worker_status)
+        seen = repr((progress.text, sorted(progress.counters.items(), key=repr)))
+        if last_seen and last_seen[0] == seen:
+            return
+        last_seen[:] = [seen]
+        on_status(progress)
+
     try:
-        await process.wait(
-            timeout=timeout_seconds,
-            on_status=((lambda ws: on_status(_progress_for(process_id, ws))) if on_status is not None else None),
-        )
+        await process.wait(timeout=timeout_seconds, on_status=observe if on_status is not None else None)
     except TimeoutError:
         return PromptResult.not_yet(
             f"The agent did not finish within {timeout_seconds:.0f}s.",

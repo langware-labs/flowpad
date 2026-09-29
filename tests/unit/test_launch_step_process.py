@@ -4,6 +4,7 @@ With ``process_id`` it prompts THAT process: a further turn in the same
 session, which is how a caller continues an agent op (``run_op(executor=…)``).
 Nothing is spawned for it.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -42,7 +43,6 @@ class _Process:
         return self.worker or WorkerStatus.IDLE
 
 
-
 @pytest.mark.asyncio
 async def test_launch_with_a_process_id_prompts_that_process(monkeypatch, tmp_path):
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -60,14 +60,22 @@ async def test_launch_with_a_process_id_prompts_that_process(monkeypatch, tmp_pa
     monkeypatch.setattr("flow_sdk.builtin.agent_registry.get_agent_local_deployment", no_spawn)
 
     result = await process_step.launch_step_process(
-        agent="provisioner", prompt="again", name="kafka", workdir=Path(tmp_path), executor="agentic_process-proc-1",
+        agent="provisioner",
+        prompt="again",
+        name="kafka",
+        workdir=Path(tmp_path),
+        executor="agentic_process-proc-1",
     )
     assert isinstance(result, PromptResult)
     assert result.ok and result.executor == "agentic_process-proc-1"
     assert process.prompts == ["again"]
 
     gone = await process_step.launch_step_process(
-        agent="provisioner", prompt="again", name="kafka", workdir=Path(tmp_path), executor="agentic_process-proc-9",
+        agent="provisioner",
+        prompt="again",
+        name="kafka",
+        workdir=Path(tmp_path),
+        executor="agentic_process-proc-9",
     )
     assert not gone.ok and gone.ran is False and "no longer exists" in gone.detail
 
@@ -86,13 +94,16 @@ async def test_a_turn_that_runs_out_of_time_says_so(monkeypatch, tmp_path):
 
     monkeypatch.setattr(AgenticProcess, "get_by_typeid", staticmethod(get_by_typeid))
     result = await process_step.launch_step_process(
-        agent="provisioner", prompt="again", name="kafka", workdir=Path(tmp_path), executor="agentic_process-proc-1",
+        agent="provisioner",
+        prompt="again",
+        name="kafka",
+        workdir=Path(tmp_path),
+        executor="agentic_process-proc-1",
     )
     # Busy, not finished: the executor is named so the caller knows WHICH
     # process is still running — and must not be prompted on top of itself.
     assert result.timed_out and result.exit_code is ExitCode.NOT_YET
     assert result.executor == "agentic_process-proc-1"
-
 
 
 @pytest.mark.asyncio
@@ -113,7 +124,50 @@ async def test_an_agent_that_ended_in_error_is_not_reported_as_done(monkeypatch,
 
     monkeypatch.setattr(AgenticProcess, "get_by_typeid", staticmethod(get_by_typeid))
     answer = await process_step.launch_step_process(
-        agent="provisioner", prompt="do it", name="kafka", workdir=Path(tmp_path), executor=process.typeid,
+        agent="provisioner",
+        prompt="do it",
+        name="kafka",
+        workdir=Path(tmp_path),
+        executor=process.typeid,
     )
     assert answer.exit_code is ExitCode.NOT_YET, answer.detail
     assert answer.executor == process.typeid
+
+
+@pytest.mark.asyncio
+async def test_only_a_change_in_what_the_agent_reports_counts_as_a_sign_of_life(monkeypatch, tmp_path):
+    """`wait` polls every 2s and reports each time. Forwarding every poll would stamp the row alive
+    whether or not the agent did anything; only a change (state, item, counters) is progress."""
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.core.compute import process_step
+
+    process = _Process()
+    reports = iter(["a", "a", "a", "b", "b"])
+
+    async def wait(timeout=None, on_status=None):
+        for status in reports:
+            on_status(status)
+
+    process.wait = wait
+
+    async def get_by_typeid(typeid):
+        return process
+
+    monkeypatch.setattr(AgenticProcess, "get_by_typeid", staticmethod(get_by_typeid))
+    monkeypatch.setattr(
+        process_step,
+        "_progress_for",
+        lambda _pid, ws: process_step.ProcessProgress(text="working", counters={"tokens": ws}),
+    )
+    said = []
+    await process_step.launch_step_process(
+        agent="provisioner",
+        prompt="go",
+        name="x",
+        workdir=Path(tmp_path),
+        executor="agentic_process-proc-1",
+        on_status=said.append,
+    )
+    # Five polls, two distinct reports: the repeats said nothing.
+    assert [p.counters["tokens"] for p in said if p.text == "working"][-2:] == ["a", "b"]
+    assert sum(1 for p in said if p.text == "working") == 2

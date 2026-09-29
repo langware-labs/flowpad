@@ -37,7 +37,16 @@ import { useSideWindows } from '@src/navigation/useSideWindows';
 import { WizardDebugger } from './WizardDebugger';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
-import { agentExecutorOf, declinedByUser, rungTrail, stepStatus, useWizardRun } from './useWizardRun';
+import {
+  agentExecutorOf,
+  declinedByUser,
+  rungTrail,
+  silentForMs,
+  STUCK_AFTER_MS,
+  stepStatus,
+  useWizardRun,
+  WAITING_FOR_PERSON,
+} from './useWizardRun';
 import { LIVE_STATE, type WizardDoc } from './wizard-doc';
 
 /** The document beside `wizard.json` — the file the editor owns. */
@@ -74,17 +83,6 @@ const STEP_STYLE: Record<string, { Icon: typeof Circle; className: string }> = {
  *  own success sentence ("already satisfied"); showing it the same way as a
  *  failure would make every row look like it might need reading. */
 const ERROR_STATUSES = new Set(['failed', 'refused', 'not_found', 'busy', 'timed_out', 'not_started']);
-
-/** How long a running step's own activity node can sit with no new tick before
- *  it is worth telling someone — a real install (`apt-get`) legitimately takes
- *  a while, but an agent call that has printed nothing for this long is the
- *  same shape as the rate-limit/network hangs this was written after seeing. */
-/** What a step's live line says while it is parked on a question to the person
- *  (`compute_op/runner.py::_ask` — "<label>: waiting for you…"). Nothing is running then,
- *  so the row shows no spinner until the person answers. */
-const WAITING_FOR_PERSON = /waiting for you/i;
-
-const STUCK_AFTER_MS = 45_000;
 
 // Resolved at render, never at module scope: before bootstrap `iconForType`
 // answers lucide `FileText`, after it a FlowIcon wrapper. A capitalised
@@ -371,6 +369,9 @@ function WizardViewerBody({
     // to do once the call is accepted — `run_state`/the live activity tree
     // take over from here, the same way they do for any other run.
   }, [t, wizard]);
+  // Any step in flight has gone quiet for long enough to be worth saying so — offer to start the whole
+  // wizard over (a newer start replaces the one in flight, killing its shell and agent).
+  const anyStuck = isPopup && joinedSteps.some(({ live, outcome }) => silentForMs(live, outcome, now) > STUCK_AFTER_MS);
   const notYetStarted = isPopup && !starting && !runView.live && !state.result;
   // A settled run that fell short — a step failed, or the person declined one. Popup only: the
   // generic page has its own Run button.
@@ -517,14 +518,10 @@ function WizardViewerBody({
               ) : (
                 <Icon className={`h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
               );
-              // Told apart from a plain "still running" by TIME, not by a
-              // status the backend does not have: `live`'s own last tick is
-              // the same signal the footer chip already uses to grey a
-              // stalled row (`useActivity`'s `sinceLastTickMs`) — this just
-              // reads it off the node `useWizardRun` already fetched instead
-              // of subscribing again.
-              const liveTickAt = live ? Date.parse(live.updated_at || live.started_at || '') : NaN;
-              const stuckMs = status === 'running' && !Number.isNaN(liveTickAt) ? now - liveTickAt : 0;
+              // Told apart from a plain "still running" by TIME since the step's last real
+              // sign of life (`silentForMs`): the backend stamps it on command output and on a
+              // change in what the agent reports, not on every poll.
+              const stuckMs = silentForMs(live, outcome, now);
               const stuck = stuckMs > STUCK_AFTER_MS;
               return (
                 <li
@@ -643,6 +640,14 @@ function WizardViewerBody({
           <Button onClick={() => void startWizard()} disabled={starting} data-testid="wizard-start">
             {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             <Trans>Start</Trans>
+          </Button>
+        </div>
+      ) : null}
+
+      {anyStuck ? (
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={() => void startWizard()} data-testid="wizard-restart">
+            {wizard.restart_label || <Trans>Restart</Trans>}
           </Button>
         </div>
       ) : null}
