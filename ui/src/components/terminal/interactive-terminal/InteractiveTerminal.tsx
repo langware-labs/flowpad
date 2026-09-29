@@ -1350,7 +1350,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // two raw never matched, and the command was silently never typed.
     if (currentDock?.shellId !== sessionId) return;
     const ask = currentDock?.shellStartCommand ?? null;
-    if (!ask || startCommandRef.current === ask.command) return;
+    // The param is gone once consumed, so a LATER arrival carrying the same
+    // command (Run pressed twice on one code block) is a new ask, not a re-render.
+    if (!ask) {
+      startCommandRef.current = null;
+      return;
+    }
+    if (startCommandRef.current === ask.command) return;
     startCommandRef.current = ask.command;
     void (async () => {
       const { runInTerminal, prefillInTerminal } = await import('@src/terminal/run-in-terminal');
