@@ -18,7 +18,7 @@ msgstr ""
 msgid " — not set"
 msgstr " — not set"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid " · not secret"
 msgstr " · not secret"
 
@@ -32,8 +32,8 @@ msgid " · you are {0}"
 msgstr " · you are {0}"
 
 #: src/components/connections-manager/credential-rows-view.tsx
-msgid " (optional)"
-msgstr " (optional)"
+#~ msgid " (optional)"
+#~ msgstr " (optional)"
 
 #: src/components/connections-manager/credential-rows-view.tsx
 msgid " (value is in the other store)"
@@ -345,9 +345,9 @@ msgstr "{0} current · {1} stale · {2} partial · {3} error"
 #. placeholder {0}: connection.provider
 #. placeholder {0}: row.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "{0} deleted"
 msgstr "{0} deleted"
 
@@ -569,8 +569,8 @@ msgstr "{0} records on disk"
 
 #. placeholder {0}: saved.title
 #: src/components/agent-resources/AgentCredentialsSection.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "{0} saved"
 msgstr "{0} saved"
 
@@ -2468,7 +2468,7 @@ msgstr "Appended to the current worker's prompt queue, tagged with this message.
 msgid "Applied to each member's own default endpoint; a member's budget can only be narrower."
 msgstr "Applied to each member's own default endpoint; a member's budget can only be narrower."
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "Applies to"
 msgstr "Applies to"
 
@@ -5264,9 +5264,9 @@ msgstr "Could not delete"
 #. placeholder {0}: e.name
 #. placeholder {0}: org.name
 #: src/components/agent-resources/AgentCredentialsSection.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/data-sources/use-source-delete.ts
 #: src/components/llm-endpoints/LlmEndpointsView.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
@@ -6489,13 +6489,13 @@ msgstr "Delegating to"
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/assets/delete-asset-modal.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/MessageBubble.tsx
+#: src/components/credentials-view/CredentialView.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/data-sources/use-source-delete.ts
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
@@ -6559,8 +6559,8 @@ msgstr "Delete {0} credential?"
 #. placeholder {0}: pendingDeleteCredential?.title ?? ''
 #: src/components/agent-resources/AgentCredentialsSection.tsx
 #: src/components/assets/delete-asset-modal.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Delete {0}?"
@@ -7588,9 +7588,9 @@ msgstr "Edges by kind"
 
 #: src/components/agents/ProjectAgentsStrip.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/data-sources/SourceMenu.tsx
 #: src/components/llm-endpoints/LlmEndpointDetail.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
@@ -8138,7 +8138,7 @@ msgstr "every project"
 msgid "Every project is selected"
 msgstr "Every project is selected"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "every project, unless one declares its own"
 msgstr "every project, unless one declares its own"
 
@@ -9285,7 +9285,7 @@ msgstr "Forwarded from another conversation"
 #~ msgstr "Found in .env.local in your home folder"
 
 #. placeholder {0}: v.found_in
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "found in {0}, not where it is declared"
 msgstr "found in {0}, not where it is declared"
 
@@ -10133,7 +10133,7 @@ msgstr "How privacy modes work"
 msgid "How to finish setup"
 msgstr "How to finish setup"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "How to get the values"
 msgstr "How to get the values"
 
@@ -10835,8 +10835,8 @@ msgid "It lives in git. Clone it, and open it in the FlowPad desktop app."
 msgstr "It lives in git. Clone it, and open it in the FlowPad desktop app."
 
 #: src/components/agent-resources/AgentCredentialsSection.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "It may be only partly removed."
 msgstr "It may be only partly removed."
 
@@ -10869,7 +10869,7 @@ msgid "its own servers"
 msgstr "its own servers"
 
 #: src/components/agent-resources/AgentCredentialsSection.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "Its values are removed from where they are stored; runs that read them will no longer find them."
 msgstr "Its values are removed from where they are stored; runs that read them will no longer find them."
 
@@ -12357,7 +12357,7 @@ msgstr "Minor"
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "missing"
 msgstr "missing"
 
@@ -12436,7 +12436,7 @@ msgid "Model pinned to {0}"
 msgstr "Model pinned to {0}"
 
 #. placeholder {0}: source.lm_provider
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "model provider · {0}"
 msgstr "model provider · {0}"
 
@@ -15137,7 +15137,7 @@ msgstr "Operation failed"
 msgid "Optional — leave blank for home"
 msgstr "Optional — leave blank for home"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "optional · not set"
 msgstr "optional · not set"
 
@@ -15291,7 +15291,7 @@ msgstr "Output: {0}"
 msgid "Overfetch"
 msgstr "Overfetch"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "Overridden"
 msgstr "Overridden"
 
@@ -16024,7 +16024,7 @@ msgstr "Profile Picture:"
 msgid "Progress"
 msgstr "Progress"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "project"
 msgstr "project"
@@ -18530,6 +18530,11 @@ msgstr "Search…"
 msgid "Searching"
 msgstr "Searching"
 
+#: src/components/chats-navigator/ChatsList.tsx
+#: src/components/chats-navigator/ChatsList.tsx
+msgid "Searching inside sessions…"
+msgstr "Searching inside sessions…"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/spotlight/Spotlight.tsx
@@ -18998,7 +19003,7 @@ msgid "Sessions that used this skill — analyze, improve, commit"
 msgstr "Sessions that used this skill — analyze, improve, commit"
 
 #: src/components/agent-resources/AgentCredentialsSection.tsx
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "set"
 msgstr "set"
 
@@ -19097,8 +19102,8 @@ msgstr "Set up project"
 msgid "Set up team budget"
 msgstr "Set up team budget"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
 #: src/components/connections-manager/credential-rows-view.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "Set values"
 msgstr "Set values"
 
@@ -21187,9 +21192,13 @@ msgstr "the other participant"
 msgid "The project could not be installed."
 msgstr "The project could not be installed."
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "The project declares the same variables; its values are the ones its runs get."
 msgstr "The project declares the same variables; its values are the ones its runs get."
+
+#: src/components/credentials-view/RequirementChip.tsx
+msgid "The project does not work without it"
+msgstr "The project does not work without it"
 
 #. placeholder {0}: bucketRowLabel(bucket)
 #: src/components/terminal/project-list-menu.tsx
@@ -21320,7 +21329,7 @@ msgstr "The value is stored in your operating system keychain and never readable
 #~ msgid "The value is written to this project's .env.local and stays on this machine."
 #~ msgstr "The value is written to this project's .env.local and stays on this machine."
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "the vault"
 msgstr "the vault"
 
@@ -21501,7 +21510,7 @@ msgstr "This conversation no longer exists or is unavailable."
 msgid "This could not be prepared for download."
 msgstr "This could not be prepared for download."
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "This credential no longer exists."
 msgstr "This credential no longer exists."
 
@@ -21783,7 +21792,7 @@ msgstr "This project's agent could not start"
 msgid "this project's own desk"
 msgstr "this project's own desk"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "this project's runs"
 msgstr "this project's runs"
 
@@ -22446,6 +22455,10 @@ msgstr "Turn failed"
 msgid "Turn on a scope above to see its assets."
 msgstr "Turn on a scope above to see its assets."
 
+#: src/components/credentials-view/RequirementChip.tsx
+msgid "Turns a feature or an integration on"
+msgstr "Turns a feature or an integration on"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Two quick steps in your browser:"
 msgstr "Two quick steps in your browser:"
@@ -22933,7 +22946,7 @@ msgstr "Used by"
 msgid "Used in transcript"
 msgstr "Used in transcript"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "user"
 msgstr "user"
 
@@ -23071,7 +23084,7 @@ msgstr "Values are kept in this project's {0}"
 msgid "Values for"
 msgstr "Values for"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 msgid "Values live in"
 msgstr "Values live in"
 
@@ -23093,7 +23106,7 @@ msgstr "Values the hub holds"
 msgid "Variable name"
 msgstr "Variable name"
 
-#: src/components/assets/editor/agent-profile/CredentialChild.tsx
+#: src/components/credentials-view/CredentialView.tsx
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Variables"
 msgstr "Variables"
