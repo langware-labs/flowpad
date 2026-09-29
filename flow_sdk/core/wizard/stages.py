@@ -5,6 +5,7 @@ OK (``state.run_key``), ``locked`` while an earlier stage is not done, else ``pe
 record a run writes is the only record, and re-running a wizard (resume) is the only way to move it.
 Shared by every declaring type (a data source through its driver, a credential through itself).
 """
+
 from __future__ import annotations
 
 from typing import Iterable
@@ -26,15 +27,23 @@ async def stage_states(stages: Iterable[SetupStageSpec], target: str) -> list[Se
     out: list[SetupStageStateSpec] = []
     earlier_done = True
     for stage in stages:
-        wizard = await Wizard.get_one({"name": stage.wizard})
+        wizard = await Wizard.by_name(stage.wizard)
         result = read_result(run_key(str(wizard.id), target)) if wizard is not None else None
         if result is not None and result.ok:
             state = STAGE_DONE
         else:
             state = STAGE_PENDING if earlier_done else STAGE_LOCKED
-        detail = result.detail if result is not None else ("" if wizard is not None else f"no wizard named {stage.wizard!r}")
-        out.append(SetupStageStateSpec(
-            stage=stage.stage, label=stage.display_label, wizard=stage.wizard, state=state, detail=detail,
-        ))
+        detail = (
+            result.detail if result is not None else ("" if wizard is not None else f"no wizard named {stage.wizard!r}")
+        )
+        out.append(
+            SetupStageStateSpec(
+                stage=stage.stage,
+                label=stage.display_label,
+                wizard=stage.wizard,
+                state=state,
+                detail=detail,
+            )
+        )
         earlier_done = earlier_done and state == STAGE_DONE
     return out
