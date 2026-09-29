@@ -3776,6 +3776,10 @@ msgstr "Choose"
 msgid "Choose a document from the sidebar to view its contents"
 msgstr "Choose a document from the sidebar to view its contents"
 
+#: src/components/credentials/FileValueInput.tsx
+msgid "Choose a file instead"
+msgstr "Choose a file instead"
+
 #: src/components/install/AddAssetDialog.tsx
 msgid "Choose a project"
 msgstr "Choose a project"
@@ -3811,6 +3815,10 @@ msgstr "Choose avatar image"
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Choose branch"
 msgstr "Choose branch"
+
+#: src/components/credentials/FileValueInput.tsx
+msgid "Choose file"
+msgstr "Choose file"
 
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
@@ -4856,6 +4864,7 @@ msgid "context tokens"
 msgstr "context tokens"
 
 #: src/components/GitHubConnectionDialog.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/survey/SurveyView.tsx
 msgid "Continue"
 msgstr "Continue"
@@ -8201,6 +8210,10 @@ msgstr "Everything is already up to date."
 msgid "Everything is in place."
 msgstr "Everything is in place."
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Everything is set up."
+msgstr "Everything is set up."
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
 msgstr "Everything the budget above allows"
@@ -8837,6 +8850,10 @@ msgstr "File"
 #: src/components/assets/editor/DocumentSaveNotice.tsx
 msgid "File changed outside this editor. Your edits are preserved."
 msgstr "File changed outside this editor. Your edits are preserved."
+
+#: src/components/credentials/FileValueInput.tsx
+msgid "File content"
+msgstr "File content"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "File mtime is newer than DB updated_date"
@@ -15435,6 +15452,10 @@ msgstr "Paste API key"
 msgid "Paste code from browser"
 msgstr "Paste code from browser"
 
+#: src/components/credentials/FileValueInput.tsx
+msgid "Paste instead"
+msgstr "Paste instead"
+
 #: src/pages/discover-page/CommandBlock.tsx
 msgid "Paste into a terminal on a machine running Flowpad and signed in. Or use Install."
 msgstr "Paste into a terminal on a machine running Flowpad and signed in. Or use Install."
@@ -19039,6 +19060,10 @@ msgstr "Set up"
 msgid "Set up (runs an agentic process)"
 msgstr "Set up (runs an agentic process)"
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "Set up {projectName}"
+msgstr "Set up {projectName}"
+
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 msgid "Set up {title}"
 msgstr "Set up {title}"
@@ -20120,6 +20145,7 @@ msgid "Star chat"
 msgstr "Star chat"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
@@ -23511,6 +23537,10 @@ msgstr "What this machine's assistants are funded by right now"
 msgid "What this project has published, and what it could."
 msgstr "What this project has published, and what it could."
 
+#: src/components/project-setup/ProjectSetupDialog.tsx
+msgid "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+msgstr "What this project needs before it can run here. Close it any time — starting again picks up where it stopped."
+
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "What to look at"
 msgstr "What to look at"
@@ -23702,6 +23732,7 @@ msgid "Working Tree"
 msgstr "Working Tree"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
+#: src/components/project-setup/ProjectSetupDialog.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
