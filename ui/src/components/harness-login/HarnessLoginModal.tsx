@@ -955,13 +955,13 @@ export function HarnessDetail({
   // and the "harness is required" dialog offer — one source, three surfaces.
   const installCommand = capability?.install_command ?? null;
 
-  // Types the command at a prompt and stops; the user presses Enter. Dismisses
+  // Types the command at a prompt and submits it. Dismisses
   // the modal on the way out so the terminal it just opened is what they see —
   // leaving a dialog over the thing it told them to look at reads as a bug.
   const tryAutoInstall = useCallback(() => {
     if (!installCommand) return;
     onDone();
-    void navigation.openNewShell({ prefillCommand: installCommand, viewMode: ViewMode.Advanced });
+    void navigation.openNewShell({ startCommand: installCommand, viewMode: ViewMode.Advanced });
   }, [installCommand, navigation, onDone]);
 
   return (

@@ -188,3 +188,21 @@ def test_the_trust_answer_reaches_the_ui_and_is_not_the_system_flag():
 
     outside = Wizard(name="Cloned", asset_ref="/tmp/some-repo/agentic-assets/wizard/x")
     assert outside.shipped is False
+
+
+def test_a_friendlier_label_and_the_popup_presentation_reach_the_ui():
+    """`llm-setup` sets both, precisely because it is the one wizard a person
+    meets before asking for anything: `name` stays the stable identifier every
+    other document and test references it by, `label` is what a person reads,
+    and `popup` is why it shows as a dialog rather than a full editor page."""
+    from flow_sdk.builtin.wizard import Wizard
+
+    setup = Wizard(name="llm-setup", asset_ref=str(LLM_SETUP))
+    assert setup.label == "Finish setting up Flowpad"
+    assert setup.popup is True
+
+    # Neither is universal: a wizard whose document sets neither falls back to
+    # its own `name`, and defaults to a full page.
+    plain = Wizard(name="llm-setup-python", asset_ref=str(WIZARDS / "llm-setup-python"))
+    assert plain.label == "llm-setup-python"
+    assert plain.popup is False

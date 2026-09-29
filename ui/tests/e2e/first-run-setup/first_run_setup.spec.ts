@@ -60,7 +60,7 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
   // By test id, not by role: an install question may already be up as a modal,
   // which hides the page behind it from the accessibility tree.
-  await expect(page.getByTestId('wizard-viewer')).toContainText('llm-setup');
+  await expect(page.getByTestId('wizard-viewer')).toContainText('Finish setting up Flowpad');
 
   // 3. All four tools are on the page.
   for (const id of STEPS) {

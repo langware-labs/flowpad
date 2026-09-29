@@ -97,9 +97,7 @@ class WizardStepSpec(DataSpec):
     @model_validator(mode="after")
     def _legal(self) -> "WizardStepSpec":
         if self.on_fail not in ON_FAIL_VALUES:
-            raise ValueError(
-                f"step {self.id!r}: on_fail must be one of {ON_FAIL_VALUES}, got {self.on_fail!r}"
-            )
+            raise ValueError(f"step {self.id!r}: on_fail must be one of {ON_FAIL_VALUES}, got {self.on_fail!r}")
         return self
 
     @property
@@ -117,10 +115,19 @@ class WizardSpec(DataSpec):
     spec_kind: ClassVar[str] = "wizard"
 
     name: str = ""
+    #: A friendlier name than `name` for a person to read, same split as
+    #: `WizardStepSpec.id`/`label` — `name` is the stable identifier other
+    #: documents and code reference by, `label` is what shows on screen. Falls
+    #: back to `name` when unset, so most wizards need no second string.
+    label: str = ""
     description: str = ""
     version: int = 1
     enabled: bool = True
     icon: str = "Wand2"
+    #: Show this wizard as a dismissible overlay instead of a full editor page.
+    #: For a first-run/onboarding wizard someone glances at and can set aside —
+    #: never for one they are meant to sit and edit beside its own document.
+    popup: bool = False
     #: A CONVERSATIONAL wizard: one agent talks to the person for the whole run,
     #: and the caller supplies the prompt and payload at launch. It declares its
     #: driver here and has NO steps — there is nothing to sequence, because the
@@ -150,9 +157,7 @@ class WizardSpec(DataSpec):
                 "conversational wizard (agent, no steps) or a stepped one (steps, no agent)"
             )
         if not self.agent and not self.steps:
-            raise ValueError(
-                f"wizard {self.name!r} declares neither an agent nor any steps, so nothing can run it"
-            )
+            raise ValueError(f"wizard {self.name!r} declares neither an agent nor any steps, so nothing can run it")
         return self
 
 
