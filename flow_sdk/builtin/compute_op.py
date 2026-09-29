@@ -89,8 +89,10 @@ class ComputeOp(Entity):
 
     @classmethod
     async def by_name(cls, name: str) -> Optional["ComputeOp"]:
-        """The op named ``name``, or None."""
-        return await cls.get_one({"name": name})
+        """The op named ``name``, or None — this install's copy when a project shadows it."""
+        from flow_sdk.builtin.shipped_lookup import by_name_preferring_this_install  # noqa: PLC0415
+
+        return await by_name_preferring_this_install(cls, name)
 
     def spec(self) -> Optional["ComputeOpSpec"]:
         """The parsed document — disk is truth, through the generic entity-document

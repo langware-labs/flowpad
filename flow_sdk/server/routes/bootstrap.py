@@ -1669,7 +1669,7 @@ async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
     from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD  # noqa: PLC0415
 
-    wizard = await Wizard.get_one({"name": LLM_SETUP_WIZARD})
+    wizard = await Wizard.by_name(LLM_SETUP_WIZARD)
     wizard_result = None
     if wizard is not None:
         result = await wizard.run(check_only=True)
