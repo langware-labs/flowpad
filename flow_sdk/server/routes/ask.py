@@ -63,6 +63,8 @@ class AskRequest(BaseModel):
     cancel_label: str = ""
     #: The answer is a secret: the window masks it.
     secret: bool = False
+    #: The answer is a file's content: the window offers a file picker and a paste box.
+    file: bool = False
     #: The Wizard entity this question is a step of, when it is one.
     wizard_id: str = ""
     #: How a person finds the value (the op's ``setup.md``).
@@ -83,6 +85,7 @@ async def ask_for_another_process(body: AskRequest):
         submit_label=body.submit_label,
         cancel_label=body.cancel_label,
         secret=body.secret,
+        file=body.file,
         wizard_id=body.wizard_id,
         guide=body.guide,
     )

@@ -65,6 +65,8 @@ class Question:
     cancel_label: str = ""
     #: The answer is a secret: whoever draws the field masks it, and nothing echoes it.
     secret: bool = False
+    #: The answer is a file's content: whoever draws the field offers a file picker and a paste box.
+    file: bool = False
     #: The Wizard entity this question is a step of, when it is one — its
     #: TypeId's uuid half. Empty for an op run outside any wizard. This is the
     #: one thread back from a settled question to the run that is still going:
@@ -91,6 +93,7 @@ class Question:
             "kind": self.shape if isinstance(self.shape, str) else None,
             "fields": self.fields,
             "secret": self.secret,
+            "file": self.file,
             "wizard_id": self.wizard_id,
             "run": self.run,
             "guide": self.guide,
@@ -145,6 +148,7 @@ def open_question(
     submit_label: str = "",
     cancel_label: str = "",
     secret: bool = False,
+    file: bool = False,
     wizard_id: str = "",
     guide: str = "",
 ) -> Question:
@@ -162,6 +166,7 @@ def open_question(
         submit_label=submit_label,
         cancel_label=cancel_label,
         secret=secret,
+        file=file,
         wizard_id=wizard_id,
         run=ASKING_RUN.get(),
         guide=guide,
@@ -255,6 +260,7 @@ async def ask_person(
     submit_label: str = "",
     cancel_label: str = "",
     secret: bool = False,
+    file: bool = False,
     wizard_id: str = "",
     guide: str = "",
 ) -> "AskResult":
@@ -276,6 +282,7 @@ async def ask_person(
         submit_label=submit_label,
         cancel_label=cancel_label,
         secret=secret,
+        file=file,
         wizard_id=wizard_id,
         guide=guide,
     )
@@ -324,6 +331,7 @@ async def ask_through_backend(
     submit_label: str = "",
     cancel_label: str = "",
     secret: bool = False,
+    file: bool = False,
     wizard_id: str = "",
     guide: str = "",
 ) -> "AskResult":
@@ -347,6 +355,7 @@ async def ask_through_backend(
         "submit_label": submit_label,
         "cancel_label": cancel_label,
         "secret": secret,
+        "file": file,
         "wizard_id": wizard_id,
         "guide": guide,
     }

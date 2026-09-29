@@ -86,6 +86,19 @@ def as_requirement(value: Any) -> Any:
     return value
 
 
+class CredentialVarKind(StrEnum):
+    """What a credential variable's value IS.
+
+    ``text``: the value itself (an API key, a URL). ``file``: a file's content (a
+    service-account key JSON) — kept as a file on this machine, and the variable
+    holds that file's path, which is what tools like ``GOOGLE_APPLICATION_CREDENTIALS``
+    expect.
+    """
+
+    TEXT = "text"
+    FILE = "file"
+
+
 #: A var's ``required`` field: the enum, reading a pre-enum bool on the way in.
 Requirement = Annotated[CredentialRequirement, BeforeValidator(as_requirement)]
 

@@ -21,15 +21,19 @@ Values travel ask → the run's values → the environment of ``flow credentials
 """
 from __future__ import annotations
 
+import asyncio
 import shlex
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from flow_sdk.schema.data_spec.compute_op_spec import ComputeOpSpec
+from flow_sdk.schema.data_spec.credential_contract import CredentialVarKind
 from flow_sdk.schema.data_spec.project_setup_spec import (
     REQUIREMENT_GAP,
     REQUIREMENT_OAUTH,
     REQUIREMENT_PACK,
+    ProjectReadinessSpec,
     SetupRequirementSpec,
     SetupVarSpec,
     input_name,
@@ -73,7 +77,8 @@ def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequir
         kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup, help_url=row.help_url,
         vars=[
             SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
-                         pattern=v.pattern, secret=v.secret, present=v.present)
+                         pattern=v.pattern, secret=v.secret, file=v.kind is CredentialVarKind.FILE,
+                         present=v.present)
             for v in row.vars if v.is_must
         ],
         satisfied=row.state == "connected", used_by=used_by,
@@ -89,7 +94,7 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
         setup=setup, help_url=template.help_url or "", declared=False, satisfied=False, used_by=used_by,
         vars=[
             SetupVarSpec(env_var=name, label=var.label, hint=var.hint, help_url=var.help_url,
-                         pattern=var.pattern, secret=var.secret)
+                         pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE)
             for name, var in (template.vars or {}).items() if name in required
         ],
         note="" if setup.strip() else "no setup instructions: AI setup unavailable",
@@ -248,7 +253,7 @@ def compile_setup(
                 add({
                     "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
                     "subkind": "ask", "output_spec_kind": "string",
-                    "exe_data": {"prompt": _ask_prompt(req, var, ai=with_ai), "secret": var.secret},
+                    "exe_data": {"prompt": _ask_prompt(req, var, ai=with_ai), "secret": var.secret, "file": var.file},
                     # The goal's own check: a re-run (resume) asks nobody once the values are stored.
                     "completion_check": check,
                 }, bind=input_name(req.name, var.env_var))
@@ -271,3 +276,89 @@ def compile_setup(
         "icon": "KeyRound", "steps": steps,
     })
     return wizard, ops
+
+
+# ── 3. readiness, and the setup run the app starts ────────────────────────────
+
+#: The kind of run, standing in for a wizard id: ``execute_wizard`` keys the slot on it and the project.
+SETUP_WIZARD_ID = "project-setup"
+#: The runs this backend started, by project — one at a time per project (the slot says so too).
+_RUNS: dict[str, "asyncio.Task"] = {}
+
+
+def to_do(req: SetupRequirementSpec) -> bool:
+    """Still needs someone: a pack with a MUST value unset, or a connection known not to hold.
+
+    A pack is judged by its MUST values alone — ``satisfied`` (the credential's state) also waits on
+    OPTIONAL ones when it has no MUST. A connection only its check can confirm (``None``) is left to
+    the wizard's own check; a gap is nobody's to run."""
+    if req.kind == REQUIREMENT_PACK:
+        return bool(req.missing)
+    if req.kind == REQUIREMENT_OAUTH:
+        return req.satisfied is False
+    return False
+
+
+async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectReadinessSpec:
+    """What the footer warning reads: ready, or what is left and what nobody can set up here."""
+    requirements = await collect_requirements(project, deployment_id)
+    left = [r for r in requirements if to_do(r)]
+    return ProjectReadinessSpec(
+        project_id=str(project.id), ready=not left, to_do=left,
+        gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],
+    )
+
+
+def setup_run_address(project_id: str) -> str:
+    """The run's activity address — what its questions carry (``Question.run``) and a screen claims."""
+    from flow_sdk.core.wizard.execute import activity_path_for  # noqa: PLC0415
+
+    return activity_path_for(SETUP_WIZARD_ID, "", project_id)
+
+
+async def start_setup(project: "Project", *, ai: bool = True) -> str:
+    """Start the project's setup in the background and return its address at once.
+
+    Its questions reach the app (``ask_person`` → the open tab), not a terminal. A run already going
+    for this project is joined, never doubled."""
+    from flow_sdk.core.wizard.execute import execute_wizard  # noqa: PLC0415
+    from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
+
+    pid = str(project.id)
+    running = _RUNS.get(pid)
+    if running is None or running.done():
+        requirements = [r for r in await collect_requirements(project) if to_do(r)]
+        wizard, ops = compile_setup(pid, requirements, ai=ai)
+
+        async def resolve(name: str) -> Optional[Resolved]:
+            return Resolved(ops[name], True) if name in ops else None
+
+        mount = str(getattr(project, "fs_storage_mount_path", "") or "")
+        task = asyncio.create_task(execute_wizard(
+            SETUP_WIZARD_ID, wizard, "", trusted=True, subject_entity=f"project-{pid}", target=pid,
+            resolve_op=resolve, cwd=Path(mount) if mount else None,
+        ))
+        task.add_done_callback(_log_failure)
+        _RUNS[pid] = task
+    return setup_run_address(pid)
+
+
+def _log_failure(task: "asyncio.Task") -> None:
+    """A run that raised is recorded nowhere else — say it, rather than let it vanish."""
+    if not task.cancelled() and task.exception() is not None:
+        import logging  # noqa: PLC0415
+
+        logging.getLogger(__name__).error("project setup run failed", exc_info=task.exception())
+
+
+def setup_run(project_id: str) -> dict[str, Any]:
+    """The run's live state: whether it is going, and its steps so far (``run.json``, no step output)."""
+    from flow_sdk.core.wizard.state import read_state, run_key, strip_heavy  # noqa: PLC0415
+
+    task = _RUNS.get(project_id)
+    result = read_state(run_key(SETUP_WIZARD_ID, project_id)).get("result")
+    return {
+        "run": setup_run_address(project_id),
+        "running": task is not None and not task.done(),
+        "result": strip_heavy(result) if isinstance(result, dict) else None,
+    }

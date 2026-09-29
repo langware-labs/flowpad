@@ -8,7 +8,12 @@ from typing import Optional
 
 from pydantic import ConfigDict
 
-from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT, CredentialRequirement, Requirement
+from flow_sdk.schema.data_spec.credential_contract import (
+    DEFAULT_ENVIRONMENT,
+    CredentialRequirement,
+    CredentialVarKind,
+    Requirement,
+)
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
@@ -25,6 +30,7 @@ class CredentialVarStatusSpec(DataSpec):
     #: What THIS deployment needs: the var's own ``required``, raised to ``MUST`` when the
     #: deployment requires it beyond the credential (``DeploymentSecretsSpec.require``).
     required: Requirement = CredentialRequirement.MUST
+    kind: CredentialVarKind = CredentialVarKind.TEXT
     #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type.
     store: str = "env"
     #: A value exists in that store.
