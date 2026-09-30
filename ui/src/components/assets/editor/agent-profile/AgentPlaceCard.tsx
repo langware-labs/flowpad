@@ -193,7 +193,7 @@ export function AgentPlaceCard({ agent, place, pendingChanges = 0, onChanged }: 
         )}
       </div>
 
-      {chatOpen && <DeployedAgentChatPanel agent={agent} deployment={deployment} />}
+      {chatOpen && <DeployedAgentChatPanel agent={agent} deployment={deployment} isLocal={place.is_local} />}
 
       <Tabs value={tab} onValueChange={openTab}>
         <TabsList className="h-auto w-full justify-start rounded-none border-y bg-transparent px-2 py-0">

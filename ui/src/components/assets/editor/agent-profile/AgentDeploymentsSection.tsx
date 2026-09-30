@@ -214,7 +214,9 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
                   )}
                 </Button>
               </div>
-              {chatOpen && <DeployedAgentChatPanel agent={agent} deployment={deployment} />}
+              {chatOpen && (
+                <DeployedAgentChatPanel agent={agent} deployment={deployment} isLocal={deployment.target.provider === 'local'} />
+              )}
             </div>
           );
         })}
