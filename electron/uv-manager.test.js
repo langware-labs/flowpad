@@ -345,6 +345,71 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     eq(await m._pythonPinForUpgrade(), bundled, 'pin: release without requires_python → bundled pin');
   }
 
+  // ── upgrade({version}): install the release the user already agreed to, not "latest" ──
+  {
+    const mk = (over = {}) => {
+      const m = new UvManager(silentLog);
+      m.args = null;
+      m._uvToolInstallForce = async (a) => { m.args = a; };
+      m._ensureShimOnPath = async () => {};
+      m._resolveFlowBin = async () => null;
+      Object.assign(m, over);
+      return m;
+    };
+    const bundled = tryPythonVersion();
+
+    // The exact version, with THAT release's Python floor (not the latest's).
+    let m = mk({
+      _getPypiVersionInfo: async (v) => ({ version: v, requires_python: '>=99.1', yanked: false }),
+      _getLatestPypiInfo: async () => { throw new Error('latest must not be consulted for a healthy pinned version'); },
+    });
+    await m.upgrade({ version: '0.2.180' });
+    eq(m.args, ['tool', 'install', 'flowpad==0.2.180', '--python', '99.1', '--force'], 'upgrade({version}): flowpad==X, pinned to X\'s own requires_python');
+
+    // Without a version it is still "@latest" (the periodic / engine-only path).
+    m = mk({ _getLatestPypiInfo: async () => ({ version: '9.9.9', requires_python: '>=99.2' }) });
+    await m.upgrade();
+    eq(m.args, ['tool', 'install', 'flowpad@latest', '--python', '99.2', '--force'], 'upgrade(): unchanged, still @latest');
+
+    // The agreed version was yanked since: installing it would be deliberate self-harm — take the latest release.
+    m = mk({
+      _getPypiVersionInfo: async () => ({ version: '0.2.180', requires_python: '>=3.11', yanked: true, yanked_reason: 'crashes on start' }),
+      _getLatestPypiInfo: async () => ({ version: '0.2.181', requires_python: '>=99.3' }),
+    });
+    await m.upgrade({ version: '0.2.180' });
+    eq(m.args, ['tool', 'install', 'flowpad==0.2.181', '--python', '99.3', '--force'], 'a yanked agreed version is replaced by the latest release (and its floor)');
+
+    // Yanked and the latest cannot be fetched: nothing better is known, so the agreed version is used.
+    m = mk({
+      _getPypiVersionInfo: async () => ({ version: '0.2.180', requires_python: '>=99.4', yanked: true }),
+      _getLatestPypiInfo: async () => null,
+    });
+    await m.upgrade({ version: '0.2.180' });
+    eq(m.args.slice(2), ['flowpad==0.2.180', '--python', '99.4', '--force'], 'yanked + PyPI unreachable for the latest: falls back to the agreed version');
+
+    // PyPI unreachable altogether: install the agreed version with the bundled pin.
+    m = mk({ _getPypiVersionInfo: async () => null });
+    await m.upgrade({ version: '0.2.180' });
+    eq(m.args, ['tool', 'install', 'flowpad==0.2.180', '--python', bundled, '--force'], 'offline: the agreed version, bundled pin');
+
+    // Release without requires_python metadata: bundled pin.
+    m = mk({ _getPypiVersionInfo: async (v) => ({ version: v, yanked: false }) });
+    await m.upgrade({ version: '0.2.180' });
+    eq(m.args[3] + ' ' + m.args[4], `--python ${bundled}`, 'no requires_python on the release: bundled pin');
+
+    // _getPypiVersionInfo itself: URL, failures.
+    const realFetch = global.fetch; const urls = [];
+    try {
+      global.fetch = async (url) => { urls.push(url); return { ok: true, json: async () => ({ info: { version: '0.2.180', yanked: false } }) }; };
+      eq((await new UvManager(silentLog)._getPypiVersionInfo('0.2.180')).version, '0.2.180', '_getPypiVersionInfo returns the release info');
+      eq(urls, ['https://pypi.org/pypi/flowpad/0.2.180/json'], 'asks PyPI for THAT release');
+      global.fetch = async () => ({ ok: false, status: 404 });
+      eq(await new UvManager(silentLog)._getPypiVersionInfo('0.0.0'), null, 'an unknown release (404) → null');
+      global.fetch = async () => { throw new Error('offline'); };
+      eq(await new UvManager(silentLog)._getPypiVersionInfo('0.2.180'), null, 'a network failure → null');
+    } finally { global.fetch = realFetch; }
+  }
+
   // ── every install path pins Python (installLatest / reinstall too) ──────────
   {
     const seen = [];
@@ -1256,36 +1321,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       });
       eq(res2, true, 'post-boot upgrade: healthy backend reports success');
       eq(loads.length, 1, 'post-boot upgrade: backend URL loaded once');
-
-      // autoInstall (desktop just updated): no dialog, upgrade runs, pre-start returns true.
-      {
-        let dialogs = 0, upgrades = 0;
-        require.cache[electronId].exports.dialog.showMessageBox = async () => { dialogs++; return { response: 1 }; };
-        const ma = new UvManager(silentLog);
-        ma._pypiUpdateStatus = async () => ({ currentVersion: '0.2.1', latestVersion: '0.2.2', required: true });
-        ma.upgrade = async () => { upgrades++; };
-        eq(await ma.checkForUpdatesInBackground(mainWindow, { beforeBackendStart: true, autoInstall: true }), true,
-          'autoInstall: pre-start upgrade reports success');
-        eq(dialogs, 0, 'autoInstall: no dialog is shown');
-        eq(upgrades, 1, 'autoInstall: upgrade ran once');
-
-        // Nothing newer on PyPI → nothing happens, even with autoInstall.
-        const mb = new UvManager(silentLog);
-        mb._pypiUpdateStatus = async () => null;
-        mb.upgrade = async () => { upgrades++; };
-        eq(await mb.checkForUpdatesInBackground(mainWindow, { beforeBackendStart: true, autoInstall: true }), false,
-          'autoInstall: no newer PyPI release → no upgrade');
-        eq(upgrades, 1, 'autoInstall: no upgrade when PyPI is not newer');
-
-        // Without autoInstall the dialog is still asked (Later → no upgrade).
-        const mc = new UvManager(silentLog);
-        mc._pypiUpdateStatus = ma._pypiUpdateStatus;
-        mc.upgrade = async () => { upgrades++; };
-        eq(await mc.checkForUpdatesInBackground(mainWindow, { beforeBackendStart: true }), false,
-          'no autoInstall: dialog answered Later → false');
-        eq(dialogs, 1, 'no autoInstall: dialog shown');
-        eq(upgrades, 1, 'no autoInstall: Later does not upgrade');
-      }
 
       // "Later" (and Esc, which maps to the same index via cancelId) defers the version.
       require.cache[electronId].exports.dialog.showMessageBox = async (_w, opts) => {
