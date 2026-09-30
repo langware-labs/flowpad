@@ -209,3 +209,123 @@ async def test_the_agents_transcript_growing_is_a_sign_of_life_even_when_its_rep
     )
     # Four polls, the transcript moved once between the second and third: two updates, not four.
     assert len(said) == 2
+
+
+class _Deployment:
+    """Creates the agent process; counts how often it was asked to, and can fail doing it."""
+
+    def __init__(self, process, error=None):
+        self.process, self.error, self.created = process, error, 0
+
+    async def create_process(self, *_a, **_kw):
+        self.created += 1
+        if self.error is not None:
+            raise self.error
+        return self.process
+
+
+def _spawn_path(monkeypatch, *, deployment, refusals, settled):
+    """The spawn path with a scripted funding verdict (`refusals`, one per `_unfunded` call) and a
+    scripted answer from the chooser (`settled`); returns the list of chooser calls."""
+    from flow_sdk.core.compute import process_step
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult
+
+    class _Worker:
+        value = "claude"
+
+    async def deployment_for(_agent):
+        return deployment
+
+    async def worker_type():
+        return _Worker()
+
+    verdicts = iter(refusals)
+
+    async def unfunded(_worker):
+        return next(verdicts)
+
+    asked = []
+
+    async def settle(**kw):
+        asked.append(kw)
+        return CliResult.satisfied("funded") if settled else CliResult.not_yet("skipped")
+
+    async def save(_self, **_kw):
+        return None
+
+    monkeypatch.setattr(_Process, "save", save, raising=False)
+    monkeypatch.setattr("flow_sdk.builtin.agent_registry.get_agent_local_deployment", deployment_for)
+    monkeypatch.setattr("flow_sdk.core.capabilities.registry.resolve_builtin_worker_type", worker_type)
+    monkeypatch.setattr(process_step, "_unfunded", unfunded)
+    monkeypatch.setattr(process_step, "settle_llm_source", settle)
+    return asked
+
+
+async def _launch(tmp_path, **kw):
+    from flow_sdk.core.compute import process_step
+
+    return await process_step.launch_step_process(
+        agent="provisioner", prompt="go", name="x", workdir=Path(tmp_path), **kw
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_funded_agent_never_asks_for_an_llm_source(monkeypatch, tmp_path):
+    deployment = _Deployment(_Process())
+    asked = _spawn_path(monkeypatch, deployment=deployment, refusals=[None], settled=True)
+    result = await _launch(tmp_path)
+    assert asked == [] and deployment.created == 1 and result.ok
+
+
+@pytest.mark.asyncio
+async def test_no_llm_source_asks_the_person_once_then_launches_with_the_one_they_pick(monkeypatch, tmp_path):
+    deployment = _Deployment(_Process())
+    # Refused before the chooser, funded after it.
+    asked = _spawn_path(monkeypatch, deployment=deployment, refusals=["no source is configured", None], settled=True)
+    said = []
+    result = await _launch(tmp_path, on_status=said.append)
+    assert asked == [{"only_if_watched": True}], "asked once, and only when someone is watching"
+    assert deployment.created == 1 and result.ok
+    assert any("choose an LLM source" in p.text for p in said), "the row says what it is waiting for"
+
+
+@pytest.mark.asyncio
+async def test_a_skipped_chooser_leaves_the_step_failing_with_the_reason(monkeypatch, tmp_path):
+    deployment = _Deployment(_Process())
+    _spawn_path(monkeypatch, deployment=deployment, refusals=["no source is configured"], settled=False)
+    result = await _launch(tmp_path)
+    assert not result.ok and result.ran is False
+    assert "no usable LLM source" in result.detail and "no source is configured" in result.detail
+    assert deployment.created == 0, "nothing was launched without a source"
+
+
+@pytest.mark.asyncio
+async def test_a_failure_that_is_not_about_the_llm_source_never_opens_the_chooser(monkeypatch, tmp_path):
+    deployment = _Deployment(_Process(), error=RuntimeError("harness exploded"))
+    asked = _spawn_path(monkeypatch, deployment=deployment, refusals=[None], settled=True)
+    result = await _launch(tmp_path)
+    assert asked == [], "a funded agent that fails to start is not a reason to pick another source"
+    assert not result.ok and "harness exploded" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_a_driver_that_draws_on_no_llm_source_is_never_refused_for_lacking_one(monkeypatch):
+    """The spawn asks the driver that will ACTUALLY run about its source. A mock or bootstrap driver
+    has no API-auth spec and needs none, so it is never refused — even when the harness name that
+    was resolved (`claude`) would have needed one. No funding lookup, no chooser: the agent runs."""
+    from flow_sdk.builtin.agentic_process import agentic_process
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+    from flow_sdk.core.compute import process_step
+
+    class _Resolved:
+        value = "claude"
+
+    class _MockDriver:
+        name = "mock"
+
+    async def picker(*_a, **_kw):
+        raise AssertionError("a driver with no source must not be looked up for funding")
+
+    monkeypatch.setattr(agentic_process, "get_driver", lambda _t: _MockDriver())
+    monkeypatch.setattr(llm_source, "llm_picker_view", picker)
+    assert await process_step._unfunded(_Resolved()) is None

@@ -10,7 +10,7 @@
  *    steps are each step's own answer. There is no parked state and no answer
  *    form: a wizard asks a person through an `ask` op, like any other step.
  */
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -77,6 +77,7 @@ vi.mock('@src/lib/minimize-to-element', () => ({
   animateMinimizeToProcessChip: minimize.toProcessChip,
 }));
 
+import { openWizardPopup, useWizardPopupStore } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { WizardViewer } from '@src/components/assets/editor/wizard/WizardViewer';
 
 const wizard = (runState: Record<string, unknown>, shipped = false) =>
@@ -294,14 +295,21 @@ describe('a fully finished run', () => {
 });
 
 describe('a popup wizard', () => {
+  /** A popup appears once, complete — only after its step list has been read. */
+  const renderPopup = async (ui: React.ReactElement) => {
+    const view = renderWizard(ui);
+    await screen.findByTestId('wizard-popup');
+    return view;
+  };
   const popupWizard = () => ({ ...wizard({}), popup: true, label: 'Finish setting up Flowpad' }) as never;
 
   it('a run that fell short says so, and offers Restart setup beside a plain Go to homepage', async () => {
     const short = {
       result: { exit_code: ExitCode.NOT_YET, detail: 'Claude Code: cancelled.', ran: true, steps: {} },
     };
-    renderWizard(
+    await renderPopup(
       <WizardViewer
+        presentation="popup"
         fsRef={fsRef()}
         wizard={
           { ...wizard(short), popup: true, failure_message: 'It stopped.', restart_label: 'Restart setup' } as never
@@ -319,30 +327,41 @@ describe('a popup wizard', () => {
     await waitFor(() => expect(h.start).toHaveBeenCalledTimes(1));
   });
 
-  it('a run that fell short says nothing of its own when the wizard declares no failure message', () => {
+  it('a run that fell short says nothing of its own when the wizard declares no failure message', async () => {
     const short = { result: { exit_code: ExitCode.NOT_YET, detail: 'x', ran: true, steps: {} } };
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={{ ...wizard(short), popup: true } as never} />);
+    await renderPopup(
+      <WizardViewer presentation="popup" fsRef={fsRef()} wizard={{ ...wizard(short), popup: true } as never} />,
+    );
     expect(screen.queryByTestId('wizard-not-finished')).toBeNull();
   });
 
-  it('a clean run shows the success message and no Restart', () => {
+  it('a clean run shows the success message and no Restart', async () => {
     const ok = { result: { exit_code: ExitCode.OK, detail: '', ran: true, steps: {} } };
-    renderWizard(
-      <WizardViewer fsRef={fsRef()} wizard={{ ...wizard(ok), popup: true, success_message: 'All done.' } as never} />,
+    await renderPopup(
+      <WizardViewer
+        presentation="popup"
+        fsRef={fsRef()}
+        wizard={{ ...wizard(ok), popup: true, success_message: 'All done.' } as never}
+      />,
     );
     expect(screen.getByTestId('wizard-finished')).toBeTruthy();
     expect(screen.queryByTestId('wizard-restart')).toBeNull();
     expect(screen.queryByTestId('wizard-not-finished')).toBeNull();
   });
 
-  it('shows the ordinary page, not a popup, when the document does not ask for one', () => {
+  it('shows the ordinary page unless it is presented as a popup — even a wizard that asks for one', () => {
     renderWizard(<WizardViewer fsRef={fsRef()} wizard={wizard({})} />);
+    expect(screen.queryByTestId('wizard-popup')).toBeNull();
+    expect(screen.getByTestId('wizard-viewer-shell')).toBeTruthy();
+    cleanup();
+    // A popup wizard opened at its own address is still a page: the popup is the OVERLAY's doing.
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
     expect(screen.queryByTestId('wizard-popup')).toBeNull();
     expect(screen.getByTestId('wizard-viewer-shell')).toBeTruthy();
   });
 
-  it('shows as a dialog, with the document′s own label as its title, when it does', () => {
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+  it('shows as a dialog, with the document′s own label as its title, when it does', async () => {
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
     expect(screen.getByTestId('wizard-popup')).toBeTruthy();
     // Twice on purpose: the visible `<h2>` and Radix's own required (sr-only)
     // accessible name for the dialog.
@@ -351,22 +370,24 @@ describe('a popup wizard', () => {
     expect(screen.queryByTestId('wizard-viewer-shell')).toBeNull();
   });
 
-  it('minimizing flies the dialog into the footer chip and leaves — nothing to pause, the run is server-side', () => {
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+  it('minimizing flies the dialog into the footer chip and closes it — the page behind was never left', async () => {
+    act(() => openWizardPopup('wizard-x'));
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
     fireEvent.click(screen.getByTestId('wizard-minimize'));
     expect(minimize.toProcessChip).toHaveBeenCalledTimes(1);
-    expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
+    expect(useWizardPopupStore.getState().open).toBe(false);
+    expect(nav.goHome).not.toHaveBeenCalled();
   });
 
-  it('offers no Run/Reset — a popup wizard has Start instead', () => {
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+  it('offers no Run/Reset — a popup wizard has Start instead', async () => {
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
     expect(screen.queryByTestId('wizard-run')).toBeNull();
     expect(screen.queryByTestId('wizard-reset')).toBeNull();
     expect(screen.getByTestId('wizard-start')).toBeTruthy();
   });
 
   it('Start calls the wizard′s own `start` action, which the backend waits for, then gets out of the way', async () => {
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
     fireEvent.click(screen.getByTestId('wizard-start'));
     expect(h.start).toHaveBeenCalledTimes(1);
     // Nothing left for it to do once the call is accepted — the run's own
@@ -374,9 +395,9 @@ describe('a popup wizard', () => {
     await waitFor(() => expect(screen.queryByTestId('wizard-start')).toBeNull());
   });
 
-  it('offers no Start once a run already exists — nothing left to wait for', () => {
+  it('offers no Start once a run already exists — nothing left to wait for', async () => {
     const started = { ...popupWizard(), run_state: { result: { exit_code: ExitCode.NOT_YET, steps: {} } } } as never;
-    renderWizard(<WizardViewer fsRef={fsRef()} wizard={started} />);
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={started} />);
     expect(screen.queryByTestId('wizard-start')).toBeNull();
   });
 });

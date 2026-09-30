@@ -42,10 +42,11 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
 
   await page.goto('/');
 
-  // 1. Steered straight to the wizard popup — no chooser, no running step, no
-  //    Start click yet. A live tab is watching, so the trigger stops there.
-  const wizardPage = /\/editor\/wizard\/typeid\//;
-  await expect(page).toHaveURL(wizardPage, { timeout: 30_000 }); // do not increase timeout without approval
+  // 1. The wizard popup opens OVER the page the tab was on — the URL does not change — with no
+  //    chooser, no running step and no Start click yet. A live tab is watching, so the trigger
+  //    stops there.
+  await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 30_000 }); // do not increase timeout without approval
+  await expect(page).not.toHaveURL(/\/editor\/wizard\/typeid\//);
   await expect(page.getByTestId('wizard-viewer')).toContainText('Finish setting up Flowpad');
   for (const id of STEPS) {
     await expect(page.getByTestId(`wizard-step-${id}`)).toHaveAttribute('data-status', 'not_reached');
@@ -58,12 +59,10 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   await page.getByTestId('wizard-start').click();
   const skip = page.getByTestId('llm-setup-skip');
   await expect(async () => {
-    // The chooser opens its "Assistants & keys" dialog over the page, and offers
-    // "Skip for now" only once that dialog is closed.
-    const dialog = page.getByRole('dialog', { name: 'Assistants & keys' });
-    if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Close' }).click({ timeout: 1_000 });
+    // The chooser is a small popup with "Choose a source" and "Skip for now"; the "Assistants &
+    // keys" dialog opens only from the first, so skipping needs nothing closed first.
     if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
-    await expect(page).toHaveURL(wizardPage, { timeout: 1_000 });
+    await expect(page.getByTestId('wizard-popup')).toBeVisible({ timeout: 1_000 });
     const started = Object.values(await stepStatuses(page)).some((s) => s !== 'not_reached');
     expect(started, 'the wizard has started running').toBe(true);
   }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
