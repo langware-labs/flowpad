@@ -719,7 +719,9 @@ function WizardViewerBody({
       {/* `reserve={false}`: the default keeps the subtree mounted and its inputs
           focusable in Standard view, which is wrong for a form — you would tab
           into fields nobody can see. */}
-      {conversational || !doc ? null : (
+      {/* Never in a popup: it is glanceable — the tools and a button — even in Advanced view,
+          where the page shows the editor below. The editor belongs to the wizard's own page. */}
+      {conversational || isPopup || !doc ? null : (
         <AdvancedOnly reserve={false}>
           <WizardForm
             doc={doc}
