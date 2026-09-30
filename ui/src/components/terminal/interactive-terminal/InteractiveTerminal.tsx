@@ -35,7 +35,7 @@ import { useDockNavigation, useSideWindows } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
-import { fetchPtyStream, replayPtyStream, saveReplayCheckpoint } from './pty-replay';
+import { useXtermShellAttach } from '../useXtermShellAttach';
 import { SearchAddon } from '@xterm/addon-search';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
@@ -1079,267 +1079,104 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const bufferSyncUpdatesRef = useRef(preferences.bufferSyncUpdates);
   bufferSyncUpdatesRef.current = preferences.bufferSyncUpdates;
 
-  // Unified PTY lifecycle effect driven by Shell 'status' events.
-  // On 'connected': reset xterm to a clean slate, write replay chunks,
-  // subscribe live output. On 'disconnected': cleanup output subscription.
-  // Gates on terminalReady so xterm is fitted to correct dimensions before
-  // replay writes (otherwise writes at default 80x24).
-  useEffect(() => {
-    if (!shell || !terminalReady) return;
+  // Synchronized output (DEC 2026): a TUI brackets a frame with BSU … ESU; holding the bracketed
+  // bytes until ESU paints the frame at once instead of tearing. Behind the bufferSyncUpdates pref.
+  const syncRef = useRef({ buf: '', inSync: false, timer: null as ReturnType<typeof setTimeout> | null });
 
-    const BSU = '\x1b[?2026h';
-    const ESU = '\x1b[?2026l';
-    let syncBuf = '';
-    let inSync = false;
-    let syncTimer: ReturnType<typeof setTimeout> | null = null;
-    let unsubOutput: (() => void) | undefined;
+  const writeToTerm = useCallback((data: string) => {
+    const term = terminalRef.current;
+    if (!term) return;
+    try {
+      term.write(data, () => {
+        if (!anchorsResolvedRef.current) {
+          ptySyncRef.current.notifyBufferReady();
+          setBufferFlushCount((c) => c + 1);
+        }
+      });
+    } catch (e) {
+      console.error('[InteractiveTerminal] write failed:', e);
+    }
+  }, []);
 
-    const writeToTerm = (data: string) => {
-      const term = terminalRef.current;
-      if (!term) return;
-      try {
-        term.write(data, () => {
-          if (!anchorsResolvedRef.current) {
-            ptySyncRef.current.notifyBufferReady();
-            setBufferFlushCount((c) => c + 1);
-          }
-        });
-      } catch (e) {
-        console.error('[InteractiveTerminal] write failed:', e);
-      }
-    };
+  /** Write out a bracketed frame still held (a disconnect, the view letting go). */
+  const flushSyncFrame = useCallback(() => {
+    const sync = syncRef.current;
+    if (sync.timer) clearTimeout(sync.timer);
+    sync.timer = null;
+    if (sync.buf) writeToTerm(sync.buf);
+    sync.buf = '';
+    sync.inSync = false;
+  }, [writeToTerm]);
 
-    const handlePtyData = (data: string, seq?: number) => {
-      if (seq !== undefined) {
-        const chunk = shell.getPtyChunk(seq);
-        if (chunk) ptySyncRef.current.processChunk(chunk);
-      }
-
+  const writeLive = useCallback(
+    (data: string) => {
+      const BSU = '\x1b[?2026h';
+      const ESU = '\x1b[?2026l';
+      const sync = syncRef.current;
       if (!bufferSyncUpdatesRef.current) {
         writeToTerm(data);
         return;
       }
-
-      if (!inSync) {
+      if (!sync.inSync) {
         const bsuIdx = data.indexOf(BSU);
-        if (bsuIdx >= 0) {
-          if (bsuIdx > 0) writeToTerm(data.slice(0, bsuIdx));
-          inSync = true;
-          syncBuf = data.slice(bsuIdx);
-          syncTimer = setTimeout(() => {
-            if (inSync && syncBuf) {
-              writeToTerm(syncBuf);
-              syncBuf = '';
-              inSync = false;
-            }
-          }, 2000);
-        } else {
+        if (bsuIdx < 0) {
           writeToTerm(data);
-        }
-      } else {
-        syncBuf += data;
-      }
-
-      if (inSync) {
-        const esuIdx = syncBuf.indexOf(ESU);
-        if (esuIdx >= 0) {
-          if (syncTimer) {
-            clearTimeout(syncTimer);
-            syncTimer = null;
-          }
-          const endIdx = esuIdx + ESU.length;
-          const syncData = syncBuf.slice(0, endIdx);
-          const remainder = syncBuf.slice(endIdx);
-          syncBuf = '';
-          inSync = false;
-          writeToTerm(syncData);
-          if (remainder) handlePtyData(remainder);
-        }
-      }
-    };
-
-    let connectGen = 0; // cancellation token: a newer connect/disconnect wins
-
-    // `source` names which of the four triggers ran the attach handshake — the
-    // same shell fetching its stream several times per mount shows up here.
-    const onConnected = (source: 'mount' | 'status' | 'recovered' | 'reconnected') => {
-      const gen = ++connectGen;
-      const tConnect = performance.now();
-      const superseded = (at: 'fetch' | 'replay') =>
-        toplog.log('pty', `on_connected superseded shell=${sessionId} source=${source} gen=${gen} at=${at}`);
-      toplog.log('pty', `on_connected start shell=${sessionId} source=${source} gen=${gen}`);
-      void (async () => {
-        const term = terminalRef.current;
-        if (!term) {
-          toplog.log('pty', `on_connected no_terminal shell=${sessionId} source=${source} gen=${gen}`);
           return;
         }
+        if (bsuIdx > 0) writeToTerm(data.slice(0, bsuIdx));
+        sync.inSync = true;
+        sync.buf = data.slice(bsuIdx);
+        sync.timer = setTimeout(() => flushSyncFrame(), 2000); // a frame never closed is shown anyway
+      } else {
+        sync.buf += data;
+      }
+      const esuIdx = sync.buf.indexOf(ESU);
+      if (esuIdx >= 0) {
+        const endIdx = esuIdx + ESU.length;
+        const frame = sync.buf.slice(0, endIdx);
+        const remainder = sync.buf.slice(endIdx);
+        if (sync.timer) clearTimeout(sync.timer);
+        sync.timer = null;
+        sync.buf = '';
+        sync.inSync = false;
+        writeToTerm(frame);
+        if (remainder) writeLive(remainder);
+      }
+    },
+    [writeToTerm, flushSyncFrame],
+  );
 
-        // Fetch + replay the recorded framed stream (full history at the
-        // recorded sizes — see pty-replay.ts). Falls back to live-only on
-        // any failure (404 legacy/no stream, replay error).
-        let historySerialized: string | null = null;
-        let historyLastSeq = 0;
-        try {
-          const ptyId = shell.pty_pid ?? shell.id;
-          const tFetch = performance.now();
-          const stream = await fetchPtyStream(ptyId);
-          const tReplay = performance.now();
-          toplog.log(
-            ['process_load', 'pty', 'agentic_process.load'],
-            `onConnected pty-stream fetch took ${(tReplay - tFetch).toFixed(1)}ms events=${stream?.events.length ?? 0} pty=${ptyId.slice(0, 8)}`,
-          );
-          if (gen !== connectGen) return superseded('fetch'); // don't burn a full replay for a dead attach
-          if (stream) {
-            const replay = await replayPtyStream(stream);
-            toplog.log(
-              ['process_load', 'pty', 'agentic_process.load'],
-              `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0} checkpoint=${stream.checkpoint ? 'yes' : 'no'} tail=${stream.events.length}`,
-            );
-            if (replay) {
-              historySerialized = replay.serialized;
-              historyLastSeq = replay.lastSeq;
-              // The next cold open of this recording replays only what comes after this.
-              saveReplayCheckpoint(ptyId, stream, replay);
-            }
-          }
-        } catch (e) {
-          console.warn('[InteractiveTerminal] history replay failed, live-only:', e);
-          toplog.log('tab_switch', `error ${sinceTabSwitch()} sink=pty_replay shell=${sessionId} err:`, e);
-          toplog.log('pty', `on_connected replay_failed shell=${sessionId} source=${source} error=${String(e)}`);
-        }
-        if (gen !== connectGen) return superseded('replay');
-
-        // Reset xterm to a clean slate for this session, then restore the
-        // replayed history (scrollback + final screen + cursor).
-        term.reset();
-        if (historySerialized) term.write(historySerialized);
-
-        // Write live-session chunks accumulated since attach into xterm,
-        // skipping chunks already covered by the replayed stream (frames
-        // carry the same per-session seq as WS chunks). Chunks are decoded
-        // with a STREAMING TextDecoder — xterm's raw-Uint8Array path drops
-        // multi-byte chars split across writes (xtermjs/xterm.js#6003).
-        // Skipped chunks are decoded too so partial-char state stays aligned
-        // across the dedup boundary.
-        const chunks = shell.getPtyChunks();
-        const chunkDecoder = new TextDecoder('utf-8', { fatal: false });
-        let wrote = Boolean(historySerialized);
-        const tBacklog = performance.now();
-        for (const chunk of chunks) {
-          ptySyncRef.current.processChunk(chunk);
-          const text = chunkDecoder.decode(chunk.data, { stream: true });
-          if (chunk.seq <= historyLastSeq) continue;
-          term.write(text);
-          wrote = true;
-        }
+  // The PTY in this view: its recorded past, then live — the ONE attach every terminal view uses
+  // (useXtermShellAttach: connect / mount / recovery / reconnect). Gated on terminalReady so the
+  // replay lands at the fitted size, not 80×24. PtySync sees every chunk; live output goes through
+  // the synchronized-output writer above.
+  useXtermShellAttach(shell, terminalReady ? terminalRef.current : null, {
+    ready: terminalReady,
+    onChunk: (chunk) => ptySyncRef.current.processChunk(chunk),
+    write: writeLive,
+    recoveredFor: (msg) => Boolean(process && msg?.process_id === process.id),
+    onAttached: ({ source, wrote, ms, historyKb }) => {
+      // Signal buffer ready once xterm has processed the history and backlog writes.
+      if (wrote) {
+        terminalRef.current?.write('', () => {
+          anchorsResolvedRef.current = false;
+          ptySyncRef.current.notifyBufferReady();
+          setBufferFlushCount((c) => c + 1);
+        });
+      }
+      setShellReady(true);
+      if (activeRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
         toplog.log(
-          ['process_load', 'pty', 'agentic_process.load'],
-          `onConnected backlog processChunk loop took ${(performance.now() - tBacklog).toFixed(1)}ms chunks=${chunks.length} lastSeq=${historyLastSeq} shell=${sessionId}`,
+          'tab_switch',
+          `ready ${sinceTabSwitch()} kind=terminal mode=cold source=${source} shell=${sessionId} attach_ms=${ms.toFixed(0)} history_kb=${historyKb.toFixed(0)}`,
         );
-
-        // Signal buffer ready after xterm processes the buffered writes.
-        if (wrote) {
-          term.write('', () => {
-            anchorsResolvedRef.current = false;
-            ptySyncRef.current.notifyBufferReady();
-            setBufferFlushCount((c) => c + 1);
-          });
-        }
-
-        // Assert this client's size on the PTY — the resulting SIGWINCH makes
-        // the running TUI repaint at the real xterm dimensions (the attach-time
-        // jiggle only repainted at the PTY's previous size).
-        if (shell.connected) void shell.resize(term.cols, term.rows);
-
-        // Subscribe to live output (unsubscribe any prior subscription first).
-        unsubOutput?.();
-        unsubOutput = shell.onOutput(handlePtyData);
-
-        setShellReady(true);
-        if (activeRef.current && !showSimpleChatRef.current && toplog.isOn('tab_switch') && claimTabSwitchReady()) {
-          toplog.log(
-            'tab_switch',
-            `ready ${sinceTabSwitch()} kind=terminal mode=cold source=${source} shell=${sessionId} attach_ms=${(performance.now() - tConnect).toFixed(0)} history_kb=${historySerialized ? (historySerialized.length / 1024).toFixed(0) : 0}`,
-          );
-        }
-        toplog.log(
-          'pty',
-          `on_connected done shell=${sessionId} source=${source} gen=${gen} ms=${(performance.now() - tConnect).toFixed(0)} history_kb=${historySerialized ? (historySerialized.length / 1024).toFixed(0) : 0} chunks=${chunks.length}`,
-        );
-      })();
-    };
-
-    const onDisconnected = () => {
-      connectGen++; // cancel any in-flight history replay
-      unsubOutput?.();
-      unsubOutput = undefined;
+      }
+    },
+    onDetached: () => {
       setShellReady(false);
-      if (syncTimer) {
-        clearTimeout(syncTimer);
-        syncTimer = null;
-      }
-      if (syncBuf && terminalRef.current) {
-        try {
-          terminalRef.current.write(syncBuf);
-        } catch {
-          // Best-effort flush during disconnect.
-        }
-        syncBuf = '';
-        inSync = false;
-      }
-    };
-
-    const unsubStatus = shell.on('status', (s: string) => {
-      if (s === 'connected') onConnected('status');
-      if (s === 'disconnected') onDisconnected();
-    });
-
-    // Distinct `recovered` event: the backend's PTY-recovery watchdog respawned
-    // this session's worker after a server restart (see flow_sdk/server/
-    // pty_recovery.py). Re-run the attach handshake — fetch + replay the fresh
-    // scrollback and re-subscribe — so an already-open tab self-heals without a
-    // reopen. connectGen makes re-invocation safe (a newer attach supersedes).
-    const onRecovered = (msg: { shell_id?: string; process_id?: string }) => {
-      if (msg?.shell_id === sessionId || (process && msg?.process_id === process.id)) {
-        onConnected('recovered');
-      }
-    };
-    connectionManager.on('on_recovered', onRecovered);
-
-    // WS reconnect (e.g. sleep/wake): connection membership is restored by the
-    // backend (PtyRegistry.on_ws_connect re-attaches this connection_id), so live
-    // output resumes on its own. Re-run the attach handshake to repaint the gap —
-    // fetch + replay the framed stream (seq-deduped against what we already have)
-    // and re-subscribe — so the terminal catches up instead of staying on its
-    // pre-sleep frame. No backend attach call is issued from here. connectGen
-    // makes re-invocation safe (a newer attach supersedes an in-flight one).
-    const onReconnected = () => onConnected('reconnected');
-    connectionManager.on('on_reconnected', onReconnected);
-
-    // Fire immediately if already connected on mount (e.g. navigation to existing terminal).
-    if (shell.connected) onConnected('mount');
-
-    return () => {
-      connectGen++; // cancel any in-flight history replay
-      unsubStatus();
-      connectionManager.off('on_recovered', onRecovered);
-      connectionManager.off('on_reconnected', onReconnected);
-      unsubOutput?.();
-
-      if (syncTimer) clearTimeout(syncTimer);
-      if (syncBuf && terminalRef.current) {
-        try {
-          terminalRef.current.write(syncBuf);
-        } catch {
-          // Best-effort flush during cleanup.
-        }
-        syncBuf = '';
-        inSync = false;
-      }
-      setShellReady(false);
-    };
-  }, [shell, terminalReady]);
+      flushSyncFrame();
+    },
+  });
 
   // ── The dock's command, typed once the PTY is actually at a prompt ─────────
   //
