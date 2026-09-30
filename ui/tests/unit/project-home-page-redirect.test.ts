@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   agentGetById: vi.fn(),
   use: vi.fn(),
   watch: vi.fn(),
+  drainQueue: vi.fn(),
   embed: vi.fn(),
   hubOnly: vi.fn(() => false),
   dataContext: { project: null as { id: string } | null },
@@ -44,7 +45,8 @@ beforeEach(() => {
   sessionStorage.clear();
   mocks.openHomePage.mockReset().mockResolvedValue({ asset: AGENT, type: 'agent' });
   mocks.query.mockReset().mockResolvedValue([]);
-  mocks.getById.mockReset().mockResolvedValue({ watch: mocks.watch });
+  mocks.getById.mockReset().mockResolvedValue({ watch: mocks.watch, drainQueue: mocks.drainQueue });
+  mocks.drainQueue.mockReset().mockResolvedValue(undefined);
   mocks.use.mockReset().mockResolvedValue({ process_id: NEW_CHAT });
   mocks.agentGetById.mockReset().mockResolvedValue({ use: mocks.use });
   mocks.embed.mockReset().mockResolvedValue(undefined);
@@ -92,15 +94,19 @@ describe('project home page redirect — only navigations that ask for it', () =
     expect(locationOf(response)).toContain('viewMode=vibe');
     expect(mocks.use).not.toHaveBeenCalled();
     expect(mocks.embed).not.toHaveBeenCalled();
+    // A resumed chat already had its turn 1: nothing is re-sent.
+    expect(mocks.drainQueue).not.toHaveBeenCalled();
   });
 
   it("opens the agent's FIRST chat with the launcher's pre-turn stack", async () => {
     const response = await projectHomePageRedirect(new Request(HOME_BUTTON_URL));
 
     expect(mocks.agentGetById).toHaveBeenCalledWith(AGENT_ID);
-    expect(mocks.use).toHaveBeenCalledWith(PROJECT_ID);
+    expect(mocks.use).toHaveBeenCalledWith(PROJECT_ID, { autoPrompt: true });
     expect(mocks.getById).toHaveBeenCalledWith(NEW_CHAT);
     expect(mocks.embed).toHaveBeenCalledTimes(1);
+    // The agent's auto prompt starts as turn 1, after the vibe embed.
+    expect(mocks.drainQueue).toHaveBeenCalledTimes(1);
     expect(locationOf(response)).toContain(`/dock/shell/agentic_process-${NEW_CHAT}`);
   });
 
