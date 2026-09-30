@@ -11,6 +11,47 @@ const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
+// Astral's installer, fetched to a FILE and run — not `curl … | sh`. In a pipeline sh reads an empty
+// stdin when curl fails (offline, DNS, blocked host, curl missing) and exits 0, so the caller only
+// ever saw "Failed to install uv: Command failed: uv --version", never the network error. Here curl's
+// own stderr is the error (-f: HTTP errors fail; -S: show them), and a 200 that is not a shell script
+// (a captive portal or proxy login page) is caught before it is executed.
+const UV_INSTALL_SH =
+  'set -eu; f="$(mktemp)"; trap \'rm -f "$f"\' EXIT; ' +
+  'curl -LsSf https://astral.sh/uv/install.sh -o "$f"; ' +
+  'head -n 1 "$f" | grep -q \'^#!\' || { echo "astral.sh did not return the uv installer script (captive portal or proxy login page?)" >&2; exit 1; }; ' +
+  'sh "$f"';
+
+// Windows PowerShell 5.1 negotiates TLS 1.0/1.1 by default and astral.sh refuses it, so force 1.2
+// first. Full cmdlet names, not the irm/iex aliases (some hosts remove the aliases).
+const UV_INSTALL_PS1 =
+  '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; ' +
+  '$ErrorActionPreference = \'Stop\'; ' +
+  'Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression';
+
+/** An Error that carries the child's stderr/exit code the way execFile errors do, so the startup panel can show them. */
+function installFailure(message, { stderr = '', code = null } = {}) {
+  const err = new Error(message);
+  err.stderr = stderr;
+  err.code = code;
+  return err;
+}
+
+// Python settings that break a managed venv's interpreter if a user's shell exports them (a global
+// PYTHONHOME/PYTHONPATH makes the venv import the wrong stdlib/site-packages). The app's children —
+// uv, the flow CLI, the backend — must never inherit them. UV_* is left alone: that is user config.
+const POISONOUS_PYTHON_ENV = ['PYTHONHOME', 'PYTHONPATH'];
+
+function cleanPythonEnv(env, log) {
+  for (const key of POISONOUS_PYTHON_ENV) {
+    if (key in env) {
+      if (log) log.warn(`[uv] not passing ${key} to child processes (it would break the flowpad venv)`);
+      delete env[key];
+    }
+  }
+  return env;
+}
+
 // What the OS / cmd.exe / uv say when Windows application control (WDAC, Device Guard,
 // AppLocker) refuses to run a binary. Three shapes, all seen or documented:
 //   * cmd.exe (shell:true):  "This program is blocked by group policy…"
@@ -422,11 +463,11 @@ class UvManager {
    * resolve correctly. On Unix we call the binary directly.
    */
   async _run(cmd, args, options = {}) {
-    const env = {
+    const env = cleanPythonEnv({
       ...process.env,
       PATH: this._enrichedPath(),
       ...options.env,
-    };
+    });
     this.log.info(`[uv] Running: ${cmd} ${args.join(' ')}`);
     const useShell = options.shell !== undefined ? options.shell : needsShellOnWin(cmd);
     const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
@@ -473,11 +514,11 @@ class UvManager {
    * which is what we want in the dialog instead of a silent kill.
    */
   _runStreaming(cmd, args, options = {}) {
-    const env = {
+    const env = cleanPythonEnv({
       ...process.env,
       PATH: this._enrichedPath(),
       ...options.env,
-    };
+    });
     const useShell = needsShellOnWin(cmd);
     const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
     const onLine = typeof options.onLine === 'function' ? options.onLine : null;
@@ -577,7 +618,7 @@ class UvManager {
           '-NoProfile',
           '-ExecutionPolicy', 'Bypass',
           '-Command',
-          'Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression',
+          UV_INSTALL_PS1,
         ], {
           shell: false,
           stdio: 'pipe',
@@ -602,7 +643,7 @@ class UvManager {
           if (code === 0) {
             resolve();
           } else {
-            reject(new Error(`uv install failed (exit ${code})\n${stderr}`));
+            reject(installFailure(`uv install failed (exit ${code})\n${stderr}`, { stderr, code }));
           }
         });
 
@@ -615,9 +656,7 @@ class UvManager {
         }, 120000);
       });
     } else {
-      await this._run('sh', [
-        '-c', 'curl -LsSf https://astral.sh/uv/install.sh | sh',
-      ], { timeout: 120000 });
+      await this._run('sh', ['-c', UV_INSTALL_SH], { timeout: 120000 });
     }
 
     // Verify
@@ -1251,6 +1290,7 @@ class UvManager {
         // consumes the variable; nothing it spawns inherits it.
         FLOWPAD_BOOT_PROGRESS: '1',
       };
+      cleanPythonEnv(env, this.log);
       if (sodKey) {
         // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
         // Python's `sod_key` property reads this and short-circuits any
@@ -1397,6 +1437,11 @@ class UvManager {
   /**
    * Run `flow stop`. Swallows errors.
    */
+  /** True once start() has spawned `flow start` — before that there is nothing of ours to stop. */
+  hasLaunchedBackend() {
+    return !!(this._backendProcess || this._lastLaunch);
+  }
+
   async _flowStop() {
     const { cmd, args, shell } = this._flowBin
       ? this._flowCmd(['stop'])
@@ -1989,6 +2034,10 @@ module.exports.tryPythonVersion = tryPythonVersion;
 module.exports.upgradeCommand = upgradeCommand;
 module.exports.pythonVersionFromPyproject = pythonVersionFromPyproject;
 module.exports.pythonFloor = pythonFloor;
+module.exports.UV_INSTALL_SH = UV_INSTALL_SH;
+module.exports.UV_INSTALL_PS1 = UV_INSTALL_PS1;
+module.exports.installFailure = installFailure;
+module.exports.cleanPythonEnv = cleanPythonEnv;
 module.exports.isPolicyBlockError = isPolicyBlockError;
 module.exports.PY_FLOW_ENTRY = PY_FLOW_ENTRY;
 module.exports.policyBlockedError = policyBlockedError;

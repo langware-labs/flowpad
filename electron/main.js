@@ -1204,7 +1204,9 @@ async function startApp() {
       await waitForRetryRequest();
       log.info('[startup] retry requested from the error panel');
       startupFailed = false;
-      if (uvManager) {
+      // Only when a previous attempt actually launched the backend: a first-install failure
+      // never did, and `stop()` would run a bare `flow stop` and kill whatever holds the port.
+      if (uvManager && uvManager.hasLaunchedBackend()) {
         await uvManager.stop().catch((e) => log.warn(`[startup] pre-retry stop failed: ${e.message}`));
       }
       result = await installAndStartBackend();
