@@ -261,8 +261,9 @@ class Agent(Entity):
     )
     auto_launch_prompt: str = APIField(
         default="",
-        description="First prompt of the auto-launched session, delivered through the process "
-        "prompt queue. Empty = open the session with no first turn.",
+        description="The agent's auto prompt: the first turn of every new session opened as it "
+        "(Use, home page, auto-launch), delivered through the process prompt queue. Independent "
+        "of ``auto_launch``. Empty = open sessions with no first turn.",
     )
 
     # ── places ────────────────────────────────────────────────────────────
@@ -489,15 +490,34 @@ class Agent(Entity):
         return self
 
     async def use(
-        self, project_id: str | None = None, *, deployment: "Deployment | None" = None, owner=None
+        self,
+        project_id: str | None = None,
+        *,
+        deployment: "Deployment | None" = None,
+        owner=None,
+        auto_prompt: bool = False,
     ) -> "AgenticProcess":
-        """Open a session AS this agent — saved, visible, no first turn.
+        """Open a session AS this agent — saved, visible, no turn started.
 
         ``owner`` is the human opening it, recorded on the process row; a
         remote ``deployment`` opens through the hub (``Deployment.use``).
+
+        ``auto_prompt=True`` queues the agent's auto prompt as the session's
+        first turn — only on a deployment local to THIS tier: the hub relays a
+        remote ``use`` without the flag, so the placement machine never queues
+        a prompt the opener could not send. It is queued, not sent: the caller
+        starts it once the session is set up — the UI's ``prepareAgentSession``
+        after the vibe embed, a script with ``process.submit()``. ``prompt()``
+        bypasses the queue, so calling it first makes the auto prompt run second.
         """
         target = deployment or await self.local_deployment()
-        return await target.use(project_id=project_id, owner=owner)
+        process = await target.use(project_id=project_id, owner=owner)
+        prompt = (self.auto_launch_prompt or "").strip()
+        if auto_prompt and prompt and target.is_local:
+            # Straight into the queue: the ``enqueue`` action would also start a
+            # drain, running turn 1 before the caller embeds its layers.
+            process.queue.enqueue(prompt, source="auto_prompt")
+        return process
 
     @staticmethod
     async def reset_auto_launch(project_id: str, agent_id: str) -> None:
@@ -524,9 +544,9 @@ class Agent(Entity):
         folders (``assets_under_roots``, the same scoping journeys use), enabled,
         ``auto_launch`` on, and not yet marked. Every candidate — winner and
         cancelled — is marked ONCE per project (see the ``auto_launch`` field),
-        under a per-project lock. The prompt is enqueued, not sent: the caller
-        kicks the queue (``drain-queue``) after the vibe persona is embedded, the
-        order ``useAgentLauncher`` uses.
+        under a per-project lock. The winner is opened with ``use(auto_prompt=True)``,
+        so its auto prompt is queued exactly as on any other session; the caller
+        starts it (``prepareAgentSession`` drains after the vibe embed).
 
         The mark is written only once the session actually opened, and the lock
         is held across that open. Marking first was cheaper but wrote off the
@@ -557,15 +577,14 @@ class Agent(Entity):
             candidates.sort(key=age_key)
             winner, cancelled = candidates[0], candidates[1:]
 
-            process = await (await winner.fresh()).use(project_id=project_id)
+            launched = await winner.fresh()
+            process = await launched.use(project_id=project_id, auto_prompt=True)
             update_project_device_state(
                 project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
             )
 
-        prompt = (winner.auto_launch_prompt or "").strip()
-        if prompt:
-            process.queue.enqueue(prompt, source="auto_launch")
-        return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=bool(prompt))
+        prompt_queued = bool((launched.auto_launch_prompt or "").strip())
+        return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=prompt_queued)
 
     def process_messages(self):
         """Scope message processing so each thread reuses one AgenticProcess."""
@@ -1311,8 +1330,11 @@ class Agent(Entity):
     async def use_action(self):
         """Open a session as this agent. `POST /agent/<id>/use` → process id.
 
-        No prompt: the process is created and shown, and the human types the
-        first message. Local placement only — same routing rule as ``run``.
+        No turn is started: the process is created and shown. The optional body
+        ``auto_prompt: true`` queues the agent's auto prompt as the first turn
+        (see ``Agent.use``); the UI sends it and starts the turn after its
+        session setup, and the hub never forwards it to a placement machine.
+        Local placement only — same routing rule as ``run``.
 
         The optional body ``project_id`` names the project the session ACTS IN,
         which is not always the project the agent lives in — see ``Agent.use``
@@ -1332,6 +1354,7 @@ class Agent(Entity):
         body = await request_info.get_post_data() if request_info else {}
         project_id = str((body or {}).get("project_id") or "").strip() or None
         deployment_id = str((body or {}).get("deployment_id") or "").strip()
+        auto_prompt = (body or {}).get("auto_prompt") is True
 
         agent = await self.fresh()
         if deployment_id:
@@ -1345,7 +1368,7 @@ class Agent(Entity):
             deployment = await agent.local_deployment()
         owner = request_info.someone_typeid if request_info else None
         try:
-            process = await agent.use(project_id=project_id, deployment=deployment, owner=owner)
+            process = await agent.use(project_id=project_id, deployment=deployment, owner=owner, auto_prompt=auto_prompt)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()
