@@ -1034,8 +1034,7 @@ class Deployment(Entity):
 
     async def use(self, *, owner=None, **options) -> "AgenticProcess":
         """Open a session AS this agent: a visible, headless Chat process, saved,
-        with no turn started. ``Agent.use(auto_prompt=True)`` queues the agent's
-        auto prompt on top of it; this primitive never does.
+        with no first turn — the human types it.
 
         The interactive counterpart of :meth:`launch`. Same bundle (worker,
         model, permissions, system prompt, dirs, ``deployment_id``); what

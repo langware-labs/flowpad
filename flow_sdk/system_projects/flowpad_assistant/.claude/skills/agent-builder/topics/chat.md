@@ -36,16 +36,12 @@ Its quality is almost entirely its prompt.
    follows instead: a ladder of steps, one at a time.
 3. **`intro`** — the welcome text at the top of the chat. The model never sees it, so
    anything the agent must know goes in the prompt, not here.
-4. **Auto prompt and auto-launch** — two separate settings.
-   * `auto_launch_prompt` (the **Auto prompt**) — set it only if the agent should
-     open every conversation itself. It is sent as the user's first message of
-     **every new chat** with the agent (its tile, its home page, auto-launch), so
-     write it in the user's voice ("Hi, I'm starting — open the lesson for me").
-   * `auto_launch: true` — only if the user wants the agent to start on its own
-     when the project opens. It fires **once per project on each machine**; after
-     that, opening the project shows its home. To test it again, the user resets it
-     (`references/screens.md` → *Re-test auto-launch*) — do not make copies of the
-     project to get a fresh launch.
+4. **Auto-launch** — set `auto_launch: true` and an `auto_launch_prompt` only if the
+   user wants it to start on its own. The prompt is sent as the user's first message,
+   so write it in the user's voice ("Hi, I'm starting — open the lesson for me").
+   It fires **once per project on each machine**; after that, opening the project
+   shows its home. To test it again, the user resets it (`references/screens.md` →
+   *Re-test auto-launch*) — do not make copies of the project to get a fresh launch.
 5. **Opening move** — if the agent should show something first (a page, a doc), say
    so in the prompt's *Opening move* with the exact `flow show file <path>`.
 

@@ -15,8 +15,7 @@ the `flowpad-navigation` skill has the full screen table.
 | --- | --- | --- |
 | **See and edit the agent** | `flow show file <agent>/agent.json` | 1. The agent's page opens beside the chat. 2. **Definition** holds title, description and avatar. 3. **Behaviour — who this agent is, its system prompt** holds the prompt. |
 | **Chat with it** | `flow show view home` | 1. On Home ("Hey …"), under **Agents**, find the agent's tile — not the project's asset page. 2. Click the tile — a new chat with the agent opens. (The pencil on the tile edits it instead.) |
-| **Set its auto prompt** | `flow show file <agent>/agent.json` | 1. Fill **Auto prompt** with the first message. 2. Every new chat with the agent now starts with it. |
-| **Turn auto-launch on** | `flow show file <agent>/agent.json` | 1. Switch **Auto-launch on project open** on. 2. The launched session starts with the **Auto prompt**, if one is set. |
+| **Turn auto-launch on** | `flow show file <agent>/agent.json` | 1. Switch **Auto-launch on project open** on. 2. Fill **Auto-launch prompt** with the first message. |
 | **Re-test auto-launch** | `flow show file <agent>/agent.json` | 1. Next to auto-launch it says **Already launched in this project**. 2. Click **Reset**. 3. Open the project again — the agent starts. |
 | **Give it a channel** | `flow show file <agent>/agent.json` | 1. In the left panel **Agent resources**, next to **Channels**, click **+** (Add channel). 2. Pick the channel (email, WhatsApp, …) — a channel is a data source that can send. 3. Finish its setup; a deployment answers only the channels it has. |
 | **Change its worker** | `flow show file <agent>/agent.json` | 1. Under **Deployments**, open **Development · local** (the placement a chat from the tile runs on). 2. Click **Settings**, then the **Config** tab. 3. Next to **Worker**, click **Change**, pick the worker, save. The next chat starts on it. |

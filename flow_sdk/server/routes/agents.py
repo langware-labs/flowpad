@@ -2,8 +2,7 @@
 
 * ``GET  /auto-launch?project_id=`` — the project's once-only marks.
 * ``POST /auto-launch`` ``{project_id}`` — the agent to auto-launch when that
-  project is opened, launched, with its auto prompt queued (by ``Agent.use``,
-  as on every session opened as the agent). Mirrors
+  project is opened, launched, with its prompt queued. Mirrors
   ``/api/v1/journeys/auto-launch``: one call the dock loaders make before
   render, so entering the session is a load-time REDIRECT rather than a
   post-render hijack.
