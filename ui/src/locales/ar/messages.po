@@ -3477,6 +3477,7 @@ msgstr ""
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -9061,6 +9062,10 @@ msgstr ""
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Finish setup, then press Verify."
 msgstr "يُرجى إكمال الإعداد أولاً، ثم الضغط على زر التحقق."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Finish signing in on the page that opened in your browser."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Finish the setup above before deploying"
@@ -15126,6 +15131,10 @@ msgstr "فتح الجلسة الحية"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "فتح الجلسة الحية في المحطة الطرفية"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Open the page again"
+msgstr ""
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Open the project"
