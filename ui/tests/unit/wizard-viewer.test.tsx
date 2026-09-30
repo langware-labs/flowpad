@@ -379,6 +379,17 @@ describe('a popup wizard', () => {
     expect(nav.goHome).not.toHaveBeenCalled();
   });
 
+  it('never carries the editor form, even in Advanced view — the popup is glanceable, the page is for editing', async () => {
+    view.advanced = true;
+    await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
+    expect(screen.getByTestId('wizard-start')).toBeTruthy();
+    expect(screen.queryByTestId('wizard-form')).toBeNull();
+    cleanup();
+    // The same wizard as a page in Advanced view DOES show its editor.
+    renderWizard(<WizardViewer fsRef={fsRef()} wizard={popupWizard()} />);
+    await waitFor(() => expect(screen.getByTestId('wizard-form')).toBeTruthy());
+  });
+
   it('offers no Run/Reset — a popup wizard has Start instead', async () => {
     await renderPopup(<WizardViewer presentation="popup" fsRef={fsRef()} wizard={popupWizard()} />);
     expect(screen.queryByTestId('wizard-run')).toBeNull();
