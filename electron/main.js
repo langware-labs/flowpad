@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
 const { CancellationToken } = require('builder-util-runtime');
 const path = require('path');
@@ -929,6 +930,7 @@ function showStartupErrorPanel(detail, { retryable = false } = {}) {
     retryable,
     upgradeCommand: upgradeCommand(),
     diagnoseCommand: DIAGNOSE_COMMAND,
+    logPath: MAIN_DESKTOP_LOG_DIR,
   };
   startupFailed = true;
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -945,22 +947,6 @@ function showStartupErrorPanel(detail, { retryable = false } = {}) {
       `2) If that doesn’t work, run:\n   ${DIAGNOSE_COMMAND}`,
   );
   return false;
-}
-
-// The paragraph the error panel shows for a failed install/start. The full
-// dump (HOME, PATH, 500 chars of stderr) stays in the log; on screen the user
-// needs the command, WHY it stopped, and the last lines uv printed. A signal
-// with no uv `error:` line means the process was killed, not that uv failed —
-// exactly the trace the old fixed install cap used to produce, which read as
-// an inexplicable "Command failed" over pure progress output.
-function describeStartupFailure(error) {
-  const parts = [String(error?.message || error).split('\n')[0]];
-  if (error?.signal) parts.push(`The process was killed (${error.signal}).`);
-  else if (typeof error?.code === 'number') parts.push(`Exit code ${error.code}.`);
-  const stderr = error?.stderr ? error.stderr.toString().trim() : '';
-  if (stderr) parts.push(`Last output:\n${stderr.split('\n').slice(-6).join('\n')}`);
-  parts.push('Retry keeps what was already downloaded, so a second attempt is usually quick.');
-  return parts.join('\n');
 }
 
 function waitForRetryRequest() {
@@ -1136,7 +1122,7 @@ async function installAndStartBackend() {
       log.info('[startup] install aborted by the user quitting');
       return { ok: false };
     }
-    log.error('Failed to start Python backend:', error);
+    log.error(`Failed to start Python backend: ${String(error?.message || error).split('\n')[0]}`);
 
     const details = [
       error?.message || String(error),
@@ -1146,7 +1132,8 @@ async function installAndStartBackend() {
       `PATH=${(process.env.PATH || '').slice(0, 500)}`
     ];
 
-    if (error?.stderr) details.push(`stderr=${error.stderr.toString().slice(-500)}`);
+    // The whole of stderr, once: uv's `error:` line is usually near the TOP, far from the last 500 chars.
+    if (error?.stderr) details.push(`stderr=${error.stderr.toString().slice(-8000)}`);
     if (error?.stdout) details.push(`stdout=${error.stdout.toString().slice(-500)}`);
 
     const detailText = details.join('\n');
@@ -1251,9 +1238,13 @@ async function startApp() {
       'hard-cap': 'It kept reporting progress but never became healthy within 10 minutes. ',
       'launcher-failed': 'Its launcher (flow start) exited with an error. ',
     }[backendWait.reason] || '';
+    const launcherOutput = backendWait.reason === 'launcher-failed' && launch
+      ? `\n\nflow start exited with code ${launch.exit.code}:\n${summarizeOutput(launch.tail())}`
+      : '';
     showStartupErrorPanel(
       `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ${why}` +
-        'This usually means the installed Flowpad package is out of date or broken.',
+        'This usually means the installed Flowpad package is out of date or broken.' +
+        launcherOutput,
     );
     return;
   }
@@ -1436,6 +1427,12 @@ ipcMain.handle('capture-region', async (event, rawRegion) => {
 });
 
 // Quit from the startup-timeout recovery panel's "Quit" button.
+ipcMain.handle('open-logs-folder', async () => {
+  const err = await require('electron').shell.openPath(MAIN_DESKTOP_LOG_DIR);
+  if (err) log.warn(`[logs] could not open ${MAIN_DESKTOP_LOG_DIR}: ${err}`);
+  return !err;
+});
+
 ipcMain.on('quit-app', () => {
   app.quit();
 });

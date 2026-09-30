@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // recovery commands to the clipboard, and quit from the panel.
   onStartupError: (callback) => ipcRenderer.on('startup-error', (_event, data) => callback(data)),
   copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text),
+  openLogsFolder: () => ipcRenderer.invoke('open-logs-folder'),
   quitApp: () => ipcRenderer.send('quit-app'),
   // Re-run the install/start in-app after a failed first install (no relaunch).
   retryStartup: () => ipcRenderer.send('retry-startup'),
