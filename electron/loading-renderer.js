@@ -160,6 +160,30 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     });
   }
 
+  // "Copy error details": the whole message the panel shows, plus where the logs are, so a
+  // user can paste it into a support message instead of photographing the screen.
+  const logPathEl = document.getElementById('error-logpath');
+  const copyDetailsBtn = document.getElementById('copy-details');
+  if (copyDetailsBtn) {
+    copyDetailsBtn.addEventListener('click', async () => {
+      const text = [
+        detailEl && detailEl.textContent,
+        logPathEl && !logPathEl.hidden ? logPathEl.textContent : '',
+      ].filter(Boolean).join('\n\n');
+      try {
+        await api.copyToClipboard(text);
+        copyDetailsBtn.textContent = 'Copied';
+        setTimeout(() => { copyDetailsBtn.textContent = 'Copy error details'; }, 1500);
+      } catch {
+        /* ignore copy failures */
+      }
+    });
+  }
+  const openLogsBtn = document.getElementById('open-logs');
+  if (openLogsBtn && api.openLogsFolder) {
+    openLogsBtn.addEventListener('click', () => { api.openLogsFolder().catch(() => {}); });
+  }
+
   wireCopy('copy-upgrade', () => upgradeEl.textContent);
   wireCopy('copy-diagnose', () => diagnoseEl.textContent);
 
@@ -181,6 +205,10 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
   api.onStartupError((data) => {
     if (!data) return;
     if (detailEl) detailEl.textContent = data.detail || '';
+    if (logPathEl) {
+      logPathEl.hidden = !data.logPath;
+      logPathEl.textContent = data.logPath ? `Logs: ${data.logPath}` : '';
+    }
     if (upgradeEl) upgradeEl.textContent = data.upgradeCommand || '';
     if (diagnoseEl) diagnoseEl.textContent = data.diagnoseCommand || '';
     if (retryBtn) retryBtn.hidden = !data.retryable;
