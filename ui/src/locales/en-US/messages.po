@@ -2023,6 +2023,8 @@ msgid "All observed deployments are current"
 msgstr "All observed deployments are current"
 
 #: src/components/git/RepoPicker.tsx
+#: src/components/git/RepoPicker.tsx
+#: src/components/git/RepoPicker.tsx
 msgid "All owners"
 msgstr "All owners"
 
@@ -9034,6 +9036,10 @@ msgstr "Filters & limits"
 msgid "Find machine"
 msgstr "Find machine"
 
+#: src/components/git/RepoPicker.tsx
+msgid "Find or type an organization…"
+msgstr "Find or type an organization…"
+
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
@@ -15299,10 +15305,6 @@ msgstr "Organization created"
 msgid "Organization created, but the key was not saved"
 msgstr "Organization created, but the key was not saved"
 
-#: src/components/git/RepoPicker.tsx
-msgid "Organization name, e.g. thinkz-team"
-msgstr "Organization name, e.g. thinkz-team"
-
 #: src/components/organization/organization-page.tsx
 msgid "Organization name…"
 msgstr "Organization name…"
@@ -15360,10 +15362,6 @@ msgstr "OS:"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Other assets"
 msgstr "Other assets"
-
-#: src/components/git/RepoPicker.tsx
-msgid "Other organization…"
-msgstr "Other organization…"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Other paths with this asset identity"
@@ -19616,8 +19614,8 @@ msgid "Show projects"
 msgstr "Show projects"
 
 #: src/components/git/RepoPicker.tsx
-msgid "Show repos"
-msgstr "Show repos"
+msgid "Show repos of “{typed}”"
+msgstr "Show repos of “{typed}”"
 
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "Show scope overrides"

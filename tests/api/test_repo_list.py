@@ -450,17 +450,17 @@ async def test_orgs_names_the_viewer_and_the_orgs_github_reports(bootstrapped_cl
 @pytest.mark.timeout(30)
 async def test_an_orgs_repos_are_listed_as_the_picker_lists_repos(bootstrapped_client, github_user_with_token):
     user = github_user_with_token
-    repo = {"name": "spora", "full_name": "thinkz-team/spora", "owner": {"login": "thinkz-team"}, "private": True,
+    repo = {"name": "api", "full_name": "acme-corp/api", "owner": {"login": "acme-corp"}, "private": True,
             "default_branch": "main", "pushed_at": "2026-09-29T00:00:00Z",
             "permissions": {"admin": False, "push": True, "pull": True}, "html_url": "", "description": "", "fork": False}
-    routes = {"https://api.github.com/orgs/thinkz-team/repos": _mock_response(200, json_body=[repo])}
+    routes = {"https://api.github.com/orgs/acme-corp/repos": _mock_response(200, json_body=[repo])}
     with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
         r = await bootstrapped_client.post(
-            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "thinkz-team"}
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "acme-corp"}
         )
 
     data = r.json()["data"]
-    assert [x["full_name"] for x in data["repos"]] == ["thinkz-team/spora"] and data["repos"][0]["role"] == "write"
+    assert [x["full_name"] for x in data["repos"]] == ["acme-corp/api"] and data["repos"][0]["role"] == "write"
     assert data["restricted"] is False and data["next_page"] is None
 
 
@@ -470,10 +470,10 @@ async def test_an_orgs_repos_are_listed_as_the_picker_lists_repos(bootstrapped_c
 async def test_an_org_that_shows_nothing_is_reported_as_restricted(bootstrapped_client, github_user_with_token):
     """What an org with OAuth App access restrictions answers: 200, and an empty list."""
     user = github_user_with_token
-    routes = {"https://api.github.com/orgs/thinkz-team/repos": _mock_response(200, json_body=[])}
+    routes = {"https://api.github.com/orgs/acme-corp/repos": _mock_response(200, json_body=[])}
     with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
         r = await bootstrapped_client.post(
-            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "thinkz-team"}
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "acme-corp"}
         )
 
     assert r.json()["data"]["restricted"] is True

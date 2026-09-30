@@ -2023,6 +2023,8 @@ msgid "All observed deployments are current"
 msgstr "כל הפריסות עדכניות"
 
 #: src/components/git/RepoPicker.tsx
+#: src/components/git/RepoPicker.tsx
+#: src/components/git/RepoPicker.tsx
 msgid "All owners"
 msgstr ""
 
@@ -9034,6 +9036,10 @@ msgstr ""
 msgid "Find machine"
 msgstr ""
 
+#: src/components/git/RepoPicker.tsx
+msgid "Find or type an organization…"
+msgstr ""
+
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Finish setup, then press Verify."
 msgstr "יש להשלים את ההגדרה, ולאחר מכן ללחוץ על אימות."
@@ -15299,10 +15305,6 @@ msgstr ""
 msgid "Organization created, but the key was not saved"
 msgstr ""
 
-#: src/components/git/RepoPicker.tsx
-msgid "Organization name, e.g. thinkz-team"
-msgstr ""
-
 #: src/components/organization/organization-page.tsx
 msgid "Organization name…"
 msgstr ""
@@ -15360,10 +15362,6 @@ msgstr "מערכת הפעלה:"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Other assets"
 msgstr "נכסים אחרים"
-
-#: src/components/git/RepoPicker.tsx
-msgid "Other organization…"
-msgstr ""
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Other paths with this asset identity"
@@ -19616,7 +19614,7 @@ msgid "Show projects"
 msgstr ""
 
 #: src/components/git/RepoPicker.tsx
-msgid "Show repos"
+msgid "Show repos of “{typed}”"
 msgstr ""
 
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
