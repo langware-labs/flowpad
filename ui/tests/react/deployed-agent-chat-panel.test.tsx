@@ -41,12 +41,12 @@ const deployment = new Deployment({
   status: { sync_state: 'current', provider_state: 'running' },
 });
 
-function renderPanel(isLocal = false): void {
+function renderPanel(): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  render(<DeployedAgentChatPanel agent={agent} deployment={deployment} isLocal={isLocal} />, { wrapper });
+  render(<DeployedAgentChatPanel agent={agent} deployment={deployment} />, { wrapper });
 }
 
 /** A chat whose one turn streams *events*; `send` records what it was asked with. */
@@ -115,15 +115,15 @@ describe('DeployedAgentChatPanel', () => {
     expect(mocks.openDock).toHaveBeenCalledWith(agent.dockPointer);
 
     await userEvent.click(screen.getByTestId('deployed-agent-open-session'));
-    // A remote placement keeps today's path: no auto prompt, no prepare step.
-    expect(useDeployment).toHaveBeenCalledWith(deployment.id);
-    await waitFor(() => expect(mocks.openShellProcess).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003'));
-    expect(mocks.prepareAgentSession).not.toHaveBeenCalled();
+    expect(useDeployment).toHaveBeenCalledWith(deployment.id, { autoPrompt: true });
+    await waitFor(() =>
+      expect(mocks.openShellProcess).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003', { viewMode: 'vibe' }),
+    );
   });
 
-  // FLOWPAD-2180: a session on THIS machine starts with the agent's auto prompt,
-  // the same stack the Use button opens with.
-  it('opens a local placement session with the auto prompt, prepared, in Vibe', async () => {
+  // FLOWPAD-2180: "Open a session" starts with the agent's auto prompt, the same
+  // stack the Use button opens with.
+  it('opens a placement session with the auto prompt, prepared, in Vibe', async () => {
     const { chat } = fakeChat([]);
     vi.spyOn(AgentChat, 'forDeployment').mockResolvedValue(chat);
     const useDeployment = vi.spyOn(agent, 'useDeployment').mockResolvedValue({
@@ -133,7 +133,7 @@ describe('DeployedAgentChatPanel', () => {
     });
     mocks.prepareAgentSession.mockResolvedValue(null);
 
-    renderPanel(true);
+    renderPanel();
     await userEvent.click(screen.getByTestId('deployed-agent-open-session'));
 
     expect(useDeployment).toHaveBeenCalledWith(deployment.id, { autoPrompt: true });
