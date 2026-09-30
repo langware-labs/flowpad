@@ -12,6 +12,7 @@ const {
   needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine,
   pythonVersionFromPyproject, getPythonVersion, tryPythonVersion, upgradeCommand,
   pythonFloor, maxPythonVersion, isPolicyBlockError, PY_FLOW_ENTRY, policyBlockedError,
+  UV_INSTALL_SH, UV_INSTALL_PS1, installFailure, cleanPythonEnv,
 } = UvManager;
 
 const IS_WIN = process.platform === 'win32';
@@ -557,6 +558,77 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     m = mk({ shim: 'ok' });
     await m._probeFlowBinOnce(); await m._probeFlowBinOnce();
     eq(m.ran.length, 1, 'the probe runs once per session');
+  }
+
+  // ── first install: the uv bootstrap reports the real cause ─────────────────
+  {
+    // The Unix installer script, run for real against local files in place of astral.sh. (Skipped
+    // where sh/curl are missing — Windows uses the PowerShell path below.)
+    const { spawnSync } = require('child_process');
+    const fs = require('fs'); const os = require('os'); const path = require('path');
+    const haveShCurl = !IS_WIN && spawnSync('sh', ['-c', 'command -v curl'], { encoding: 'utf8' }).status === 0;
+    if (!haveShCurl) {
+      console.log('  (sh/curl not available: skipped the uv installer script runs)');
+    } else {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uvsh-'));
+      try {
+        const run = (url) => spawnSync('sh', ['-c', UV_INSTALL_SH.replace('https://astral.sh/uv/install.sh', url)], { encoding: 'utf8' });
+        const good = path.join(dir, 'good.sh'); fs.writeFileSync(good, '#!/bin/sh\necho installer-ran\n');
+        let r = run(`file://${good}`);
+        eq([r.status, r.stdout.trim()], [0, 'installer-ran'], 'uv installer script: a real script is fetched and run');
+
+        const html = path.join(dir, 'portal.html'); fs.writeFileSync(html, '<html><body>Sign in to the network</body></html>');
+        r = run(`file://${html}`);
+        ok(r.status !== 0 && /did not return the uv installer script/.test(r.stderr) && !/installer-ran/.test(r.stdout),
+          'a captive-portal page is refused with an explanation, never executed');
+
+        r = run(`file://${path.join(dir, 'missing.sh')}`);
+        ok(r.status !== 0, 'a failed download FAILS the step (the old `curl | sh` exited 0 here)');
+        ok(/curl:/.test(r.stderr), `curl's own error reaches stderr: ${r.stderr.trim().split('\n')[0]}`);
+
+        const oldStyle = spawnSync('sh', ['-c', `curl -LsSf file://${path.join(dir, 'missing.sh')} | sh`], { encoding: 'utf8' });
+        eq(oldStyle.status, 0, 'baseline: the previous `curl … | sh` really did exit 0 on a failed download');
+      } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    }
+
+    ok(/Tls12/.test(UV_INSTALL_PS1) && UV_INSTALL_PS1.indexOf('Tls12') < UV_INSTALL_PS1.indexOf('Invoke-RestMethod'), 'PowerShell installer forces TLS 1.2 before the download');
+    ok(/Invoke-RestMethod/.test(UV_INSTALL_PS1) && /Invoke-Expression/.test(UV_INSTALL_PS1) && !/\b(irm|iex)\b/.test(UV_INSTALL_PS1), 'full cmdlet names, no irm/iex aliases');
+    ok(/ErrorActionPreference = 'Stop'/.test(UV_INSTALL_PS1), 'a failed download stops the script (non-zero exit)');
+
+    const f = installFailure('uv install failed (exit 1)\nboom', { stderr: 'boom', code: 1 });
+    eq([f.stderr, f.code, f.message.split('\n')[0]], ['boom', 1, 'uv install failed (exit 1)'], 'installFailure carries stderr/code so the panel can show them');
+    ok(/boom/.test(require('./startup-error').describeStartupFailure(f)), 'and the startup panel shows the installer\'s stderr');
+  }
+
+  // ── children never inherit a PYTHONHOME/PYTHONPATH that would break the venv ──
+  {
+    const seen = [];
+    const env = cleanPythonEnv({ PATH: '/bin', PYTHONHOME: '/x', PYTHONPATH: '/y', UV_PYTHON_INSTALL_MIRROR: 'm', HOME: '/h' }, { warn: (l) => seen.push(l) });
+    eq(Object.keys(env).sort(), ['HOME', 'PATH', 'UV_PYTHON_INSTALL_MIRROR'], 'PYTHONHOME/PYTHONPATH removed; UV_* (user config) and the rest kept');
+    eq(seen.length, 2, 'each removal is logged');
+    eq(cleanPythonEnv({ PATH: '/bin' }), { PATH: '/bin' }, 'a clean env is untouched');
+
+    let seenEnv = null;
+    const m = new UvManager(silentLog);
+    m._enrichedPath = () => '/p';
+    const origHome = process.env.PYTHONHOME;
+    process.env.PYTHONHOME = '/user/global/python';
+    try {
+      m._runStreaming = UvManager.prototype._runStreaming;
+      await m._run(process.execPath, ['-e', 'process.stdout.write(process.env.PYTHONHOME || "unset")'], { timeout: 5000, shell: false })
+        .then((r) => { seenEnv = r.stdout; });
+    } finally {
+      if (origHome === undefined) delete process.env.PYTHONHOME; else process.env.PYTHONHOME = origHome;
+    }
+    eq(seenEnv, 'unset', 'a real child process started through _run does not see the parent\'s PYTHONHOME');
+  }
+
+  // ── retry only stops a backend a previous attempt launched ─────────────────
+  {
+    const m = new UvManager(silentLog);
+    eq(m.hasLaunchedBackend(), false, 'a fresh manager has launched nothing (first-install retry must not `flow stop` / kill the port)');
+    m._lastLaunch = { startedAt: 1 };
+    eq(m.hasLaunchedBackend(), true, 'after start() has spawned flow start, stopping is legitimate');
   }
 
   // ── _uvToolInstallForce compiles bytecode in the install, not on first boot ─
