@@ -42,6 +42,9 @@ export interface ConversationFacets {
   /** Latest RECEIVED message is unread (invitation rows count as unread).
    *  Viewer-relative: a self-sent latest message never makes the row unread. */
   isUnread: boolean;
+  /** How many messages wait — the backend's `unread_count`, rendered, never recomputed. An
+   *  unread row the backend has not counted (a hub runtime) reads as 1. */
+  unreadCount: number;
 }
 
 /** Derive the category facets for a conversation row. Pure — no hooks, safe to
@@ -78,7 +81,9 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const hubUnread = latestMessage ? !latestMessage.is_read && !authoredBy(senderOf(latestMessage), [viewer.cloudUserId, viewer.localUserId]) : false;
   const isUnread = isInvitation || (conv.is_unread ?? hubUnread);
 
-  return { kind, isInvitation, isArchived, isUnread };
+  const unreadCount = isUnread ? Math.max(conv.unread_count ?? 1, 1) : 0;
+
+  return { kind, isInvitation, isArchived, isUnread, unreadCount };
 }
 
 // ── Recency sort — shared by StreamInboxView + RecentConversationsStrip ────────────

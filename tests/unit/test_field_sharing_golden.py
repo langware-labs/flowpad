@@ -370,12 +370,12 @@ def test_the_two_egress_seams_now_agree():
             # never the hub's (that is the roster's `owner` role).
             # `channel_source_id`: the local DataSource behind a source-backed
             # conversation — a row id in OUR database.
-            # `is_unread`: this viewer's unread, projected by `stream_inbox.recompute_unread`.
+            # `is_unread`/`unread_count`: this viewer's unread, projected by `stream_inbox.recompute_unread`.
             # `channel_spec`: the channel's traits, derived locally from `channel` — never travels.
             # `address`/`started_at`/`ended_at`: who a channel conversation is with and when it ran —
             # stamped by the local projection from the channel's own messages.
             # `channel_provider`: the driver behind the channel (two drivers speak `whatsapp`) — local.
-            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "channel_spec",
+            ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "channel_spec",
              "address", "started_at", "ended_at", "channel_provider"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
@@ -397,6 +397,7 @@ def test_the_two_egress_seams_now_agree():
                 "message_ids",
                 # A projection like `message_count`: only `recompute_unread` may write it.
                 "is_unread",
+                "unread_count",
                 "private_context_entities_",
                 "shared_context_entities",
             ],
