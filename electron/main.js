@@ -99,11 +99,17 @@ log.info('Flowpad starting...');
 // app quit/restart (autoInstallOnAppQuit). Reset once consumed.
 let suppressDesktopRestartPrompt = false;
 
+let updaterInitialized = false;
+
 function setupElectronAutoUpdater() {
   if (!app.isPackaged) {
     log.info('[electron-updater] skipped: app is not packaged');
     return;
   }
+  // startApp() can run again (macOS `activate`); a second setup would stack handlers
+  // (two "ready" prompts) and a second periodic interval.
+  if (updaterInitialized) return;
+  updaterInitialized = true;
 
   if (process.windowsStore) {
     // Microsoft Store build: the Store delivers desktop updates (and electron-updater
@@ -152,7 +158,7 @@ function setupElectronAutoUpdater() {
         log.warn('[electron-updater] mainWindow missing; will install on quit');
         return;
       }
-      if (packageUpdateInFlight) {
+      if (packageUpdateInFlight || (uvManager && uvManager.isInstalling())) {
         // The package "Update Available" dialog (or its upgrade) is up right now.
         // Don't stack a second dialog; the next hourly tick re-emits this event
         // from the cached download and prompts then. Quitting meanwhile still
@@ -989,9 +995,16 @@ async function installAndStartBackend() {
     // may be half-replaced. Repair it before anything reads or starts it.
     if (flowBin && uvManager.hadInterruptedInstall()) {
       sendStatus('Repairing Flowpad installation');
-      await uvManager.repairIfInterrupted({ onProgress: installProgress('Repairing Flowpad installation') });
-      backendJustUpgraded = true;
-      flowBin = uvManager.getInstalledFlowBin() || flowBin;
+      try {
+        await uvManager.repairIfInterrupted({ onProgress: installProgress('Repairing Flowpad installation') });
+        backendJustUpgraded = true;
+        flowBin = uvManager.getInstalledFlowBin() || flowBin;
+      } catch (repairErr) {
+        // Offline, or uv itself is unavailable: start what is installed (it may be perfectly
+        // fine) instead of failing every launch. The marker is kept, so the repair is
+        // retried next launch; a truly broken venv still hits the broken-install path below.
+        log.warn(`[uv] repair of the interrupted install failed, starting the current install: ${repairErr.message}`);
+      }
     }
 
     if (flowBin) {
@@ -1117,6 +1130,12 @@ async function installAndStartBackend() {
       await uvManager.start();
     }
   } catch (error) {
+    if (installQuitConfirmed) {
+      // The user chose "Quit anyway" during an install: the abort is why we are here. Do not
+      // show the error panel (it would re-show the window we just hid); the app is quitting.
+      log.info('[startup] install aborted by the user quitting');
+      return { ok: false };
+    }
     log.error('Failed to start Python backend:', error);
 
     const details = [
@@ -1304,7 +1323,11 @@ app.on('activate', () => {
   }
   // On macOS, recreate window when dock icon is clicked
   if (BrowserWindow.getAllWindows().length === 0) {
-    startApp();
+    if (uvManager && uvManager.isInstalling()) {
+      createWindow(); // the running startup owns the install; only the window is missing
+    } else {
+      startApp();
+    }
   }
 });
 
@@ -1326,17 +1349,26 @@ app.on('before-quit', (event) => {
       type: 'warning',
       title: 'Update in progress',
       message: 'FlowPad is installing an update.',
-      detail: 'Quitting now interrupts it. FlowPad will repair the installation the next time it starts.',
+      detail: uvManager.hasInstallMarker()
+        ? 'Quitting now interrupts it. FlowPad will repair the installation the next time it starts.'
+        : 'Quitting now interrupts it and may leave the installation incomplete. If FlowPad does not start next time, reinstall it.',
       buttons: ['Keep waiting', 'Quit anyway'],
       defaultId: 0,
       cancelId: 0,
     }).then(({ response }) => {
-      installQuitDialogOpen = false;
       if (response === 1) {
         installQuitConfirmed = true;
         uvManager.abortInstall();
         app.quit();
+      } else if (!mainWindow || mainWindow.isDestroyed()) {
+        // The window was closed to trigger this quit. "Keep waiting" must not leave a
+        // running install with nothing on screen (and startApp still needs a window).
+        createWindow();
       }
+    }).catch((err) => {
+      log.warn(`[quit] install-in-progress dialog failed: ${err.message}`);
+    }).finally(() => {
+      installQuitDialogOpen = false;
     });
     return;
   }

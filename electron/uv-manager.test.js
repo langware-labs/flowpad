@@ -413,6 +413,63 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       eq(await m.repairIfInterrupted(), false, 'repairIfInterrupted: no marker → no-op');
       eq(reinstalls, 0, 'repairIfInterrupted: no reinstall without a marker');
 
+      // uv killed from OUTSIDE (a signal) after it started → the venv may be half-replaced → keep.
+      fs.rmSync(marker, { force: true });
+      m = mk();
+      m._runStreaming = async (_c, _a, opts) => {
+        opts.onChild({ pid: 1, exitCode: null, kill() {} });
+        const e = new Error('uv was killed'); e.signal = 'SIGKILL'; throw e;
+      };
+      await m._uvToolInstallForce(['tool', 'install', 'flowpad']).catch(() => {});
+      eq(fs.existsSync(marker), true, 'marker: kept when uv is killed by a signal');
+      eq(m.hasInstallMarker(), true, 'hasInstallMarker: true while the marker file exists');
+
+      // ...but an ordinary uv failure after it started leaves a state uv reports → clear.
+      fs.rmSync(marker, { force: true });
+      m = mk();
+      m._runStreaming = async (_c, _a, opts) => {
+        opts.onChild({ pid: 1, exitCode: null, kill() {} });
+        throw new Error('No solution found when resolving dependencies');
+      };
+      await m._uvToolInstallForce(['tool', 'install', 'flowpad']).catch(() => {});
+      eq(fs.existsSync(marker), false, 'marker: cleared on an ordinary uv failure even after it started');
+
+      // Abort BEFORE uv started (during the drain) changed nothing → no repair next launch.
+      m = mk();
+      let spawnedUv = false;
+      let releaseDrain;
+      m._drainVenvProcesses = () => new Promise((r) => { releaseDrain = r; });
+      m._runStreaming = async () => { spawnedUv = true; return { stdout: '', stderr: '' }; };
+      const early = m._uvToolInstallForce(['tool', 'install', 'flowpad']).then(() => 'done', (e) => e.message);
+      await new Promise((r) => setImmediate(r));
+      eq(m.abortInstall(), true, 'abortInstall during the drain reports a running install');
+      releaseDrain();
+      eq(await early, 'install aborted before uv started', 'aborted before spawn: the install stops');
+      eq(spawnedUv, false, 'aborted before spawn: uv was never started');
+      eq(fs.existsSync(marker), false, 'aborted before spawn: marker cleared (nothing was touched)');
+
+      // A marker owned by another LIVE process is an install in flight, not an interrupted one.
+      fs.writeFileSync(marker, JSON.stringify({ pid: process.ppid }));
+      eq(mk().hadInterruptedInstall(), false, 'marker owned by a live foreign pid → not interrupted');
+      const dead = require('child_process').spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.pid))'], { encoding: 'utf8' });
+      fs.writeFileSync(marker, JSON.stringify({ pid: Number(dead.stdout) }));
+      eq(mk().hadInterruptedInstall(), true, 'marker owned by a dead pid → interrupted');
+      fs.writeFileSync(marker, JSON.stringify({ pid: process.pid }));
+      eq(mk().hadInterruptedInstall(), true, 'marker owned by this process (stale) → interrupted');
+      fs.writeFileSync(marker, 'not json');
+      eq(mk().hadInterruptedInstall(), true, 'unreadable marker → interrupted');
+
+      // A successful repair through the REAL reinstall/_uvToolInstallForce clears the marker.
+      fs.writeFileSync(marker, JSON.stringify({ pid: 999999999 }));
+      m = mk();
+      m.ensureUv = async () => {};
+      m._getLatestPypiInfo = async () => null;
+      m._ensureShimOnPath = async () => {};
+      m._resolveFlowBin = async () => null;
+      m._runStreaming = async (_c, _a, opts) => { opts.onChild({ pid: 1, exitCode: null, kill() {} }); return { stdout: '', stderr: '' }; };
+      eq(await m.repairIfInterrupted(), true, 'repair through the real reinstall runs');
+      eq(fs.existsSync(marker), false, 'repair success: the marker is gone');
+
       // stateDir null → marker disabled (the default; tests and tools stay out of $HOME).
       const off = new UvManager(silentLog);
       eq(off.hadInterruptedInstall(), false, 'marker disabled without a stateDir');

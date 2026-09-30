@@ -135,6 +135,12 @@ function tryPythonVersion() {
   try { return getPythonVersion(); } catch { return null; }
 }
 
+// True when a process with this pid exists (signal 0 = existence probe; EPERM = exists,
+// owned by someone else).
+function isPidAlive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
 // The recovery command shown to the user, mirroring installLatest()/upgrade().
 function upgradeCommand() {
   const v = tryPythonVersion();
@@ -198,6 +204,8 @@ class UvManager {
     this._installing = false;
     this._installChild = null;
     this._installAborted = false;
+    this._keepMarker = false;
+    this._spawned = false;
     this.isShuttingDown = false;
     this._flowBin = null;
     // Set to true when the uv-generated flow.exe shim is blocked by Windows
@@ -844,16 +852,26 @@ class UvManager {
   async _uvToolInstallForce(installArgs, { onProgress } = {}) {
     this._installing = true;
     this._installAborted = false;
+    this._keepMarker = false;
+    this._spawned = false;
     this._writeInstallMarker(installArgs);
     try {
       return await this._uvToolInstallForceAttempts(installArgs, { onProgress });
+    } catch (err) {
+      // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
+      // half-written tool dir: the venv may be half-replaced, so keep the marker.
+      if (err && (err.signal || this.isToolDirLockedError(err) || this.isCorruptEnvError(err))) {
+        this._keepMarker = true;
+      }
+      throw err;
     } finally {
       this._installing = false;
       this._installChild = null;
-      // A finished install — success OR a clean uv failure — leaves the tool
-      // dir in a state uv itself reports on. Only a KILLED install (aborted, or
-      // the app died so this never runs) is unknown, so only that keeps the marker.
-      if (!this._installAborted) this._clearInstallMarker();
+      // A finished install — success OR a clean uv failure — leaves the tool dir in a state
+      // uv itself reports on. Only a KILLED install is unknown, and only if uv had started:
+      // an abort during the drain, before the spawn, changed nothing.
+      const keep = (this._installAborted || this._keepMarker) && this._spawned;
+      if (!keep) this._clearInstallMarker();
     }
   }
 
@@ -876,7 +894,7 @@ class UvManager {
         // No wall-clock cap — see _runStreaming. Progress lines go to the
         // caller (the loading window) so a long slow install is visibly alive.
         return await this._runStreaming('uv', args, {
-          onChild: (child) => { this._installChild = child; },
+          onChild: (child) => { this._installChild = child; this._spawned = true; },
           onLine: (line) => {
             if (onProgress && isInstallProgressLine(line)) onProgress(line);
           },
@@ -932,6 +950,20 @@ class UvManager {
    * half-replaced and should be repaired before the backend is started.
    */
   hadInterruptedInstall() {
+    const file = this._installMarkerPath();
+    if (!file || !fs.existsSync(file)) return false;
+    // A marker owned by ANOTHER LIVE process is an install in flight, not an interrupted
+    // one — repairing now would run a second `uv tool install` over it. (A dead owner's pid
+    // that the OS reused reads as alive: we skip the repair until it exits, never race it.)
+    try {
+      const { pid } = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (pid && pid !== process.pid && isPidAlive(pid)) return false;
+    } catch { /* unreadable marker → treat as interrupted */ }
+    return true;
+  }
+
+  /** True when the install-in-progress marker file exists (whoever wrote it). */
+  hasInstallMarker() {
     const file = this._installMarkerPath();
     return !!file && fs.existsSync(file);
   }
