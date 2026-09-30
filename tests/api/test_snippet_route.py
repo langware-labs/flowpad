@@ -78,7 +78,10 @@ async def test_a_file_has_one_terminal_and_another_file_its_own(client, tmp_path
     first, second = tmp_path / "a.py", tmp_path / "b.py"
     first.write_text(SNIPPET)
     second.write_text(SNIPPET)
+    none_yet = (await _post(client, "terminal", {"path": str(first), "create": False}))["data"]
+    assert none_yet["shell_id"] is None, "a file never run has no terminal, and finding one makes none"
     one = (await _post(client, "terminal", {"path": str(first)}))["data"]
+    assert (await _post(client, "terminal", {"path": str(first), "create": False}))["data"]["shell_id"] == one["shell_id"]
     again = (await _post(client, "terminal", {"path": str(first)}))["data"]
     other = (await _post(client, "terminal", {"path": str(second)}))["data"]
     assert one["shell_id"] == again["shell_id"] != other["shell_id"]

@@ -1,7 +1,9 @@
 import apiClient from '@sdk/client';
-import { ConnectionManager, PrefKey, isOk, type CliResult, type TypeId } from '@sdk';
+import { PrefKey, Shell, type TypeId } from '@sdk';
 import { useFileWatch } from '@sdk/react/hooks';
 import { usePreference } from '@src/hooks/use-preference';
+import { useShellRun } from '@src/hooks/useShellRun';
+import { ShellTerminal, type ShellTerminalHandle } from '@src/components/terminal/interactive-terminal/ShellTerminal';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { formatClock } from '@src/components/lens-viewer/shared/format-utils';
@@ -18,11 +20,16 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
  * markers split it into hidden (imports) / init / snippet. Only the snippet
  * region shows by default; the toolbar reveals the others (remembered prefs).
  *
- * Deliberately a renderer only. Reading regions, writing one back, checking and
- * running the file are the backend's (`flow_sdk/core/snippet.py`, `/api/v1/snippet/*`),
- * proven there by unit tests — nothing here decides what a region is or what a
- * problem is. The check's problems come back in FILE lines; this view only maps
- * them onto the region that holds each line.
+ * Deliberately a renderer only. Reading regions, writing one back and checking the
+ * file are the backend's (`flow_sdk/core/snippet.py`, `/api/v1/snippet/*`), proven
+ * there by unit tests — nothing here decides what a region is or what a problem is.
+ * The check's problems come back in FILE lines; this view only maps them onto the
+ * region that holds each line.
+ *
+ * Running is the file's OWN terminal (`Shell.forSnippet`): Run types the file's
+ * command into it and the output streams below as it is printed — no time limit,
+ * Stop is the terminal's interrupt, and the terminal outlives the view (its last
+ * run is there on the next visit).
  */
 
 interface SnippetRegionView {
@@ -60,12 +67,6 @@ export function regionLine(regions: SnippetRegionView[], line: number): { index:
   return null;
 }
 
-/** The run's answer, and whether THIS view stopped it. A stop is a fact the
- *  view knows — it pressed the button — not something to infer from the answer:
- *  reading "any detail means stopped" labelled every failed run "stopped", since
- *  the backend writes a sentence for every run that does not succeed. */
-type SnippetOutcome = CliResult & { stopped: boolean };
-
 /** Elapsed run time as the clock shows it: tenths under a minute, then m:ss. */
 export function formatElapsed(ms: number): string {
   return ms < 60_000 ? `${(ms / 1000).toFixed(1)}s` : formatClock(ms);
@@ -86,8 +87,9 @@ function RunClock() {
   );
 }
 
-/** The one caller of the stop route: the button and the unmount both go through here. */
-const stopRun = (runId: string) => apiClient.post<{ stopped?: boolean }>('/api/v1/snippet/stop', { run_id: runId });
+/** What Run types: `clear` first, so the terminal's own record starts clean too and a later visit
+ *  replays just this run; then the file's command. */
+const runLine = (command: string) => `clear; ${command}`;
 
 const LINE_HEIGHT = 19;
 /** The owner name the check's markers are set under (one set per region editor). */
@@ -120,7 +122,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const { resolvedTheme } = useTheme();
   const [showInit, setShowInit] = usePreference<boolean>(PrefKey.SNIPPET_SHOW_INIT);
   const [showImports, setShowImports] = usePreference<boolean>(PrefKey.SNIPPET_SHOW_IMPORTS);
-  const [timeoutSeconds] = usePreference<number>(PrefKey.SNIPPET_RUN_TIMEOUT);
 
   const [regions, setRegions] = useState<SnippetRegionView[] | null>(null);
   // Bumped only when the file changed under us (not by our own save), to remount
@@ -132,16 +133,22 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const [readError, setReadError] = useState('');
   const [notice, setNotice] = useState('');
   const error = readError || notice;
-  const [running, setRunning] = useState(false);
-  const [result, setResult] = useState<SnippetOutcome | null>(null);
+  // The file's terminal, once it has one: found on arrival (its last run), made on the first Run.
+  const [terminal, setTerminal] = useState<{ shell: Shell; command: string } | null>(null);
+  const terminalView = useRef<ShellTerminalHandle | null>(null);
+  const shellRun = useShellRun(terminal?.shell ?? null);
+  // Whether the last run ended because THIS view pressed Stop — a fact the view knows, not one to
+  // read off an exit code (a snippet may exit 130 on its own).
+  const [stopped, setStopped] = useState(false);
+  // The host runner's run in flight (a deployment's Restart).
+  const [hostRunning, setHostRunning] = useState(false);
+  const running = runner ? hostRunning : shellRun.running;
+  const firstRun = useRef<string | null>(null);
   // What the check says about the file on disk — null until the first answer.
   const [problems, setProblems] = useState<SnippetDiagnostic[] | null>(null);
   // Only the newest check's answer counts: a slow check of an older text must not
   // overwrite the answer for the text on screen.
   const checkSeqRef = useRef(0);
-  // The run in flight, by the id the backend knows it by — what Stop names.
-  const runIdRef = useRef<string | null>(null);
-  const stopRequestedRef = useRef(false);
   // Editors mount only once the shared shiki themes exist (see shikiMonaco.ts).
   const [themed, setThemed] = useState(false);
 
@@ -183,15 +190,12 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   const check = useCallback(async () => {
     const seq = ++checkSeqRef.current;
     try {
-      const res = await apiClient.post<{ diagnostics?: SnippetDiagnostic[] }>('/api/v1/snippet/check', {
-        path,
-        timeout_seconds: timeoutSeconds,
-      });
+      const res = await apiClient.post<{ diagnostics?: SnippetDiagnostic[] }>('/api/v1/snippet/check', { path });
       if (seq === checkSeqRef.current) setProblems(res?.diagnostics ?? []);
     } catch {
       // A check that could not be asked says nothing about the file: keep the last answer.
     }
-  }, [path, timeoutSeconds]);
+  }, [path]);
 
   const load = useCallback(async () => {
     let res: SnippetRead;
@@ -291,77 +295,84 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
     [save],
   );
 
+  // Arriving: the file's terminal if it has one — its last run shows; nothing is started for a file never run.
+  useEffect(() => {
+    if (runner) return;
+    let alive = true;
+    setTerminal(null);
+    void Shell.findForSnippet(path)
+      .then((found) => alive && found && setTerminal(found))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [path, runner]);
+
+  /** Write what is on screen before anything runs it. */
+  const flushEdits = useCallback(async () => {
+    const flushing = [...pendingRef.current.keys()].map((index) => {
+      const region = regions?.find((r) => r.index === index);
+      return region ? save(region) : null;
+    });
+    await Promise.all([...flushing, ...inflightRef.current]);
+  }, [regions, save]);
+
   const run = useCallback(async () => {
-    // One run at a time: clicks landing before the button turns into Stop would
-    // each start a process, and Stop only knows the last.
-    if (runIdRef.current) return;
-    const runId = crypto.randomUUID();
-    runIdRef.current = runId;
-    stopRequestedRef.current = false;
-    // A new run starts on a clean console: the last run's output is gone the moment Run is
-    // clicked, not when the new answer lands (a long run would otherwise show stale output).
-    setResult(null);
-    setRunning(true);
+    if (shellRun.running) return;
+    setStopped(false);
+    setNotice('');
+    // A clean console the moment Run is clicked — not when the terminal gets round to it.
+    terminalView.current?.clear();
     try {
-      // Run what is on screen: flush unsaved edits first.
-      const flushing = [...pendingRef.current.keys()].map((index) => {
-        const region = regions?.find((r) => r.index === index);
-        return region ? save(region) : null;
-      });
-      await Promise.all([...flushing, ...inflightRef.current]);
-      // The connection id ends the run if this tab closes mid-run (no unmount runs then).
-      const answer = await apiClient.post<CliResult>('/api/v1/snippet/run', {
-        path,
-        timeout_seconds: timeoutSeconds,
-        run_id: runId,
-        connection_id: ConnectionManager.getInstance().id,
-      });
-      // A run that finished cleanly as Stop landed was not stopped.
-      setResult({ ...answer, stopped: stopRequestedRef.current && !isOk(answer) });
+      await flushEdits();
+      if (terminal) {
+        await shellRun.run(runLine(terminal.command));
+        return;
+      }
+      // The first Run makes the terminal; the run starts once this view holds it (the effect below).
+      const found = await Shell.forSnippet(path);
+      firstRun.current = runLine(found.command);
+      setTerminal(found);
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not run the snippet`));
-    } finally {
-      runIdRef.current = null;
-      setRunning(false);
     }
-  }, [path, regions, save, timeoutSeconds, t]);
+  }, [flushEdits, path, shellRun, terminal, t]);
+
+  useEffect(() => {
+    const line = firstRun.current;
+    if (!line || !terminal) return;
+    firstRun.current = null;
+    shellRun.run(line).catch((reason) => setNotice(errorMessage(reason, t`Could not run the snippet`)));
+  }, [terminal, shellRun, t]);
 
   /** The host's runner: what is on screen is saved first, then the host runs it. */
   const runByHost = useCallback(async () => {
     if (!runner) return;
-    setRunning(true);
+    setHostRunning(true);
     try {
-      const flushing = [...pendingRef.current.keys()].map((index) => {
-        const region = regions?.find((r) => r.index === index);
-        return region ? save(region) : null;
-      });
-      await Promise.all([...flushing, ...inflightRef.current]);
+      await flushEdits();
       await runner.run();
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not run the snippet`));
     } finally {
-      setRunning(false);
+      setHostRunning(false);
     }
-  }, [runner, regions, save, t]);
+  }, [runner, flushEdits, t]);
 
-  /** Kill the run in flight; it then answers with what it printed so far. */
+  /** Stop the run: Ctrl-C in its terminal, then whatever is left is killed. The terminal stays. */
   const stop = useCallback(async () => {
-    const runId = runIdRef.current;
-    if (!runId) return;
-    stopRequestedRef.current = true;
+    setStopped(true);
     try {
-      await stopRun(runId);
+      await shellRun.interrupt();
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not stop the snippet`));
     }
-  }, [t]);
+  }, [shellRun, t]);
 
+  // Leaving the view writes what is pending; the run goes on in its terminal.
   useEffect(
     () => () => {
       pendingRef.current.forEach((handle) => clearTimeout(handle));
-      // Leaving the view must not leave its run going.
-      const runId = runIdRef.current;
-      if (runId) stopRun(runId).catch(() => undefined);
     },
     [],
   );
@@ -404,7 +415,14 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
             {t`Run`}
           </Button>
         )}
-        {running && !runner && <RunClock />}
+        {shellRun.startedAt !== null && !runner && <RunClock />}
+        {!running && !runner && shellRun.lastExit && (
+          <span className="ml-1 font-mono text-xs text-muted-foreground" data-testid="snippet-status">
+            {stopped
+              ? t`stopped after ${formatElapsed(shellRun.lastExit.durationS * 1000)}`
+              : t`exit ${shellRun.lastExit.exitCode} · ${formatElapsed(shellRun.lastExit.durationS * 1000)}`}
+          </span>
+        )}
         {has('init') && (
           <Button variant={showInit ? 'secondary' : 'ghost'} size="sm" onClick={() => setShowInit(!showInit)} data-testid="snippet-toggle-init">
             <ListStart className="mr-1 h-3.5 w-3.5" />
@@ -451,23 +469,13 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
           </div>
         ))}
 
-        {result && (
-          <div className="p-3 font-mono text-xs" data-testid="snippet-console">
-            {result.stdout && <pre className="whitespace-pre-wrap" data-testid="snippet-stdout">{result.stdout}</pre>}
-            {result.stderr && <pre className="whitespace-pre-wrap text-destructive" data-testid="snippet-stderr">{result.stderr}</pre>}
-            <div className="mt-1 text-muted-foreground" data-testid="snippet-status">
-              {result.timed_out
-                ? t`timed out after ${timeoutSeconds}s — killed`
-                : result.stopped
-                  ? t`stopped — killed after ${(result.duration_s ?? 0).toFixed(2)}s`
-                  : result.returncode == null
-                    ? // Never started: no such file, no runner for it. The answer says which.
-                      result.detail || t`did not run`
-                    : t`exit ${result.returncode} · ${(result.duration_s ?? 0).toFixed(2)}s`}
-            </div>
-          </div>
-        )}
       </div>
+
+      {terminal && !runner && (
+        <div className="flex h-[40%] min-h-[160px] flex-col border-t" data-testid="snippet-terminal">
+          <ShellTerminal ref={terminalView} key={terminal.shell.id} shellId={terminal.shell.id} active className="h-full" />
+        </div>
+      )}
     </div>
   );
 }

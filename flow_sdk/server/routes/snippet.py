@@ -115,8 +115,12 @@ async def snippet_terminal(req: SnippetTerminalRequest):
     command = terminal_command(path)
     if command is None:
         return _fail("NOT_APPLICABLE", f"no runner for '{path.suffix}' files")
+    what = f"snippet:{path}"
+    if not req.create:
+        found = await Shell.find_belonging_to(what)
+        return ApiSuccessResponse(data={"shell_id": str(found.id) if found else None, "command": command, "path": str(path)})
     try:
-        shell = await Shell.belonging_to(f"snippet:{path}", workdir=str(path.parent), name=f"{path.name} · snippet")
+        shell = await Shell.belonging_to(what, workdir=str(path.parent), name=f"{path.name} · snippet")
     except RuntimeError as exc:
         return ApiFailResponse(message=str(exc))
     return ApiSuccessResponse(data={"shell_id": str(shell.id), "command": command, "path": str(path)})

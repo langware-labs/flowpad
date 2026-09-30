@@ -7,7 +7,7 @@ import { DEPLOYMENT_TIMELINE_TAG, type Deployment, type DeploymentProcess } from
 import { useOnTag } from '@sdk/react/hooks';
 import { ensureShikiMonaco, monacoTheme } from '@src/components/code-editor/shikiMonaco';
 import { SnippetView } from '@src/components/code-editor/SnippetView';
-import { SidecarShellTerminal } from '@src/components/terminal/interactive-terminal/SidecarShellTerminal';
+import { ShellTerminal } from '@src/components/terminal/interactive-terminal/ShellTerminal';
 import { Button } from '@src/components/ui/button';
 import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
@@ -191,7 +191,7 @@ export function DeploymentProcessPanel({ deployment }: { deployment: Deployment 
         <div className="min-h-0 flex-1">
           {tab === 'console' ? (
             process?.shell_id ? (
-              <SidecarShellTerminal key={process.shell_id} shellId={process.shell_id} active className="h-full" />
+              <ShellTerminal key={process.shell_id} shellId={process.shell_id} active className="h-full" />
             ) : (
               <p className="px-4 py-3 text-sm text-muted-foreground">
                 <Trans>Not started yet — its terminal appears when the deployment first runs.</Trans>

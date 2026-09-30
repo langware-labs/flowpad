@@ -72,7 +72,7 @@ import {
 } from './side-windows';
 import { SideTabTooltipContent } from './LastPromptTooltip';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
-import { SidecarShellTerminal } from './SidecarShellTerminal';
+import { ShellTerminal } from './ShellTerminal';
 import { TerminalBottomRibbon } from './TerminalBottomRibbon';
 import { TerminalSearchBar } from './TerminalSearchBar';
 import { calcTimeGutterWidth, TimeGutter } from './TimeGutter';
@@ -383,7 +383,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const handleToggleSidecar = useCallback(async () => {
     if (!process) return;
     if (!sidecarShellId) {
-      // Create a plain Shell entity and let SidecarShellTerminal start its PTY
+      // Create a plain Shell entity and let ShellTerminal start its PTY
       const computeNodeId = shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? null;
       const computeNodeUname = shellRef.current?.compute_node_uname ?? dataContext.computeNode?.uname ?? null;
       if (!computeNodeId) return;
@@ -2014,7 +2014,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             {/* Shell pane — full content area when active */}
             {activePane === 'shell' && sidecarShellId && (
               <PaneView>
-                <SidecarShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
+                <ShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
               </PaneView>
             )}
           </div>

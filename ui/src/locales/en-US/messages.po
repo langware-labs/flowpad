@@ -5639,6 +5639,7 @@ msgstr "Could not run the connection test."
 
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/code-editor/SnippetView.tsx
 msgid "Could not run the snippet"
 msgstr "Could not run the snippet"
 
@@ -7116,8 +7117,8 @@ msgid "Diagnostic complete — no issue found."
 msgstr "Diagnostic complete — no issue found."
 
 #: src/components/code-editor/SnippetView.tsx
-msgid "did not run"
-msgstr "did not run"
+#~ msgid "did not run"
+#~ msgstr "did not run"
 
 #: src/components/code-editor/CodeEditor.tsx
 #: src/pages/flow-page/display-annotation.ts
@@ -8334,11 +8335,15 @@ msgstr "Existing repo"
 msgid "exit {0}"
 msgstr "exit {0}"
 
-#. placeholder {0}: result.returncode
-#. placeholder {1}: (result.duration_s ?? 0).toFixed(2)
+#. placeholder {0}: shellRun.lastExit.exitCode
+#. placeholder {1}: formatElapsed(shellRun.lastExit.durationS * 1000)
 #: src/components/code-editor/SnippetView.tsx
-msgid "exit {0} · {1}s"
-msgstr "exit {0} · {1}s"
+msgid "exit {0} · {1}"
+msgstr "exit {0} · {1}"
+
+#: src/components/code-editor/SnippetView.tsx
+#~ msgid "exit {0} · {1}s"
+#~ msgstr "exit {0} · {1}s"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Exit local"
@@ -20535,10 +20540,14 @@ msgstr "stopped"
 msgid "Stopped"
 msgstr "Stopped"
 
-#. placeholder {0}: (result.duration_s ?? 0).toFixed(2)
 #: src/components/code-editor/SnippetView.tsx
-msgid "stopped — killed after {0}s"
-msgstr "stopped — killed after {0}s"
+#~ msgid "stopped — killed after {0}s"
+#~ msgstr "stopped — killed after {0}s"
+
+#. placeholder {0}: formatElapsed(shellRun.lastExit.durationS * 1000)
+#: src/components/code-editor/SnippetView.tsx
+msgid "stopped after {0}"
+msgstr "stopped after {0}"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "Storage"
@@ -22229,8 +22238,8 @@ msgid "timed out"
 msgstr "timed out"
 
 #: src/components/code-editor/SnippetView.tsx
-msgid "timed out after {timeoutSeconds}s — killed"
-msgstr "timed out after {timeoutSeconds}s — killed"
+#~ msgid "timed out after {timeoutSeconds}s — killed"
+#~ msgstr "timed out after {timeoutSeconds}s — killed"
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Timeline"
