@@ -94,7 +94,7 @@ describe('useAgentLauncher', () => {
 
     await result.current.launch(agent, 'proj-1');
 
-    expect(use).toHaveBeenCalledWith('proj-1', { autoPrompt: true });
+    expect(use).toHaveBeenCalledWith('proj-1', true);
     expect(mocks.drainQueue).toHaveBeenCalledTimes(1);
     expect(mocks.openShellProcess).toHaveBeenCalledWith(PROCESS_ID, expect.anything());
     expect(mocks.notifyError).not.toHaveBeenCalled();

@@ -159,7 +159,7 @@ export class Agent extends APIEntity<Agent> {
    *  cancelled with a warning. See `Agent.auto_launch_for` (backend). */
   auto_launch: boolean;
   /** The agent's auto prompt: the first turn of every new session opened as it
-   *  with `use(…, { autoPrompt: true })` — auto-launch included — delivered via
+   *  with `use(…, true)` — auto-launch included — delivered via
    *  the prompt queue. Independent of `auto_launch`. */
   auto_launch_prompt?: string;
   /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
@@ -321,13 +321,13 @@ export class Agent extends APIEntity<Agent> {
    * open on the customer's project. Omit it and the backend falls back to the
    * agent's own project.
    *
-   * `autoPrompt: true` queues the agent's auto prompt as the first turn. It is
+   * `autoPrompt` queues the agent's auto prompt as the first turn. It is
    * queued, not sent: start it with `drainQueue()` (the UI's
    * `prepareAgentSession` does, after the vibe embed) BEFORE sending your own
    * prompt, or the auto prompt runs second.
    */
-  async use(projectId?: string | null, options: AgentUseOptions = {}): Promise<AgentUseResult> {
-    return (await this.post('use', { project_id: projectId ?? null, ...autoPromptBody(options) })) as AgentUseResult;
+  async use(projectId?: string | null, autoPrompt = false): Promise<AgentUseResult> {
+    return (await this.post('use', { project_id: projectId ?? null, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
   }
 
   /**
@@ -339,8 +339,8 @@ export class Agent extends APIEntity<Agent> {
    * remote-chat transport. `autoPrompt` as in `use` — honoured only for a
    * placement on this machine.
    */
-  async useDeployment(deploymentId: string, options: AgentUseOptions = {}): Promise<AgentUseResult> {
-    return (await this.post('use', { deployment_id: deploymentId, ...autoPromptBody(options) })) as AgentUseResult;
+  async useDeployment(deploymentId: string, autoPrompt = false): Promise<AgentUseResult> {
+    return (await this.post('use', { deployment_id: deploymentId, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
   }
 
   /**
@@ -592,16 +592,10 @@ export interface AgentUseResult {
   deployment_id: string;
 }
 
-/** Options for `Agent.use` / `useDeployment`. */
-export interface AgentUseOptions {
-  /** Queue the agent's auto prompt as the session's first turn (default off). */
-  autoPrompt?: boolean;
-}
-
 /** The body key for an opted-in `use` — absent unless asked, so the hub relay
  *  and SDK callers that never drain keep a turn-less session. */
-function autoPromptBody(options: AgentUseOptions): { auto_prompt?: true } {
-  return options.autoPrompt ? { auto_prompt: true } : {};
+function autoPromptBody(autoPrompt: boolean): { auto_prompt?: true } {
+  return autoPrompt ? { auto_prompt: true } : {};
 }
 
 /** The fields a schedule manages — `POST /agent/<id>/add_schedule` and friends

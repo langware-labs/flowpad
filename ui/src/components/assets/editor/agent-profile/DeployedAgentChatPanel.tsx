@@ -120,7 +120,7 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
   };
 
   const openSession = async () => {
-    const receipt = await agent.useDeployment(deployment.id, { autoPrompt: true });
+    const receipt = await agent.useDeployment(deployment.id, true);
     await prepareAgentSession(receipt.process_id);
     void navigation.openShellProcess(receipt.process_id, { viewMode: ViewMode.Vibe });
   };
