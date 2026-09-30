@@ -76,7 +76,12 @@ def test_sentinel_grammar_is_pinned() -> None:
     start = f"printf '\\033]7770;{m};s\\007'"
     end = f"printf '\\033]7770;{m};%d\\007'"
     guarded = f"if [ -e {cancel} ]; then (exit 130); else ls -la; fi"
-    assert Shell.sentinel_command("ls -la", m, shell="/bin/bash") == f"{start}; {guarded}; {end} $?"
+    interrupted = shlex.quote(f"printf '\\033]7770;{m};130\\007'; trap - INT")
+    assert Shell.sentinel_command("ls -la", m, shell="/bin/bash") == (
+        f"trap {interrupted} INT; {start}; {guarded}; {end} $?; trap - INT"
+    )
+    background = f"if [ -e {cancel} ]; then (exit 130); else sleep 9 & fi"
+    assert f"; {background};" in Shell.sentinel_command("sleep 9 &", m, shell="/bin/bash"), "bash refuses '&;'"
     assert Shell.sentinel_command("ls -la", m, shell="/bin/zsh") == f"{{ {start}; {guarded} }} always {{ {end} $? }}"
     assert Shell.sentinel_command("ls", m, shell="/usr/local/bin/fish") == f"{start}; if test -e {cancel}; false; else; ls; end; {end} $status"
     assert Shell.sentinel_command("dir", m, shell="C:/x/pwsh.exe") == (
