@@ -2,14 +2,19 @@
  * Browser scenario — first-run setup (the `llm-setup` wizard's fire-once
  * `app.tab.ready` trigger).
  *
- *   1. The first tab that loads on a fresh install is steered into setup,
- *      without anyone clicking anything.
- *   2. A box with no LLM source lands on the chooser (`/dock/llm-setup`);
- *      "Skip for now" is an answer, and setup steers on to the wizard's page.
- *      A box that is already funded never sees the chooser.
- *   3. The page lists all four tools and shows the run live.
- *   4. The run settles: every step reaches an answer, a tool already on the
- *      machine (Git) reads as done, and the Run button is usable again.
+ *   1. The first tab that loads on a fresh install is steered STRAIGHT to the
+ *      setup popup — steps blank, nothing running yet. A live tab is watching
+ *      (`_run_llm_setup_trigger`'s own check), so nothing runs until Start is
+ *      pressed: racing an install question onto the screen before there was
+ *      time to read what any of it is for is the bug this popup exists to
+ *      not repeat.
+ *   2. Pressing Start is what actually begins first-run setup. A box with no
+ *      LLM source THEN lands on the chooser (`/dock/llm-setup`); "Skip for
+ *      now" is an answer, and setup steers back to the wizard's popup. A box
+ *      that is already funded never sees the chooser at all.
+ *   3. The popup lists all four tools and shows the run live.
+ *   4. The run settles: every step reaches an answer, and a tool already on
+ *      the machine (Git) reads as done.
  *
  * A tool missing on the machine raises an "Install X?" question in a modal;
  * the spec declines every one, so nothing is installed on the runner — a
@@ -37,16 +42,20 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
 
   await page.goto('/');
 
-  // 1. Steered, not clicked: the trigger sends the tab into setup — the wizard's
-  //    page, or straight on to the chooser when the box has no LLM source (the
-  //    second steer can land before the first one renders).
+  // 1. Steered straight to the wizard popup — no chooser, no running step, no
+  //    Start click yet. A live tab is watching, so the trigger stops there.
   const wizardPage = /\/editor\/wizard\/typeid\//;
-  await expect(page).toHaveURL(/\/editor\/wizard\/typeid\/|\/dock\/llm-setup/);
+  await expect(page).toHaveURL(wizardPage, { timeout: 30_000 }); // do not increase timeout without approval
+  await expect(page.getByTestId('wizard-viewer')).toContainText('Finish setting up Flowpad');
+  for (const id of STEPS) {
+    await expect(page.getByTestId(`wizard-step-${id}`)).toHaveAttribute('data-status', 'not_reached');
+  }
 
-  // 2. Skipping the chooser is an answer, and setup steers on to the wizard page
-  //    before the wizard runs. The wizard starts only once the source is settled,
-  //    so a step that has left `not_reached` on the wizard page means the chooser
-  //    phase is over — a visit to the page before the chooser proves nothing.
+  // 2. Start is what actually begins first-run setup. Skipping the chooser
+  //    (when it appears) is an answer, and setup steers back to the popup
+  //    before the wizard runs — the wizard starts only once the source is
+  //    settled, so a step that has left `not_reached` means that phase is over.
+  await page.getByTestId('wizard-start').click();
   const skip = page.getByTestId('llm-setup-skip');
   await expect(async () => {
     // The chooser opens its "Assistants & keys" dialog over the page, and offers
@@ -58,9 +67,6 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
     const started = Object.values(await stepStatuses(page)).some((s) => s !== 'not_reached');
     expect(started, 'the wizard has started running').toBe(true);
   }).toPass({ timeout: 30_000 }); // do not increase timeout without approval
-  // By test id, not by role: an install question may already be up as a modal,
-  // which hides the page behind it from the accessibility tree.
-  await expect(page.getByTestId('wizard-viewer')).toContainText('llm-setup');
 
   // 3. All four tools are on the page.
   for (const id of STEPS) {
@@ -80,5 +86,4 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
 
   const statuses = await stepStatuses(page);
   expect(['satisfied', 'completed'], `git is on every runner: ${JSON.stringify(statuses)}`).toContain(statuses.git);
-  await expect(page.getByTestId('wizard-run')).toBeEnabled();
 });

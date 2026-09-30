@@ -69,15 +69,13 @@ function CapabilityHarnessRow({
   // selected, not re-installed.
   const installCommand = available ? null : (access?.install_command ?? null);
 
-  // Open a terminal on the raw-xterm surface and TYPE the command there,
-  // unsubmitted. The user reads the line, sees exactly what is about to run,
-  // and presses Enter — piping a remote install script into a shell is their
-  // keystroke to make, not ours. Everything after the click is ordinary
-  // navigation: the mounted terminal consumes `prefillCommand` on attach.
+  // Open a terminal on the raw-xterm surface and RUN the command there, so the
+  // user does not have to press Enter. Everything after the click is ordinary
+  // navigation: the mounted terminal consumes `startCommand` on attach.
   const onTryAutoInstall = () => {
     if (!installCommand) return;
     onClose();
-    void navigation.openNewShell({ prefillCommand: installCommand, viewMode: ViewMode.Advanced });
+    void navigation.openNewShell({ startCommand: installCommand, viewMode: ViewMode.Advanced });
   };
 
   const onUse = async () => {

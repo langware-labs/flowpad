@@ -1,35 +1,52 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { Trans } from '@lingui/react/macro';
 import { ActionInfo, AgenticProcess, dataManager, FSRef, TypeId, Wizard, isOk, type WizardResult } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import {
+  Check,
   CheckCircle2,
   Circle,
   CircleDashed,
+  Copy,
   ListTree,
   Loader2,
+  Minus,
   PanelRightClose,
   RotateCcw,
   TriangleAlert,
+  XCircle,
 } from 'lucide-react';
 
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { Button } from '@src/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { notify } from '@src/notifications';
 import { errorMessage } from '@src/lib/error-message';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { useIsAdvanced } from '@src/components/view-mode';
+import { useClock } from '@src/hooks/useActivity';
 import { useJsonDoc } from '@src/hooks/use-json-doc';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
+import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
-import { agentExecutorOf, rungTrail, stepStatus, useWizardRun } from './useWizardRun';
+import {
+  agentExecutorOf,
+  declinedByUser,
+  rungTrail,
+  silentForMs,
+  STUCK_AFTER_MS,
+  stepStatus,
+  useWizardRun,
+  WAITING_FOR_PERSON,
+} from './useWizardRun';
 import { LIVE_STATE, type WizardDoc } from './wizard-doc';
 
 /** The document beside `wizard.json` — the file the editor owns. */
@@ -57,7 +74,15 @@ const STEP_STYLE: Record<string, { Icon: typeof Circle; className: string }> = {
   cancelled: { Icon: CircleDashed, className: 'text-muted-foreground' },
   not_started: { Icon: TriangleAlert, className: 'text-destructive/70' },
   not_reached: { Icon: Circle, className: 'text-muted-foreground/30' },
+  // The person said no to the install question: a decision, drawn as a red cross, not a warning.
+  declined: { Icon: XCircle, className: 'text-destructive' },
 };
+
+/** Which statuses are actually a PROBLEM — the only ones whose detail is worth
+ *  a "View error" tooltip. A satisfied/completed step's own detail is just its
+ *  own success sentence ("already satisfied"); showing it the same way as a
+ *  failure would make every row look like it might need reading. */
+const ERROR_STATUSES = new Set(['failed', 'refused', 'not_found', 'busy', 'timed_out', 'not_started']);
 
 // Resolved at render, never at module scope: before bootstrap `iconForType`
 // answers lucide `FileText`, after it a FlowIcon wrapper. A capitalised
@@ -89,7 +114,36 @@ const AGENT_HARNESS_LABEL: Record<string, string> = {
  *  AFTER the wizard step's own trail already reads "completed" — a plain fetch made the
  *  moment the "agent" rung first appeared could win that race and cache the field still
  *  empty, showing no label at all until the page happened to reload. */
-function AgentRungLabel({ executorTypeId }: { executorTypeId: string }) {
+/** Copies a failed step's error text — the tooltip closes the moment the pointer leaves it, so
+ *  the text itself is hard to select; this puts the whole of it on the clipboard. */
+function CopyErrorButton({ text, testId }: { text: string; testId: string }) {
+  const { t } = useLingui();
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard denied (insecure context / no permission): nothing to confirm.
+    }
+  }, [text]);
+  const Glyph = copied ? Check : Copy;
+  return (
+    <button
+      type="button"
+      onClick={() => void copy()}
+      aria-label={t`Copy error`}
+      title={t`Copy error`}
+      className="text-muted-foreground hover:text-foreground"
+      data-testid={testId}
+    >
+      <Glyph className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
+function AgentRungLabel({ executorTypeId, rowLabel }: { executorTypeId: string; rowLabel: string }) {
   const typeId = useMemo(() => {
     try {
       return new TypeId(executorTypeId);
@@ -99,10 +153,15 @@ function AgentRungLabel({ executorTypeId }: { executorTypeId: string }) {
   }, [executorTypeId]);
   const { data: process } = useEntity<AgenticProcess>(typeId, { enabled: !!typeId, watch: true });
   if (!process?.resolved_model_slug) return null;
-  const label = (process.worker_type && AGENT_HARNESS_LABEL[process.worker_type]) || process.worker_type || 'agent';
+  const harness = (process.worker_type && AGENT_HARNESS_LABEL[process.worker_type]) || process.worker_type || 'agent';
+  // The row already names the STEP ("Claude Code"); naming the harness too is
+  // only useful when it differs (installing Python via a "Deep agent" says
+  // something the row doesn't) — when the tool being installed and the agent
+  // installing it happen to share a name, saying it twice is just noise.
   return (
-    <span className="mt-0.5 shrink-0 text-xs text-muted-foreground/60" data-testid="wizard-step-agent-model">
-      ({label}: {process.resolved_model_slug})
+    <span className="text-xs text-muted-foreground/60" data-testid="wizard-step-agent-model">
+      ({harness === rowLabel ? '' : `${harness}: `}
+      {process.resolved_model_slug})
     </span>
   );
 }
@@ -152,6 +211,30 @@ function WizardViewerBody({
 
   const state = wizard.run_state ?? {};
   const conversational = Boolean(wizard.agent);
+  const { navigation } = useDockNavigation();
+  // A run that settled OK, not one merely mid-run: `on_step`'s own partial
+  // writes are always NOT_YET (see `_report_progress`), so this is only true
+  // once the REAL final result lands.
+  const finished = !conversational && isOk(state.result) && Boolean(wizard.success_message);
+  // The shared 1s clock — one subscription for the whole row list, not one
+  // per row (`useActivity`'s own reason: a hook cannot be called inside a
+  // `.map`). Only stuck-detection reads it; that math happens per row below,
+  // as plain arithmetic against each row's own `live` node.
+  const now = useClock();
+
+  // A wizard that asks to be a popup (a glanceable one, like first-run setup) is a dialog, not a page — see
+  // `WizardSpec.popup`. The dialog's own content node is the minimize
+  // animation's source; `[data-minimize-anchor="process-chip"]` (the footer's
+  // chip) is its target, resolved by the animation itself.
+  const isPopup = Boolean(wizard.popup);
+  const dialogContentRef = useRef<HTMLDivElement | null>(null);
+  const minimizeAndLeave = useCallback(() => {
+    // Nothing to pause: the run is entirely server-side and keeps going
+    // whether or not this dialog is on screen. "Minimize" is just leaving —
+    // the fly animation is what tells a person where it went.
+    animateMinimizeToProcessChip(dialogContentRef.current);
+    navigation.goHome({ homePage: true });
+  }, [navigation]);
 
   // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
   // changes what is rendered, never which hooks execute or what data is
@@ -266,22 +349,55 @@ function WizardViewerBody({
     await call('run', { approved: true });
   }, [call, revealRunDetail]);
 
+  // A POPUP wizard's own "Start" — the wizard's `start` action, not the plain `run` above: it is
+  // the person pressing Start, so a question raised on the way is put to them, and a wizard that
+  // declares `requires_llm_source` has one settled first (`start_wizard`/`POST /wizard/<id>/start`).
+  // The backend already waits for exactly this call instead of racing itself onto the screen
+  // (the trigger in `builtin_triggers.py`); this button is the OTHER half of that same design, not a separate one.
+  const [starting, setStarting] = useState(false);
+  const startWizard = useCallback(async () => {
+    setStarting(true);
+    try {
+      // Settle an LLM source, then run the wizard. Resolves when the whole run has ended — its
+      // progress arrives through the run record, not this reply.
+      await wizard.start();
+    } catch (e) {
+      notify.error({ title: t`Could not start`, message: errorMessage(e, t`Could not start`) });
+      setStarting(false);
+    }
+    // On success, `starting` stays true: there is nothing left for this button
+    // to do once the call is accepted — `run_state`/the live activity tree
+    // take over from here, the same way they do for any other run.
+  }, [t, wizard]);
+  // Any step in flight has gone quiet for long enough to be worth saying so — offer to start the whole
+  // wizard over (a newer start replaces the one in flight, killing its shell and agent).
+  const anyStuck = isPopup && joinedSteps.some(({ live, outcome }) => silentForMs(live, outcome, now) > STUCK_AFTER_MS);
+  const notYetStarted = isPopup && !starting && !runView.live && !state.result;
+  // A settled run that fell short — a step failed, or the person declined one. Popup only: the
+  // generic page has its own Run button.
+  const notFinished =
+    !conversational && !runView.live && Boolean(state.result) && !isOk(state.result) && Boolean(wizard.failure_message);
+
   const main = (
-    <div className="flex flex-col gap-4 p-4" data-testid="wizard-viewer">
-      <header className="flex items-center gap-2">
+    <div className="flex flex-col gap-5 p-4" data-testid="wizard-viewer">
+      <header className="flex items-start gap-3">
         {/* From the backend type registry — the project's rule for every per-type
             glyph. Hardcoding `Wand2` here made the wizard icon a third copy
             (TypeInfo, the WizardSpec default, this header) that could go stale. */}
-        <WizardIcon className="h-5 w-5 text-muted-foreground" />
-        <div className="flex-1">
-          <h2 className="text-base font-medium">{wizard.name}</h2>
-          {wizard.description ? <p className="text-sm text-muted-foreground">{wizard.description}</p> : null}
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
+          <WizardIcon className="h-5 w-5 text-primary" />
+        </div>
+        <div className="flex-1 pt-0.5">
+          <h2 className="text-base font-medium leading-tight">{wizard.label || wizard.name}</h2>
+          {wizard.description ? (
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{wizard.description}</p>
+          ) : null}
         </div>
         {/* A CONVERSATIONAL wizard has no steps and cannot be run from here: its
             agent needs the caller's prompt and payload, which only the surface
             offering it has. The backend refuses such a run, so offering the
             button would be offering a guaranteed error. */}
-        {conversational ? null : (
+        {conversational || isPopup ? null : (
           <>
             {/* Reset sits beside Run because they are the same decision made
                 twice — start this wizard, or start it over. It is Advanced-only
@@ -316,9 +432,11 @@ function WizardViewerBody({
       )}
 
       {askApproval ? (
-        <section className="rounded-md border border-destructive/40 bg-destructive/5 p-3" data-testid="wizard-approval">
+        <section className="rounded-lg border border-destructive/40 bg-destructive/5 p-3" data-testid="wizard-approval">
           <p className="text-sm">
-            <Trans>"{wizard.name}" is not shipped with Flowpad. Running it executes commands on this machine.</Trans>
+            <Trans>
+              "{wizard.label || wizard.name}" is not shipped with Flowpad. Running it executes commands on this machine.
+            </Trans>
           </p>
           <div className="mt-2 flex gap-2">
             <Button size="sm" onClick={() => void approveAndRun()} data-testid="wizard-approve">
@@ -337,7 +455,7 @@ function WizardViewerBody({
           here". This is the diagnostic. */}
       {wizard.document_error || docError ? (
         <p
-          className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive"
+          className="rounded-lg border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive"
           data-testid="wizard-document-error"
         >
           {wizard.document_error || docError}
@@ -346,7 +464,7 @@ function WizardViewerBody({
 
       {joinedSteps.length > 0 ? (
         <section data-testid="wizard-steps">
-          <ul className="flex flex-col gap-1">
+          <ul className="flex flex-col divide-y divide-border overflow-hidden rounded-lg border">
             {joinedSteps.map(({ step_id, live, outcome }) => {
               // The durable OUTCOME wins whenever it exists, whether or not the
               // wizard as a whole is still running: `on_step` writes a step's
@@ -358,52 +476,143 @@ function WizardViewerBody({
               // going, so gating on that (rather than on `outcome` existing)
               // used to blank out every already-finished step's status, trail
               // and detail until the entire run ended.
-              const status = outcome ? stepStatus(outcome) : live ? LIVE_STATE[live.state]?.status : undefined;
+              const declined = declinedByUser(outcome);
+              const waiting = !outcome && WAITING_FOR_PERSON.test(live?.current ?? '');
+              const status = outcome
+                ? declined
+                  ? 'declined'
+                  : stepStatus(outcome)
+                : live
+                  ? waiting
+                    ? 'not_reached'
+                    : LIVE_STATE[live.state]?.status
+                  : undefined;
               const style = STEP_STYLE[status ?? ''] ?? STEP_STYLE.not_reached;
               const { Icon } = style;
               // A step still in flight spins.
               const spin = status === 'running';
               const trail = outcome ? rungTrail(outcome) : [];
+              // A step that only ever needed its check reads "validated" — the check
+              // is DONE, not something the row is about to do; a longer ladder keeps
+              // the rung names, since those are the steps it actually went through.
+              const trailText =
+                trail.length === 1 && trail[0] === 'validation' && !ERROR_STATUSES.has(status ?? '')
+                  ? 'validated'
+                  : trail.join(' → ');
               const agentExecutor = trail.includes('agent') ? agentExecutorOf(outcome) : null;
-              // A tooltip, not an always-visible span: a passing run's steps
-              // used to each print their own "cli check passed" line
-              // permanently, which drowned the one row that actually needs
-              // reading (a failure) in five that do not.
-              const detail = outcome?.detail || live?.current;
-              const icon = (
-                <Icon
-                  className={`mt-0.5 h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''} ${detail ? 'cursor-help' : ''}`}
-                />
+              const rowLabel = stepLabels.get(step_id) || step_id;
+              // A step actually in flight — no outcome yet — prints its live
+              // phase inline: that is the one thing worth watching unfold in
+              // real time, and hiding it behind a hover would mean there is
+              // nothing to see while it runs. The trail and the agent-rung
+              // label persist once the step settles, same as this — none of
+              // them wait for the WHOLE wizard to finish.
+              const liveText = outcome ? null : live?.current;
+              // A tooltip only for an actual PROBLEM — never a satisfied/
+              // completed step's own "already satisfied" sentence, which is
+              // not something worth reading, let alone flagging.
+              const tooltipDetail = outcome && ERROR_STATUSES.has(status ?? '') ? outcome.detail : null;
+              // Parked on a question: a blank slot, not a spinner and not a grey circle.
+              const icon = waiting ? (
+                <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+              ) : (
+                <Icon className={`h-4 w-4 shrink-0 ${style.className} ${spin ? 'animate-spin' : ''}`} />
               );
+              // Told apart from a plain "still running" by TIME since the step's last real
+              // sign of life (`silentForMs`): the backend stamps it on command output and on a
+              // change in what the agent reports, not on every poll.
+              const stuckMs = silentForMs(live, outcome, now);
+              const stuck = stuckMs > STUCK_AFTER_MS;
               return (
                 <li
                   key={step_id}
-                  className="flex items-start gap-2 text-sm"
+                  className="flex min-w-0 flex-col gap-1 px-3 py-2.5 text-sm transition-colors hover:bg-accent/40"
                   data-testid={`wizard-step-${step_id}`}
                   data-status={status || 'not_reached'}
                 >
-                  {detail ? (
-                    <Tooltip delayDuration={0}>
-                      <TooltipTrigger asChild>{icon}</TooltipTrigger>
-                      <TooltipContent className="max-w-sm" data-testid={`wizard-step-${step_id}-detail`}>
-                        {detail}
-                      </TooltipContent>
+                  <div className="flex min-w-0 items-center gap-2">
+                    {icon}
+                    {/* One line, trimmed with "…" — a failed row carries its whole
+                        ladder plus the agent's model, which used to run under the
+                        dialog's edge. The full text is one hover away; "View error"
+                        below stays pinned and visible either way. */}
+                    <Tooltip delayDuration={300}>
+                      <TooltipTrigger asChild>
+                        <span
+                          className={`min-w-0 truncate ${liveText || declined ? '' : 'flex-1'}`}
+                          data-testid={`wizard-step-${step_id}-summary`}
+                        >
+                          <span className="font-medium text-foreground">{rowLabel}</span>
+                          {trail.length > 0 && (
+                            <span
+                              className="ml-2 text-xs text-muted-foreground/60"
+                              data-testid={`wizard-step-${step_id}-rungs`}
+                            >
+                              ({trailText})
+                            </span>
+                          )}
+                          {agentExecutor && (
+                            <span className="ml-2">
+                              <AgentRungLabel executorTypeId={agentExecutor} rowLabel={rowLabel} />
+                            </span>
+                          )}
+                        </span>
+                      </TooltipTrigger>
+                      {(trail.length > 0 || agentExecutor) && (
+                        <TooltipContent className="max-w-sm" data-testid={`wizard-step-${step_id}-summary-full`}>
+                          <span className="font-medium">{rowLabel}</span>
+                          {trail.length > 0 && <span className="ml-2">({trailText})</span>}
+                          {agentExecutor && (
+                            <span className="ml-2">
+                              <AgentRungLabel executorTypeId={agentExecutor} rowLabel={rowLabel} />
+                            </span>
+                          )}
+                        </TooltipContent>
+                      )}
                     </Tooltip>
-                  ) : (
-                    icon
-                  )}
-                  <span className="mt-0.5 shrink-0 text-xs text-muted-foreground">
-                    {stepLabels.get(step_id) || step_id}
-                  </span>
-                  {trail.length > 0 && (
-                    <span
-                      className="mt-0.5 shrink-0 text-xs text-muted-foreground/60"
-                      data-testid={`wizard-step-${step_id}-rungs`}
+                    {declined ? (
+                      <span
+                        className="shrink-0 text-xs font-medium text-destructive"
+                        data-testid={`wizard-step-${step_id}-declined`}
+                      >
+                        <Trans>Cancelled by user</Trans>
+                      </span>
+                    ) : null}
+                    {liveText && <span className="min-w-0 flex-1 truncate text-muted-foreground">— {liveText}</span>}
+                    {tooltipDetail ? (
+                      // A visible label, not just a subtler cursor on the icon —
+                      // "something failed here" should be obvious at a glance,
+                      // not something you discover by hovering the right pixel.
+                      <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                        <Tooltip delayDuration={0}>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="text-xs font-medium text-destructive hover:underline"
+                              data-testid={`wizard-step-${step_id}-view-error`}
+                            >
+                              <Trans>View error</Trans>
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-sm" data-testid={`wizard-step-${step_id}-detail`}>
+                            {tooltipDetail}
+                          </TooltipContent>
+                        </Tooltip>
+                        <CopyErrorButton text={tooltipDetail} testId={`wizard-step-${step_id}-copy-error`} />
+                      </span>
+                    ) : null}
+                  </div>
+                  {stuck && (
+                    <p
+                      className="ml-6 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400"
+                      data-testid={`wizard-step-${step_id}-stuck`}
                     >
-                      ({trail.join(' → ')})
-                    </span>
+                      <TriangleAlert className="h-3 w-3 shrink-0" />
+                      <Trans>
+                        Taking longer than usual ({Math.round(stuckMs / 1000)}s with no update) — it may be stuck.
+                      </Trans>
+                    </p>
                   )}
-                  {agentExecutor && <AgentRungLabel executorTypeId={agentExecutor} />}
                 </li>
               );
             })}
@@ -418,6 +627,64 @@ function WizardViewerBody({
           <Trans>This wizard declares no steps.</Trans>
         </p>
       )}
+
+      {/* Below the steps, centred — the last thing read, after the list of what
+          will be checked. A POPUP wizard's only button, and only before anything has
+          run: the backend (the trigger in `builtin_triggers.py`) deliberately waits for this
+          instead of racing an install question onto the screen before there was
+          time to read what any of it is for. Once started (by this click, or
+          because a headless box already ran it before anyone was watching) there
+          is nothing left to offer — Reset/Run are the generic editor page's job. */}
+      {!conversational && notYetStarted ? (
+        <div className="flex justify-center">
+          <Button onClick={() => void startWizard()} disabled={starting} data-testid="wizard-start">
+            {starting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            <Trans>Start</Trans>
+          </Button>
+        </div>
+      ) : null}
+
+      {anyStuck ? (
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={() => void startWizard()} data-testid="wizard-restart">
+            {wizard.restart_label || <Trans>Restart</Trans>}
+          </Button>
+        </div>
+      ) : null}
+
+      {notFinished ? (
+        <section
+          className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center"
+          data-testid="wizard-not-finished"
+        >
+          <p className="text-sm">{wizard.failure_message}</p>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => void startWizard()} data-testid="wizard-restart">
+              {wizard.restart_label || <Trans>Restart</Trans>}
+            </Button>
+            <Button variant="ghost" onClick={() => navigation.goHome({ homePage: true })} data-testid="wizard-go-home">
+              <Trans>Go to homepage</Trans>
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
+      {/* No wizard or trigger today declares "where to send someone once this
+          finishes" — there is nothing to read that from, so this always goes
+          home. If that changes, this is the one place to branch on it and
+          swap the label to "Continue". */}
+      {finished ? (
+        <section
+          className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/5 p-3"
+          data-testid="wizard-finished"
+        >
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
+          <p className="flex-1 text-sm">{wizard.success_message}</p>
+          <Button size="sm" onClick={() => navigation.goHome({ homePage: true })} data-testid="wizard-go-home">
+            <Trans>Go to homepage</Trans>
+          </Button>
+        </section>
+      ) : null}
 
       {/* `reserve={false}`: the default keeps the subtree mounted and its inputs
           focusable in Standard view, which is wrong for a form — you would tab
@@ -454,6 +721,47 @@ function WizardViewerBody({
           },
         ];
   const openTabs = railTabs.filter((tab) => windows.includes(tab.id)).map((tab) => ({ ...tab, closable: true }));
+
+  // A popup wizard skips the side-drawer machinery below: `Run detail` is
+  // Advanced-only and this presentation is for the quick, glanceable
+  // glance-and-set-aside case, not for sitting beside a document editing it.
+  if (isPopup) {
+    return (
+      // Non-modal on purpose. A modal Radix dialog blocks the rest of the page
+      // and counts any click outside itself as "dismiss" — including a click on
+      // the install question this very wizard raises, which would minimize the
+      // wizard instead of answering the question (and, mounted later, would
+      // also sit on top of it). Non-modal has neither problem; the backdrop
+      // below stands in for the dimming a modal would have drawn.
+      <Dialog open modal={false} onOpenChange={(wantsOpen) => !wantsOpen && minimizeAndLeave()}>
+        <div className="fixed inset-0 z-50 bg-black/80" aria-hidden="true" />
+        <DialogContent
+          ref={dialogContentRef}
+          hideClose
+          onInteractOutside={(e) => e.preventDefault()}
+          className="max-h-[85vh] overflow-y-auto sm:max-w-2xl"
+          data-testid="wizard-popup"
+        >
+          {/* Radix wants an accessible name on the dialog; `main`'s own
+              visible `<h2>` already says this out loud, so this is silent. */}
+          <DialogHeader className="sr-only">
+            <DialogTitle>{wizard.label || wizard.name}</DialogTitle>
+          </DialogHeader>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute right-3 top-3 h-7 w-7 text-muted-foreground"
+            onClick={minimizeAndLeave}
+            title={t`Minimize — it keeps running in the background`}
+            data-testid="wizard-minimize"
+          >
+            <Minus className="h-4 w-4" />
+          </Button>
+          {main}
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <div className="flex h-full w-full" data-testid="wizard-viewer-shell">

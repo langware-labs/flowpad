@@ -188,3 +188,38 @@ def test_the_trust_answer_reaches_the_ui_and_is_not_the_system_flag():
 
     outside = Wizard(name="Cloned", asset_ref="/tmp/some-repo/agentic-assets/wizard/x")
     assert outside.shipped is False
+
+
+def test_a_friendlier_label_and_the_popup_presentation_reach_the_ui():
+    """`llm-setup` sets both, precisely because it is the one wizard a person
+    meets before asking for anything: `name` stays the stable identifier every
+    other document and test references it by, `label` is what a person reads,
+    and `popup` is why it shows as a dialog rather than a full editor page."""
+    from flow_sdk.builtin.wizard import Wizard
+
+    setup = Wizard(name="llm-setup", asset_ref=str(LLM_SETUP))
+    assert setup.label == "Finish setting up Flowpad"
+    assert setup.popup is True
+
+    # Neither is universal: a wizard whose document sets neither falls back to
+    # its own `name`, and defaults to a full page.
+    plain = Wizard(name="llm-setup-python", asset_ref=str(WIZARDS / "llm-setup-python"))
+    assert plain.label == "llm-setup-python"
+    assert plain.popup is False
+
+
+def test_the_wizards_own_document_carries_what_its_page_says_and_needs():
+    """The page has no wording of its own: what a run's end says, the restart button's label and
+    whether an LLM source comes first are all read from the document, so another wizard gets none of
+    first-run setup's words unless its own file says them."""
+    from flow_sdk.builtin.wizard import Wizard
+
+    setup = Wizard(name="llm-setup", asset_ref=str(LLM_SETUP))
+    assert setup.success_message and setup.failure_message
+    assert setup.restart_label == "Restart setup"
+    assert setup.spec().requires_llm_source is True
+
+    plain = Wizard(name="llm-setup-python", asset_ref=str(WIZARDS / "llm-setup-python"))
+    assert plain.success_message == "" and plain.failure_message == ""
+    assert plain.restart_label == "Restart"
+    assert plain.spec().requires_llm_source is False

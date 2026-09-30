@@ -282,7 +282,7 @@ function CapabilityAccessRow({
   const installCommand = access.available ? null : access.install_command;
   const onTryAutoInstall = useCallback(() => {
     if (!installCommand) return;
-    void navigation.openNewShell({ prefillCommand: installCommand, viewMode: ViewMode.Advanced });
+    void navigation.openNewShell({ startCommand: installCommand, viewMode: ViewMode.Advanced });
   }, [installCommand, navigation]);
 
   return (
