@@ -2022,6 +2022,10 @@ msgstr ""
 msgid "All observed deployments are current"
 msgstr "جميع الإطلاقات المُراقَبة حالية"
 
+#: src/components/git/RepoPicker.tsx
+msgid "All owners"
+msgstr ""
+
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -9192,6 +9196,10 @@ msgstr "مساعد Flowpad"
 msgid "Flowpad Assistant project not available."
 msgstr "مشروع مساعد Flowpad غير متاح حالياً."
 
+#: src/components/git/RepoPicker.tsx
+msgid "Flowpad can’t see any of {owner}’s repos. {owner} most likely restricts third-party apps: grant Flowpad access to it on GitHub (Settings → Applications → Flowpad → Organization access), or paste a repo URL above."
+msgstr ""
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Flowpad Cloud"
 msgstr "Flowpad Cloud"
@@ -14420,6 +14428,10 @@ msgstr "لا توجد تغييرات للحفظ"
 msgid "Nothing to set up."
 msgstr ""
 
+#: src/components/git/RepoPicker.tsx
+msgid "Nothing to show for {owner}."
+msgstr ""
+
 #: src/pages/hub-browse/HubEntityView.tsx
 msgid "Nothing to show."
 msgstr "لا يوجد ما يمكن عرضه."
@@ -14806,6 +14818,10 @@ msgstr "فتح التقرير الكامل"
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Open full search"
 msgstr "فتح البحث الكامل"
+
+#: src/components/git/RepoPicker.tsx
+msgid "Open GitHub settings"
+msgstr ""
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Open help desk"
@@ -15283,6 +15299,10 @@ msgstr ""
 msgid "Organization created, but the key was not saved"
 msgstr ""
 
+#: src/components/git/RepoPicker.tsx
+msgid "Organization name, e.g. thinkz-team"
+msgstr ""
+
 #: src/components/organization/organization-page.tsx
 msgid "Organization name…"
 msgstr ""
@@ -15340,6 +15360,10 @@ msgstr "نظام التشغيل:"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Other assets"
 msgstr "أصول أخرى"
+
+#: src/components/git/RepoPicker.tsx
+msgid "Other organization…"
+msgstr ""
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Other paths with this asset identity"
@@ -19589,6 +19613,10 @@ msgstr "عرض معلومات الموضع"
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Show projects"
+msgstr ""
+
+#: src/components/git/RepoPicker.tsx
+msgid "Show repos"
 msgstr ""
 
 #: src/components/settings-view/ClaudeSettingsPanel.tsx

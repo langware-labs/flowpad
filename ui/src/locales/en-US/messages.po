@@ -2022,6 +2022,10 @@ msgstr "All my projects"
 msgid "All observed deployments are current"
 msgstr "All observed deployments are current"
 
+#: src/components/git/RepoPicker.tsx
+msgid "All owners"
+msgstr "All owners"
+
 #: src/components/connections-manager/credential-rows-view.tsx
 #: src/components/connections-manager/machine-wide-cell.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -9192,6 +9196,10 @@ msgstr "Flowpad Assistant"
 msgid "Flowpad Assistant project not available."
 msgstr "Flowpad Assistant project not available."
 
+#: src/components/git/RepoPicker.tsx
+msgid "Flowpad can’t see any of {owner}’s repos. {owner} most likely restricts third-party apps: grant Flowpad access to it on GitHub (Settings → Applications → Flowpad → Organization access), or paste a repo URL above."
+msgstr "Flowpad can’t see any of {owner}’s repos. {owner} most likely restricts third-party apps: grant Flowpad access to it on GitHub (Settings → Applications → Flowpad → Organization access), or paste a repo URL above."
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Flowpad Cloud"
 msgstr "Flowpad Cloud"
@@ -14420,6 +14428,10 @@ msgstr "Nothing to save"
 msgid "Nothing to set up."
 msgstr "Nothing to set up."
 
+#: src/components/git/RepoPicker.tsx
+msgid "Nothing to show for {owner}."
+msgstr "Nothing to show for {owner}."
+
 #: src/pages/hub-browse/HubEntityView.tsx
 msgid "Nothing to show."
 msgstr "Nothing to show."
@@ -14806,6 +14818,10 @@ msgstr "Open full report"
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Open full search"
 msgstr "Open full search"
+
+#: src/components/git/RepoPicker.tsx
+msgid "Open GitHub settings"
+msgstr "Open GitHub settings"
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "Open help desk"
@@ -15283,6 +15299,10 @@ msgstr "Organization created"
 msgid "Organization created, but the key was not saved"
 msgstr "Organization created, but the key was not saved"
 
+#: src/components/git/RepoPicker.tsx
+msgid "Organization name, e.g. thinkz-team"
+msgstr "Organization name, e.g. thinkz-team"
+
 #: src/components/organization/organization-page.tsx
 msgid "Organization name…"
 msgstr "Organization name…"
@@ -15340,6 +15360,10 @@ msgstr "OS:"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Other assets"
 msgstr "Other assets"
+
+#: src/components/git/RepoPicker.tsx
+msgid "Other organization…"
+msgstr "Other organization…"
 
 #: src/components/assets/editor/AssetCollisionUI.tsx
 msgid "Other paths with this asset identity"
@@ -19590,6 +19614,10 @@ msgstr "Show positioning info"
 #: src/components/connections-manager/usage-cell.tsx
 msgid "Show projects"
 msgstr "Show projects"
+
+#: src/components/git/RepoPicker.tsx
+msgid "Show repos"
+msgstr "Show repos"
 
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "Show scope overrides"

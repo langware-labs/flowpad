@@ -413,3 +413,95 @@ async def test_invitation_accept_invalid_id_returns_400(bootstrapped_client, git
     )
     assert r.status_code == 400
     assert "invitation_id" in r.json()["message"].lower()
+
+
+# ── the owner select: orgs, and one org's repos ─────────────────────────────
+
+
+def _by_url(routes: dict):
+    """A ``requests.get`` answering by URL — each test names exactly what GitHub says."""
+
+    def get(url, **_kwargs):
+        return routes[url]
+
+    return get
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_orgs_names_the_viewer_and_the_orgs_github_reports(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    routes = {
+        "https://api.github.com/user": _mock_response(200, json_body={"login": "serans1"}),
+        "https://api.github.com/user/orgs": _mock_response(
+            200, json_body=[{"login": "langware-labs", "avatar_url": "https://a/1"}]
+        ),
+    }
+    with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
+        r = await bootstrapped_client.post(f"/api/v1/graph/user/{user.id}/repo/orgs", json={"provider": "github"})
+
+    assert r.status_code == 200, r.text
+    assert r.json()["data"] == {"login": "serans1", "orgs": [{"login": "langware-labs", "avatar_url": "https://a/1"}]}
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_an_orgs_repos_are_listed_as_the_picker_lists_repos(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    repo = {"name": "spora", "full_name": "thinkz-team/spora", "owner": {"login": "thinkz-team"}, "private": True,
+            "default_branch": "main", "pushed_at": "2026-09-29T00:00:00Z",
+            "permissions": {"admin": False, "push": True, "pull": True}, "html_url": "", "description": "", "fork": False}
+    routes = {"https://api.github.com/orgs/thinkz-team/repos": _mock_response(200, json_body=[repo])}
+    with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "thinkz-team"}
+        )
+
+    data = r.json()["data"]
+    assert [x["full_name"] for x in data["repos"]] == ["thinkz-team/spora"] and data["repos"][0]["role"] == "write"
+    assert data["restricted"] is False and data["next_page"] is None
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_an_org_that_shows_nothing_is_reported_as_restricted(bootstrapped_client, github_user_with_token):
+    """What an org with OAuth App access restrictions answers: 200, and an empty list."""
+    user = github_user_with_token
+    routes = {"https://api.github.com/orgs/thinkz-team/repos": _mock_response(200, json_body=[])}
+    with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "thinkz-team"}
+        )
+
+    assert r.json()["data"]["restricted"] is True
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_an_org_github_does_not_know_is_said_so(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    routes = {"https://api.github.com/orgs/no-such-org/repos": _mock_response(404, json_body={}, text="Not Found")}
+    with patch.object(ra.requests, "get", side_effect=_by_url(routes)):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "no-such-org"}
+        )
+
+    body = r.json()
+    assert body["status"] != "SUCCESS" and "no organization named no-such-org" in body["message"]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_an_unsafe_owner_never_reaches_github(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    with patch.object(ra.requests, "get", side_effect=AssertionError("reached GitHub")):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/org-repos", json={"provider": "github", "owner": "../user"}
+        )
+
+    assert r.status_code == 400

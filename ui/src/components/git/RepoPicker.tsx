@@ -1,12 +1,19 @@
 import type { GitProvider, RepoSummary } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
-import { useGitRepos } from '@src/hooks/use-git-providers';
+import { useGitOrgRepos, useGitOrgs, useGitRepos } from '@src/hooks/use-git-providers';
 import { formatRelative } from './relative-time';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { GitFork, Loader2, Lock, RefreshCw, Search } from 'lucide-react';
 import { memo, useEffect, useMemo, useState } from 'react';
+
+/** The owner select's two non-owner choices. An owner is a GitHub login, which never starts with `_`. */
+const ALL_OWNERS = '__all__';
+const OTHER_OWNER = '__other__';
+/** Where a person grants (or requests) an app's access to an organization. */
+const GITHUB_APP_ACCESS_URL = 'https://github.com/settings/applications';
 
 interface RepoPickerProps {
   provider: GitProvider;
@@ -61,6 +68,28 @@ function RepoPickerImpl({
 }: RepoPickerProps) {
   const { t } = useLingui();
   const { data: repos, isLoading, isError, error, refetch, isFetching } = useGitRepos(provider, enabled);
+  const { data: orgs } = useGitOrgs(provider, enabled);
+  const [ownerChoice, setOwnerChoice] = useState(ALL_OWNERS);
+  const [typedOwner, setTypedOwner] = useState('');
+  const [otherOwner, setOtherOwner] = useState('');
+
+  // Everyone who owns something here: you, the orgs GitHub reports, and the owners already in the
+  // list (a repo you collaborate on is owned by someone who is neither).
+  const owners = useMemo(() => {
+    const seen = new Map<string, string>();
+    const add = (login?: string) => login && !seen.has(login.toLowerCase()) && seen.set(login.toLowerCase(), login);
+    add(orgs?.login);
+    orgs?.orgs.forEach((o) => add(o.login));
+    [...(repos ?? [])].sort((a, b) => a.owner.localeCompare(b.owner)).forEach((r) => add(r.owner));
+    return [...seen.values()];
+  }, [orgs, repos]);
+
+  const owner = ownerChoice === OTHER_OWNER ? otherOwner : ownerChoice === ALL_OWNERS ? '' : ownerChoice;
+  // An owner the full list already holds is a filter over it; any other is asked for on its own — an
+  // org that restricts third-party apps never appears in the list, however much you belong to it.
+  const inList = !!owner && !!repos?.some((r) => r.owner.toLowerCase() === owner.toLowerCase());
+  const orgRepos = useGitOrgRepos(provider, owner && repos && !inList ? owner : '');
+  const shown = owner && !inList ? orgRepos.data?.repos : repos;
 
   // Hosts that want to describe the token's reach ("private repos included")
   // learn it from the fetch that already happened, rather than asking again.
@@ -70,9 +99,10 @@ function RepoPickerImpl({
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
-    if (!repos) return [];
+    if (!shown) return [];
     const q = query.trim().toLowerCase();
-    const allowed = allowedRoles?.length ? repos.filter((repo) => allowedRoles.includes(repo.role)) : repos;
+    const ofOwner = owner ? shown.filter((r) => r.owner.toLowerCase() === owner.toLowerCase()) : shown;
+    const allowed = allowedRoles?.length ? ofOwner.filter((repo) => allowedRoles.includes(repo.role)) : ofOwner;
     const matched = q
       ? allowed.filter(
           (r) =>
@@ -83,11 +113,32 @@ function RepoPickerImpl({
       : allowed;
     // Sort: pushed_at desc (most recent first).
     return [...matched].sort((a, b) => (b.pushed_at || '').localeCompare(a.pushed_at || ''));
-  }, [repos, query, allowedRoles]);
+  }, [shown, owner, query, allowedRoles]);
+  const orgPending = !!owner && !inList && orgRepos.isLoading;
+  const restricted = !!owner && !inList && !!orgRepos.data?.restricted;
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-center gap-2">
+        <Select value={ownerChoice} onValueChange={setOwnerChoice}>
+          <SelectTrigger className="h-9 w-40 shrink-0 text-sm" data-testid="repo-picker-owner">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_OWNERS}>
+              <Trans>All owners</Trans>
+            </SelectItem>
+            {owners.map((login) => (
+              <SelectItem key={login} value={login} data-testid={`repo-picker-owner-${login}`}>
+                {login}
+              </SelectItem>
+            ))}
+            <SelectSeparator />
+            <SelectItem value={OTHER_OWNER} data-testid="repo-picker-owner-other">
+              <Trans>Other organization…</Trans>
+            </SelectItem>
+          </SelectContent>
+        </Select>
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -108,13 +159,55 @@ function RepoPickerImpl({
         </button>
       </div>
 
+      {ownerChoice === OTHER_OWNER && (
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setOtherOwner(typedOwner.trim());
+          }}
+        >
+          <Input
+            autoFocus
+            value={typedOwner}
+            onChange={(e) => setTypedOwner(e.target.value)}
+            placeholder={t`Organization name, e.g. thinkz-team`}
+            className="text-sm"
+            data-testid="repo-picker-other-owner"
+          />
+          <Button type="submit" size="sm" variant="outline" disabled={!typedOwner.trim()}>
+            <Trans>Show repos</Trans>
+          </Button>
+        </form>
+      )}
+
+      {restricted && (
+        // A notice, not an error: tinted row, text in the foreground colour.
+        <div
+          className="rounded border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-foreground"
+          data-testid="repo-picker-restricted"
+        >
+          <Trans>
+            Flowpad can’t see any of {owner}’s repos. {owner} most likely restricts third-party apps: grant Flowpad
+            access to it on GitHub (Settings → Applications → Flowpad → Organization access), or paste a repo URL above.
+          </Trans>{' '}
+          <a href={GITHUB_APP_ACCESS_URL} target="_blank" rel="noreferrer" className="text-primary underline">
+            <Trans>Open GitHub settings</Trans>
+          </a>
+        </div>
+      )}
+
       {/* A five-column repo table has a min-content width of its own. Scroll it
           here (`overflow-auto` also makes this a shrinkable box) instead of
           letting it set the width of everything beside it. */}
       <div className="max-h-[280px] overflow-auto rounded-md border border-border">
-        {isLoading ? (
+        {isLoading || orgPending ? (
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> <Trans>Loading your repos…</Trans>
+          </div>
+        ) : owner && !inList && orgRepos.isError ? (
+          <div className="px-3 py-4 text-xs text-foreground" data-testid="repo-picker-owner-error">
+            {orgRepos.error?.message}
           </div>
         ) : isError || !repos ? (
           // `!repos` counts as a failure, not as an empty account. Without it a
@@ -141,7 +234,13 @@ function RepoPickerImpl({
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-            {query ? `No repos match "${query}"` : <Trans>No repos accessible with this token</Trans>}
+            {query ? (
+              `No repos match "${query}"`
+            ) : restricted ? (
+              <Trans>Nothing to show for {owner}.</Trans>
+            ) : (
+              <Trans>No repos accessible with this token</Trans>
+            )}
           </div>
         ) : (
           <Table>
@@ -194,7 +293,7 @@ function RepoPickerImpl({
       </div>
       {repos && repos.length > 0 && (
         <div className="text-[11px] text-muted-foreground">
-          {filtered.length} of {repos.length} repos
+          {filtered.length} of {shown?.length ?? repos.length} repos
         </div>
       )}
     </div>
