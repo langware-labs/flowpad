@@ -117,6 +117,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
   /** The start in flight, so concurrent callers of `ensureStarted` share one. */
   private _starting: Promise<void> | null = null;
 
+  /** The marker of the run `runCommand` is waiting on — what makes `interrupt()` exact. */
+  private _runMarker: string | null = null;
+
   /**
    * The single PTY interface — always present, eagerly created.
    * All PTY lifecycle, I/O, and event logic lives here.
@@ -389,6 +392,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     try {
       const answer = await this.post<{ marker: string } | null>('run-command', { command });
       if (!answer?.marker) throw new Error(`Shell ${this.id} could not run the command`);
+      this._runMarker = answer.marker;
       const osc = `\x1b]${Shell.SENTINEL_OSC};${answer.marker};`;
       const end = new RegExp(`${osc.replace(/[\]\[]/g, '\\$&')}(-?\\d+)\x07`);
       let scanned = 0;
@@ -409,13 +413,15 @@ export class Shell extends APIEntity<Shell> implements IShell {
     } finally {
       off();
       wake = null;
+      this._runMarker = null;
     }
   }
 
   /** Stop the command running in this terminal (Ctrl-C, then what is left is killed); the
-   *  terminal stays. Whether nothing of it is left running. */
+   *  terminal stays. Whether nothing of it is left running. A run `runCommand` is waiting on is
+   *  named by its marker, so the stop reaches exactly its jobs and waits for its end. */
   async interrupt(): Promise<boolean> {
-    const answer = await this.post<{ stopped: boolean } | null>('interrupt', {});
+    const answer = await this.post<{ stopped: boolean } | null>('interrupt', this._runMarker ? { marker: this._runMarker } : {});
     return Boolean(answer?.stopped);
   }
 
