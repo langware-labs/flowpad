@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
+const { buildSupportZip, buildMailtoUrl, redact } = require('./support-bundle');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
 const { CancellationToken } = require('builder-util-runtime');
 const path = require('path');
@@ -1431,6 +1432,50 @@ ipcMain.handle('open-logs-folder', async () => {
   const err = await require('electron').shell.openPath(MAIN_DESKTOP_LOG_DIR);
   if (err) log.warn(`[logs] could not open ${MAIN_DESKTOP_LOG_DIR}: ${err}`);
   return !err;
+});
+
+// "Share with us" on the startup error panel. Builds a zip of the newest desktop log and the
+// newest backend-server log (tails, obvious secrets masked), opens the user's own mail client
+// with a short message to the team, and shows the zip in the file manager to attach — a
+// mailto: URL cannot carry an attachment, and nothing is sent until the user presses Send.
+// Recipient: the same address the in-app "Report issue" mail uses (flow_sdk/app/actions/report_action.py).
+const SUPPORT_EMAIL = 'diagnosis@langware.ai';
+
+ipcMain.handle('share-logs', async (_event, detail) => {
+  try {
+    const { shell } = require('electron');
+    const shownError = redact(String(detail || '')).slice(0, 4000);
+    const bundle = buildSupportZip({
+      sources: [
+        { label: 'desktop', dir: path.join(LOGS_BASE, 'main_desktop') },
+        { label: 'server', dir: path.join(BACKEND_LOGS, 'server') },
+      ],
+      info: {
+        app: app.getVersion(),
+        engine: (uvManager && uvManager.getInstalledVersionSync()) || 'unknown',
+        instance: FLOW_INSTANCE,
+        platform: `${process.platform} ${process.arch} ${os.release()}`,
+        electron: process.versions.electron,
+        packaged: app.isPackaged,
+      },
+      detail: shownError,
+    });
+    log.info(`[share-logs] built ${bundle.zipPath} (${bundle.bytes} bytes; included: ${bundle.included.join(', ') || 'none'})`);
+    shell.showItemInFolder(bundle.zipPath);
+    const body = [
+      `Please attach this file (it is highlighted in the folder that just opened):`,
+      bundle.zipPath,
+      '',
+      `Flowpad ${app.getVersion()} on ${process.platform} ${process.arch} did not start.`,
+      '',
+      shownError.slice(0, 700),
+    ].join('\n');
+    await shell.openExternal(buildMailtoUrl({ to: SUPPORT_EMAIL, subject: 'Flowpad startup problem', body }));
+    return { ok: true, zipPath: bundle.zipPath, bytes: bundle.bytes, included: bundle.included, missing: bundle.missing, to: SUPPORT_EMAIL };
+  } catch (err) {
+    log.warn(`[share-logs] failed: ${err.message}`);
+    return { ok: false, error: err.message };
+  }
 });
 
 ipcMain.on('quit-app', () => {

@@ -13,6 +13,8 @@
     "shutdown.js",
     "backend-wait.js",
     "startup-error.js",
+    "zip-writer.js",
+    "support-bundle.js",
     "semver.js",
     "uv-manager.js",
     "flow-rs-keychain.js",
