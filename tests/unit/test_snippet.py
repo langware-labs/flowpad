@@ -11,6 +11,7 @@ import asyncio
 import os
 import sys
 import random
+import shlex
 import shutil
 import tempfile
 import time
@@ -24,8 +25,7 @@ from flow_sdk.core.snippet import (
     edit_region,
     read_snippet,
     run_snippet,
-    stop_runs_of,
-    stop_snippet,
+    terminal_command,
     write_temp_snippet,
 )
 from flow_sdk.core.capabilities.env_probe import capture_terminal_path
@@ -398,49 +398,25 @@ def _hang_with_grandchild(tmp_path: Path) -> Path:
     return _snip(tmp_path, "py", body)
 
 
-def test_stop_kills_the_run_and_keeps_what_it_printed(tmp_path, py_path):
-    async def scenario():
-        run = asyncio.create_task(run_snippet(_hang_with_grandchild(tmp_path), timeout_seconds=30, env_path=py_path, run_id="r1"))
-        await asyncio.sleep(0.4)
-        assert stop_snippet("r1") is True
-        return await run
-
-    t0 = time.monotonic()
-    r = asyncio.run(scenario())
-    assert time.monotonic() - t0 < 1.5, "stop must not wait for the 30s timeout"
-    assert not r.timed_out and r.detail == "The run was stopped." and not r.ok
-    assert r.stdout.startswith("started")
-    grandchild = int(r.stdout.split()[1])
-    deadline = time.monotonic() + 0.5
-    while _alive(grandchild) and time.monotonic() < deadline:
-        time.sleep(0.02)
-    assert not _alive(grandchild), "stop left the snippet's child process running"
-    assert stop_snippet("r1") is False, "a finished run is no longer stoppable"
+def test_the_terminal_command_runs_the_file_on_flowpads_interpreter(tmp_path):
+    """What the viewer types into the file's terminal: the same runner a one-shot run uses."""
+    path = tmp_path / "my snippet.py"
+    command = terminal_command(path, platform="darwin")
+    assert command == f"{shlex.quote(sys.executable)} -m flow_sdk.snippet_launch {shlex.quote(str(path))}"
+    assert terminal_command(tmp_path / "x.cobol") is None
 
 
-def test_a_dropped_connection_stops_its_runs_and_only_its_runs(tmp_path, py_path):
-    """A closed tab runs no unmount cleanup: its socket dropping is what ends its run."""
-    hang = _snip(tmp_path, "py", "print('up', flush=True)\nwhile True:\n    pass")
-
-    async def scenario():
-        mine = asyncio.create_task(run_snippet(hang, timeout_seconds=30, env_path=py_path, run_id="m", connection_id="tab-1"))
-        other = asyncio.create_task(run_snippet(hang, timeout_seconds=30, env_path=py_path, run_id="o", connection_id="tab-2"))
-        await asyncio.sleep(0.4)
-        assert stop_runs_of("tab-1") == 1
-        first = await mine
-        assert not other.done(), "another tab's run must keep going"
-        stop_snippet("o")
-        return first, await other
-
-    t0 = time.monotonic()
-    mine, other = asyncio.run(scenario())
-    assert time.monotonic() - t0 < 2
-    assert mine.detail == "The run was stopped." and mine.stdout == "up\n"
-    assert other.detail == "The run was stopped."
+def test_on_windows_the_terminal_command_never_exits_the_terminal(tmp_path):
+    """A one-shot PowerShell run ends with ``exit $LASTEXITCODE`` to hand back the snippet's code;
+    typed into a terminal that would close it. The terminal's end marker carries the code."""
+    command = terminal_command(tmp_path / "x.py", platform="win32")
+    assert command.startswith("& ") and "exit" not in command
 
 
-def test_stopping_an_unknown_run_is_a_no(tmp_path):
-    assert stop_snippet("never-started") is False
+def test_a_compiled_snippet_builds_into_a_folder_of_its_own(tmp_path):
+    first = terminal_command(tmp_path / "a.rs", platform="darwin")
+    second = terminal_command(tmp_path / "b.rs", platform="darwin")
+    assert first.startswith("rustc") and first != second.replace("b.rs", "a.rs")
 
 
 def test_a_cancelled_run_does_not_leave_its_process_running(tmp_path, py_path):

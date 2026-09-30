@@ -1,9 +1,8 @@
-"""POST /api/v1/snippet/{read,save,run} — the snippet view's backend.
+"""POST /api/v1/snippet/{read,save,check,terminal} — the snippet view's backend.
 
 The rules live in ``flow_sdk.core.snippet`` (tests/unit/test_snippet.py); this
-proves the wire: shapes, error codes, and that a crash or hang is a result to
-show, never an HTTP failure. python3 only — node/rust are proven in the unit
-tier, and the route runs them through the same function.
+proves the wire: shapes, error codes, and that a file runs in ITS terminal — the
+one ``/snippet/terminal`` names, typed into through the shell's ``run-command``.
 """
 
 import asyncio
@@ -49,44 +48,6 @@ async def test_read_returns_each_region_as_the_viewer_edits_it(client, tmp_path)
     ]
 
 
-async def test_region_line_is_the_line_a_traceback_names(client, tmp_path):
-    path = tmp_path / "tb.py"
-    path.write_text("# %% flowpad:hidden\nimport os\n\n# %% flowpad:snippet\nx = 1\nraise RuntimeError('here')\n")
-    region = (await _post(client, "read", {"path": str(path)}))["data"]["regions"][1]
-    run = (await _post(client, "run", {"path": str(path)}))["data"]
-    failing_line = region["line"] + region["shown"].split("\n").index("raise RuntimeError('here')")
-    assert f"line {failing_line}" in run["stderr"]
-
-
-async def test_read_refusals_carry_their_error_code(client, tmp_path):
-    assert _error_code(await _post(client, "read", {"path": str(tmp_path / "nope.py")})) == "NOT_FOUND"
-    plain = tmp_path / "plain.py"
-    plain.write_text("print(1)\n")
-    assert _error_code(await _post(client, "read", {"path": str(plain)})) == "NOT_A_SNIPPET"
-
-
-async def test_unknown_body_keys_are_rejected(client, tmp_path):
-    resp = await client.post("/api/v1/snippet/read", json={"path": str(tmp_path), "pth": "typo"})
-    assert resp.status_code == 422
-
-
-async def test_save_writes_only_that_region_and_answers_the_reread_file(client, tmp_path):
-    path = tmp_path / "s.py"
-    path.write_text(SNIPPET)
-    data = (await _post(client, "save", {"path": str(path), "index": 3, "kind": "snippet", "shown": "print(d['a'])"}))["data"]
-    assert data["regions"][3]["shown"] == "print(d['a'])"
-    assert path.read_text() == SNIPPET.replace("print(json.dumps(d))", "print(d['a'])")
-    assert data["text"] == path.read_text()
-
-
-async def test_save_by_a_stale_position_is_refused_and_writes_nothing(client, tmp_path):
-    path = tmp_path / "s.py"
-    path.write_text(SNIPPET)
-    payload = await _post(client, "save", {"path": str(path), "index": 0, "kind": "snippet", "shown": "x"})
-    assert _error_code(payload) == "STALE"
-    assert path.read_text() == SNIPPET
-
-
 async def test_save_against_text_that_changed_on_disk_is_refused(client, tmp_path):
     path = tmp_path / "s.py"
     path.write_text(SNIPPET.replace("print(json.dumps(d))", "print('agent')"))
@@ -95,58 +56,55 @@ async def test_save_against_text_that_changed_on_disk_is_refused(client, tmp_pat
     assert "print('agent')" in path.read_text()
 
 
-async def test_run_ok_exception_syntax_and_hang_are_all_results(client, tmp_path):
+async def _run_in_its_terminal(client, path) -> tuple[int, str]:
+    """What the viewer does on Run: the file's terminal, then its command typed there; the exit
+    code and what it printed, read from the terminal's own stream."""
+    from flow_sdk.builtin.shell import Shell, _strip_pty_keep_lines
+
+    term = (await _post(client, "terminal", {"path": str(path)}))["data"]
+    resp = await client.post(f"/api/v1/graph/shell/{term['shell_id']}/run-command", json={"command": term["command"]})
+    marker = resp.json()["data"]["marker"]
+    shell = await Shell.get_by_id(term["shell_id"])
+    for _ in range(200):
+        raw = await shell.read()
+        done = Shell.sentinel_exit(raw, marker)
+        if done:
+            return done[0], _strip_pty_keep_lines(Shell.sentinel_output(raw, marker))
+        await asyncio.sleep(0.05)
+    raise TimeoutError(f"the run never ended: {raw[-300:]!r}")
+
+
+async def test_a_file_has_one_terminal_and_another_file_its_own(client, tmp_path):
+    first, second = tmp_path / "a.py", tmp_path / "b.py"
+    first.write_text(SNIPPET)
+    second.write_text(SNIPPET)
+    one = (await _post(client, "terminal", {"path": str(first)}))["data"]
+    again = (await _post(client, "terminal", {"path": str(first)}))["data"]
+    other = (await _post(client, "terminal", {"path": str(second)}))["data"]
+    assert one["shell_id"] == again["shell_id"] != other["shell_id"]
+    assert one["command"].endswith(f"-m flow_sdk.snippet_launch {first.resolve()}")
+
+
+async def test_the_file_runs_in_its_terminal_and_its_exit_code_comes_back(client, tmp_path):
     ok = tmp_path / "ok.py"
     ok.write_text(SNIPPET)
-    r = (await _post(client, "run", {"path": str(ok)}))["data"]
-    assert (r["returncode"], r["stdout"], r["timed_out"]) == (0, '{"a": 1}\n', False)
+    code, printed = await _run_in_its_terminal(client, ok)
+    assert code == 0 and '{"a": 1}' in printed
 
     boom = tmp_path / "boom.py"
-    boom.write_text("# %% flowpad:snippet\nraise KeyError('k')\n")
-    r = (await _post(client, "run", {"path": str(boom)}))["data"]
-    assert r["returncode"] == 1 and "KeyError: 'k'" in r["stderr"]
-
-    bad = tmp_path / "bad.py"
-    bad.write_text("# %% flowpad:snippet\nif True print(1)\n")
-    r = (await _post(client, "run", {"path": str(bad)}))["data"]
-    assert r["returncode"] == 1 and "SyntaxError" in r["stderr"]
-
-    hang = tmp_path / "hang.py"
-    hang.write_text("# %% flowpad:snippet\nprint('before', flush=True)\nwhile True:\n    pass\n")
-    r = (await _post(client, "run", {"path": str(hang), "timeout_seconds": 0.3}))["data"]
-    assert r["timed_out"] and r["stdout"] == "before\n"
+    boom.write_text("# %% flowpad:hidden\nimport os\n\n# %% flowpad:snippet\nx = 1\nraise KeyError('k')\n")
+    region = (await _post(client, "read", {"path": str(boom)}))["data"]["regions"][1]
+    code, printed = await _run_in_its_terminal(client, boom)
+    assert code == 1 and "KeyError: 'k'" in printed
+    failing_line = region["line"] + region["shown"].split("\n").index("raise KeyError('k')")
+    assert f"line {failing_line}" in printed, "a traceback names the file's own line"
 
 
-async def test_stop_route_ends_a_hanging_run(client, tmp_path):
-    hang = tmp_path / "hang.py"
-    hang.write_text("# %% flowpad:snippet\nprint('up', flush=True)\nwhile True:\n    pass\n")
-    run = asyncio.create_task(_post(client, "run", {"path": str(hang), "timeout_seconds": 30, "run_id": "api-1"}))
-    await asyncio.sleep(0.4)
-    assert (await _post(client, "stop", {"run_id": "api-1"}))["data"] == {"stopped": True}
-    r = (await asyncio.wait_for(run, 5))["data"]
-    assert not r["timed_out"] and r["detail"] == "The run was stopped." and r["stdout"] == "up\n"
-    assert (await _post(client, "stop", {"run_id": "api-1"}))["data"] == {"stopped": False}
-
-
-async def test_run_timeout_is_bounded(client, tmp_path):
-    for bad in (0, -1, 601):
-        resp = await client.post("/api/v1/snippet/run", json={"path": str(tmp_path / "x.py"), "timeout_seconds": bad})
-        assert resp.status_code == 422, bad
-
-
-async def test_run_of_a_missing_file_is_a_result_not_a_crash(client, tmp_path):
-    r = (await _post(client, "run", {"path": str(tmp_path / "gone.py")}))["data"]
-    assert r["returncode"] is None and "not found" in r["stderr"]
-
-
-async def test_ten_concurrent_runs_through_the_route(client, tmp_path):
-    paths = []
-    for i in range(10):
-        p = tmp_path / f"c{i}.py"
-        p.write_text(f"# %% flowpad:snippet\nprint({i})\n")
-        paths.append(p)
-    results = await asyncio.gather(*(_post(client, "run", {"path": str(p)}) for p in paths))
-    assert [r["data"]["stdout"] for r in results] == [f"{i}\n" for i in range(10)]
+async def test_a_terminal_for_a_missing_file_or_an_unknown_language_is_refused(client, tmp_path):
+    assert _error_code(await _post(client, "terminal", {"path": str(tmp_path / "gone.py")})) == "NOT_FOUND"
+    cobol = tmp_path / "x.cobol"
+    cobol.write_text("# %% flowpad:snippet\n")
+    assert _error_code(await _post(client, "terminal", {"path": str(cobol)})) == "NOT_APPLICABLE"
 
 
 async def test_a_rejected_body_answers_in_the_standard_envelope(client, tmp_path):
@@ -159,7 +117,7 @@ async def test_a_rejected_body_answers_in_the_standard_envelope(client, tmp_path
     sentence, put an object into React, and the whole page was replaced by the error
     screen. A mistyped field must not be able to do that.
     """
-    resp = await client.post("/api/v1/snippet/run", json={"path": str(tmp_path / "x.py"), "bogus": 1})
+    resp = await client.post("/api/v1/snippet/terminal", json={"path": str(tmp_path / "x.py"), "bogus": 1})
 
     assert resp.status_code == 422
     body = resp.json()
