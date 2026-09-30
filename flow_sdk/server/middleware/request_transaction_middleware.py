@@ -94,6 +94,7 @@ class RequestTransactionMiddleware:
                         registered_action = action.get_by_name(
                             req_info.action or "",
                             req_info.target_entity_typeid.type,
+                            method=req_info.method or None,
                         )
                         allow_missing_target = bool(
                             registered_action
