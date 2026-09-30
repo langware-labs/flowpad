@@ -40,23 +40,20 @@ import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
  * Null when the process is not readable — the caller opens it anyway.
  */
 export async function prepareAgentSession(processId: string): Promise<AgenticProcess | null> {
+  // The queue kick never throws: a refused kick must not read as a failed open.
+  const errLog = (e: unknown) => console.warn('[agent-launcher] queue kick failed; auto prompt not started', e);
   const proc = await AgenticProcess.getById<AgenticProcess>(processId);
   if (!proc) {
     console.warn('[agent-launcher] process not readable after use(); vibe persona not embedded', processId);
     // Left queued, the auto prompt would run only after the human's first turn.
-    await startQueuedTurn(new AgenticProcess({ id: processId }));
+    await new AgenticProcess({ id: processId }).drainQueue().catch(errLog);
     return null;
   }
   void proc.watch().catch((e) => console.warn('[agent-launcher] watch failed; live updates degraded', e));
   // A layer, not the persona: the agent's own system prompt is the identity.
   await embedVibeSubagent(proc, { asPersona: false });
-  await startQueuedTurn(proc);
+  await proc.drainQueue().catch(errLog);
   return proc;
-}
-
-/** Kick the queue; never throws — a refused kick must not read as a failed open. */
-async function startQueuedTurn(proc: AgenticProcess): Promise<void> {
-  await proc.drainQueue().catch((e) => console.warn('[agent-launcher] queue kick failed; auto prompt not started', e));
 }
 
 export function useAgentLauncher(): {
