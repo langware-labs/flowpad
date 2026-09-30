@@ -811,9 +811,9 @@ class Shell(Entity):
         await self.write(self.sentinel_command(command, marker))
         return marker
 
-    def _shell_process(self) -> "psutil.Process | None":
+    async def _shell_process(self) -> "psutil.Process | None":
         """The terminal's own shell process (the PTY's child), or ``None`` without a live PTY."""
-        if not self.compute_node_id:
+        if not self.compute_node_id or not await self.ensure_live_compute_node_binding():
             return None
         cn = self.compute_node
         pid = cn.compute_provider.get_pty_shell_pid(cn.node_provider_id, self.id)
@@ -822,12 +822,12 @@ class Shell(Entity):
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return None
 
-    def running(self) -> int | None:
+    async def running(self) -> int | None:
         """The pid of the command running in this terminal now, or ``None`` at the prompt.
 
         A command typed at the prompt is a child of the terminal's shell; the prompt itself has none.
         """
-        shell = self._shell_process()
+        shell = await self._shell_process()
         try:
             children = shell.children() if shell else []
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -840,16 +840,16 @@ class Shell(Entity):
         of the command is left running."""
         from flow_sdk.instances.procs import terminate_tree  # noqa: PLC0415
 
-        if self.running() is None:
+        if await self.running() is None:
             return True
         await self.write_raw(b"\x03")
         loop = asyncio.get_running_loop()
         deadline = loop.time() + grace
         while loop.time() < deadline:
-            if self.running() is None:
+            if await self.running() is None:
                 return True
             await asyncio.sleep(0.05)
-        shell = self._shell_process()
+        shell = await self._shell_process()
         try:
             children = shell.children() if shell else []
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -1384,7 +1384,7 @@ class Shell(Entity):
     @action.get(action_name="run-state")
     async def _http_run_state(self) -> ApiResponse:
         """HTTP: whether a command runs in this terminal now (``running_pid``), and its status."""
-        return ApiSuccessResponse(data={"running_pid": self.running(), "status": self.status})
+        return ApiSuccessResponse(data={"running_pid": await self.running(), "status": self.status})
 
     @action.post(action_name="run-detached")
     async def run_detached(self) -> ApiResponse:

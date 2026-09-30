@@ -17,10 +17,14 @@ from tests.unit.conftest import kill_pty, poll_read
 async def _until(predicate, timeout: float = 10.0) -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
-    while not predicate():
+    while not await predicate():
         if loop.time() > deadline:
             raise TimeoutError("condition never held")
         await asyncio.sleep(0.05)
+
+
+async def _is_running(shell: Shell) -> bool:
+    return await shell.running() is not None
 
 
 async def _finished(shell: Shell, marker: str, timeout: float = 10.0) -> int:
@@ -59,7 +63,7 @@ async def test_a_command_runs_in_the_terminal_and_its_end_carries_the_exit_code(
         marker = await shell.run_command("echo keyed-out; (exit 3)")
         assert await _finished(shell, marker) == 3
         assert b"keyed-out" in await shell.read()
-        assert shell.running() is None, "back at the prompt"
+        assert await shell.running() is None, "back at the prompt"
     finally:
         await shell.close()
 
@@ -74,7 +78,7 @@ async def test_the_end_marker_arrives_however_the_command_ends(tmp_path, monkeyp
     try:
         marker = await shell.run_command(command)
         if ctrl_c:
-            await _until(lambda: shell.running() is not None)
+            await _until(lambda: _is_running(shell))
             await shell.write_raw(b"\x03")
         assert await _finished(shell, marker) == exit_code
     finally:
@@ -100,9 +104,9 @@ async def test_interrupt_stops_the_command_and_keeps_the_terminal(tmp_path):
     shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         marker = await shell.run_command("sleep 30")
-        await _until(lambda: shell.running() is not None)
+        await _until(lambda: _is_running(shell))
         assert await shell.interrupt() is True
-        assert shell.running() is None
+        assert await shell.running() is None
         await _finished(shell, marker)  # the shell carried on to the sentinel
         after = await shell.run_command("echo still-here")
         assert await _finished(shell, after) == 0
@@ -116,9 +120,9 @@ async def test_a_command_deaf_to_ctrl_c_is_terminated_after_the_grace(tmp_path):
     shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         await shell.run_command("""python3 -c 'import signal,time; signal.signal(signal.SIGINT, signal.SIG_IGN); time.sleep(30)'""")
-        await _until(lambda: shell.running() is not None)
+        await _until(lambda: _is_running(shell))
         assert await shell.interrupt(grace=0.5) is True
-        assert shell.running() is None and shell.is_alive
+        assert await shell.running() is None and shell.is_alive
     finally:
         await shell.close()
 
@@ -126,7 +130,7 @@ async def test_a_command_deaf_to_ctrl_c_is_terminated_after_the_grace(tmp_path):
 async def test_interrupting_an_idle_terminal_is_a_no_op(tmp_path):
     shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
-        assert shell.running() is None
+        assert await shell.running() is None
         assert await shell.interrupt() is True
     finally:
         await shell.close()
