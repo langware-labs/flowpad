@@ -86,7 +86,8 @@ export function useXtermShellAttach(
             );
             if (replay) {
               history = cb.current.trimRecordedBlankRows
-                ? replay.serialized.replace(/(?:\r\n)+\x1b\[\d+A$/, '')
+                ? // eslint-disable-next-line no-control-regex -- the ESC of a cursor-up sequence
+                  replay.serialized.replace(/(?:\r\n)+\x1b\[\d+A$/, '')
                 : replay.serialized;
               historyLastSeq = replay.lastSeq;
               // The next cold open of this recording replays only what comes after this.
