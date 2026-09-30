@@ -60,7 +60,8 @@ vi.mock('@src/components/connections-manager/use-credential-usage', async (impor
 }));
 // The credential half is a fixture here: this file is about the table, and the
 // fold itself is covered by `credential-rows.test.ts`.
-vi.mock('@src/components/credentials/use-credentials', () => ({
+vi.mock('@src/components/credentials/use-credentials', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   useCredentials: () => ({ status: h.status, templates: h.templates, ready: true, refresh: h.refresh }),
 }));
 vi.mock('@sdk', async (importOriginal) => ({

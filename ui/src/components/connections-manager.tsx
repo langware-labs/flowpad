@@ -49,7 +49,7 @@ import {
   type CredentialRow,
   type DetectedGroup,
 } from './credentials-view/credential-rows';
-import { useCredentials } from './credentials/use-credentials';
+import { CREDENTIAL_DEPLOYMENT_OPTION, credentialDeploymentId, useCredentials } from './credentials/use-credentials';
 import { CredentialDialog } from './credentials/CredentialDialog';
 import { DetectedKeys } from './credentials/DetectedKeys';
 import {
@@ -65,9 +65,6 @@ import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
 import { Plus } from 'lucide-react';
 import { useProjects } from '@src/hooks/use-projects';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-
-/** The URL option naming the deployment whose values the table shows; absent means this computer. */
-export const CREDENTIAL_DEPLOYMENT_OPTION = 'deployment';
 
 export interface ConnectionsManagerProps {
   /**
@@ -345,7 +342,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   const { navigation, currentDock } = useDockNavigation();
   // URL-first: the deployment rides in the dock's options, so a reload or a
   // shared link lands on the same values. This computer is the absent option.
-  const credentialDeployment = currentDock?.options?.[CREDENTIAL_DEPLOYMENT_OPTION] || null;
+  const credentialDeployment = credentialDeploymentId(currentDock);
   const {
     status: credentialStatus,
     templates: credentialTemplates,

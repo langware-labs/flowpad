@@ -1,8 +1,8 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { CredentialsSubview, PageId, ViewType } from '@sdk';
+import { CredentialsSubview, PageId, ViewType, credentialEnvFileName, EMPTY_CREDENTIALS_STATUS } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { CREDENTIAL_DEPLOYMENT_OPTION, ConnectionsManager } from '@src/components/connections-manager';
-import { useCredentials } from '@src/components/credentials/use-credentials';
+import { ConnectionsManager } from '@src/components/connections-manager';
+import { credentialDeploymentId, useCredentialsStatus } from '@src/components/credentials/use-credentials';
 import { ProjectSelector } from '@src/components/project-selector';
 import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
 import { Button } from '@src/components/ui/button';
@@ -55,13 +55,15 @@ export const CredentialsView: React.FC = () => {
     [projects, projectId],
   );
 
-  // The env files the table reads, as chips — only those on disk. Same query key
-  // as the table's, so this is the cached status, not a second fetch.
-  const { status } = useCredentials(
+  // The env files the table reads, as chips — only those on disk. The table's
+  // own status entry, so this is the cached status, not a second fetch.
+  const { data: status = EMPTY_CREDENTIALS_STATUS } = useCredentialsStatus(
     selected?.id ?? null,
-    currentDock?.options?.[CREDENTIAL_DEPLOYMENT_OPTION] || null,
+    credentialDeploymentId(currentDock),
   );
-  const envFiles = status.files.filter((file) => file.exists && file.path);
+  const envFiles = status.files.flatMap((file) =>
+    file.exists && file.path ? [{ scope: file.scope, path: file.path, name: credentialEnvFileName(file.environment) }] : [],
+  );
 
   const go = (nextTab: CredentialsSubview, nextProjectId?: string) => {
     navigation.openPage(
@@ -92,12 +94,12 @@ export const CredentialsView: React.FC = () => {
             variant="outline"
             size="sm"
             className="h-6 gap-1 rounded-full px-2 font-mono text-[11px] font-normal"
-            title={file.path ?? undefined}
-            onClick={() => navigation.openMachinePath(file.path!, LOCAL_COMPUTE_NODE)}
+            title={file.path}
+            onClick={() => navigation.openMachinePath(file.path, LOCAL_COMPUTE_NODE)}
             data-testid={`credentials-env-file-${file.scope}`}
           >
             <FileKey className="h-3 w-3" />
-            {file.path!.split(/[\\/]/).pop()}
+            {file.name}
           </Button>
         ))}
 
