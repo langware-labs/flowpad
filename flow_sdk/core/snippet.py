@@ -222,14 +222,16 @@ class SnippetSaveRequest(DataSpec):
 
 
 class SnippetTerminalRequest(DataSpec):
-    """``POST /api/v1/snippet/terminal`` — the file's terminal, and the command that runs it there."""
+    """``POST /api/v1/snippet/terminal`` — the file's terminal, and the command that runs it there.
+    ``create=False`` only finds one (a view showing the last run, before anything is run)."""
 
     path: str
+    create: bool = True
 
 
 class SnippetCheckRequest(DataSpec):
-    """``POST /api/v1/snippet/check``. ``timeout_seconds`` bounds the check as it bounds a run:
-    the check imports the file's modules, and a module may hang on import."""
+    """``POST /api/v1/snippet/check``. ``timeout_seconds`` bounds the check: it imports the file's
+    modules, and a module may hang on import."""
 
     path: str
     timeout_seconds: float = Field(default=30.0, gt=0, le=600)

@@ -1,11 +1,13 @@
 /**
  * SnippetView renders what `/api/v1/snippet/*` answers and nothing more: the
- * region rules, saving and running are proven in `tests/unit/test_snippet.py`.
- * Here: which regions show, that the toggles persist, that edits are saved by
- * region and flushed before a Run, and that each kind of run result renders.
+ * region rules and saving are proven in `tests/unit/test_snippet.py`, the terminal
+ * run in `tests/unit/test_shell_terminal_run.py`. Here: which regions show, that the
+ * toggles persist, that edits are saved by region and flushed before a Run, and that
+ * a Run is the file's terminal running its command — clock, exit line, Stop.
  *
- * Monaco is stubbed with a textarea (jsdom cannot host it); `apiClient` at the
- * transport edge.
+ * Monaco is stubbed with a textarea and the terminal view with a div (jsdom cannot
+ * host either); `apiClient` at the transport edge; the file's Shell is real, only
+ * its HTTP answers stood in for.
  */
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +20,8 @@ const mocks = vi.hoisted(() => ({
   watched: [] as string[],
   // Monaco's setModelMarkers, by the model (the region's text) it was called for.
   markers: new Map<string, Array<Record<string, unknown>>>(),
+  // The terminal view's clear(), called by Run.
+  clear: vi.fn(),
 }));
 
 vi.mock('@sdk/client', () => ({ __esModule: true, default: { post: mocks.post } }));
@@ -59,9 +63,52 @@ vi.mock('@monaco-editor/react', async () => {
   };
 });
 
+vi.mock('@src/components/terminal/interactive-terminal/ShellTerminal', async () => {
+  const { forwardRef, useImperativeHandle } = await import('react');
+  return {
+    ShellTerminal: forwardRef(function ShellTerminal({ shellId }: { shellId: string }, ref) {
+      useImperativeHandle(ref, () => ({ clear: mocks.clear, focus: () => undefined }));
+      return <div data-testid="terminal" data-shell={shellId} />;
+    }),
+  };
+});
+
 const { SnippetView, regionLine, formatElapsed } = await import('@src/components/code-editor/SnippetView');
+const { Shell, apiClient: sdkClient } = await import('@sdk');
 
 const PATH = '/tmp/flowpad-snippets/t.py';
+const SHELL_ID = '11111111-2222-4333-8444-555555555555';
+const COMMAND = "python -m flow_sdk.snippet_launch '/tmp/flowpad-snippets/t.py'";
+const b64 = (text: string) => Buffer.from(text, 'utf-8').toString('base64');
+
+/** The file's terminal: a real Shell whose `run-command` answers a marker and whose output this
+ *  test prints (`finish`); `interrupt` ends the run as Ctrl-C does (exit 130). */
+function fileTerminal() {
+  const shell = new Shell({ id: SHELL_ID, compute_node_id: crypto.randomUUID() });
+  const typed: string[] = [];
+  const actions: string[] = [];
+  let marker = '';
+  const finish = (code: number, out = 'ok\r\n') =>
+    shell.ptyConnection.appendOutput(b64(`\x1b]7770;${marker};s\x07${out}\x1b]7770;${marker};${code}\x07`));
+  vi.spyOn(shell as unknown as { post: (a: string, b: { command?: string }) => Promise<unknown> }, 'post').mockImplementation(
+    async (action, body) => {
+      actions.push(action);
+      if (action === 'run-command') {
+        typed.push(body.command ?? '');
+        marker = `__flow_m${typed.length}`;
+        return { marker };
+      }
+      if (action === 'interrupt') {
+        setTimeout(() => finish(130, ''), 0);
+        return { stopped: true };
+      }
+      return null;
+    },
+  );
+  vi.spyOn(shell, 'runState').mockResolvedValue({ running_pid: null, status: 'running' });
+  vi.spyOn(Shell, 'getById').mockResolvedValue(shell);
+  return { shell, typed, actions, finish: (code: number, out?: string) => finish(code, out) };
+}
 const REGIONS = [
   { index: 0, kind: 'hidden', shown: 'import json', line: 2 },
   { index: 1, kind: 'init', shown: 'd = 1', line: 4 },
@@ -70,13 +117,17 @@ const REGIONS = [
 
 function backend(overrides: Record<string, unknown> = {}) {
   const calls: Array<[string, Record<string, unknown>]> = [];
+  // The SDK's own entities (Shell.forSnippet) reach the ONE client instance, not this test's module
+  // mock of it — so the instance answers the same way.
+  vi.spyOn(sdkClient, 'post').mockImplementation(((url: string, body: Record<string, unknown>) => mocks.post(url, body)) as never);
   mocks.post.mockImplementation((url: string, body: Record<string, unknown>) => {
     calls.push([url, body]);
     if (url in overrides) return Promise.resolve(overrides[url]);
     if (url.endsWith('/read')) return Promise.resolve({ path: PATH, regions: REGIONS, text: 'READ TEXT' });
     if (url.endsWith('/save')) return Promise.resolve({ path: PATH, regions: REGIONS, text: 'FILE TEXT' });
     if (url.endsWith('/check')) return Promise.resolve({ path: PATH, diagnostics: [] });
-    return Promise.resolve({ returncode: 0, stdout: 'ok\n', stderr: '', timed_out: false, duration_s: 0.12 });
+    if (url.endsWith('/terminal')) return Promise.resolve({ shell_id: body.create === false ? null : SHELL_ID, command: COMMAND, path: PATH });
+    return Promise.resolve(null);
   });
   return calls;
 }
@@ -93,7 +144,6 @@ describe('SnippetView', () => {
   beforeEach(() => {
     instancePreferences.set(PrefKey.SNIPPET_SHOW_INIT, false);
     instancePreferences.set(PrefKey.SNIPPET_SHOW_IMPORTS, false);
-    instancePreferences.set(PrefKey.SNIPPET_RUN_TIMEOUT, 30);
   });
 
   afterEach(() => {
@@ -102,6 +152,8 @@ describe('SnippetView', () => {
     mocks.fileChanged = null;
     mocks.watched = [];
     mocks.markers.clear();
+    mocks.clear.mockReset();
+    vi.restoreAllMocks();
   });
 
   const problem = (line: number, message: string, kind = 'name') => ({ line, col: 1, end_line: line, end_col: 4, severity: 'error', kind, message });
@@ -159,29 +211,6 @@ describe('SnippetView', () => {
     expect(screen.queryByTestId('snippet-toggle-imports')).toBeNull();
   });
 
-  it('saves an edit by region, and a Run flushes it first', async () => {
-    const calls = backend();
-    const onSynced = vi.fn();
-    view({ onSynced });
-    await screen.findByTestId('snippet-region-snippet');
-    fireEvent.change(editors()[0], { target: { value: 'print(d + 1)' } });
-    fireEvent.click(screen.getByTestId('snippet-run'));
-    await screen.findByTestId('snippet-console');
-
-    const urls = calls.map(([url]) => url);
-    const save = urls.indexOf('/api/v1/snippet/save');
-    expect(save).toBeGreaterThan(-1);
-    expect(save).toBeLessThan(urls.indexOf('/api/v1/snippet/run'));
-    expect(calls[save][1]).toEqual({ path: PATH, index: 2, kind: 'snippet', shown: 'print(d + 1)', base: 'print(d)' });
-    expect(calls.find(([url]) => url.endsWith('/run'))?.[1]).toEqual({ path: PATH, timeout_seconds: 30, run_id: expect.any(String), connection_id: expect.any(String) });
-    expect(onSynced).toHaveBeenCalledWith('READ TEXT');
-    expect(onSynced).toHaveBeenCalledWith('FILE TEXT');
-    expect(editors()[0].value).toBe('print(d + 1)');
-    // The flushed edit's debounce timer must not fire a second save afterwards.
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    expect(calls.filter(([url]) => url.endsWith('/save'))).toHaveLength(1);
-  });
-
   it('50 fast keystrokes in two regions save once per region with the final text', async () => {
     const calls = backend();
     instancePreferences.set(PrefKey.SNIPPET_SHOW_INIT, true);
@@ -196,34 +225,15 @@ describe('SnippetView', () => {
     expect(saves).toEqual(expect.arrayContaining([['init', 'v48'], ['snippet', 'v49']]));
   });
 
-  it.each([
-    [{ returncode: 0, stdout: 'hi\n', stderr: '', timed_out: false, duration_s: 0.1 }, 'hi', null, /exit 0/],
-    [{ returncode: 1, stdout: '', stderr: 'ValueError: boom', timed_out: false, duration_s: 0.1 }, null, 'ValueError: boom', /exit 1/],
-    // The backend writes a sentence for EVERY run that does not succeed — a failed
-    // run is not a stopped one just because it has a detail (the bug: it read so).
-    [{ exit_code: 1, returncode: 1, stdout: '', stderr: 'boom', timed_out: false, duration_s: 0.1, detail: 'The command exited 1.' }, null, 'boom', /exit 1/],
-    [{ exit_code: 4, returncode: null, stdout: '', stderr: 'snippet file not found', timed_out: false, duration_s: 0, detail: 'snippet file not found: /x.py' }, null, 'not found', /snippet file not found/],
-    [{ returncode: -9, stdout: 'step 1\n', stderr: '', timed_out: true, duration_s: 2 }, 'step 1', null, /timed out after 30s/],
-    [{ returncode: null, stdout: '', stderr: "no runner for '.cobol' files", timed_out: false, duration_s: 0 }, null, 'no runner', /did not run/],
-  ])('renders a run result: %#', async (result, stdout, stderr, status) => {
-    backend({ '/api/v1/snippet/run': result });
-    view();
-    fireEvent.click(await screen.findByTestId('snippet-run'));
-    await screen.findByTestId('snippet-console');
-    if (stdout) expect(screen.getByTestId('snippet-stdout').textContent).toContain(stdout);
-    else expect(screen.queryByTestId('snippet-stdout')).toBeNull();
-    if (stderr) expect(screen.getByTestId('snippet-stderr').textContent).toContain(stderr);
-    expect(screen.getByTestId('snippet-status').textContent).toMatch(status);
-  });
-
   it('an answer without text never hands the host an empty file', async () => {
+    fileTerminal();
     backend({ '/api/v1/snippet/read': { path: PATH, regions: REGIONS }, '/api/v1/snippet/save': { path: PATH, regions: REGIONS } });
     const onSynced = vi.fn();
     view({ onSynced });
     await screen.findByTestId('snippet-region-snippet');
     fireEvent.change(editors()[0], { target: { value: 'x' } });
     fireEvent.click(screen.getByTestId('snippet-run'));
-    await screen.findByTestId('snippet-console');
+    await waitFor(() => expect(mocks.post.mock.calls.some(([url]) => String(url).endsWith('/terminal'))).toBe(true));
     expect(onSynced).not.toHaveBeenCalled();
   });
 
@@ -252,50 +262,93 @@ describe('SnippetView', () => {
     await waitFor(() => expect(onNotSnippet).toHaveBeenCalled());
   });
 
-  it('Stop kills the run in flight by its id, and the result says it was stopped', async () => {
-    let finishRun: (value: unknown) => void = () => undefined;
-    const calls = backend({
-      '/api/v1/snippet/run': new Promise((resolve) => (finishRun = resolve)),
-      '/api/v1/snippet/stop': { stopped: true },
-    });
+  it('saves an edit by region, and a Run flushes it first — then runs the file in its terminal', async () => {
+    const calls = backend();
+    const { typed, finish } = fileTerminal();
+    const onSynced = vi.fn();
+    view({ onSynced });
+    await screen.findByTestId('snippet-region-snippet');
+    fireEvent.change(editors()[0], { target: { value: 'print(d + 1)' } });
+    fireEvent.click(screen.getByTestId('snippet-run'));
+    await waitFor(() => expect(typed).toHaveLength(1));
+
+    const urls = calls.map(([url]) => url);
+    const save = urls.indexOf('/api/v1/snippet/save');
+    expect(save).toBeGreaterThan(-1);
+    expect(save).toBeLessThan(urls.lastIndexOf('/api/v1/snippet/terminal'));
+    expect(calls[save][1]).toEqual({ path: PATH, index: 2, kind: 'snippet', shown: 'print(d + 1)', base: 'print(d)' });
+    expect(typed).toEqual([`clear; ${COMMAND}`]);
+    expect(screen.getByTestId('terminal').dataset.shell).toBe(SHELL_ID);
+    expect(onSynced).toHaveBeenCalledWith('FILE TEXT');
+    finish(0);
+    expect((await screen.findByTestId('snippet-status')).textContent).toMatch(/exit 0/);
+    // The flushed edit's debounce timer must not fire a second save afterwards.
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(calls.filter(([url]) => url.endsWith('/save'))).toHaveLength(1);
+  });
+
+  it('shows the file\'s terminal on arrival when it has one, and makes none for a file never run', async () => {
+    const calls = backend();
+    view();
+    await screen.findByTestId('snippet-region-snippet');
+    await waitFor(() => expect(calls.some(([url, body]) => url.endsWith('/terminal') && body.create === false)).toBe(true));
+    expect(screen.queryByTestId('terminal')).toBeNull();
+    cleanup();
+
+    fileTerminal();
+    backend({ '/api/v1/snippet/terminal': { shell_id: SHELL_ID, command: COMMAND, path: PATH } });
+    view();
+    expect((await screen.findByTestId('terminal')).dataset.shell).toBe(SHELL_ID);
+  });
+
+  it.each([
+    [0, /exit 0 · /],
+    [1, /exit 1 · /],
+  ])('ends with the exit line: %s', async (code, status) => {
+    backend();
+    const { typed, finish } = fileTerminal();
     view();
     fireEvent.click(await screen.findByTestId('snippet-run'));
-    fireEvent.click(await screen.findByTestId('snippet-stop'));
-    await waitFor(() => expect(calls.some(([url]) => url.endsWith('/stop'))).toBe(true));
-    const runId = calls.find(([url]) => url.endsWith('/run'))?.[1].run_id;
-    expect(typeof runId).toBe('string');
-    expect(calls.find(([url]) => url.endsWith('/stop'))?.[1]).toEqual({ run_id: runId });
-    // What a killed run really answers with: the reason is the backend's own sentence.
-    finishRun({ returncode: -9, stdout: 'started\n', stderr: '', timed_out: false, duration_s: 0.4, detail: 'The run was stopped.' });
-    expect((await screen.findByTestId('snippet-status')).textContent).toMatch(/stopped/);
-    expect(screen.getByTestId('snippet-stdout').textContent).toContain('started');
+    await waitFor(() => expect(typed).toHaveLength(1));
+    finish(code);
+    expect((await screen.findByTestId('snippet-status')).textContent).toMatch(status);
     expect(screen.getByTestId('snippet-run')).toBeTruthy();
   });
 
-  it('Run clears the last run\'s console the moment it is clicked, not when the new run answers', async () => {
-    backend({ '/api/v1/snippet/run': { returncode: 1, stdout: 'old out\n', stderr: 'old err', timed_out: false, duration_s: 0.1 } });
+  it('Stop interrupts the run in its terminal, and the line says it was stopped', async () => {
+    backend();
+    const { typed, actions } = fileTerminal();
     view();
     fireEvent.click(await screen.findByTestId('snippet-run'));
-    expect((await screen.findByTestId('snippet-stdout')).textContent).toContain('old out');
-    await screen.findByTestId('snippet-run');
-    backend({ '/api/v1/snippet/run': new Promise(() => undefined) });
+    await waitFor(() => expect(typed).toHaveLength(1));
+    fireEvent.click(await screen.findByTestId('snippet-stop'));
+    expect((await screen.findByTestId('snippet-status')).textContent).toMatch(/stopped after/);
+    expect(actions).toContain('interrupt');
+    expect(screen.getByTestId('terminal')).toBeTruthy(); // the terminal stays
+  });
+
+  it('Run clears the terminal the moment it is clicked', async () => {
+    backend({ '/api/v1/snippet/terminal': { shell_id: SHELL_ID, command: COMMAND, path: PATH } });
+    const { typed, finish } = fileTerminal();
+    view();
+    await screen.findByTestId('terminal');
     fireEvent.click(screen.getByTestId('snippet-run'));
-    await screen.findByTestId('snippet-stop');
-    expect(screen.queryByTestId('snippet-stdout')).toBeNull();
-    expect(screen.queryByTestId('snippet-stderr')).toBeNull();
-    expect(screen.queryByTestId('snippet-status')).toBeNull();
+    expect(mocks.clear).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(typed).toHaveLength(1));
+    finish(0);
   });
 
   it('a clock beside Stop counts the run in flight, and goes when the run ends', async () => {
-    let finishRun: (value: unknown) => void = () => undefined;
-    backend({ '/api/v1/snippet/run': new Promise((resolve) => (finishRun = resolve)) });
+    backend();
+    const { typed, finish } = fileTerminal();
     view();
     fireEvent.click(await screen.findByTestId('snippet-run'));
     const clock = await screen.findByTestId('snippet-clock');
     expect(clock.textContent).toMatch(/^0\.\ds$/);
     await waitFor(() => expect(clock.textContent).not.toBe('0.0s'), { timeout: 1000 });
-    finishRun({ returncode: 0, stdout: 'done\n', stderr: '', timed_out: false, duration_s: 0.3 });
-    await screen.findByTestId('snippet-run');
+    await waitFor(() => expect(typed).toHaveLength(1));
+    finish(0);
+    await screen.findByTestId('snippet-status');
     expect(screen.queryByTestId('snippet-clock')).toBeNull();
   });
 
@@ -307,24 +360,28 @@ describe('SnippetView', () => {
   });
 
   it('clicks before the button turns into Stop start one run, not one each', async () => {
-    const calls = backend({ '/api/v1/snippet/run': new Promise(() => undefined) });
+    backend({ '/api/v1/snippet/terminal': { shell_id: SHELL_ID, command: COMMAND, path: PATH } });
+    const { typed } = fileTerminal();
     view();
-    const runButton = await screen.findByTestId('snippet-run');
+    await screen.findByTestId('terminal');
+    const runButton = screen.getByTestId('snippet-run');
     fireEvent.click(runButton);
     fireEvent.click(runButton);
     fireEvent.click(runButton);
     await screen.findByTestId('snippet-stop');
-    expect(calls.filter(([url]) => url.endsWith('/run'))).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(typed).toHaveLength(1);
   });
 
-  it('leaving the view mid-run stops the run', async () => {
-    const calls = backend({ '/api/v1/snippet/run': new Promise(() => undefined), '/api/v1/snippet/stop': { stopped: true } });
+  it('leaving the view mid-run leaves the run going in its terminal', async () => {
+    backend();
+    const { typed, actions } = fileTerminal();
     const { unmount } = view();
     fireEvent.click(await screen.findByTestId('snippet-run'));
-    await screen.findByTestId('snippet-stop');
+    await waitFor(() => expect(typed).toHaveLength(1));
     unmount();
-    const runId = calls.find(([url]) => url.endsWith('/run'))?.[1].run_id;
-    await waitFor(() => expect(calls.find(([url]) => url.endsWith('/stop'))?.[1]).toEqual({ run_id: runId }));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(actions).not.toContain('interrupt');
   });
 
   it('watches its file, and a change on disk (the agent) reloads the regions', async () => {

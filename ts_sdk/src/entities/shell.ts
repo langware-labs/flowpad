@@ -458,12 +458,22 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return Shell.adopt(data);
   }
 
-  /** The snippet file's own terminal and the command that runs the file there. */
+  /** The snippet file's own terminal (made now if it has none) and the command that runs the file there. */
   static async forSnippet(path: string): Promise<{ shell: Shell; command: string }> {
-    const data = await apiClient.post<{ shell_id: string; command: string }>('/api/v1/snippet/terminal', { path });
-    const shell = (await Shell.getById(data.shell_id)) as Shell | null;
-    if (!shell) throw new Error(`the terminal of ${path} could not be found`);
-    return { shell, command: data.command };
+    const found = await Shell.snippetTerminal(path, true);
+    if (!found) throw new Error(`the terminal of ${path} could not be opened`);
+    return found;
+  }
+
+  /** The snippet file's terminal if it already has one — found, never made (no PTY is started). */
+  static async findForSnippet(path: string): Promise<{ shell: Shell; command: string } | null> {
+    return Shell.snippetTerminal(path, false);
+  }
+
+  private static async snippetTerminal(path: string, create: boolean): Promise<{ shell: Shell; command: string } | null> {
+    const data = await apiClient.post<{ shell_id: string | null; command: string }>('/api/v1/snippet/terminal', { path, create });
+    const shell = data.shell_id ? ((await Shell.getById(data.shell_id)) as Shell | null) : null;
+    return shell ? { shell, command: data.command } : null;
   }
 
   /** The cached instance for these fields, refreshed — never a second instance of one shell

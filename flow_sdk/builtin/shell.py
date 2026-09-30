@@ -507,6 +507,12 @@ class Shell(Entity):
         return shell
 
     @classmethod
+    async def find_belonging_to(cls, what: str) -> "Shell | None":
+        """The terminal of *what* if it has one (not closed) — found, never made; no PTY started."""
+        shell = await cls.get_by_prop("belongs_to", what, BuiltinEntityType.SHELL.value)
+        return None if shell is None or shell.status == ShellStatus.CLOSED.value else shell
+
+    @classmethod
     async def belonging_to(
         cls,
         what: str,
@@ -521,8 +527,8 @@ class Shell(Entity):
         """The terminal of *what*, with a live PTY — the one it had, else a new one on this machine.
         *what* is the natural name of the thing the terminal belongs to (``snippet:<path>``,
         ``deployment:<id>``); it is looked up (``belongs_to``), never turned into an id."""
-        shell = await cls.get_by_prop("belongs_to", what, BuiltinEntityType.SHELL.value)
-        if shell is None or shell.status == ShellStatus.CLOSED.value:
+        shell = await cls.find_belonging_to(what)
+        if shell is None:
             from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
             node = await ComputeNode.get_local()

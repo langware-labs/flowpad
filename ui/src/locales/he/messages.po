@@ -5639,6 +5639,7 @@ msgstr "לא ניתן להריץ בדיקת חיבור."
 
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
+#: src/components/code-editor/SnippetView.tsx
 msgid "Could not run the snippet"
 msgstr ""
 
@@ -7116,8 +7117,8 @@ msgid "Diagnostic complete — no issue found."
 msgstr "אבחון הושלם — לא נמצאה בעיה."
 
 #: src/components/code-editor/SnippetView.tsx
-msgid "did not run"
-msgstr ""
+#~ msgid "did not run"
+#~ msgstr ""
 
 #: src/components/code-editor/CodeEditor.tsx
 #: src/pages/flow-page/display-annotation.ts
@@ -8334,11 +8335,15 @@ msgstr "מאגר קיים"
 msgid "exit {0}"
 msgstr "יציאה {0}"
 
-#. placeholder {0}: result.returncode
-#. placeholder {1}: (result.duration_s ?? 0).toFixed(2)
+#. placeholder {0}: shellRun.lastExit.exitCode
+#. placeholder {1}: formatElapsed(shellRun.lastExit.durationS * 1000)
 #: src/components/code-editor/SnippetView.tsx
-msgid "exit {0} · {1}s"
+msgid "exit {0} · {1}"
 msgstr ""
+
+#: src/components/code-editor/SnippetView.tsx
+#~ msgid "exit {0} · {1}s"
+#~ msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Exit local"
@@ -20535,9 +20540,13 @@ msgstr "עצור"
 msgid "Stopped"
 msgstr ""
 
-#. placeholder {0}: (result.duration_s ?? 0).toFixed(2)
 #: src/components/code-editor/SnippetView.tsx
-msgid "stopped — killed after {0}s"
+#~ msgid "stopped — killed after {0}s"
+#~ msgstr ""
+
+#. placeholder {0}: formatElapsed(shellRun.lastExit.durationS * 1000)
+#: src/components/code-editor/SnippetView.tsx
+msgid "stopped after {0}"
 msgstr ""
 
 #: src/components/credentials/CredentialDialog.tsx
@@ -22229,8 +22238,8 @@ msgid "timed out"
 msgstr ""
 
 #: src/components/code-editor/SnippetView.tsx
-msgid "timed out after {timeoutSeconds}s — killed"
-msgstr ""
+#~ msgid "timed out after {timeoutSeconds}s — killed"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceAssetEditor.tsx
 msgid "Timeline"
