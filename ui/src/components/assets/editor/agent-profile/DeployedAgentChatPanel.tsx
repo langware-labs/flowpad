@@ -1,9 +1,11 @@
-import { Agent, AgentChat, type AgentChatMessage, Deployment } from '@sdk';
+import { Agent, AgentChat, type AgentChatMessage, Deployment, isHubOnly } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { badgeVariants } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
@@ -12,6 +14,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 interface DeployedAgentChatPanelProps {
   agent: Agent;
   deployment: Deployment;
+  /** The placement runs on this computer. Remote (the default) opens sessions as before. */
+  isLocal?: boolean;
 }
 
 /** Where this viewer's conversation with one placement's chat is remembered (a per-viewer convenience). */
@@ -48,7 +52,7 @@ interface ShownMessage extends AgentChatMessage {
  * forwards to the hub, the hub to the box). "Open a session" is the owner's other
  * door: a process on that machine, for looking under the hood.
  */
-export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatPanelProps) {
+export function DeployedAgentChatPanel({ agent, deployment, isLocal = false }: DeployedAgentChatPanelProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [conversationId, setConversationId] = useState<string | null>(() => remembered(deployment.id));
@@ -118,8 +122,17 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
   };
 
   const openSession = async () => {
-    const receipt = await agent.useDeployment(deployment.id);
-    void navigation.openShellProcess(receipt.process_id);
+    // Only a session on THIS machine can start the agent's auto prompt: a
+    // remote one is a hub route row, where the vibe embed and the queue kick
+    // do not reach the worker — it keeps the plain open it always had.
+    if (!isLocal || isHubOnly()) {
+      const receipt = await agent.useDeployment(deployment.id);
+      void navigation.openShellProcess(receipt.process_id);
+      return;
+    }
+    const receipt = await agent.useDeployment(deployment.id, { autoPrompt: true });
+    await prepareAgentSession(receipt.process_id);
+    void navigation.openShellProcess(receipt.process_id, { viewMode: ViewMode.Vibe });
   };
 
   return (
