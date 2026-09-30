@@ -9,7 +9,7 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { useXtermShellAttach } from '../useXtermShellAttach';
-import { FONT_FAMILY, FONT_SIZE_PX, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
+import { XTERM_BASE_OPTIONS, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 
 interface ShellTerminalProps {
@@ -57,20 +57,7 @@ export const ShellTerminal = forwardRef<ShellTerminalHandle, ShellTerminalProps>
     if (!container || typeof window === 'undefined') return;
 
     let disposed = false;
-    const xterm = new XTerm({
-      scrollback: 10000,
-      convertEol: true,
-      cursorBlink: true,
-      scrollOnUserInput: true,
-      disableStdin: false,
-      cursorStyle: 'block',
-      fontFamily: FONT_FAMILY,
-      fontSize: FONT_SIZE_PX,
-      fontWeight: '400',
-      fontWeightBold: '700',
-      allowTransparency: true,
-      allowProposedApi: true,
-    });
+    const xterm = new XTerm({ ...XTERM_BASE_OPTIONS, scrollback: 10000 });
     const fit = new FitAddon();
     xterm.loadAddon(fit);
     try {

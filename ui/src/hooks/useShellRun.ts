@@ -12,8 +12,9 @@ export interface ShellRun {
   /** How the last run this view started ended; null while one runs or before the first. */
   lastExit: ShellRunResult | null;
   /** Type `command` into the terminal and wait for it to end. One at a time: while a run is in
-   *  flight a second call does nothing and answers null. */
-  run: (command: string) => Promise<ShellRunResult | null>;
+   *  flight a second call does nothing and answers null. `clear` starts it on a clean screen;
+   *  `shell` names the terminal when the caller just got it (before this hook re-renders with it). */
+  run: (command: string, opts?: { clear?: boolean; shell?: Shell }) => Promise<ShellRunResult | null>;
   /** Stop the running command (Ctrl-C, then kill); the terminal stays. */
   interrupt: () => Promise<boolean>;
 }
@@ -30,11 +31,18 @@ export function useShellRun(shell: Shell | null): ShellRun {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [lastExit, setLastExit] = useState<ShellRunResult | null>(null);
   const [adopted, setAdopted] = useState(false);
-  const inFlight = useRef<AbortController | null>(null);
+  // The run in flight and the terminal it runs in — a run started on a terminal the view has only
+  // just been handed (the first Run makes it) must survive the re-render that hands it over.
+  const inFlight = useRef<{ ac: AbortController; shell: Shell } | null>(null);
 
   useEffect(() => {
-    setStartedAt(null);
-    setLastExit(null);
+    const own = inFlight.current?.shell === shell;
+    if (!own) {
+      inFlight.current?.ac.abort();
+      inFlight.current = null;
+      setStartedAt(null);
+      setLastExit(null);
+    }
     setAdopted(false);
     if (!shell) return;
     let alive = true;
@@ -44,10 +52,17 @@ export function useShellRun(shell: Shell | null): ShellRun {
       .catch(() => undefined);
     return () => {
       alive = false;
-      inFlight.current?.abort();
-      inFlight.current = null;
     };
   }, [shell]);
+
+  // Leaving the view stops the wait (never the command).
+  useEffect(
+    () => () => {
+      inFlight.current?.ac.abort();
+      inFlight.current = null;
+    },
+    [],
+  );
 
   // A run this view did not start ends without telling it: ask until it has.
   useEffect(() => {
@@ -62,22 +77,23 @@ export function useShellRun(shell: Shell | null): ShellRun {
   }, [shell, adopted]);
 
   const run = useCallback(
-    async (command: string): Promise<ShellRunResult | null> => {
-      if (!shell || inFlight.current) return null;
+    async (command: string, opts: { clear?: boolean; shell?: Shell } = {}): Promise<ShellRunResult | null> => {
+      const target = opts.shell ?? shell;
+      if (!target || inFlight.current) return null;
       const ac = new AbortController();
-      inFlight.current = ac;
+      inFlight.current = { ac, shell: target };
       setAdopted(false);
       setLastExit(null);
       setStartedAt(Date.now());
       try {
-        const result = await shell.runCommand(command, { signal: ac.signal });
+        const result = await target.runCommand(command, { signal: ac.signal, clear: opts.clear });
         if (!ac.signal.aborted) setLastExit(result);
         return result;
       } catch (error) {
         if (ac.signal.aborted) return null;
         throw error;
       } finally {
-        if (inFlight.current === ac) {
+        if (inFlight.current?.ac === ac) {
           inFlight.current = null;
           setStartedAt(null);
         }

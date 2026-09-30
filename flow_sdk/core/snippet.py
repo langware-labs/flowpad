@@ -63,12 +63,11 @@ RUNNERS: dict[str, str] = {
     ".sh": "sh {file}",
 }
 
-#: What differs on Windows, where ``run_shell`` runs POWERSHELL: the same
-#: interpreter, but PowerShell only RUNS a quoted path behind its call operator
-#: ``&`` (without it, a quoted path is just a string). The script's exit code is
-#: the snippet's, not PowerShell's own verdict.
+#: What differs on Windows, where the shell is POWERSHELL: the same interpreter, but
+#: PowerShell only RUNS a quoted path behind its call operator ``&`` (without it, a
+#: quoted path is just a string). A one-shot run adds the exit (``oneshot_command``).
 WIN32_RUNNERS: dict[str, str] = {
-    ".py": "& {python} -m flow_sdk.snippet_launch {file}; exit $LASTEXITCODE",
+    ".py": "& {python} -m flow_sdk.snippet_launch {file}",
 }
 
 
@@ -92,13 +91,26 @@ def terminal_command(path: Path, platform: str = "") -> Optional[str]:
     template = runner_for(path.suffix.lower(), platform)
     if template is None:
         return None
-    template = template.removesuffix("; exit $LASTEXITCODE")
     build = Path(tempfile.gettempdir()) / "flowpad-snippet-build" / hashlib.sha256(str(path).encode()).hexdigest()[:16]
     if "{out}" in template:
         build.mkdir(parents=True, exist_ok=True)
-    return template.format(
-        file=shlex.quote(str(path)), out=shlex.quote(str(build / "snippet")), python=shlex.quote(sys.executable)
-    )
+    return _runner_command(template, path, build / "snippet")
+
+
+def oneshot_command(path: Path, out: Path, platform: str = "") -> Optional[str]:
+    """What ``run_snippet`` spawns for the file at *path*: the runner, and on Windows its exit —
+    a one-shot PowerShell otherwise answers its own verdict, not the snippet's. (Typed into a
+    terminal that exit would close it: ``terminal_command`` never has it.)"""
+    template = runner_for(Path(path).suffix.lower(), platform)
+    if template is None:
+        return None
+    command = _runner_command(template, Path(path), out)
+    return f"{command}; exit $LASTEXITCODE" if template.startswith("& ") else command
+
+
+def _runner_command(template: str, path: Path, out: Path) -> str:
+    """A runner template filled in: the file, the build output and this interpreter, shell-quoted."""
+    return template.format(file=shlex.quote(str(path)), out=shlex.quote(str(out)), python=shlex.quote(sys.executable))
 
 
 #: Where a snippet with no file of its own is written. The OS temp dir: outside
@@ -390,11 +402,7 @@ async def run_snippet(
         message = f"no runner for '{path.suffix}' files (runnable: {known})"
         return CliResult.not_applicable(message, command=str(path), stderr=message)
     with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
-        command = template.format(
-            file=shlex.quote(str(path)),
-            out=shlex.quote(str(Path(build) / "snippet")),
-            python=shlex.quote(sys.executable),
-        )
+        command = oneshot_command(path, Path(build) / "snippet")
         said = await run_shell(
             command,
             timeout_seconds=timeout_seconds,

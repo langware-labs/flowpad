@@ -87,10 +87,6 @@ function RunClock() {
   );
 }
 
-/** What Run types: `clear` first, so the terminal's own record starts clean too and a later visit
- *  replays just this run; then the file's command. */
-const runLine = (command: string) => `clear; ${command}`;
-
 const LINE_HEIGHT = 19;
 /** The owner name the check's markers are set under (one set per region editor). */
 const MARKER_OWNER = 'flowpad-snippet-check';
@@ -143,7 +139,6 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
   // The host runner's run in flight (a deployment's Restart).
   const [hostRunning, setHostRunning] = useState(false);
   const running = runner ? hostRunning : shellRun.running;
-  const firstRun = useRef<string | null>(null);
   // What the check says about the file on disk — null until the first answer.
   const [problems, setProblems] = useState<SnippetDiagnostic[] | null>(null);
   // Only the newest check's answer counts: a slow check of an older text must not
@@ -325,25 +320,15 @@ export function SnippetView({ path, watch, language, revision, readOnly, onNotSn
     terminalView.current?.clear();
     try {
       await flushEdits();
-      if (terminal) {
-        await shellRun.run(runLine(terminal.command));
-        return;
-      }
-      // The first Run makes the terminal; the run starts once this view holds it (the effect below).
-      const found = await Shell.forSnippet(path);
-      firstRun.current = runLine(found.command);
-      setTerminal(found);
+      // The first Run makes the file's terminal. `clear`: the terminal's own record starts clean
+      // too, so a later visit replays just this run.
+      const found = terminal ?? (await Shell.forSnippet(path));
+      if (!terminal) setTerminal(found);
+      await shellRun.run(found.command, { clear: true, shell: found.shell });
     } catch (reason) {
       setNotice(errorMessage(reason, t`Could not run the snippet`));
     }
   }, [flushEdits, path, shellRun, terminal, t]);
-
-  useEffect(() => {
-    const line = firstRun.current;
-    if (!line || !terminal) return;
-    firstRun.current = null;
-    shellRun.run(line).catch((reason) => setNotice(errorMessage(reason, t`Could not run the snippet`)));
-  }, [terminal, shellRun, t]);
 
   /** The host's runner: what is on screen is saved first, then the host runs it. */
   const runByHost = useCallback(async () => {

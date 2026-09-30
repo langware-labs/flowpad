@@ -178,3 +178,23 @@ async def test_a_stop_sent_before_the_command_started_still_stops_it(tmp_path):
         assert await shell.running() is None
     finally:
         await shell.close()
+
+
+@pytest.mark.long  # ~1.1s: a real command outliving the wait, then stopped
+async def test_run_and_capture_that_outlives_its_wait_is_timed_out_and_keeps_running(tmp_path):
+    """The wait is bounded, never the command: the answer has no verdict, and the output so far."""
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    try:
+        answer = await shell.run_and_capture("echo still-going; sleep 30", timeout=0.4)
+        assert answer.timed_out is True and answer.returncode is None and not answer.ok
+        assert "still-going" in answer.stdout
+        assert await shell.running() is not None, "the command keeps running in the terminal"
+    finally:
+        await shell.close()
+
+
+async def test_run_and_capture_without_a_terminal_is_returned_not_raised():
+    shell = Shell(name="t", workdir="/tmp", compute_node_id=str(uuid.uuid4()))
+    answer = await shell.run_and_capture("ls", timeout=1)
+    assert answer.returncode is None and answer.ran is False
+    assert "No PTY session" in answer.stderr
