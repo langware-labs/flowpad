@@ -89,17 +89,18 @@ describe('Task.assign', () => {
     vi.resetModules();
     const sdk = await import('@sdk');
     send.createAndSendConversation.mockResolvedValue({ conversation_id: 'conv-1' });
-    vi.spyOn(sdk.dataManager, 'callAction').mockResolvedValue(assignResult() as never);
-    const save = vi.spyOn(sdk.Task.prototype, 'save').mockImplementation(function (this: Task) {
-      return Promise.resolve(this);
-    });
+    const call = vi.spyOn(sdk.dataManager, 'callAction').mockResolvedValue(assignResult() as never);
     const t = new sdk.Task({ id: crypto.randomUUID(), type: 'task', title: 'Fix login' });
 
     const out = await t.assign('bob@x.com', { message: 'please look' });
 
     expect(out).toEqual({ conversationId: 'conv-1', self: false });
     expect(t.origin_conversation).toBe('conv-1');
-    expect(save).toHaveBeenCalledTimes(1);
+    // A local action, never a field save: a save of a shared task round-trips through the hub,
+    // which does not model the link and would drop it.
+    const link = call.mock.calls[1][0] as any;
+    expect(link.name).toBe('link-conversation');
+    expect(link.bodyParameters).toEqual({ conversation_id: 'conv-1' });
   });
 
   it('requires a recipient email', async () => {

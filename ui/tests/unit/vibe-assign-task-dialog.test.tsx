@@ -21,6 +21,7 @@ vi.mock('@src/hooks/use-my-vibe-tasks', async (orig) => {
       real.vibeTaskRows(
         h.tasks.filter((t) => (t as { project_id?: string }).project_id === projectId) as never,
         h.conversations as never,
+        'me@x.com',
       ),
   };
 });
@@ -43,6 +44,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const ME = 'me@x.com';
 const P1 = '11111111-1111-4111-8111-111111111111';
 const P2 = '22222222-2222-4222-8222-222222222222';
 
@@ -54,6 +56,7 @@ function helpTask(over: Record<string, unknown> = {}) {
     kind: TaskKind.VIBE,
     status: 'to_do',
     project_id: P1,
+    reporter: ME,
     assignee: 'bob@x.com',
     origin_conversation: 'conv-1',
     ...over,
@@ -102,7 +105,9 @@ describe('VibeAssignTaskButton — the current task button', () => {
       mine,
       helpTask({ title: 'done one', status: 'done' }),
       helpTask({ title: 'canceled one', status: 'canceled' }),
-      helpTask({ title: 'shared with me', shared_by_id: 'user-bob' }),
+      // The helper's received copy: no reporter, assigned to me — never "my request".
+      helpTask({ title: 'shared with me', reporter: null, assignee: ME }),
+      helpTask({ title: 'asked by someone else', reporter: 'carol@x.com' }),
       helpTask({ title: 'other project', project_id: P2 }),
     ];
     h.conversations = [{ id: 'conv-1', unread_count: 3 }];
@@ -120,6 +125,7 @@ describe('VibeAssignTaskButton — the current task button', () => {
     expect(list).not.toHaveTextContent('done one');
     expect(list).not.toHaveTextContent('canceled one');
     expect(list).not.toHaveTextContent('shared with me');
+    expect(list).not.toHaveTextContent('asked by someone else');
     expect(list).not.toHaveTextContent('other project');
     expect(screen.getByTestId(`vibe-help-task-unread-${mine.id}`)).toHaveTextContent('3');
 
