@@ -311,6 +311,18 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       'upgrade: no PyPI answer → bundled pin');
   }
 
+  {
+    // Pin selection: never below the bundled pin, never below the release floor.
+    const m = new UvManager(silentLog);
+    const bundled = tryPythonVersion();
+    m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: '>=3.8' });
+    eq(await m._pythonPinForUpgrade(), bundled, 'pin: release floor below the bundle → bundled pin');
+    m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: `>=${bundled}` });
+    eq(await m._pythonPinForUpgrade(), bundled, 'pin: release floor equals the bundle → same pin');
+    m._getLatestPypiInfo = async () => ({ version: '9.9.9' }); // no requires_python
+    eq(await m._pythonPinForUpgrade(), bundled, 'pin: release without requires_python → bundled pin');
+  }
+
   // ── _uvToolInstallForce compiles bytecode in the install, not on first boot ─
   {
     const m = new UvManager(silentLog);
@@ -487,6 +499,36 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       });
       eq(res2, true, 'post-boot upgrade: healthy backend reports success');
       eq(loads.length, 1, 'post-boot upgrade: backend URL loaded once');
+
+      // autoInstall (desktop just updated): no dialog, upgrade runs, pre-start returns true.
+      {
+        let dialogs = 0, upgrades = 0;
+        require.cache[electronId].exports.dialog.showMessageBox = async () => { dialogs++; return { response: 1 }; };
+        const ma = new UvManager(silentLog);
+        ma._pypiUpdateStatus = async () => ({ currentVersion: '0.2.1', latestVersion: '0.2.2', required: true });
+        ma.upgrade = async () => { upgrades++; };
+        eq(await ma.checkForUpdatesInBackground(mainWindow, { beforeBackendStart: true, autoInstall: true }), true,
+          'autoInstall: pre-start upgrade reports success');
+        eq(dialogs, 0, 'autoInstall: no dialog is shown');
+        eq(upgrades, 1, 'autoInstall: upgrade ran once');
+
+        // Nothing newer on PyPI → nothing happens, even with autoInstall.
+        const mb = new UvManager(silentLog);
+        mb._pypiUpdateStatus = async () => null;
+        mb.upgrade = async () => { upgrades++; };
+        eq(await mb.checkForUpdatesInBackground(mainWindow, { beforeBackendStart: true, autoInstall: true }), false,
+          'autoInstall: no newer PyPI release → no upgrade');
+        eq(upgrades, 1, 'autoInstall: no upgrade when PyPI is not newer');
+
+        // Without autoInstall the dialog is still asked (Later → no upgrade).
+        const mc = new UvManager(silentLog);
+        mc._pypiUpdateStatus = ma._pypiUpdateStatus;
+        mc.upgrade = async () => { upgrades++; };
+        eq(await mc.checkForUpdatesInBackground(mainWindow, { beforeBackendStart: true }), false,
+          'no autoInstall: dialog answered Later → false');
+        eq(dialogs, 1, 'no autoInstall: dialog shown');
+        eq(upgrades, 1, 'no autoInstall: Later does not upgrade');
+      }
 
       // "Later" (and Esc, which maps to the same index via cancelId) defers the version.
       require.cache[electronId].exports.dialog.showMessageBox = async (_w, opts) => {
