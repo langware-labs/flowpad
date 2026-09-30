@@ -15,6 +15,7 @@ import collections
 import logging
 import os
 import re
+import shlex
 import time
 import uuid
 from datetime import datetime, timezone
@@ -117,6 +118,13 @@ _PTY_OSC_RE = re.compile(rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 _PTY_CSI_RE = re.compile(rb"\x1b\[[0-9;:?<>=!]*[ -/]*[@-~]")
 _PTY_ESC_RE = re.compile(rb"\x1b[@-_=>]?")
 _PTY_CTRL_RE = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")  # keeps \t \n \r
+
+
+def _pgid(pid: int) -> int | None:
+    try:
+        return os.getpgid(pid)
+    except (ProcessLookupError, PermissionError):
+        return None
 
 
 def _strip_pty_keep_lines(data: bytes) -> str:
@@ -787,6 +795,10 @@ class Shell(Entity):
         bash and PowerShell carry on to the next command after an interrupted one; zsh abandons the
         rest of the line, so there the marker sits in an ``always`` block, which runs regardless.
         (cmd.exe cannot type an escape: a run there has no end marker.)
+
+        A run stopped before it starts (a terminal still starting, the line not yet read) is
+        cancelled, not raced: at its start the line looks for its cancel file (``cancel_path``) and,
+        finding it, skips the command — the end marker still prints, with 130.
         """
         if shell is None:
             from flow_sdk.compute.providers.desktop.provider import default_terminal_shell  # noqa: PLC0415
@@ -794,16 +806,29 @@ class Shell(Entity):
             shell = default_terminal_shell()
         name = os.path.basename(shell).lower().removesuffix(".exe")
         osc = cls.SENTINEL_OSC
+        cancel = shlex.quote(str(cls.cancel_path(marker)))
         if name in ("pwsh", "powershell"):
             write = '[Console]::Write("$([char]27)]{osc};{marker};{what}$([char]7)")'.format
-            return f"{write(osc=osc, marker=marker, what='s')}; {command}; {write(osc=osc, marker=marker, what='$LASTEXITCODE')}"
+            return (
+                f"{write(osc=osc, marker=marker, what='s')}; if (Test-Path {cancel}) {{ }} else {{ {command} }}; "
+                f"{write(osc=osc, marker=marker, what='$LASTEXITCODE')}"
+            )
         start = f"printf '\\033]{osc};{marker};s\\007'"
         end = f"printf '\\033]{osc};{marker};%d\\007'"
         if name == "fish":
-            return f"{start}; {command}; {end} $status"
+            return f"{start}; if test -e {cancel}; false; else; {command}; end; {end} $status"
+        guarded = f"if [ -e {cancel} ]; then (exit 130); else {command}; fi"
         if name == "zsh":
-            return f"{{ {start}; {command} }} always {{ {end} $? }}"
-        return f"{start}; {command}; {end} $?"
+            return f"{{ {start}; {guarded} }} always {{ {end} $? }}"
+        return f"{start}; {guarded}; {end} $?"
+
+    @classmethod
+    def cancel_path(cls, marker: str) -> "Path":
+        """The file whose presence cancels *marker*'s run before it starts (``interrupt``)."""
+        from pathlib import Path  # noqa: PLC0415
+        import tempfile  # noqa: PLC0415
+
+        return Path(tempfile.gettempdir()) / "flowpad-run-cancel" / marker
 
     @classmethod
     def new_marker(cls) -> str:
@@ -828,39 +853,88 @@ class Shell(Entity):
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return None
 
-    async def running(self) -> int | None:
-        """The pid of the command running in this terminal now, or ``None`` at the prompt.
+    async def _foreground_command(self) -> "tuple[int, list[psutil.Process]] | None":
+        """The command in the foreground of this terminal — ``(its process group, its processes)``
+        — or ``None`` at the prompt.
 
-        A command typed at the prompt is a child of the terminal's shell; the prompt itself has none.
+        The foreground process group is the truth where the PTY can tell it: the shell's own at the
+        prompt, the command's job while one runs. The children of the shell are NOT: an async
+        prompt (a git status helper) spawns children while the prompt sits idle, and a line of
+        several commands has none for an instant between two of them. Without a POSIX PTY, the
+        shell's children are the fallback.
         """
         shell = await self._shell_process()
+        if shell is None:
+            return None
+        cn = self.compute_node
+        fg = cn.compute_provider.get_pty_foreground_pgid(cn.node_provider_id, self.id)
         try:
-            children = shell.children() if shell else []
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            children = []
-        return children[0].pid if children else None
+            if fg is None:
+                children = shell.children()
+                return (children[0].pid, children) if children else None
+            if fg == os.getpgid(shell.pid):
+                return None
+            job = [p for p in shell.children(recursive=True) if _pgid(p.pid) == fg]
+            return fg, job
+        except (psutil.NoSuchProcess, psutil.AccessDenied, ProcessLookupError):
+            return None
 
-    async def interrupt(self, grace: float = 2.0) -> bool:
-        """Stop the command running in this terminal and keep the terminal: Ctrl-C, and whatever is
-        still running after *grace* seconds is terminated with everything under it. Whether nothing
-        of the command is left running."""
+    async def running(self) -> int | None:
+        """The pid (process group) of the command running in this terminal now, or ``None`` at the
+        prompt — see ``_foreground_command``."""
+        found = await self._foreground_command()
+        return found[0] if found else None
+
+    async def interrupt(self, grace: float = 2.0, settle: float = 0.3, marker: str | None = None) -> bool:
+        """Stop the command running in this terminal and keep the terminal: Ctrl-C to each job that
+        takes the foreground, and whatever still holds it after *grace* seconds is terminated.
+        Whether nothing of it is left running.
+
+        A typed line is several foreground jobs in turn (the marker's printf, then the command), and
+        a prompt may run its own (a synchronous git status) before the line is even read — so "a job
+        in the foreground" is not necessarily the run, and "the prompt holds the foreground" is not
+        necessarily its end. With the run's *marker* (``run_command``) both are exact: its jobs are
+        the ones after its start marker, and it has ended when its end marker prints. Without one
+        (a run this caller did not start), the prompt holding the foreground for *settle* seconds
+        counts as the end.
+        """
         from flow_sdk.instances.procs import terminate_tree  # noqa: PLC0415
 
-        if await self.running() is None:
-            return True
-        await self.write_raw(b"\x03")
         loop = asyncio.get_running_loop()
         deadline = loop.time() + grace
+        signalled: set[int] = set()
+        quiet_since: float | None = None
+        started = marker is None
+        start_marker = b"\x1b]%d;%s;s\x07" % (self.SENTINEL_OSC, (marker or "").encode())
+        if marker is not None and start_marker not in await self.read():
+            # Not started yet: cancel it. The line checks this file at its start and skips the
+            # command; whatever it runs from here on is still signalled below.
+            cancel = self.cancel_path(marker)
+            cancel.parent.mkdir(parents=True, exist_ok=True)
+            cancel.touch()
         while loop.time() < deadline:
-            if await self.running() is None:
-                return True
+            if marker is not None:
+                recorded = await self.read()
+                if self.sentinel_exit(recorded, marker):
+                    self.cancel_path(marker).unlink(missing_ok=True)  # the run is over; its cancel is spent
+                    return True
+                started = started or start_marker in recorded
+            found = await self._foreground_command()
+            now = loop.time()
+            if found is None:
+                quiet_since = quiet_since if quiet_since is not None else now
+                if marker is None and signalled and now - quiet_since >= settle:
+                    return True
+            else:
+                quiet_since = None
+                if started and found[0] not in signalled:
+                    await self.write_raw(b"\x03")
+                    signalled.add(found[0])
             await asyncio.sleep(0.05)
-        shell = await self._shell_process()
-        try:
-            children = shell.children() if shell else []
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            children = []
-        _, survivors = await asyncio.to_thread(terminate_tree, children)
+        found = await self._foreground_command()
+        if found is None:
+            return True
+        _, survivors = await asyncio.to_thread(terminate_tree, found[1])
         return not survivors
 
     @classmethod
@@ -1384,8 +1458,14 @@ class Shell(Entity):
     @action.post(action_name="interrupt")
     async def _http_interrupt(self) -> ApiResponse:
         """HTTP: stop the command running in this terminal; the terminal stays. ``stopped`` is
-        whether nothing of it is left running."""
-        return ApiSuccessResponse(data={"stopped": await self.interrupt()})
+        whether nothing of it is left running.
+
+        POST body: {marker?: str} — the run's marker (``run-command``), which makes the stop exact.
+        """
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        marker = str(body.get("marker") or "") or None
+        return ApiSuccessResponse(data={"stopped": await self.interrupt(marker=marker)})
 
     @action.get(action_name="run-state")
     async def _http_run_state(self) -> ApiResponse:

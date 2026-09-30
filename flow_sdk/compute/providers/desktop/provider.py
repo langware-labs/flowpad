@@ -1093,6 +1093,19 @@ class LocalComputeProvider(ComputeProvider):
         session = self._pty_processes.get((provider_node_id, session_id))
         return session["pid"] if session else None
 
+    def get_pty_foreground_pgid(self, provider_node_id: str, session_id: str) -> int | None:
+        """The PTY's foreground process group (``tcgetpgrp`` on its master): the shell's own at the
+        prompt, a command's job while one runs — never a background helper the prompt spawns.
+        ``None`` without a POSIX PTY (Windows)."""
+        session = self._pty_processes.get((provider_node_id, session_id))
+        fd = getattr(session["process"], "fd", None) if session else None
+        if not isinstance(fd, int):
+            return None
+        try:
+            return os.tcgetpgrp(fd)
+        except OSError:
+            return None
+
     def get_pty_cwd(self, provider_node_id: str, session_id: str) -> str | None:
         """Return the live working directory of this PTY session's shell, or None."""
         pid = self.get_pty_shell_pid(provider_node_id, session_id)

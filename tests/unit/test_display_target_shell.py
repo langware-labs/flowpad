@@ -65,19 +65,41 @@ def test_shell_target_builder_shape() -> None:
 
 
 def test_sentinel_grammar_is_pinned() -> None:
-    """The ONE sentinel: built here, read by the browser (``PtyConnection.onOsc``) by its OSC
-    number — invisible escapes around the command (start, then end with the exit code), in the
-    grammar of the terminal's shell."""
+    """The ONE sentinel: built here, read by the browser (``PtyConnection.onText``) by its OSC
+    number — invisible escapes around the command (start, then end with the exit code), a cancel
+    check at its start, in the grammar of the terminal's shell."""
+    import shlex
+
     assert Shell.SENTINEL_PREFIX == "__flow_" and Shell.SENTINEL_OSC == 7770
-    start = "printf '\\033]7770;__flow_abc123;s\\007'"
-    end = "printf '\\033]7770;__flow_abc123;%d\\007'"
-    assert Shell.sentinel_command("ls -la", "__flow_abc123", shell="/bin/bash") == f"{start}; ls -la; {end} $?"
-    assert Shell.sentinel_command("ls -la", "__flow_abc123", shell="/bin/zsh") == f"{{ {start}; ls -la }} always {{ {end} $? }}"
-    assert Shell.sentinel_command("ls", "__flow_abc123", shell="/usr/local/bin/fish") == f"{start}; ls; {end} $status"
-    assert Shell.sentinel_command("dir", "__flow_abc123", shell="C:/x/pwsh.exe") == (
-        '[Console]::Write("$([char]27)]7770;__flow_abc123;s$([char]7)"); dir; '
-        '[Console]::Write("$([char]27)]7770;__flow_abc123;$LASTEXITCODE$([char]7)")'
+    m = "__flow_abc123"
+    cancel = shlex.quote(str(Shell.cancel_path(m)))
+    start = f"printf '\\033]7770;{m};s\\007'"
+    end = f"printf '\\033]7770;{m};%d\\007'"
+    guarded = f"if [ -e {cancel} ]; then (exit 130); else ls -la; fi"
+    assert Shell.sentinel_command("ls -la", m, shell="/bin/bash") == f"{start}; {guarded}; {end} $?"
+    assert Shell.sentinel_command("ls -la", m, shell="/bin/zsh") == f"{{ {start}; {guarded} }} always {{ {end} $? }}"
+    assert Shell.sentinel_command("ls", m, shell="/usr/local/bin/fish") == f"{start}; if test -e {cancel}; false; else; ls; end; {end} $status"
+    assert Shell.sentinel_command("dir", m, shell="C:/x/pwsh.exe") == (
+        f'[Console]::Write("$([char]27)]7770;{m};s$([char]7)"); if (Test-Path {cancel}) {{ }} else {{ dir }}; '
+        f'[Console]::Write("$([char]27)]7770;{m};$LASTEXITCODE$([char]7)")'
     )
+
+
+def test_a_run_cancelled_before_it_starts_skips_its_command_and_still_ends() -> None:
+    """What a real shell does with a cancelled line: the command never runs, the end marker prints."""
+    import subprocess
+
+    m = "__flow_cancel01"
+    cancel = Shell.cancel_path(m)
+    cancel.parent.mkdir(parents=True, exist_ok=True)
+    cancel.touch()
+    try:
+        typed = Shell.sentinel_command("echo SHOULD-NOT-RUN", m, shell="sh")
+        printed = subprocess.run(["sh", "-c", typed], capture_output=True, check=False).stdout
+        assert b"SHOULD-NOT-RUN" not in printed
+        assert Shell.sentinel_exit(printed, m)[0] == 130
+    finally:
+        cancel.unlink(missing_ok=True)
 
 
 def test_the_sentinel_a_shell_prints_is_read_with_its_exit_code() -> None:

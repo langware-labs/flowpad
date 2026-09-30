@@ -69,7 +69,10 @@ async def test_a_command_runs_in_the_terminal_and_its_end_carries_the_exit_code(
 
 
 @pytest.mark.parametrize("login_shell", [p for p in ("/bin/zsh", "/bin/bash") if __import__("os").path.exists(p)])
-@pytest.mark.parametrize(("command", "ctrl_c", "exit_code"), [("true", False, 0), ("(exit 3)", False, 3), ("sleep 30", True, 130)])
+@pytest.mark.parametrize(
+    ("command", "ctrl_c", "exit_code"),
+    [("true", False, 0), ("(exit 3)", False, 3), pytest.param("sleep 30", True, 130, marks=pytest.mark.long)],  # ~1.2s
+)
 async def test_the_end_marker_arrives_however_the_command_ends(tmp_path, monkeypatch, login_shell, command, ctrl_c, exit_code):
     """Ctrl-C included: zsh abandons the rest of an interrupted line, and a marker lost there
     leaves a viewer waiting forever."""
@@ -131,7 +134,10 @@ async def test_interrupting_an_idle_terminal_is_a_no_op(tmp_path):
     shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         assert await shell.running() is None
-        assert await shell.interrupt() is True
+        # Nothing takes the foreground within the grace (it waits that long for a command typed a
+        # moment ago to start), so nothing is signalled and nothing killed.
+        assert await shell.interrupt(grace=0.3) is True
+        assert shell.is_alive
     finally:
         await shell.close()
 
@@ -143,5 +149,32 @@ async def test_run_and_capture_reads_the_output_between_the_command_and_its_mark
         answer = await shell.run_and_capture("echo captured-line; (exit 4)", timeout=10)
         assert answer.returncode == 4
         assert answer.stdout.strip() == "captured-line"
+    finally:
+        await shell.close()
+
+
+@pytest.mark.long  # 1.0–1.5s: a real background job, then the prompt checked
+async def test_a_background_process_at_the_prompt_is_not_a_running_command(tmp_path):
+    """A prompt spawns helpers (an async git status) while the terminal sits idle: children of the
+    shell that are not the command. Only the foreground job is — so the terminal is at its prompt."""
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    try:
+        marker = await shell.run_command("sleep 60 &")
+        assert await _finished(shell, marker) == 0
+        assert await shell.running() is None, "a background job is not the command in the foreground"
+    finally:
+        await shell.close()
+
+
+@pytest.mark.long  # ~1.2s: a real command, stopped the moment it was typed
+async def test_a_stop_sent_before_the_command_started_still_stops_it(tmp_path):
+    """Stop pressed right after Run: the line may still sit in the line editor, where a Ctrl-C is a
+    plain character and the command, starting a moment later, never sees it."""
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    try:
+        marker = await shell.run_command("sleep 30")
+        assert await shell.interrupt(marker=marker) is True
+        assert await _finished(shell, marker) == 130
+        assert await shell.running() is None
     finally:
         await shell.close()

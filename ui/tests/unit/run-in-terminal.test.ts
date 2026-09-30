@@ -31,6 +31,7 @@ function makeShell(printed: (feed: (s: string) => void) => void, { before = fals
   vi.spyOn(shell as unknown as { post: (a: string, b: unknown) => Promise<unknown> }, 'post').mockImplementation(
     async (action: string, body: unknown) => {
       posted.push([action, body]);
+      if (action !== 'run-command') return { stopped: true };
       if (before) printed(feed); // the command ended before its answer came back
       else setTimeout(() => printed(feed), 0);
       return { marker: MARKER, osc: 7770 };
@@ -62,6 +63,18 @@ describe('Shell.runCommand', () => {
       for (const piece of [all.slice(0, 5), all.slice(5, 20), all.slice(20, all.length - 3), all.slice(-3)]) feed(piece);
     });
     await expect(shell.runCommand('sleep 30')).resolves.toMatchObject({ exitCode: 130, output: 'out\r\n' });
+  });
+
+  it('a stop during a run names the run by its marker; outside a run it names none', async () => {
+    const { shell, posted, feed } = makeShell(() => undefined);
+    const run = shell.runCommand('sleep 30');
+    await vi.waitFor(() => expect(posted.some(([a]) => a === 'run-command')).toBe(true));
+    await shell.interrupt();
+    expect(posted.at(-1)).toEqual(['interrupt', { marker: MARKER }]);
+    feed(`${START}${end(130)}`);
+    await run;
+    await shell.interrupt();
+    expect(posted.at(-1)).toEqual(['interrupt', {}]);
   });
 
   it('lets go of the wait when the caller aborts, and a late end changes nothing', async () => {
