@@ -15,7 +15,9 @@ export const PROJECT_HOME_PAGE_ENABLED = true;
 /**
  * Where an AGENT home page lands: its last chat in this project — the rail's
  * Chats-icon query narrowed to the agent (`lastVibeChatQuery`) — else a new
- * session, opened with the same pre-turn stack `useAgentLauncher` gives one.
+ * session, opened with the same pre-turn stack `useAgentLauncher` gives one
+ * (auto prompt queued, vibe embedded, turn 1 started). A resumed chat already
+ * had its turn 1, so nothing is re-sent.
  * Resuming is the point: Home is clicked again and again, and minting a
  * session per click would leave an empty conversation behind each time.
  */
@@ -27,7 +29,7 @@ async function agentHomePageDock(agentTypeId: string, projectId: string): Promis
   if (!processId) {
     const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
     if (!agent) return null;
-    processId = (await agent.use(projectId)).process_id;
+    processId = (await agent.use(projectId, { autoPrompt: true })).process_id;
     await prepareAgentSession(processId).catch((e) =>
       console.warn('[project-home-page] pre-turn setup failed; opening the session anyway', e),
     );
