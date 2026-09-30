@@ -107,12 +107,7 @@ import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
 const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
-import {
-  FONT_FAMILY,
-  FONT_SIZE_PX,
-  applyRtlGridContract,
-  registerOsc52ClipboardWrite,
-} from './terminalConfig';
+import { FONT_FAMILY, FONT_SIZE_PX, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
 import { workerCliVendor } from './process-cli-presentation';
 import { isTextInputTarget } from '@src/utils/isTextInputTarget';
 
@@ -1326,7 +1321,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   // ── The dock's command, typed once the PTY is actually at a prompt ─────────
   //
-  // `?startCommand=` / `?prefillCommand=` name a command the navigation asked
+  // `?startCommand=` names a command the navigation asked
   // this terminal to type (see START_COMMAND_PARAM). The write lands HERE, on
   // the mounted view at `shellReady`, and nowhere else: the click handler that
   // navigated has no PTY yet, and the loader must not await one — a shell is
@@ -1349,12 +1344,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // (`shell-<uuid>`) while `sessionId` here is the bare uuid — comparing the
     // two raw never matched, and the command was silently never typed.
     if (currentDock?.shellId !== sessionId) return;
-    const ask = currentDock?.shellStartCommand ?? null;
-    if (!ask || startCommandRef.current === ask.command) return;
-    startCommandRef.current = ask.command;
+    const command = currentDock?.shellStartCommand ?? null;
+    if (!command || startCommandRef.current === command) return;
+    startCommandRef.current = command;
     void (async () => {
-      const { runInTerminal, prefillInTerminal } = await import('@src/terminal/run-in-terminal');
-      await (ask.submit ? runInTerminal(sessionId, ask.command) : prefillInTerminal(sessionId, ask.command));
+      const { runInTerminal } = await import('@src/terminal/run-in-terminal');
+      await runInTerminal(sessionId, command);
       navigation.openDock(currentDock.withoutShellStartCommand(), undefined, { replace: true });
     })().catch((err: unknown) => {
       startCommandRef.current = null;
@@ -1576,7 +1571,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!showSimpleChat || !toplog.isOn('tab_switch')) return;
     const frame = requestAnimationFrame(() => {
       if (claimTabSwitchReady()) {
-        toplog.log('tab_switch', `ready ${sinceTabSwitch()} kind=chat mode=warm proc=${process?.id.slice(0, 8) ?? '-'}`);
+        toplog.log(
+          'tab_switch',
+          `ready ${sinceTabSwitch()} kind=chat mode=warm proc=${process?.id.slice(0, 8) ?? '-'}`,
+        );
       }
     });
     return () => cancelAnimationFrame(frame);
@@ -2001,11 +1999,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             onOpenShown={handleOpenShown}
             composer={
               showSimpleChat && process ? (
-                <ChatComposerBar
-                  process={process}
-                  onPasteImages={handleChatPasteImages}
-                  composerRef={composerRef}
-                />
+                <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} composerRef={composerRef} />
               ) : undefined
             }
           />

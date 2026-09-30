@@ -97,6 +97,96 @@ def test_run_action_answers_refused_with_a_200_and_the_answer_in_the_body(tmp_pa
     assert response.data["exit_code"] == 7 and "steps" in response.data
 
 
+def test_open_action_shows_the_wizard_blank_without_running_it(tmp_path, monkeypatch):
+    """`POST /wizard/<id>/open` — Settings' "Run setup again": the page, cleared, and nothing runs."""
+    import asyncio
+
+    from flow_sdk.core.wizard import start as wizard_start
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    shown = []
+
+    async def _show(wizard):
+        shown.append(wizard)
+
+    monkeypatch.setattr(wizard_start, "show_wizard_fresh", _show)
+    wizard = _folder_wizard(tmp_path, monkeypatch)
+    response = asyncio.run(wizard.open_action())
+    assert isinstance(response, ApiSuccessResponse) and response.data == {"opened": True}
+    assert shown == [wizard]
+
+
+def test_start_action_settles_a_source_then_runs_this_wizard_with_the_person_present(tmp_path, monkeypatch):
+    """`POST /wizard/<id>/start` — the Start button: both verdicts in the body, and never
+    `unattended`, so a question raised on the way is put to the person watching."""
+    import asyncio
+
+    from flow_sdk.core.wizard import start as wizard_start
+    from flow_sdk.responses.response import ApiSuccessResponse
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+
+    seen = {}
+
+    async def _run(wizard, *, unattended):
+        seen.update(wizard=wizard, unattended=unattended)
+        return CliResult.satisfied("funded"), WizardResult.satisfied("stubbed")
+
+    monkeypatch.setattr(wizard_start, "start_wizard", _run)
+    wizard = _folder_wizard(tmp_path, monkeypatch)
+    response = asyncio.run(wizard.start_action())
+    assert isinstance(response, ApiSuccessResponse)
+    assert set(response.data) == {"llm_source", "wizard"}
+    assert seen == {"wizard": wizard, "unattended": False}
+
+
+def test_a_wizard_that_declares_no_llm_source_is_started_without_settling_one(tmp_path, monkeypatch):
+    """The source step is the wizard's own declaration (`requires_llm_source`), not something every
+    start does: a wizard without it never opens the chooser, and its first answer is `None`."""
+    import asyncio
+
+    from flow_sdk.core.wizard import start as wizard_start
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+
+    asked = []
+
+    async def _source():
+        asked.append("source")
+        return CliResult.satisfied("funded")
+
+    async def _fresh(_wizard):
+        return None
+
+    async def _run(_self, **_kwargs):
+        return WizardResult.satisfied("stubbed")
+
+    monkeypatch.setattr(wizard_start, "_resolve_llm_source", _source)
+    monkeypatch.setattr(wizard_start, "show_wizard_fresh", _fresh)
+    monkeypatch.setattr(Wizard, "run", _run)
+    wizard = _folder_wizard(tmp_path, monkeypatch)  # declares nothing about an LLM source
+    source, result = asyncio.run(wizard_start.start_wizard(wizard, unattended=False))
+    assert source is None and result.ok and asked == []
+
+    # …and the action says so: no source verdict in the body.
+    response = asyncio.run(wizard.start_action())
+    assert response.data["llm_source"] is None
+
+
+def test_start_action_answers_409_when_another_run_holds_the_slot(tmp_path, monkeypatch):
+    import asyncio
+
+    from flow_sdk.core.wizard import start as wizard_start
+    from flow_sdk.responses.response import ApiFailResponse
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, WizardResult
+
+    async def _run(wizard, *, unattended):
+        return CliResult.not_yet("x", ran=False), WizardResult.held("already running")
+
+    monkeypatch.setattr(wizard_start, "start_wizard", _run)
+    wizard = _folder_wizard(tmp_path, monkeypatch)
+    response = asyncio.run(wizard.start_action())
+    assert isinstance(response, ApiFailResponse) and response.status_code == 409
+
+
 def test_a_wizard_that_did_not_run_is_not_busy_and_not_a_409(tmp_path, monkeypatch):
     """The regression `busy` exists for. The edge used to send every NOT_YET with
     `ran=False` to 409 — so a wizard whose op does not exist, one that calls

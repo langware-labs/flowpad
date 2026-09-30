@@ -46,6 +46,13 @@ class Wizard(Entity):
 
     _api_visible: ClassVar[bool] = True
 
+    @classmethod
+    async def by_name(cls, name: str) -> Optional["Wizard"]:
+        """The wizard named ``name``, or None — this install's copy when a project shadows it."""
+        from flow_sdk.builtin.shipped_lookup import by_name_preferring_this_install  # noqa: PLC0415
+
+        return await by_name_preferring_this_install(cls, name)
+
     @property
     def folder(self) -> Optional[Path]:
         return Path(self.asset_ref) if self.asset_ref else None
@@ -91,6 +98,44 @@ class Wizard(Entity):
         that teaches people to click through the one gate that matters.
         """
         return self.is_system()
+
+    @computed_field
+    @property
+    def label(self) -> str:
+        """A friendlier name than `name`, when the document sets one — same
+        split as a step's own `id`/`label`. Read fresh from the document, like
+        `agent`, since a label is cosmetic and does not need indexing."""
+        spec = self.spec()
+        return (spec.label if spec is not None else "") or self.name
+
+    @computed_field
+    @property
+    def popup(self) -> bool:
+        """Whether this wizard shows as a dismissible overlay instead of a
+        full editor page — see `WizardSpec.popup`."""
+        spec = self.spec()
+        return bool(spec.popup) if spec is not None else False
+
+    @computed_field
+    @property
+    def success_message(self) -> str:
+        """What the page says when a run passes — see `WizardSpec.success_message`."""
+        spec = self.spec()
+        return spec.success_message if spec is not None else ""
+
+    @computed_field
+    @property
+    def failure_message(self) -> str:
+        """What the page says when a run ended short — see `WizardSpec.failure_message`."""
+        spec = self.spec()
+        return spec.failure_message if spec is not None else ""
+
+    @computed_field
+    @property
+    def restart_label(self) -> str:
+        """The restart button's label — see `WizardSpec.restart_label`."""
+        spec = self.spec()
+        return spec.restart_label if spec is not None else "Restart"
 
     @computed_field
     @property
@@ -383,6 +428,41 @@ class Wizard(Entity):
                 status_code=409,
             )
         return ApiSuccessResponse(data=fresh)
+
+    @action.post(action_name="open")
+    async def open_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/open` — show this wizard's page blank, WITHOUT running it.
+
+        Settings → "Run setup again": the person reads what the wizard is for and presses its own
+        Start (`start` below). A run already in flight keeps its record.
+        """
+        from flow_sdk.core.wizard.start import show_wizard_fresh  # noqa: PLC0415
+
+        await show_wizard_fresh(self)
+        return ApiSuccessResponse(data={"opened": True})
+
+    @action.post(action_name="start")
+    async def start_action(self) -> ApiResponse:
+        """`POST /wizard/<id>/start` — the wizard's own Start button: run it with the person present.
+
+        When the wizard's document says it ``requires_llm_source``, one is settled first (the chooser
+        opens when the box has none). Both verdicts come back in the body; ``llm_source`` is null for
+        a wizard with no such step. Unlike an unattended run, a question raised on the way is put to
+        the person watching. Awaits the whole run, and replaces a start already in flight for this
+        wizard (a second click means "start over"). Goes through `run`, so the trust gate holds: a
+        wizard not shipped with Flowpad is refused here and must be approved through `run`.
+        """
+        from flow_sdk.core.wizard.start import start_wizard  # noqa: PLC0415
+
+        source, result = await start_wizard(self, unattended=False)
+        if result.busy:
+            return ApiFailResponse(message=result.detail, status_code=409)
+        return ApiSuccessResponse(
+            data={
+                "llm_source": source.model_dump(mode="json") if source is not None else None,
+                "wizard": result.model_dump(mode="json"),
+            }
+        )
 
     @action.get(action_name="run-detail")
     async def run_detail_action(self) -> ApiResponse:
