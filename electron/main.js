@@ -968,7 +968,7 @@ function waitForRetryRequest() {
 async function installAndStartBackend() {
   let backendJustUpgraded = false;
   // Install and start backend via uv + flow CLI
-  uvManager = new UvManager(log);
+  uvManager = new UvManager(log, { stateDir: FLOW_HOME });
 
   // Did the user just upgrade to a new desktop build? Logged for diagnostics
   // only — the pre-start update prompt below decides (and asks) whether to
@@ -983,7 +983,16 @@ async function installAndStartBackend() {
 
   try {
     // FAST PATH: check if flow binary exists on disk (no subprocess, just fs.existsSync)
-    const flowBin = uvManager.getInstalledFlowBin();
+    let flowBin = uvManager.getInstalledFlowBin();
+
+    // A previous run quit (or died) in the middle of an install: the tool venv
+    // may be half-replaced. Repair it before anything reads or starts it.
+    if (flowBin && uvManager.hadInterruptedInstall()) {
+      sendStatus('Repairing Flowpad installation');
+      await uvManager.repairIfInterrupted({ onProgress: installProgress('Repairing Flowpad installation') });
+      backendJustUpgraded = true;
+      flowBin = uvManager.getInstalledFlowBin() || flowBin;
+    }
 
     if (flowBin) {
       log.info(`Fast path: flow binary found at ${flowBin}`);
@@ -1299,8 +1308,38 @@ app.on('activate', () => {
   }
 });
 
+// Quitting while `uv tool install` is replacing the venv would leave a
+// half-written environment (and, before this, an orphaned uv holding the tool
+// lock). Ask first; on "Quit anyway" the install is aborted and the next launch
+// repairs it (UvManager.hadInterruptedInstall).
+let installQuitDialogOpen = false;
+let installQuitConfirmed = false;
+
 app.on('before-quit', (event) => {
   if (isQuitting) return;
+  if (uvManager && uvManager.isInstalling() && !installQuitConfirmed) {
+    event.preventDefault();
+    if (installQuitDialogOpen) return;
+    installQuitDialogOpen = true;
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    dialog.showMessageBox(parent, {
+      type: 'warning',
+      title: 'Update in progress',
+      message: 'FlowPad is installing an update.',
+      detail: 'Quitting now interrupts it. FlowPad will repair the installation the next time it starts.',
+      buttons: ['Keep waiting', 'Quit anyway'],
+      defaultId: 0,
+      cancelId: 0,
+    }).then(({ response }) => {
+      installQuitDialogOpen = false;
+      if (response === 1) {
+        installQuitConfirmed = true;
+        uvManager.abortInstall();
+        app.quit();
+      }
+    });
+    return;
+  }
   isQuitting = true;
 
   log.info('Quitting — stopping backend...');

@@ -135,12 +135,6 @@ function tryPythonVersion() {
   try { return getPythonVersion(); } catch { return null; }
 }
 
-// `uv tool install …` argument list for the pinned interpreter. Throws (see
-// getPythonVersion) only on a broken build — and only when an install runs.
-function pythonPinArgs() {
-  return ['--python', getPythonVersion()];
-}
-
 // The recovery command shown to the user, mirroring installLatest()/upgrade().
 function upgradeCommand() {
   const v = tryPythonVersion();
@@ -196,8 +190,14 @@ function splitLines(onLine) {
 }
 
 class UvManager {
-  constructor(log) {
+  constructor(log, { stateDir = null } = {}) {
     this.log = log;
+    // Where the "install in progress" marker lives. null → marker disabled
+    // (unit tests, tools that must not touch the user's home).
+    this._stateDir = stateDir;
+    this._installing = false;
+    this._installChild = null;
+    this._installAborted = false;
     this.isShuttingDown = false;
     this._flowBin = null;
     // Set to true when the uv-generated flow.exe shim is blocked by Windows
@@ -406,6 +406,8 @@ class UvManager {
         reject(err);
         return;
       }
+
+      if (typeof options.onChild === 'function') options.onChild(child);
 
       let stdout = '';
       let stderr = '';
@@ -840,6 +842,22 @@ class UvManager {
    *     so it survives for diagnosis) and retry, which rebuilds the env clean.
    */
   async _uvToolInstallForce(installArgs, { onProgress } = {}) {
+    this._installing = true;
+    this._installAborted = false;
+    this._writeInstallMarker(installArgs);
+    try {
+      return await this._uvToolInstallForceAttempts(installArgs, { onProgress });
+    } finally {
+      this._installing = false;
+      this._installChild = null;
+      // A finished install — success OR a clean uv failure — leaves the tool
+      // dir in a state uv itself reports on. Only a KILLED install (aborted, or
+      // the app died so this never runs) is unknown, so only that keeps the marker.
+      if (!this._installAborted) this._clearInstallMarker();
+    }
+  }
+
+  async _uvToolInstallForceAttempts(installArgs, { onProgress } = {}) {
     const MAX_RETRIES = 3;
     const HANDLE_RELEASE_WAIT_MS = 1500;
     // Compile the venv's bytecode here, in the install, not on the first boot.
@@ -853,10 +871,12 @@ class UvManager {
       : [...installArgs, '--compile-bytecode'];
     for (let attempt = 1; ; attempt++) {
       await this._drainVenvProcesses();
+      if (this._installAborted) throw new Error('install aborted before uv started');
       try {
         // No wall-clock cap — see _runStreaming. Progress lines go to the
         // caller (the loading window) so a long slow install is visibly alive.
         return await this._runStreaming('uv', args, {
+          onChild: (child) => { this._installChild = child; },
           onLine: (line) => {
             if (onProgress && isInstallProgressLine(line)) onProgress(line);
           },
@@ -884,13 +904,93 @@ class UvManager {
     }
   }
 
+  _installMarkerPath() {
+    return this._stateDir ? path.join(this._stateDir, 'desktop-install-in-progress.json') : null;
+  }
+
+  _writeInstallMarker(installArgs) {
+    const file = this._installMarkerPath();
+    if (!file) return;
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ startedAt: new Date().toISOString(), pid: process.pid, args: installArgs }));
+    } catch (err) {
+      this.log.warn(`[uv] could not write the install-in-progress marker: ${err.message}`);
+    }
+  }
+
+  _clearInstallMarker() {
+    const file = this._installMarkerPath();
+    if (!file) return;
+    try { fs.rmSync(file, { force: true }); } catch { /* best effort */ }
+  }
+
+  /**
+   * True when a previous run died (or was told to quit) in the middle of a
+   * `uv tool install`: the marker is written before uv starts and removed the
+   * moment it finishes, so finding it at launch means the tool venv may be
+   * half-replaced and should be repaired before the backend is started.
+   */
+  hadInterruptedInstall() {
+    const file = this._installMarkerPath();
+    return !!file && fs.existsSync(file);
+  }
+
+  /** True while a `uv tool install` (drain, spawn or retry) is running. */
+  isInstalling() {
+    return this._installing;
+  }
+
+  /**
+   * Stop a running install because the app is quitting. The marker is kept, so
+   * the next launch repairs the venv. Returns false when nothing was running.
+   * No waiting: the child is signalled and the app is free to exit.
+   */
+  abortInstall() {
+    if (!this._installing) return false;
+    this._installAborted = true;
+    const child = this._installChild;
+    if (child && child.exitCode === null && child.pid) {
+      this.log.warn(`[uv] aborting the running install (pid ${child.pid})`);
+      try {
+        if (process.platform === 'win32') {
+          execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {});
+        } else {
+          child.kill('SIGTERM');
+        }
+      } catch (err) {
+        this.log.warn(`[uv] abortInstall failed to signal the child: ${err.message}`);
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Repair a tool venv left half-replaced by an interrupted install (see
+   * hadInterruptedInstall). Keeps the marker if the repair itself fails, so the
+   * next launch tries again. Returns true when a repair ran.
+   */
+  async repairIfInterrupted({ onProgress } = {}) {
+    if (!this.hadInterruptedInstall()) return false;
+    this.log.warn('[uv] previous install was interrupted — repairing the tool environment');
+    await this.ensureUv();
+    try {
+      await this.reinstall({ onProgress });
+    } catch (err) {
+      this._writeInstallMarker(['repair-failed']);
+      throw err;
+    }
+    return true;
+  }
+
   /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
   async installLatest({ onProgress } = {}) {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
+    const pin = await this._pythonPinForUpgrade();
     await this._uvToolInstallForce(
-      ['tool', 'install', PYPI_PACKAGE, ...pythonPinArgs(), '--force'],
+      ['tool', 'install', PYPI_PACKAGE, '--python', pin, '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
@@ -1659,8 +1759,9 @@ class UvManager {
    */
   async reinstall({ onProgress } = {}) {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
+    const pin = await this._pythonPinForUpgrade();
     await this._uvToolInstallForce(
-      ['tool', 'install', PYPI_PACKAGE, ...pythonPinArgs(), '--reinstall', '--force'],
+      ['tool', 'install', PYPI_PACKAGE, '--python', pin, '--reinstall', '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
