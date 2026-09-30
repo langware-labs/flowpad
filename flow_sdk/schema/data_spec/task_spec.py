@@ -59,6 +59,8 @@ class TaskType(StrEnum):
 class TaskKind(StrEnum):
     STANDARD = "standard"
     GROUP = "group"
+    #: Raised from the Vibe workspace's "Ask for help" button — the tasks that button lists.
+    VIBE = "vibe"
 
 
 class TaskSpec(FrontMatter):

@@ -54,9 +54,7 @@ describe('stream inbox unread truth table — conversationFacets parity', () => 
     const firstFm = conv.pointers[0] ? c.messages[conv.pointers[0].fm] : undefined;
     const lastPtr = conv.pointers[conv.pointers.length - 1];
     const latestFm = lastPtr ? c.messages[lastPtr.fm] : undefined;
-    const invitation = c.invitations.find(
-      (i) => i.target_url_path === `/conversation/${conv.id}`,
-    );
+    const invitation = c.invitations.find((i) => i.target_url_path === `/conversation/${conv.id}`);
 
     const facets = conversationFacets({
       // The flag as the backend stamped it (`facets.isUnread` is what the backend test pins).

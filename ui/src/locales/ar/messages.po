@@ -5639,7 +5639,6 @@ msgstr "تعذر إجراء اختبار الاتصال."
 
 #: src/components/code-editor/SnippetView.tsx
 #: src/components/code-editor/SnippetView.tsx
-#: src/components/code-editor/SnippetView.tsx
 msgid "Could not run the snippet"
 msgstr ""
 
@@ -12982,6 +12981,10 @@ msgstr "رد جديد"
 msgid "New repo"
 msgstr "مستودع جديد"
 
+#: src/pages/flow-page/VibeAssignTaskButton.tsx
+msgid "New request"
+msgstr ""
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "New sandbox"
 msgstr "بيئة معزولة جديدة"
@@ -15057,6 +15060,10 @@ msgstr "فتح الطرفية ({modLabel}+T)"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open terminal in {workdir}"
 msgstr "فتح الطرفية في {workdir}"
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Open that conversation"
+msgstr ""
 
 #. placeholder {0}: source.provider
 #: src/components/data-sources/DataSourceRow.tsx
@@ -22863,6 +22870,10 @@ msgstr "غير مؤكد"
 msgid "Unsure"
 msgstr "غير مؤكد"
 
+#: src/pages/flow-page/VibeAssignTaskButton.tsx
+msgid "Untitled request"
+msgstr ""
+
 #: src/components/terminal/HistoryModal.tsx
 msgid "Untitled session"
 msgstr "جلسة بدون عنوان"
@@ -23986,6 +23997,12 @@ msgstr "أنت"
 msgid "You administer no LLM endpoint to allocate from, so this agent spends your capped default."
 msgstr ""
 
+#. placeholder {0}: person?.name || person?.email
+#. placeholder {1}: alreadyAsked.task.title
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "You already asked {0}: \"{1}\"."
+msgstr ""
+
 #~ msgid "you are {role}"
 #~ msgstr ""
 
@@ -24143,6 +24160,11 @@ msgstr "اسمك المعروض"
 
 #~ msgid "Your FlowPad account"
 #~ msgstr ""
+
+#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/pages/flow-page/VibeAssignTaskButton.tsx
+msgid "Your help requests"
+msgstr ""
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup on this image will be lost."
