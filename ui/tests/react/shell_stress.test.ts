@@ -414,7 +414,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await new Promise((r) => setTimeout(r, 400));
 
     const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
-    const result = await shell.run('echo stress-test-ok');
+    const result = await shell.runDetached('echo stress-test-ok');
 
     expect(result.returncode).toBe(0);
     expect(result.stdout).toContain('stress-test-ok');

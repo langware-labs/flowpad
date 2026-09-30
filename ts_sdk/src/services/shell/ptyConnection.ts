@@ -6,6 +6,8 @@ import type { OrphanEntry } from './ptyOrphanBuffer';
 
 export type PtyOutputListener = (data: string, seq?: number) => void;
 export type PtyLineListener = (line: string) => void;
+/** Raw decoded output, escapes included — every chunk, attached or not. */
+export type PtyTextListener = (text: string) => void;
 /**
  * Pattern watcher registered via ``Shell.addTrigger`` /
  * ``PtyConnection.addTrigger``. ``onMatch`` fires when an ANSI-stripped PTY
@@ -50,7 +52,7 @@ export type PtyConnectionStatus = 'idle' | 'connecting' | 'live' | 'restarting' 
  * output Claude Code / shell prompts produce.
  */
 const ANSI_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
-function stripAnsi(s: string): string {
+export function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
 }
 
@@ -92,6 +94,9 @@ export class PtyConnection {
 
   /** Pending raw text not yet terminated by LF or a terminal-row CR. */
   private _lineBuffer = '';
+
+  /** Raw text listeners — the decoded stream as it arrives, escapes and all. */
+  private readonly _textListeners = new Set<PtyTextListener>();
 
   /** onReady subscribers — fired once when attach completes + live stream opens. */
   private readonly _readyListeners = new Set<() => void>();
@@ -205,6 +210,13 @@ export class PtyConnection {
     // Feed line listeners regardless of attach state — triggers must fire
     // for orphan-flushed output too so early pattern detection works.
     this._feedLineBuffer(decoded);
+    for (const fn of this._textListeners) {
+      try {
+        fn(decoded);
+      } catch (e) {
+        console.error('[PtyConnection] text listener error:', e);
+      }
+    }
     // Only fire live listeners once attach has completed.
     // Gate on _attached only (not isLive) so unit tests work without a WS.
     if (this._attached) {
@@ -217,6 +229,18 @@ export class PtyConnection {
       }
     }
     return decoded;
+  }
+
+  // ── Raw text ──────────────────────────────────────────────────────────────
+
+  /**
+   * Subscribe to the decoded stream as it arrives — escapes included, attached or not. What a
+   * reader of invisible markers needs (`Shell.runCommand`), where `onLine` has stripped them.
+   * Returns an unsubscribe function.
+   */
+  onText(fn: PtyTextListener): () => void {
+    this._textListeners.add(fn);
+    return () => this._textListeners.delete(fn);
   }
 
   // ── Line stream ───────────────────────────────────────────────────────────

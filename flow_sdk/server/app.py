@@ -78,6 +78,7 @@ from .routes import (
     runs_router,
     search_router,
     semantic_checker_router,
+    shell_router,
     snippet_router,
     subgraph_router,
     tags_router,
@@ -838,6 +839,7 @@ server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(display_router)
 server.add_router(snippet_router)
+server.add_router(shell_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)
 server.add_router(ask_router)
