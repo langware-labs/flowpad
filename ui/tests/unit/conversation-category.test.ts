@@ -56,12 +56,14 @@ function makeInputs(over: {
 describe('conversationFacets', () => {
   it('plain direct conversation with a read latest message → active', () => {
     const f = conversationFacets(makeInputs({ latestRead: true }));
-    expect(f).toEqual({ kind: 'direct', isInvitation: false, isArchived: false, isUnread: false });
+    expect(f).toEqual({ kind: 'direct', isInvitation: false, isArchived: false, isUnread: false, unreadCount: 0 });
   });
 
   it('hub runtime (no is_unread on the row): an unread latest message → unread', () => {
     const f = conversationFacets(makeInputs({ latestRead: false }));
     expect(f.isUnread).toBe(true);
+    // No backend count on a hub row: an unread row still reads as at least one waiting message.
+    expect(f.unreadCount).toBe(1);
   });
 
   it("the backend's is_unread wins over the latest message", () => {
