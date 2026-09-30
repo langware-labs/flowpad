@@ -40,7 +40,8 @@ describe('shell_run_command', () => {
 
   it('resolves with the exit code and exactly what the command printed', async () => {
     const shell = await liveShell();
-    const result = await shell.runCommand('echo run-command-ok; (exit 3)');
+    const pending = shell.runCommand('echo run-command-ok; (exit 3)');
+    const result = await pending;
     expect(result.exitCode).toBe(3);
     expect(result.output.trim()).toBe('run-command-ok');
   });

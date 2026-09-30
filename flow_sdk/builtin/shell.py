@@ -72,6 +72,11 @@ async def _next_unseen_pty_output(
             return chunk
 
 
+#: Commands waiting to be typed until their terminal shows its prompt (``Shell.run_command``) —
+#: held here so a task is never collected mid-wait.
+_TYPING: set[asyncio.Task] = set()
+
+
 class _OutputFeed:
     """A terminal's output from one moment on: what it had printed (this PTY generation) when the
     feed opened, then each new chunk as it is written — the live queue, never a re-read of the
@@ -776,12 +781,20 @@ class Shell(Entity):
 
     # ── I/O ───────────────────────────────────────────────────────────────────
 
-    async def _wait_for_shell_ready(self, timeout: float = 5.0, idle_ms: int = 150) -> None:
-        """Wait until the PTY output has been silent for idle_ms milliseconds.
+    #: Shells whose line editor switches bracketed paste on while it reads a line and off when it
+    #: runs one (``ESC [ ? 2004 h`` / ``l``) — the exact "ready to be typed into" signal.
+    _LINE_EDITOR_SHELLS: ClassVar[frozenset[str]] = frozenset({"zsh", "bash", "fish"})
 
-        Polls the session's output-chunk counter. When output stops arriving the
-        shell is at its prompt with readline initialised — safe to inject input.
+    async def _wait_for_shell_ready(self, timeout: float = 5.0, idle_ms: int = 150) -> None:
+        """Wait until typing into this terminal will be read.
+
+        At a zsh / bash / fish prompt the line editor says so itself (``_wait_for_line_editor``).
+        For anything else in the terminal (a TUI, a program, another shell) output going quiet for
+        *idle_ms* stands in: the output-chunk counter holding still.
         """
+        if await self._at_line_editor_prompt():
+            await self._wait_for_line_editor(timeout)
+            return
         from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
         # Resolve the real provider_node_id used by the append path
@@ -805,9 +818,48 @@ class Shell(Entity):
             last_seq = current_seq
             await asyncio.sleep(idle_ms / 1000)
 
+    async def _is_line_editor_shell(self) -> bool:
+        """Whether this terminal's own process is a zsh / bash / fish (whatever holds the foreground)."""
+        shell = await self._shell_process()
+        try:
+            return shell is not None and os.path.basename(shell.name()).lower() in self._LINE_EDITOR_SHELLS
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
+    async def _at_line_editor_prompt(self) -> bool:
+        """Whether this terminal's own process is a zsh / bash / fish holding the foreground — not a
+        TUI or program started from it, which is typed into as it is."""
+        return await self._is_line_editor_shell() and await self._foreground_pgid() is None
+
+    async def _wait_for_line_editor(self, timeout: float | None, idle_ms: int = 150) -> bool:
+        """Until the shell's line editor is reading (True), or *timeout* (``None``: until the PTY
+        closes — False).
+
+        Output going quiet alone is NOT the signal: a freshly spawned zsh is silent while it sources
+        its rc files, and a line typed then is discarded when the line editor starts. So the shell
+        must first have printed something in this PTY's life (its prompt), then gone quiet for
+        *idle_ms* — or, sooner, said it is reading: a line editor that uses bracketed paste turns it
+        on (``ESC[?2004h``) when it starts reading a line and off when it runs one.
+        """
+        async with self._output_feed() as feed:
+            if feed is None:
+                return False
+            data = feed.initial[-65536:]
+            loop = asyncio.get_running_loop()
+            deadline = None if timeout is None else loop.time() + timeout
+            while (deadline is None or loop.time() < deadline) and not feed.closed:
+                if data.rfind(b"\x1b[?2004h") > data.rfind(b"\x1b[?2004l"):
+                    return True
+                wait = idle_ms / 1000 if deadline is None else min(idle_ms / 1000, max(deadline - loop.time(), 0.0))
+                chunk = await feed.next(timeout=wait)
+                if not chunk and data and not feed.closed:
+                    return True  # printed its prompt, then quiet
+                data = (data + chunk)[-65536:]
+            return not feed.closed
+
     #: Sentinel grammar for "run this and tell me how it went" — built HERE only;
     #: the browser asks for it through ``run-command`` and only reads the marker
-    #: (``ts_sdk`` ``PtyConnection.onOsc``). Writing to a PTY proves delivery and
+    #: (``ts_sdk`` ``Shell.runCommand`` over ``PtyConnection.onText``). Writing to a PTY proves delivery and
     #: nothing else, so the appended marker is the only moment we know the command
     #: FINISHED, and it carries the exit code. It is an OSC escape a terminal
     #: swallows: the run's own output is all the viewer sees.
@@ -874,8 +926,29 @@ class Shell(Entity):
         screen and scrollback first, in the terminal's shell's own grammar, so the terminal —
         and its recording, replayed on a later visit — shows just this run."""
         marker = self.new_marker()
-        await self.write(self.sentinel_command(command, marker, clear=clear))
+        text = self.sentinel_command(command, marker, clear=clear)
+        # A command is typed at the prompt — including while the shell is still starting, when its
+        # rc files' own steps hold the foreground (and would read a line typed then).
+        if not await self._is_line_editor_shell():
+            await self.write(text)
+            return marker
+        if self.compute_node.get_pty(self.id) is None:
+            raise RuntimeError("No PTY session — call start_pty() first")
+        # Typed when the shell has shown its prompt — not after a fixed wait: a freshly spawned zsh
+        # can take seconds to source its rc files, and a line typed before its line editor starts
+        # is discarded. The caller has the marker now; a Stop before the line is typed cancels it
+        # (``cancel_path``), and the typing gives up only if the PTY closes first.
+        task = asyncio.get_running_loop().create_task(self._type_when_reading(text))
+        _TYPING.add(task)
+        task.add_done_callback(_TYPING.discard)
         return marker
+
+    async def _type_when_reading(self, text: str) -> None:
+        try:
+            if await self._wait_for_line_editor(None):
+                await self.write_raw(f"{text}\r".encode())
+        except Exception:  # noqa: BLE001 — a background typing must log, never vanish
+            logger.exception("[shell] could not type the command into %s", self.id)
 
     async def _shell_process(self) -> "psutil.Process | None":
         """The terminal's own shell process (the PTY's child), or ``None`` without a live PTY."""

@@ -198,3 +198,25 @@ async def test_run_and_capture_without_a_terminal_is_returned_not_raised():
     answer = await shell.run_and_capture("ls", timeout=1)
     assert answer.returncode is None and answer.ran is False
     assert "No PTY session" in answer.stderr
+
+
+@pytest.mark.long  # ~7s: the case itself is a shell whose rc file takes 6s
+async def test_a_command_run_before_a_slow_starting_shell_shows_its_prompt_still_runs(tmp_path, monkeypatch):
+    """A freshly spawned zsh is silent while it sources its rc files, and whatever runs there
+    inherits the terminal as its stdin — a line typed then can be read by the rc instead of the
+    shell (echoed, never run). So the command is typed once the prompt shows, however long that
+    takes, never after a fixed wait."""
+    if not __import__("os").path.exists("/bin/zsh"):
+        pytest.skip("needs zsh")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".zshrc").write_text("sleep 6\nread -t 2 -r swallowed || true\n")  # an rc step that reads stdin
+    monkeypatch.setenv("HOME", str(home))  # the spawned zsh reads $HOME/.zshrc (ZDOTDIR=~)
+    monkeypatch.setenv("SHELL", "/bin/zsh")
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    try:
+        marker = await shell.run_command("echo slow-rc-ok")
+        assert await _finished(shell, marker, timeout=20) == 0
+        assert b"slow-rc-ok" in Shell.sentinel_output(await shell.read(), marker)
+    finally:
+        await shell.close()
