@@ -26,7 +26,7 @@ import {
   PtyOutputMessage,
   RestApiMessage,
 } from '../websocket';
-import { FlowData, FlowDataSource } from '../flow_processing';
+import { FlowData, FlowDataAttribute, FlowDataSource } from '../flow_processing';
 import { toplog } from '../services/toplog';
 import { getUtmParams } from '../utils/utm';
 import { emitEntityTag } from './entity.onTag';
@@ -571,6 +571,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (flowData.source === FlowDataSource.Unknown) {
       flowData.source = FlowDataSource.WebSocket;
     }
+    flowData.attributes[FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE] = 'DataManager';
 
     if (flowData.elementType === 'chat') {
       toplog.log(

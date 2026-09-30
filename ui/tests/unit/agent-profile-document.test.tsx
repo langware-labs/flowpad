@@ -12,10 +12,10 @@ vi.mock('@src/components/assets/editor/agent-profile/use-agent-mcp-sync', () => 
 vi.mock('@sdk/react/hooks', async (original) => ({ ...(await original<object>()), useProject: () => ({ project: null }) }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
-function fixture() {
+function fixture(extraFields: Record<string, unknown> = {}) {
   const agent = new Agent({ id: '11111111-1111-4111-8111-111111111111', name: 'profile', title: 'Original', enabled: true });
   const mainRef = new FSRef('/selected-copy/agent.md', new TypeId('compute_node', '@local'));
-  let stored: AssetDocument = { body_ref: mainRef.toJSON(), raw_text: '', body: 'Original prompt', fields: {name: 'profile', title: 'Original', metadata: {owner: 'team'}}, body_start_line: 7, revision: 'first' };
+  let stored: AssetDocument = { body_ref: mainRef.toJSON(), raw_text: '', body: 'Original prompt', fields: {name: 'profile', title: 'Original', metadata: {owner: 'team'}, ...extraFields}, body_start_line: 7, revision: 'first' };
   vi.spyOn(mainRef, 'readDocument').mockImplementation(() => Promise.resolve(stored));
   const update = vi.spyOn(mainRef, 'updateDocument').mockImplementation((patch) => {
     if (patch.expected_revision !== stored.revision) return Promise.reject(Object.assign(new Error('stale_document'), {status: 409}));
@@ -56,5 +56,30 @@ describe('Chief of Staff checkbox', () => {
     fireEvent.click(toggle);
     await waitFor(() => expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', set_fields: { chief_of_staff: true } }));
     await screen.findByText(/Staff \(sub-agents/);
+  });
+});
+
+describe('Auto prompt', () => {
+  it('is its own field, shown and saved with auto-launch off', async () => {
+    const f = fixture({ auto_launch: false, auto_launch_prompt: 'Say hello' });
+    const field = await screen.findByRole('textbox', { name: 'Auto prompt' });
+    expect(field).toHaveValue('Say hello');
+    fireEvent.change(field, { target: { value: '  Summarize the notes  ' } });
+    fireEvent.blur(field);
+    await waitFor(() =>
+      expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', set_fields: { auto_launch_prompt: 'Summarize the notes' } }),
+    );
+  });
+
+  it('stays put when auto-launch is switched, which still writes auto_launch', async () => {
+    const f = fixture({ auto_launch: true, auto_launch_prompt: 'Say hello' });
+    await screen.findByRole('textbox', { name: 'Auto prompt' });
+    expect(screen.getAllByRole('textbox', { name: 'Auto prompt' })).toHaveLength(1);
+    // The once-per-project rule is always explained under the switch.
+    expect(screen.getByText(/Once per project, the first time it is opened/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('switch', { name: 'Auto-launch on project open' }));
+    await waitFor(() => expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', set_fields: { auto_launch: false } }));
+    expect(screen.getAllByRole('textbox', { name: 'Auto prompt' })).toHaveLength(1);
+    expect(screen.getByRole('textbox', { name: 'Auto prompt' })).toHaveValue('Say hello');
   });
 });

@@ -8,17 +8,18 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
 
 /**
- * Launch an agent: open a NEW session as it, in Vibe mode, and let the human
- * type the first message.
+ * Launch an agent: open a NEW session as it, in Vibe mode, starting with the
+ * agent's auto prompt when it has one.
  *
  *   agent.use()  →  the process (built from the agent's deployment: worker,
- *                   model, permissions, system prompt, dirs, deployment_id)
- *   embed vibe   →  the vibe SubAgent persona layered UNDER the agent, so the
+ *                   model, permissions, system prompt, dirs, deployment_id),
+ *                   with the auto prompt queued (`autoPrompt`)
+ *   prepare      →  the vibe SubAgent persona layered UNDER the agent, so the
  *                   vibe pane's `flow show` / mcp-ui contract still applies —
  *                   the agent stays the principal, vibe stays the display
- *                   contract (same call every vibe start path makes). Awaited
- *                   BEFORE the pane opens: here the human types turn 1, so
- *                   nothing else stands between "open" and "first prompt".
+ *                   contract (same call every vibe start path makes) — then
+ *                   the queue kick that runs the auto prompt as turn 1. Awaited
+ *                   BEFORE the pane opens, so turn 1 is already running.
  *   open         →  the vibe workspace for that process
  *
  * No prompt dialog: using an agent is starting a conversation with it. Every
@@ -30,21 +31,28 @@ import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
  * id of the agent being launched (the shape `VibeAgentsCard` already uses).
  */
 /**
- * Resolve a freshly `use()`d process and make it ready for turn 1: watch it
- * (watcher-scoped events reach the pane only for a watched process) and embed
- * the vibe persona UNDER the agent. Shared by the launcher hook and the
- * project auto-launch redirect so both open a session with the same stack.
+ * Resolve a freshly `use()`d process, make it ready for turn 1, and start it:
+ * watch it (watcher-scoped events reach the pane only for a watched process),
+ * embed the vibe persona UNDER the agent, then kick the prompt queue — the
+ * "session is set up, start" signal that runs the auto prompt `use()` queued.
+ * Shared by every opener of an agent session (launcher hook, home page,
+ * project auto-launch, deployed panel) so all open with the same stack.
  * Null when the process is not readable — the caller opens it anyway.
  */
 export async function prepareAgentSession(processId: string): Promise<AgenticProcess | null> {
+  // The queue kick never throws: a refused kick must not read as a failed open.
+  const errLog = (e: unknown) => console.warn('[agent-launcher] queue kick failed; auto prompt not started', e);
   const proc = await AgenticProcess.getById<AgenticProcess>(processId);
   if (!proc) {
     console.warn('[agent-launcher] process not readable after use(); vibe persona not embedded', processId);
+    // Left queued, the auto prompt would run only after the human's first turn.
+    await new AgenticProcess({ id: processId }).drainQueue().catch(errLog);
     return null;
   }
   void proc.watch().catch((e) => console.warn('[agent-launcher] watch failed; live updates degraded', e));
   // A layer, not the persona: the agent's own system prompt is the identity.
   await embedVibeSubagent(proc, { asPersona: false });
+  await proc.drainQueue().catch(errLog);
   return proc;
 }
 
@@ -60,7 +68,7 @@ export function useAgentLauncher(): {
     async (agent: Agent, projectId?: string | null) => {
       setBusyId(agent.id);
       try {
-        const result = await agent.use(projectId ?? null);
+        const result = await agent.use(projectId ?? null, true);
         await prepareAgentSession(result.process_id);
         await navigation.openShellProcess(result.process_id, { viewMode: ViewMode.Vibe });
       } catch (e) {

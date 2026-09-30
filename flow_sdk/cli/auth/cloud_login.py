@@ -109,26 +109,50 @@ async def _login_local() -> dict[str, Any]:
     return {"status": "logged_in", "user": login_data.user}
 
 
+#: Which browser sign-in is the live one. Every attempt shares ONE "the callback arrived" event, and
+#: each starts its own timeout — so a second click (or the double-fire the dialog used to do) left
+#: the FIRST attempt's timer running, and when it expired it declared the NEWER attempt failed while
+#: the person was still signing in. Only the current attempt's timer may fail it; a cancel retires it.
+_window_attempt = 0
+
+
 async def _login_by_window(timeout: float) -> dict[str, Any]:
     # Race window: the cloud could redirect-back before this function returns,
     # so reset the waiter state BEFORE opening the browser.
     from flow_sdk.server import state
 
+    global _window_attempt
+    _window_attempt += 1
     state.login_received.clear()
     state.login_result = None
-    asyncio.create_task(_wait_or_timeout(timeout))
+    asyncio.create_task(_wait_or_timeout(timeout, _window_attempt))
 
     url = get_login_url(desktop_login_callback_url())
     await asyncio.to_thread(webbrowser.open, url)
     return {"status": "started", "url": url}
 
 
-async def _wait_or_timeout(timeout: float) -> None:
+async def _wait_or_timeout(timeout: float, attempt: int) -> None:
     from flow_sdk.server import state
 
     success = await asyncio.to_thread(state.login_received.wait, timeout)
-    if not success:
+    if not success and attempt == _window_attempt:
         await _broadcast_oauth_error(f"Login timed out after {int(timeout)}s — please try again")
+
+
+async def cancel_window_login() -> None:
+    """Give up on the browser sign-in in flight: its timer stays quiet and the status leaves
+    ``logging_in``, so the dialog stops waiting on a page the person closed or never saw.
+
+    A callback that still arrives afterwards (they finished in the browser after all) is honoured
+    as before — cancelling says "stop waiting", not "refuse this account".
+    """
+    from flow_sdk.cloud_client.auth_state import set_login_status
+    from flow_sdk.cloud_client.auth_status import HubLoginStatus
+
+    global _window_attempt
+    _window_attempt += 1
+    await set_login_status(HubLoginStatus.LOGGED_OUT)
 
 
 async def _post_cloud_login(email: str, password: str) -> LoginData:

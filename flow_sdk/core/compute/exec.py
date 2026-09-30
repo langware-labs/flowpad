@@ -24,25 +24,34 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 from flow_sdk.utils.process_tree import CAN_KILLPG, kill_process_tree
 
 logger = logging.getLogger(__name__)
 
+
 async def _spawn(command: str, *, cwd: str, env: dict, platform: str):
     if platform == "win32":
         return await asyncio.create_subprocess_exec(
-            "powershell", "-NoProfile", "-NonInteractive", "-Command", command,
-            cwd=cwd, env=env,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            "powershell",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            command,
+            cwd=cwd,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.DEVNULL,
         )
     return await asyncio.create_subprocess_shell(
         command,
-        cwd=cwd, env=env,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
         stdin=asyncio.subprocess.DEVNULL,
         # Own process GROUP so a timeout can kill the whole tree.
         start_new_session=CAN_KILLPG,
@@ -67,6 +76,25 @@ def flow_env() -> dict[str, str]:
     return env
 
 
+async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[], None]]) -> bytes:
+    """Read a stream to EOF, telling ``on_output`` each time bytes arrive.
+
+    A plain ``read()`` would answer only at the end, so nothing could say the command was still
+    producing output. An observer that raises is ignored: reporting must never fail the command.
+    """
+    chunks: list[bytes] = []
+    while True:
+        chunk = await stream.read(4096)
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+        if on_output is not None:
+            try:
+                on_output()
+            except Exception:  # noqa: BLE001
+                logger.debug("shell output observer failed", exc_info=True)
+
+
 async def run_shell(
     command: str,
     *,
@@ -75,8 +103,12 @@ async def run_shell(
     extra_env: Optional[dict] = None,
     platform: str = "",
     stop: Optional[asyncio.Event] = None,
+    on_output: Optional[Callable[[], None]] = None,
 ) -> CliResult:
     """Run one shell one-liner. Never raises — a failure IS the result.
+
+    ``on_output`` is called each time the command writes to stdout or stderr: the one real sign of
+    life a shell step gives, so a caller can tell a quiet install from a hung one.
 
     ``stdin`` is DEVNULL on purpose. An installer that decides to ask a
     question must fail on a closed stdin rather than block a headless run
@@ -104,7 +136,9 @@ async def run_shell(
     # away what it had already read, so a command that printed and then hung
     # came back with no output at all — exactly the output that says where it
     # hung. Reading to EOF under a shield keeps it; the kill closes the pipes.
-    finished = asyncio.ensure_future(asyncio.gather(proc.stdout.read(), proc.stderr.read(), proc.wait()))
+    finished = asyncio.ensure_future(
+        asyncio.gather(_drain(proc.stdout, on_output), _drain(proc.stderr, on_output), proc.wait())
+    )
     stopper = asyncio.ensure_future(stop.wait()) if stop is not None else None
     waiters = [finished, stopper] if stopper is not None else [finished]
     try:

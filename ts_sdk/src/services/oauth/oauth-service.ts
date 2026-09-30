@@ -629,8 +629,9 @@ export class OAuthService {
   /**
    * End a hub grant whose consent window the user left — the one decision the client owns.
    *
-   * "Closed" is read only where it can be trusted: the app's own Electron window
-   * reports it, and a web popup is re-checked when this tab regains focus. A timer
+   * "Closed" is read only where it can be trusted: a web popup is re-checked when
+   * this tab regains focus (the desktop's system-browser tab can't be seen, so it
+   * never cancels from here). A timer
    * on `popup.closed` would cancel people mid-consent — a COOP provider (claude.ai,
    * Google) severs the popup, which then reads closed while consent is on screen.
    * The backend's cancel answers `success` when the hub had already finished, and

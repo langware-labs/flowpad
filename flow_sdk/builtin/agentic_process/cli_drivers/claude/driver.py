@@ -104,6 +104,43 @@ _HOOK_CAPABILITIES: "HookCapabilities" = {
     HookScope.PROCESS: process_capability(response_events=_RESPONSE_EVENTS),
 }
 
+#: How much of the transcript's tail to read for the model: its last assistant entry is near the end,
+#: and a long session's whole file is not worth reading after every turn.
+_MODEL_TAIL_BYTES = 256 * 1024
+
+
+async def _fill_resolved_model_slug(process: "AgenticProcess", transcript: Path | None) -> None:
+    """``process.resolved_model_slug`` from Claude's own transcript, when nothing else named it.
+
+    An API-key or endpoint run is stamped before spawn (``build_worker_env``); a DEVICE login
+    (Claude's own subscription) never is, because Flowpad does not pick the model — Claude does.
+    The transcript's last assistant entry names the model that actually answered. Only an EMPTY
+    slug is filled: a pre-spawn stamp is the endpoint's own slug, which the transcript's bare model
+    name must not overwrite. ``<synthetic>`` entries are Claude's placeholders, not a model.
+    """
+    if process.resolved_model_slug or transcript is None:
+        return
+    try:
+        with transcript.open("rb") as fh:
+            fh.seek(0, 2)
+            fh.seek(max(0, fh.tell() - _MODEL_TAIL_BYTES))
+            lines = fh.read().decode("utf-8", errors="replace").splitlines()
+    except OSError:
+        return
+    for line in reversed(lines):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        model = (entry.get("message") or {}).get("model") if entry.get("type") == "assistant" else None
+        if model and model != "<synthetic>":
+            process.resolved_model_slug = str(model)
+            try:
+                await process.save()
+            except Exception:
+                logger.exception("ClaudeDriver: failed to record resolved_model_slug for %s", process.id)
+            return
+
 
 class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
@@ -431,6 +468,10 @@ class ClaudeDriver:
                 except Exception:
                     logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
 
+        async def _after_turn() -> None:
+            await _strip_materialised_fork()
+            await _fill_resolved_model_slug(process, self.transcript_path(process))
+
         # The three non-default arguments are claude's documented divergences;
         # each is explained once, on run_headless_turn's own docstring.
         return await run_headless_turn(
@@ -442,7 +483,7 @@ class ClaudeDriver:
             logger=logger,
             save_running_status=False,
             emit_failure_level=logging.ERROR,
-            on_turn_finally=_strip_materialised_fork,
+            on_turn_finally=_after_turn,
         )
 
     def stream_worker(self, process: "AgenticProcess") -> ClaudeCLIStreamWorker:

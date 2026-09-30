@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { v4 as uuid } from 'uuid';
-import { FlowData } from './flow-data';
+import { FlowData, FlowDataAttribute } from './flow-data';
 import { toplog } from '../services/toplog';
 import { FlowElementType, FlowElementTypes, isStreamableElementType } from './flow-element-types';
 import { FlowDataEvents, FlowEvents } from './flow-events';
@@ -514,6 +514,14 @@ export class FlowDataStream extends EventEmitter {
     } else {
       // Consolidate into current group
       const tracked = this._openGroups.get(this._currentGroupId!)!;
+      // A group only grows from the channel that opened it. Two live channels can
+      // carry the same message (a queue drain: observe-turn + the WS broadcast);
+      // the other channel's copy is a twin, not this row's next chunk (FLOWPAD-2042).
+      const owner = tracked.attributes[FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE];
+      const from = item.attributes[FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE];
+      if (owner && from && owner !== from) {
+        return null;
+      }
       if (this._isDuplicateChunk(item, this._currentGroupId!)) {
         return null;
       }
