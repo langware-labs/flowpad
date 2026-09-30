@@ -32,6 +32,27 @@ GCP = {
 }
 
 
+
+async def _the_one_question(project) -> "ask.Question":
+    """The setup's single open question — or a failure that says what the run did instead.
+
+    A run that asks nothing leaves only "got 0" behind, which cannot tell a run that is
+    still working from one that had nothing to do or one that raised. So a miss reports
+    the requirements still to do and the run's own live state.
+    """
+    for _ in range(200):
+        if open_questions():
+            break
+        await asyncio.sleep(0.01)
+    questions = open_questions()
+    if len(questions) != 1:
+        to_do = [r.name for r in await project_setup.collect_requirements(project) if project_setup.to_do(r)]
+        pytest.fail(
+            f"expected one open question, got {len(questions)}; "
+            f"requirements still to do: {to_do}; run: {project_setup.setup_run(str(project.id))}"
+        )
+    return questions[0]
+
 @pytest.fixture(autouse=True)
 def _no_sources(monkeypatch):
     async def none(_project):
@@ -142,11 +163,7 @@ async def test_with_ai_the_question_offers_ai_assist(project, templates, served_
 
     await project_setup.start_setup(project, ai=True)
     try:
-        for _ in range(200):
-            if open_questions():
-                break
-            await asyncio.sleep(0.01)
-        (question,) = open_questions()
+        question = await _the_one_question(project)
         assert question.to_payload()["assist_available"] is True
         assert question.setup_timeout == SETUP_TIMEOUT
     finally:
@@ -158,11 +175,7 @@ async def test_the_setup_asks_in_the_app_with_a_file_block_for_a_file_value(proj
 
     address = await project_setup.start_setup(project, ai=False)
     try:
-        for _ in range(200):
-            if open_questions():
-                break
-            await asyncio.sleep(0.01)
-        (question,) = open_questions()
+        question = await _the_one_question(project)
         payload = question.to_payload()
         assert payload["run"] == address == project_setup.setup_run_address(str(project.id)), (
             "the question names the run, so the setup screen can claim it"
