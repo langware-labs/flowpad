@@ -34,9 +34,9 @@ async def test_a_run_sends_only_its_own_prompt_and_queues_nothing(tmp_path, turn
         tmp_path / "proj", "greeter", auto_launch=True, auto_launch_prompt="Say hello", project_id=project.id
     )
 
-    answer = await agent.launch("summarise the inbox")
+    answer = await agent.launch("summarise the report")
 
     assert answer.ok, answer.detail
     [(process, prompt)] = turns
-    assert prompt == "summarise the inbox"
+    assert prompt == "summarise the report"
     assert process.queue.read()["entries"] == []
