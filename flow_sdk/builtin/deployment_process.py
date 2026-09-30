@@ -155,21 +155,20 @@ def command_of(deployment) -> str:
 
 
 async def _shell(deployment):
-    """The deployment's terminal — the one it had, else a new one — with a live PTY."""
-    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+    """The deployment's terminal (``Shell.for_key``) — the one it had, else a new one — with a live PTY."""
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
-    shell = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
-    if shell is None or shell.status == "closed":
-        node = await ComputeNode.get_local()
-        shell = Shell(
-            compute_node_id=str(node.id),
-            compute_node_uname=getattr(node, "uname", None),
-            name=f"{deployment.name or 'Deployment'} · process",
-            workdir=str(file_of(deployment).parent),
-        )
-        await shell.save()
-    await shell.start_pty(rows=30, cols=120, extra_env={DEPLOYMENT_ENV: str(deployment.id)})
+    key = f"deployment:{deployment.id}"
+    legacy = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
+    if legacy is not None and not legacy.key and legacy.status != "closed":
+        legacy.key = key  # a row from before keyed terminals: its terminal keeps serving it
+        await legacy.save()
+    shell = await Shell.for_key(
+        key,
+        name=f"{deployment.name or 'Deployment'} · process",
+        workdir=str(file_of(deployment).parent),
+        extra_env={DEPLOYMENT_ENV: str(deployment.id)},
+    )
     _pin(shell)
     return shell
 

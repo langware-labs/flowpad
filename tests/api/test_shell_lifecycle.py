@@ -276,7 +276,7 @@ async def test_create_shell_entity_fields(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_run_command(bootstrapped_client):
-    """POST /graph/shell/{id}/run executes command and returns output."""
+    """POST /graph/shell/{id}/run-detached executes command and returns output."""
     # Create entity
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",
@@ -288,7 +288,7 @@ async def test_run_command(bootstrapped_client):
 
     # Run a command
     response = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/run",
+        f"/api/v1/graph/shell/{entity_id}/run-detached",
         json={"command": "echo hello"},
     )
     assert response.status_code == 200, response.text
@@ -312,7 +312,7 @@ async def test_run_command_failure_keeps_the_raw_exit(bootstrapped_client):
     )
     entity_id = ApiResponse(**create_resp.json()).data["id"]
     response = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/run",
+        f"/api/v1/graph/shell/{entity_id}/run-detached",
         json={"command": "exit 7"},
     )
     assert response.status_code == 200, response.text

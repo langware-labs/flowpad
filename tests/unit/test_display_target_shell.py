@@ -65,38 +65,48 @@ def test_shell_target_builder_shape() -> None:
 
 
 def test_sentinel_grammar_is_pinned() -> None:
-    """MIRROR of `ui/src/terminal/run-in-terminal.ts`.
+    """The ONE sentinel: built here, read by the browser (``PtyConnection.onOsc``) by its OSC
+    number — invisible escapes around the command (start, then end with the exit code), in the
+    grammar of the terminal's shell."""
+    assert Shell.SENTINEL_PREFIX == "__flow_" and Shell.SENTINEL_OSC == 7770
+    start = "printf '\\033]7770;__flow_abc123;s\\007'"
+    end = "printf '\\033]7770;__flow_abc123;%d\\007'"
+    assert Shell.sentinel_command("ls -la", "__flow_abc123", shell="/bin/bash") == f"{start}; ls -la; {end} $?"
+    assert Shell.sentinel_command("ls -la", "__flow_abc123", shell="/bin/zsh") == f"{{ {start}; ls -la }} always {{ {end} $? }}"
+    assert Shell.sentinel_command("ls", "__flow_abc123", shell="/usr/local/bin/fish") == f"{start}; ls; {end} $status"
+    assert Shell.sentinel_command("dir", "__flow_abc123", shell="C:/x/pwsh.exe") == (
+        '[Console]::Write("$([char]27)]7770;__flow_abc123;s$([char]7)"); dir; '
+        '[Console]::Write("$([char]27)]7770;__flow_abc123;$LASTEXITCODE$([char]7)")'
+    )
 
-    The agent (python) and a guided journey (browser) both assert on a command
-    by appending this exact echo. If either side edits the format, the other
-    stops recognising the sentinel and every assertion hangs — so both pin the
-    literal shape.
-    """
-    assert Shell.SENTINEL_PREFIX == "__flow_"
-    assert Shell.sentinel_command("ls -la", "__flow_abc123") == 'ls -la; echo "__flow_abc123_$?"'
 
-
-def test_sentinel_body_drops_the_echoed_command() -> None:
-    """The terminal echoes what was typed, and what was typed ENDS in the
-    sentinel echo — so the first marker-bearing line is the echo, never output.
-    Without dropping it, every captured result is prefixed by the command that
-    produced it."""
-    from flow_sdk.builtin.shell import _sentinel_body
+def test_the_sentinel_a_shell_prints_is_read_with_its_exit_code() -> None:
+    """What a real shell prints for the posix form: the escape itself, never the typed text —
+    the echoed command line holds ``\\033`` as four characters and must not match."""
+    import subprocess
 
     marker = "__flow_abc123"
+    typed = Shell.sentinel_command("echo hi; (exit 3)", marker, shell="sh")
+    printed = subprocess.run(["sh", "-c", typed], capture_output=True, check=False).stdout
+    assert Shell.sentinel_exit(printed, marker) == (3, printed.rindex(b"\x1b]7770"))
+    assert Shell.sentinel_output(printed, marker) == b"hi\n"
+    assert Shell.sentinel_exit(typed.encode(), marker) is None, "the echoed command is not the sentinel"
+    assert Shell.sentinel_exit(printed, "__flow_other") is None
+
+
+def test_the_output_is_what_lies_between_the_markers_however_the_echo_wraps() -> None:
+    """The terminal echoes the typed command — wrapped at its width, redrawn by the line editor —
+    before the start marker. Only what comes after it, up to the end marker, is output."""
+    marker = "__flow_abc123"
     stream = (
-        f'shlom@Mac proj % ls -la; echo "{marker}_$?"\n'
-        "total 8\n"
-        "drwxr-xr-x  2 shlom  staff   64 Jul 27 20:31 .\n"
-        f"{marker}_0\n"
+        b"shlom@Mac proj % { printf '\\033]7770;__flow_abc123;s\\007'; ls } al\r\nways { printf '"
+        b"\\033]7770;__flow_abc123;%d\\007' $? }\r\n"
+        b"\x1b]7770;__flow_abc123;s\x07total 8\r\nfile.txt\r\n\x1b]7770;__flow_abc123;0\x07shlom@Mac proj % "
     )
-    end = stream.index(f"{marker}_0")
-
-    body = _sentinel_body(stream, marker, end)
-
-    assert "echo" not in body, "the echoed command must not be reported as output"
-    assert body.splitlines()[0] == "total 8"
-    assert body.splitlines()[-1].endswith(" .")
+    assert Shell.sentinel_output(stream, marker) == b"total 8\r\nfile.txt\r\n"
+    assert Shell.sentinel_exit(stream, marker)[0] == 0
+    running = stream[: stream.index(b"file.txt")]
+    assert Shell.sentinel_output(running, marker) == b"total 8\r\n" and Shell.sentinel_exit(running, marker) is None
 
 
 def test_strip_pty_keeps_line_structure() -> None:
@@ -121,11 +131,11 @@ def _fake_terminal(monkeypatch, *, output: str, exit_code: "int | None"):
         return stream["data"]
 
     async def write(self, text: str) -> None:
-        marker = text.rsplit('echo "', 1)[1].split("_$?")[0]
-        tail = f"{text}\n{output}"
+        marker = text.rsplit("7770;", 1)[1].split(";", 1)[0].encode()
+        tail = f"{text}\n".encode() + b"\x1b]7770;%s;s\x07" % marker + output.encode()
         if exit_code is not None:
-            tail += f"{marker}_{exit_code}\n"
-        stream["data"] += tail.encode()
+            tail += b"\x1b]7770;%s;%d\x07" % (marker, exit_code)
+        stream["data"] += tail
 
     monkeypatch.setattr(Shell, "read", read)
     monkeypatch.setattr(Shell, "write", write)
