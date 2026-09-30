@@ -416,10 +416,9 @@ msgstr "{0} is deployed"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} is indexed without a valid source path and cannot be opened."
 
-#. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
-msgid "{0} is issuing your LLM calls."
-msgstr "{0} is issuing your LLM calls."
+#~ msgid "{0} is issuing your LLM calls."
+#~ msgstr "{0} is issuing your LLM calls."
 
 #. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
@@ -3478,6 +3477,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -6414,8 +6414,8 @@ msgid "Debug logging"
 msgstr "Debug logging"
 
 #: src/components/account/settings-section.tsx
-msgid "DEBUG: remove 6 tools"
-msgstr "DEBUG: remove 6 tools"
+#~ msgid "DEBUG: remove 6 tools"
+#~ msgstr "DEBUG: remove 6 tools"
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -7425,7 +7425,6 @@ msgstr "done"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-setup/LlmSetupView.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -9063,6 +9062,10 @@ msgstr "Find machine"
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Finish signing in on the page that opened in your browser."
+msgstr "Finish signing in on the page that opened in your browser."
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Finish the setup above before deploying"
@@ -15129,6 +15132,10 @@ msgstr "Open the live session"
 msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Open the page again"
+msgstr "Open the page again"
+
 #: src/pages/entry/InstallLanding.tsx
 msgid "Open the project"
 msgstr "Open the project"
@@ -17304,8 +17311,8 @@ msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
 
 #: src/components/account/settings-section.tsx
-msgid "Removing & re-checking…"
-msgstr "Removing & re-checking…"
+#~ msgid "Removing & re-checking…"
+#~ msgstr "Removing & re-checking…"
 
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -17573,6 +17580,7 @@ msgid "Rescanning…"
 msgstr "Rescanning…"
 
 #: src/components/account/settings-section.tsx
+#: src/components/account/settings-section.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -17616,6 +17624,7 @@ msgstr "resets in {hours} h {m} m"
 msgid "resets in {mins} m"
 msgstr "resets in {mins} m"
 
+#: src/components/account/settings-section.tsx
 #: src/components/account/settings-section.tsx
 msgid "Resetting…"
 msgstr "Resetting…"

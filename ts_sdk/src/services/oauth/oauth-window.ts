@@ -3,17 +3,15 @@ export interface OAuthWindow {
   close(): void;
   get isOpen(): boolean;
   /**
-   * Called when the USER closed the window, where that is reliably observable (a
-   * window the app owns). Returns the unsubscribe. Optional: a web popup cannot
-   * say — a COOP provider severs it, and it then reads closed mid-consent.
+   * Called when the USER closed the window, where that is reliably observable.
+   * Returns the unsubscribe. Optional: a web popup cannot say — a COOP provider
+   * severs it, and it then reads closed mid-consent — and the system browser
+   * the desktop app hands consent to cannot be observed at all.
    */
   onClosed?(listener: () => void): () => void;
 }
 
 type ElectronAuthApi = {
-  openAuthWindow?: (url: string) => Promise<number | null>;
-  closeAuthWindow?: (id: number) => Promise<boolean>;
-  onAuthWindowClosed?: (listener: (id: number) => void) => () => void;
   openExternal?: (url: string) => Promise<boolean>;
 };
 
@@ -27,33 +25,14 @@ let _sharedPopup: Window | null = null;
 export class BrowserAuthWindow implements OAuthWindow {
   private _window: Window | null = null;
   private _openedExternal: boolean = false;
-  // Electron: a consent window the app OWNS, so a confirmed grant can close it.
-  private _ownedId: number | null = null;
-  private _ownedOpen: boolean = false;
-  private _offOwnedClosed: (() => void) | null = null;
-  private _closedListeners = new Set<() => void>();
 
   open(url: string) {
     const electron = electronApi();
 
-    if (electron?.openAuthWindow) {
-      this._ownedOpen = true;
-      this._offOwnedClosed =
-        electron.onAuthWindowClosed?.((id) => {
-          if (id !== this._ownedId) return;
-          this._ownedOpen = false;
-          this._releaseOwned();
-          this._closedListeners.forEach((listener) => listener());
-        }) ?? null;
-      void electron.openAuthWindow(url).then((id) => {
-        this._ownedId = id;
-        if (id === null) this._ownedOpen = false;
-      });
-      return;
-    }
-
-    // An Electron shell that predates owned auth windows: the system browser,
-    // which the app can neither observe nor close.
+    // Desktop: consent runs in the user's own browser, where their saved
+    // passwords and signed-in Google/GitHub sessions live. An app-owned window
+    // starts empty and makes them retype everything. The cost: the app can
+    // neither observe nor close that tab — the grant still lands via the backend.
     if (electron?.openExternal) {
       void electron.openExternal(url);
       this._openedExternal = true;
@@ -90,12 +69,6 @@ export class BrowserAuthWindow implements OAuthWindow {
   }
 
   close(): void {
-    if (this._ownedId !== null) {
-      void electronApi()?.closeAuthWindow?.(this._ownedId);
-      this._ownedId = null;
-    }
-    this._ownedOpen = false;
-    this._releaseOwned();
     if (this._window) {
       this._window.close();
       this._window = null;
@@ -105,25 +78,12 @@ export class BrowserAuthWindow implements OAuthWindow {
   }
 
   get isOpen(): boolean {
-    if (this._ownedOpen) {
-      return true;
-    }
     // When opened in external browser, we can't track if it's still open
     // Return true to indicate auth flow is in progress
     if (this._openedExternal) {
       return true;
     }
     return this._window !== null && !this._window.closed;
-  }
-
-  onClosed(listener: () => void): () => void {
-    this._closedListeners.add(listener);
-    return () => this._closedListeners.delete(listener);
-  }
-
-  private _releaseOwned(): void {
-    this._offOwnedClosed?.();
-    this._offOwnedClosed = null;
   }
 }
 export class MockAuthWindow implements OAuthWindow {

@@ -155,6 +155,11 @@ function legacyConnectionStatus(d: Partial<DesktopInfoSeed | CloudWsControlResul
   return null;
 }
 
+/** What a pending `login()` rejects with when the person cancelled it (`cancelLogin`). */
+export const LOGIN_CANCELLED = 'Sign-in cancelled';
+/** What a pending `login()` rejects with when a newer `login()` replaced it ("Open the page again"). */
+export const LOGIN_SUPERSEDED = 'superseded by new login attempt';
+
 class CloudManager extends EventEmitter {
   private _login: LoginSlot<HubLoginStatus> = makeLoginSlot<HubLoginStatus>('logged_out');
   private _currentUser: User | null = null;
@@ -511,7 +516,7 @@ class CloudManager extends EventEmitter {
       throw new Error('Login canceled');
     }
 
-    this._rejectPending('superseded by new login attempt');
+    this._rejectPending(LOGIN_SUPERSEDED);
 
     this._applyLoginStatus('logging_in', null, null);
 
@@ -540,6 +545,22 @@ class CloudManager extends EventEmitter {
     }
 
     return promise;
+  }
+
+  /**
+   * Stop waiting on a browser sign-in: the login page may never have shown, or the person closed it,
+   * and the only way out used to be the backend's 5-minute timeout. The pending `login()` rejects
+   * with {@link LOGIN_CANCELLED} (callers treat that as a choice, not an error) and the backend
+   * retires the attempt so its timer cannot later fail a new one.
+   */
+  async cancelLogin(): Promise<void> {
+    this._rejectPending(LOGIN_CANCELLED);
+    try {
+      await apiClient.post('/cloud/login/cancel');
+    } catch {
+      /* an older backend has no such route; the status still leaves "logging in" below */
+    }
+    this._applyLoginStatus('logged_out', null, null);
   }
 
   /**
