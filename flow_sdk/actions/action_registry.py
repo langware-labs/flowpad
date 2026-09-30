@@ -63,15 +63,29 @@ class ActionManager:
     def reset(self):
         self.function_registry = {}
 
-    def get_by_name(self, name: str, entity_type: Optional[str] = None) -> Action | None:
+    def get_by_name(self, name: str, entity_type: Optional[str] = None, method: Optional[str] = None) -> Action | None:
+        """The action ``name`` for ``entity_type``: its type-scoped registration
+        (``<type>.<name>``) when there is one, else the generic ``name``.
+
+        With ``method``, a type-scoped action that does not take it gives way to
+        a generic one that does — e.g. the POST instance ``agentic_process.open``
+        must not swallow a GET deep link meant for the generic GET ``open``.
+        Without ``method``, or when no generic action takes it, lookup is as before.
+        """
         name = name.lower()
+        generic = self.function_registry.get(name)
         if entity_type:
-            entity_action_key = f"{entity_type}.{name}"
-            if entity_action_key in self.function_registry:
-                return self.function_registry[entity_action_key]
-        if name in self.function_registry:
-            return self.function_registry[name]
-        return None
+            scoped = self.function_registry.get(f"{entity_type}.{name}")
+            if scoped is not None:
+                if (
+                    method is None
+                    or scoped.is_allowed_method(method)
+                    or generic is None
+                    or not generic.is_allowed_method(method)
+                ):
+                    return scoped
+                return generic
+        return generic
 
     def register(
         self,
