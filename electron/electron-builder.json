@@ -15,6 +15,7 @@
     "startup-error.js",
     "zip-writer.js",
     "support-bundle.js",
+    "update-restart.js",
     "semver.js",
     "uv-manager.js",
     "flow-rs-keychain.js",
