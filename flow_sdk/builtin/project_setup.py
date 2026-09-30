@@ -311,11 +311,64 @@ async def start_setup(project: "Project", *, ai: bool = True) -> str:
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
         task = asyncio.create_task(execute_wizard(
             SETUP_WIZARD_ID, wizard, "", trusted=True, subject_entity=f"project-{pid}", target=pid,
-            resolve_op=resolve, cwd=Path(mount) if mount else None,
+            resolve_op=resolve, cwd=Path(mount) if mount else None, shell=_setup_shell,
         ))
         task.add_done_callback(_log_failure)
         _RUNS[pid] = task
     return setup_run_address(pid)
+
+
+def _own_check(command: str) -> Optional[tuple[str, str, str]]:
+    """``(name, project_id, deployment_id)`` when ``command`` is this interpreter's
+    ``flow credentials check`` — the check a setup step runs before it asks — else None."""
+    import shlex  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    if argv[:5] != [sys.executable, "-m", "flow_sdk.cli.flow_cli", "credentials", "check"] or len(argv) < 6:
+        return None
+    options = argv[6:]
+    given = dict(zip(options[::2], options[1::2]))
+    return argv[5], given.get("--project", ""), given.get("--deployment", "")
+
+
+async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, extra_env: Optional[dict] = None,
+                       platform: str = "", stop: Optional[asyncio.Event] = None, on_output=None):
+    """The setup's shell: its own credential checks answered here, everything else run as usual.
+
+    Every step checks its goal before it asks, and ``flow credentials check`` as a process imports
+    the CLI and, with no backend to reach, opens the database — about a second before each question,
+    measured. The setup runs inside the instance the check would ask, so it asks the same
+    ``credentials_status`` directly: same row (the project's own before the user's), same verdict
+    (``connected`` is ready), same exit codes. Windows builds the command differently, so it keeps
+    the process."""
+    import json  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+    import time  # noqa: PLC0415
+
+    from flow_sdk.core.compute.exec import run_shell  # noqa: PLC0415
+
+    own = _own_check(command) if (platform or sys.platform) != "win32" else None
+    if own is None:
+        return await run_shell(command, timeout_seconds=timeout_seconds, workdir=workdir, extra_env=extra_env,
+                               platform=platform, stop=stop, on_output=on_output)
+    from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode  # noqa: PLC0415
+
+    started = time.monotonic()
+    name, project_id, deployment_id = own
+    project = await Project.get_one({"id": project_id}) if project_id else None
+    status = (await credentials_status(project, deployment_id)).model_dump(mode="json")
+    rows = [row for row in status.get("credentials") or [] if row.get("name") == name]
+    row = next((r for r in rows if r.get("scope") == "project"), rows[0] if rows else None)
+    ready = row is not None and row.get("state") == "connected"
+    said = json.dumps({"name": name, "declared": row is not None, "ready": ready})
+    return CliResult.of_process(command, 0 if ready else int(ExitCode.NOT_YET), said,
+                                duration_s=time.monotonic() - started)
 
 
 def _log_failure(task: "asyncio.Task") -> None:
