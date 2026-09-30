@@ -8,15 +8,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const AGENT_ID = '5f0e7c1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b';
 
-function sentBodies(): Record<string, unknown>[] {
-  return vi.mocked(dataManager.callAction).mock.calls.map(([info]) => (info as { bodyParameters?: Record<string, unknown> }).bodyParameters ?? {});
+/** Stub the SDK transport and return a reader for the bodies each call sent. */
+function recordCalls(): () => Record<string, unknown>[] {
+  const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({ process_id: 'p-1' } as never);
+  return () => spy.mock.calls.map(([info]) => (info as { bodyParameters?: Record<string, unknown> }).bodyParameters ?? {});
 }
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('Agent.use auto prompt opt-in', () => {
   it('sends no auto_prompt unless asked', async () => {
-    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ process_id: 'p-1' } as never);
+    const sentBodies = recordCalls();
     const agent = new Agent({ id: AGENT_ID, name: 'greeter' } as never);
 
     await agent.use('proj-1');
@@ -26,7 +28,7 @@ describe('Agent.use auto prompt opt-in', () => {
   });
 
   it('sends auto_prompt: true when the caller opts in', async () => {
-    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ process_id: 'p-1' } as never);
+    const sentBodies = recordCalls();
     const agent = new Agent({ id: AGENT_ID, name: 'greeter' } as never);
 
     await agent.use('proj-1', { autoPrompt: true });
