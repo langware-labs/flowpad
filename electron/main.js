@@ -188,7 +188,10 @@ function setupElectronAutoUpdater() {
       if (result.response === 0) {
         log.info('[electron-updater] user accepted, quitting to install');
         isQuitting = true;
-        autoUpdater.quitAndInstall();
+        // Silent + relaunch. The NSIS build is not one-click (oneClick:false), so the
+        // default quitAndInstall() opens the full Setup wizard and waits for the
+        // user — the app looks closed and never comes back.
+        autoUpdater.quitAndInstall(true, true);
       } else if (desktopPromptAbort.signal.aborted) {
         log.info(`[electron-updater] prompt for ${info.version} closed: superseded by a newer release`);
       } else {
