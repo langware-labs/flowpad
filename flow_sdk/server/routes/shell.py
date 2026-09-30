@@ -7,22 +7,14 @@ and gets the shell — the one it had, else a new one — with a live PTY.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from fastapi import APIRouter
 
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
-from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.core.shell_request import ShellBelongingToRequest
 
 router = APIRouter()
 
 
-class ShellBelongingToRequest(DataSpec):
-    """What the terminal belongs to, and where a new one starts."""
-
-    what: str
-    workdir: Optional[str] = None
-    name: Optional[str] = None
 
 
 @router.post("/api/v1/shell/belonging-to")
