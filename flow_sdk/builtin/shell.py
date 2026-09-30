@@ -819,10 +819,16 @@ class Shell(Entity):
         end = f"printf '\\033]{osc};{marker};%d\\007'"
         if name == "fish":
             return f"{start}; if test -e {cancel}; false; else; {command}; end; {end} $status"
-        guarded = f"if [ -e {cancel} ]; then (exit 130); else {command}; fi"
+        # A trailing ``&`` already ends the command; bash refuses the ``;`` after it.
+        ended = "" if command.rstrip().endswith("&") else ";"
+        guarded = f"if [ -e {cancel} ]; then (exit 130); else {command}{ended} fi"
         if name == "zsh":
             return f"{{ {start}; {guarded} }} always {{ {end} $? }}"
-        return f"{start}; {guarded}; {end} $?"
+        # bash abandons the rest of the line when the command dies of Ctrl-C (bash 4+), so the
+        # interrupted end marker is printed by a trap for the line's length. A trap with a handler,
+        # not an ignored signal: the command itself must still die of the Ctrl-C.
+        interrupted = shlex.quote(f"printf '\\033]{osc};{marker};130\\007'; trap - INT")
+        return f"trap {interrupted} INT; {start}; {guarded}; {end} $?; trap - INT"
 
     @classmethod
     def cancel_path(cls, marker: str) -> Path:
