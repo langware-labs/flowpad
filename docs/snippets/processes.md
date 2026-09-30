@@ -93,9 +93,7 @@ proc = await AgenticProcess.get_by_typeid(answer.executor)
   `PromptResult` whose `executor` names the process — with `wait`, the run's own
   verdict (an errored worker is `NOT_YET`); a remotely placed agent answers
   `NOT_APPLICABLE` rather than being silently run here.
-* `agent.use()` opens a visible session as the agent with no turn started;
-  `agent.use(auto_prompt=True)` queues the agent's auto prompt, which runs once
-  you start the queue (`submit()`) — before your own `prompt()`.
+* `agent.use()` opens a visible session as the agent with no first turn.
 
 `prompt()` returning is not the turn finishing. `launch(..., wait=True)` and
 `AgenticProcess.run` wait for the turn; beyond the reply, read the outcome the

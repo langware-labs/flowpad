@@ -38,7 +38,7 @@ put the boundary in the prompt (and `permission_mode`) instead.
 | `cli_options` | Vendor CLI keys passed through as-is | yes | all |
 | `intro` | Welcome text shown at the top of the chat — **the model never sees it** | yes | chat |
 | `auto_launch` | Start this agent when its project is opened (once per project, per machine) | yes | chat |
-| `auto_launch_prompt` | The **auto prompt**: the first user message of every new chat with the agent (tile, home page, auto-launch), sent on the user's behalf. Independent of `auto_launch`. SDK callers opt in with `use(auto_prompt=True)` and start it with `submit()` before their own prompt | yes | chat |
+| `auto_launch_prompt` | The first user message, sent on the user's behalf at auto-launch | yes | chat |
 | `chief_of_staff` | The agent delegates long work to `subagents` through the task ledger | yes | chat |
 | `subagents` | Names of the SubAgents a chief of staff may hand work to | yes | chat |
 | `input` | The shape the caller must pass in (a shape form, below) | yes | typed |

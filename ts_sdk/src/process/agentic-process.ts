@@ -1340,7 +1340,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   /** Kick a drain without adding a prompt — for a queue seeded server-side
-   *  (agent auto prompt) that must run only after the caller finished its
+   *  (agent auto-launch) that must run only after the caller finished its
    *  pre-turn setup (vibe persona embed). No-op when empty or busy. */
   async drainQueue(): Promise<void> {
     await this.post('drain-queue');

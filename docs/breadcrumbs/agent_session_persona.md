@@ -45,11 +45,10 @@ it through the same UI function:
 
 | step | where |
 | --- | --- |
-| Auto-launch: `POST /api/v1/agents/auto-launch` | `flow_sdk/server/routes/agents.py:35` → `Agent.auto_launch_for` (`flow_sdk/builtin/agent.py:540`) → `launched.use(..., auto_prompt=True)` (`:581`) |
-| Use button: `POST /agent/<id>/use` | `Agent.use_action` (`flow_sdk/builtin/agent.py:1329`), body `auto_prompt: true` from the UI openers |
+| Auto-launch: `POST /api/v1/agents/auto-launch` | `flow_sdk/server/routes/agents.py:34` → `Agent.auto_launch_for` (`flow_sdk/builtin/agent.py:449`) → `winner.use(...)` (`:484`) |
+| Use button: `POST /agent/<id>/use` | `Agent.use_action` (`flow_sdk/builtin/agent.py:1101`) |
 | Both → `Deployment.use()` | writes the agent's `system_prompt` into `context_data.instructions` (`flow_sdk/builtin/deployment.py:584`), sets `launched_by_agent = agent.name` (`:587`), appends the output-folder line (`:774`). `process_persona_path` is left unset. |
-| Auto prompt | `Agent.use(auto_prompt=True)` (`flow_sdk/builtin/agent.py:492`) queues `auto_launch_prompt` straight into the process queue — no drain — on a deployment local to the calling tier (FLOWPAD-2180) |
-| UI prepare, every opener | `prepareAgentSession` (`ui/src/components/agents/use-agent-launcher.ts:42`), called by `useAgentLauncher`, `agentAutoLaunchRedirect` (`ui/src/agents/agent-auto-launch-redirect.ts:85`), the project home page (new chat) and the deployed-agent panel; after the embed it kicks `drain-queue`, which runs the auto prompt as turn 1 |
+| UI prepare, both paths | `prepareAgentSession` (`ui/src/components/agents/use-agent-launcher.ts:39`), called by `useAgentLauncher` and by `agentAutoLaunchRedirect` (`ui/src/agents/agent-auto-launch-redirect.ts:61`) |
 | Vibe embed | `embedVibeSubagent(proc, { asPersona })` (`ui/src/pages/flow-page/use-start-vibe-session.ts:69`) → `proc.loadEmbeddedSubagent(vibeRef, asPersona)` (`:77`) → `ts_sdk/src/process/agentic-process.ts:2273` posts `set_ap_persona` |
 | Persona write | `ProcessAssets.load_embedded_subagent_action` writes `process_persona_path = ".claude/agents/vibe.md"` only `if set_ap_persona` (`flow_sdk/builtin/agentic_process/process_assets.py:84`) |
 | Render | `_prepare_system_instruction_assets` (`process_assets.py:335`) joins `resolve_system_instructions()` (`agentic_process.py:6537`, i.e. `context_data.instructions` first) with `_render_agents_instruction_block(agents, process_persona_path)` (`process_assets.py:349`, `:295`). A declared persona renders `_render_persona_section` (`:219`): `# You are the '<name>' agent … for every reply`. |
@@ -62,7 +61,7 @@ comesh **after** it. The worker gets the file trough
 
 * **In an agent session the agent's `system_prompt` is the identity.**
   `prepareAgentSession` calls `embedVibeSubagent(proc, { asPersona: false })`
-  (`use-agent-launcher.ts:52`). `process_persona_path` stays unset, and CLAUDE.md
+  (`use-agent-launcher.ts:47`). `process_persona_path` stays unset, and CLAUDE.md
   renders vibe and the other layers under `# Embedded agent specs`, with no
   `# You are the '…' agent` directive.
 * **Plain vibe sessions are unchanged.** `asPersona` defaults to `true`; every
@@ -70,10 +69,6 @@ comesh **after** it. The worker gets the file trough
   declares vibe as the persona.
 * **Use and auto-launch cannot diverge.** Both go through `prepareAgentSession`;
   a fix for one is a fix for both. Don't add a second embed call on either path.
-* **The auto prompt starts after the embed, from one place.** `Agent.use` only
-  queues it; `prepareAgentSession` kicks the queue after `embedVibeSubagent`, so
-  turn 1 always renders CLAUDE.md with the vibe layer. Don't add a drain on an
-  opener path, and don't queue it through the `enqueue` action (it drains).
 
 ## Failure modes
 

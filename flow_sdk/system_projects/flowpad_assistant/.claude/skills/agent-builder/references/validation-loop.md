@@ -56,6 +56,5 @@ Run at least two rounds. After each change, re-run every turn of the affected
 response kind, not only the one that failed — a tightened rule often breaks its
 neighbour. Stop when a full round comes back "all good".
 
-A prompt edit applies to the **next** session. A new chat from the agent's tile starts
-with the auto prompt too, so re-test there; reset auto-launch only to re-test the
-launch itself (`references/screens.md`).
+A prompt edit applies to the **next** session. When the chat was auto-launched, reset
+auto-launch before re-testing (`references/screens.md`).
