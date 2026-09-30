@@ -512,7 +512,7 @@ class Agent(Entity):
         """
         target = deployment or await self.local_deployment()
         process = await target.use(project_id=project_id, owner=owner)
-        prompt = (self.auto_launch_prompt or "").strip()
+        prompt = self.auto_prompt_text
         if auto_prompt and prompt and target.is_local:
             # Straight into the queue: the ``enqueue`` action would also start a
             # drain, running turn 1 before the caller embeds its layers.
@@ -583,7 +583,7 @@ class Agent(Entity):
                 project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
             )
 
-        prompt_queued = bool((launched.auto_launch_prompt or "").strip())
+        prompt_queued = bool(launched.auto_prompt_text)
         return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=prompt_queued)
 
     def process_messages(self):
@@ -1382,6 +1382,11 @@ class Agent(Entity):
         )
 
     # ── projection into the launch bundle ─────────────────────────────────
+
+    @property
+    def auto_prompt_text(self) -> str:
+        """The auto prompt as ``use(auto_prompt=True)`` queues it; empty = none."""
+        return (self.auto_launch_prompt or "").strip()
 
     @property
     def display_name(self) -> str:
