@@ -323,6 +323,104 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     eq(await m._pythonPinForUpgrade(), bundled, 'pin: release without requires_python → bundled pin');
   }
 
+  // ── every install path pins Python (installLatest / reinstall too) ──────────
+  {
+    const seen = [];
+    const mk = () => {
+      const m = new UvManager(silentLog);
+      m._uvToolInstallForce = async (args) => { seen.push(args); };
+      m._ensureShimOnPath = async () => {};
+      m._resolveFlowBin = async () => null;
+      m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: '>=99.1' });
+      return m;
+    };
+    await mk().installLatest();
+    eq(seen[0], ['tool', 'install', 'flowpad', '--python', '99.1', '--force'],
+      'installLatest: pins the release floor when it is above the bundled pin');
+    await mk().reinstall();
+    eq(seen[1], ['tool', 'install', 'flowpad', '--python', '99.1', '--reinstall', '--force'],
+      'reinstall: pins the release floor when it is above the bundled pin');
+  }
+
+  // ── interrupted install: marker, abort, repair ──────────────────────────────
+  {
+    const fs = require('fs'); const os = require('os'); const path = require('path');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'uvm-marker-'));
+    const marker = path.join(dir, 'desktop-install-in-progress.json');
+    const mk = () => {
+      const m = new UvManager(silentLog, { stateDir: dir });
+      m._drainVenvProcesses = async () => {};
+      return m;
+    };
+    try {
+      // Marker exists WHILE uv runs, is gone after success.
+      let during = null;
+      let m = mk();
+      m._runStreaming = async () => { during = fs.existsSync(marker); return { stdout: '', stderr: '' }; };
+      eq(m.isInstalling(), false, 'isInstalling: false before an install');
+      await m._uvToolInstallForce(['tool', 'install', 'flowpad']);
+      eq(during, true, 'marker: written before uv starts');
+      eq(fs.existsSync(marker), false, 'marker: cleared after a successful install');
+      eq(m.isInstalling(), false, 'isInstalling: false after an install');
+
+      // A clean uv failure also clears it (uv reports its own state).
+      m = mk();
+      m._runStreaming = async () => { throw new Error('No solution found when resolving dependencies'); };
+      await m._uvToolInstallForce(['tool', 'install', 'flowpad']).then(
+        () => { throw new Error('should have thrown'); },
+        (e) => eq(/No solution/.test(e.message), true, 'a clean uv failure still propagates'),
+      );
+      eq(fs.existsSync(marker), false, 'marker: cleared after a clean uv failure');
+
+      // Abort mid-install: child signalled, marker KEPT, hadInterruptedInstall true.
+      m = mk();
+      let killed = null;
+      const child = { pid: 4242, exitCode: null, kill: (sig) => { killed = sig; } };
+      let release;
+      m._runStreaming = (_c, _a, opts) => new Promise((resolve, reject) => {
+        opts.onChild(child);
+        release = () => reject(new Error('killed'));
+      });
+      const running = m._uvToolInstallForce(['tool', 'install', 'flowpad']).catch(() => {});
+      await new Promise((r) => setImmediate(r));
+      eq(m.isInstalling(), true, 'isInstalling: true while uv runs');
+      eq(m.abortInstall(), true, 'abortInstall: reports a running install');
+      if (process.platform !== 'win32') eq(killed, 'SIGTERM', 'abortInstall: signals the child');
+      release();
+      await running;
+      eq(fs.existsSync(marker), true, 'marker: kept after an aborted install');
+      eq(m.hadInterruptedInstall(), true, 'hadInterruptedInstall: true after an abort');
+      eq(m.abortInstall(), false, 'abortInstall: nothing running afterwards');
+
+      // repairIfInterrupted: reinstalls once and clears the marker.
+      let reinstalls = 0;
+      m = mk();
+      m.ensureUv = async () => {};
+      m.reinstall = async () => { reinstalls++; };
+      eq(await m.repairIfInterrupted(), true, 'repairIfInterrupted: repairs when the marker exists');
+      eq(reinstalls, 1, 'repairIfInterrupted: reinstall ran once');
+
+      // A failed repair keeps the marker for the next launch.
+      m.reinstall = async () => { throw new Error('offline'); };
+      fs.writeFileSync(marker, '{}');
+      await m.repairIfInterrupted().then(() => { throw new Error('should have thrown'); }, () => {});
+      eq(m.hadInterruptedInstall(), true, 'repairIfInterrupted: failed repair keeps the marker');
+
+      // No marker → no-op.
+      fs.rmSync(marker, { force: true });
+      reinstalls = 0;
+      m.reinstall = async () => { reinstalls++; };
+      eq(await m.repairIfInterrupted(), false, 'repairIfInterrupted: no marker → no-op');
+      eq(reinstalls, 0, 'repairIfInterrupted: no reinstall without a marker');
+
+      // stateDir null → marker disabled (the default; tests and tools stay out of $HOME).
+      const off = new UvManager(silentLog);
+      eq(off.hadInterruptedInstall(), false, 'marker disabled without a stateDir');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   // ── _uvToolInstallForce compiles bytecode in the install, not on first boot ─
   {
     const m = new UvManager(silentLog);
