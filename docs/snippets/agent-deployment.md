@@ -86,11 +86,13 @@ A disabled agent answers `REFUSED`, a turn already in flight `NOT_YET` with
 `busy`.
 
 `use` opens the interactive shape — visible, `process_type=chat`, stream-json,
-no first turn — keyed to the agent through `target_typeid_str`:
+no turn started — keyed to the agent through `target_typeid_str`:
 
 ```python
 session = await agent.use()                    # acts in the agent's own project
 session = await agent.use(project_id=OTHER_PROJECT)   # acts in another project's checkout
+session = await agent.use(auto_prompt=True)    # queue the agent's auto prompt as turn 1 ...
+await session.submit()                         # ... and start it before your own prompt
 ```
 
 The primitive under both is the placement's own verb — not saved, not started:
