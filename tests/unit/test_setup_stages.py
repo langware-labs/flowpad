@@ -3,6 +3,7 @@
 Nothing is stored: a stage is read off its wizard's last run FOR that thing. So the record a run
 writes is the only record, and a second target of the same wizard is a different answer.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -34,10 +35,10 @@ def wizards(tmp_path, monkeypatch):
     monkeypatch.setattr(wizard_state, "run_dir", lambda key: tmp_path / "runs" / key)
     rows = {"wa-test": _Row("wa-test"), "wa-prod": _Row("wa-prod")}
 
-    async def get_one(query):
-        return rows.get(query["name"])
+    async def by_name(name):
+        return rows.get(name)
 
-    monkeypatch.setattr(wizard_module.Wizard, "get_one", staticmethod(get_one))
+    monkeypatch.setattr(wizard_module.Wizard, "by_name", staticmethod(by_name))
     return rows
 
 
@@ -74,9 +75,15 @@ async def test_a_stage_naming_no_installed_wizard_says_so(wizards):
 
 def test_a_stage_is_declared_once():
     """Both declaring specs share the rule: a credential can be parsed whole, so it proves the wiring."""
-    body = {"name": "whatsapp", "schema": 2, "setup": "x", "setup_wizards": [
-        {"stage": "test", "wizard": "a"}, {"stage": "test", "wizard": "b"},
-    ]}
+    body = {
+        "name": "whatsapp",
+        "schema": 2,
+        "setup": "x",
+        "setup_wizards": [
+            {"stage": "test", "wizard": "a"},
+            {"stage": "test", "wizard": "b"},
+        ],
+    }
     with pytest.raises(ValidationError, match="declared twice"):
         CredentialSpec.model_validate(body)
     assert "setup_wizards" in DataDriverSpec.model_fields

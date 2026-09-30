@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   FlowData,
+  FlowDataAttribute,
   FlowDataEvents,
   FlowDataType,
   FlowElementTypes,
@@ -9,6 +10,9 @@ import {
   FlowStreamProcessor,
 } from '@sdk';
 import { collectAllChunks, createMockStreamer, verifyChunksReconstruct } from './mock_flow_streamer_test_utils';
+
+/** Every element the stream processor builds is stamped with its client channel (FLOWPAD-2042). */
+const STREAM_STAMP = { [FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE]: 'FlowStreamProcessor' };
 
 // Initialize pseudo-random seed at module level
 const SEED = 42;
@@ -924,7 +928,7 @@ describe('XML Stream Processor', () => {
       expect(elements[0].content).toBe('some  tex t here');
 
       // Verify attributes parsing worked despite being broken across chunks
-      expect(elements[0].attributes).toEqual({ id: '123', 'data-type': 'string' });
+      expect(elements[0].attributes).toEqual({ id: '123', 'data-type': 'string', ...STREAM_STAMP });
 
       // Verify stream events occurred
       expect(streamEvents).toHaveLength(1);
@@ -991,7 +995,7 @@ describe('XML Stream Processor', () => {
         expect(elements[0].elementType).toBe(testCase.expectedType);
 
         // Verify attributes parsing
-        expect(elements[0].attributes).toEqual(testCase.expectedAttrs);
+        expect(elements[0].attributes).toEqual({ ...testCase.expectedAttrs, ...STREAM_STAMP });
 
         console.log(`Test case ${index + 1} (${testCase.description}): PASSED`);
       });

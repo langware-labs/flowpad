@@ -232,7 +232,7 @@ async def _resolve_wizard(name: str):
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
     from flow_sdk.core.wizard.runner import Resolved  # noqa: PLC0415
 
-    row = await Wizard.get_one({"name": name})
+    row = await Wizard.by_name(name)
     if row is None:
         return None
     spec = row.spec()

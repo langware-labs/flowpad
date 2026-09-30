@@ -46,6 +46,10 @@ export enum FlowDataAttribute {
   /** Marks a client-minted placeholder row that an authoritative source will
    *  replace — see `FlowData.isOptimisticEcho`. */
   OPTIMISTIC_ECHO = 'optimistic-echo',
+  /** The client channel that delivered this item, stamped at the seam that built
+   *  it — a literal of that class's name, since minified builds rename classes.
+   *  A raw group only grows from the channel that opened it (FLOWPAD-2042). */
+  FRONTEND_EV_SOURCE_TYPE = 'frontend-ev-source-type',
 }
 
 /**

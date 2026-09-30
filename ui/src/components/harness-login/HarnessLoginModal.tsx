@@ -10,6 +10,8 @@ import {
   copyToClipboard,
   HARNESS_CAPABILITY_KINDS,
   LMApiProvider,
+  LOGIN_CANCELLED,
+  LOGIN_SUPERSEDED,
   lmKeysService,
   TypeId,
   WorkerModelTier,
@@ -445,6 +447,8 @@ function SetupRow({
   onMakeDefault,
   emphasis,
   testId,
+  rowOpens = true,
+  below,
 }: {
   mark: React.ReactNode;
   name: React.ReactNode;
@@ -459,8 +463,20 @@ function SetupRow({
   onMakeDefault?: () => void;
   emphasis?: boolean;
   testId: string;
+  /** Whether a click anywhere on the row does what the button does. Off where the button's action
+   *  is not a harmless "open": FlowPad's starts a browser sign-in, and a stray click on its name
+   *  started one the person never asked for. */
+  rowOpens?: boolean;
+  /** A line under the row, inside its border — what the row is waiting on, and how to get out. */
+  below?: React.ReactNode;
 }) {
   const { t } = useLingui();
+  // The buttons below stop at themselves: the row's own click would otherwise run `onOpen` a SECOND
+  // time for the same click — harmless for a panel that opens, but for FlowPad it started two sign-ins.
+  const own = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onOpen();
+  };
   return (
     // The WHOLE row opens the panel, not just the button on its end. That was the affordance
     // before this became a multi-control row, and losing it is a silent downgrade: a list of
@@ -470,68 +486,71 @@ function SetupRow({
     // which is a real button and a real tab stop.
     <div
       data-testid={testId}
-      onClick={onOpen}
-      className={`flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors ${
+      onClick={rowOpens ? onOpen : undefined}
+      className={`flex w-full flex-col rounded-xl border transition-colors ${rowOpens ? 'cursor-pointer' : ''} ${
         emphasis
-          ? 'border-primary/40 bg-primary/5 hover:bg-primary/10'
+          ? `border-primary/40 bg-primary/5 ${rowOpens ? 'hover:bg-primary/10' : ''}`
           : 'border-border/70 bg-card/40 hover:bg-accent/40'
       }`}
     >
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/70">
-        {mark}
-      </div>
+      <div className="flex w-full items-center gap-3 p-3">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/70">
+          {mark}
+        </div>
 
-      <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{name}</span>
+        <span className="min-w-0 flex-1 truncate text-[15px] font-medium">{name}</span>
 
-      {/* The default tick, in place of the old "Default assistant" dropdown: the mark sits ON
+        {/* The default tick, in place of the old "Default assistant" dropdown: the mark sits ON
           the thing it describes, and clicking it is how you move it. A dropdown listing the
           same four names the list already shows was a second copy of the list. */}
-      {onMakeDefault && (
+        {onMakeDefault && (
+          <button
+            type="button"
+            // Stops at the tick: the row opens the panel, but making something the default is a
+            // different action and must not also navigate away from the list.
+            onClick={(e) => {
+              e.stopPropagation();
+              onMakeDefault();
+            }}
+            title={isDefault ? t`This is your default assistant` : t`Make this the default assistant`}
+            aria-pressed={isDefault}
+            data-testid={`${testId}-default`}
+            className={`shrink-0 rounded-md p-1 transition-colors ${
+              isDefault ? 'text-emerald-500' : 'text-muted-foreground/25 hover:text-muted-foreground'
+            }`}
+          >
+            <Check className="h-4 w-4" />
+          </button>
+        )}
+
+        {/* Status and button both open the same panel — see the component docstring. */}
         <button
           type="button"
-          // Stops at the tick: the row opens the panel, but making something the default is a
-          // different action and must not also navigate away from the list.
-          onClick={(e) => {
-            e.stopPropagation();
-            onMakeDefault();
-          }}
-          title={isDefault ? t`This is your default assistant` : t`Make this the default assistant`}
-          aria-pressed={isDefault}
-          data-testid={`${testId}-default`}
-          className={`shrink-0 rounded-md p-1 transition-colors ${
-            isDefault ? 'text-emerald-500' : 'text-muted-foreground/25 hover:text-muted-foreground'
-          }`}
+          onClick={rowOpens ? own : (e) => e.stopPropagation()}
+          data-testid={`${testId}-status`}
+          // Not a tab stop: it goes exactly where the button beside it goes, so keyboard users
+          // would hit the same destination twice per row. It also made Radix's open-autofocus
+          // land on the FIRST row's status, drawing a ring around the words "Not signed in" that
+          // read as a validation error on a dialog that had not been touched yet.
+          tabIndex={-1}
+          className="flex shrink-0 items-center gap-1.5 text-xs hover:underline"
         >
-          <Check className="h-4 w-4" />
+          <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+          <span className={status.tone}>{status.label}</span>
         </button>
-      )}
 
-      {/* Status and button both open the same panel — see the component docstring. */}
-      <button
-        type="button"
-        onClick={onOpen}
-        data-testid={`${testId}-status`}
-        // Not a tab stop: it goes exactly where the button beside it goes, so keyboard users
-        // would hit the same destination twice per row. It also made Radix's open-autofocus
-        // land on the FIRST row's status, drawing a ring around the words "Not signed in" that
-        // read as a validation error on a dialog that had not been touched yet.
-        tabIndex={-1}
-        className="flex shrink-0 items-center gap-1.5 text-xs hover:underline"
-      >
-        <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-        <span className={status.tone}>{status.label}</span>
-      </button>
-
-      <Button
-        size="sm"
-        variant={emphasis ? 'default' : 'outline'}
-        className="h-8 w-[92px] shrink-0"
-        disabled={busy}
-        onClick={onOpen}
-        data-testid={`${testId}-action`}
-      >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : action}
-      </Button>
+        <Button
+          size="sm"
+          variant={emphasis ? 'default' : 'outline'}
+          className="h-8 w-[92px] shrink-0"
+          disabled={busy}
+          onClick={own}
+          data-testid={`${testId}-action`}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : action}
+        </Button>
+      </div>
+      {below}
     </div>
   );
 }
@@ -648,14 +667,51 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
     try {
       await cloudManager.login();
     } catch (error) {
-      notify.error({
-        title: t`Could not sign in to FlowPad`,
-        message: errorMessage(error, t`The login did not complete.`),
-      });
+      // Cancel, or "Open the page again" starting a newer attempt: choices, not failures to report.
+      const quiet = error instanceof Error && (error.message === LOGIN_CANCELLED || error.message === LOGIN_SUPERSEDED);
+      if (!quiet) {
+        notify.error({
+          title: t`Could not sign in to FlowPad`,
+          message: errorMessage(error, t`The login did not complete.`),
+        });
+      }
     } finally {
       setBusy(false);
     }
   };
+
+  // A browser sign-in waits for the login page with nothing on this screen moving, and the page may
+  // never have shown (or was closed). Say where the next step is, and give a way out of the wait.
+  const waiting = signingIn ? (
+    <div
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-primary/20 px-3 py-2 text-xs"
+      data-testid="harness-row-flowpad-waiting"
+    >
+      <span className="text-muted-foreground">
+        <Trans>Finish signing in on the page that opened in your browser.</Trans>
+      </span>
+      <span className="ml-auto flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2"
+          onClick={() => void cloudManager.login()}
+          data-testid="harness-row-flowpad-reopen"
+        >
+          <Trans>Open the page again</Trans>
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2"
+          onClick={() => void cloudManager.cancelLogin()}
+          data-testid="harness-row-flowpad-cancel"
+        >
+          <Trans>Cancel</Trans>
+        </Button>
+      </span>
+    </div>
+  ) : null;
 
   const account = [cloudUrl, typeof login.user?.email === 'string' ? login.user.email : null]
     .filter(Boolean)
@@ -671,6 +727,8 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
       status={statusTextFor(signingIn ? 'busy' : loggedIn ? 'signedin' : 'signedout')}
       action={loggedIn ? <Trans>Signed in</Trans> : <Trans>Sign in</Trans>}
       onOpen={() => void connect()}
+      rowOpens={false}
+      below={waiting}
     />
   );
 }
@@ -955,13 +1013,13 @@ export function HarnessDetail({
   // and the "harness is required" dialog offer — one source, three surfaces.
   const installCommand = capability?.install_command ?? null;
 
-  // Types the command at a prompt and stops; the user presses Enter. Dismisses
+  // Types the command at a prompt and submits it. Dismisses
   // the modal on the way out so the terminal it just opened is what they see —
   // leaving a dialog over the thing it told them to look at reads as a bug.
   const tryAutoInstall = useCallback(() => {
     if (!installCommand) return;
     onDone();
-    void navigation.openNewShell({ prefillCommand: installCommand, viewMode: ViewMode.Advanced });
+    void navigation.openNewShell({ startCommand: installCommand, viewMode: ViewMode.Advanced });
   }, [installCommand, navigation, onDone]);
 
   return (

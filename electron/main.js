@@ -969,7 +969,8 @@ async function installAndStartBackend() {
 
   // Did the user just upgrade to a new desktop build? Logged for diagnostics
   // only — the pre-start update prompt below decides (and asks) whether to
-  // bring the flowpad backend up to match; we don't silently auto-upgrade.
+  // bring the flowpad backend up to match: right after a desktop update the
+  // engine is upgraded to the latest PyPI release without a prompt.
   const lastDesktopVersion = readLastDesktopVersion();
   const desktopUpgraded =
     app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
@@ -1017,9 +1018,19 @@ async function installAndStartBackend() {
             // background and prompts to restart once ready.
             const loadingPath = path.join(__dirname, 'loading.html');
             await mainWindow.loadFile(loadingPath);
-            await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
-            activeBin = uvManager.getInstalledFlowBin() || flowBin;
-            backendJustUpgraded = true;
+            try {
+              await uvManager.upgrade({ onProgress: installProgress('Upgrading Flowpad') });
+              activeBin = uvManager.getInstalledFlowBin() || flowBin;
+              backendJustUpgraded = true;
+            } catch (upgradeErr) {
+              // The engine upgrade can fail on an older desktop (e.g. the
+              // release needs a newer Python than this build knows). Don't
+              // abort startup: keep the current engine and still fetch the
+              // desktop update — the newer desktop upgrades the engine on its
+              // next launch.
+              log.warn(`[uv] engine upgrade failed, continuing with the desktop update: ${upgradeErr.message}`);
+              uvManager.deferPackageVersion(backendStatus.latestVersion);
+            }
             downloadDesktopUpdateInBackground({ version: desktopLatest });
           } else {
             // Later: still pre-download the desktop in the background so the
@@ -1046,6 +1057,9 @@ async function installAndStartBackend() {
           backendUrl: BACKEND_URL,
           cloudUrl: FLOWPAD_CLOUD_URL,
           beforeBackendStart: true,
+          // The desktop was just updated (restarted into the new build): bring
+          // the engine to the latest PyPI release without asking again.
+          autoInstall: desktopUpgraded,
         });
         if (upgradedPreStart) {
           activeBin = uvManager.getInstalledFlowBin() || activeBin;
@@ -1663,38 +1677,3 @@ ipcMain.handle('open-external', async (_, url) => {
   return false;
 });
 
-// OAuth consent in a window the app OWNS. A grant used to open in the system
-// browser (open-external), which the app can neither observe nor close — so every
-// connection ended on a stray "connected" tab. Owning the window lets a confirmed
-// grant close it, and lets the renderer hear that the user closed it.
-const authWindows = new Map();
-let nextAuthWindowId = 1;
-
-ipcMain.handle('open-auth-window', async (event, url) => {
-  if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
-    log.warn(`[auth-window] blocked non-http URL: ${url}`);
-    return null;
-  }
-  const id = nextAuthWindowId++;
-  const win = new BrowserWindow({
-    parent: BrowserWindow.fromWebContents(event.sender) || undefined,
-    width: 520,
-    height: 760,
-    autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  authWindows.set(id, win);
-  win.on('closed', () => {
-    authWindows.delete(id);
-    if (!event.sender.isDestroyed()) event.sender.send('auth-window-closed', id);
-  });
-  log.info(`[auth-window] ${id} opened`);
-  win.loadURL(url);
-  return id;
-});
-
-ipcMain.handle('close-auth-window', async (_, id) => {
-  const win = authWindows.get(id);
-  if (win && !win.isDestroyed()) win.close();
-  return true;
-});

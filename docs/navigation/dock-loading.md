@@ -69,10 +69,15 @@ Nothing after it → the checkpoint IS the screen, no replay at all.
   frame; nothing else branches on URL shape to pick a layout.
 - **I6 — a runtime lives as long as its tab.** `TerminalPool`, mounted once in
   `RootLayout`, renders every terminal panel ever shown through a portal into a
-  container it owns; `TabbedTerminal` slots adopt the container they show. A
-  change of layout, view mode or project moves a DOM node — it never unmounts a
-  terminal, so nothing re-opens, re-streams or replays. A panel goes when its
-  tab closes.
+  container it owns. All containers share one stack, full size, that sits in the
+  `TabbedTerminal` slot shown last; a tab switch only flips which panel is visible
+  and moves nothing, so no panel is re-laid-out and every scroll offset stays. A
+  change of layout moves the stack whole, once (to the new slot, or to a
+  full-size parking when no slot is on screen), and the pool puts scroll offsets
+  back — it never unmounts a terminal, so nothing re-opens, re-streams or
+  replays. A panel goes when its tab closes. (Moving single panels into a 0×0
+  parking re-laid-out a long chat at zero width on every switch away: 7–15 s on
+  prod 0.2.179, FLOWPAD-2193.)
 
 ## Where each invariant is tested
 
@@ -81,9 +86,9 @@ Nothing after it → the checkpoint IS the screen, no replay at all.
 | I1, I2, I4 | `ui/tests/unit/dock-loader/dock-loader-matrix.test.ts` — the real `loadAgentApp` over every URL family in `tests/fixtures/dock_address_contract.json` plus a row for every `ViewType` the fixture lacks (a coverage guard fails on a new view type without a row), with every `apiClient` request recorded by `ui/tests/utils/dock-loader-harness.ts` |
 | I2 (step 2) | `ui/tests/unit/dock-loader/canonicalize.test.ts` |
 | I5 | `ui/tests/unit/dock-loader/dock-layout.test.ts` |
-| I6 | `ui/tests/unit/terminal-survives-layout-swap.test.tsx`, `ui/tests/unit/terminal_tab_switch_keeps_xterm_mounted.test.tsx` |
-| All, in a browser | `ui/tests/manual_regression/navigation/` — `every_place_renders` (real entities, every mode) and `terminal_round_trips` (a live terminal → every kind of place → back) |
-| Speed | `ui/tests/manual_regression/navigation/tab_switch_perf.md.ts` — budgets on a production build (below) |
+| I6 | `ui/tests/unit/terminal-survives-layout-swap.test.tsx`, `ui/tests/unit/terminal_tab_switch_keeps_xterm_mounted.test.tsx`, `ui/tests/unit/terminal-pool-switch-moves-nothing.test.tsx` (a switch moves no pool node; a layout change moves the stack whole; parking is full size) |
+| All, in a browser | `ui/tests/manual_regression/navigation/` — `every_place_renders` (real entities, every mode), `terminal_round_trips` (a live terminal → every kind of place → back) and `chat_round_trips` (a long chat keeps its node and scroll position across a tab switch and a layout change) |
+| Speed | `ui/tests/manual_regression/navigation/tab_switch_perf.md.ts` — budgets on a production build (below), including leaving and returning to a long chat |
 
 ## Traps that broke this before
 
@@ -97,6 +102,31 @@ Nothing after it → the checkpoint IS the screen, no replay at all.
   by a render when the project moves; read the subscribed `useContext()` project.
 - **"Warm" measured per component.** A panel counted warm only while its own
   component instance lived. The pool's `has(key)` is the only warm/cold truth.
+- **Every pooled panel reads the view mode.** The mode (Standard ⇄ Advanced) is one
+  app-wide value, and a pooled panel is alive whether or not it is shown. A flip used
+  to mount a full chat pane in EACH pooled chat and unmount them all on the way back
+  (11 s with three long chats pooled), and the tab being LEFT — still "active" for
+  the one commit before the pool's `shown` caught up with the URL — remounted its own
+  against the new mode. Now `isActive` is `shown` AND the URL's tab in the same
+  render, and a chat pane mounts the first time its panel is shown as chat and is
+  hidden, never rebuilt, when the mode moves on (`terminal-headless-roundtrip.test.tsx`,
+  and the mode-flip budget in `tab_switch_perf.md.ts`; 2026-09-30, FLOWPAD-2193).
+- **A preference hook that re-renders on every preference.** `usePreference(tag)`
+  binds to the store's version counter, not to its key, so every reader re-renders
+  on ANY preference change — and a Standard ⇄ Advanced flip saves the view mode.
+  `MarkdownView` read the locale through it, so each flip re-rendered and re-parsed
+  every message of a long chat: 600 of them, 2.5-4.5 s per flip, first or fifth
+  (2026-09-30, FLOWPAD-2193). A component rendered many times over that only READS
+  a value uses `usePreferenceValue` (primitives only), which re-renders on its own
+  key alone (`ui/tests/unit/markdown-view-ignores-unrelated-preferences.test.tsx`).
+- **A loader that re-runs on a search change.** The root loader is init-once
+  (`initSdk` + `applySupportedLocales`), but React-Router re-runs any loader when
+  the search string changes, and the first tab switch after a page load changes it
+  (`?viewMode=…&scope-…` → `?scope-…&viewMode=…`). The re-run re-activated the
+  same locale; Lingui announced a change and every i18n consumer re-rendered past
+  its `memo` — 2.7 s for a 900-row chat, on that first switch only (2026-09-30,
+  FLOWPAD-2193). The root route now answers `shouldRevalidate: () => false`
+  (`ui/tests/unit/root-loader-revalidation.test.ts`).
 
 ## Speed budgets
 
