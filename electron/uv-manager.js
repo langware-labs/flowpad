@@ -80,14 +80,27 @@ const PYPI_PACKAGE = 'flowpad';
 // pyproject.toml is bundled as an extraResource (electron-builder.json), so a
 // packaged app reads `<resources>/pyproject.toml`; a dev checkout (`electron .`,
 // the tests) reads the repo-root file directly.
+function pythonFloor(requiresPython) {
+  const floor = String(requiresPython || '').match(/>=\s*(\d+\.\d+)/);
+  return floor ? floor[1] : null;
+}
+
 function pythonVersionFromPyproject(text) {
   const m = text.match(/^\s*requires-python\s*=\s*"([^"]*)"/m);
   if (!m) throw new Error('pyproject.toml has no `requires-python`');
-  const floor = m[1].match(/>=\s*(\d+\.\d+)/);
+  const floor = pythonFloor(m[1]);
   if (!floor) {
     throw new Error(`pyproject.toml requires-python "${m[1]}" has no ">=" floor to pin uv to`);
   }
-  return floor[1];
+  return floor;
+}
+
+// The higher of two "<major>.<minor>" Python versions; a null side loses.
+function maxPythonVersion(a, b) {
+  if (!a || !b) return a || b || null;
+  const [am, an] = a.split('.').map(Number);
+  const [bm, bn] = b.split('.').map(Number);
+  return (bm > am || (bm === am && bn > an)) ? b : a;
 }
 
 // Resolved LAZILY, on the first install/upgrade that needs it — never at
@@ -1314,6 +1327,12 @@ class UvManager {
    * pypi.org only — works even when the local backend is down.
    */
   async getLatestPypiVersion() {
+    const info = await this._getLatestPypiInfo();
+    return (info && info.version) || null;
+  }
+
+  /** `info` block of the latest flowpad release on PyPI, or null on any failure. */
+  async _getLatestPypiInfo() {
     try {
       const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/json`, {
         headers: { Accept: 'application/json' },
@@ -1323,11 +1342,29 @@ class UvManager {
         return null;
       }
       const data = await res.json();
-      return (data && data.info && data.info.version) || null;
+      return (data && data.info) || null;
     } catch (err) {
       this.log.warn(`[uv] PyPI version lookup failed: ${err.message}`);
       return null;
     }
+  }
+
+  /**
+   * Interpreter minor to pin an upgrade to: the higher of the bundled pin
+   * (this desktop build's pyproject.toml) and the `requires_python` floor of
+   * the latest PyPI release. A desktop older than the release it installs
+   * would otherwise pin an interpreter the release refuses to run on
+   * ("flowpad==X depends on Python>=3.11", uv exits non-zero).
+   */
+  async _pythonPinForUpgrade() {
+    const info = await this._getLatestPypiInfo();
+    const remote = pythonFloor(info && info.requires_python);
+    const pin = maxPythonVersion(tryPythonVersion(), remote);
+    if (!pin) return getPythonVersion(); // broken build and no PyPI answer: throws, naming the build
+    if (remote && pin === remote && pin !== tryPythonVersion()) {
+      this.log.info(`[uv] Latest ${PYPI_PACKAGE} needs Python >=${remote}; pinning ${pin} instead of the bundled ${tryPythonVersion()}`);
+    }
+    return pin;
   }
 
   /**
@@ -1429,7 +1466,7 @@ class UvManager {
 
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, autoInstall = false }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -1457,30 +1494,33 @@ class UvManager {
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
 
-      // Abortable: a newer release found while this is on screen closes it (as
-      // "Later") via supersedePackageDialog(), so only one dialog, for the latest
-      // version, is ever shown.
-      this._packageDialog = { version: latest, abort: new AbortController() };
-      let response;
-      try {
-        ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
-          type: 'info',
-          title: 'Update Available',
-          message: `A new version of FlowPad is available (${latest}).`,
-          detail: status.currentVersion
-            ? `You are running version ${status.currentVersion}.`
-            : 'Your current installation could not be verified and may be incomplete.',
-          buttons: ['Upgrade', 'Later'],
-          defaultId: 0,
-          cancelId: 1, // Esc / close = Later, never an implicit Upgrade
-          signal: this._packageDialog.abort.signal,
-        }));
-      } finally {
-        this._packageDialog = null;
+      // `autoInstall` (the desktop was just updated): no question — the user
+      // already accepted the update, and the engine must catch up with it.
+      if (!autoInstall) {
+        // Abortable: a newer release found while this is on screen closes it (as
+        // "Later") via supersedePackageDialog(), so only one dialog, for the latest
+        // version, is ever shown.
+        this._packageDialog = { version: latest, abort: new AbortController() };
+        let response;
+        try {
+          ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: 'Update Available',
+            message: `A new version of FlowPad is available (${latest}).`,
+            detail: status.currentVersion
+              ? `You are running version ${status.currentVersion}.`
+              : 'Your current installation could not be verified and may be incomplete.',
+            buttons: ['Upgrade', 'Later'],
+            defaultId: 0,
+            cancelId: 1, // Esc / close = Later, never an implicit Upgrade
+            signal: this._packageDialog.abort.signal,
+          }));
+        } finally {
+          this._packageDialog = null;
+        }
+        if (response !== 0) this._deferredPackageVersion = latest;
+        if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
       }
-      if (response !== 0) this._deferredPackageVersion = latest;
-      if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
-
       // User chose Upgrade — show loading screen and wait for its IPC listener.
       const loadingPath = require('path').join(__dirname, 'loading.html');
       await mainWindow.loadFile(loadingPath);
@@ -1600,8 +1640,9 @@ class UvManager {
    */
   async upgrade({ onProgress } = {}) {
     this.log.info('[uv] Upgrading flowpad...');
+    const pin = await this._pythonPinForUpgrade();
     await this._uvToolInstallForce(
-      ['tool', 'install', `${PYPI_PACKAGE}@latest`, ...pythonPinArgs(), '--force'],
+      ['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', pin, '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
@@ -1730,6 +1771,8 @@ module.exports.getPythonVersion = getPythonVersion;
 module.exports.tryPythonVersion = tryPythonVersion;
 module.exports.upgradeCommand = upgradeCommand;
 module.exports.pythonVersionFromPyproject = pythonVersionFromPyproject;
+module.exports.pythonFloor = pythonFloor;
+module.exports.maxPythonVersion = maxPythonVersion;
 // Pure helpers exported for unit testing (electron/uv-manager.test.js).
 module.exports.needsShellOnWin = needsShellOnWin;
 module.exports.quoteWinCmd = quoteWinCmd;

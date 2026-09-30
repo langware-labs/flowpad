@@ -35,10 +35,19 @@ export interface WizardStepDoc {
 
 export interface WizardDoc {
   name?: string;
+  /** A friendlier name than `name`, when set — same split as a step's own
+   *  `id`/`label`. Falls back to `name` when unset. */
+  label?: string;
   description?: string;
   enabled?: boolean;
   version?: number;
   icon?: string;
+  /** Show this wizard as a dismissible overlay instead of a full editor page. */
+  popup?: boolean;
+  requires_llm_source?: boolean;
+  success_message?: string;
+  failure_message?: string;
+  restart_label?: string;
   /** Non-empty ⇒ a CONVERSATIONAL wizard: one agent, no steps. */
   agent?: string;
   /** What the wizard returns, in authoring form. */
@@ -121,7 +130,10 @@ export function nextFreeName(taken: Iterable<string>, prefix: string): string {
 
 /** A blank step, seeded with the commonest kind so it is valid on arrival. */
 export function blankStep(existing: WizardStepDoc[]): WizardStepDoc {
-  const id = nextFreeName(existing.map((step) => step.id), 'step-');
+  const id = nextFreeName(
+    existing.map((step) => step.id),
+    'step-',
+  );
   return { id, kind: 'compute', ref: '', args: {} };
 }
 
@@ -152,7 +164,10 @@ export function duplicateStepIds(steps: WizardStepDoc[] | undefined): Set<string
  */
 export function namesInScope(doc: WizardDoc, index: number): string[] {
   const steps = doc.steps ?? [];
-  return steps.slice(0, index).map((step) => step.id).filter(Boolean);
+  return steps
+    .slice(0, index)
+    .map((step) => step.id)
+    .filter(Boolean);
 }
 
 /**
@@ -201,10 +216,7 @@ export function issuesByLoc(issues: WizardIssue[] | undefined): Map<string, Wiza
 
 /** Issues that belong to no field the form renders — shown at the top, never
  *  dropped: an error nothing displays is worse than a clumsy one. */
-export function orphanIssues(
-  issues: WizardIssue[] | undefined,
-  rendered: Set<string>,
-): WizardIssue[] {
+export function orphanIssues(issues: WizardIssue[] | undefined, rendered: Set<string>): WizardIssue[] {
   return (issues ?? []).filter((issue) => !rendered.has((issue.loc ?? []).join('.')));
 }
 

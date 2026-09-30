@@ -69,6 +69,28 @@ export function usePreferencesVersion(): number {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/**
+ * One preference's value, re-rendering ONLY when that value changes.
+ *
+ * `usePreference` binds to the store's version counter, so every consumer re-renders on
+ * ANY preference change — the view mode is saved on every Standard ⇄ Advanced flip, which
+ * re-rendered (and re-parsed) every `MarkdownView` in a long chat, 600 of them: 2.5-4.5 s
+ * per flip (FLOWPAD-2193). A component that only READS a value and is rendered many times
+ * over should use this instead.
+ *
+ * PRIMITIVES ONLY (string / number / boolean): the snapshot is compared with `Object.is`,
+ * so a value that is a fresh object on every read would never settle.
+ */
+export function usePreferenceValue<T extends string | number | boolean | null | undefined>(tag: PrefKey): T {
+  useEffect(() => {
+    if (!instancePreferences.isLoaded) {
+      void instancePreferences.loadJson();
+    }
+  }, []);
+  const getSnapshot = () => instancePreferences.get(tag) as T;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
 export function usePreference<T = unknown>(tag: PrefKey): [T, (value: T) => void] {
   usePreferencesVersion();
 

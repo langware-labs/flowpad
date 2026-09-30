@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   setReferenceKind: vi.fn(() => Promise.resolve()),
   login: vi.fn(() => Promise.resolve()),
+  cancelLogin: vi.fn(() => Promise.resolve()),
   resolvedKind: 'harness.claude.cli' as string | null,
   /** `checked && available` is what the modal turns into "installed". */
   available: true,
@@ -45,7 +46,7 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {
     ...actual,
-    cloudManager: { login: h.login, logout: vi.fn() },
+    cloudManager: { login: h.login, logout: vi.fn(), cancelLogin: h.cancelLogin },
     lmKeysService: { list: () => Promise.resolve([]) },
     capabilityManager: {
       getSnapshot: () => ({
@@ -182,6 +183,34 @@ describe('Assistants & keys — one row per thing that can pay', () => {
 
     fireEvent.click(action);
     await waitFor(() => expect(h.login).toHaveBeenCalled());
+  });
+
+  it('one click on Sign in starts ONE sign-in, and a click on the row itself starts none', async () => {
+    // The row used to sign in on ANY click (a stray click on its name started one), and the
+    // button's click bubbled to the row, so each press of Sign in started two.
+    mount();
+
+    fireEvent.click(await screen.findByTestId('harness-row-flowpad'));
+    fireEvent.click(screen.getByTestId('harness-row-flowpad-status'));
+    expect(h.login).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('harness-row-flowpad-action'));
+    await waitFor(() => expect(h.login).toHaveBeenCalledTimes(1));
+  });
+
+  it('while signing in, says where to finish, and offers the page again or a way out', async () => {
+    // A browser sign-in waits on a page this screen cannot see; it may never have opened.
+    h.cloudStatus = 'logging_in';
+    mount();
+
+    const waiting = await screen.findByTestId('harness-row-flowpad-waiting');
+    expect(waiting.textContent).toContain('browser');
+
+    fireEvent.click(screen.getByTestId('harness-row-flowpad-cancel'));
+    expect(h.cancelLogin).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId('harness-row-flowpad-reopen'));
+    expect(h.login).toHaveBeenCalledTimes(1);
   });
 
   it('says FlowPad is signed in once it is, without offering the login again', async () => {

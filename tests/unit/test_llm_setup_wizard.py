@@ -1,6 +1,6 @@
 """The shipped `llm-setup` wizard: ask before installing, never install
 unasked, and fall back to an agent when the plain install command does not get
-there. (The LLM source is settled BEFORE this wizard — `run_llm_setup`, covered
+there. (The LLM source is settled BEFORE this wizard — `start_wizard`, covered
 in `test_wizard_trigger_reconcile.py` — so here it is simply present or not.)
 
 The real documents off disk, the real runner, the real ask waiter. Only the

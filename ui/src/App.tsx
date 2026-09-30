@@ -45,6 +45,7 @@ import { queryClient } from '@sdk/lazy';
 import { PrimaryContentProvider } from '@sdk/react/primary-content';
 import { AddAssetDialogRoot } from '@src/components/install/AddAssetDialog';
 import { AskModalRoot } from '@src/components/ask/AskModal';
+import { WizardPopupRoot } from '@src/components/assets/editor/wizard/WizardPopupRoot';
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
@@ -157,6 +158,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             Mounted at the root like every other global overlay, so it opens over
             whatever page is showing rather than replacing it. */}
         <AskModalRoot />
+        {/* A popup wizard (first-run setup) shown over the current page, which stays as it was. */}
+        <WizardPopupRoot />
         <GlobalEvents />
         {/* One-click install from the hub lands here — desktop only (it writes files). */}
         {!isHubOnly() && <AddAssetDialogRoot />}

@@ -84,14 +84,14 @@ describe('Assistants & keys — a harness that is not installed', () => {
     vi.clearAllMocks();
   });
 
-  it('offers to install it, and types the command instead of running it', async () => {
+  it('offers to install it, and runs the command in a terminal', async () => {
     mount(INSTALL);
 
     const button = await screen.findByTestId('harness-auto-install');
     fireEvent.click(button);
 
     expect(h.openNewShell).toHaveBeenCalledWith(
-      expect.objectContaining({ prefillCommand: INSTALL, viewMode: 'advanced' }),
+      expect.objectContaining({ startCommand: INSTALL, viewMode: 'advanced' }),
     );
     // The modal gets out of the way — otherwise it covers the terminal it just
     // told the user to look at.

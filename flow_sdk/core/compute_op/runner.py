@@ -477,17 +477,27 @@ def _with_value(spec: ComputeOpSpec, answer: ReturnedValue, *, said: Optional[Cl
 
 
 async def _cli(
-    spec: ComputeOpSpec, *, platform: str, workdir: Path, env: Optional[dict], shell: Shell, **_: Any
+    spec: ComputeOpSpec,
+    *,
+    platform: str,
+    workdir: Path,
+    env: Optional[dict],
+    shell: Shell,
+    say: Callable[[str], None],
+    **_: Any,
 ) -> CliResult:
     command = spec.exe_data.command_for(platform)
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
+    # Each write to stdout/stderr re-says the rung: the one real sign of life a command gives, so a
+    # long quiet install is told apart from a hung one by the row's own last update.
     said = await shell(
         command,
         timeout_seconds=spec.exe_data.timeout(),
         workdir=workdir,
         extra_env=env or {},
         platform=platform,
+        on_output=lambda: say(f"{spec.display_label}: {spec.subkind}"),
     )
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 

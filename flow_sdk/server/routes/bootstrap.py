@@ -1580,31 +1580,6 @@ async def onboarding_reset() -> ApiSuccessResponse[dict]:
     )
 
 
-@router.post("/api/v1/onboarding/setup")
-async def onboarding_setup():
-    """Run first-run setup again, from the top: an LLM source, then the ``llm-setup``
-    wizard. Settings → General's "Run setup again"; the same function the first-run
-    trigger calls, so both run it in the same order. Answers both verdicts."""
-    from fastapi.responses import JSONResponse  # noqa: PLC0415
-
-    from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
-    from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD, run_llm_setup  # noqa: PLC0415
-
-    wizard = await Wizard.get_one({"name": LLM_SETUP_WIZARD})
-    if wizard is None:
-        return JSONResponse(
-            status_code=404,
-            content={"status": "FAIL", "message": f"The {LLM_SETUP_WIZARD} wizard is not installed.", "data": None},
-        )
-    source, result = await run_llm_setup(wizard, unattended=False)
-    if result.busy:
-        # Already running (the first-run trigger, or a second click): HTTP's own 409.
-        return JSONResponse(status_code=409, content={"status": "FAIL", "message": result.detail, "data": None})
-    return ApiSuccessResponse[dict](
-        data={"llm_source": source.model_dump(mode="json"), "wizard": result.model_dump(mode="json")}
-    )
-
-
 #: The `llm-setup` wizard's own 6 tools, by the binary name each one's
 #: `completion_check` actually looks for on PATH — never the wizard step id,
 #: which is a different spelling (``claude-code`` the step, ``claude`` the
@@ -1693,7 +1668,7 @@ async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
     from flow_sdk.server.builtin_triggers import LLM_SETUP_WIZARD  # noqa: PLC0415
 
-    wizard = await Wizard.get_one({"name": LLM_SETUP_WIZARD})
+    wizard = await Wizard.by_name(LLM_SETUP_WIZARD)
     wizard_result = None
     if wizard is not None:
         result = await wizard.run(check_only=True)

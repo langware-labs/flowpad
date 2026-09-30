@@ -11,7 +11,7 @@ import {
   type Project,
 } from '@sdk';
 import type { SupportedLocale } from '@sdk/models';
-import { usePreference } from '@src/hooks/use-preference';
+import { usePreferenceValue } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 
 /**
@@ -459,7 +459,9 @@ defineGlobal('getLocale', getLocale);
  */
 export function useLocale(): string {
   const supported = useSupportedLocales();
-  const [value] = usePreference<string>(PrefKey.LOCALE);
+  // The value only: `usePreference` re-renders on ANY preference change, and this hook is
+  // read by every MarkdownView in a chat (a view-mode flip re-parsed all 600 of a long one).
+  const value = usePreferenceValue<string>(PrefKey.LOCALE);
   return supported.some((l) => l.code === value) ? value : DEFAULT_LOCALE;
 }
 

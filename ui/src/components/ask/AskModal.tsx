@@ -61,7 +61,10 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
 
   return (
     <Dialog open onOpenChange={dismiss}>
-      <DialogContent className="sm:max-w-md" data-testid="ask-modal">
+      {/* Above every other dialog (z-50), by z-index rather than by mount order: the
+          wizard's own popup can re-mount after a question arrives, and a question
+          hidden behind the very popup that raised it cannot be answered. */}
+      <DialogContent className="z-[60] sm:max-w-md" overlayClassName="z-[60]" data-testid="ask-modal">
         {settledKind ? (
           settledMessage && (
             <p className="py-2 text-center text-sm text-muted-foreground" data-testid="ask-modal-settled">
@@ -81,7 +84,12 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
               ) : null}
             </DialogHeader>
 
-            {question.guide ? (
+            {/* The guide is `setup.md` — genuinely helpful beside a field asking
+                for a value ("copy the Phone number ID"), and pure noise beside a
+                plain yes/no confirm, which has nothing to guide anyone THROUGH
+                and whose `setup.md` is written for the next maintainer, not for
+                whoever is answering. */}
+            {question.guide && fieldsOf(question.fields).length > 0 ? (
               <div className="rounded border bg-muted/30 p-3 text-sm" data-testid="ask-modal-guide">
                 <MarkdownView value={question.guide} compact />
               </div>
