@@ -113,6 +113,14 @@ function buildSupportZip({ sources, info, detail, outDir = os.tmpdir(), now = ne
   };
 }
 
+const SUBJECT_TITLE = 'Flowpad startup problem';
+
+/** Fixed title + the local date, so a team inbox threads/sorts a day's reports together. */
+function supportSubject(now = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${SUBJECT_TITLE} - ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 /** A mailto: URL that stays short enough for every handler; the body is trimmed to fit. */
 function buildMailtoUrl({ to, subject, body }) {
   const make = (b) => `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(b)}`;
@@ -125,4 +133,4 @@ function buildMailtoUrl({ to, subject, body }) {
   return url;
 }
 
-module.exports = { redact, newestFile, tailText, collectLogs, buildSupportZip, buildMailtoUrl, MAX_LOG_BYTES, MAILTO_MAX_LENGTH };
+module.exports = { redact, newestFile, tailText, collectLogs, buildSupportZip, buildMailtoUrl, supportSubject, SUBJECT_TITLE, MAX_LOG_BYTES, MAILTO_MAX_LENGTH };

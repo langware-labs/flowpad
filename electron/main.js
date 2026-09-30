@@ -1,7 +1,8 @@
 const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
-const { buildSupportZip, buildMailtoUrl, redact } = require('./support-bundle');
+const { buildSupportZip, buildMailtoUrl, supportSubject, redact } = require('./support-bundle');
+const { createRestartApplier } = require('./update-restart');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
 const { CancellationToken } = require('builder-util-runtime');
 const path = require('path');
@@ -101,6 +102,26 @@ log.info('Flowpad starting...');
 // app quit/restart (autoInstallOnAppQuit). Reset once consumed.
 let suppressDesktopRestartPrompt = false;
 
+// "Restart now": stop the backend, then hand over to the installer; if the updater reports it
+// could not restart, undo `isQuitting` and tell the user (see update-restart.js).
+const restartApplier = createRestartApplier({
+  uvManager: { stop: () => (uvManager ? uvManager.stop() : Promise.resolve()) },
+  autoUpdater,
+  setQuitting: (v) => { isQuitting = v; },
+  hideWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide(); },
+  showWindow: () => { if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); } },
+  onFailure: (err) => {
+    dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+      type: 'warning',
+      title: 'Update could not be applied',
+      message: 'FlowPad could not restart to finish the update.',
+      detail: `The update is downloaded and will be applied the next time FlowPad is closed.\n\n${err && err.message ? err.message : err}`,
+      buttons: ['OK'],
+    }).catch((e) => log.warn(`[electron-updater] failure dialog failed: ${e.message}`));
+  },
+  log,
+});
+
 let updaterInitialized = false;
 
 function setupElectronAutoUpdater() {
@@ -142,6 +163,8 @@ function setupElectronAutoUpdater() {
     });
     autoUpdater.on('error', (err) => {
       log.error('[electron-updater] error:', err);
+      // If this happened while a "Restart now" was in flight, the app is not quitting after all.
+      restartApplier.failed(err);
     });
 
     // Fires only after an explicit downloadUpdate() completes. Restarting to
@@ -195,11 +218,9 @@ function setupElectronAutoUpdater() {
       }
       if (result.response === 0) {
         log.info('[electron-updater] user accepted, quitting to install');
-        isQuitting = true;
-        // Silent + relaunch. The NSIS build is not one-click (oneClick:false), so the
-        // default quitAndInstall() opens the full Setup wizard and waits for the
-        // user — the app looks closed and never comes back.
-        autoUpdater.quitAndInstall(true, true);
+        // Stops the backend first, then quitAndInstall(silent, relaunch): the NSIS build is not
+        // one-click (oneClick:false), so the default would open the Setup wizard and wait.
+        await restartApplier.apply();
       } else if (desktopPromptAbort.signal.aborted) {
         log.info(`[electron-updater] prompt for ${info.version} closed: superseded by a newer release`);
       } else {
@@ -1438,7 +1459,8 @@ ipcMain.handle('open-logs-folder', async () => {
 // newest backend-server log (tails, obvious secrets masked), opens the user's own mail client
 // with a short message to the team, and shows the zip in the file manager to attach — a
 // mailto: URL cannot carry an attachment, and nothing is sent until the user presses Send.
-// Recipient: the same address the in-app "Report issue" mail uses (flow_sdk/app/actions/report_action.py).
+// Recipient: the diagnosis inbox (also where the in-app "Report issue" mail goes, flow_sdk/app/actions/report_action.py).
+// Subject: a fixed title + the date (supportSubject).
 const SUPPORT_EMAIL = 'diagnosis@langware.ai';
 
 ipcMain.handle('share-logs', async (_event, detail) => {
@@ -1470,7 +1492,7 @@ ipcMain.handle('share-logs', async (_event, detail) => {
       '',
       shownError.slice(0, 700),
     ].join('\n');
-    await shell.openExternal(buildMailtoUrl({ to: SUPPORT_EMAIL, subject: 'Flowpad startup problem', body }));
+    await shell.openExternal(buildMailtoUrl({ to: SUPPORT_EMAIL, subject: supportSubject(), body }));
     return { ok: true, zipPath: bundle.zipPath, bytes: bundle.bytes, included: bundle.included, missing: bundle.missing, to: SUPPORT_EMAIL };
   } catch (err) {
     log.warn(`[share-logs] failed: ${err.message}`);

@@ -12,7 +12,7 @@ const path = require('path');
 const zlib = require('zlib');
 const { spawnSync } = require('child_process');
 const { createZip, crc32 } = require('./zip-writer');
-const { redact, newestFile, tailText, collectLogs, buildSupportZip, buildMailtoUrl } = require('./support-bundle');
+const { redact, newestFile, tailText, collectLogs, buildSupportZip, buildMailtoUrl, supportSubject } = require('./support-bundle');
 
 let passed = 0;
 const ok = (c, m) => { assert.ok(c, m); passed++; };
@@ -140,6 +140,13 @@ try {
   ok(files['info.txt'].includes('Bearer [REDACTED]') && !files['info.txt'].includes('abcdefghijklmnop123456'), 'the shown error is redacted too');
   ok(files['desktop-new.log'].includes('new desktop') && !files['desktop-new.log'].includes('abcdef123456'), 'log inside the zip is redacted');
 } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+
+// ── subject ─────────────────────────────────────────────────────────────────
+{
+  eq(supportSubject(new Date(2026, 8, 30, 12, 0)), 'Flowpad startup problem - 2026-09-30', 'fixed title + local date');
+  eq(supportSubject(new Date(2026, 0, 5, 23, 59)), 'Flowpad startup problem - 2026-01-05', 'month and day are zero-padded');
+  ok(/^Flowpad startup problem - \d{4}-\d{2}-\d{2}$/.test(supportSubject()), 'defaults to today');
+}
 
 // ── mailto ──────────────────────────────────────────────────────────────────
 {
