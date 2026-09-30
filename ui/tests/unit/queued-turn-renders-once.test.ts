@@ -106,4 +106,62 @@ describe('FLOWPAD-2022 — queued prompt renders once', () => {
     const text = chat.map((i) => String(i.content ?? '')).join('');
     expect(text, 'the agent said it once; the pane must not show it twice').toBe(TOKEN);
   });
+
+  /**
+   * FLOWPAD-2042 — today's wire: observe-turn frames are groupless and the WS
+   * frame carries the transcript's own time (`created_time`), so both copies
+   * share `t`. The observe-turn element is still OPEN (its `</chat>` comes when
+   * the next element starts or the stream ends) when the WS twin lands; `_ingestRaw`
+   * used to take the twin as the open row's next chunk: "TOKENTOKEN" in one row.
+   * Proven live: `raw_consolidate item_src=websocket into_src=stream into_ready=false`.
+   */
+  it('does not glue the WS twin onto the still-open observe-turn row', async () => {
+    const ap = new AgenticProcess({ id: PROC_ID, pty_mode: false, visible: false });
+    dataManager.register_new_entity(PROC_TYPEID, ap);
+
+    const SAID_AT = '2026-09-30T14:06:49.031Z';
+    const ANSWER = 'ZEBRA-2042-M2';
+    let push: (chunk: string) => void = () => {};
+    let close: () => void = () => {};
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const enc = new TextEncoder();
+        push = (chunk) => controller.enqueue(enc.encode(chunk));
+        close = () => controller.close();
+      },
+    });
+    vi.spyOn(dataManager, 'callAction').mockImplementation((info: { name?: string }) =>
+      Promise.resolve((info?.name === 'observe-turn' ? { body } : undefined) as unknown as Response),
+    );
+
+    const observing = ap.observeTurn();
+    // observe-turn: the answer's element opens and its text streams in — no end tag yet.
+    push(
+      `<chat i="109" t="${SAID_AT}" data-type="string" subtype="assistant_message"` +
+        ` observation-kind="live" role="assistant">${ANSWER}`,
+    );
+    await vi.waitFor(() =>
+      expect(ap.flowDataStream.items.find((i) => i.elementType === 'chat')?.content).toBe(ANSWER),
+    );
+
+    // …the WS broadcast of the same message lands while that row is still open.
+    (dataManager as unknown as { onFlowData: (t: TypeId, j: unknown) => void }).onFlowData(PROC_TYPEID, {
+      element_type: 'chat',
+      data_type: 'string',
+      content: ANSWER,
+      index: 108,
+      created_time: SAID_AT,
+      attributes: { 'element-type': 'chat', 'data-type': 'string', role: 'assistant' },
+    });
+
+    push('</chat>');
+    close();
+    await observing;
+
+    const chat = ap.flowDataStream.items.filter((i) => i.elementType === 'chat');
+    expect(
+      chat.map((i) => String(i.content ?? '')),
+      'one row, the answer once — not the WS copy appended into the observe-turn row',
+    ).toEqual([ANSWER]);
+  });
 });
