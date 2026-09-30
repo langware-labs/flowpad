@@ -61,7 +61,7 @@ export function AgentIntroCard({
   const avatar = <AgentAvatar agent={agent} className="h-12 w-12 text-lg" glyphClassName="h-6 w-6 text-2xl" />;
 
   // ONE card body, two ways of opening it — never a second description popover
-  // that could drift from this one. Spelled out as two returns rather than a
+  // that could drift from this one. Spelled out as two JSX trees rather than a
   // swapped component tuple so each primitive's own props stay type-checked.
   const body = (
     <>
@@ -126,27 +126,25 @@ export function AgentIntroCard({
     <MediaLightbox url={avatarImageUrl} name={`${title} avatar.png`} onClose={() => setAvatarOpen(false)} />
   );
 
-  if (trigger === 'hover') {
-    return (
-      <>
-        <HoverCard openDelay={200} closeDelay={100}>
-          <HoverCardTrigger asChild>{children}</HoverCardTrigger>
-          <HoverCardContent align="start" className="w-72 p-0" data-testid="agent-intro-card">
-            {body}
-          </HoverCardContent>
-        </HoverCard>
-        {lightbox}
-      </>
-    );
-  }
-  return (
-    <>
+  const card =
+    trigger === 'hover' ? (
+      <HoverCard openDelay={200} closeDelay={100}>
+        <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+        <HoverCardContent align="start" className="w-72 p-0" data-testid="agent-intro-card">
+          {body}
+        </HoverCardContent>
+      </HoverCard>
+    ) : (
       <Popover>
         <PopoverTrigger asChild>{children}</PopoverTrigger>
         <PopoverContent align="start" className="w-72 p-0" data-testid="agent-intro-card">
           {body}
         </PopoverContent>
       </Popover>
+    );
+  return (
+    <>
+      {card}
       {lightbox}
     </>
   );
