@@ -31,7 +31,13 @@ interface FixtureCase {
   }>;
   expected: number;
   /** Present only for single-conversation cases where FE facets apply. */
-  facets?: { conversation: string; isUnread: boolean; isArchived: boolean; isInvitation: boolean };
+  facets?: {
+    conversation: string;
+    isUnread: boolean;
+    isArchived: boolean;
+    isInvitation: boolean;
+    unreadCount: number;
+  };
 }
 
 const viewer = {
@@ -54,7 +60,11 @@ describe('stream inbox unread truth table — conversationFacets parity', () => 
 
     const facets = conversationFacets({
       // The flag as the backend stamped it (`facets.isUnread` is what the backend test pins).
-      conv: { archived_at: conv.archived_at ?? undefined, is_unread: c.facets!.isUnread } as unknown as Conversation,
+      conv: {
+        archived_at: conv.archived_at ?? undefined,
+        is_unread: c.facets!.isUnread,
+        unread_count: c.facets!.unreadCount,
+      } as unknown as Conversation,
       firstMessage: (firstFm ?? null) as unknown as FlowMessage | null,
       latestMessage: (latestFm ?? null) as unknown as FlowMessage | null,
       latestPtrTs: lastPtr?.ts ?? null,
@@ -65,6 +75,8 @@ describe('stream inbox unread truth table — conversationFacets parity', () => 
     expect(facets.isUnread, 'isUnread').toBe(c.facets!.isUnread);
     expect(facets.isArchived, 'isArchived').toBe(c.facets!.isArchived);
     expect(facets.isInvitation, 'isInvitation').toBe(c.facets!.isInvitation);
+    // The count the backend stamped is what the row shows — never recomputed here.
+    expect(facets.unreadCount, 'unreadCount').toBe(c.facets!.unreadCount);
 
     // The scalar the backend derives for this single-conversation world must
     // match what the row facets imply: one when visible-and-unread, plus any
