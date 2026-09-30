@@ -14,6 +14,8 @@
  *   cold terminal open    content visible ≤ 1 s on a large recording, from its
  *                         replay checkpoint (the first open ever, which makes the
  *                         checkpoint, is measured and reported)
+ *   long chat, both ways  main-thread long tasks ≤ 300 ms in the 1.5 s after the
+ *                         click (added 2026-09-30, FLOWPAD-2193 — see LONG_CHAT_MS)
  *
  * Opt-in (FLOWPAD_PERF_GATE=1): the numbers mean something only on a production
  * build (`vite build` + `vite preview`, see ../../../../.github/actions/e2e-tests).
@@ -22,7 +24,9 @@ import { expect, test, type Page } from '@playwright/test';
 import {
   awaitSteerable,
   BACKEND,
+  createLongChat,
   createWorld,
+  destroyLongChat,
   destroyWorld,
   installObservers,
   MOCK_MARKER,
@@ -112,7 +116,44 @@ const CI_PROJECT_MS = 550;
  */
 const CI_COLD_TERMINAL_MS = 1700;
 
+/**
+ * Leaving (and returning to) a LONG chat: the main thread's long-task time in the
+ * 1.5 s after the click, p90 — not `ready`. The content is visible within the
+ * warm budget either way; what froze prod 0.2.179 for 7–15 s came AFTER the paint:
+ * the pool moved the panel into a 0×0 parking and the browser re-laid-out the whole
+ * chat at zero width (FLOWPAD-2193). Only the main thread's own time shows it.
+ *
+ * Measured on the `createLongChat` shape (39k nodes, ~900 KB wrapping text), dev build,
+ * this machine, p90 over 8 rounds:
+ *   pool moving panels (0.2.178+)       leave 1095 ms, enter 476 ms
+ *   root loader re-run on the first     leave 2.4-3.3 s, once — the first switch after a
+ *   search-string change                page load re-activated the locale and re-rendered
+ *                                       every row past its memo
+ *   one stack, switch flips visibility  leave 124-176 ms, enter 141-157 ms
+ * 300 sits above the fixed numbers and well under both broken ones (the spike lands in
+ * p90 because the loop's first leave is one of 8). CI gets 3x, the spread CI_WARM_MS
+ * documents.
+ */
+const LONG_CHAT_MS = 300;
+/**
+ * Flipping the view mode (Standard ⇄ Advanced) with three 400-row chats pooled: the
+ * main thread's long-task time in the 1.2 s after the navigation, p90.
+ *
+ * The mode is one value for the whole app and every pooled panel reads it, so a flip used to
+ * do work in ALL of them: each mounted its chat pane on the way to Standard and dropped it on
+ * the way back, and the tab being LEFT — still "active" for one commit — remounted its own
+ * against the new mode (3.6 s to draw again). Dev build, this machine, p90 over 4 rounds:
+ *   before   to Standard 3.5-4.8 s once per round trip, to Advanced 0.7-1.4 s
+ *   after    to Standard 0.22-0.29 s, to Advanced 0.37-0.49 s
+ * 700 is the worst sample plus the 1.4x margin the budgets above carry; CI gets 3x.
+ */
+const MODE_FLIP_MS = 700;
+const CI_MODE_FLIP_MS = 2100;
+const CI_LONG_CHAT_MS = 900;
+
 /** CI runs on slower hardware than the SLAs were calibrated on; see CI_WARM_MS. */
+const longChatMs = process.env.CI ? CI_LONG_CHAT_MS : LONG_CHAT_MS;
+const modeFlipMs = process.env.CI ? CI_MODE_FLIP_MS : MODE_FLIP_MS;
 const warmMs = process.env.CI ? CI_WARM_MS : BUDGET.warmMs;
 const projectMs = process.env.CI ? CI_PROJECT_MS : BUDGET.projectMs;
 const coldTerminalMs = process.env.CI ? CI_COLD_TERMINAL_MS : BUDGET.coldTerminalMs;
@@ -382,6 +423,169 @@ test('project switch between visited projects: content visible within budget', a
   const p90 = p(measured, 0.9);
   console.log(`[perf] project switch ms p50=${p(measured, 0.5)} p90=${p90}`);
   expect(p90, `project switch (budget ${projectMs}ms)`).toBeLessThanOrEqual(projectMs);
+});
+
+test('leaving and returning to a long chat: the main thread stays free', async ({ page }) => {
+  const chat = await createLongChat(a);
+  try {
+    await installObservers(page);
+    await page.addInitScript(() => {
+      const w = window as unknown as { __longTasks: [number, number][] };
+      w.__longTasks = [];
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) w.__longTasks.push([e.startTime, e.duration]);
+      }).observe({ type: 'longtask', buffered: true });
+    });
+    await page.goto('/dock/desktop?viewMode=standard');
+    await awaitSteerable(page);
+    const small = `shell/agentic_process-${a.processId}`;
+    await navigateTo(page, `${small}?viewMode=standard`, `/shell/agentic_process-${a.processId}`);
+    await navigateTo(
+      page,
+      `shell/agentic_process-${chat.processId}?viewMode=standard`,
+      `/shell/agentic_process-${chat.processId}`,
+    );
+    await expect
+      .poll(
+        () =>
+          page
+            .locator(`[data-session-id="agentic_process-${chat.processId}"] [data-testid="execution-message"]`)
+            .count(),
+        {
+          timeout: 30_000,
+          message: 'the long chat never rendered its history',
+        },
+      )
+      .toBeGreaterThan(500);
+    await networkQuiet(page);
+
+    /** Click a chip and return the main thread's long-task time over the next 1.5 s. */
+    const blockedAfterClick = async (chip: string): Promise<number> => {
+      const t0 = await page.evaluate(() => performance.now());
+      await page.locator(chip).first().click();
+      await page.waitForTimeout(1_500);
+      return page.evaluate(
+        (since) =>
+          (window as unknown as { __longTasks: [number, number][] }).__longTasks
+            .filter(([start]) => start >= since)
+            .reduce((sum, [, d]) => sum + d, 0),
+        t0,
+      );
+    };
+    const smallChip = `[data-testid="tab-shell|agentic_process-${a.processId}"]`;
+    const chatChip = `[data-testid="tab-shell|agentic_process-${chat.processId}"]`;
+    const leave: number[] = [];
+    const enter: number[] = [];
+    for (let i = 0; i < 8; i++) {
+      leave.push(await blockedAfterClick(smallChip));
+      enter.push(await blockedAfterClick(chatChip));
+    }
+    const table = {
+      leave: { p50: p(leave, 0.5), p90: p(leave, 0.9) },
+      enter: { p50: p(enter, 0.5), p90: p(enter, 0.9) },
+    };
+    console.log(
+      '[perf] long chat, main-thread long tasks after the click (ms)',
+      JSON.stringify({ ...table, leave_samples: leave.map(Math.round), enter_samples: enter.map(Math.round) }),
+    );
+    expect(table.leave.p90, `leaving a long chat blocked the main thread (budget ${longChatMs}ms)`).toBeLessThanOrEqual(
+      longChatMs,
+    );
+    expect(
+      table.enter.p90,
+      `returning to a long chat blocked the main thread (budget ${longChatMs}ms)`,
+    ).toBeLessThanOrEqual(longChatMs);
+  } finally {
+    destroyLongChat(chat);
+  }
+});
+
+test('flipping the view mode with several long chats pooled: the main thread stays free', async ({ page }) => {
+  // The view mode is one value for the whole app, and every pooled panel read it: a flip to
+  // Standard mounted a full transcript render in EACH pooled chat — shown or not — and the
+  // flip back unmounted them all. 11 s with three long chats pooled (FLOWPAD-2193).
+  const chats = [await createLongChat(a, 200), await createLongChat(a, 200), await createLongChat(a, 200)];
+  try {
+    await installObservers(page);
+    await page.addInitScript(() => {
+      const w = window as unknown as { __longTasks: [number, number][] };
+      w.__longTasks = [];
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) w.__longTasks.push([e.startTime, e.duration]);
+      }).observe({ type: 'longtask', buffered: true });
+    });
+    await page.goto('/dock/desktop?viewMode=standard');
+    await awaitSteerable(page);
+    // Each chat rendered once as chat, so all three are pooled.
+    for (const chat of chats) {
+      await navigateTo(
+        page,
+        `shell/agentic_process-${chat.processId}?viewMode=standard`,
+        `/shell/agentic_process-${chat.processId}`,
+      );
+      await expect
+        .poll(
+          () =>
+            page
+              .locator(`[data-session-id="agentic_process-${chat.processId}"] [data-testid="execution-message"]`)
+              .count(),
+          { timeout: 30_000, message: 'a long chat never rendered its history' },
+        )
+        .toBeGreaterThan(300);
+    }
+    await networkQuiet(page);
+
+    /** Steer to `address`, and return the main thread's long-task time over the next 1.2 s. */
+    const blockedAfter = async (address: string, path: string): Promise<number> => {
+      const t0 = await page.evaluate(() => performance.now());
+      await navigateTo(page, address, path);
+      await page.waitForTimeout(1_200);
+      return page.evaluate(
+        (since) =>
+          (window as unknown as { __longTasks: [number, number][] }).__longTasks
+            .filter(([start]) => start >= since)
+            .reduce((sum, [, d]) => sum + d, 0),
+        t0,
+      );
+    };
+    const terminal = `shell/agentic_process-${a.processId}`;
+    const chat = `shell/agentic_process-${chats[0].processId}`;
+    // The terminal's own first open (xterm, PTY attach) is a cold open, measured elsewhere;
+    // it is not what a flip costs.
+    await navigateTo(page, `${terminal}?viewMode=advanced`, `/shell/agentic_process-${a.processId}`);
+    await expect(page.locator(`[data-session-id="agentic_process-${a.processId}"]`)).toContainText(MOCK_MARKER, {
+      timeout: 15_000,
+    });
+    await navigateTo(page, `${chat}?viewMode=standard`, `/shell/agentic_process-${chats[0].processId}`);
+    await networkQuiet(page);
+    const toTerminal: number[] = [];
+    const toChat: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      toTerminal.push(await blockedAfter(`${terminal}?viewMode=advanced`, `/shell/agentic_process-${a.processId}`));
+      toChat.push(await blockedAfter(`${chat}?viewMode=standard`, `/shell/agentic_process-${chats[0].processId}`));
+    }
+    const table = {
+      toTerminal: { p50: p(toTerminal, 0.5), p90: p(toTerminal, 0.9) },
+      toChat: { p50: p(toChat, 0.5), p90: p(toChat, 0.9) },
+    };
+    console.log(
+      '[perf] mode flips, 3 long chats pooled, main-thread long tasks (ms)',
+      JSON.stringify({
+        ...table,
+        toTerminal_samples: toTerminal.map(Math.round),
+        toChat_samples: toChat.map(Math.round),
+      }),
+    );
+    expect(
+      table.toTerminal.p90,
+      `a flip to Advanced blocked the main thread (budget ${modeFlipMs}ms)`,
+    ).toBeLessThanOrEqual(modeFlipMs);
+    expect(table.toChat.p90, `a flip to Standard blocked the main thread (budget ${modeFlipMs}ms)`).toBeLessThanOrEqual(
+      modeFlipMs,
+    );
+  } finally {
+    for (const c of chats) destroyLongChat(c);
+  }
 });
 
 /** Open the session in a FRESH page (nothing warm) and return its cold `ready` line. */

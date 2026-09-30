@@ -49,6 +49,7 @@ import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
 import { type CompactExecutionInputHandle } from '@src/components/entity-execution-panel/CompactExecutionInput';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
+import { FrozenWhenHidden } from './FrozenWhenHidden';
 import { SimpleChatPane } from './SimpleChatPane';
 
 import { useIsAdvanced } from '@src/components/view-mode';
@@ -194,6 +195,27 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // attempted for a process that has no shell.
   const isHeadless = !embedded && !!process && process.isHeadless;
   const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
+  // The chat pane is a full render of the transcript (a 600-row chat ≈ 4 s). The surface
+  // is GLOBAL — one view mode for the whole app — so every pooled panel, shown or not,
+  // used to mount its pane when the mode flipped to chat and unmount it on the way back:
+  // 11 s with three long chats pooled, on every switch between a chat tab and a terminal
+  // tab (FLOWPAD-2193). A panel now mounts its pane the first time it is SHOWN as chat and
+  // keeps it: when the surface moves on the pane is hidden, not rebuilt, so a flip is a
+  // visibility change. `chatMounted` only ever goes true.
+  //
+  // Also not for a panel that is merely LEFT: on a switch the surface follows the NEW url
+  // at once while the pool still lists the OLD panel as shown, and that panel's own mode
+  // reconcile can flap its transport for a commit — either looked like "active in chat"
+  // and mounted a 1373-row pane on the wrong tab. `active` drops on the next commit, which
+  // cancels this frame.
+  const [chatMounted, setChatMounted] = useState(false);
+  const wantsChatMount = !chatMounted && showSimpleChat && active && !!process;
+  useEffect(() => {
+    if (!wantsChatMount) return;
+    const frame = requestAnimationFrame(() => setChatMounted(true));
+    return () => cancelAnimationFrame(frame);
+  }, [wantsChatMount]);
+  const mountChatPane = chatMounted && !!process;
   // `null` = the mode is not known yet (first load in this browser profile, no
   // boot seed). Neither surface is the right guess, so cover the pane until it
   // resolves — a headless process needs no wait (its transport decides), and the
@@ -1782,18 +1804,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
         {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
         {process && activePane === 'claude' && (
-          <ProcessToolbar
-            process={process}
-            traceFilters={traceFilters}
-            onTraceFiltersChange={setTraceFilters}
-            colVis={colVis}
-            onColVisChange={setColVis}
-            sessionStartTime={sessionStartTime}
-            lastMessageTime={lastMessageTime}
-            embedded={embedded}
-            onClose={onClose}
-            shell={shell}
-          />
+          <FrozenWhenHidden active={active}>
+            <ProcessToolbar
+              process={process}
+              traceFilters={traceFilters}
+              onTraceFiltersChange={setTraceFilters}
+              colVis={colVis}
+              onColVisChange={setColVis}
+              sessionStartTime={sessionStartTime}
+              lastMessageTime={lastMessageTime}
+              embedded={embedded}
+              onClose={onClose}
+              shell={shell}
+            />
+          </FrozenWhenHidden>
         )}
         {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
 
@@ -1809,22 +1833,24 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             (trace/annotation/PTY-timing), hidden in Standard view and when the
             simple chat replaces the xterm. */}
           {process && activePane === 'claude' && !showSimpleChat && isAdvanced ? (
-            <ColumnHeaderBar
-              showTrace={showGutter}
-              traceWidth={48}
-              totalTraceEvents={totalTraceEvents}
-              historicalCount={historicalCount}
-              liveCount={liveCount}
-              showTime={showTimeGutter}
-              timeWidth={timeGutterWidth}
-              traceFilters={traceFilters}
-              showAnnotations={showAnnotationGutter}
-              annotationsWidth={24}
-              annotationElements={annotationElements}
-              onToggleTrace={() => setColVis({ ...colVis, trace: !colVis.trace })}
-              onHideTime={() => setColVis({ ...colVis, time: false })}
-              onToggleAnnotations={() => setColVis({ ...colVis, annotations: !colVis.annotations })}
-            />
+            <FrozenWhenHidden active={active}>
+              <ColumnHeaderBar
+                showTrace={showGutter}
+                traceWidth={48}
+                totalTraceEvents={totalTraceEvents}
+                historicalCount={historicalCount}
+                liveCount={liveCount}
+                showTime={showTimeGutter}
+                timeWidth={timeGutterWidth}
+                traceFilters={traceFilters}
+                showAnnotations={showAnnotationGutter}
+                annotationsWidth={24}
+                annotationElements={annotationElements}
+                onToggleTrace={() => setColVis({ ...colVis, trace: !colVis.trace })}
+                onHideTime={() => setColVis({ ...colVis, time: false })}
+                onToggleAnnotations={() => setColVis({ ...colVis, annotations: !colVis.annotations })}
+              />
+            </FrozenWhenHidden>
           ) : null}
 
           <div className="flex min-h-0 flex-1">
@@ -1889,56 +1915,69 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     className="absolute bottom-0 left-0 top-0"
                     style={{ width: 48, zIndex: gutterExpanded ? 50 : 1 }}
                   >
-                    <TraceGutter
-                      entries={gutterEntries}
-                      totalTraceEvents={totalTraceEvents}
-                      historicalCount={historicalCount}
-                      liveCount={liveCount}
-                      viewportY={viewportY}
-                      rows={rows}
-                      cellHeight={metricsCellHeight}
-                      expanded={gutterExpanded}
-                      onOpen={() => setGutterExpanded(true)}
-                      onClose={() => setGutterExpanded(false)}
-                      hideCounter
-                    />
+                    <FrozenWhenHidden active={active}>
+                      <TraceGutter
+                        entries={gutterEntries}
+                        totalTraceEvents={totalTraceEvents}
+                        historicalCount={historicalCount}
+                        liveCount={liveCount}
+                        viewportY={viewportY}
+                        rows={rows}
+                        cellHeight={metricsCellHeight}
+                        expanded={gutterExpanded}
+                        onOpen={() => setGutterExpanded(true)}
+                        onClose={() => setGutterExpanded(false)}
+                        hideCounter
+                      />
+                    </FrozenWhenHidden>
                   </div>
                 )}
                 {showTimeGutter && (
                   <div className="absolute bottom-0 top-0" style={{ left: 48, width: timeGutterWidth, zIndex: 1 }}>
-                    <TimeGutter
-                      rows={timeGutterRows}
-                      cellHeight={metricsCellHeight}
-                      filters={traceFilters}
-                      ptySyncSession={ptySyncRef.current}
-                      viewportY={viewportY}
-                      refLines={ptySyncSnapshot.refLines}
-                    />
+                    <FrozenWhenHidden active={active}>
+                      <TimeGutter
+                        rows={timeGutterRows}
+                        cellHeight={metricsCellHeight}
+                        filters={traceFilters}
+                        ptySyncSession={ptySyncRef.current}
+                        viewportY={viewportY}
+                        refLines={ptySyncSnapshot.refLines}
+                      />
+                    </FrozenWhenHidden>
                   </div>
                 )}
                 {showAnnotationGutter && (
                   <div className="absolute bottom-0 right-0 top-0" style={{ width: 24, zIndex: 1 }}>
-                    <AnnotationGutter
-                      elements={annotationElements}
-                      viewportY={viewportY}
-                      rows={rows}
-                      cellHeight={metricsCellHeight}
-                      scrollToLine={scrollAnnotationToLine}
-                      createBookmark={createBookmark}
-                      createComment={createComment}
-                      deleteBookmark={deleteBookmark}
-                      onHoverRow={onAnnotationHoverRow}
-                      hideCounter
-                    />
+                    <FrozenWhenHidden active={active}>
+                      <AnnotationGutter
+                        elements={annotationElements}
+                        viewportY={viewportY}
+                        rows={rows}
+                        cellHeight={metricsCellHeight}
+                        scrollToLine={scrollAnnotationToLine}
+                        createBookmark={createBookmark}
+                        createComment={createComment}
+                        deleteBookmark={deleteBookmark}
+                        onHoverRow={onAnnotationHoverRow}
+                        hideCounter
+                      />
+                    </FrozenWhenHidden>
                   </div>
                 )}
                 {/* Standard-view simple chat — opaque overlay above xterm +
                   gutters. The xterm stays mounted (and fitted) underneath so
                   toggling Advanced⇄Standard is instant and never resets the
                   terminal. Same session, same PTY (see SimpleChatPane). */}
-                {showSimpleChat && process && (
-                  <div className="absolute inset-0 z-[60]">
-                    <SimpleChatPane process={process} />
+                {mountChatPane && process && (
+                  <div
+                    className={showSimpleChat ? 'absolute inset-0 z-[60]' : 'invisible absolute inset-0 z-[60]'}
+                    aria-hidden={!showSimpleChat}
+                    data-testid="simple-chat-overlay"
+                    data-shown={showSimpleChat ? 'true' : 'false'}
+                  >
+                    <FrozenWhenHidden active={active && showSimpleChat}>
+                      <SimpleChatPane process={process} />
+                    </FrozenWhenHidden>
                   </div>
                 )}
                 {/* Mode not resolved yet — hold the pane blank rather than paint
@@ -1976,33 +2015,35 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         </PtySyncProvider>
 
         {process && !surfacePending && (
-          <TerminalBottomRibbon
-            fileCount={fileCount}
-            isActive={processIsActive}
-            promptCount={mergedPrompts.length}
-            lastPromptText={lastPromptText}
-            process={process}
-            openTabs={ribbonOpenTabs}
-            activeSideTab={ribbonActiveSideTab}
-            onOpenSideTab={(tab) => {
-              if (tab === SideTabId.Shell) {
-                void handleToggleSidecar();
-              } else {
-                toggleSideTab(tab);
+          <FrozenWhenHidden active={active}>
+            <TerminalBottomRibbon
+              fileCount={fileCount}
+              isActive={processIsActive}
+              promptCount={mergedPrompts.length}
+              lastPromptText={lastPromptText}
+              process={process}
+              openTabs={ribbonOpenTabs}
+              activeSideTab={ribbonActiveSideTab}
+              onOpenSideTab={(tab) => {
+                if (tab === SideTabId.Shell) {
+                  void handleToggleSidecar();
+                } else {
+                  toggleSideTab(tab);
+                }
+              }}
+              hasLastPlan={hasPlan}
+              onOpenLastPlan={handleOpenLastPlan}
+              artifacts={artifacts}
+              onOpenArtifact={handleOpenArtifact}
+              shown={shownStack}
+              onOpenShown={handleOpenShown}
+              composer={
+                showSimpleChat && process ? (
+                  <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} composerRef={composerRef} />
+                ) : undefined
               }
-            }}
-            hasLastPlan={hasPlan}
-            onOpenLastPlan={handleOpenLastPlan}
-            artifacts={artifacts}
-            onOpenArtifact={handleOpenArtifact}
-            shown={shownStack}
-            onOpenShown={handleOpenShown}
-            composer={
-              showSimpleChat && process ? (
-                <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} composerRef={composerRef} />
-              ) : undefined
-            }
-          />
+            />
+          </FrozenWhenHidden>
         )}
       </div>
     </ChatPlanModeProvider>

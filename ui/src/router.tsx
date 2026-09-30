@@ -105,7 +105,6 @@ function RootLayout() {
       toplog.log('tab_switch', `painted ${sinceTabSwitch()} kind=${viewType || layout || 'home'} path=${pathname}`);
     });
     return () => cancelAnimationFrame(frame);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one line per URL
   }, [pathname, search]);
 
   return (
@@ -151,6 +150,13 @@ export const router = createBrowserRouter(
       path="/"
       element={<RootLayout />}
       loader={loadRoot}
+      // `loadRoot` is init-once (see its header). React-Router re-runs a loader whenever
+      // the search string changes — and the first tab switch after a page load does
+      // change it (`?viewMode=…&scope-…` → `?scope-…&viewMode=…`). Re-running it
+      // re-activates the SAME locale, Lingui announces a change, and every i18n consumer
+      // re-renders past its `memo`: a 900-row chat took 2.7 s (FLOWPAD-2193). A loader that
+      // failed still re-runs — its data is `undefined`, which RR treats as never loaded.
+      shouldRevalidate={() => false}
       errorElement={<ErrorScreen />}
       HydrateFallback={() => (
         <div className="flex min-h-screen items-center justify-center">
