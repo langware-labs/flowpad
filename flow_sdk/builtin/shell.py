@@ -16,9 +16,11 @@ import logging
 import os
 import re
 import shlex
+import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar
 
 import psutil
@@ -823,11 +825,8 @@ class Shell(Entity):
         return f"{start}; {guarded}; {end} $?"
 
     @classmethod
-    def cancel_path(cls, marker: str) -> "Path":
+    def cancel_path(cls, marker: str) -> Path:
         """The file whose presence cancels *marker*'s run before it starts (``interrupt``)."""
-        from pathlib import Path  # noqa: PLC0415
-        import tempfile  # noqa: PLC0415
-
         return Path(tempfile.gettempdir()) / "flowpad-run-cancel" / marker
 
     @classmethod
