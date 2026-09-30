@@ -56,7 +56,7 @@ icon values remain supported for Agents that do not use an image.
 Creating another Agent whose normalized name resolves to an occupied bundle
 returns a conflict and never overwrites the existing Agent or its files.
 
-### Intro and project auto-launch
+### Intro, auto prompt and project auto-launch
 
 These keys are **declaration only**: they round-trip through
 `agent.json`, show in the profile editor, and never enter `to_agent_options`, so
@@ -67,7 +67,7 @@ setting them does not flip `restart_required` on a running process.
 | `phone` | The agent's own phone number, the one its WhatsApp channel answers on: `{"country_code": "972", "number": "557709288"}` (`PhoneNumberSpec`). Input is normalised — `+972` and `055-770-9288` are accepted; `digits` / `e164` give `972557709288` / `+972557709288`. |
 | `intro` | Welcome text rendered as the agent's first message in Vibe and Standard chat (`AgentIntroMessage`). Presentation only: not in the transcript, never sent to the model. Hidden in Advanced/Dev, which show the raw session. |
 | `auto_launch` | Launch this agent once, the first time the project it lives in is opened. |
-| `auto_launch_prompt` | First prompt of that session, delivered through the process prompt queue. Empty opens the session with no first turn. |
+| `auto_launch_prompt` | The agent's **auto prompt**: the first turn of every new session opened as the agent — the Use button, the agent home page (new chat), project auto-launch, and "Open a session" on a local placement — delivered through the process prompt queue. Independent of `auto_launch`. Empty opens sessions with no first turn. One-shot runs (run, schedules, triggers, email/WhatsApp, tasks) never receive it; they bring their own prompt. |
 
 Auto-launch is **once per project, ever**. The dock loaders run a load-redirect
 resolver (`ui/src/agents/agent-auto-launch-redirect.ts`, registered after the
@@ -78,12 +78,23 @@ in the project's device state (`<instance_dir>/projects/<project_id>/device_stat
 key `agent_auto_launched`, via `flow_sdk/project_device_state.py` — backend-owned so no
 UI `project.save()` can clobber it; read it back with `GET /api/v1/agents/auto-launch?project_id=`). The **oldest** wins — first
 indexed (`created_date`), then alphabetical by folder — and every candidate,
-winner and cancelled alike, is recorded before the session opens, so a cancelled
-agent never fires on a later open and a failed launch is not retried. The UI
-warns which launches were cancelled. The session is opened with `use()`, the
-prompt is enqueued server-side, and the UI embeds the vibe persona before it
-kicks the queue with `drain-queue`. Never set `auto_launch` on a system agent:
-the system project is a context root of every project.
+winner and cancelled alike, is recorded once the winner's session has opened
+(under a per-project lock), so a cancelled agent never fires on a later open,
+while a `use()` that raised leaves the mark unset and the next open retries.
+The UI warns which launches were cancelled. Never set `auto_launch` on a system
+agent: the system project is a context root of every project.
+
+**How the auto prompt reaches turn 1.** Every opener calls `use` with the
+opt-in (`Agent.use(auto_prompt=True)`; TS `agent.use(projectId, { autoPrompt: true })`
+/ `useDeployment(id, { autoPrompt: true })`; body `auto_prompt: true` on
+`POST /agent/<id>/use`). `Agent.use` queues the prompt straight into the
+process queue (source `auto_prompt`) without starting it, and only when the
+deployment is local to the tier handling the call — the hub relays a remote
+`use` without the flag. The UI's `prepareAgentSession` then embeds the vibe
+layer and kicks the queue with `drain-queue`, so turn 1 runs with the layer in
+place. A script that opts in starts the turn itself before its own prompt:
+Python `process.submit()` (TS `drainQueue()`); `prompt()` bypasses the queue,
+so calling it first makes the auto prompt run second.
 
 The same entity supports two execution modes:
 

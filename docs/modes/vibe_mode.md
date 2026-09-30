@@ -189,9 +189,10 @@ process's deployment) shows the agent's `intro` as its first message, above the
 transcript, in Vibe and Standard only (`AgentIntroMessage`, mounted by
 `EntityExecutionPanel` and `SimpleChatPane`). It is presentation: nothing in
 the stream, nothing on disk, nothing the model reads. Advanced/Dev omit it so
-the raw transcript stays faithful. Project agent auto-launch (see
-`docs/agents-management.md`) lands here too, with the queued prompt as the first
-real user turn.
+the raw transcript stays faithful. Every session opened as an agent from the UI
+— the Use button, the agent home page, project auto-launch (see
+`docs/agents-management.md`) — lands here with the agent's auto prompt, when it
+has one, as the first real user turn.
 
 ## Theme (hub palette)
 
