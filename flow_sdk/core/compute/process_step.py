@@ -134,6 +134,53 @@ def _transcript_signature(process: Any) -> Any:
         return None
 
 
+#: What the row says while the agent's own command is doing work — a download, an unpack, an
+#: installer — rather than the agent itself thinking.
+RUNNING_A_COMMAND = "running a command"
+
+
+def _command_activity(process_id: str) -> Any:
+    """The CPU and I/O used so far by the commands the agent is running, or ``None`` when none is.
+
+    One long command — a 30 MB download and unpack — leaves the agent's state, item, counters and
+    transcript all unchanged for minutes, so the row read "may be stuck" while the command was busy
+    the whole time (seen on the clean-Windows VM: 2 minutes, then "Goal achieved"). The agent's
+    CHILD processes are those commands; their CPU time and bytes moved grow while they work.
+
+    Only the children, never the agent process itself: a harness idling on a hung model call has
+    timers that tick, and must still read as quiet. A command sitting idle (waiting on a permission
+    prompt nobody sees) is quiet too, which is the right thing for the row to say.
+    Never raises: a sign of life is never worth a failure.
+    """
+    try:
+        import psutil  # noqa: PLC0415
+
+        from flow_sdk.builtin.agentic_process.agentic_process import prompt_worker_pid  # noqa: PLC0415
+
+        pid = prompt_worker_pid(process_id)
+        if pid is None:
+            return None
+        children = psutil.Process(pid).children(recursive=True)
+        if not children:
+            return None
+        cpu, moved = 0.0, 0
+        for child in children:
+            try:
+                times = child.cpu_times()
+                cpu += times.user + times.system
+            except psutil.Error:
+                continue
+            try:  # absent on macOS; CPU alone still answers there
+                io = child.io_counters()
+                moved += io.read_bytes + io.write_bytes
+            except (psutil.Error, AttributeError):
+                pass
+        return (len(children), round(cpu, 1), moved)
+    except Exception:  # noqa: BLE001
+        logger.debug("could not read command activity for %s", process_id, exc_info=True)
+        return None
+
+
 async def launch_step_process(
     *,
     agent: str,
@@ -239,17 +286,22 @@ async def _prompt_and_wait(
     # "alive" on every poll whether or not the agent did anything. Only a CHANGE is a sign of life:
     # what the agent reports (its state, what it is on, its token and tool counters), or its
     # transcript file growing — the agent's own record of everything it does, which moves when it
-    # makes a tool call or gets a result even while its counters sit still.
+    # makes a tool call or gets a result even while its counters sit still — or the command it is
+    # running doing work (`_command_activity`), which moves while one long command runs.
     last_seen: list[str] = []
 
     def observe(worker_status: Any) -> None:
         progress = _progress_for(process_id, worker_status)
+        activity = _command_activity(process_id)
+        if activity is not None:
+            progress = progress.model_copy(update={"text": f"{progress.text} · {RUNNING_A_COMMAND}"})
         seen = repr(
             (
                 progress.text,
                 sorted(progress.counters.items(), key=repr),
                 str(getattr(worker_status, "value", worker_status)),
                 _transcript_signature(process),
+                activity,
             )
         )
         if last_seen and last_seen[0] == seen:

@@ -265,6 +265,12 @@ function WizardViewerBody({
     animateMinimizeToProcessChip(dialogContentRef.current);
     closeWizardPopup();
   }, []);
+  // "Go to homepage" from a popup must also close it: the popup sits OVER the page, so navigating
+  // alone changed only the page behind it and the click looked like it did nothing.
+  const goHome = useCallback(() => {
+    if (isPopup) closeWizardPopup();
+    navigation.goHome({ homePage: true });
+  }, [isPopup, navigation]);
 
   // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
   // changes what is rendered, never which hooks execute or what data is
@@ -692,7 +698,7 @@ function WizardViewerBody({
             <Button onClick={() => void startWizard()} data-testid="wizard-restart">
               {wizard.restart_label || <Trans>Restart</Trans>}
             </Button>
-            <Button variant="ghost" onClick={() => navigation.goHome({ homePage: true })} data-testid="wizard-go-home">
+            <Button variant="ghost" onClick={goHome} data-testid="wizard-go-home">
               <Trans>Go to homepage</Trans>
             </Button>
           </div>
@@ -710,7 +716,7 @@ function WizardViewerBody({
         >
           <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
           <p className="flex-1 text-sm">{wizard.success_message}</p>
-          <Button size="sm" onClick={() => navigation.goHome({ homePage: true })} data-testid="wizard-go-home">
+          <Button size="sm" onClick={goHome} data-testid="wizard-go-home">
             <Trans>Go to homepage</Trans>
           </Button>
         </section>
