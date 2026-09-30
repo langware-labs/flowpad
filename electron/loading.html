@@ -269,9 +269,22 @@
 
     .error-tools {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
-      margin-bottom: 24px;
+      margin-bottom: 12px;
     }
+
+    .error-share-note {
+      font-size: 0.75rem;
+      line-height: 1.5;
+      color: hsl(0 0% 50%);
+      margin-bottom: 24px;
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+
+    .error-share-note.ok { color: hsl(140 40% 60%); }
+    .error-share-note.fail { color: hsl(0 70% 65%); }
 
     .error-step {
       margin-bottom: 24px;
@@ -419,7 +432,12 @@
       <div class="error-tools">
         <button class="quit-btn" id="copy-details">Copy error details</button>
         <button class="quit-btn" id="open-logs">Open logs folder</button>
+        <button class="quit-btn" id="share-logs">Share with us</button>
       </div>
+      <p class="error-share-note" id="share-status">
+        “Share with us” opens your email app with a short message to the Flowpad team and shows a zip of
+        your latest logs to attach. Nothing is sent until you press Send in your email app.
+      </p>
 
       <div class="error-step">
         <div class="error-step-label"><span class="step-num">1</span>Upgrade Flowpad. Paste this in your terminal, then reopen the app:</div>
