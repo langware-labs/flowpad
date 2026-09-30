@@ -1945,8 +1945,45 @@ class UvManager {
    * would otherwise pin an interpreter the release refuses to run on
    * ("flowpad==X depends on Python>=3.11", uv exits non-zero).
    */
-  async _pythonPinForUpgrade() {
-    const info = await this._getLatestPypiInfo();
+  /** PyPI `info` of ONE release (requires_python, yanked, …), or null when unknown (offline, 404). */
+  async _getPypiVersionInfo(version) {
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/${encodeURIComponent(version)}/json`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        this.log.warn(`[uv] PyPI lookup of ${PYPI_PACKAGE} ${version} failed: HTTP ${res.status}`);
+        return null;
+      }
+      const data = await res.json();
+      return (data && data.info) || null;
+    } catch (err) {
+      this.log.warn(`[uv] PyPI lookup of ${PYPI_PACKAGE} ${version} failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * The engine release to install when the user already agreed to a SPECIFIC version (saved when the
+   * update was offered). That version may have been yanked since — `uv` would still install it when
+   * pinned with `==` — so ask PyPI; a yanked version is replaced by the latest release. When PyPI cannot
+   * be reached the requested version is used as is (the install needs the network anyway, and the
+   * Python pin then falls back to the bundled one).
+   * @returns {Promise<{version: string, info: object|null}>}
+   */
+  async _resolveEngineTarget(version) {
+    const info = await this._getPypiVersionInfo(version);
+    if (info && info.yanked === true) {
+      this.log.warn(`[uv] ${PYPI_PACKAGE} ${version} was yanked on PyPI${info.yanked_reason ? ` (${info.yanked_reason})` : ''} — installing the latest release instead`);
+      const latest = await this._getLatestPypiInfo();
+      if (latest && latest.version) return { version: latest.version, info: latest };
+    }
+    return { version, info };
+  }
+
+  async _pythonPinForUpgrade(release) {
+    // `release` undefined → the latest release's metadata; null → unknown (bundled pin only); else that release's.
+    const info = release === undefined ? await this._getLatestPypiInfo() : release;
     const remote = pythonFloor(info && info.requires_python);
     const pin = maxPythonVersion(tryPythonVersion(), remote);
     if (!pin) return getPythonVersion(); // broken build and no PyPI answer: throws, naming the build
@@ -2055,7 +2092,7 @@ class UvManager {
 
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, autoInstall = false }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -2083,33 +2120,29 @@ class UvManager {
 
       if (!mainWindow || mainWindow.isDestroyed()) return false;
 
-      // `autoInstall` (the desktop was just updated): no question — the user
-      // already accepted the update, and the engine must catch up with it.
-      if (!autoInstall) {
-        // Abortable: a newer release found while this is on screen closes it (as
-        // "Later") via supersedePackageDialog(), so only one dialog, for the latest
-        // version, is ever shown.
-        this._packageDialog = { version: latest, abort: new AbortController() };
-        let response;
-        try {
-          ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
-            type: 'info',
-            title: 'Update Available',
-            message: `A new version of FlowPad is available (${latest}).`,
-            detail: status.currentVersion
-              ? `You are running version ${status.currentVersion}.`
-              : 'Your current installation could not be verified and may be incomplete.',
-            buttons: ['Upgrade', 'Later'],
-            defaultId: 0,
-            cancelId: 1, // Esc / close = Later, never an implicit Upgrade
-            signal: this._packageDialog.abort.signal,
-          }));
-        } finally {
-          this._packageDialog = null;
-        }
-        if (response !== 0) this._deferredPackageVersion = latest;
-        if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
+      // Abortable: a newer release found while this is on screen closes it (as
+      // "Later") via supersedePackageDialog(), so only one dialog, for the latest
+      // version, is ever shown.
+      this._packageDialog = { version: latest, abort: new AbortController() };
+      let response;
+      try {
+        ({ response } = await require('electron').dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: 'Update Available',
+          message: `A new version of FlowPad is available (${latest}).`,
+          detail: status.currentVersion
+            ? `You are running version ${status.currentVersion}.`
+            : 'Your current installation could not be verified and may be incomplete.',
+          buttons: ['Upgrade', 'Later'],
+          defaultId: 0,
+          cancelId: 1, // Esc / close = Later, never an implicit Upgrade
+          signal: this._packageDialog.abort.signal,
+        }));
+      } finally {
+        this._packageDialog = null;
       }
+      if (response !== 0) this._deferredPackageVersion = latest;
+      if (response !== 0 || !mainWindow || mainWindow.isDestroyed()) return false;
       // User chose Upgrade — show loading screen and wait for its IPC listener.
       const loadingPath = require('path').join(__dirname, 'loading.html');
       await mainWindow.loadFile(loadingPath);
@@ -2227,11 +2260,21 @@ class UvManager {
   /**
    * Upgrade flowpad to the latest version via `uv tool install flowpad@latest`.
    */
-  async upgrade({ onProgress } = {}) {
-    this.log.info('[uv] Upgrading flowpad...');
-    const pin = await this._pythonPinForUpgrade();
+  async upgrade({ onProgress, version } = {}) {
+    // `version`: the exact release the user agreed to (update offered earlier) instead of "whatever is latest now".
+    let spec = `${PYPI_PACKAGE}@latest`;
+    let pin;
+    if (version) {
+      const target = await this._resolveEngineTarget(version);
+      spec = `${PYPI_PACKAGE}==${target.version}`;
+      pin = await this._pythonPinForUpgrade(target.info); // that release's own requires_python
+      this.log.info(`[uv] Upgrading flowpad to ${target.version}${target.version !== version ? ` (${version} was withdrawn)` : ''}...`);
+    } else {
+      pin = await this._pythonPinForUpgrade();
+      this.log.info('[uv] Upgrading flowpad...');
+    }
     await this._uvToolInstallForce(
-      ['tool', 'install', `${PYPI_PACKAGE}@latest`, '--python', pin, '--force'],
+      ['tool', 'install', spec, '--python', pin, '--force'],
       { onProgress },
     );
     await this._ensureShimOnPath();
