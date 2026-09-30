@@ -4,6 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const { promisify } = require('util');
 const { SEMVER_RE, isNewer } = require('./semver');
+const { createProgressWatchdog } = require('./progress-watchdog');
 
 const execFileAsync = promisify(execFile);
 
@@ -35,6 +36,92 @@ function installFailure(message, { stderr = '', code = null } = {}) {
   err.stderr = stderr;
   err.code = code;
   return err;
+}
+
+/** Total bytes of every regular file under `dir` (symlinks not followed). 0 for a missing dir. */
+function dirSizeBytes(dir, skip = []) {
+  let total = 0;
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
+  for (const e of entries) {
+    if (skip.includes(e.name)) continue; // top level only: our own mktemp wrapper dir (.bin)
+    const full = path.join(dir, e.name);
+    try {
+      if (e.isDirectory()) total += dirSizeBytes(full);
+      else if (e.isFile()) total += fs.lstatSync(full).size;
+    } catch { /* vanished mid-scan: the installer is cleaning up */ }
+  }
+  return total;
+}
+
+// macOS's `mktemp -d` IGNORES $TMPDIR (it uses the per-user temp dir), so on a Mac the installer would
+// download into a directory we cannot watch. This wrapper, placed first on the installer's PATH, forces
+// template-less calls (`mktemp`, `mktemp -d` — what install.sh uses for the archive) under $TMPDIR, and
+// passes anything with an explicit template through unchanged. `realMktemp` is the system tool.
+function mktempShimSource(realMktemp) {
+  return [
+    '#!/bin/sh',
+    '# Flowpad: keep the uv installer\'s temp files under $TMPDIR (macOS mktemp -d ignores it) so the',
+    '# download can be watched for progress. Explicit templates are passed through untouched.',
+    'for a in "$@"; do',
+    '  case "$a" in -*) : ;; *) exec ' + JSON.stringify(realMktemp) + ' "$@" ;; esac',
+    'done',
+    'exec ' + JSON.stringify(realMktemp) + ' "$@" "${TMPDIR%/}/tmp.XXXXXXXXXX"',
+    '',
+  ].join('\n');
+}
+
+// Async twins of the above for sampling during `uv tool install`: a scan of a big directory must not
+// block the Electron main process (a full recursive scan of a real 8 GB uv cache took ~9 s of synchronous
+// work — measured 2026-09-30 — so the global cache is only ever fingerprinted at its TOP level).
+async function dirSizeBytesAsync(dir) {
+  let total = 0;
+  let entries;
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return 0; }
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    try {
+      if (e.isDirectory()) total += await dirSizeBytesAsync(full);
+      else if (e.isFile()) total += (await fs.promises.lstat(full)).size;
+    } catch { /* vanished mid-scan */ }
+  }
+  return total;
+}
+
+/**
+ * Cheap change-detector for a big directory: the names + mtimes of its TOP level entries, plus the
+ * recursive size of the dot-entries (`.tmp*`, `.temp`: where uv keeps downloads that are still in
+ * flight). Moves when uv adds/finishes an entry or a download grows. 'none' when the dir is missing.
+ */
+async function topFingerprintAsync(dir) {
+  let entries;
+  try { entries = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { return 'none'; }
+  const parts = [];
+  let dot = 0;
+  for (const e of entries) {
+    const full = path.join(dir, e.name);
+    try {
+      const st = await fs.promises.lstat(full);
+      parts.push(`${e.name}:${Math.round(st.mtimeMs)}`);
+      if (e.name.startsWith('.')) dot += e.isDirectory() ? await dirSizeBytesAsync(full) : st.size;
+    } catch { /* vanished mid-scan */ }
+  }
+  return `${parts.sort().join('|')}#${dot}`;
+}
+
+// Windows PowerShell 5.1's own module search path. A parent that is PowerShell 7 (an app started from a
+// pwsh terminal, or from an ssh/pwsh session) leaves PSModulePath pointing at pwsh's modules, and then
+// powershell.exe cannot load its built-in ones: the uv installer dies with "The 'Get-ExecutionPolicy'
+// command was found in the module 'Microsoft.PowerShell.Security', but the module could not be loaded",
+// and the venv-process drain (Get-CimInstance) silently does nothing. Reproduced on the Windows VM
+// 2026-09-30: installer exit 1 with the inherited path, exit 0 with this one.
+function windowsPowerShellModulePath(env = process.env) {
+  const w = path.win32;
+  return [
+    w.join(env.USERPROFILE || os.homedir(), 'Documents', 'WindowsPowerShell', 'Modules'),
+    w.join(env.ProgramFiles || 'C:\\Program Files', 'WindowsPowerShell', 'Modules'),
+    w.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'Modules'),
+  ].join(';');
 }
 
 // Python settings that break a managed venv's interpreter if a user's shell exports them (a global
@@ -282,6 +369,20 @@ class UvManager {
     this._installAborted = false;
     this._keepMarker = false;
     this._spawned = false;
+    this._progressTickMs = 5000; // elapsed-time line during the uv download (display only)
+    // Stall watchdog for the uv download (progress-watchdog.js): 30 s windows, 3 quiet ones in a row.
+    // Overridable per instance for tests only.
+    this._watchdogWindowMs = undefined;
+    this._watchdogStrikes = undefined;
+    this._timers = { setInterval, clearInterval, setTimeout, clearTimeout };
+    // Wall-clock cap for the uv download ONLY when the stall watchdog cannot be armed (no trustworthy
+    // progress signal on this machine). Approved by the user, 2026-09-30: 200 s. Never applies when the
+    // watchdog is running — a moving download is not capped at all.
+    this._fallbackCapMs = 200 * 1000;
+    // Same idea for `uv tool install flowpad` (install/upgrade/reinstall): a wall-clock cap that applies ONLY
+    // while the progress signal has not been shown to work. Approved by the user, 2026-09-30: 240 s.
+    this._toolInstallCapMs = 240 * 1000;
+    this._uvDirsPromise = null;
     this.isShuttingDown = false;
     this._flowBin = null;
     // Set to true when the uv-generated flow.exe shim is blocked by Windows
@@ -519,7 +620,7 @@ class UvManager {
       PATH: this._enrichedPath(),
       ...options.env,
     });
-    const useShell = needsShellOnWin(cmd);
+    const useShell = options.shell !== undefined ? options.shell : needsShellOnWin(cmd);
     const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
     const onLine = typeof options.onLine === 'function' ? options.onLine : null;
     this.log.info(`[uv] Running (streaming, no cap): ${cmd} ${args.join(' ')}`);
@@ -556,8 +657,11 @@ class UvManager {
           lines(text);
         };
       };
-      child.stdout.on('data', feed(false));
-      child.stderr.on('data', feed(true));
+      const onData = typeof options.onData === 'function' ? options.onData : null;
+      const feedOut = feed(false);
+      const feedErr = feed(true);
+      child.stdout.on('data', (c) => { if (onData) onData(c); feedOut(c); });
+      child.stderr.on('data', (c) => { if (onData) onData(c); feedErr(c); });
 
       child.on('error', (err) => {
         err.stdout = stdout;
@@ -595,11 +699,66 @@ class UvManager {
   // uv bootstrap (first-time install only)
   // ---------------------------------------------------------------------------
 
+  /** Write the mktemp wrapper into `<tmpRoot>/.bin`. Returns its path, or null if no system mktemp is found. */
+  _installMktempShim(tmpRoot) {
+    const dirs = this._enrichedPath().split(path.delimiter).filter(Boolean);
+    const real = dirs.map((d) => path.join(d, 'mktemp')).find((f) => { try { fs.accessSync(f, fs.constants.X_OK); return fs.statSync(f).isFile(); } catch { return false; } });
+    if (!real) return null;
+    try {
+      const dir = path.join(tmpRoot, '.bin');
+      fs.mkdirSync(dir, { recursive: true });
+      const shim = path.join(dir, 'mktemp');
+      fs.writeFileSync(shim, mktempShimSource(real), { mode: 0o755 });
+      fs.chmodSync(shim, 0o755);
+      return shim;
+    } catch (err) {
+      this.log.warn(`[uv] could not write the mktemp wrapper: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Does the uv installer, started with `env`, put its temp files under `tmpRoot`? Asks the same
+   * primitive the installer scripts use (`mktemp -d` on Unix, [IO.Path]::GetTempPath() on Windows).
+   * False on any doubt — the caller then leaves the stall watchdog off.
+   */
+  async _installerHonorsTempDir(tmpRoot, env) {
+    try {
+      const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+      const root = real(tmpRoot);
+      const norm = (p) => (IS_WIN ? p.toLowerCase() : p);
+      if (IS_WIN) {
+        const { stdout } = await this._run('powershell.exe', ['-NoProfile', '-Command', '[System.IO.Path]::GetTempPath()'], { env, shell: false });
+        return norm(real(stdout.trim())).startsWith(norm(root));
+      }
+      const { stdout } = await this._run('sh', ['-c', 'mktemp -d'], { env });
+      const made = stdout.trim();
+      const inside = !!made && norm(real(made)).startsWith(norm(root) + path.sep);
+      if (made) try { fs.rmSync(made, { recursive: true, force: true }); } catch { /* ignore */ }
+      return inside;
+    } catch (err) {
+      this.log.warn(`[uv] could not verify the installer's temp dir: ${err.message}`);
+      return false;
+    }
+  }
+
   /**
    * Ensure uv is available. If not found, install it automatically.
-   * Only called during first-time setup.
+   * Only called during first-time setup (and repair).
+   *
+   * The download has NO wall-clock cap. It used to (120s), which killed a slow-but-working download on
+   * a weak link and reported "process was killed (SIGTERM)" — its duration is the user's bandwidth,
+   * not something we can bound without also killing good installs. What is bounded is SILENCE: a
+   * progress watchdog (progress-watchdog.js) stops it only after 3 consecutive 30 s windows with no new
+   * byte (output or downloaded), and any new byte resets it. And it is never invisible or unstoppable:
+   *   - the caller's progress line shows the installer's own output plus an elapsed-time tick
+   *     (display only — it never aborts anything), so a long download is visibly alive;
+   *   - `isInstalling()` covers it, so quitting mid-download asks first, and `abortInstall()` kills the
+   *     installer's process tree — the user can always get out;
+   *   - a failed download fails FAST with the real cause (see UV_INSTALL_SH): DNS, refused, a login
+   *     page — none of those hang, only a stalled-but-open connection does.
    */
-  async ensureUv() {
+  async ensureUv({ onProgress } = {}) {
     // Check if uv is already available
     try {
       await this._uv(['--version']);
@@ -609,54 +768,107 @@ class UvManager {
       this.log.info('[uv] uv not found, installing...');
     }
 
-    // Install uv
+    // Install uv. Windows: powershell.exe directly, shell:false (cmd.exe would not quote the -Command
+    // script); full cmdlet names, not the irm/iex aliases (see UV_INSTALL_PS1).
+    const [cmd, args, shell] = IS_WIN
+      ? ['powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', UV_INSTALL_PS1], false]
+      : ['sh', ['-c', UV_INSTALL_SH], undefined];
+    this._installing = true;
+    this._installAborted = false;
+    const startedAt = Date.now();
+
+    // A private temp dir for the installer. Astral's scripts download the archive (the slow part) into
+    // `mktemp -d` / [IO.Path]::GetTempPath() — both honour TMPDIR / TEMP+TMP — SILENTLY (curl -s,
+    // WebClient.DownloadFile), so output bytes say nothing about a download in progress; the growth of
+    // this directory does. Checked against the real install.sh / install.ps1 (2026-09-30).
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'flowpad-uv-'));
+    const tmpEnv = { TMPDIR: tmpRoot, TEMP: tmpRoot, TMP: tmpRoot };
     if (IS_WIN) {
-      // Must use full PowerShell cmdlet names (not aliases like irm/iex)
-      // and spawn powershell.exe directly without shell: true
-      await new Promise((resolve, reject) => {
-        const ps = spawn('powershell.exe', [
-          '-NoProfile',
-          '-ExecutionPolicy', 'Bypass',
-          '-Command',
-          UV_INSTALL_PS1,
-        ], {
-          shell: false,
-          stdio: 'pipe',
-          windowsHide: true,
-        });
-
-        let stdout = '';
-        let stderr = '';
-
-        ps.stdout.on('data', (d) => {
-          const text = d.toString();
-          stdout += text;
-          this.log.info(`[uv] ${text.trim()}`);
-        });
-        ps.stderr.on('data', (d) => {
-          const text = d.toString();
-          stderr += text;
-          this.log.warn(`[uv] ${text.trim()}`);
-        });
-
-        ps.on('close', (code) => {
-          if (code === 0) {
-            resolve();
-          } else {
-            reject(installFailure(`uv install failed (exit ${code})\n${stderr}`, { stderr, code }));
-          }
-        });
-
-        ps.on('error', reject);
-
-        // Timeout after 120s
-        setTimeout(() => {
-          try { ps.kill(); } catch {}
-          reject(new Error('uv install timed out after 120s'));
-        }, 120000);
-      });
+      tmpEnv.PSModulePath = windowsPowerShellModulePath();
     } else {
-      await this._run('sh', ['-c', UV_INSTALL_SH], { timeout: 120000 });
+      const shimPath = this._installMktempShim(tmpRoot);
+      if (shimPath) tmpEnv.PATH = `${path.dirname(shimPath)}${path.delimiter}${this._enrichedPath()}`;
+    }
+    let outBytes = 0;
+    let stall = null;
+    const downloaded = () => dirSizeBytes(tmpRoot, ['.bin']); // the installer's files, not our own wrapper
+    const sample = () => outBytes + downloaded();
+    const tick = onProgress
+      ? this._timers.setInterval(() => {
+        const got = downloaded();
+        onProgress(`still downloading uv (${Math.round((Date.now() - startedAt) / 1000)}s${got ? `, ${(got / 1048576).toFixed(1)} MB` : ''})`);
+      }, this._progressTickMs)
+      : null;
+    if (tick && tick.unref) tick.unref();
+    let watchdog = null;
+    let capTimer = null;
+    let capped = false;
+    try {
+      // Arm the stall watchdog ONLY if the signal is trustworthy: if this machine's installer would not
+      // use our temp dir, a flat directory would look like a stall while the download is healthy — the
+      // old 120 s cap's mistake in a new form. Then fall back to "no cap, visible, abortable".
+      if (await this._installerHonorsTempDir(tmpRoot, tmpEnv)) {
+        watchdog = createProgressWatchdog({
+          sample,
+          windowMs: this._watchdogWindowMs,
+          strikes: this._watchdogStrikes,
+          timers: this._timers,
+          log: this.log,
+          onStall: (info) => {
+            stall = info;
+            this._killInstallChild(this._installChild, `uv download made no progress for ${info.misses} x ${info.windowMs / 1000}s — stopping it`);
+          },
+        }).start();
+      } else {
+        // No signal we can trust, so silence cannot be told from a healthy silent download. Fall back to
+        // a plain wall-clock cap (200 s, user-approved) — the only case where one is used.
+        this.log.warn(`[uv] the uv installer would not use our temp dir — stall watchdog disabled; using a ${this._fallbackCapMs / 1000}s cap instead`);
+        capTimer = this._timers.setTimeout(() => {
+          capped = true;
+          this._killInstallChild(this._installChild, `uv download exceeded the ${this._fallbackCapMs / 1000}s fallback cap — stopping it`);
+        }, this._fallbackCapMs);
+        if (capTimer && capTimer.unref) capTimer.unref();
+      }
+      // An abort asked for while the temp dir was being verified (before any child exists) must still stop us.
+      if (this._installAborted) throw new Error('install aborted before the uv download started');
+      await this._runStreaming(cmd, args, {
+        shell,
+        env: tmpEnv,
+        onChild: (child) => { this._installChild = child; },
+        onData: (chunk) => { outBytes += chunk.length; },
+        onLine: (line) => { if (onProgress) onProgress(line); },
+      });
+    } catch (err) {
+      if (capped) {
+        const e = installFailure(
+          `The uv download did not finish within ${this._fallbackCapMs / 1000} seconds. ` +
+          'Check your internet connection, then click Retry.',
+          { stderr: '', code: null },
+        );
+        e.timedOut = true;
+        throw e;
+      }
+      if (stall) {
+        const seconds = (stall.misses * stall.windowMs) / 1000;
+        const e = installFailure(
+          `The uv download stalled: no new data for ${seconds} seconds (${stall.misses} checks of ${stall.windowMs / 1000} s). ` +
+          'Check your internet connection, then click Retry.',
+          { stderr: '', code: null },
+        );
+        e.stalled = true;
+        throw e;
+      }
+      throw installFailure(
+        `Could not install uv (${err.signal ? `killed by ${err.signal}` : `exit ${err.code}`})`,
+        { stderr: err.stderr || err.message, code: err.code },
+      );
+    } finally {
+      if (watchdog) watchdog.stop();
+      if (capTimer) this._timers.clearTimeout(capTimer);
+      if (tick) this._timers.clearInterval(tick);
+      this._installing = false;
+      this._installChild = null;
+      try { fs.rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* best effort */ }
     }
 
     // Verify
@@ -877,7 +1089,7 @@ class UvManager {
           `Get-CimInstance Win32_Process | ` +
           `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
           `Select-Object -ExpandProperty ProcessId`,
-        ], { timeout: 8000, windowsHide: true });
+        ], { timeout: 8000, windowsHide: true, env: { ...process.env, PSModulePath: windowsPowerShellModulePath() } });
         const pids = stdout.split(/\r?\n/)
           .map((s) => parseInt(s.trim(), 10))
           .filter((p) => p > 0);
@@ -982,7 +1194,7 @@ class UvManager {
     } catch (err) {
       // uv killed from outside (a signal: OOM, AV, Task Manager), or given up on a locked /
       // half-written tool dir: the venv may be half-replaced, so keep the marker.
-      if (err && (err.signal || this.isToolDirLockedError(err) || this.isCorruptEnvError(err))) {
+      if (err && (err.signal || err.killedByGuard || this.isToolDirLockedError(err) || this.isCorruptEnvError(err))) {
         this._keepMarker = true;
       }
       throw err;
@@ -1004,8 +1216,9 @@ class UvManager {
     // uv leaves .py files uncompiled by default, so the first boot after an
     // install compiles ~2,000 modules while importing them — the slowest phase
     // of a cold boot on a weak machine, doubled, and under an AV scanner on
-    // Windows far worse. The install has no stall watchdog and reports this
-    // step ("Bytecode compiled N files in Xs"); the boot has both.
+    // Windows far worse. The install is guarded against stalls (see
+    // _runToolInstallGuarded) and reports this step ("Bytecode compiled N
+    // files in Xs"); the boot has both.
     const args = installArgs.includes('--compile-bytecode')
       ? installArgs
       : [...installArgs, '--compile-bytecode'];
@@ -1013,13 +1226,11 @@ class UvManager {
       await this._drainVenvProcesses();
       if (this._installAborted) throw new Error('install aborted before uv started');
       try {
-        // No wall-clock cap — see _runStreaming. Progress lines go to the
-        // caller (the loading window) so a long slow install is visibly alive.
-        return await this._runStreaming('uv', args, {
+        // No wall-clock cap while it makes progress — see _runToolInstallGuarded. Progress lines go
+        // to the caller (the loading window) so a long slow install is visibly alive.
+        return await this._runToolInstallGuarded(args, {
+          onProgress,
           onChild: (child) => { this._installChild = child; this._spawned = true; },
-          onLine: (line) => {
-            if (onProgress && isInstallProgressLine(line)) onProgress(line);
-          },
         });
       } catch (err) {
         if (attempt >= MAX_RETRIES) throw err;
@@ -1041,6 +1252,120 @@ class UvManager {
         }
         throw err;
       }
+    }
+  }
+
+  /**
+   * uv's cache, python and tool directories (`uv cache dir` etc.) — the places a running `uv tool install`
+   * writes to. Memoized. null when they cannot be resolved, or when UV_NO_CACHE is set (uv then works in a
+   * throw-away cache we cannot watch): callers treat null as "no trustworthy signal".
+   */
+  _uvDirs() {
+    if (!this._uvDirsPromise) {
+      this._uvDirsPromise = (async () => {
+        if (process.env.UV_NO_CACHE) return null;
+        try {
+          const ask = async (sub) => (await this._run('uv', [sub, 'dir'])).stdout.trim();
+          const [cache, python, tools] = [await ask('cache'), await ask('python'), await ask('tool')];
+          return cache && python && tools ? { cache, python, tools } : null;
+        } catch (err) {
+          this.log.warn(`[uv] could not resolve uv's directories: ${err.message}`);
+          return null;
+        }
+      })();
+    }
+    return this._uvDirsPromise;
+  }
+
+  /**
+   * Run `uv tool install` under a progress guard. There is NO wall-clock cap while it makes progress: a
+   * 100 MB install on a slow link is bounded by bandwidth, and a cap kills it every time (the mistake
+   * already removed once). What is bounded is SILENCE, and only once the signal has proven itself:
+   *
+   *  - signal = bytes on uv's output + change in (uv cache dir top level, uv python dir top level, the
+   *    flowpad tool venv being built). Each is cheap to sample (top-level fingerprints; one bounded async
+   *    scan) — a full scan of a real 8 GB cache would freeze the app for ~9 s, measured.
+   *  - the signal is TRUSTED once the directories are seen to move during this install. Only then do
+   *    3 quiet 30 s windows (90 s) stop the install; any new byte resets it.
+   *  - until it is trusted (or if the dirs cannot be resolved / UV_NO_CACHE) a plain 240 s wall-clock cap
+   *    applies instead (user-approved 2026-09-30, the same for install, upgrade and reinstall). The
+   *    first observed movement removes that cap: a moving install is never capped.
+   *  A wrong "trusted" can only come from ANOTHER process moving those dirs, which only ever delays a
+   *  stop; it can never kill a healthy install.
+   */
+  async _runToolInstallGuarded(args, { onProgress, onChild }) {
+    const dirs = await this._uvDirs();
+    const startedAt = Date.now();
+    let outBytes = 0;
+    let stall = null;
+    let capped = false;
+    let trusted = false;
+    let lastDirFp = null;
+    let capTimer = null;
+    const toolDir = dirs ? path.join(dirs.tools, PYPI_PACKAGE) : null;
+
+    const sample = async () => {
+      const dirFp = `${await topFingerprintAsync(dirs.cache)}#${await topFingerprintAsync(dirs.python)}#${await dirSizeBytesAsync(toolDir)}`;
+      if (!trusted && lastDirFp !== null && dirFp !== lastDirFp) {
+        trusted = true;
+        this.log.info('[uv] the install is writing to uv\'s directories — progress signal trusted, wall-clock cap removed');
+        if (capTimer) { this._timers.clearTimeout(capTimer); capTimer = null; }
+      }
+      lastDirFp = dirFp;
+      return `${outBytes}|${dirFp}`;
+    };
+
+    const tick = onProgress
+      ? this._timers.setInterval(() => onProgress(`still installing (${Math.round((Date.now() - startedAt) / 1000)}s)`), this._progressTickMs)
+      : null;
+    if (tick && tick.unref) tick.unref();
+    let watchdog = null;
+    try {
+      capTimer = this._timers.setTimeout(() => {
+        capped = true;
+        this._killInstallChild(this._installChild, `flowpad install exceeded the ${this._toolInstallCapMs / 1000}s cap while its progress signal was not trusted — stopping it`);
+      }, this._toolInstallCapMs);
+      if (capTimer && capTimer.unref) capTimer.unref();
+      if (dirs) {
+        watchdog = createProgressWatchdog({
+          sample,
+          canStall: () => trusted,
+          windowMs: this._watchdogWindowMs,
+          strikes: this._watchdogStrikes,
+          timers: this._timers,
+          log: this.log,
+          onStall: (info) => {
+            stall = info;
+            this._killInstallChild(this._installChild, `flowpad install made no progress for ${info.misses} x ${info.windowMs / 1000}s — stopping it`);
+          },
+        }).start();
+      } else {
+        this.log.warn(`[uv] no directories to watch — the flowpad install is bounded by the ${this._toolInstallCapMs / 1000}s cap only`);
+      }
+      return await this._runStreaming('uv', args, {
+        onChild,
+        onData: (chunk) => { outBytes += chunk.length; },
+        onLine: (line) => { if (onProgress && isInstallProgressLine(line)) onProgress(line); },
+      });
+    } catch (err) {
+      if (capped || stall) {
+        // We killed uv mid-install: its tool venv may be half-replaced. killedByGuard keeps the
+        // install-in-progress marker so the next launch repairs it (see _uvToolInstallForce).
+        const e = installFailure(
+          capped
+            ? `The Flowpad install did not finish within ${this._toolInstallCapMs / 1000} seconds. Check your internet connection, then click Retry.`
+            : `The Flowpad install stalled: no new data for ${(stall.misses * stall.windowMs) / 1000} seconds (${stall.misses} checks of ${stall.windowMs / 1000} s). Check your internet connection, then click Retry.`,
+          { stderr: '', code: null },
+        );
+        e.killedByGuard = true;
+        if (capped) e.timedOut = true; else e.stalled = true;
+        throw e;
+      }
+      throw err;
+    } finally {
+      if (watchdog) watchdog.stop();
+      if (capTimer) this._timers.clearTimeout(capTimer);
+      if (tick) this._timers.clearInterval(tick);
     }
   }
 
@@ -1103,20 +1428,23 @@ class UvManager {
   abortInstall() {
     if (!this._installing) return false;
     this._installAborted = true;
-    const child = this._installChild;
-    if (child && child.exitCode === null && child.pid) {
-      this.log.warn(`[uv] aborting the running install (pid ${child.pid})`);
-      try {
-        if (process.platform === 'win32') {
-          execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {});
-        } else {
-          child.kill('SIGTERM');
-        }
-      } catch (err) {
-        this.log.warn(`[uv] abortInstall failed to signal the child: ${err.message}`);
-      }
-    }
+    this._killInstallChild(this._installChild, 'aborting the running install');
     return true;
+  }
+
+  /** Signal an install child and its tree. No waiting: it is signalled and we move on. */
+  _killInstallChild(child, why) {
+    if (!child || child.exitCode !== null || !child.pid) return;
+    this.log.warn(`[uv] ${why} (pid ${child.pid})`);
+    try {
+      if (process.platform === 'win32') {
+        execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => {});
+      } else {
+        child.kill('SIGTERM');
+      }
+    } catch (err) {
+      this.log.warn(`[uv] could not signal the install child: ${err.message}`);
+    }
   }
 
   /**
@@ -1127,7 +1455,7 @@ class UvManager {
   async repairIfInterrupted({ onProgress } = {}) {
     if (!this.hadInterruptedInstall()) return false;
     this.log.warn('[uv] previous install was interrupted — repairing the tool environment');
-    await this.ensureUv();
+    await this.ensureUv({ onProgress });
     try {
       await this.reinstall({ onProgress });
     } catch (err) {
@@ -2034,6 +2362,11 @@ module.exports.tryPythonVersion = tryPythonVersion;
 module.exports.upgradeCommand = upgradeCommand;
 module.exports.pythonVersionFromPyproject = pythonVersionFromPyproject;
 module.exports.pythonFloor = pythonFloor;
+module.exports.dirSizeBytes = dirSizeBytes;
+module.exports.topFingerprintAsync = topFingerprintAsync;
+module.exports.dirSizeBytesAsync = dirSizeBytesAsync;
+module.exports.mktempShimSource = mktempShimSource;
+module.exports.windowsPowerShellModulePath = windowsPowerShellModulePath;
 module.exports.UV_INSTALL_SH = UV_INSTALL_SH;
 module.exports.UV_INSTALL_PS1 = UV_INSTALL_PS1;
 module.exports.installFailure = installFailure;
