@@ -244,6 +244,7 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
     if (upgradeEl) upgradeEl.textContent = data.upgradeCommand || '';
     if (diagnoseEl) diagnoseEl.textContent = data.diagnoseCommand || '';
     if (retryBtn) retryBtn.hidden = !data.retryable;
+    document.querySelectorAll('.error-step').forEach((el) => { el.hidden = !!data.policyBlocked; });
     if (overlay) overlay.classList.add('visible');
     // Stop the spinner/status from animating behind the overlay.
     if (spinner) spinner.style.display = 'none';

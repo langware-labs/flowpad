@@ -11,6 +11,41 @@ const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
+// What the OS / cmd.exe / uv say when Windows application control (WDAC, Device Guard,
+// AppLocker) refuses to run a binary. Three shapes, all seen or documented:
+//   * cmd.exe (shell:true):  "This program is blocked by group policy…"
+//   * uv:                    "Failed to spawn: `flow` … An Application Control policy has blocked
+//                             this file. (os error 4551)"
+//   * CreateProcess direct:  Node reports `spawn UNKNOWN` (errno -4094) with no stderr at all.
+const POLICY_BLOCK_TEXT =
+  /Device Guard|Application Control|blocked by (your organization|group policy|an administrator|your administrator)|os error 4551|policy has blocked|administrator has blocked|This program is blocked/i;
+
+/** True when `err` (from execFile/spawn) reads as an application-control block. */
+function isPolicyBlockError(err) {
+  if (!err) return false;
+  const text = [err.stderr, err.stdout, err.message].filter(Boolean).map(String).join('\n');
+  if (POLICY_BLOCK_TEXT.test(text)) return true;
+  return err.code === 'UNKNOWN' || /spawn UNKNOWN/.test(text);
+}
+
+// `flow` without its console-script exe: the same entry point the exe calls
+// (pyproject: flow = "flow_sdk.cli:cli_main"), driven by the venv's python. Used when
+// application control blocks the generated flow.exe. No quotes/semicolons-in-args trouble:
+// callers run it with shell:false.
+const PY_FLOW_ENTRY = 'import sys; sys.argv[0] = "flow"; from flow_sdk.cli import cli_main; cli_main()';
+
+function policyBlockedError(tried) {
+  const paths = tried.map((t) => t.path);
+  const err = new Error(
+    'This computer’s application-control policy (Windows Defender Application Control / Device Guard) ' +
+    'blocks the programs Flowpad needs to start its engine.'
+  );
+  err.policyBlocked = true;
+  err.blockedPaths = paths;
+  err.tried = tried;
+  return err;
+}
+
 /**
  * Decide whether to spawn `cmd` through cmd.exe on Windows.
  *
@@ -214,50 +249,98 @@ class UvManager {
     // through the unsigned shim.
     this._useUvToolRun = false;
     this._probedShim = false;
+    // Which way to run `flow`: 'shim' (default), 'uv' (`uv tool run`) or 'python' (the venv's
+    // python, no console-script exe) — chosen by _probeFlowBinOnce on machines whose policy
+    // blocks the shim. _policyBlocked is set when every way is blocked.
+    this._launcher = 'shim';
+    this._policyBlocked = null;
+  }
+
+  _isWindows() {
+    return IS_WIN;
+  }
+
+  /** The venv's python.exe (Windows), or null when it is not there. */
+  _venvPython() {
+    const py = path.join(this._toolVenvDir(), 'Scripts', 'python.exe');
+    return fs.existsSync(py) ? py : null;
   }
 
   /**
-   * Build the spawn command for invoking the flow CLI. When the uv shim
-   * is blocked by Device Guard we route through `uv tool run` which
-   * launches the venv's signed python directly.
+   * Build the spawn command for invoking the flow CLI: { cmd, args, shell? }. `shell` is only set
+   * when a launcher needs a specific value (the python launcher passes one big -c argument and
+   * must NOT go through cmd.exe, which does not quote arguments).
    */
   _flowCmd(args) {
-    if (this._useUvToolRun) {
+    if (this._launcher === 'python') {
+      return { cmd: this._venvPython() || 'python', args: ['-c', PY_FLOW_ENTRY, ...args], shell: false };
+    }
+    if (this._launcher === 'uv' || this._useUvToolRun) {
       return { cmd: 'uv', args: ['tool', 'run', '--from', PYPI_PACKAGE, 'flow', ...args] };
     }
     return { cmd: this._flowBin, args };
   }
 
   /**
-   * Probe the flow shim once. On Windows machines with Device Guard / WDAC,
-   * `uv tool install` writes an unsigned shim that's blocked from executing.
-   * If we detect that here, swap to the `uv tool run` fallback for the rest
-   * of this session. No-op on non-Windows.
+   * On Windows machines with application control (WDAC / Device Guard / AppLocker), the exe that
+   * `uv tool install` generates for `flow` (an unsigned trampoline) can be blocked from running.
+   * Find a way that works, once per session, trying in order:
+   *   1. the flow shim                      (the normal way)
+   *   2. `uv tool run --from flowpad flow`  (uv.exe itself is often allowed — but uv then spawns
+   *                                          the SAME entry-point exe, so this can be blocked too)
+   *   3. the venv's python.exe running the entry point directly (no generated exe involved)
+   * If every way is blocked, `_policyBlocked` is set and start() fails with a clear message
+   * instead of a bare "flow start exited with code 2". No-op on non-Windows.
    *
-   * Timeout is deliberately SHORT: a Device Guard / WDAC block fails the
-   * process launch *instantly* (the OS rejects CreateProcess), so the only
-   * thing we're waiting for is that fast rejection. A shim that's merely slow
-   * to print `--help` (cold Python import on first run after install/AV scan)
-   * tells us nothing — it works — so there's no reason to wait it out. On
-   * timeout we fall through and let the real `flow start` proceed normally.
-   * Do NOT widen this to "give --help time to finish": that just re-adds the
-   * old multi-second tax to every cold launch for zero detection benefit.
+   * Each probe keeps the short budget the original single probe had: a policy block fails the
+   * process launch *instantly* (the OS rejects CreateProcess), so the only thing waited for is that
+   * fast rejection. A slow `--help` (cold Python import, AV scan) means it works. Do NOT widen it.
    */
   async _probeFlowBinOnce() {
-    if (this._probedShim || !IS_WIN || !this._flowBin) return;
+    if (this._probedShim || !this._isWindows() || !this._flowBin) return;
     this._probedShim = true;
-    try {
-      await this._run(this._flowBin, ['--help'], { timeout: 2000 });
-    } catch (err) {
-      const stderr = (err.stderr || err.message || '').toString();
-      if (/Device Guard|Application Control|blocked by your organization/i.test(stderr)) {
-        this.log.warn(
-          '[uv] flow shim blocked by Windows Device Guard — falling back to `uv tool run`'
-        );
-        this._useUvToolRun = true;
+    const tried = [];
+    // 'ok' | 'slow' (timed out: it runs) | 'blocked' | 'failed' (some other error)
+    const attempt = async (launcher, cmd, args, shell) => {
+      try {
+        await this._run(cmd, args, { timeout: 2000, ...(shell === undefined ? {} : { shell }) });
+        return 'ok';
+      } catch (err) {
+        if (isPolicyBlockError(err)) { tried.push({ launcher, path: cmd, detail: String(err.stderr || err.message).split('\n')[0] }); return 'blocked'; }
+        if (err && err.killed && err.signal) return 'slow';
+        tried.push({ launcher, path: cmd, detail: String(err && (err.stderr || err.message)).split('\n')[0] });
+        return 'failed';
       }
-      // Other failures will surface naturally on the real call below.
+    };
+
+    const shim = await attempt('shim', this._flowBin, ['--help']);
+    if (shim !== 'blocked') { tried.length = 0; return; } // works, or fails for a reason the real call will report
+    this.log.warn('[uv] flow shim blocked by Windows application control — looking for a launcher that is allowed');
+
+    const viaUv = await attempt('uv tool run', 'uv', ['tool', 'run', '--from', PYPI_PACKAGE, 'flow', '--help']);
+    if (viaUv === 'ok' || viaUv === 'slow') {
+      this.log.warn('[uv] using `uv tool run` to launch flow');
+      this._launcher = 'uv';
+      this._useUvToolRun = true;
+      return;
     }
+
+    const py = this._venvPython();
+    if (py) {
+      const viaPython = await attempt('venv python', py, ['-c', 'import sys'], false);
+      if (viaPython === 'ok' || viaPython === 'slow') {
+        this.log.warn('[uv] using the venv python to launch flow (the flow.exe shim and `uv tool run` are blocked)');
+        this._launcher = 'python';
+        return;
+      }
+    }
+    this._policyBlocked = { tried };
+    this.log.error(`[uv] every way of launching flow is blocked by application control: ${JSON.stringify(tried)}`);
+  }
+
+  /** Throws a clear, actionable error when application control blocks every launcher. */
+  _assertNotPolicyBlocked() {
+    if (this._policyBlocked) throw policyBlockedError(this._policyBlocked.tried);
   }
 
   // ---------------------------------------------------------------------------
@@ -345,7 +428,7 @@ class UvManager {
       ...options.env,
     };
     this.log.info(`[uv] Running: ${cmd} ${args.join(' ')}`);
-    const useShell = needsShellOnWin(cmd);
+    const useShell = options.shell !== undefined ? options.shell : needsShellOnWin(cmd);
     const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
     try {
       const { stdout, stderr } = await execFileAsync(cmdToRun, args, {
@@ -1138,6 +1221,7 @@ class UvManager {
       // On Windows, probe whether the uv shim is blocked by Device Guard.
       // If so, _useUvToolRun gets set and _flowCmd() routes around it.
       await this._probeFlowBinOnce();
+      this._assertNotPolicyBlocked();
 
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
@@ -1187,8 +1271,8 @@ class UvManager {
       // shell:true on Windows breaks paths with spaces (e.g.
       // "C:\Users\avi tal\…\flow.exe" gets split on the space). Use shell
       // only when actually needed — see needsShellOnWin().
-      const { cmd: flowCmd, args: flowArgs } = this._flowCmd(['start']);
-      const useShell = needsShellOnWin(flowCmd);
+      const { cmd: flowCmd, args: flowArgs, shell: flowShell } = this._flowCmd(['start']);
+      const useShell = flowShell !== undefined ? flowShell : needsShellOnWin(flowCmd);
       const cmdToRun = useShell ? quoteWinCmd(flowCmd) : flowCmd;
       // Ensure the app-owned workspace exists so spawn() doesn't ENOENT on the
       // cwd, and so the backend never falls back to walking the home tree.
@@ -1314,11 +1398,11 @@ class UvManager {
    * Run `flow stop`. Swallows errors.
    */
   async _flowStop() {
-    const { cmd, args } = this._flowBin
+    const { cmd, args, shell } = this._flowBin
       ? this._flowCmd(['stop'])
       : { cmd: 'flow', args: ['stop'] };
     try {
-      await this._run(cmd, args, { timeout: 10000 });
+      await this._run(cmd, args, { timeout: 10000, ...(shell === undefined ? {} : { shell }) });
       this.log.info('[uv] flow stop completed');
     } catch (error) {
       this.log.warn(`[uv] flow stop failed: ${error.message}`);
@@ -1435,8 +1519,8 @@ class UvManager {
    */
   async _getUpgradeInfo() {
     try {
-      const { cmd, args } = this._flowCmd(['upgrade', '--info']);
-      const { stdout } = await this._run(cmd, args, { timeout: 15000 });
+      const { cmd, args, shell } = this._flowCmd(['upgrade', '--info']);
+      const { stdout } = await this._run(cmd, args, { timeout: 15000, ...(shell === undefined ? {} : { shell }) });
       return JSON.parse(stdout);
     } catch (err) {
       this.log.warn(`[uv] _getUpgradeInfo failed: ${err.message}`);
@@ -1905,6 +1989,9 @@ module.exports.tryPythonVersion = tryPythonVersion;
 module.exports.upgradeCommand = upgradeCommand;
 module.exports.pythonVersionFromPyproject = pythonVersionFromPyproject;
 module.exports.pythonFloor = pythonFloor;
+module.exports.isPolicyBlockError = isPolicyBlockError;
+module.exports.PY_FLOW_ENTRY = PY_FLOW_ENTRY;
+module.exports.policyBlockedError = policyBlockedError;
 module.exports.maxPythonVersion = maxPythonVersion;
 // Pure helpers exported for unit testing (electron/uv-manager.test.js).
 module.exports.needsShellOnWin = needsShellOnWin;
