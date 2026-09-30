@@ -252,3 +252,34 @@ def test_run_action_maps_busy_to_409_with_the_answer_in_the_body(tmp_path, monke
     assert response.data["exit_code"] == 1 and response.data["ran"] is False
     assert response.data["busy"] is True, "busy is the ONE thing the edge maps to 409"
     assert "already running" in response.message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("popup, kind", [(True, "open_wizard_popup"), (False, "navigate_dock")])
+async def test_a_popup_wizard_opens_over_the_current_page_and_any_other_takes_the_tab_to_its_page(
+    monkeypatch, tmp_path, popup, kind
+):
+    """A popup wizard is a dialog over whatever page is showing — the page is not left. Any other
+    wizard still takes the tab to its own page."""
+    from flow_sdk.core.wizard import start as wizard_start
+    from flow_sdk.notifications import ui_command
+    from flow_sdk.server.routes import websocket
+
+    sent = []
+
+    async def send(_ws, kind, **fields):
+        sent.append((kind, fields))
+
+    monkeypatch.setattr(ui_command, "send_ui_command", send)
+    monkeypatch.setattr(websocket, "get_active_connection", lambda: ("conn-1", object()))
+    wizard = _folder_wizard(tmp_path, monkeypatch)
+    monkeypatch.setattr(type(wizard), "popup", property(lambda _self: popup))
+
+    await wizard_start.navigate_to_wizard(wizard)
+
+    assert [k for k, _ in sent] == [kind]
+    fields = sent[0][1]
+    if popup:
+        assert fields == {"pointer": str(wizard.typeid)}, "the popup names the wizard and nothing about a page"
+    else:
+        assert fields["pointer"] == f"editor/wizard/typeid/{wizard.typeid}"

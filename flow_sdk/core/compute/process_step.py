@@ -32,6 +32,7 @@ from typing import Any, Callable, Optional
 
 from pydantic import Field
 
+from flow_sdk.core.compute.llm_source import settle_llm_source
 from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -87,6 +88,36 @@ def _progress_for(process_id: str, worker_status: Any) -> ProcessProgress:
     except Exception:  # noqa: BLE001 — a status line is never worth a failure
         logger.debug("could not read agent status for %s", process_id, exc_info=True)
     return ProcessProgress(text=text, counters=counters, blocked=blocked)
+
+
+async def _unfunded(worker_type: Any) -> Optional[str]:
+    """Why NOTHING can fund this agent, or ``None`` when something can.
+
+    The same question, from the same resolver, that refuses an agent launch at the API edge
+    (`createProcess`): ``chosen`` is the source a spawn in this scope would get, so this cannot
+    refuse an agent that would have run. Local reads only. It answers about LLM SOURCES and nothing
+    else — a harness that is missing or a model that is overloaded is not this, and must not send
+    anyone to the chooser.
+    """
+    # The driver the spawn will ACTUALLY run — not merely the harness name resolved above. They can
+    # differ (a test swaps in a mock driver), and the spawn asks the driver about its own source
+    # (`process.driver.name`). Read through the module, at call time, so a swapped `get_driver` counts.
+    from flow_sdk.builtin.agentic_process import agentic_process  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
+
+    resolved = str(getattr(worker_type, "value", worker_type))
+    name = str(getattr(agentic_process.get_driver(resolved), "name", "") or resolved)
+    # A worker with no API-auth spec draws on no LLM source at all (a mock or bootstrap worker), and
+    # the spawn skips the source check for it (`resolve_worker_api_auth`). Refusing it here would
+    # stop an agent that runs fine — and send the person to a chooser for nothing.
+    if driver_api_auth_spec(name) is None:
+        return None
+    funding = await llm_picker_view(name, LLMScope(project_id=""))
+    if funding.chosen is not None:
+        return None
+    return funding.blocked or "no source is configured"
 
 
 def _transcript_signature(process: Any) -> Any:
@@ -151,6 +182,20 @@ async def launch_step_process(
         deployment = await get_agent_local_deployment(agent)
     except LookupError as exc:
         return PromptResult.not_yet(str(exc), ran=False)
+
+    # No LLM source able to fund this agent: put the chooser in front of the person (only when
+    # someone is watching) and, once they pick one, go on to launch — the same attempt, made again
+    # with a source. Skipped, or nobody there: the step fails, and says why, as it always did.
+    refusal = await _unfunded(worker_type)
+    if refusal is not None:
+        if on_status is not None:
+            on_status(ProcessProgress(text="waiting for you to choose an LLM source", blocked=True))
+        settled = await settle_llm_source(only_if_watched=True)
+        refusal = await _unfunded(worker_type) if settled.ok else refusal
+        if refusal is not None:
+            return PromptResult.not_yet(
+                f"{getattr(worker_type, 'value', worker_type)} has no usable LLM source: {refusal}", ran=False
+            )
 
     try:
         process = await deployment.create_process(

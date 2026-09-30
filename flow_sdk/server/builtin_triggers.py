@@ -354,7 +354,8 @@ async def _run_llm_setup_trigger(trigger: Trigger, changes: list[ChangeEvent]) -
         _log.warning("llm setup trigger %r names no wizard it can resolve; nothing to run", trigger.uname)
         return
 
-    from flow_sdk.core.wizard.start import navigate_to_wizard, person_is_watching, start_wizard  # noqa: PLC0415
+    from flow_sdk.core.compute.llm_source import person_is_watching  # noqa: PLC0415
+    from flow_sdk.core.wizard.start import navigate_to_wizard, start_wizard  # noqa: PLC0415
 
     # A popup wizard, and a person looking: put its page in front of them — steps blank, its
     # explanation readable — and stop. Racing an install question onto the screen the instant the

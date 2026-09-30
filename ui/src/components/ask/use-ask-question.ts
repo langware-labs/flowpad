@@ -5,7 +5,7 @@ import { TypeId, Wizard } from '@sdk';
 import { deepestRunning } from '@sdk/activity';
 import apiClient from '@sdk/client';
 import { useEntity } from '@sdk/react/hooks';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { showWizard } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 
@@ -110,7 +110,7 @@ export function useAskQuestion(questionId: string | undefined) {
   const wizardTypeId = useMemo(() => (wizardId ? new TypeId(Wizard.type, wizardId) : null), [wizardId]);
   const openWizard = useCallback(() => {
     if (!wizardTypeId) return;
-    navigation.openDock(DockPointer.forAssetEditorByTypeId('wizard', wizardTypeId));
+    void showWizard(navigation, wizardTypeId);
   }, [navigation, wizardTypeId]);
 
   // ...and the one thing worth showing without leaving here at all: whatever
