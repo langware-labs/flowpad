@@ -31,8 +31,8 @@ describe('Agent.use auto prompt opt-in', () => {
     const sentBodies = recordCalls();
     const agent = new Agent({ id: AGENT_ID, name: 'greeter' } as never);
 
-    await agent.use('proj-1', { autoPrompt: true });
-    await agent.useDeployment('dep-1', { autoPrompt: true });
+    await agent.use('proj-1', true);
+    await agent.useDeployment('dep-1', true);
 
     expect(sentBodies()).toEqual([
       { project_id: 'proj-1', auto_prompt: true },

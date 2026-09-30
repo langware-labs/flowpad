@@ -115,7 +115,7 @@ describe('DeployedAgentChatPanel', () => {
     expect(mocks.openDock).toHaveBeenCalledWith(agent.dockPointer);
 
     await userEvent.click(screen.getByTestId('deployed-agent-open-session'));
-    expect(useDeployment).toHaveBeenCalledWith(deployment.id, { autoPrompt: true });
+    expect(useDeployment).toHaveBeenCalledWith(deployment.id, true);
     await waitFor(() =>
       expect(mocks.openShellProcess).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003', { viewMode: 'vibe' }),
     );
@@ -136,7 +136,7 @@ describe('DeployedAgentChatPanel', () => {
     renderPanel();
     await userEvent.click(screen.getByTestId('deployed-agent-open-session'));
 
-    expect(useDeployment).toHaveBeenCalledWith(deployment.id, { autoPrompt: true });
+    expect(useDeployment).toHaveBeenCalledWith(deployment.id, true);
     await waitFor(() =>
       expect(mocks.openShellProcess).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003', { viewMode: 'vibe' }),
     );

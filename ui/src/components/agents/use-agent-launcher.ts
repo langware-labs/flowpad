@@ -13,7 +13,7 @@ import { embedVibeSubagent } from '@src/pages/flow-page/use-start-vibe-session';
  *
  *   agent.use()  →  the process (built from the agent's deployment: worker,
  *                   model, permissions, system prompt, dirs, deployment_id),
- *                   with the auto prompt queued (`autoPrompt: true`)
+ *                   with the auto prompt queued (`autoPrompt`)
  *   prepare      →  the vibe SubAgent persona layered UNDER the agent, so the
  *                   vibe pane's `flow show` / mcp-ui contract still applies —
  *                   the agent stays the principal, vibe stays the display
@@ -68,7 +68,7 @@ export function useAgentLauncher(): {
     async (agent: Agent, projectId?: string | null) => {
       setBusyId(agent.id);
       try {
-        const result = await agent.use(projectId ?? null, { autoPrompt: true });
+        const result = await agent.use(projectId ?? null, true);
         await prepareAgentSession(result.process_id);
         await navigation.openShellProcess(result.process_id, { viewMode: ViewMode.Vibe });
       } catch (e) {

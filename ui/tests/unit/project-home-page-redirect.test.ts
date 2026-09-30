@@ -102,7 +102,7 @@ describe('project home page redirect — only navigations that ask for it', () =
     const response = await projectHomePageRedirect(new Request(HOME_BUTTON_URL));
 
     expect(mocks.agentGetById).toHaveBeenCalledWith(AGENT_ID);
-    expect(mocks.use).toHaveBeenCalledWith(PROJECT_ID, { autoPrompt: true });
+    expect(mocks.use).toHaveBeenCalledWith(PROJECT_ID, true);
     expect(mocks.getById).toHaveBeenCalledWith(NEW_CHAT);
     expect(mocks.embed).toHaveBeenCalledTimes(1);
     // The agent's auto prompt starts as turn 1, after the vibe embed.

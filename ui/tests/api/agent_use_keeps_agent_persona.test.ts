@@ -113,7 +113,7 @@ describe('agent session persona', () => {
       trackTypeId('agent', created.id);
       const prompted = (await Agent.getById<Agent>(created.id))!;
 
-      const { process_id } = await prompted.use(project.id, { autoPrompt: true });
+      const { process_id } = await prompted.use(project.id, true);
       trackTypeId('agentic_process', process_id);
       const proc = await prepareAgentSession(process_id);
       expect(proc, 'prepareAgentSession must resolve the used process').not.toBeNull();

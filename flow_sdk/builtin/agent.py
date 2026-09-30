@@ -502,13 +502,9 @@ class Agent(Entity):
         ``owner`` is the human opening it, recorded on the process row; a
         remote ``deployment`` opens through the hub (``Deployment.use``).
 
-        ``auto_prompt=True`` queues the agent's auto prompt as the session's
-        first turn — only on a deployment local to THIS tier: the hub relays a
-        remote ``use`` without the flag, so the placement machine never queues
-        a prompt the opener could not send. It is queued, not sent: the caller
-        starts it once the session is set up — the UI's ``prepareAgentSession``
-        after the vibe embed, a script with ``process.submit()``. ``prompt()``
-        bypasses the queue, so calling it first makes the auto prompt run second.
+        ``auto_prompt=True`` queues (never sends) the agent's auto prompt as the
+        first turn, on a local deployment only; the caller starts it once the
+        session is set up (the UI's ``prepareAgentSession``, or ``process.submit()``).
         """
         target = deployment or await self.local_deployment()
         process = await target.use(project_id=project_id, owner=owner)
@@ -583,6 +579,7 @@ class Agent(Entity):
                 project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
             )
 
+        # The queueing itself is done by ``use`` above.
         prompt_queued = bool(launched.auto_prompt_text)
         return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=prompt_queued)
 

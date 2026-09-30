@@ -29,7 +29,7 @@ async function agentHomePageDock(agentTypeId: string, projectId: string): Promis
   if (!processId) {
     const agent = await Agent.getById<Agent>(new TypeId(agentTypeId).id);
     if (!agent) return null;
-    processId = (await agent.use(projectId, { autoPrompt: true })).process_id;
+    processId = (await agent.use(projectId, true)).process_id;
     await prepareAgentSession(processId).catch((e) =>
       console.warn('[project-home-page] pre-turn setup failed; opening the session anyway', e),
     );
