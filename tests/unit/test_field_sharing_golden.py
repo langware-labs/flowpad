@@ -236,7 +236,9 @@ def test_the_two_egress_seams_now_agree():
             # `git_origin`: re-declared PRIVATE here, so this type keeps the
             # pre-2259df26 answer while the base now shares it.
             # `placement`: where THIS machine keeps the row (repo folder vs instance-only) — a receiver decides its own.
-            ["origin", "my_process_id", "project_name", "project_root", "placement"],
+            # `origin_conversation`: a local conversation row id — the hub's task has no such field, and a
+            # shared task's save round-trips through the hub (the Vibe help button lost its link that way).
+            ["origin", "my_process_id", "project_name", "project_root", "placement", "origin_conversation"],
             BASE_LOCAL_ONLY,
             [
                 "artifacts",

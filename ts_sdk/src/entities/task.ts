@@ -392,10 +392,14 @@ export class Task extends APIEntity<Task> implements ITask {
       opts.ensureCloudLogin ? { ensureCloudLogin: opts.ensureCloudLogin } : undefined,
     );
     // The task lives in that conversation from now on: whoever opens the task (the Vibe
-    // "Ask for help" button, a board row) opens the conversation it was asked in.
+    // "Ask for help" button, a board row) opens the conversation it was asked in. A local action,
+    // not a save: the task is on the hub now, and a field save round-trips through it, dropping
+    // what the hub does not model — this link is this machine's own (a PRIVATE field).
     if (sent.conversation_id) {
+      const link = new ActionInfo('link-conversation', Task.type, this.id, 'POST');
+      link.bodyParameters = { conversation_id: sent.conversation_id };
+      await dataManager.callAction(link);
       this.origin_conversation = sent.conversation_id;
-      await this.save();
     }
     return { conversationId: sent.conversation_id, self };
   }

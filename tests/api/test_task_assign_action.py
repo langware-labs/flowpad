@@ -152,8 +152,13 @@ async def test_a_vibe_help_task_stays_one_and_keeps_its_conversation(bootstrappe
     )
     await _assign(bootstrapped_client, task["id"], email="bob@x.com", message="please look")
 
-    resp = await bootstrapped_client.put(f"{GRAPH}/task/{task['id']}", json={"origin_conversation": "conv-1"})
+    # The link is this machine's (PRIVATE) and set by a LOCAL action: the task is on the hub now,
+    # and a field save of it round-trips through the hub, which does not model the field.
+    resp = await bootstrapped_client.post(
+        f"{GRAPH}/task/{task['id']}/link-conversation", json={"conversation_id": "conv-1"}
+    )
     assert resp.status_code == 200, resp.text
+    assert not [p for p in hub_faked["puts"] if "origin_conversation" in (p[1] or {})], "never sent to the hub"
 
     row = await Task.get_one({"id": task["id"]})
     assert (row.kind, row.origin_conversation, row.assignee) == (TaskKind.VIBE.value, "conv-1", "bob@x.com")

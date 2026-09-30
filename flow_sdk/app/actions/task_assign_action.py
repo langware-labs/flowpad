@@ -181,3 +181,28 @@ async def assign_task() -> ApiResponse:
         "members",
     )
     return ApiSuccessResponse(data={"self": False, "assignee": email})
+
+
+@action.post(action_name="link-conversation", types=["task"])
+async def link_conversation() -> ApiResponse:
+    """``POST /graph/task/<id>/link-conversation`` — the conversation this task was asked in.
+
+    Body: ``{"conversation_id": ...}``. Stored as ``origin_conversation``, a PRIVATE field: it is a
+    local row id, the hub's task does not model it, and a shared task's field save round-trips
+    through the hub (``_hub_reflect``), which drops every field the hub does not echo. This action
+    runs HERE — a server-side save never hub-reflects — so the link stays on this machine, where
+    opening the task (the Vibe "Ask for help" button) opens that conversation.
+    """
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail="link-conversation: target task typeid required")
+    task = await Task.get_one({"id": request_info.target_entity_typeid.id})
+    if task is None:
+        raise HTTPException(status_code=404, detail="link-conversation: task not found")
+    body = await request_info.get_post_data() or {}
+    conversation_id = str(body.get("conversation_id") or "").strip()
+    if not conversation_id:
+        raise HTTPException(status_code=400, detail="link-conversation: 'conversation_id' required")
+    task.origin_conversation = conversation_id
+    await task.save(request_info.someone_typeid)
+    return ApiSuccessResponse(data={"origin_conversation": conversation_id})
