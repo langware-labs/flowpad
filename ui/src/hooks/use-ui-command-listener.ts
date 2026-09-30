@@ -22,6 +22,7 @@ import {
 } from '@src/notifications/renderDesktopNotification';
 import { openInstallRequest } from '@src/components/install/install-request-store';
 import { closeAskModal, openAskModal, useAskModalStore } from '@src/components/ask/ask-modal-store';
+import { openWizardPopup } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { deliverClaimedQuestion } from '@src/components/ask/ask-claims';
 
 /** The subset of the Electron preload bridge this hook uses. */
@@ -167,6 +168,13 @@ export function useUiCommandListener(): void {
         if (msg.pointer && deliverClaimedQuestion(msg.run, msg.pointer)) return;
         if (msg.pointer) openAskModal(msg.pointer);
         else console.warn('[ui_command] open_ask_modal without a pointer', msg);
+        return;
+      }
+      // `open_wizard_popup`: a popup wizard (first-run setup) is being put in front of this live tab.
+      // A dialog over whatever the tab is showing — never a navigation, so the page stays as it was.
+      if (msg.kind === 'open_wizard_popup') {
+        if (msg.pointer) openWizardPopup(msg.pointer);
+        else console.warn('[ui_command] open_wizard_popup without a pointer', msg);
         return;
       }
       // `close_ask_modal`: the op stopped waiting (its run was replaced). Close

@@ -35,6 +35,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
+import { closeWizardPopup } from './wizard-popup-store';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
 import {
@@ -166,9 +167,21 @@ function AgentRungLabel({ executorTypeId, rowLabel }: { executorTypeId: string; 
   );
 }
 
-export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }) {
+/** How the viewer is shown: as a page (the asset editor's), or as a popup over whatever page is
+ *  showing (`WizardPopupRoot`). Chosen by the caller — a popup wizard's own page is still a page. */
+export type WizardPresentation = 'page' | 'popup';
+
+export function WizardViewer({
+  wizard,
+  fsRef,
+  presentation = 'page',
+}: {
+  wizard: Wizard;
+  fsRef: FSRef;
+  presentation?: WizardPresentation;
+}) {
   const mainRef = useMemo(() => fsRef.child(MAIN_FILE), [fsRef]);
-  const { doc, error } = useJsonDoc<WizardDoc>(mainRef);
+  const { doc, error, loading } = useJsonDoc<WizardDoc>(mainRef);
 
   // A run started from ANYWHERE else — Settings' "Run setup again", a trigger,
   // another tab — writes `run_state` on this same entity, but the prop this
@@ -191,7 +204,21 @@ export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }
   // remount when the file arrives and discard anything already on screen — an
   // open approval panel, a half-typed answer — because the read resolves a tick
   // or two after the first paint. `useWizardDoc` adopts the document instead.
-  return <WizardViewerBody key={mainRef.path} wizard={current} mainRef={mainRef} initial={doc} docError={error} />;
+  // A popup appears ONCE, complete. Its step list comes from the document, read a beat after the
+  // first paint; drawing the dialog before then showed it short and centred, then jumping taller
+  // and higher when the steps landed — the flicker. A page can fill in as it likes; a dialog cannot.
+  if (presentation === 'popup' && loading) return null;
+
+  return (
+    <WizardViewerBody
+      key={mainRef.path}
+      wizard={current}
+      mainRef={mainRef}
+      initial={doc}
+      docError={error}
+      presentation={presentation}
+    />
+  );
 }
 
 function WizardViewerBody({
@@ -199,8 +226,10 @@ function WizardViewerBody({
   mainRef,
   initial,
   docError,
+  presentation,
 }: {
   wizard: Wizard;
+  presentation: WizardPresentation;
   mainRef: FSRef;
   initial: WizardDoc | null;
   docError: string | null;
@@ -222,19 +251,26 @@ function WizardViewerBody({
   // as plain arithmetic against each row's own `live` node.
   const now = useClock();
 
-  // A wizard that asks to be a popup (a glanceable one, like first-run setup) is a dialog, not a page — see
-  // `WizardSpec.popup`. The dialog's own content node is the minimize
-  // animation's source; `[data-minimize-anchor="process-chip"]` (the footer's
-  // chip) is its target, resolved by the animation itself.
-  const isPopup = Boolean(wizard.popup);
+  // A popup is a dialog over whatever page is showing (`WizardPopupRoot`); the same wizard opened
+  // at its own address is a page. The dialog's own content node is the minimize animation's
+  // source; `[data-minimize-anchor="process-chip"]` (the footer's chip) is its target, resolved by
+  // the animation itself.
+  const isPopup = presentation === 'popup';
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const minimizeAndLeave = useCallback(() => {
     // Nothing to pause: the run is entirely server-side and keeps going
-    // whether or not this dialog is on screen. "Minimize" is just leaving —
-    // the fly animation is what tells a person where it went.
+    // whether or not this dialog is on screen. "Minimize" is just closing it —
+    // the page behind was never left, and the fly animation tells a person
+    // where the wizard went (the footer chip reopens it).
     animateMinimizeToProcessChip(dialogContentRef.current);
+    closeWizardPopup();
+  }, []);
+  // "Go to homepage" from a popup must also close it: the popup sits OVER the page, so navigating
+  // alone changed only the page behind it and the click looked like it did nothing.
+  const goHome = useCallback(() => {
+    if (isPopup) closeWizardPopup();
     navigation.goHome({ homePage: true });
-  }, [navigation]);
+  }, [isPopup, navigation]);
 
   // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
   // changes what is rendered, never which hooks execute or what data is
@@ -662,7 +698,7 @@ function WizardViewerBody({
             <Button onClick={() => void startWizard()} data-testid="wizard-restart">
               {wizard.restart_label || <Trans>Restart</Trans>}
             </Button>
-            <Button variant="ghost" onClick={() => navigation.goHome({ homePage: true })} data-testid="wizard-go-home">
+            <Button variant="ghost" onClick={goHome} data-testid="wizard-go-home">
               <Trans>Go to homepage</Trans>
             </Button>
           </div>
@@ -680,7 +716,7 @@ function WizardViewerBody({
         >
           <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
           <p className="flex-1 text-sm">{wizard.success_message}</p>
-          <Button size="sm" onClick={() => navigation.goHome({ homePage: true })} data-testid="wizard-go-home">
+          <Button size="sm" onClick={goHome} data-testid="wizard-go-home">
             <Trans>Go to homepage</Trans>
           </Button>
         </section>
@@ -689,7 +725,9 @@ function WizardViewerBody({
       {/* `reserve={false}`: the default keeps the subtree mounted and its inputs
           focusable in Standard view, which is wrong for a form — you would tab
           into fields nobody can see. */}
-      {conversational || !doc ? null : (
+      {/* Never in a popup: it is glanceable — the tools and a button — even in Advanced view,
+          where the page shows the editor below. The editor belongs to the wizard's own page. */}
+      {conversational || isPopup || !doc ? null : (
         <AdvancedOnly reserve={false}>
           <WizardForm
             doc={doc}
