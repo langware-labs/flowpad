@@ -99,10 +99,22 @@ async def _unfunded(worker_type: Any) -> Optional[str]:
     else — a harness that is missing or a model that is overloaded is not this, and must not send
     anyone to the chooser.
     """
+    # The driver the spawn will ACTUALLY run — not merely the harness name resolved above. They can
+    # differ (a test swaps in a mock driver), and the spawn asks the driver about its own source
+    # (`process.driver.name`). Read through the module, at call time, so a swapped `get_driver` counts.
+    from flow_sdk.builtin.agentic_process import agentic_process  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view  # noqa: PLC0415
     from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
 
-    funding = await llm_picker_view(str(getattr(worker_type, "value", worker_type)), LLMScope(project_id=""))
+    resolved = str(getattr(worker_type, "value", worker_type))
+    name = str(getattr(agentic_process.get_driver(resolved), "name", "") or resolved)
+    # A worker with no API-auth spec draws on no LLM source at all (a mock or bootstrap worker), and
+    # the spawn skips the source check for it (`resolve_worker_api_auth`). Refusing it here would
+    # stop an agent that runs fine — and send the person to a chooser for nothing.
+    if driver_api_auth_spec(name) is None:
+        return None
+    funding = await llm_picker_view(name, LLMScope(project_id=""))
     if funding.chosen is not None:
         return None
     return funding.blocked or "no source is configured"
