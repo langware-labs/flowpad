@@ -126,22 +126,6 @@ def _strip_pty_keep_lines(data: bytes) -> str:
     return data.decode("utf-8", "replace").replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _sentinel_body(text: str, marker: str, end: int) -> str:
-    """The command's own output: everything between the ECHOED command line and
-    the sentinel at ``end``.
-
-    The terminal echoes what was typed, and what was typed ends in the sentinel
-    ``echo`` — so the first marker-bearing line is the echo, never output. Drop
-    it, or every result would be prefixed by the command that produced it.
-    """
-    lines = text[:end].split("\n")
-    for i, line in enumerate(lines):
-        if marker in line:
-            lines = lines[i + 1 :]
-            break
-    return "\n".join(lines).strip("\n")
-
-
 async def _with_attached_project_secrets(
     project_id: str | None, extra_env: dict[str, str] | None, *, process_id: str | None = None
 ) -> dict[str, str] | None:
@@ -515,6 +499,38 @@ class Shell(Entity):
         await shell.start_pty()
         return shell
 
+    @classmethod
+    async def for_key(
+        cls,
+        key: str,
+        *,
+        workdir: str | None = None,
+        name: str | None = None,
+        project_id: str | None = None,
+        extra_env: dict[str, str] | None = None,
+        rows: int = 30,
+        cols: int = 120,
+    ) -> "Shell":
+        """The terminal that *key* names, with a live PTY — the one it had, else a new one on this
+        machine. A key is the natural name of the thing a terminal belongs to (``snippet:<path>``,
+        ``deployment:<id>``); it is looked up, never turned into an id."""
+        shell = await cls.get_by_key(key)
+        if shell is None or shell.status == ShellStatus.CLOSED.value:
+            from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+
+            node = await ComputeNode.get_local()
+            shell = cls(
+                key=key,
+                name=name,
+                workdir=workdir,
+                project_id=project_id,
+                compute_node_id=str(node.id),
+                compute_node_uname=getattr(node, "uname", None),
+            )
+            await shell.save()
+        await shell.start_pty(rows=rows, cols=cols, extra_env=extra_env)
+        return shell
+
     async def __aenter__(self) -> "Shell":
         await self.start_pty()
         return self
@@ -582,6 +598,8 @@ class Shell(Entity):
             # same set a worker gets. Transient: it reaches the child process
             # env and is never written to the node's filesystem. An explicitly
             # passed value always wins.
+            # The shell's own ``env`` is part of its spawn; an explicit ``extra_env`` wins over it.
+            extra_env = {**(self.env or {}), **(extra_env or {})} or None
             extra_env = await _with_attached_project_secrets(
                 self.project_id, extra_env, process_id=self.agentic_process_id
             )
@@ -738,17 +756,115 @@ class Shell(Entity):
             last_seq = current_seq
             await asyncio.sleep(idle_ms / 1000)
 
-    #: Sentinel grammar for "run this and tell me how it went". MIRRORED in TS —
-    #: ``ui/src/terminal/run-in-terminal.ts`` builds the identical string, and a
-    #: test on each side pins this literal shape so the two cannot drift. The
-    #: appended ``echo`` is the only moment we know the command FINISHED, since
-    #: writing to a PTY proves delivery and nothing else.
+    #: Sentinel grammar for "run this and tell me how it went" — built HERE only;
+    #: the browser asks for it through ``run-command`` and only reads the marker
+    #: (``ts_sdk`` ``PtyConnection.onOsc``). Writing to a PTY proves delivery and
+    #: nothing else, so the appended marker is the only moment we know the command
+    #: FINISHED, and it carries the exit code. It is an OSC escape a terminal
+    #: swallows: the run's own output is all the viewer sees.
     SENTINEL_PREFIX: ClassVar[str] = "__flow_"
+    SENTINEL_OSC: ClassVar[int] = 7770
 
     @classmethod
-    def sentinel_command(cls, command: str, marker: str) -> str:
-        """``<command>; echo "<marker>_$?"`` — the shared assertion grammar."""
-        return f'{command}; echo "{marker}_$?"'
+    def sentinel_command(cls, command: str, marker: str, *, shell: str | None = None) -> str:
+        """``<command>`` then an invisible ``ESC ] 7770 ; <marker> ; <exit> BEL``, in the grammar of
+        the terminal's *shell* (default: the one a terminal runs, ``default_terminal_shell``).
+
+        The marker must print however the command ends — Ctrl-C included, or a viewer waits forever.
+        bash and PowerShell carry on to the next command after an interrupted one; zsh abandons the
+        rest of the line, so there the marker sits in an ``always`` block, which runs regardless.
+        (cmd.exe cannot type an escape: a run there has no end marker.)
+        """
+        if shell is None:
+            from flow_sdk.compute.providers.desktop.provider import default_terminal_shell  # noqa: PLC0415
+
+            shell = default_terminal_shell()
+        name = os.path.basename(shell).lower().removesuffix(".exe")
+        osc = cls.SENTINEL_OSC
+        if name in ("pwsh", "powershell"):
+            write = '[Console]::Write("$([char]27)]{osc};{marker};{what}$([char]7)")'.format
+            return f"{write(osc=osc, marker=marker, what='s')}; {command}; {write(osc=osc, marker=marker, what='$LASTEXITCODE')}"
+        start = f"printf '\\033]{osc};{marker};s\\007'"
+        end = f"printf '\\033]{osc};{marker};%d\\007'"
+        if name == "fish":
+            return f"{start}; {command}; {end} $status"
+        if name == "zsh":
+            return f"{{ {start}; {command} }} always {{ {end} $? }}"
+        return f"{start}; {command}; {end} $?"
+
+    @classmethod
+    def new_marker(cls) -> str:
+        return f"{cls.SENTINEL_PREFIX}{uuid.uuid4().hex[:8]}"
+
+    async def run_command(self, command: str) -> str:
+        """Type *command* into this terminal followed by its sentinel, and return the marker at
+        once — the command runs in the visible terminal; whoever watches its output learns it
+        finished (and how) when the marker arrives (``sentinel_exit``)."""
+        marker = self.new_marker()
+        await self.write(self.sentinel_command(command, marker))
+        return marker
+
+    def _shell_process(self) -> "psutil.Process | None":
+        """The terminal's own shell process (the PTY's child), or ``None`` without a live PTY."""
+        if not self.compute_node_id:
+            return None
+        cn = self.compute_node
+        pid = cn.compute_provider.get_pty_shell_pid(cn.node_provider_id, self.id)
+        try:
+            return psutil.Process(pid) if pid else None
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return None
+
+    def running(self) -> int | None:
+        """The pid of the command running in this terminal now, or ``None`` at the prompt.
+
+        A command typed at the prompt is a child of the terminal's shell; the prompt itself has none.
+        """
+        shell = self._shell_process()
+        try:
+            children = shell.children() if shell else []
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            children = []
+        return children[0].pid if children else None
+
+    async def interrupt(self, grace: float = 2.0) -> bool:
+        """Stop the command running in this terminal and keep the terminal: Ctrl-C, and whatever is
+        still running after *grace* seconds is terminated with everything under it. Whether nothing
+        of the command is left running."""
+        from flow_sdk.instances.procs import terminate_tree  # noqa: PLC0415
+
+        if self.running() is None:
+            return True
+        await self.write_raw(b"\x03")
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + grace
+        while loop.time() < deadline:
+            if self.running() is None:
+                return True
+            await asyncio.sleep(0.05)
+        shell = self._shell_process()
+        try:
+            children = shell.children() if shell else []
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            children = []
+        _, survivors = await asyncio.to_thread(terminate_tree, children)
+        return not survivors
+
+    @classmethod
+    def sentinel_exit(cls, data: bytes, marker: str) -> "tuple[int, int] | None":
+        """``(exit code, offset)`` of *marker*'s end sentinel in raw PTY bytes, or ``None`` before it."""
+        match = re.search(rb"\x1b\]%d;%s;(-?\d+)\x07" % (cls.SENTINEL_OSC, re.escape(marker.encode())), data)
+        return (int(match.group(1)), match.start()) if match else None
+
+    @classmethod
+    def sentinel_output(cls, data: bytes, marker: str) -> bytes:
+        """What the command printed: the raw bytes between *marker*'s start and end sentinels (to
+        the end of *data* while it still runs). The terminal's echo of the typed command comes
+        before the start sentinel, however it wraps, so none of it is output."""
+        start = re.search(rb"\x1b\]%d;%s;s\x07" % (cls.SENTINEL_OSC, re.escape(marker.encode())), data)
+        begin = start.end() if start else len(data)
+        done = cls.sentinel_exit(data, marker)
+        return data[begin : done[1] if done else len(data)]
 
     async def run_and_capture(
         self,
@@ -781,8 +897,7 @@ class Shell(Entity):
         from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
 
         executor = str(self.typeid)
-        marker = f"{self.SENTINEL_PREFIX}{uuid.uuid4().hex[:8]}"
-        sentinel = re.compile(rf"{re.escape(marker)}_(\d+)")
+        marker = self.new_marker()
         # Only read what THIS command adds; the stream file holds the whole
         # session, and a previous `ls` in scrollback must not be reported here.
         baseline = len(await self.read())
@@ -796,16 +911,16 @@ class Shell(Entity):
 
         deadline = started + timeout
         while True:
-            tail = _strip_pty_keep_lines((await self.read())[baseline:])
-            match = sentinel.search(tail)
-            if match:
+            raw = (await self.read())[baseline:]
+            done = self.sentinel_exit(raw, marker)
+            printed = _strip_pty_keep_lines(self.sentinel_output(raw, marker)).strip("\n")
+            if done:
                 return CliResult.of_process(
-                    command, int(match.group(1)), _sentinel_body(tail, marker, match.start()),
-                    duration_s=loop.time() - started, executor=executor,
+                    command, done[0], printed, duration_s=loop.time() - started, executor=executor,
                 )
             if loop.time() >= deadline:
                 return CliResult.of_process(
-                    command, None, _sentinel_body(tail, marker, len(tail)),
+                    command, None, printed,
                     timed_out=True, duration_s=loop.time() - started, executor=executor,
                 )
             await asyncio.sleep(poll_interval)
@@ -1235,9 +1350,39 @@ class Shell(Entity):
 
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
-    @action.post(action_name="run")
-    async def run(self) -> ApiResponse:
-        """HTTP: Execute a command in a subprocess and answer with its ``CliResult``.
+    @action.post(action_name="run-command")
+    async def _http_run_command(self) -> ApiResponse:
+        """HTTP: type a command into this terminal and answer at once with its ``marker`` — the
+        sentinel the output carries when the command finishes, with its exit code.
+
+        POST body: {command: str}.
+        """
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        command = str(body.get("command") or "")
+        if not command.strip():
+            return ApiFailResponse(message="command is required")
+        try:
+            marker = await self.run_command(command)
+        except RuntimeError as exc:  # no live terminal
+            return ApiFailResponse(message=str(exc))
+        return ApiSuccessResponse(data={"marker": marker, "osc": self.SENTINEL_OSC})
+
+    @action.post(action_name="interrupt")
+    async def _http_interrupt(self) -> ApiResponse:
+        """HTTP: stop the command running in this terminal; the terminal stays. ``stopped`` is
+        whether nothing of it is left running."""
+        return ApiSuccessResponse(data={"stopped": await self.interrupt()})
+
+    @action.get(action_name="run-state")
+    async def _http_run_state(self) -> ApiResponse:
+        """HTTP: whether a command runs in this terminal now (``running_pid``), and its status."""
+        return ApiSuccessResponse(data={"running_pid": self.running(), "status": self.status})
+
+    @action.post(action_name="run-detached")
+    async def run_detached(self) -> ApiResponse:
+        """HTTP: Execute a command in a subprocess OUTSIDE the terminal (nothing shows in it) and
+        answer with its ``CliResult``. To run in the terminal, ``run-command``.
 
         POST body: {command: str}. ``returncode`` is the process's own exit;
         ``exit_code`` is the verdict (``OK`` only for a 0).

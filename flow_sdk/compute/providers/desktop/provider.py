@@ -297,6 +297,56 @@ def get_shell_rc_file() -> str:
         return "~/.bashrc"
 
 
+
+def default_terminal_shell() -> str:
+    """The shell a terminal (a bare PTY) runs: PowerShell, else cmd.exe, on Windows; the user's
+    ``$SHELL`` elsewhere, else zsh on macOS and bash (or sh) on Linux. ONE answer — the spawn uses it,
+    and so does whatever types into the terminal and must speak its grammar (``Shell.sentinel_command``)."""
+    if sys.platform == PLATFORM_WIN32:
+        # Windows: prefer PowerShell, fallback to cmd.exe
+        shell_cmd = None
+
+        # Try to find PowerShell using PATH (works regardless of install location)
+        for pwsh_name in ["pwsh", "powershell"]:
+            found_pwsh = shutil.which(pwsh_name)
+            if found_pwsh:
+                shell_cmd = found_pwsh
+                break
+
+        # If PowerShell not found in PATH, try common locations
+        if shell_cmd is None:
+            system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
+            program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
+
+            pwsh_paths = [
+                os.path.join(program_files, "PowerShell", "7", "pwsh.exe"),
+                os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+            ]
+            for path in pwsh_paths:
+                if os.path.exists(path):
+                    shell_cmd = path
+                    break
+
+        # Fallback to cmd.exe
+        if shell_cmd is None:
+            shell_cmd = os.environ.get("COMSPEC")
+            if not shell_cmd:
+                system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
+                shell_cmd = os.path.join(system_root, "System32", "cmd.exe")
+    else:
+        # Unix-like: use user's default shell
+        user_shell = os.environ.get("SHELL", "")
+        if user_shell and os.path.exists(user_shell):
+            shell_cmd = user_shell
+        elif sys.platform == "darwin":
+            # macOS defaults to zsh
+            shell_cmd = "/bin/zsh"
+        else:
+            # Linux/Unix - try bash, fallback to sh
+            shell_cmd = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
+    return shell_cmd
+
+
 def get_set_env_cmd(name: str, value: str | None) -> str:
     """
     Generate a command to set or remove an environment variable persistently.
@@ -807,49 +857,8 @@ class LocalComputeProvider(ComputeProvider):
                 # Direct spawn: caller provides exact argv (e.g. Claude CLI directly)
                 final_spawn_args = spawn_args
             else:
-                # Shell spawn: detect and configure the user's default shell
-                if sys.platform == PLATFORM_WIN32:
-                    # Windows: prefer PowerShell, fallback to cmd.exe
-                    shell_cmd = None
-
-                    # Try to find PowerShell using PATH (works regardless of install location)
-                    for pwsh_name in ["pwsh", "powershell"]:
-                        found_pwsh = shutil.which(pwsh_name)
-                        if found_pwsh:
-                            shell_cmd = found_pwsh
-                            break
-
-                    # If PowerShell not found in PATH, try common locations
-                    if shell_cmd is None:
-                        system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
-                        program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
-
-                        pwsh_paths = [
-                            os.path.join(program_files, "PowerShell", "7", "pwsh.exe"),
-                            os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-                        ]
-                        for path in pwsh_paths:
-                            if os.path.exists(path):
-                                shell_cmd = path
-                                break
-
-                    # Fallback to cmd.exe
-                    if shell_cmd is None:
-                        shell_cmd = os.environ.get("COMSPEC")
-                        if not shell_cmd:
-                            system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
-                            shell_cmd = os.path.join(system_root, "System32", "cmd.exe")
-                else:
-                    # Unix-like: use user's default shell
-                    user_shell = os.environ.get("SHELL", "")
-                    if user_shell and os.path.exists(user_shell):
-                        shell_cmd = user_shell
-                    elif sys.platform == "darwin":
-                        # macOS defaults to zsh
-                        shell_cmd = "/bin/zsh"
-                    else:
-                        # Linux/Unix - try bash, fallback to sh
-                        shell_cmd = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
+                # Shell spawn: the user's default shell (``default_terminal_shell``)
+                shell_cmd = default_terminal_shell()
 
                 # Configure spawn arguments (command + flags) based on shell type
                 if sys.platform == PLATFORM_WIN32:
