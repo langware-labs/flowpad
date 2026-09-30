@@ -181,7 +181,7 @@ export function WizardViewer({
   presentation?: WizardPresentation;
 }) {
   const mainRef = useMemo(() => fsRef.child(MAIN_FILE), [fsRef]);
-  const { doc, error } = useJsonDoc<WizardDoc>(mainRef);
+  const { doc, error, loading } = useJsonDoc<WizardDoc>(mainRef);
 
   // A run started from ANYWHERE else — Settings' "Run setup again", a trigger,
   // another tab — writes `run_state` on this same entity, but the prop this
@@ -204,6 +204,11 @@ export function WizardViewer({
   // remount when the file arrives and discard anything already on screen — an
   // open approval panel, a half-typed answer — because the read resolves a tick
   // or two after the first paint. `useWizardDoc` adopts the document instead.
+  // A popup appears ONCE, complete. Its step list comes from the document, read a beat after the
+  // first paint; drawing the dialog before then showed it short and centred, then jumping taller
+  // and higher when the steps landed — the flicker. A page can fill in as it likes; a dialog cannot.
+  if (presentation === 'popup' && loading) return null;
+
   return (
     <WizardViewerBody
       key={mainRef.path}
