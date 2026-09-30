@@ -3477,6 +3477,7 @@ msgstr "Can't update right now — showing the last synced list."
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -9061,6 +9062,10 @@ msgstr "Find machine"
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Finish setup, then press Verify."
 msgstr "Finish setup, then press Verify."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Finish signing in on the page that opened in your browser."
+msgstr "Finish signing in on the page that opened in your browser."
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Finish the setup above before deploying"
@@ -15126,6 +15131,10 @@ msgstr "Open the live session"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Open the page again"
+msgstr "Open the page again"
 
 #: src/pages/entry/InstallLanding.tsx
 msgid "Open the project"
