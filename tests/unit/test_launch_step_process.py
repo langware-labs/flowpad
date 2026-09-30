@@ -306,3 +306,26 @@ async def test_a_failure_that_is_not_about_the_llm_source_never_opens_the_choose
     result = await _launch(tmp_path)
     assert asked == [], "a funded agent that fails to start is not a reason to pick another source"
     assert not result.ok and "harness exploded" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_a_driver_that_draws_on_no_llm_source_is_never_refused_for_lacking_one(monkeypatch):
+    """The spawn asks the driver that will ACTUALLY run about its source. A mock or bootstrap driver
+    has no API-auth spec and needs none, so it is never refused — even when the harness name that
+    was resolved (`claude`) would have needed one. No funding lookup, no chooser: the agent runs."""
+    from flow_sdk.builtin.agentic_process import agentic_process
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+    from flow_sdk.core.compute import process_step
+
+    class _Resolved:
+        value = "claude"
+
+    class _MockDriver:
+        name = "mock"
+
+    async def picker(*_a, **_kw):
+        raise AssertionError("a driver with no source must not be looked up for funding")
+
+    monkeypatch.setattr(agentic_process, "get_driver", lambda _t: _MockDriver())
+    monkeypatch.setattr(llm_source, "llm_picker_view", picker)
+    assert await process_step._unfunded(_Resolved()) is None
