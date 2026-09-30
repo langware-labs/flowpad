@@ -1,8 +1,10 @@
-"""The snippet view's verbs — read, save one region, check, run — over ``flow_sdk.core.snippet``.
+"""The snippet view's verbs — read, save one region, check, and the terminal it runs in — over
+``flow_sdk.core.snippet`` and ``Shell``.
 
 Thin on purpose: every rule (what a region is, how an edit is written back, how
-a language runs, what a timeout does) lives in the core module and is proven
-there by fast unit tests. This file only moves values across HTTP.
+a language runs) lives in the core module and is proven there by fast unit tests;
+running is the file's own terminal (``Shell.belonging_to``), whose output streams as it
+is printed. This file only moves values across HTTP.
 
 Failures carry ``error_code`` in the body (see ``display.py``'s ``_fail``):
 ``NOT_FOUND``, ``NOT_A_SNIPPET``, ``STALE`` (the file was restructured since the
@@ -14,18 +16,17 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter
+
 from flow_sdk.core.snippet import (
     SnippetCheckRequest,
     SnippetDoc,
     SnippetReadRequest,
-    SnippetRunRequest,
     SnippetSaveRequest,
-    SnippetStopRequest,
+    SnippetTerminalRequest,
     check_snippet,
     edit_region,
     read_snippet,
-    run_snippet,
-    stop_snippet,
+    terminal_command,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -101,17 +102,21 @@ async def snippet_check(req: SnippetCheckRequest):
     return ApiSuccessResponse(data={"path": str(path), "diagnostics": [d.model_dump() for d in found]})
 
 
-@router.post("/api/v1/snippet/run")
-async def snippet_run(req: SnippetRunRequest):
-    """Run the file as written. Always succeeds at the HTTP level: a crash, a
-    compile error and a timeout are all a ``CliResult`` to show, not a failure."""
-    result = await run_snippet(
-        Path(req.path), timeout_seconds=req.timeout_seconds, run_id=req.run_id, connection_id=req.connection_id
-    )
-    return ApiSuccessResponse(data=result.model_dump())
+@router.post("/api/v1/snippet/terminal")
+async def snippet_terminal(req: SnippetTerminalRequest):
+    """The file's own terminal — one per file (``snippet:<path>``), so its last run is still there
+    on the next visit — and the command that runs the file in it. The viewer types the command
+    through the terminal (``run-command``) and watches it there."""
+    from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
-
-@router.post("/api/v1/snippet/stop")
-async def snippet_stop(req: SnippetStopRequest):
-    """Stop a run by the id its caller gave it. ``stopped: false`` = it already ended."""
-    return ApiSuccessResponse(data={"stopped": stop_snippet(req.run_id)})
+    path = _existing(req.path)
+    if isinstance(path, ApiFailResponse):
+        return path
+    command = terminal_command(path)
+    if command is None:
+        return _fail("NOT_APPLICABLE", f"no runner for '{path.suffix}' files")
+    try:
+        shell = await Shell.belonging_to(f"snippet:{path}", workdir=str(path.parent), name=f"{path.name} · snippet")
+    except RuntimeError as exc:
+        return ApiFailResponse(message=str(exc))
+    return ApiSuccessResponse(data={"shell_id": str(shell.id), "command": command, "path": str(path)})

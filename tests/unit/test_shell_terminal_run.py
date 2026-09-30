@@ -1,5 +1,5 @@
-"""A terminal a command runs in: found by its key, told what to run, asked whether it still runs,
-and stopped without losing the terminal — ``Shell.for_key`` / ``run_command`` / ``running`` /
+"""A terminal a command runs in: found by what it belongs to, told what to run, asked whether it still runs,
+and stopped without losing the terminal — ``Shell.belonging_to`` / ``run_command`` / ``running`` /
 ``interrupt``, on a real PTY. What the snippet viewer and a deployment's process both stand on.
 """
 
@@ -35,18 +35,18 @@ async def _finished(shell: Shell, marker: str, timeout: float = 10.0) -> int:
 
 
 @pytest.mark.long  # 1.25s: three real terminals (~0.4s each to spawn)
-async def test_a_key_names_one_terminal_until_it_is_closed(tmp_path):
+async def test_a_thing_has_one_terminal_until_it_is_closed(tmp_path):
     key = f"test:{uuid.uuid4().hex}"
-    first = await Shell.for_key(key, workdir=str(tmp_path), name="keyed")
+    first = await Shell.belonging_to(key, workdir=str(tmp_path), name="keyed")
     try:
-        again = await Shell.for_key(key, workdir=str(tmp_path))
+        again = await Shell.belonging_to(key, workdir=str(tmp_path))
         assert again.id == first.id and again.is_alive
-        other = await Shell.for_key(f"{key}-other", workdir=str(tmp_path))
+        other = await Shell.belonging_to(f"{key}-other", workdir=str(tmp_path))
         assert other.id != first.id
         await other.close()
 
         await first.close()
-        fresh = await Shell.for_key(key, workdir=str(tmp_path))
+        fresh = await Shell.belonging_to(key, workdir=str(tmp_path))
         assert fresh.id != first.id, "a closed terminal is not handed out again"
         await fresh.close()
     finally:
@@ -54,7 +54,7 @@ async def test_a_key_names_one_terminal_until_it_is_closed(tmp_path):
 
 
 async def test_a_command_runs_in_the_terminal_and_its_end_carries_the_exit_code(tmp_path):
-    shell = await Shell.for_key(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         marker = await shell.run_command("echo keyed-out; (exit 3)")
         assert await _finished(shell, marker) == 3
@@ -70,7 +70,7 @@ async def test_the_end_marker_arrives_however_the_command_ends(tmp_path, monkeyp
     """Ctrl-C included: zsh abandons the rest of an interrupted line, and a marker lost there
     leaves a viewer waiting forever."""
     monkeypatch.setenv("SHELL", login_shell)
-    shell = await Shell.for_key(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         marker = await shell.run_command(command)
         if ctrl_c:
@@ -84,7 +84,7 @@ async def test_the_end_marker_arrives_however_the_command_ends(tmp_path, monkeyp
 async def test_the_shells_own_env_reaches_what_it_runs(tmp_path):
     from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-    keyed = Shell(key=f"test:{uuid.uuid4().hex}", workdir=str(tmp_path), env={"FLOW_T_ENV": "from-env"},
+    keyed = Shell(belongs_to=f"test:{uuid.uuid4().hex}", workdir=str(tmp_path), env={"FLOW_T_ENV": "from-env"},
                   compute_node_id=str((await ComputeNode.get_local()).id))
     await keyed.save()
     try:
@@ -97,7 +97,7 @@ async def test_the_shells_own_env_reaches_what_it_runs(tmp_path):
 
 @pytest.mark.long  # ~1.5s: a real sleep, then Ctrl-C
 async def test_interrupt_stops_the_command_and_keeps_the_terminal(tmp_path):
-    shell = await Shell.for_key(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         marker = await shell.run_command("sleep 30")
         await _until(lambda: shell.running() is not None)
@@ -113,7 +113,7 @@ async def test_interrupt_stops_the_command_and_keeps_the_terminal(tmp_path):
 
 @pytest.mark.long  # ~2.5s: a command that ignores Ctrl-C, killed after the grace
 async def test_a_command_deaf_to_ctrl_c_is_terminated_after_the_grace(tmp_path):
-    shell = await Shell.for_key(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         await shell.run_command("""python3 -c 'import signal,time; signal.signal(signal.SIGINT, signal.SIG_IGN); time.sleep(30)'""")
         await _until(lambda: shell.running() is not None)
@@ -124,7 +124,7 @@ async def test_a_command_deaf_to_ctrl_c_is_terminated_after_the_grace(tmp_path):
 
 
 async def test_interrupting_an_idle_terminal_is_a_no_op(tmp_path):
-    shell = await Shell.for_key(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         assert shell.running() is None
         assert await shell.interrupt() is True
@@ -134,7 +134,7 @@ async def test_interrupting_an_idle_terminal_is_a_no_op(tmp_path):
 
 async def test_run_and_capture_reads_the_output_between_the_command_and_its_marker(tmp_path):
     """``flow terminal run``'s path on a real terminal: the output, without the echoed command."""
-    shell = await Shell.for_key(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
+    shell = await Shell.belonging_to(f"test:{uuid.uuid4().hex}", workdir=str(tmp_path))
     try:
         answer = await shell.run_and_capture("echo captured-line; (exit 4)", timeout=10)
         assert answer.returncode == 4

@@ -200,6 +200,13 @@ class Shell(Entity):
     last_launch_cmd: dict | None = APIField(
         default=None, description="Serialized AgentOptions from the last launch() call"
     )
+    belongs_to: str | None = APIField(
+        default=None,
+        description=(
+            "What this terminal is the terminal OF — a natural name such as `snippet:<path>` or "
+            "`deployment:<id>`, looked up by `Shell.belonging_to`; null for a free terminal."
+        ),
+    )
 
     def get_implicit_private_context_entities(self) -> list["TypeId"]:
         """Project the owning process into private context (the reverse of
@@ -500,9 +507,9 @@ class Shell(Entity):
         return shell
 
     @classmethod
-    async def for_key(
+    async def belonging_to(
         cls,
-        key: str,
+        what: str,
         *,
         workdir: str | None = None,
         name: str | None = None,
@@ -511,16 +518,16 @@ class Shell(Entity):
         rows: int = 30,
         cols: int = 120,
     ) -> "Shell":
-        """The terminal that *key* names, with a live PTY — the one it had, else a new one on this
-        machine. A key is the natural name of the thing a terminal belongs to (``snippet:<path>``,
-        ``deployment:<id>``); it is looked up, never turned into an id."""
-        shell = await cls.get_by_key(key)
+        """The terminal of *what*, with a live PTY — the one it had, else a new one on this machine.
+        *what* is the natural name of the thing the terminal belongs to (``snippet:<path>``,
+        ``deployment:<id>``); it is looked up (``belongs_to``), never turned into an id."""
+        shell = await cls.get_by_prop("belongs_to", what, BuiltinEntityType.SHELL.value)
         if shell is None or shell.status == ShellStatus.CLOSED.value:
             from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
 
             node = await ComputeNode.get_local()
             shell = cls(
-                key=key,
+                belongs_to=what,
                 name=name,
                 workdir=workdir,
                 project_id=project_id,

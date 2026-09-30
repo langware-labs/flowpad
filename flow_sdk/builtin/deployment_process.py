@@ -155,16 +155,16 @@ def command_of(deployment) -> str:
 
 
 async def _shell(deployment):
-    """The deployment's terminal (``Shell.for_key``) — the one it had, else a new one — with a live PTY."""
+    """The deployment's terminal (``Shell.belonging_to``) — the one it had, else a new one — with a live PTY."""
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
-    key = f"deployment:{deployment.id}"
+    what = f"deployment:{deployment.id}"
     legacy = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
-    if legacy is not None and not legacy.key and legacy.status != "closed":
-        legacy.key = key  # a row from before keyed terminals: its terminal keeps serving it
+    if legacy is not None and not legacy.belongs_to and legacy.status != "closed":
+        legacy.belongs_to = what  # a row from before terminals named their owner: it keeps serving
         await legacy.save()
-    shell = await Shell.for_key(
-        key,
+    shell = await Shell.belonging_to(
+        what,
         name=f"{deployment.name or 'Deployment'} · process",
         workdir=str(file_of(deployment).parent),
         extra_env={DEPLOYMENT_ENV: str(deployment.id)},
