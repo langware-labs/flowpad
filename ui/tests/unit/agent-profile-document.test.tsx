@@ -64,10 +64,10 @@ describe('Auto prompt', () => {
     const f = fixture({ auto_launch: false, auto_launch_prompt: 'Say hello' });
     const field = await screen.findByRole('textbox', { name: 'Auto prompt' });
     expect(field).toHaveValue('Say hello');
-    fireEvent.change(field, { target: { value: '  Summarize the inbox  ' } });
+    fireEvent.change(field, { target: { value: '  Summarize the notes  ' } });
     fireEvent.blur(field);
     await waitFor(() =>
-      expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', set_fields: { auto_launch_prompt: 'Summarize the inbox' } }),
+      expect(f.update).toHaveBeenCalledWith({ expected_revision: 'first', set_fields: { auto_launch_prompt: 'Summarize the notes' } }),
     );
   });
 
