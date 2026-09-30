@@ -211,6 +211,72 @@ async def test_the_agents_transcript_growing_is_a_sign_of_life_even_when_its_rep
     assert len(said) == 2
 
 
+@pytest.mark.asyncio
+async def test_a_command_doing_work_is_a_sign_of_life_and_the_row_says_so(monkeypatch, tmp_path):
+    """One long command (a download + unpack) leaves the agent's report AND transcript still for
+    minutes — on the clean-Windows VM the row read "may be stuck" while Node was downloading. The
+    command's own CPU and I/O growing is real activity; a command sitting still is not."""
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.core.compute import process_step
+
+    process = _Process()
+    activity = iter([None, (1, 0.1, 100), (1, 0.6, 9_000), (1, 0.6, 9_000)])
+
+    async def wait(timeout=None, on_status=None):
+        for _ in range(4):
+            on_status("working")
+
+    process.wait = wait
+
+    async def get_by_typeid(typeid):
+        return process
+
+    monkeypatch.setattr(AgenticProcess, "get_by_typeid", staticmethod(get_by_typeid))
+    monkeypatch.setattr(
+        process_step, "_progress_for", lambda _pid, _ws: process_step.ProcessProgress(text="working", counters={})
+    )
+    monkeypatch.setattr(process_step, "_transcript_signature", lambda _p: (10, 1))
+    monkeypatch.setattr(process_step, "_command_activity", lambda _pid: next(activity))
+    said = []
+    await process_step.launch_step_process(
+        agent="provisioner",
+        prompt="go",
+        name="x",
+        workdir=Path(tmp_path),
+        executor="agentic_process-proc-1",
+        on_status=said.append,
+    )
+    # Nothing running, then a command started, then it did more work, then it sat still: three.
+    assert [p.text for p in said] == ["working", *[f"working · {process_step.RUNNING_A_COMMAND}"] * 2]
+
+
+def test_command_activity_measures_the_agents_child_processes(monkeypatch):
+    """Real processes: a busy child moves the numbers; no worker, or no child, is ``None``."""
+    import os
+    import subprocess
+    import sys
+    import time
+
+    from flow_sdk.builtin.agentic_process import agentic_process
+    from flow_sdk.core.compute import process_step
+
+    assert process_step._command_activity("no-such-process") is None
+
+    monkeypatch.setattr(agentic_process, "prompt_worker_pid", lambda _pid: os.getpid())
+    busy = subprocess.Popen(
+        [sys.executable, "-c", "import time\nend = time.time() + 0.6\nwhile time.time() < end: pass"]
+    )
+    try:
+        time.sleep(0.15)
+        first = process_step._command_activity("proc-1")
+        time.sleep(0.3)
+        later = process_step._command_activity("proc-1")
+    finally:
+        busy.wait(timeout=5)
+    assert first is not None and later is not None
+    assert later[1] > first[1], "a busy command's CPU time grows between polls"
+
+
 class _Deployment:
     """Creates the agent process; counts how often it was asked to, and can fail doing it."""
 
