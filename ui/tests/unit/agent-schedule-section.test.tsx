@@ -54,9 +54,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderSection(autoPrompt = '') {
+function renderSection(autoLaunchPrompt = '') {
   const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
-  render(<AgentScheduleSection agent={agent} autoPrompt={autoPrompt} deploymentId={LOCAL_PLACE} isLocal />);
+  render(<AgentScheduleSection agent={agent} autoLaunchPrompt={autoLaunchPrompt} deploymentId={LOCAL_PLACE} isLocal />);
   return agent;
 }
 
@@ -97,7 +97,7 @@ describe('the agent schedule tab', () => {
     expect(pointer.options?.trigger_id).toBe('t1');
   });
 
-  it('pre-fills a new schedule with the auto prompt and writes through the agent', async () => {
+  it('pre-fills a new schedule with the auto-launch prompt and writes through the agent', async () => {
     const agent = renderSection('Summarize the stream inbox');
     const add = vi.spyOn(agent, 'addSchedule').mockResolvedValue({} as never);
 
@@ -170,7 +170,7 @@ describe('the agent schedule tab', () => {
     const LOCAL = '44444444-4444-4444-8444-444444444444';
     const agent = new Agent({ id: AGENT_ID, name: 'triage', enabled: true });
     const add = vi.spyOn(agent, 'addSchedule').mockResolvedValue({} as never);
-    render(<AgentScheduleSection agent={agent} autoPrompt="Go" deploymentId={LOCAL} isLocal />);
+    render(<AgentScheduleSection agent={agent} autoLaunchPrompt="Go" deploymentId={LOCAL} isLocal />);
     fireEvent.click(screen.getByTestId('agent-schedule-add'));
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
     await waitFor(() => expect(add).toHaveBeenCalledTimes(1));

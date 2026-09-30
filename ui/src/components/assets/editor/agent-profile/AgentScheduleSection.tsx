@@ -19,8 +19,8 @@ import { DockPointer } from '@src/navigation/DockPointer';
 
 interface AgentScheduleSectionProps {
   agent: Agent;
-  /** The agent's live auto prompt — the default for a new schedule's prompt. */
-  autoPrompt?: string;
+  /** The agent's live auto-launch prompt — the default for a new schedule. */
+  autoLaunchPrompt?: string;
   /** The place (Deployment id) this list belongs to: shows its schedules and creates new ones there. */
   deploymentId: string;
   /** Whether that place is this computer — where legacy place-less schedules show. */
@@ -45,7 +45,7 @@ function promptOf(row: Pick<Trigger, 'actions'>): string {
  * Writes go through the agent's schedule verbs, never a trigger row PATCH: the
  * document is the source of truth and a row edit would be reverted on re-index.
  */
-export function AgentScheduleSection({ agent, autoPrompt = '', deploymentId, isLocal }: AgentScheduleSectionProps) {
+export function AgentScheduleSection({ agent, autoLaunchPrompt = '', deploymentId, isLocal }: AgentScheduleSectionProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [editing, setEditing] = useState<Trigger | 'new' | null>(null);
@@ -68,7 +68,7 @@ export function AgentScheduleSection({ agent, autoPrompt = '', deploymentId, isL
   );
 
   const startNew = () => {
-    setPrompt(autoPrompt);
+    setPrompt(autoLaunchPrompt);
     setEditing('new');
   };
 
