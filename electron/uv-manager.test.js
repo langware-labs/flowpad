@@ -12,10 +12,30 @@ const {
   needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine,
   pythonVersionFromPyproject, getPythonVersion, tryPythonVersion, upgradeCommand,
   pythonFloor, maxPythonVersion, isPolicyBlockError, PY_FLOW_ENTRY, policyBlockedError,
-  UV_INSTALL_SH, UV_INSTALL_PS1, installFailure, cleanPythonEnv,
+  UV_INSTALL_SH, UV_INSTALL_PS1, installFailure, cleanPythonEnv, mktempShimSource, windowsPowerShellModulePath,
 } = UvManager;
 
 const IS_WIN = process.platform === 'win32';
+
+// Existing `_uvToolInstallForce` tests must not resolve (and scan) the developer's REAL uv directories:
+// default to "no directories" (guard = 240 s cap only, timers unref'd and cleared). Guard tests override it.
+const realUvDirs = UvManager.prototype._uvDirs;
+UvManager.prototype._uvDirs = async () => null;
+
+// SAFETY NET: no test may run the REAL uv installer or a real `uv tool install` on the machine that
+// runs the tests (it rewrites ~/.local/bin/uv and the uv receipt, and would install flowpad into the
+// developer's tool dir). Every such call must be stubbed on the instance; one that is not fails
+// loudly here instead of quietly touching the machine. (A real one ran once, before this existed.)
+{
+  const realRunStreaming = UvManager.prototype._runStreaming;
+  UvManager.prototype._runStreaming = function guardedRunStreaming(cmd, args, opts) {
+    const line = `${cmd} ${(args || []).join(' ')}`;
+    if (/astral\.sh|\btool install\b|\btool run\b/.test(line)) {
+      throw new Error(`test attempted a REAL install command (stub _runStreaming on the instance): ${line.slice(0, 120)}`);
+    }
+    return realRunStreaming.call(this, cmd, args, opts);
+  };
+}
 
 let passed = 0;
 function eq(actual, expected, msg) {
@@ -142,7 +162,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
   // followed by `uv tool update-shell` immediately, or a first-time setup that
   // dies later leaves `uv` unreachable from the user's terminal. An already-
   // present uv must NOT trigger the repair (no rc-file edit on every launch).
-  // The fresh-install leg stubs _run (the `sh -c curl | sh` installer); on
+  // The fresh-install leg stubs _runStreaming (the installer script); on
   // Windows ensureUv spawns powershell.exe directly, which would really
   // download uv — so that leg is Unix-only.
   if (!IS_WIN) {
@@ -157,6 +177,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       return { stdout: '', stderr: '' };
     };
     m._run = async (cmd, args) => { calls.push([cmd, ...args]); return { stdout: '', stderr: '' }; };
+    m._runStreaming = async (cmd, args) => { calls.push([cmd, ...args]); return { stdout: '', stderr: '' }; };
     await m.ensureUv();
     ok(calls.some((c) => c[0] === 'tool' && c[1] === 'update-shell'),
       'ensureUv runs `uv tool update-shell` right after installing uv');
@@ -600,6 +621,18 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     ok(/boom/.test(require('./startup-error').describeStartupFailure(f)), 'and the startup panel shows the installer\'s stderr');
   }
 
+  // ── Windows PowerShell 5.1 gets its OWN module path, not the pwsh 7 one it inherits ──
+  {
+    const p = windowsPowerShellModulePath({ USERPROFILE: 'C:\\Users\\Tzahi', ProgramFiles: 'C:\\Program Files', SystemRoot: 'C:\\Windows' });
+    eq(p.split(';'), [
+      'C:\\Users\\Tzahi\\Documents\\WindowsPowerShell\\Modules',
+      'C:\\Program Files\\WindowsPowerShell\\Modules',
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',
+    ], 'the three Windows PowerShell 5.1 module directories, none of them pwsh 7\'s');
+    ok(!/\\PowerShell\\Modules/.test(p.replace(/WindowsPowerShell/g, '')), 'no PowerShell 7 module directory');
+    eq(windowsPowerShellModulePath({ windir: 'D:\\Win' }).split(';')[2], 'D:\\Win\\System32\\WindowsPowerShell\\v1.0\\Modules', 'falls back to windir when SystemRoot is missing');
+  }
+
   // ── children never inherit a PYTHONHOME/PYTHONPATH that would break the venv ──
   {
     const seen = [];
@@ -629,6 +662,422 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     eq(m.hasLaunchedBackend(), false, 'a fresh manager has launched nothing (first-install retry must not `flow stop` / kill the port)');
     m._lastLaunch = { startedAt: 1 };
     eq(m.hasLaunchedBackend(), true, 'after start() has spawned flow start, stopping is legitimate');
+  }
+
+  // ── the uv download has no wall-clock cap, but is visible and stoppable ─────
+  if (!IS_WIN) {
+    const mkFresh = () => {
+      const m = new UvManager(silentLog);
+      let n = 0;
+      m._uv = async (args) => { if (args[0] === '--version' && n++ === 0) throw new Error('not found'); return { stdout: '', stderr: '' }; };
+      m._ensureShimOnPath = async () => {};
+      // `mktemp -d` under the private TMPDIR the installer is given (what _installerHonorsTempDir asks).
+      m._run = async (_cmd, _args, o) => {
+        const d = require('fs').mkdtempSync(require('path').join(o.env.TMPDIR, 'tmp.'));
+        return { stdout: d + '\n', stderr: '' };
+      };
+      return m;
+    };
+
+    // No timeout is passed to the runner (a cap kills slow-but-working downloads on weak links).
+    let m = mkFresh(); let opts0 = null;
+    m._runStreaming = async (_c, _a, o) => { opts0 = o; return { stdout: '', stderr: '' }; };
+    await m.ensureUv();
+    ok(opts0 && !('timeout' in opts0), 'ensureUv passes NO timeout to the installer run');
+
+    // The installer's own lines and an elapsed-time tick reach the caller; the tick stops afterwards.
+    m = mkFresh(); m._progressTickMs = 10;
+    const shown = [];
+    m._runStreaming = async (_c, _a, o) => {
+      o.onLine('downloading uv 0.9.9 aarch64-apple-darwin');
+      await new Promise((r) => setTimeout(r, 60));
+      return { stdout: '', stderr: '' };
+    };
+    await m.ensureUv({ onProgress: (l) => shown.push(l) });
+    ok(shown.includes('downloading uv 0.9.9 aarch64-apple-darwin'), "the installer's own output is forwarded");
+    ok(shown.some((l) => /^still downloading uv \(\d+s\)$/.test(l)), 'a "still downloading" elapsed tick is shown while it runs');
+    const count = shown.length;
+    await new Promise((r) => setTimeout(r, 40));
+    eq(shown.length, count, 'the tick stops when the download ends (no leaked timer)');
+
+    // Covered by the quit guard, and abortable: the user can always get out.
+    m = mkFresh();
+    let killed = null; let release;
+    const child = { pid: 4242, exitCode: null, kill: (sig) => { killed = sig; } };
+    m._runStreaming = (_c, _a, o) => new Promise((_res, rej) => { o.onChild(child); release = () => rej(Object.assign(new Error('killed'), { signal: 'SIGTERM' })); });
+    const running = m.ensureUv().then(() => 'done', (e) => e);
+    while (!release) await new Promise((r) => setImmediate(r)); // the installer child now exists
+    eq(m.isInstalling(), true, 'isInstalling() is true during the uv download, so quitting mid-download asks first');
+    eq(m.abortInstall(), true, 'abortInstall() reports a running download');
+    eq(killed, 'SIGTERM', 'and signals the installer process');
+    release();
+    const err = await running;
+    ok(err instanceof Error && /killed by SIGTERM/.test(err.message), `the abort surfaces as a clear error: ${err.message}`);
+    eq(m.isInstalling(), false, 'not installing any more');
+
+    // ── progress watchdog: 3 x 30 s of silence stops it; any new byte resets; never without a trustworthy signal ──
+    const fs2 = require('fs'); const path2 = require('path');
+    const fakeTimers = () => {
+      let now = 0; const jobs = [];
+      return {
+        setInterval(fn, ms) { const j = { fn, ms, next: now + ms, dead: false, unref() {} }; jobs.push(j); return j; },
+        clearInterval(j) { if (j) j.dead = true; },
+        setTimeout(fn, ms) { const j = { fn, ms, next: now + ms, dead: false, once: true, unref() {} }; jobs.push(j); return j; },
+        clearTimeout(j) { if (j) j.dead = true; },
+        advance(ms) { const end = now + ms; for (;;) { const due = jobs.filter((j) => !j.dead && j.next <= end).sort((a, b) => a.next - b.next)[0]; if (!due) break; now = due.next; if (due.once) due.dead = true; else due.next += due.ms; due.fn(); } now = end; },
+      };
+    };
+    // A manager on fake time whose installer we control. `ctl.finish()` ends the install, `ctl.killed` records signals.
+    const mkWatched = () => {
+      const m = mkFresh();
+      const timers = fakeTimers();
+      m._timers = timers;
+      const ctl = { timers, tmp: null, env: null, killed: [], child: null, started: null, runs: 0 };
+      let started; ctl.started = new Promise((r) => { started = r; });
+      m._runStreaming = (_c, _a, o) => new Promise((resolve, reject) => {
+        ctl.runs++; ctl.env = o.env; ctl.tmp = o.env.TMPDIR; ctl.onData = o.onData;
+        ctl.child = { pid: 99, exitCode: null, kill: (sig) => { ctl.killed.push(sig); reject(Object.assign(new Error('killed'), { signal: sig })); } };
+        o.onChild(ctl.child);
+        ctl.finish = () => resolve({ stdout: '', stderr: '' });
+        started();
+      });
+      return { m, ctl, timers };
+    };
+    const S = 1000;
+
+    // No new byte: not stopped at 60 s or 89 s, stopped at 90 s; the error says why and is retryable text.
+    {
+      const { m, ctl, timers } = mkWatched();
+      const p2 = m.ensureUv().then(() => 'done', (e) => e);
+      await ctl.started;
+      timers.advance(60 * S); eq(ctl.killed.length, 0, 'watchdog: silent for 60 s is not a stall yet');
+      timers.advance(29 * S); eq(ctl.killed.length, 0, 'watchdog: nor at 89 s');
+      timers.advance(1 * S); eq(ctl.killed, ['SIGTERM'], 'watchdog: 3 quiet windows (90 s) -> the installer is stopped');
+      const e = await p2;
+      ok(e.stalled === true && /no new data for 90 seconds \(3 checks of 30 s\)/.test(e.message) && /click Retry/.test(e.message), `the stall error is clear: ${e.message}`);
+      eq(m.isInstalling(), false, 'not installing after a stall');
+      eq(fs2.existsSync(ctl.tmp), false, 'the private temp dir is removed after a stall');
+    }
+
+    // A silent-on-stdout download that GROWS the temp dir is progress (this is the real curl -s case).
+    {
+      const { m, ctl, timers } = mkWatched();
+      const p2 = m.ensureUv().then(() => 'done', (e) => e);
+      await ctl.started;
+      const file = path2.join(ctl.tmp, 'input.tar.gz');
+      for (let i = 0; i < 40; i++) { fs2.appendFileSync(file, Buffer.alloc(1024)); timers.advance(25 * S); } // 1000 s, a byte-slow download
+      eq(ctl.killed.length, 0, 'watchdog: a download that keeps growing its temp file is never stopped (1000 s here)');
+      ctl.finish();
+      eq(await p2, 'done', 'and it completes normally');
+      eq(fs2.existsSync(ctl.tmp), false, 'temp dir removed after success');
+    }
+
+    // Output bytes are progress too.
+    {
+      const { m, ctl, timers } = mkWatched();
+      const p2 = m.ensureUv().then(() => 'done', (e) => e);
+      await ctl.started;
+      for (let i = 0; i < 20; i++) { ctl.onData(Buffer.from('x')); timers.advance(25 * S); }
+      eq(ctl.killed.length, 0, 'watchdog: bytes on the installer\'s output count as progress');
+      ctl.finish(); await p2;
+    }
+
+    // A byte during the 3rd quiet window resets to three fresh windows.
+    {
+      const { m, ctl, timers } = mkWatched();
+      const p2 = m.ensureUv().then(() => 'done', (e) => e);
+      await ctl.started;
+      timers.advance(60 * S);                       // 2 quiet windows
+      ctl.onData(Buffer.from('y')); timers.advance(30 * S); // byte in the 3rd -> reset
+      eq(ctl.killed.length, 0, 'watchdog: a byte in the 3rd window resets instead of stopping');
+      timers.advance(60 * S); eq(ctl.killed.length, 0, 'watchdog: two quiet windows after the reset: still running');
+      timers.advance(30 * S); eq(ctl.killed.length, 1, 'watchdog: three fresh quiet windows after the reset: stopped');
+      await p2;
+    }
+
+    // The mktemp wrapper: on macOS the real `mktemp -d` ignores TMPDIR, so without it the download lands
+    // somewhere we cannot watch (found by running the real installer, 2026-09-30).
+    {
+      const { spawnSync: sp } = require('child_process');
+      const dir = fs2.mkdtempSync(path2.join(require('os').tmpdir(), 'shimtest-'));
+      try {
+        const m0 = new UvManager(silentLog);
+        const shim = m0._installMktempShim(dir);
+        ok(shim && fs2.existsSync(shim) && (fs2.statSync(shim).mode & 0o111) !== 0, 'the mktemp wrapper is written and executable');
+        const inDir = (p) => fs2.realpathSync(p).startsWith(fs2.realpathSync(dir) + path2.sep);
+        const env = { ...process.env, TMPDIR: dir };
+        let r = sp(shim, ['-d'], { env, encoding: 'utf8' });
+        ok(r.status === 0 && inDir(r.stdout.trim()) && fs2.statSync(r.stdout.trim()).isDirectory(), '`mktemp -d` (what install.sh runs for the archive) lands under TMPDIR');
+        r = sp(shim, [], { env, encoding: 'utf8' });
+        ok(r.status === 0 && inDir(r.stdout.trim()) && fs2.statSync(r.stdout.trim()).isFile(), '`mktemp` with no args makes a file under TMPDIR');
+        const explicit = path2.join(dir, 'elsewhere.XXXXXX');
+        r = sp(shim, ['-d', explicit], { env: { ...process.env, TMPDIR: '/nonexistent' }, encoding: 'utf8' });
+        ok(r.status === 0 && r.stdout.trim().startsWith(path2.join(dir, 'elsewhere.')), 'an explicit template is passed through untouched');
+        ok(/^#!\/bin\/sh/.test(mktempShimSource('/usr/bin/mktemp')) && mktempShimSource('/a b/mktemp').includes('"/a b/mktemp"'), 'the real mktemp path is quoted into the wrapper');
+      } finally { fs2.rmSync(dir, { recursive: true, force: true }); }
+    }
+
+    // ...and ensureUv puts that wrapper first on the installer's PATH.
+    {
+      const { m, ctl } = mkWatched();
+      const p2 = m.ensureUv();
+      await ctl.started;
+      const first = ctl.env.PATH.split(path2.delimiter)[0];
+      ok(first === path2.join(ctl.tmp, '.bin') && fs2.existsSync(path2.join(first, 'mktemp')), 'the installer\'s PATH starts with the private dir\'s wrapper');
+      ctl.finish(); await p2;
+    }
+
+    // The installer runs with the private temp dir (all three variables), which exists while it runs.
+    {
+      const { m, ctl, timers } = mkWatched();
+      const p2 = m.ensureUv();
+      await ctl.started;
+      ok(ctl.env.TMPDIR && ctl.env.TMPDIR === ctl.env.TEMP && ctl.env.TEMP === ctl.env.TMP, 'TMPDIR/TEMP/TMP all point at the private dir');
+      ok(fs2.existsSync(ctl.tmp) && ctl.tmp.includes('flowpad-uv-'), 'the private dir exists while the installer runs');
+      ctl.finish(); await p2;
+    }
+
+    // NEVER arm the stall watchdog without a trustworthy signal: a flat temp dir would look like a stall
+    // while a healthy, silent download runs. In that case ONLY, a 200 s wall-clock cap applies instead.
+    for (const [name, runStub] of [
+      ['the installer would use a different temp dir', async () => ({ stdout: '/somewhere/else/tmp.abc\n', stderr: '' })],
+      ['the temp-dir check itself fails', async () => { throw new Error('sh: mktemp: not found'); }],
+    ]) {
+      {
+        const { m, ctl, timers } = mkWatched();
+        m._run = runStub;
+        const p2 = m.ensureUv().then(() => 'done', (e) => e);
+        await ctl.started;
+        timers.advance(199 * S);
+        eq(ctl.killed.length, 0, `fallback (${name}): not stopped at 199 s, and NOT by the stall watchdog (silent for 199 s)`);
+        timers.advance(1 * S);
+        eq(ctl.killed, ['SIGTERM'], `fallback (${name}): the 200 s cap stops it`);
+        const e = await p2;
+        ok(e.timedOut === true && !e.stalled && /did not finish within 200 seconds/.test(e.message) && /click Retry/.test(e.message), `the cap error is clear: ${e.message}`);
+      }
+      {
+        const { m, ctl, timers } = mkWatched();
+        m._run = runStub;
+        const p2 = m.ensureUv().then(() => 'done', (e) => e);
+        await ctl.started;
+        timers.advance(150 * S);
+        ctl.finish();
+        eq(await p2, 'done', `fallback (${name}): a download that finishes inside 200 s completes`);
+        timers.advance(1000 * S);
+        eq(ctl.killed.length, 0, 'and the cap timer is cleared (nothing fires afterwards)');
+      }
+    }
+
+    // While the stall watchdog IS armed there is no wall-clock cap at all.
+    {
+      const { m, ctl, timers } = mkWatched();
+      const p2 = m.ensureUv().then(() => 'done', (e) => e);
+      await ctl.started;
+      const file = path2.join(ctl.tmp, 'input.tar.gz');
+      for (let i = 0; i < 30; i++) { fs2.appendFileSync(file, Buffer.alloc(64)); timers.advance(20 * S); } // 600 s > 200 s
+      eq(ctl.killed.length, 0, 'watchdog armed: a moving download runs past 200 s untouched (600 s here)');
+      ctl.finish(); await p2;
+    }
+
+    // An abort asked for before the installer child exists (during the temp-dir check) is honoured.
+    {
+      const { m, ctl } = mkWatched();
+      let releaseCheck;
+      m._run = () => new Promise((res) => { releaseCheck = () => res({ stdout: '/x\n', stderr: '' }); });
+      const p2 = m.ensureUv().then(() => 'done', (e) => e);
+      while (!releaseCheck) await new Promise((r) => setImmediate(r));
+      eq(m.abortInstall(), true, 'abort during the temp-dir check reports a running install');
+      releaseCheck();
+      const e = await p2;
+      ok(e instanceof Error && /Could not install uv/.test(e.message), 'the aborted install fails');
+      eq(ctl.runs, 0, 'and the installer was never started');
+    }
+
+    // A failed download reports the real cause and carries stderr for the panel.
+    m = mkFresh();
+    m._runStreaming = async () => { throw Object.assign(new Error('Command failed: sh -c ...'), { code: 6, stderr: 'curl: (6) Could not resolve host: astral.sh' }); };
+    const failure = await m.ensureUv().then(() => null, (e) => e);
+    ok(failure && /exit 6/.test(failure.message) && /Could not resolve host/.test(failure.stderr), 'a failed download: short message + curl\'s stderr');
+    ok(!/sh -c/.test(failure.message), 'the panel never shows the raw installer command line');
+  }
+
+  // Guard against a cap creeping back in: ensureUv must contain no timer-driven abort / timeout option.
+  {
+    const src = require('fs').readFileSync(require('path').join(__dirname, 'uv-manager.js'), 'utf8');
+    const body = src.slice(src.indexOf('  async ensureUv('), src.indexOf('  // flow CLI binary resolution'));
+    const code = body.replace(/\/\/.*$/gm, '');
+    ok(!/(^|[^.\w])setTimeout\s*\(|timeout\s*:|\.kill\(/.test(code), 'ensureUv has no bare setTimeout, timeout option or kill of its own');
+    eq((code.match(/_timers\.setTimeout/g) || []).length, 1, 'the ONLY wall-clock timer in ensureUv is the fallback cap (used when the stall watchdog cannot be armed)');
+    ok(/this\._fallbackCapMs\b/.test(code) && /_fallbackCapMs = 200 \* 1000/.test(src), 'and its value is the approved 200 s');
+  }
+
+  // ── `uv tool install flowpad`: progress guard (no cap while moving; 90 s of silence once the signal is trusted; 240 s cap until then) ──
+  {
+    const fs3 = require('fs'); const os3 = require('os'); const path3 = require('path');
+    const S = 1000;
+    const fakeT = () => {
+      let now = 0; const jobs = [];
+      return {
+        setInterval(fn, ms) { const j = { fn, ms, next: now + ms, dead: false, unref() {} }; jobs.push(j); return j; },
+        clearInterval(j) { if (j) j.dead = true; },
+        setTimeout(fn, ms) { const j = { fn, ms, next: now + ms, dead: false, once: true, unref() {} }; jobs.push(j); return j; },
+        clearTimeout(j) { if (j) j.dead = true; },
+        advance(ms) { const end = now + ms; for (;;) { const due = jobs.filter((j) => !j.dead && j.next <= end).sort((a, b) => a.next - b.next)[0]; if (!due) break; now = due.next; if (due.once) due.dead = true; else due.next += due.ms; due.fn(); } now = end; },
+      };
+    };
+    const settle = () => new Promise((r) => setTimeout(r, 25)); // the samplers are async fs scans
+    const tmpBase = fs3.mkdtempSync(path3.join(os3.tmpdir(), 'toolguard-'));
+    let seq = 0;
+    // A manager whose uv we control; `dirs` = real temp dirs standing in for uv's cache/python/tool dirs.
+    const mkTool = ({ withDirs = true, stateDir = null } = {}) => {
+      const base = path3.join(tmpBase, `t${seq++}`);
+      const dirs = { cache: path3.join(base, 'cache'), python: path3.join(base, 'python'), tools: path3.join(base, 'tools') };
+      for (const d of [dirs.cache, dirs.python, path3.join(dirs.tools, 'flowpad')]) fs3.mkdirSync(d, { recursive: true });
+      const m = new UvManager(silentLog, stateDir ? { stateDir } : {});
+      const timers = fakeT(); m._timers = timers;
+      m._uvDirs = async () => (withDirs ? dirs : null);
+      m._drainVenvProcesses = async () => {};
+      m._pythonPinForUpgrade = async () => '3.11'; m._pythonPinForUpgradeUnused = true;
+      m._ensureShimOnPath = async () => {}; m._resolveFlowBin = async () => null;
+      m._getLatestPypiInfo = async () => null;
+      const ctl = { killed: [], runs: 0, dirs, timers };
+      ctl.started = new Promise((res) => { ctl.markStarted = res; });
+      m._runStreaming = (_c, _a, o) => new Promise((resolve, reject) => {
+        ctl.runs++; ctl.onData = o.onData;
+        ctl.child = { pid: 77, exitCode: null, kill: (sig) => { ctl.killed.push(sig); reject(Object.assign(new Error('killed'), { signal: sig })); } };
+        o.onChild(ctl.child); ctl.finish = () => resolve({ stdout: '', stderr: '' }); ctl.markStarted();
+      });
+      // one virtual step: advance, then let the async samplers finish
+      ctl.step = async (sec) => { timers.advance(sec * S); await settle(); };
+      ctl.download = (n = 512) => fs3.appendFileSync(path3.join(dirs.cache, '.tmp-download'), Buffer.alloc(n)); // an in-flight download growing
+      return { m, ctl };
+    };
+    const run = (m) => m._uvToolInstallForce(['tool', 'install', 'flowpad']).then(() => 'done', (e) => e);
+
+    // A moving install is never stopped — not by the watchdog, and not by the 240 s cap (600 s here).
+    {
+      const { m, ctl } = mkTool(); const p2 = run(m); await ctl.started; await settle();
+      for (let i = 0; i < 30; i++) { ctl.download(); await ctl.step(20); }
+      eq(ctl.killed.length, 0, 'tool install: a download that keeps growing runs 600 s untouched (no watchdog stall, no 240 s cap)');
+      ctl.finish(); eq(await p2, 'done', 'and completes');
+    }
+
+    // Trusted, then silent: 3 quiet 30 s windows stop it. Movement at 20 s -> trusted at the 30 s check; then 60/90/120 quiet.
+    {
+      const { m, ctl } = mkTool(); const p2 = run(m); await ctl.started; await settle();
+      await ctl.step(20); ctl.download(); await ctl.step(10);       // t=30: the dirs moved -> trusted
+      await ctl.step(30); await ctl.step(30); await ctl.step(29);    // one window per step (an async scan can't overlap the next tick in real time): t=119
+      eq(ctl.killed.length, 0, 'tool install: not stopped before the 3rd quiet window ends (t=119)');
+      await ctl.step(1);
+      eq(ctl.killed, ['SIGTERM'], 'tool install: 3 quiet windows after the signal proved itself -> stopped (t=120)');
+      const e = await p2;
+      ok(e.stalled === true && e.killedByGuard === true && /Flowpad install stalled: no new data for 90 seconds \(3 checks of 30 s\)/.test(e.message) && /click Retry/.test(e.message), `clear stall error: ${e.message}`);
+    }
+
+    // Output bytes are progress too.
+    {
+      const { m, ctl } = mkTool(); const p2 = run(m); await ctl.started; await settle();
+      await ctl.step(20); ctl.download(); await ctl.step(10);       // trusted
+      for (let i = 0; i < 12; i++) { ctl.onData(Buffer.from('x')); await ctl.step(25); } // only uv's output moves for 300 s
+      eq(ctl.killed.length, 0, 'tool install: bytes on uv\'s output keep a trusted install alive');
+      ctl.finish(); await p2;
+    }
+
+    // Signal never seen moving -> silence proves nothing -> NO 90 s stop; only the 240 s cap.
+    {
+      const { m, ctl } = mkTool(); const p2 = run(m); await ctl.started; await settle();
+      await ctl.step(200);
+      eq(ctl.killed.length, 0, 'tool install: a signal that never moved cannot declare a stall (silent for 200 s)');
+      await ctl.step(39);
+      eq(ctl.killed.length, 0, 'not at 239 s');
+      await ctl.step(1);
+      eq(ctl.killed, ['SIGTERM'], 'the 240 s cap stops it');
+      const e = await p2;
+      ok(e.timedOut === true && !e.stalled && e.killedByGuard === true && /did not finish within 240 seconds/.test(e.message), `clear cap error: ${e.message}`);
+    }
+
+    // Movement removes the cap: a install that started moving at 10 s is not cut at 240 s.
+    {
+      const { m, ctl } = mkTool(); const p2 = run(m); await ctl.started; await settle();
+      await ctl.step(10); ctl.download(); await ctl.step(20);       // trusted at t=30 -> cap cleared
+      for (let i = 0; i < 20; i++) { ctl.download(); await ctl.step(20); } // to t=430 s
+      eq(ctl.killed.length, 0, 'tool install: once trusted, the 240 s cap is gone (430 s here)');
+      ctl.finish(); await p2;
+    }
+
+    // Directories not resolvable -> cap only, and it is 240 s.
+    {
+      const { m, ctl } = mkTool({ withDirs: false }); const p2 = run(m); await ctl.started; await settle();
+      await ctl.step(239); eq(ctl.killed.length, 0, 'no dirs: not stopped at 239 s');
+      await ctl.step(1); eq(ctl.killed, ['SIGTERM'], 'no dirs: the 240 s cap applies');
+      ok((await p2).timedOut === true, 'reported as a timeout');
+    }
+
+    // A finished install leaves nothing armed.
+    {
+      const { m, ctl } = mkTool(); const p2 = run(m); await ctl.started; await settle();
+      await ctl.step(60); ctl.finish(); await p2;
+      await ctl.step(2000);
+      eq(ctl.killed.length, 0, 'after completion no timer fires (cap, watchdog and progress tick are all cleared)');
+    }
+
+    // A kill by the guard leaves the install marker: the tool venv may be half-replaced.
+    for (const scenario of ['cap', 'stall']) {
+      const stateDir = path3.join(tmpBase, `state-${scenario}`);
+      const { m, ctl } = mkTool({ withDirs: scenario === 'stall', stateDir }); const p2 = run(m); await ctl.started; await settle();
+      if (scenario === 'stall') { await ctl.step(20); ctl.download(); await ctl.step(10); await ctl.step(30); await ctl.step(30); await ctl.step(30); } else { await ctl.step(240); }
+      const e = await p2;
+      ok(e instanceof Error && e.killedByGuard, `${scenario}: uv was stopped by the guard`);
+      eq(m.hasInstallMarker(), true, `${scenario}: the install-in-progress marker is KEPT (next launch repairs the venv)`);
+      eq(m.hadInterruptedInstall(), true, `${scenario}: hadInterruptedInstall() is true afterwards`);
+    }
+
+    // install, upgrade and reinstall all get the same guard (they share _uvToolInstallForce).
+    for (const name of ['installLatest', 'upgrade', 'reinstall']) {
+      const { m, ctl } = mkTool({ withDirs: false });
+      const p2 = m[name]().then(() => 'done', (e) => e);
+      await ctl.started; await settle();
+      await ctl.step(239); eq(ctl.killed.length, 0, `${name}: not stopped at 239 s`);
+      await ctl.step(1);
+      const e = await p2;
+      ok(ctl.killed.length === 1 && e.timedOut === true, `${name}: the same 240 s cap applies`);
+    }
+
+    // _uvDirs itself: resolves once, and refuses to guess when uv works in a throw-away cache.
+    {
+      const m1 = new UvManager(silentLog); m1._uvDirs = realUvDirs;
+      const asked = [];
+      m1._run = async (_c, a) => { asked.push(a.join(' ')); return { stdout: `/uv/${a[0]}\n`, stderr: '' }; };
+      eq(await m1._uvDirs(), { cache: '/uv/cache', python: '/uv/python', tools: '/uv/tool' }, '_uvDirs asks uv for cache/python/tool dirs');
+      await m1._uvDirs(); eq(asked.length, 3, '_uvDirs is memoized (uv asked once each)');
+      const m2 = new UvManager(silentLog); m2._uvDirs = realUvDirs;
+      m2._run = async () => { throw new Error('uv not found'); };
+      eq(await m2._uvDirs(), null, '_uvDirs: uv unavailable -> null (cap only)');
+      const m3 = new UvManager(silentLog); m3._uvDirs = realUvDirs; let called = false;
+      m3._run = async () => { called = true; return { stdout: '/x', stderr: '' }; };
+      const saved = process.env.UV_NO_CACHE; process.env.UV_NO_CACHE = '1';
+      try { eq(await m3._uvDirs(), null, '_uvDirs: UV_NO_CACHE set -> null (uv would use a temp cache we cannot watch)'); }
+      finally { if (saved === undefined) delete process.env.UV_NO_CACHE; else process.env.UV_NO_CACHE = saved; }
+      eq(called, false, 'and uv is not even asked');
+    }
+
+    // The samplers themselves.
+    {
+      const d = path3.join(tmpBase, 'fp'); fs3.mkdirSync(path3.join(d, 'archive-v0', 'pkg'), { recursive: true }); fs3.mkdirSync(path3.join(d, '.tmpA'), { recursive: true });
+      const { topFingerprintAsync: fp, dirSizeBytesAsync: sz } = UvManager;
+      const a = await fp(d);
+      fs3.appendFileSync(path3.join(d, '.tmpA', 'download'), Buffer.alloc(100));
+      const b = await fp(d);
+      ok(a !== b, 'the fingerprint moves when a download in a dot-dir grows');
+      fs3.mkdirSync(path3.join(d, 'archive-v0', 'new-entry'));
+      ok(await fp(d) !== b, 'a new entry directly under a top-level cache dir DOES move it (that dir\'s mtime)');
+      const c = await fp(d);
+      fs3.appendFileSync(path3.join(d, 'archive-v0', 'pkg', 'deep-file'), Buffer.alloc(100));
+      eq(await fp(d), c, 'a change two levels down is NOT scanned (cheap by design; the dot-dirs and the tool venv cover in-flight work)');
+      eq(await fp(path3.join(tmpBase, 'missing')), 'none', 'a missing dir fingerprints as "none"');
+      eq(await sz(path3.join(d, '.tmpA')), 100, 'async recursive size');
+    }
+    fs3.rmSync(tmpBase, { recursive: true, force: true });
   }
 
   // ── _uvToolInstallForce compiles bytecode in the install, not on first boot ─

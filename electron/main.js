@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = r
 const { autoUpdater } = require('electron-updater');
 const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 const { buildSupportZip, buildMailtoUrl, supportSubject, redact } = require('./support-bundle');
+const { redactUrl, installLogRedaction } = require('./log-redact');
+const { offerMoveToApplications } = require('./app-location');
 const { createRestartApplier } = require('./update-restart');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
 const { CancellationToken } = require('builder-util-runtime');
@@ -91,6 +93,8 @@ const MAIN_LOG_PATH = path.join(MAIN_DESKTOP_LOG_DIR, generateTimestampedFilenam
 log.transports.file.resolvePathFn = () => MAIN_LOG_PATH;
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
+// Secrets never reach the log file (it is emailed to us): see log-redact.js. Installed before the first line.
+installLogRedaction(log);
 log.info('Flowpad starting...');
 
 // ----------------------------------------------------------------------------
@@ -398,6 +402,9 @@ function downloadDesktopUpdateInBackground({ promptOnReady = true, version = nul
 function getDesktopVersionStatePath() {
   return path.join(app.getPath('userData'), 'desktop-version.json');
 }
+function locationPromptStatePath() {
+  return path.join(app.getPath('userData'), 'app-location-prompt.json');
+}
 function readLastDesktopVersion() {
   try {
     const data = JSON.parse(fs.readFileSync(getDesktopVersionStatePath(), 'utf8'));
@@ -549,7 +556,7 @@ function isStartupOnlyDeepLink(url) {
  * flowpad://task/<id>  →  http://localhost:9007/task/<id>
  */
 function handleDeepLink(url) {
-  log.info(`[deep-link] received: ${url}`);
+  log.info(`[deep-link] received: ${redactUrl(url)}`);
 
   // Ignore install/probe URLs.
   // These are only used by the browser to detect whether FlowPad
@@ -577,7 +584,7 @@ function handleDeepLink(url) {
       pendingDeepLink = localUrl;
     }
   } catch (err) {
-    log.warn(`[deep-link] failed to parse URL "${url}": ${err}`);
+    log.warn(`[deep-link] failed to parse URL "${redactUrl(url)}": ${err}`);
   }
 }
 
@@ -627,7 +634,7 @@ app.on('second-instance', (_event, argv) => {
 if (!isMac) {
   const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
   if (argvDeepLink) {
-    log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
+    log.info(`[deep-link] picked up from process.argv: ${redactUrl(argvDeepLink)}`);
     handleDeepLink(argvDeepLink);
   }
 }
@@ -696,7 +703,7 @@ ipcMain.on('set-menu-visible', (_event, visible) => {
 function navStateFor(win) {
   try {
     const h = win.webContents.navigationHistory;
-    return `idx=${h.getActiveIndex()}/${h.length() - 1} canBack=${h.canGoBack()} canFwd=${h.canGoForward()} url=${win.webContents.getURL()}`;
+    return `idx=${h.getActiveIndex()}/${h.length() - 1} canBack=${h.canGoBack()} canFwd=${h.canGoForward()} url=${redactUrl(win.webContents.getURL())}`;
   } catch (err) {
     return `<navState unavailable: ${err.message}>`;
   }
@@ -750,11 +757,11 @@ function createWindow() {
   // who triggered them (gesture, renderer history.back, react-router). These are
   // the ground truth for "how many steps did one gesture cause".
   mainWindow.webContents.on('did-navigate', (_e, url) => {
-    log.info(`[nav] did-navigate (full load) url=${url} ${navState()}`);
+    log.info(`[nav] did-navigate (full load) url=${redactUrl(url)} ${navState()}`);
   });
   mainWindow.webContents.on('did-navigate-in-page', (_e, url, isMainFrame) => {
     if (!isMainFrame) return;
-    log.info(`[nav] did-navigate-in-page (SPA/pushState) url=${url} ${navState()}`);
+    log.info(`[nav] did-navigate-in-page (SPA/pushState) url=${redactUrl(url)} ${navState()}`);
   });
 
   if (isMac) {
@@ -825,7 +832,7 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    log.info(`[nav] will-navigate url=${url}`);
+    log.info(`[nav] will-navigate url=${redactUrl(url)}`);
     // Allow navigation to the backend (same-origin), block everything else.
     // Same-origin /win/ URLs are covered by this allow — they are in-app
     // destinations, consistent with the window-open carve-out above.
@@ -1115,7 +1122,7 @@ async function installAndStartBackend() {
         if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
         log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
         sendStatus('Repairing Flowpad installation');
-        await uvManager.ensureUv();
+        await uvManager.ensureUv({ onProgress: installProgress('Repairing Flowpad installation') });
         await uvManager.reinstall({ onProgress: installProgress('Repairing Flowpad installation') });
         backendJustUpgraded = true;
         const repairedVersion = uvManager.getInstalledVersionSync();
@@ -1128,7 +1135,7 @@ async function installAndStartBackend() {
       sendStatus('Setting up Flowpad (first time)');
 
       sendStatus('Checking Python installation');
-      await uvManager.ensureUv();
+      await uvManager.ensureUv({ onProgress: installProgress('Setting up Flowpad — installing uv') });
 
       await uvManager.installLatest({ onProgress: installProgress('Installing Flowpad') });
       backendJustUpgraded = true;
@@ -1188,6 +1195,21 @@ async function startApp() {
   // Wait for the loading page to finish loading so IPC listeners are ready
   if (mainWindow.webContents.isLoading()) {
     await new Promise((resolve) => mainWindow.webContents.once('did-finish-load', resolve));
+  }
+
+  // macOS App Translocation: an app launched from Downloads / the .dmg runs from a read-only temporary copy
+  // and cannot update itself. Ask once per version to move to /Applications — BEFORE any install work, so an
+  // accepted move (which restarts the app) does not interrupt one. See app-location.js.
+  if (process.platform === 'darwin' && !isDev) {
+    await offerMoveToApplications({
+      platform: process.platform,
+      app,
+      dialog,
+      execPath: process.execPath,
+      readState: () => { try { return JSON.parse(fs.readFileSync(locationPromptStatePath(), 'utf8')); } catch { return null; } },
+      writeState: (state) => fs.writeFileSync(locationPromptStatePath(), JSON.stringify(state), 'utf8'),
+      log,
+    }).catch((err) => log.warn(`[location] move offer failed: ${err.message}`));
   }
 
   let backendJustUpgraded = false;
@@ -1283,7 +1305,7 @@ async function startApp() {
   // Load the main UI (or a pending deep-link target if one arrived during startup).
   const startUrl = pendingDeepLink || BACKEND_URL;
   pendingDeepLink = null;
-  log.info(`Loading UI from ${startUrl}`);
+  log.info(`Loading UI from ${redactUrl(startUrl)}`);
   // The splash (`loading.html`) is a real document load, so without this it
   // stays in the navigation history as entry 0 — and Back from the app's home
   // screen lands the user on the loading screen. Drop it once the UI commits,
@@ -1364,7 +1386,7 @@ app.on('before-quit', (event) => {
     dialog.showMessageBox(parent, {
       type: 'warning',
       title: 'Update in progress',
-      message: 'FlowPad is installing an update.',
+      message: 'FlowPad is installing its components.',
       detail: uvManager.hasInstallMarker()
         ? 'Quitting now interrupts it. FlowPad will repair the installation the next time it starts.'
         : 'Quitting now interrupts it and may leave the installation incomplete. If FlowPad does not start next time, reinstall it.',
@@ -1808,13 +1830,13 @@ ipcMain.handle('secrets:provision-sod-key', async (_event, existingValue) => {
 
 ipcMain.handle('open-external', async (_, url) => {
   const { shell } = require('electron');
-  log.info(`[open-external] requested: ${url}`);
+  log.info(`[open-external] requested: ${redactUrl(url)}`);
   // Only allow http/https URLs for security
   if (typeof url === 'string' && /^https?:\/\//.test(url)) {
     await shell.openExternal(url);
     return true;
   }
-  log.warn(`[open-external] blocked non-http URL: ${url}`);
+  log.warn(`[open-external] blocked non-http URL: ${redactUrl(url)}`);
   return false;
 });
 
@@ -1827,7 +1849,7 @@ let nextAuthWindowId = 1;
 
 ipcMain.handle('open-auth-window', async (event, url) => {
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
-    log.warn(`[auth-window] blocked non-http URL: ${url}`);
+    log.warn(`[auth-window] blocked non-http URL: ${redactUrl(url)}`);
     return null;
   }
   const id = nextAuthWindowId++;

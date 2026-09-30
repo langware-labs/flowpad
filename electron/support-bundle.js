@@ -22,6 +22,7 @@ const REDACTIONS = [
   [/(authorization\s*[:=]\s*)(bearer\s+)?\S+/gi, `$1$2${MASK}`],
   [/\b(bearer\s+)[A-Za-z0-9._~+/=-]{12,}/gi, `$1${MASK}`],
   [/((?:token|secret|password|passwd|api[_-]?key|access[_-]?key|client[_-]?secret|sod[_-]?key|private[_-]?key)["']?\s*[=:]\s*["']?)[^\s"',;&]+/gi, `$1${MASK}`],
+  [/\bfp_(?:live|test)_[A-Za-z0-9]{8,}/g, MASK], // Flowpad API keys, in any context
   [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})\b/g, MASK],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, MASK],
   [/(:\/\/[^\s/:@]+:)[^\s/@]+@/g, `$1${MASK}@`],
