@@ -54,6 +54,7 @@ async def execute_wizard(
     inputs: Optional[dict] = None,
     resolve_op=None,
     cwd: "Optional[Path]" = None,
+    shell=None,
 ) -> WizardResult:
     """Run `spec` as the wizard `wizard_id`, and stamp what it answered.
 
@@ -142,6 +143,9 @@ async def execute_wizard(
             approved=approved,
             resolve_op=resolve_op or _resolve_op,
             resolve_wizard=_resolve_wizard,
+            # The shell its ops' commands run in — a caller that can answer some of them itself
+            # (project setup answers its own credential checks in-process) passes its own.
+            **({"shell": shell} if shell is not None else {}),
             wizard_id=wizard_id,
             check_only=check_only,
             # A person watching should see a step's own answer (an agent
