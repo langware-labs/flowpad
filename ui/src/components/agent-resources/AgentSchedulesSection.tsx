@@ -92,7 +92,7 @@ export function AgentSchedulesSection({ agentTypeId }: { agentTypeId: TypeId }) 
             </DialogHeader>
             <AgentScheduleSection
               agent={agent}
-              autoPrompt={agent.auto_launch_prompt ?? ''}
+              autoLaunchPrompt={agent.auto_launch_prompt ?? ''}
               deploymentId={selected.deployment.id}
               isLocal={selected.is_local}
             />
