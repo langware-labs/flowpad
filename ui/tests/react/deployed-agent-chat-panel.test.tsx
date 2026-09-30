@@ -12,7 +12,10 @@ import { DeployedAgentChatPanel } from '@src/components/assets/editor/agent-prof
 const mocks = vi.hoisted(() => ({
   openDock: vi.fn(),
   openShellProcess: vi.fn(),
+  prepareAgentSession: vi.fn(),
 }));
+
+vi.mock('@src/components/agents/use-agent-launcher', () => ({ prepareAgentSession: mocks.prepareAgentSession }));
 
 vi.mock('@src/components/agents/AgentAvatar', () => ({
   AgentAvatar: () => <div data-testid="deployed-agent-chat-avatar" />,
@@ -112,7 +115,34 @@ describe('DeployedAgentChatPanel', () => {
     expect(mocks.openDock).toHaveBeenCalledWith(agent.dockPointer);
 
     await userEvent.click(screen.getByTestId('deployed-agent-open-session'));
-    expect(useDeployment).toHaveBeenCalledWith(deployment.id);
-    await waitFor(() => expect(mocks.openShellProcess).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003'));
+    expect(useDeployment).toHaveBeenCalledWith(deployment.id, true);
+    await waitFor(() =>
+      expect(mocks.openShellProcess).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003', { viewMode: 'vibe' }),
+    );
+  });
+
+  // FLOWPAD-2180: "Open a session" starts with the agent's auto prompt, the same
+  // stack the Use button opens with.
+  it('opens a placement session with the auto prompt, prepared, in Vibe', async () => {
+    const { chat } = fakeChat([]);
+    vi.spyOn(AgentChat, 'forDeployment').mockResolvedValue(chat);
+    const useDeployment = vi.spyOn(agent, 'useDeployment').mockResolvedValue({
+      process_id: '00000000-0000-4000-8000-000000000003',
+      process_typeid: 'agentic_process-00000000-0000-4000-8000-000000000003',
+      deployment_id: deployment.id,
+    });
+    mocks.prepareAgentSession.mockResolvedValue(null);
+
+    renderPanel();
+    await userEvent.click(screen.getByTestId('deployed-agent-open-session'));
+
+    expect(useDeployment).toHaveBeenCalledWith(deployment.id, true);
+    await waitFor(() =>
+      expect(mocks.openShellProcess).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003', { viewMode: 'vibe' }),
+    );
+    expect(mocks.prepareAgentSession).toHaveBeenCalledWith('00000000-0000-4000-8000-000000000003');
+    expect(mocks.prepareAgentSession.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.openShellProcess.mock.invocationCallOrder[0],
+    );
   });
 });

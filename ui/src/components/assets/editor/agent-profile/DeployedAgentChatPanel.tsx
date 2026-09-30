@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
+import { prepareAgentSession } from '@src/components/agents/use-agent-launcher';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { badgeVariants } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
@@ -118,8 +120,9 @@ export function DeployedAgentChatPanel({ agent, deployment }: DeployedAgentChatP
   };
 
   const openSession = async () => {
-    const receipt = await agent.useDeployment(deployment.id);
-    void navigation.openShellProcess(receipt.process_id);
+    const receipt = await agent.useDeployment(deployment.id, true);
+    await prepareAgentSession(receipt.process_id);
+    void navigation.openShellProcess(receipt.process_id, { viewMode: ViewMode.Vibe });
   };
 
   return (

@@ -1,4 +1,5 @@
-import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, WorkerStatus } from '@sdk';
+import { AgenticProcess, ExecutionMode, Project, supportedExecutionModes, TypeId, WorkerStatus } from '@sdk';
+import type { ActivityProgressSpec } from '@sdk/activity';
 import { Pencil } from 'lucide-react';
 import { EntityTypeBar } from '@src/components/asset-manager/EntityTypeBar';
 import { InlineRenameInput } from '@src/components/browseable-tree/InlineRenameInput';
@@ -7,6 +8,7 @@ import { workerStatusConfig } from '@src/components/agentic-progress/shared/stat
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { showWizard } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   agenticProcessName,
@@ -173,6 +175,21 @@ export function PendingActionsChip() {
     [navigation],
   );
 
+  // A wizard's own top-level activity is scoped to ITSELF when attended (see
+  // `Wizard.run`: `subject_entity=None if unattended else str(self.typeid)`),
+  // so its row can be picked straight back to the editor page it was
+  // minimized from — no lookup needed, the address already IS the typeid.
+  // Every other activity kind (an index walk, a RAG pass) has nowhere of its
+  // own to reopen, so this is deliberately a no-op for them.
+  const handlePickActivity = useCallback(
+    (spec: ActivityProgressSpec) => {
+      if (!spec.subject_entity?.startsWith('wizard-')) return;
+      setOpen(false);
+      void showWizard(navigation, new TypeId(spec.subject_entity));
+    },
+    [navigation],
+  );
+
   // Hide the chip only when there is nothing happening at all — no supported workers AND
   // no activities. When the user has narrowed to an empty mode (e.g. External in v1) the
   // chip stays visible showing 0 so the popover remains reachable to reset the filter.
@@ -240,7 +257,7 @@ export function PendingActionsChip() {
           <div className="h-64 overflow-y-auto" data-testid="worker-list-body">
             {rows.length === 0 && activities.length === 0 ? (
               <div className="px-2 py-3 text-center text-xs text-muted-foreground" data-testid="worker-list-empty">
-                {effective.length === 1 && effective[0] === ExecutionMode.External
+                {effective.length === 1 && effective[0] === (ExecutionMode.External as string)
                   ? 'No external workers detected'
                   : 'No agents match this filter'}
               </div>
@@ -269,7 +286,11 @@ export function PendingActionsChip() {
                       {/* Keyed by scope+path: an activity's address is its identity, and a
                           recycled address is a new activity rather than a moved row. */}
                       {activities.map((spec) => (
-                        <ActivityRow key={`${spec.subject_entity ?? ''}::${spec.path}`} spec={spec} />
+                        <ActivityRow
+                          key={`${spec.subject_entity ?? ''}::${spec.path}`}
+                          spec={spec}
+                          onPick={handlePickActivity}
+                        />
                       ))}
                     </ul>
                   </>

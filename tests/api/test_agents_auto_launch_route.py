@@ -26,7 +26,7 @@ def stub_use(monkeypatch):
     route test does not depend on compute-node placement."""
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
-    async def _use(self, project_id=None, *, deployment=None):
+    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
         proc = AgenticProcess(
             name=self.display_name, worker_type="claude_code", pty_mode=False, visible=True, project_id=project_id
         )
@@ -66,9 +66,10 @@ async def test_launches_once_queues_the_prompt_and_marks_the_project(bootstrappe
     assert data["prompt_queued"] is True
     assert [c["title"] for c in data["cancelled"]] == [n for n in ("a-first", "b-second") if n != winner.name]
 
+    # The route itself queues nothing: the prompt is ``Agent.use``'s job (stubbed
+    # here), proven through the real route in test_agent_use_queues_auto_launch_prompt.
     queue = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{data['process_id']}")
-    entries = ApiResponse(**queue.json()).data["queue"]["entries"]
-    assert [(e["prompt"], e["source"]) for e in entries] == [("Say hello", "auto_launch")]
+    assert ApiResponse(**queue.json()).data["queue"]["entries"] == []
 
     marks = await bootstrapped_client.get(f"{ROUTE}?project_id={project.id}")
     assert set(ApiResponse(**marks.json()).data["auto_launched_agent_ids"]) == {a.id for a in agents}
@@ -118,7 +119,7 @@ async def test_a_refused_launch_answers_with_an_error_the_loader_can_read(
     """
     project, _ = await _seed(tmp_path, "tutor")
 
-    async def _boom(self, project_id=None, *, deployment=None):
+    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
         raise RuntimeError("no worker binary")
 
     monkeypatch.setattr(Agent, "use", _boom)

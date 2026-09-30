@@ -9,7 +9,7 @@ primitive (`_start_activity`/`_complete_activity`) and the SAME real method
 `ComputeNode._index_system_assets()` — the exact call `bootstrap.index_system_content()`
 makes at every server startup — and checks the REAL, product-observable
 symptom: a shipped wizard (`llm-setup`) is missing from the DB, which is what
-made `POST /api/v1/onboarding/setup` answer 404 on a real machine.
+made first-run setup answer 404 on a real machine (its wizard was not in the DB).
 """
 
 import asyncio

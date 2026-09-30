@@ -7,6 +7,7 @@ shell's process boundary, the terminal and the agent launch is replaced.
 ``tests/long_tests/test_project_setup_cli.py`` runs the literal ``flow project setup`` against a
 real backend.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -59,12 +60,15 @@ async def test_every_shipped_credential_carries_setup_instructions():
 
 async def test_a_credential_without_setup_instructions_is_refused(project):
     with pytest.raises(CredentialError, match="setup instructions"):
-        await save_credential(manifest={"name": "bare", "vars": {"BARE_KEY": {}}}, scope="project", project_id=project.id)
+        await save_credential(
+            manifest={"name": "bare", "vars": {"BARE_KEY": {}}}, scope="project", project_id=project.id
+        )
 
 
 async def test_a_pack_without_setup_still_loads_and_is_reported_as_having_no_ai_setup(project, templates, monkeypatch):
-    spec = await save_credential(manifest={"name": "legacy", "vars": {"LEGACY_KEY": {}}, "setup": "x"},
-                                 scope="project", project_id=project.id)
+    spec = await save_credential(
+        manifest={"name": "legacy", "vars": {"LEGACY_KEY": {}}, "setup": "x"}, scope="project", project_id=project.id
+    )
     spec.setup = ""  # a pack written before `setup` existed, as read from disk
     await spec.save()
     _sources(monkeypatch)
@@ -80,7 +84,8 @@ async def test_a_pack_without_setup_still_loads_and_is_reported_as_having_no_ai_
 async def test_a_value_that_does_not_match_its_pattern_is_refused(project):
     spec = await save_credential(
         manifest={"name": "pat", "vars": {"PAT_KEY": {"pattern": "^sk-"}}, "setup": "x"},
-        scope="project", project_id=project.id,
+        scope="project",
+        project_id=project.id,
     )
     with pytest.raises(CredentialError, match="does not look right"):
         await credential_service.set_credential_values(str(spec.typeid), {"PAT_KEY": "nope"})
@@ -90,18 +95,29 @@ async def test_a_value_that_does_not_match_its_pattern_is_refused(project):
 
 
 async def test_the_collector_reads_the_project_and_its_sources_drivers(project, templates, monkeypatch):
-    await save_credential(manifest={"name": "stripe", "vars": {"STRIPE_KEY": {"label": "Secret key"}},
-                                    "setup": "From the Stripe dashboard."}, scope="project", project_id=project.id)
+    await save_credential(
+        manifest={
+            "name": "stripe",
+            "vars": {"STRIPE_KEY": {"label": "Secret key"}},
+            "setup": "From the Stripe dashboard.",
+        },
+        scope="project",
+        project_id=project.id,
+    )
     _sources(monkeypatch, "gdrive", "gcs", "telegram", "gmail", "voice_phone")
 
     reqs = await project_setup.collect_requirements(project)
     by = {(r.kind, r.name): r for r in reqs}
 
-    assert [r.kind for r in reqs] == sorted((r.kind for r in reqs), key=[REQUIREMENT_OAUTH, REQUIREMENT_PACK, REQUIREMENT_GAP].index)
+    assert [r.kind for r in reqs] == sorted(
+        (r.kind for r in reqs), key=[REQUIREMENT_OAUTH, REQUIREMENT_PACK, REQUIREMENT_GAP].index
+    )
     google = by[(REQUIREMENT_OAUTH, "google")]
     assert google.used_by == ["gdrive source", "gcs source"], "one connection, every requester"
-    assert set(google.scopes) == {"https://www.googleapis.com/auth/drive.readonly",
-                                  "https://www.googleapis.com/auth/devstorage.read_only"}
+    assert set(google.scopes) == {
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/devstorage.read_only",
+    }
     assert google.satisfied is None, "only its check can tell"
 
     stripe = by[(REQUIREMENT_PACK, "stripe")]
@@ -116,8 +132,12 @@ async def test_the_collector_reads_the_project_and_its_sources_drivers(project, 
 
 
 async def test_a_credential_with_its_values_is_ready(project, templates, monkeypatch):
-    await save_credential(manifest={"name": "stripe", "vars": {"STRIPE_KEY": {}}, "setup": "x"},
-                          scope="project", project_id=project.id, values={"STRIPE_KEY": "sk_live"})
+    await save_credential(
+        manifest={"name": "stripe", "vars": {"STRIPE_KEY": {}}, "setup": "x"},
+        scope="project",
+        project_id=project.id,
+        values={"STRIPE_KEY": "sk_live"},
+    )
     _sources(monkeypatch)
 
     (req,) = await project_setup.collect_requirements(project)
@@ -135,7 +155,10 @@ async def test_a_credential_compiles_to_ask_store_then_ai_on_one_check(project, 
     wizard, ops = project_setup.compile_setup(project.id, reqs)
 
     assert [s.id for s in wizard.steps] == [
-        "connect-google", "ask-telegram-TELEGRAM_BOT_TOKEN", "store-telegram", "ai-telegram",
+        "connect-google",
+        "ask-telegram-TELEGRAM_BOT_TOKEN",
+        "store-telegram",
+        "ai-telegram",
     ]
     assert {s.on_fail for s in wizard.steps} == {"continue"}, "one credential nobody can provide stops nothing"
     ask = ops["ask-telegram-TELEGRAM_BOT_TOKEN"]
@@ -181,12 +204,16 @@ async def cli(monkeypatch, project):
     def invoke(argv: list[str], env: dict, stdin: str = "") -> CliResult:
         ran.append(argv)
         said = CliRunner().invoke(flow_cli.app, argv, env=env, input=stdin)
-        return CliResult(exit_code=0 if said.exit_code == 0 else 1, returncode=said.exit_code,
-                         stdout=said.stdout, stderr=getattr(said, "stderr", ""))
+        return CliResult(
+            exit_code=0 if said.exit_code == 0 else 1,
+            returncode=said.exit_code,
+            stdout=said.stdout,
+            stderr=getattr(said, "stderr", ""),
+        )
 
-    async def shell(command, *, timeout_seconds, workdir, extra_env=None, platform=""):
+    async def shell(command, *, timeout_seconds, workdir, extra_env=None, platform="", **_):
         argv = shlex.split(command)
-        argv = argv[argv.index("flow_sdk.cli.flow_cli") + 1:]
+        argv = argv[argv.index("flow_sdk.cli.flow_cli") + 1 :]
         return await asyncio.to_thread(invoke, argv, dict(extra_env or {}))
 
     answers: list[str] = []
@@ -216,7 +243,11 @@ async def test_a_typed_key_is_stored_never_printed_and_a_rerun_skips_it(project,
     assert _env_file(project)["TELEGRAM_BOT_TOKEN"] == TOKEN, "declared from its template, value in the project"
     assert TOKEN not in out.out + out.err, "a value is never printed"
     assert cli["asked"] == [(cli["asked"][0][0], True)] and "Telegram" in cli["asked"][0][0]
-    assert "Bot token: answered" in out.out and "✓  Store Telegram bot: done" in out.out and "AI setup: Telegram bot: already done" in out.out
+    assert (
+        "Bot token: answered" in out.out
+        and "✓  Store Telegram bot: done" in out.out
+        and "AI setup: Telegram bot: already done" in out.out
+    )
     assert all(TOKEN not in " ".join(argv) for argv in cli["ran"]), "the value travels as env, never argv"
 
     cli["asked"].clear()
@@ -233,8 +264,12 @@ async def test_an_empty_answer_hands_the_credential_to_the_ai_setup(project, tem
     async def agent(**call):
         """The provisioner, doing what its instructions say: pipe the value into the store command."""
         prompts.append(call)
-        stored = await asyncio.to_thread(cli["invoke"], ["credentials", "set", "telegram", "--project", project.id,
-                                                          "--stdin"], {}, f"TELEGRAM_BOT_TOKEN={TOKEN}\n")
+        stored = await asyncio.to_thread(
+            cli["invoke"],
+            ["credentials", "set", "telegram", "--project", project.id, "--stdin"],
+            {},
+            f"TELEGRAM_BOT_TOKEN={TOKEN}\n",
+        )
         assert stored.ok, stored.stdout
         return PromptResult.satisfied("stored it", text="Stored the bot token.")
 
@@ -284,7 +319,8 @@ async def test_dry_run_lists_and_changes_nothing(project, templates, cli, monkey
 
     assert code == 0 and cli["ran"] == [] and cli["asked"] == []
     assert [(r["kind"], r["name"], r["state"]) for r in listed["requirements"]][:2] == [
-        ("oauth", "google", "checked when run"), ("pack", "telegram", "missing TELEGRAM_BOT_TOKEN"),
+        ("oauth", "google", "checked when run"),
+        ("pack", "telegram", "missing TELEGRAM_BOT_TOKEN"),
     ]
     assert any(r["kind"] == "gap" for r in listed["requirements"])
 
@@ -294,7 +330,10 @@ async def test_the_documented_commands_are_real():
     from flow_sdk.cli import flow_cli
     from tests.utils.snippets import doc, fence_under
 
-    lines = [ln.split("#")[0].split() for ln in fence_under(doc("secret-stores.md"), "7. Set up a project", lang="bash").splitlines()]
+    lines = [
+        ln.split("#")[0].split()
+        for ln in fence_under(doc("secret-stores.md"), "7. Set up a project", lang="bash").splitlines()
+    ]
     commands = [ln for ln in lines if ln and ln[0] == "flow"]
     assert len(commands) == 8
     for argv in commands:
@@ -305,11 +344,14 @@ async def test_the_documented_commands_are_real():
 # ── declare / set --stdin: the public surface a project and an agent use ─────
 
 DEMO = {
-    "name": "demo-service", "title": "Demo service",
-    "vars": {"DEMO_API_KEY": {"label": "API key", "pattern": "^demo_[0-9a-f]{32}$"},
-             "DEMO_ENDPOINT": {"label": "Endpoint", "pattern": "^https?://", "secret": False}},
+    "name": "demo-service",
+    "title": "Demo service",
+    "vars": {
+        "DEMO_API_KEY": {"label": "API key", "pattern": "^demo_[0-9a-f]{32}$"},
+        "DEMO_ENDPOINT": {"label": "Endpoint", "pattern": "^https?://", "secret": False},
+    },
     "setup": "Generate DEMO_API_KEY, read DEMO_ENDPOINT from service.url; pipe both into "
-             "`flow credentials set demo-service --stdin`.",
+    "`flow credentials set demo-service --stdin`.",
 }
 DEMO_KEY = "demo_" + "0123456789abcdef" * 2
 
@@ -321,13 +363,18 @@ def _manifest(tmp_path, body: dict) -> str:
 
 
 async def test_declare_puts_the_credential_in_the_project_and_twice_is_once(project, cli, tmp_path):
-    first = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {})
+    first = await asyncio.to_thread(
+        cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {}
+    )
     assert first.ok, first.stdout
     folder = Path(project.fs_storage_mount_path) / "agentic-assets/credential/demo-service"
     assert json.loads((folder / "credential.json").read_text())["vars"].keys() == DEMO["vars"].keys()
 
-    again = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, {**DEMO, "title": "Demo 2"}),
-                                                    "--project", project.id], {})
+    again = await asyncio.to_thread(
+        cli["invoke"],
+        ["credentials", "declare", _manifest(tmp_path, {**DEMO, "title": "Demo 2"}), "--project", project.id],
+        {},
+    )
     assert again.ok, again.stdout
     assert json.loads(again.stdout)["typeid"] == json.loads(first.stdout)["typeid"], "updated in place, not a twin"
     assert json.loads((folder / "credential.json").read_text())["title"] == "Demo 2"
@@ -335,25 +382,41 @@ async def test_declare_puts_the_credential_in_the_project_and_twice_is_once(proj
 
 async def test_declare_refuses_a_credential_that_does_not_say_how_it_is_set_up(project, cli, tmp_path):
     bare = {k: v for k, v in DEMO.items() if k != "setup"}
-    said = await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, bare), "--project", project.id], {})
+    said = await asyncio.to_thread(
+        cli["invoke"], ["credentials", "declare", _manifest(tmp_path, bare), "--project", project.id], {}
+    )
     assert not said.ok and "setup instructions" in said.stdout + said.stderr
     assert not (Path(project.fs_storage_mount_path) / "agentic-assets/credential/demo-service").exists()
 
 
 async def test_set_stdin_stores_checks_the_pattern_and_prints_no_value(project, cli, tmp_path):
-    assert (await asyncio.to_thread(cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {})).ok
+    assert (
+        await asyncio.to_thread(
+            cli["invoke"], ["credentials", "declare", _manifest(tmp_path, DEMO), "--project", project.id], {}
+        )
+    ).ok
 
-    wrong = await asyncio.to_thread(cli["invoke"], ["credentials", "set", "demo-service", "--project", project.id, "--stdin"],
-                                    {}, "DEMO_API_KEY=not-a-demo-key\n")
+    wrong = await asyncio.to_thread(
+        cli["invoke"],
+        ["credentials", "set", "demo-service", "--project", project.id, "--stdin"],
+        {},
+        "DEMO_API_KEY=not-a-demo-key\n",
+    )
     assert not wrong.ok, "a value off its pattern is refused at the write"
     assert "DEMO_API_KEY" not in _env_file(project)
 
-    stored = await asyncio.to_thread(cli["invoke"], ["credentials", "set", "demo-service", "--project", project.id, "--stdin"],
-                                     {}, f"# the key\nDEMO_API_KEY={DEMO_KEY}\n\nDEMO_ENDPOINT=https://demo.test/api\n")
+    stored = await asyncio.to_thread(
+        cli["invoke"],
+        ["credentials", "set", "demo-service", "--project", project.id, "--stdin"],
+        {},
+        f"# the key\nDEMO_API_KEY={DEMO_KEY}\n\nDEMO_ENDPOINT=https://demo.test/api\n",
+    )
     assert stored.ok, stored.stdout
     assert json.loads(stored.stdout)["stored"] == ["DEMO_API_KEY", "DEMO_ENDPOINT"]
     assert DEMO_KEY not in stored.stdout
     assert _env_file(project) == {"DEMO_API_KEY": DEMO_KEY, "DEMO_ENDPOINT": "https://demo.test/api"}
 
-    check = await asyncio.to_thread(cli["invoke"], ["credentials", "check", "demo-service", "--project", project.id], {})
+    check = await asyncio.to_thread(
+        cli["invoke"], ["credentials", "check", "demo-service", "--project", project.id], {}
+    )
     assert check.ok and json.loads(check.stdout)["ready"], check.stdout
