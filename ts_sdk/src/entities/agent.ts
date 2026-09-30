@@ -158,7 +158,9 @@ export class Agent extends APIEntity<Agent> {
    *  Oldest wins when several agents in a project set it; the rest are
    *  cancelled with a warning. See `Agent.auto_launch_for` (backend). */
   auto_launch: boolean;
-  /** First prompt of the auto-launched session, delivered via the prompt queue. */
+  /** The agent's auto prompt: the first turn of every new session opened as it
+   *  with `use(…, true)` — auto-launch included — delivered via
+   *  the prompt queue. Independent of `auto_launch`. */
   auto_launch_prompt?: string;
   /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
   places?: AgentPlaceSpecWire[] | null;
@@ -310,7 +312,7 @@ export class Agent extends APIEntity<Agent> {
 
   /**
    * Open a session AS this agent: a new, visible, headless Chat process built
-   * from the agent's local deployment, with no first turn — the human types it.
+   * from the agent's local deployment, with no turn started.
    * `POST /agent/<id>/use`. The counterpart of `run` (one prompt, headless).
    *
    * `projectId` is the project the session should ACT IN, which is not always
@@ -318,9 +320,14 @@ export class Agent extends APIEntity<Agent> {
    * as a context folder belongs to the desk's checkout, but the session has to
    * open on the customer's project. Omit it and the backend falls back to the
    * agent's own project.
+   *
+   * `autoPrompt` queues the agent's auto prompt as the first turn. It is
+   * queued, not sent: start it with `drainQueue()` (the UI's
+   * `prepareAgentSession` does, after the vibe embed) BEFORE sending your own
+   * prompt, or the auto prompt runs second.
    */
-  async use(projectId?: string | null): Promise<AgentUseResult> {
-    return (await this.post('use', { project_id: projectId ?? null })) as AgentUseResult;
+  async use(projectId?: string | null, autoPrompt = false): Promise<AgentUseResult> {
+    return (await this.post('use', { project_id: projectId ?? null, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
   }
 
   /**
@@ -329,10 +336,11 @@ export class Agent extends APIEntity<Agent> {
    * The Hub validates that the placement belongs to this Agent and creates the
    * real AgenticProcess on that machine. The returned process id is addressed
    * through the ordinary AgenticProcess SDK; callers do not need a second
-   * remote-chat transport.
+   * remote-chat transport. `autoPrompt` as in `use` — honoured only for a
+   * placement on this machine.
    */
-  async useDeployment(deploymentId: string): Promise<AgentUseResult> {
-    return (await this.post('use', { deployment_id: deploymentId })) as AgentUseResult;
+  async useDeployment(deploymentId: string, autoPrompt = false): Promise<AgentUseResult> {
+    return (await this.post('use', { deployment_id: deploymentId, ...autoPromptBody(autoPrompt) })) as AgentUseResult;
   }
 
   /**
@@ -582,6 +590,12 @@ export interface AgentUseResult {
   process_id: string;
   process_typeid: string;
   deployment_id: string;
+}
+
+/** The body key for an opted-in `use` — absent unless asked, so the hub relay
+ *  and SDK callers that never drain keep a turn-less session. */
+function autoPromptBody(autoPrompt: boolean): { auto_prompt?: true } {
+  return autoPrompt ? { auto_prompt: true } : {};
 }
 
 /** The fields a schedule manages — `POST /agent/<id>/add_schedule` and friends
