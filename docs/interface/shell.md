@@ -41,6 +41,7 @@ rather than duplicates.
 | `worker_name` | `str \| None` | Worker executable name (e.g. `claude`) |
 | `auto_rename` | `bool` | When True, PTY OSC title escapes may update `name`; cleared on first manual rename |
 | `last_launch_cmd` | `dict \| None` | Serialized `AgentOptions` from the last `launch()` |
+| `belongs_to` | `str \| None` | What this terminal is the terminal OF — a natural name (`snippet:<path>`, `deployment:<id>`, `run:<project path>`), looked up by `belonging_to`; null for a free terminal. (Not the base row's `key`: that is the namespace counter key the driver overwrites.) |
 
 `tab_order` and `last_active_at` are base-`Entity` fields (no per-shell `tabbed` flag — strip
 membership is the `Tab` entity, see [docs/tab-management.md](../tab-management.md)).
@@ -52,6 +53,8 @@ membership is the `Tab` entity, see [docs/tab-management.md](../tab-management.m
 | Method | Kind | Description |
 | --- | --- | --- |
 | `open(cls, workdir=None, **kwargs)` | classmethod | Create + `start_pty()` immediately; returns a ready shell |
+| `belonging_to(cls, what, *, workdir, name, project_id, extra_env, rows, cols)` | classmethod | The terminal of `what` with a live PTY — the one it had (not closed), else a new one on the local node. A lookup on `belongs_to`, never a derived id. The snippet view's terminal (one per file) and a deployment's are this |
+| `find_belonging_to(cls, what)` | classmethod | The terminal of `what` if it has one — found, never made, no PTY started |
 | `__aenter__` / `__aexit__` | async ctx | `start_pty()` on enter, `close()` on exit |
 | `save(*args, **kwargs)` | async | Persists; defaults `project_id` to the `@local` Project when none supplied |
 
@@ -59,7 +62,7 @@ membership is the `Tab` entity, see [docs/tab-management.md](../tab-management.m
 
 | Method | Description |
 | --- | --- |
-| `start_pty(rows=24, cols=80, on_exit=None, connection_id=None, spawn_args=None, extra_env=None)` | Spawn the OS PTY. Idempotent — no-op (returns `False`) if already alive; returns `True` when a fresh PTY was spawned. Rebinds compute node, cleans a stale session, then `cn.create_pty(...)`; sets `status=running`, `pty_pid=id`. Raises `RuntimeError` on bad status / missing compute node |
+| `start_pty(rows=24, cols=80, on_exit=None, connection_id=None, spawn_args=None, extra_env=None)` | Spawn the OS PTY. Idempotent — no-op (returns `False`) if already alive; returns `True` when a fresh PTY was spawned. Rebinds compute node, cleans a stale session, then `cn.create_pty(...)`; sets `status=running`, `pty_pid=id`. The shell's own `env` is part of the spawn (an explicit `extra_env` wins). Raises `RuntimeError` on bad status / missing compute node |
 | `start(*args, **kwargs)` | Back-compat alias for `start_pty` (prefer `start_pty`) |
 | `stop()` | `terminate_worker()` + kill PTY, keep the entity; `status=idle` |
 | `restart()` | `stop()` then `start_pty()`; preserves workdir/env/tab_order |
@@ -77,6 +80,17 @@ membership is the `Tab` entity, see [docs/tab-management.md](../tab-management.m
 | `wait_for_input_ready(timeout=5.0)` | Public prompt gate. `write`/`write_then_submit` call it internally; a raw `write_raw` (e.g. `AgenticProcess.input`) must call it FIRST or a fresh TUI drops keystrokes |
 | `launch(cmd, instruction=None) -> WorkerExecutionInfo` | shell-mode path: inject `cmd.to_shell_string(...)` via `write()`, poll ≤1s for the worker child PID, persist `worker_pid`/`worker_name`/`last_launch_cmd` |
 | `set_env(**vars)` | Persist env vars on the entity and inject live (`export`/`set`) if `status=running` |
+
+**Commands in the terminal** — what a viewer's Run/Stop stand on
+
+| Method | Description |
+| --- | --- |
+| `run_command(command) -> str` | Type the command wrapped in the sentinel (`sentinel_command`) and return its **marker** at once. The output streams in the terminal; the end marker carries the exit code |
+| `sentinel_command(command, marker, *, shell=None)` | THE grammar (built only here; the browser only reads it): invisible OSC 7770 escapes — start, then end with the exit code — in the terminal's shell's grammar (`default_terminal_shell`). zsh abandons a line on Ctrl-C, so there the end sits in an `always` block; bash/fish/PowerShell carry on. A cancel check at the start (`cancel_path`) skips a run stopped before it began, still printing its end (130) |
+| `sentinel_exit(data, marker)` / `sentinel_output(data, marker)` | `(exit, offset)` of a run's end in raw PTY bytes; the bytes between its start and end — never the echoed command, however it wraps |
+| `run_and_capture(command, timeout=120)` | `run_command` + read the recorded stream until the end marker → `CliResult` (what `flow terminal run` answers). The timeout bounds the WAIT; the command keeps running |
+| `running() -> int \| None` | The foreground job of the terminal (`tcgetpgrp` on the PTY master, provider `get_pty_foreground_pgid`): the shell's own at the prompt → `None`. Never the shell's children — an async prompt spawns helpers, and a line is several jobs in turn |
+| `interrupt(grace=2.0, settle=0.3, marker=None) -> bool` | Stop the run, keep the terminal: Ctrl-C to each job that takes the foreground, terminate what outlives `grace`. With the run's `marker` it is exact — its jobs are those after its start marker, it has ended when its end prints, and a run not started yet is cancelled. Without one, the prompt holding the foreground for `settle` counts as the end |
 | `rename(name)` | Mirror new name + pin (`auto_rename=False`) so PTY OSC titles stop overwriting it |
 
 **Liveness / PTY handle**
@@ -121,13 +135,16 @@ membership is the `Tab` entity, see [docs/tab-management.md](../tab-management.m
 
 ## Backend actions
 
-`@action.post` methods on `Shell` (verified — exactly four):
+HTTP actions on `Shell`, plus `POST /api/v1/shell/belonging-to {what, workdir?, name?}` (the class-level `belonging_to`, `server/routes/shell.py`) and `POST /api/v1/snippet/terminal {path, create?}` (a snippet file's terminal and the command that runs it there):
 
 | Action | Verb | Python method | Guards | Description |
 | --- | --- | --- | --- | --- |
 | `open` | POST | `_http_open` | catches `RuntimeError` → `ApiFailResponse` | Start PTY (`start_pty`), set `status=running`. Body: `{connection_id?, cols?, rows?, working_dir?}`. Returns entity + `pty_id` |
 | `close` | POST | `close` | best-effort (each step wrapped) | Kill worker + PTY, **delete disk record + delete entity**. Permanent teardown |
-| `run` | POST | `run` | `command` required else `ApiFailResponse` | Run a command in a one-shot subprocess; returns `{stdout, stderr, exit_code}` |
+| `run-command` | POST | `_http_run_command` | `command` required; no live PTY → `ApiFailResponse` | Type the command into the terminal (`run_command`); answers `{marker, osc}` at once |
+| `interrupt` | POST | `_http_interrupt` | — | Stop the running command (`interrupt`); body `{marker?}` makes it exact. Answers `{stopped}` |
+| `run-state` | GET | `_http_run_state` | — | `{running_pid, status}` — whether a command holds the terminal now |
+| `run-detached` | POST | `run_detached` | `command` required else `ApiFailResponse` | Run a command in a one-shot subprocess OUTSIDE the terminal; returns its `CliResult` |
 | `set-env` | POST | `_http_set_env` | `vars` required else `ApiFailResponse` | Persist + live-inject env vars. Body: `{vars: {k: v}}` |
 
 **`close` vs worker-exit semantics.** `close` is destructive: it terminates the worker, deletes
@@ -149,6 +166,8 @@ lifecycle/I/O to it.
 | Static | Description |
 | --- | --- |
 | `create(computeNode, opts?)` | Construct an unsaved `Shell` bound to a compute node (id + uname) |
+| `belongingTo(what, opts?)` | `POST /api/v1/shell/belonging-to` → the terminal of `what` (cached instance, never a second one) |
+| `forSnippet(path)` / `findForSnippet(path)` | A snippet file's terminal + its run command (made on first use / found only) |
 | `newLiveShell(opts?)` | Construct against `dataContext.computeNode`, `save()`, then `start()` — a ready live shell |
 | `list(computeNodeId)` | `list-shells` action on `ComputeNode`; merges into cached instances (never orphans subscribers) |
 | `getActiveSessions()` | `query({})` filtered to non-`CLOSED`, sorted by `tab_order` |
@@ -174,7 +193,10 @@ lifecycle/I/O to it.
 | `sendInput(data)` | → `ptyConnection.sendInput` |
 | `resize(cols, rows)` | → `ptyConnection.resize` |
 | `close()` | `close` action; on success (or 404) dispose connection + `status=CLOSED` |
-| `run(command) -> Promise<CliResult>` | `run` action → `CliResult` (see [call-returns](../snippets/call-returns.md)) |
+| `ensureStarted(opts?)` | Live and attached, started if not — ONE start however many callers ask at once |
+| `runCommand(cmd, {signal}) -> Promise<{exitCode, output, durationS}>` | `run-command`, then resolve on the run's end marker read off the live stream (`PtyConnection.onText`); `output` is what lies between its markers (last MB). `signal` stops the wait, never the command |
+| `interrupt()` / `runState()` | `interrupt` (naming the run `runCommand` waits on by its marker) / `run-state` |
+| `runDetached(command) -> Promise<CliResult>` | `run-detached` action → `CliResult` (see [call-returns](../snippets/call-returns.md)) |
 | `setEnv(vars)` | `set-env` action |
 | `onOutput(fn)` | Live output subscription (gated on `attached`; undefined if not attached yet) |
 | `onLine(fn)` | ANSI-stripped line subscription (fires for replay too) |
@@ -182,6 +204,16 @@ lifecycle/I/O to it.
 | `getPtyChunks()` | Sorted output chunks (VirtualTerminal rebuild on resize) |
 | `addTrigger(trigger)` | Register a regex trigger over the line stream |
 | `getPtyEventFires()` / `onPtyEventFire(fn)` | Read / subscribe to recorded trigger fires |
+
+### React: one attach, one run hook, one plain-shell view
+
+| Piece | Where | What it owns |
+| --- | --- | --- |
+| `useXtermShellAttach(shell, term, opts)` | `ui/src/components/terminal/useXtermShellAttach.ts` | THE attach every terminal view uses: recorded stream replayed (checkpoint saved), then the chunks it does not cover, then live output; re-run on connect / mount / `on_recovered` / `on_reconnected`, each superseding one in flight. Per-view concerns are options (`onChunk` for PtySync, a custom live `write` for synchronized output, `onAttached`/`onDetached`, `recoveredFor`, `trimRecordedBlankRows`). Starting the shell is not its job |
+| `useShellRun(shell)` | `ui/src/hooks/useShellRun.ts` | The verbs around a run: one at a time, `startedAt` (the clock), `lastExit`, `interrupt`; a run found going on arrival is adopted until `run-state` says it ended. Leaving the view stops the wait, never the command |
+| `ShellTerminal` | `ui/src/components/terminal/interactive-terminal/ShellTerminal.tsx` | A plain shell's xterm (`useShell` + `ensureStarted` + `useXtermShellAttach`), with a `clear`/`focus` handle. Hosts: an agent terminal's sidecar, a deployment's console, the snippet view's run terminal |
+
+`InteractiveTerminal` (the agent/dock terminal) attaches through the same hook.
 
 ### PtyConnection
 
