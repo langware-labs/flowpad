@@ -1339,10 +1339,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     await this.post('clear-queue');
   }
 
-  /** Kick a drain without adding a prompt — the "session is set up, start"
-   *  signal for a queue seeded server-side (an agent's auto prompt from
-   *  `Agent.use(…, { autoPrompt: true })`) that must run only after the caller
-   *  finished its pre-turn setup (vibe layer embed). No-op when empty or busy. */
+  /** Kick a drain without adding a prompt — for a queue seeded server-side
+   *  (agent auto prompt) that must run only after the caller finished its
+   *  pre-turn setup (vibe persona embed). No-op when empty or busy. */
   async drainQueue(): Promise<void> {
     await this.post('drain-queue');
   }
