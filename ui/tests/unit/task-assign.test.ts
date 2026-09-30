@@ -14,6 +14,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dataManager, Task } from '@sdk';
 
+// The notification send is its own module (a hub round-trip); what the task does with its
+// answer is what is under test here.
+const send = vi.hoisted(() => ({ createAndSendConversation: vi.fn() }));
+vi.mock('@sdk/entities/conversation-send', () => send);
+
 // Fresh id per task: the SDK entity registry warns when the same id is
 // re-registered with a different instance across tests.
 let TASK_ID = '';
@@ -77,6 +82,24 @@ describe('Task.assign', () => {
     // No notification conversation: a self-assignment has nobody to notify.
     expect(callAction).toHaveBeenCalledTimes(1);
     expect(out).toEqual({ conversationId: null, self: true });
+  });
+
+  it('keeps the conversation it was asked in, so opening the task opens that conversation', async () => {
+    // The setup file loaded the SDK before this file's mock registered: a fresh graph sees it.
+    vi.resetModules();
+    const sdk = await import('@sdk');
+    send.createAndSendConversation.mockResolvedValue({ conversation_id: 'conv-1' });
+    vi.spyOn(sdk.dataManager, 'callAction').mockResolvedValue(assignResult() as never);
+    const save = vi.spyOn(sdk.Task.prototype, 'save').mockImplementation(function (this: Task) {
+      return Promise.resolve(this);
+    });
+    const t = new sdk.Task({ id: crypto.randomUUID(), type: 'task', title: 'Fix login' });
+
+    const out = await t.assign('bob@x.com', { message: 'please look' });
+
+    expect(out).toEqual({ conversationId: 'conv-1', self: false });
+    expect(t.origin_conversation).toBe('conv-1');
+    expect(save).toHaveBeenCalledTimes(1);
   });
 
   it('requires a recipient email', async () => {

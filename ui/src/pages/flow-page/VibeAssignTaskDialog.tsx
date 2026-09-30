@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ConversationParticipant, Task, type TaskAssignOptions, TypeId } from '@sdk';
+import { ConversationParticipant, Task, TaskKind, type TaskAssignOptions, TypeId } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -17,6 +17,7 @@ import {
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import { guardCloudAction } from '@src/services/privacy-guard';
+import type { VibeTaskRow } from '@src/hooks/use-my-vibe-tasks';
 
 interface VibeAssignTaskDialogProps {
   open: boolean;
@@ -27,6 +28,10 @@ interface VibeAssignTaskDialogProps {
    *  (the dialog still works; the transcript option is simply not offered). */
   sessionTypeId: TypeId | null;
   onAssigned?: (taskId: string) => void;
+  /** My open Vibe help tasks in this project — one already asked of the picked person is offered. */
+  openTasks?: VibeTaskRow[];
+  /** Open that task's conversation instead of asking again. */
+  onOpenExisting?: (row: VibeTaskRow) => void;
 }
 
 /**
@@ -46,6 +51,8 @@ export function VibeAssignTaskDialog({
   projectId,
   sessionTypeId,
   onAssigned,
+  openTasks = [],
+  onOpenExisting,
 }: VibeAssignTaskDialogProps) {
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
@@ -58,6 +65,12 @@ export function VibeAssignTaskDialog({
 
   const person = picked[0] ?? null;
   const canSubmit = !!person && !!title.trim() && !busy;
+  // Same opener, same person, same project: the request already open with them. Asking again
+  // is still allowed — this only offers the way back to it.
+  const pickedEmail = (person?.email ?? '').trim().toLowerCase();
+  const alreadyAsked = pickedEmail
+    ? openTasks.find((row) => (row.task.assignee ?? '').trim().toLowerCase() === pickedEmail)
+    : undefined;
 
   /** The session transcript, or nothing. Never blocks the assign — a missing
    *  transcript downgrades to a warning, exactly like the share path. */
@@ -94,9 +107,11 @@ export function VibeAssignTaskDialog({
       // 400 "'project_id' cannot be set in the body for 'task' ... POST to
       // /api/v1/graph/project/<project_id>/task instead". Scoping the save is
       // the same shape `useClaudeErrorRecords` already uses.
+      // `kind: vibe` is what the button lists: this project's open help tasks, opened here.
       const task = await new Task({
         title: title.trim(),
         description: notes.trim() || undefined,
+        kind: TaskKind.VIBE,
       }).save(projectId ? [new TypeId('project', projectId)] : []);
 
       // The notification message must stand on its own: the title IS the issue,
@@ -146,6 +161,23 @@ export function VibeAssignTaskDialog({
             testId="vibe-assign-person"
           />
 
+          {alreadyAsked && onOpenExisting && (
+            <p
+              className="rounded border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-foreground"
+              data-testid="vibe-assign-already-asked"
+            >
+              {t`You already asked ${person?.name || person?.email}: "${alreadyAsked.task.title}".`}{' '}
+              <button
+                type="button"
+                className="text-primary underline"
+                onClick={() => onOpenExisting(alreadyAsked)}
+                data-testid="vibe-assign-open-existing"
+              >
+                {t`Open that conversation`}
+              </button>
+            </p>
+          )}
+
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -173,7 +205,11 @@ export function VibeAssignTaskDialog({
             </label>
           )}
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && (
+            <p className="rounded border border-destructive/60 bg-destructive/10 px-3 py-2 text-sm text-foreground">
+              {error}
+            </p>
+          )}
         </div>
 
         <DialogFooter>

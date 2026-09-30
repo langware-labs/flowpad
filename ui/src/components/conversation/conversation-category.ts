@@ -78,7 +78,9 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   // read projection yet (docs/hub-rest-consolidation.md §1): its rows arrive without
   // the field and fall back to the latest message. Invitation rows carry a CTA, so
   // they are unread either way.
-  const hubUnread = latestMessage ? !latestMessage.is_read && !authoredBy(senderOf(latestMessage), [viewer.cloudUserId, viewer.localUserId]) : false;
+  const hubUnread = latestMessage
+    ? !latestMessage.is_read && !authoredBy(senderOf(latestMessage), [viewer.cloudUserId, viewer.localUserId])
+    : false;
   const isUnread = isInvitation || (conv.is_unread ?? hubUnread);
 
   const unreadCount = isUnread ? Math.max(conv.unread_count ?? 1, 1) : 0;

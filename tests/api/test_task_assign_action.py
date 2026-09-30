@@ -141,3 +141,20 @@ async def test_a_sub_task_can_be_assigned(bootstrapped_client, hub_faked):
 
     data = await _assign(bootstrapped_client, child["id"], email="bob@x.com")
     assert data == {"self": False, "assignee": "bob@x.com"}
+
+
+async def test_a_vibe_help_task_stays_one_and_keeps_its_conversation(bootstrapped_client, hub_faked):
+    """The Vibe "Ask for help" button lists `kind=vibe` tasks and opens `origin_conversation`:
+    assigning must not rewrite the kind, and the conversation the task was asked in (stored by
+    `Task.assign` right after the send) must survive the save — both are the button's state."""
+    task = await _create(
+        bootstrapped_client, "task", {"type": "task", "title": "Popout button is disabled", "kind": TaskKind.VIBE.value}
+    )
+    await _assign(bootstrapped_client, task["id"], email="bob@x.com", message="please look")
+
+    resp = await bootstrapped_client.put(f"{GRAPH}/task/{task['id']}", json={"origin_conversation": "conv-1"})
+    assert resp.status_code == 200, resp.text
+
+    row = await Task.get_one({"id": task["id"]})
+    assert (row.kind, row.origin_conversation, row.assignee) == (TaskKind.VIBE.value, "conv-1", "bob@x.com")
+    assert await Task.get_all({"kind": TaskKind.VIBE.value, "id": task["id"]}), "the button's query finds it by kind"
