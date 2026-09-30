@@ -6414,8 +6414,8 @@ msgid "Debug logging"
 msgstr "Debug logging"
 
 #: src/components/account/settings-section.tsx
-msgid "DEBUG: remove 6 tools"
-msgstr "DEBUG: remove 6 tools"
+#~ msgid "DEBUG: remove 6 tools"
+#~ msgstr "DEBUG: remove 6 tools"
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -17311,8 +17311,8 @@ msgid "Removes it everywhere"
 msgstr "Removes it everywhere"
 
 #: src/components/account/settings-section.tsx
-msgid "Removing & re-checking…"
-msgstr "Removing & re-checking…"
+#~ msgid "Removing & re-checking…"
+#~ msgstr "Removing & re-checking…"
 
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -17580,6 +17580,7 @@ msgid "Rescanning…"
 msgstr "Rescanning…"
 
 #: src/components/account/settings-section.tsx
+#: src/components/account/settings-section.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -17623,6 +17624,7 @@ msgstr "resets in {hours} h {m} m"
 msgid "resets in {mins} m"
 msgstr "resets in {mins} m"
 
+#: src/components/account/settings-section.tsx
 #: src/components/account/settings-section.tsx
 msgid "Resetting…"
 msgstr "Resetting…"

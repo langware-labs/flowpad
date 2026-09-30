@@ -148,20 +148,23 @@ export function SettingsSection() {
           <Trans>Connect an LLM source, then install the tools Flowpad needs. Runs once on first launch.</Trans>
         }
         control={
-          <div className="flex gap-2">
+          // Stacked, so the description on the left keeps its width instead of wrapping word by word.
+          <div className="flex flex-col items-stretch gap-2">
             <Button size="sm" variant="outline" onClick={() => void handleRunSetup()} disabled={runningSetup}>
               {runningSetup ? <Trans>Running…</Trans> : <Trans>Run setup again</Trans>}
             </Button>
-            {/* TEMPORARY DEBUG BUTTON — remove before shipping, see FLOWPAD-2171. */}
-            <Button
-              size="sm"
-              onClick={() => void handleRemoveTools()}
-              disabled={removingTools}
-              className="border-orange-500 bg-orange-500 text-white hover:bg-orange-600 hover:text-white"
-              title="DEBUG ONLY — actually uninstalls jq/rg/claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
-            >
-              {removingTools ? <Trans>Removing & re-checking…</Trans> : <Trans>DEBUG: remove 6 tools</Trans>}
-            </Button>
+            {/* TEMPORARY DEBUG BUTTON, Dev mode only — remove before shipping, see FLOWPAD-2171. */}
+            {isDev && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void handleRemoveTools()}
+                disabled={removingTools}
+                title="DEV ONLY — actually uninstalls jq/rg/claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
+              >
+                {removingTools ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
+              </Button>
+            )}
           </div>
         }
       />
