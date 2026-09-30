@@ -2888,6 +2888,14 @@ msgstr "אישור חיבור"
 msgid "Auto Index"
 msgstr "אינדוקס אוטומטי"
 
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto prompt"
+msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+msgid "Auto prompt — sent as the first message of every new session with this agent"
+msgstr ""
+
 #: src/components/settings-view/settings-utils.ts
 msgid "Auto Updates Channel"
 msgstr "ערוץ עדכונים אוטומטיים"
@@ -2926,8 +2934,8 @@ msgid "Auto-launch on project open"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "Auto-launch prompt"
-msgstr ""
+#~ msgid "Auto-launch prompt"
+#~ msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Auto-launch reset"
@@ -9100,8 +9108,12 @@ msgid "First indexed"
 msgstr "אונדקס לראשונה"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "First prompt to send when the project opens…"
+msgid "First message to send when a session starts…"
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#~ msgid "First prompt to send when the project opens…"
+#~ msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "First selection"
@@ -12723,8 +12735,12 @@ msgid "Name — the agent's folder name, used to address it"
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
-msgid "name · description · intro · auto-launch · Flowpad assistant · declared fields"
+msgid "name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields"
 msgstr ""
+
+#: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
+#~ msgid "name · description · intro · auto-launch · Flowpad assistant · declared fields"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "name (e.g. coding)"
