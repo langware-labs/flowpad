@@ -327,6 +327,25 @@ describe('a popup wizard', () => {
     await waitFor(() => expect(h.start).toHaveBeenCalledTimes(1));
   });
 
+  it('Go to homepage from the popup closes it, not only the page behind it', async () => {
+    // The popup sits OVER the page: navigating alone changed the page underneath and left the
+    // dialog in front, so the click looked like it did nothing.
+    const short = { result: { exit_code: ExitCode.NOT_YET, detail: 'x', ran: true, steps: {} } };
+    act(() => openWizardPopup('wizard-x'));
+    await renderPopup(
+      <WizardViewer
+        presentation="popup"
+        fsRef={fsRef()}
+        wizard={{ ...wizard(short), popup: true, failure_message: 'It stopped.' } as never}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('wizard-go-home'));
+
+    expect(useWizardPopupStore.getState().open).toBe(false);
+    expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
+  });
+
   it('a run that fell short says nothing of its own when the wizard declares no failure message', async () => {
     const short = { result: { exit_code: ExitCode.NOT_YET, detail: 'x', ran: true, steps: {} } };
     await renderPopup(
