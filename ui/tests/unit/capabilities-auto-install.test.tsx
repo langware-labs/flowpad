@@ -101,17 +101,16 @@ describe('Capabilities page auto-install', () => {
     await waitFor(() => expect(button()).toBeTruthy());
   });
 
-  it('types it into a terminal instead of running it', async () => {
+  it('runs it in a terminal', async () => {
     const { button } = mount(summaryWith({}));
     await waitFor(() => expect(button()).toBeTruthy());
 
     fireEvent.click(button()!);
 
-    // `prefillCommand`, never `startCommand`: the line is typed at the prompt
-    // and the user presses Enter. Piping a remote install script into a shell
-    // is their keystroke to make.
+    // `startCommand`: the line is typed AND submitted, so the user does not
+    // have to press Enter.
     expect(h.openNewShell).toHaveBeenCalledWith(
-      expect.objectContaining({ prefillCommand: INSTALL, viewMode: 'advanced' }),
+      expect.objectContaining({ startCommand: INSTALL, viewMode: 'advanced' }),
     );
   });
 

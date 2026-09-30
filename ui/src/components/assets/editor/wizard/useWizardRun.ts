@@ -5,6 +5,8 @@ import { ExitCode, type Wizard, type WizardResult, type WizardRunDetail } from '
 
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
 
+import { LIVE_STATE } from './wizard-doc';
+
 /** ONE step's answer — the op's own result (a `CliResult`, a `PromptResult`, an
  *  `AskResult`, a nested `WizardResult`) — with the step it belongs to. */
 export type WizardStepAnswer = NonNullable<WizardResult['steps']>[string] & { step_id: string };
@@ -40,6 +42,7 @@ function answersOf(result: WizardResult | null | undefined): WizardStepAnswer[] 
  *  on a CliResult/PromptResult regardless of which one a step settled on. */
 interface OpAnswerShape {
   ran?: boolean;
+  cancelled?: boolean;
   executor?: string | null;
   steps?: Record<string, OpAnswerShape>;
 }
@@ -66,6 +69,14 @@ export function rungTrail(outcome: WizardStepAnswer | null | undefined): string[
   return trail;
 }
 
+/** Whether the PERSON said no: the step's own question was declined ("Install Claude Code?" →
+ *  Skip). A decision, not a failure — nothing broke, so the row must not read as an error. The
+ *  step is usually a nested wizard (ask, then install), so the decline sits on its `ask` answer. */
+export function declinedByUser(outcome: WizardStepAnswer | null | undefined): boolean {
+  const asShape = outcome as unknown as OpAnswerShape | null | undefined;
+  return Boolean(asShape?.cancelled || asShape?.steps?.ask?.cancelled);
+}
+
 /** The agent rung's own executor typeid (``agentic_process-<id>``), or ``null`` when the step
  *  never reached that rung — the process to resolve for "which harness, which model actually
  *  ran" (see {@link AgentRungLabel} in `WizardViewer.tsx`). Same extraction as {@link rungTrail},
@@ -74,6 +85,29 @@ export function agentExecutorOf(outcome: WizardStepAnswer | null | undefined): s
   const asShape = outcome as unknown as OpAnswerShape | null | undefined;
   const install = asShape?.steps?.install ?? asShape ?? null;
   return install?.executor ?? null;
+}
+
+/** What a step's live line says while it is parked on a question to the person
+ *  (`compute_op/runner.py::_ask` — "<label>: waiting for you…"). Nothing is running then,
+ *  so the row shows no spinner until the person answers. */
+export const WAITING_FOR_PERSON = /waiting for you/i;
+
+/** How long a running step's own activity node can sit with no new tick before
+ *  it is worth telling someone — a real install (`apt-get`) legitimately takes
+ *  a while, but an agent call that has printed nothing for this long is the
+ *  same shape as the rate-limit/network hangs this was written after seeing. */
+export const STUCK_AFTER_MS = 45_000;
+
+/** How long a step in flight has gone without a tick, in ms — 0 when it is not in flight (it has
+ *  answered, or has not started) or is waiting on a person, who is not a hang. Told apart from a
+ *  plain "still running" by TIME, not by a status the backend does not have: the node's own last
+ *  tick is the same signal the footer chip uses to grey a stalled row. */
+export function silentForMs(live: ActivityProgressSpec | null, outcome: unknown, now: number): number {
+  if (outcome || !live) return 0;
+  if (WAITING_FOR_PERSON.test(live.current ?? '')) return 0;
+  if (LIVE_STATE[live.state]?.status !== 'running') return 0;
+  const tickAt = Date.parse(live.updated_at || live.started_at || '');
+  return Number.isNaN(tickAt) ? 0 : now - tickAt;
 }
 
 /** One step, as the debugger sees it: what it is doing now, and what it answered. */

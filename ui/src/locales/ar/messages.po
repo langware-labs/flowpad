@@ -90,7 +90,7 @@ msgstr ""
 msgid "· pick a branch"
 msgstr "اختيار فرع"
 
-#. placeholder {0}: wizard.name
+#. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
 msgstr ""
@@ -416,10 +416,9 @@ msgstr "{0} مُنتشر"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} مُفهرس بدون مسار مصدر صحيح ولا يمكن فتحه."
 
-#. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
-msgid "{0} is issuing your LLM calls."
-msgstr ""
+#~ msgid "{0} is issuing your LLM calls."
+#~ msgstr ""
 
 #. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
@@ -3550,6 +3549,10 @@ msgstr "إلغاء"
 msgid "Cancel reply"
 msgstr ""
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Cancelled by user"
+msgstr ""
+
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/use-ask-question.ts
 msgid "Cancelled."
@@ -5059,6 +5062,11 @@ msgstr ""
 msgid "Copy entry"
 msgstr "نسخ العنصر"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Copy error"
+msgstr ""
+
 #: src/notifications/NotificationOutlet.tsx
 msgid "Copy error text"
 msgstr ""
@@ -5466,6 +5474,10 @@ msgstr "تعذر فتح {0}"
 msgid "Could not open link"
 msgstr ""
 
+#: src/components/account/settings-section.tsx
+msgid "Could not open setup"
+msgstr ""
+
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "تعذّر فتح المهارة"
@@ -5734,6 +5746,8 @@ msgid "Could not sign the sandbox out"
 msgstr "تعذّر تسجيل الخروج من Sandbox"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
@@ -7418,7 +7432,6 @@ msgstr "تم"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-setup/LlmSetupView.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -8275,8 +8288,8 @@ msgid "Everything is already up to date."
 msgstr "كل شيء محدث بالفعل"
 
 #: src/components/account/settings-section.tsx
-msgid "Everything is in place."
-msgstr ""
+#~ msgid "Everything is in place."
+#~ msgstr ""
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
@@ -9751,6 +9764,11 @@ msgstr "الانتقال إلى وحدة التحكم"
 #: src/pages/entry/entry-shell.tsx
 msgid "Go to Home"
 msgstr "الانتقال إلى الصفحة الرئيسية"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Go to homepage"
+msgstr ""
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
@@ -11615,8 +11633,8 @@ msgid "LLM keys"
 msgstr "مفاتيح LLM"
 
 #: src/components/account/settings-section.tsx
-msgid "LLM source"
-msgstr ""
+#~ msgid "LLM source"
+#~ msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -12460,6 +12478,10 @@ msgstr "المقاييس"
 #: src/components/cron-view/CronForm.tsx
 msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "الدقيقة والساعة ويوم الشهر والشهر ويوم الأسبوع — أو \"30s\" / \"5m\" للفاصل الزمني"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Minimize — it keeps running in the background"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Minimize the process"
@@ -14196,10 +14218,9 @@ msgstr "لم تُنسخ إلى مجلد السياق"
 msgid "Not deployed yet — it runs nowhere until you launch it."
 msgstr ""
 
-#. placeholder {0}: missing.join('; ')
 #: src/components/account/settings-section.tsx
-msgid "Not done: {0}"
-msgstr ""
+#~ msgid "Not done: {0}"
+#~ msgstr ""
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
@@ -17647,6 +17668,8 @@ msgstr "الردود"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/journey/JourneyTray.tsx
@@ -17667,6 +17690,10 @@ msgstr "يجب إعادة التشغيل — تغيرت الإعدادات من�
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Restart session"
 msgstr "إعادة تشغيل الجلسة"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "Restart setup"
+#~ msgstr ""
 
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
@@ -19284,18 +19311,31 @@ msgstr "الإعدادات"
 msgid "Setup"
 msgstr ""
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "Setup could not start"
+#~ msgstr ""
+
 #: src/components/account/settings-section.tsx
 #: src/components/account/settings-section.tsx
-msgid "Setup did not finish"
-msgstr ""
+#~ msgid "Setup did not finish"
+#~ msgstr ""
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "Setup didn't finish successfully."
+#~ msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
 msgstr "فشل الإعداد"
 
 #: src/components/account/settings-section.tsx
-msgid "Setup finished"
-msgstr ""
+#~ msgid "Setup finished"
+#~ msgstr ""
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "Setup finished — everything is installed."
+#~ msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
@@ -20076,8 +20116,8 @@ msgid "Some deployments have errors"
 msgstr "بعض الإطلاقات بها أخطاء"
 
 #: src/components/account/settings-section.tsx
-msgid "some tools"
-msgstr ""
+#~ msgid "some tools"
+#~ msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
@@ -20274,6 +20314,7 @@ msgid "Star chat"
 msgstr "إضافة نجمة للمحادثة"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
@@ -20904,6 +20945,11 @@ msgstr "يستغرق نحو 4 ثوانٍ"
 #~ msgid "takes effect after a restart"
 #~ msgstr ""
 
+#. placeholder {0}: Math.round(stuckMs / 1000)
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Taking longer than usual ({0}s with no update) — it may be stuck."
+msgstr ""
+
 #: src/components/voice/CallControls.tsx
 msgid "Talk to the agent from this browser."
 msgstr ""
@@ -21426,6 +21472,10 @@ msgstr "الجلسة لا تزال قيد الاتصال — يُرجى المح
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "The session transcript could not be read."
 msgstr "تعذّر قراءة نسخة الجلسة."
+
+#: src/components/account/settings-section.tsx
+msgid "The setup wizard is not installed."
+msgstr ""
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 msgid "The site doesn't allow being embedded in other apps. Open it in your browser instead."
@@ -21996,6 +22046,10 @@ msgstr "لم يتم تشغيل هذا الرمل بعد"
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox loads code from a private repository."
 msgstr "هذا Sandbox يحمّل الكود من مستودع خاص."
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "This seems stuck. Restart to stop what is running and start over from the first step."
+#~ msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -23381,6 +23435,10 @@ msgstr "عرض الملف الحالي"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "View diagnosis"
 msgstr "عرض التشخيص"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "View error"
+msgstr ""
 
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx

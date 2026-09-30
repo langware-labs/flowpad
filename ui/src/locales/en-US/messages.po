@@ -90,7 +90,7 @@ msgstr ".env.local is not ignored by git here, so a value written there would be
 msgid "· pick a branch"
 msgstr "· pick a branch"
 
-#. placeholder {0}: wizard.name
+#. placeholder {0}: wizard.label || wizard.name
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
 msgstr "\"{0}\" is not shipped with Flowpad. Running it executes commands on this machine."
@@ -416,10 +416,9 @@ msgstr "{0} is deployed"
 msgid "{0} is indexed without a valid source path and cannot be opened."
 msgstr "{0} is indexed without a valid source path and cannot be opened."
 
-#. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
-msgid "{0} is issuing your LLM calls."
-msgstr "{0} is issuing your LLM calls."
+#~ msgid "{0} is issuing your LLM calls."
+#~ msgstr "{0} is issuing your LLM calls."
 
 #. placeholder {0}: funded.name
 #: src/components/llm-setup/LlmSetupView.tsx
@@ -3550,6 +3549,10 @@ msgstr "Cancel"
 msgid "Cancel reply"
 msgstr "Cancel reply"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Cancelled by user"
+msgstr "Cancelled by user"
+
 #: src/components/ask/AskForm.tsx
 #: src/components/ask/use-ask-question.ts
 msgid "Cancelled."
@@ -5059,6 +5062,11 @@ msgstr "Copy email address"
 msgid "Copy entry"
 msgstr "Copy entry"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Copy error"
+msgstr "Copy error"
+
 #: src/notifications/NotificationOutlet.tsx
 msgid "Copy error text"
 msgstr "Copy error text"
@@ -5466,6 +5474,10 @@ msgstr "Could not open {0}"
 msgid "Could not open link"
 msgstr "Could not open link"
 
+#: src/components/account/settings-section.tsx
+msgid "Could not open setup"
+msgstr "Could not open setup"
+
 #: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "Could not open skill"
@@ -5734,6 +5746,8 @@ msgid "Could not sign the sandbox out"
 msgstr "Could not sign the sandbox out"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
@@ -7418,7 +7432,6 @@ msgstr "done"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/llm-setup/LlmSetupView.tsx
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/hub-home/LaunchSandboxDialog.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -8275,8 +8288,8 @@ msgid "Everything is already up to date."
 msgstr "Everything is already up to date."
 
 #: src/components/account/settings-section.tsx
-msgid "Everything is in place."
-msgstr "Everything is in place."
+#~ msgid "Everything is in place."
+#~ msgstr "Everything is in place."
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "Everything the budget above allows"
@@ -9751,6 +9764,11 @@ msgstr "Go to Console"
 #: src/pages/entry/entry-shell.tsx
 msgid "Go to Home"
 msgstr "Go to Home"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Go to homepage"
+msgstr "Go to homepage"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
@@ -11615,8 +11633,8 @@ msgid "LLM keys"
 msgstr "LLM keys"
 
 #: src/components/account/settings-section.tsx
-msgid "LLM source"
-msgstr "LLM source"
+#~ msgid "LLM source"
+#~ msgstr "LLM source"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -12460,6 +12478,10 @@ msgstr "Metrics"
 #: src/components/cron-view/CronForm.tsx
 msgid "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
 msgstr "min hr dom mon dow — or \"30s\" / \"5m\" for interval"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Minimize — it keeps running in the background"
+msgstr "Minimize — it keeps running in the background"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 msgid "Minimize the process"
@@ -14196,10 +14218,9 @@ msgstr "Not copied into context folder"
 msgid "Not deployed yet — it runs nowhere until you launch it."
 msgstr "Not deployed yet — it runs nowhere until you launch it."
 
-#. placeholder {0}: missing.join('; ')
 #: src/components/account/settings-section.tsx
-msgid "Not done: {0}"
-msgstr "Not done: {0}"
+#~ msgid "Not done: {0}"
+#~ msgstr "Not done: {0}"
 
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "not fired yet"
@@ -17647,6 +17668,8 @@ msgstr "responses"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/journey/JourneyTray.tsx
@@ -17667,6 +17690,10 @@ msgstr "Restart required — config changed since start"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Restart session"
 msgstr "Restart session"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "Restart setup"
+#~ msgstr "Restart setup"
 
 #: src/journey/JourneyTray.tsx
 msgid "Restart this journey"
@@ -19284,18 +19311,31 @@ msgstr "Settings"
 msgid "Setup"
 msgstr "Setup"
 
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "Setup could not start"
+#~ msgstr "Setup could not start"
+
 #: src/components/account/settings-section.tsx
 #: src/components/account/settings-section.tsx
-msgid "Setup did not finish"
-msgstr "Setup did not finish"
+#~ msgid "Setup did not finish"
+#~ msgstr "Setup did not finish"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "Setup didn't finish successfully."
+#~ msgstr "Setup didn't finish successfully."
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Setup failed"
 msgstr "Setup failed"
 
 #: src/components/account/settings-section.tsx
-msgid "Setup finished"
-msgstr "Setup finished"
+#~ msgid "Setup finished"
+#~ msgstr "Setup finished"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "Setup finished — everything is installed."
+#~ msgstr "Setup finished — everything is installed."
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Setup git"
@@ -20076,8 +20116,8 @@ msgid "Some deployments have errors"
 msgstr "Some deployments have errors"
 
 #: src/components/account/settings-section.tsx
-msgid "some tools"
-msgstr "some tools"
+#~ msgid "some tools"
+#~ msgstr "some tools"
 
 #: src/components/conversation/ConversationView.tsx
 #: src/components/conversation/ConversationView.tsx
@@ -20274,6 +20314,7 @@ msgid "Star chat"
 msgstr "Star chat"
 
 #: src/components/assets/editor/agent-profile/deployment/DeploymentProcessPanel.tsx
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/setup-wizard/SetupWizardDialog.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/journey/JourneyTray.tsx
@@ -20904,6 +20945,11 @@ msgstr "Takes ~4 seconds"
 #~ msgid "takes effect after a restart"
 #~ msgstr "takes effect after a restart"
 
+#. placeholder {0}: Math.round(stuckMs / 1000)
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "Taking longer than usual ({0}s with no update) — it may be stuck."
+msgstr "Taking longer than usual ({0}s with no update) — it may be stuck."
+
 #: src/components/voice/CallControls.tsx
 msgid "Talk to the agent from this browser."
 msgstr "Talk to the agent from this browser."
@@ -21426,6 +21472,10 @@ msgstr "The session is still connecting — try again in a moment."
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "The session transcript could not be read."
 msgstr "The session transcript could not be read."
+
+#: src/components/account/settings-section.tsx
+msgid "The setup wizard is not installed."
+msgstr "The setup wizard is not installed."
 
 #: src/components/web-url-display/WebUrlDisplay.tsx
 msgid "The site doesn't allow being embedded in other apps. Open it in your browser instead."
@@ -21996,6 +22046,10 @@ msgstr "This sandbox hasn't been started yet"
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This sandbox loads code from a private repository."
 msgstr "This sandbox loads code from a private repository."
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+#~ msgid "This seems stuck. Restart to stop what is running and start over from the first step."
+#~ msgstr "This seems stuck. Restart to stop what is running and start over from the first step."
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -23381,6 +23435,10 @@ msgstr "View current file"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "View diagnosis"
 msgstr "View diagnosis"
+
+#: src/components/assets/editor/wizard/WizardViewer.tsx
+msgid "View error"
+msgstr "View error"
 
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx

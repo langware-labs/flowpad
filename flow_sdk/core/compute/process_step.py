@@ -32,6 +32,7 @@ from typing import Any, Callable, Optional
 
 from pydantic import Field
 
+from flow_sdk.core.compute.llm_source import settle_llm_source
 from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -89,6 +90,50 @@ def _progress_for(process_id: str, worker_status: Any) -> ProcessProgress:
     return ProcessProgress(text=text, counters=counters, blocked=blocked)
 
 
+async def _unfunded(worker_type: Any) -> Optional[str]:
+    """Why NOTHING can fund this agent, or ``None`` when something can.
+
+    The same question, from the same resolver, that refuses an agent launch at the API edge
+    (`createProcess`): ``chosen`` is the source a spawn in this scope would get, so this cannot
+    refuse an agent that would have run. Local reads only. It answers about LLM SOURCES and nothing
+    else — a harness that is missing or a model that is overloaded is not this, and must not send
+    anyone to the chooser.
+    """
+    # The driver the spawn will ACTUALLY run — not merely the harness name resolved above. They can
+    # differ (a test swaps in a mock driver), and the spawn asks the driver about its own source
+    # (`process.driver.name`). Read through the module, at call time, so a swapped `get_driver` counts.
+    from flow_sdk.builtin.agentic_process import agentic_process  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
+
+    resolved = str(getattr(worker_type, "value", worker_type))
+    name = str(getattr(agentic_process.get_driver(resolved), "name", "") or resolved)
+    # A worker with no API-auth spec draws on no LLM source at all (a mock or bootstrap worker), and
+    # the spawn skips the source check for it (`resolve_worker_api_auth`). Refusing it here would
+    # stop an agent that runs fine — and send the person to a chooser for nothing.
+    if driver_api_auth_spec(name) is None:
+        return None
+    funding = await llm_picker_view(name, LLMScope(project_id=""))
+    if funding.chosen is not None:
+        return None
+    return funding.blocked or "no source is configured"
+
+
+def _transcript_signature(process: Any) -> Any:
+    """A value that changes whenever the agent's transcript can have changed, or ``None`` when it has
+    none yet. Never raises: a sign of life is never worth a failure."""
+    try:
+        from flow_sdk.builtin.agentic_process.transcript_cache import transcript_path  # noqa: PLC0415
+        from flow_sdk.transcript_analyzer.resolver import transcript_change_signature  # noqa: PLC0415
+
+        path = transcript_path(process)
+        return transcript_change_signature(path) if path is not None else None
+    except Exception:  # noqa: BLE001
+        logger.debug("could not read the transcript signature for %s", getattr(process, "id", "?"), exc_info=True)
+        return None
+
+
 async def launch_step_process(
     *,
     agent: str,
@@ -138,6 +183,20 @@ async def launch_step_process(
     except LookupError as exc:
         return PromptResult.not_yet(str(exc), ran=False)
 
+    # No LLM source able to fund this agent: put the chooser in front of the person (only when
+    # someone is watching) and, once they pick one, go on to launch — the same attempt, made again
+    # with a source. Skipped, or nobody there: the step fails, and says why, as it always did.
+    refusal = await _unfunded(worker_type)
+    if refusal is not None:
+        if on_status is not None:
+            on_status(ProcessProgress(text="waiting for you to choose an LLM source", blocked=True))
+        settled = await settle_llm_source(only_if_watched=True)
+        refusal = await _unfunded(worker_type) if settled.ok else refusal
+        if refusal is not None:
+            return PromptResult.not_yet(
+                f"{getattr(worker_type, 'value', worker_type)} has no usable LLM source: {refusal}", ran=False
+            )
+
     try:
         process = await deployment.create_process(
             prompt,
@@ -176,11 +235,30 @@ async def _prompt_and_wait(
     if not taken.ok:
         return taken
 
-    try:
-        await process.wait(
-            timeout=timeout_seconds,
-            on_status=((lambda ws: on_status(_progress_for(process_id, ws))) if on_status is not None else None),
+    # `wait` polls every 2s and reports each time, so passing that straight on would stamp the row
+    # "alive" on every poll whether or not the agent did anything. Only a CHANGE is a sign of life:
+    # what the agent reports (its state, what it is on, its token and tool counters), or its
+    # transcript file growing — the agent's own record of everything it does, which moves when it
+    # makes a tool call or gets a result even while its counters sit still.
+    last_seen: list[str] = []
+
+    def observe(worker_status: Any) -> None:
+        progress = _progress_for(process_id, worker_status)
+        seen = repr(
+            (
+                progress.text,
+                sorted(progress.counters.items(), key=repr),
+                str(getattr(worker_status, "value", worker_status)),
+                _transcript_signature(process),
+            )
         )
+        if last_seen and last_seen[0] == seen:
+            return
+        last_seen[:] = [seen]
+        on_status(progress)
+
+    try:
+        await process.wait(timeout=timeout_seconds, on_status=observe if on_status is not None else None)
     except TimeoutError:
         return PromptResult.not_yet(
             f"The agent did not finish within {timeout_seconds:.0f}s.",

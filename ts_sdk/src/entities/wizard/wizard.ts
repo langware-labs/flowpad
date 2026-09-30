@@ -1,7 +1,7 @@
 import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { IEntity, EntityMerge } from '../../IEntity';
 import { ActionInfo } from '../../models/ActionInfo';
-import type { WizardResult } from '../../models/ReturnedValue';
+import type { ReturnedValue, WizardResult } from '../../models/ReturnedValue';
 
 /** One problem with a wizard document.
  *
@@ -58,6 +58,20 @@ export interface IWizard extends IEntity {
   asset_ref?: string;
   enabled?: boolean;
   description?: string;
+  /** A friendlier name than `name`, when the document sets one — same split as
+   *  a step's own `id`/`label`. Falls back to `name` when the document does not
+   *  set one, so most wizards need no second string. */
+  label?: string;
+  /** Show this wizard as a dismissible overlay instead of a full editor page.
+   *  Set on the document (`WizardSpec.popup`) for a wizard someone glances
+   *  at and can set aside; it is started from its own Start button. */
+  popup?: boolean;
+  /** Said under the steps when a run passes; empty says nothing. From the document. */
+  success_message?: string;
+  /** Said when a run ended short (a failed or declined step); empty says nothing. */
+  failure_message?: string;
+  /** The label of the restart button beside `failure_message`. */
+  restart_label?: string;
   /** The agent driving this CONVERSATIONAL wizard, declared in the document.
    *
    *  Non-empty means the wizard is a conversation: it has no steps, it is
@@ -100,6 +114,11 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
   asset_ref?: string;
   enabled?: boolean;
   description?: string;
+  label?: string;
+  popup?: boolean;
+  success_message?: string;
+  failure_message?: string;
+  restart_label?: string;
   /** The agent driving this CONVERSATIONAL wizard, declared in the document.
    *
    *  Non-empty means the wizard is a conversation: it has no steps, it is
@@ -122,6 +141,11 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     this.description = entity.description;
     // A computed field on the backend: re-read on every fetch, never written
     // from here. The UI mirrors it, the backend owns it.
+    this.label = entity.label;
+    this.popup = entity.popup;
+    this.success_message = entity.success_message;
+    this.failure_message = entity.failure_message;
+    this.restart_label = entity.restart_label;
     this.agent = entity.agent;
     this.shipped = entity.shipped;
     this.run_state = entity.run_state;
@@ -193,5 +217,27 @@ export class Wizard extends APIEntity<Wizard> implements IWizard {
     action.bodyParameters = target ? { target } : {};
     return await dataManager.callAction<Record<string, unknown>, WizardRunState>(action);
   }
-}
 
+  /**
+   * Show this wizard's page blank, WITHOUT running it: the last run is archived and the active tab is
+   * sent here. A run already in flight keeps its record.
+   */
+  async open(): Promise<{ opened: boolean }> {
+    return await dataManager.callAction<void, { opened: boolean }>(
+      new ActionInfo('open', Wizard.type, this.id, 'POST'),
+    );
+  }
+
+  /**
+   * Run this wizard from its own Start button, with the person watching — a question raised on the
+   * way is put to them. A wizard whose document requires an LLM source has one settled first
+   * (`llm_source` is null for one that does not). Resolves when the whole run has ended; its progress
+   * arrives through the run record. Replaces a start already in flight; refuses (409) when another
+   * run holds the wizard, and refuses a wizard not shipped with Flowpad (use `runFor` with approval).
+   */
+  async start(): Promise<{ llm_source: ReturnedValue | null; wizard: WizardResult }> {
+    return await dataManager.callAction<void, { llm_source: ReturnedValue | null; wizard: WizardResult }>(
+      new ActionInfo('start', Wizard.type, this.id, 'POST'),
+    );
+  }
+}

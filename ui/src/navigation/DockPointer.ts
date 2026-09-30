@@ -149,7 +149,16 @@ export const CHILD_PARAM = 'child';
 export const CHILD_SECTION_PARAM = 'child_section';
 const CHILD_SEGMENT = 'child';
 /** The sections a child can be opened from. */
-export const CHILD_SECTIONS = ['channel', 'data_source', 'schedule', 'mcp', 'skill', 'doc', 'deployment', 'credential'] as const;
+export const CHILD_SECTIONS = [
+  'channel',
+  'data_source',
+  'schedule',
+  'mcp',
+  'skill',
+  'doc',
+  'deployment',
+  'credential',
+] as const;
 export type ChildSection = (typeof CHILD_SECTIONS)[number];
 
 function isChildSection(value: string | undefined): value is ChildSection {
@@ -157,7 +166,11 @@ function isChildSection(value: string | undefined): value is ChildSection {
 }
 
 /** Lift a trailing `child/<section>/<typeid>` off a pointer. Pointers without one pass through. */
-function liftChild(pointer: string | undefined): { pointer: string | undefined; section: ChildSection | null; child: string | null } {
+function liftChild(pointer: string | undefined): {
+  pointer: string | undefined;
+  section: ChildSection | null;
+  child: string | null;
+} {
   if (!pointer) return { pointer, section: null, child: null };
   const seg = pointer.split('/');
   const at = seg.length - 3;
@@ -297,13 +310,7 @@ export const JOURNEY_STEP_PARAM = 'journeyStep';
 export const CAPABILITY_PARAM = 'capability';
 
 /**
- * A command the shell dock hands its terminal to type on first attach.
- *
- * `startCommand` is typed AND submitted; `prefillCommand` is typed and left at
- * the prompt for the user to press Enter on. The distinction is the whole
- * point of the pair: "resume this session" is an instruction Flowpad is
- * carrying out, while "install Claude Code" is one it is only proposing — that
- * one pipes a remote script into a shell, so the Enter belongs to the user.
+ * A command the shell dock hands its terminal to type AND submit on first attach.
  *
  * Consumed exactly once, by the mounted `InteractiveTerminal` at the moment
  * its PTY reports ready, which then navigates to the same dock WITHOUT the
@@ -313,7 +320,6 @@ export const CAPABILITY_PARAM = 'capability';
 const SHELL_TYPE = 'shell';
 
 export const START_COMMAND_PARAM = 'startCommand';
-export const PREFILL_COMMAND_PARAM = 'prefillCommand';
 
 /**
  * Canonicalize an entity-relative path: forward slashes, collapsed separators,
@@ -1519,34 +1525,29 @@ export class DockPointer implements IDockPointer {
    * @param sessionId - Optional shell session ID (e.g., 'run', 'flowShell', or custom UUID)
    * @param options.cwd - Working directory to cd into before starting the shell
    * @param options.startCommand - Command typed AND submitted once the shell is ready
-   * @param options.prefillCommand - Command typed but NOT submitted; the user presses Enter
    * @param options.skipPermissions - Pass through `--dangerously-skip-permissions` semantics where applicable
    */
   static forShell(
     sessionId?: string,
-    options?: { cwd?: string; startCommand?: string; prefillCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
     if (options?.cwd) queryOptions.cwd = options.cwd;
     if (options?.startCommand) queryOptions[START_COMMAND_PARAM] = options.startCommand;
-    if (options?.prefillCommand) queryOptions[PREFILL_COMMAND_PARAM] = options.prefillCommand;
     if (options?.skipPermissions) queryOptions.skipPermissions = 'true';
     return new DockPointer(ViewType.SHELL, sessionId, queryOptions, layout);
   }
 
   /**
-   * The command this shell dock asks its terminal to type on first attach, and
-   * whether to submit it. Consumed ONCE by the mounted `InteractiveTerminal`
+   * The command this shell dock asks its terminal to run on first attach.
+   * Consumed ONCE by the mounted `InteractiveTerminal`
    * (see `START_COMMAND_PARAM`) — a PTY write is a side effect on a live
    * terminal, so it belongs to the mounted view, not to the loader or to the
    * click handler that navigated here.
    */
-  get shellStartCommand(): { command: string; submit: boolean } | null {
-    const submitted = this.options?.[START_COMMAND_PARAM];
-    if (submitted) return { command: submitted, submit: true };
-    const typed = this.options?.[PREFILL_COMMAND_PARAM];
-    return typed ? { command: typed, submit: false } : null;
+  get shellStartCommand(): string | null {
+    return this.options?.[START_COMMAND_PARAM] || null;
   }
 
   /**
@@ -1566,10 +1567,10 @@ export class DockPointer implements IDockPointer {
     return pointer.startsWith(`${SHELL_TYPE}-`) ? pointer.slice(SHELL_TYPE.length + 1) : pointer;
   }
 
-  /** Clone this dock with both command params dropped — what the terminal
+  /** Clone this dock with the command param dropped — what the terminal
    *  navigates to after typing, so a refresh cannot retype the command. */
   withoutShellStartCommand(): DockPointer {
-    return this.withOption(START_COMMAND_PARAM, null).withOption(PREFILL_COMMAND_PARAM, null);
+    return this.withOption(START_COMMAND_PARAM, null);
   }
 
   /**

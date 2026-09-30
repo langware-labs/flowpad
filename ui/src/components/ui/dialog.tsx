@@ -41,12 +41,14 @@ interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof Dialo
    * padded toolbar layout, would sit on top of the primary action button.
    */
   hideClose?: boolean;
+  /** Classes for the backdrop, e.g. a higher `z-*` so this dialog can sit above another one. */
+  overlayClassName?: string;
 }
 
 const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, DialogContentProps>(
-  ({ className, children, hideClose = false, ...props }, ref) => (
+  ({ className, children, hideClose = false, overlayClassName, ...props }, ref) => (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
