@@ -10,6 +10,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Optional
 
+from flow_sdk.core.compute.llm_source import settle_llm_source
+
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.wizard import Wizard
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ReturnedValue, WizardResult
@@ -18,38 +20,8 @@ _log = logging.getLogger(__name__)
 
 
 async def _resolve_llm_source() -> "CliResult":
-    """`flow llm set auto`, run IN this process. Idempotent: it returns at once
-    when the box is already funded, without opening anything.
-
-    In-process, not a `flow` subprocess. The command is only this backend's own
-    resolver plus a socket back to it, and a subprocess made the person pay a
-    fresh shell and a cold ``flow_sdk`` import before the chooser appeared — on
-    Windows ~3s (PowerShell, then ~1000 modules), a visible pause between the
-    wizard page opening and the chooser. The resolver is synchronous and blocks
-    on the chooser's socket, so it runs on a worker thread; its HTTP calls come
-    back to this loop, which stays free to serve them.
-
-    ``project_id=""`` is the box, which is what the subprocess answered too: it
-    ran from the home directory, and the server's own working directory says
-    nothing about what the person meant.
-    """
-    import typer  # noqa: PLC0415
-
-    from flow_sdk.cli.commands import llm_cmd  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.compute_op_spec import CLI_TIMEOUT  # noqa: PLC0415
-    from flow_sdk.schema.data_spec.returned_value_spec import CliResult  # noqa: PLC0415
-
-    try:
-        row = await asyncio.wait_for(asyncio.to_thread(llm_cmd._resolve_or_choose, project_id=""), timeout=CLI_TIMEOUT)
-    except asyncio.TimeoutError:
-        return CliResult.not_yet("no LLM source was chosen in time")
-    except typer.Exit as exc:
-        # `_fail` has already said why, to this process's stderr — the log.
-        return CliResult.not_yet(f"no LLM source was settled (exit {exc.exit_code})")
-    except Exception as exc:  # noqa: BLE001 — the setup that follows must still run
-        _log.warning("llm setup: resolving an LLM source failed", exc_info=True)
-        return CliResult.not_yet(f"resolving an LLM source failed: {exc}")
-    return CliResult.satisfied(f"{row.name} ({row.kind}) funds {', '.join(row.active_for)}")
+    """Settle the box's LLM source before the wizard's steps run — see `settle_llm_source`."""
+    return await settle_llm_source()
 
 
 async def navigate_to_wizard(wizard: "Wizard") -> None:
@@ -184,14 +156,3 @@ async def _start_wizard(
         _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
         await navigate_to_wizard(wizard)
     return source, await wizard.run(unattended=unattended)
-
-
-def person_is_watching() -> bool:
-    """Whether a live app tab is open right now — someone who can read a page and press its buttons.
-
-    A trigger that fires a popup wizard uses it to choose: put the popup in front of them and wait
-    for their Start, or (headless box, no tab ever) start it itself.
-    """
-    from flow_sdk.server.routes.websocket import get_active_connection  # noqa: PLC0415
-
-    return get_active_connection() is not None

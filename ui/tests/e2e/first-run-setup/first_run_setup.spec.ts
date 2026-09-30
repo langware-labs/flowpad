@@ -58,10 +58,8 @@ test('a fresh install lands on the setup wizard, which runs to an answer for eve
   await page.getByTestId('wizard-start').click();
   const skip = page.getByTestId('llm-setup-skip');
   await expect(async () => {
-    // The chooser opens its "Assistants & keys" dialog over the page, and offers
-    // "Skip for now" only once that dialog is closed.
-    const dialog = page.getByRole('dialog', { name: 'Assistants & keys' });
-    if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Close' }).click({ timeout: 1_000 });
+    // The chooser is a small popup with "Choose a source" and "Skip for now"; the "Assistants &
+    // keys" dialog opens only from the first, so skipping needs nothing closed first.
     if (await skip.isVisible()) await skip.click({ timeout: 1_000 });
     await expect(page).toHaveURL(wizardPage, { timeout: 1_000 });
     const started = Object.values(await stepStatuses(page)).some((s) => s !== 'not_reached');
