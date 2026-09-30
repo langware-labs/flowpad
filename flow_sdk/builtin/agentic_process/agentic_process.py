@@ -334,6 +334,19 @@ def register_prompt_worker(process_id: str, worker: Any) -> None:
     _PROMPT_ADMISSIONS.pop(process_id, None)
 
 
+def prompt_worker_pid(process_id: str) -> int | None:
+    """The OS pid of ``process_id``'s running headless worker, or ``None`` when there is none.
+
+    Stream workers keep their CLI subprocess on ``_proc`` (claude, and every ``jsonl_tee_worker``
+    harness). A caller that wants to know whether the agent's COMMANDS are doing anything looks at
+    that pid's children; the registry itself stays the one place a live worker is found.
+    """
+    proc = getattr(_PROMPT_WORKERS.get(process_id), "_proc", None)
+    if proc is None or getattr(proc, "returncode", 0) is not None:
+        return None
+    return getattr(proc, "pid", None)
+
+
 def unregister_prompt_worker(process_id: str, worker: Any) -> bool:
     """Remove ``worker`` only when it still owns ``process_id``'s slot."""
     if _PROMPT_WORKERS.get(process_id) is not worker:

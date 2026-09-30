@@ -3477,6 +3477,7 @@ msgstr ""
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/graph-view/ui/AccessTab.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 #: src/components/helpdesk/HelpdeskRequestDialog.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -6413,8 +6414,8 @@ msgid "Debug logging"
 msgstr "רישום ניפוי באגים"
 
 #: src/components/account/settings-section.tsx
-msgid "DEBUG: remove 6 tools"
-msgstr ""
+#~ msgid "DEBUG: remove 6 tools"
+#~ msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -9061,6 +9062,10 @@ msgstr ""
 #: src/components/data-sources/DataSourceRow.tsx
 msgid "Finish setup, then press Verify."
 msgstr "יש להשלים את ההגדרה, ולאחר מכן ללחוץ על אימות."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Finish signing in on the page that opened in your browser."
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeploymentsSection.tsx
 msgid "Finish the setup above before deploying"
@@ -15127,6 +15132,10 @@ msgstr "פתיחת הסשן החי"
 msgid "Open the live session in a terminal"
 msgstr "פתח את החילוק החי בטרמינל"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Open the page again"
+msgstr ""
+
 #: src/pages/entry/InstallLanding.tsx
 msgid "Open the project"
 msgstr "פתחו את הפרויקט"
@@ -17302,8 +17311,8 @@ msgid "Removes it everywhere"
 msgstr "הסר אותו בכל מקום"
 
 #: src/components/account/settings-section.tsx
-msgid "Removing & re-checking…"
-msgstr ""
+#~ msgid "Removing & re-checking…"
+#~ msgstr ""
 
 #: src/components/browseable-tree/BrowseableGrid.tsx
 #: src/components/favorites/FavoriteStar.tsx
@@ -17571,6 +17580,7 @@ msgid "Rescanning…"
 msgstr "סורקים מחדש…"
 
 #: src/components/account/settings-section.tsx
+#: src/components/account/settings-section.tsx
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
@@ -17614,6 +17624,7 @@ msgstr ""
 msgid "resets in {mins} m"
 msgstr ""
 
+#: src/components/account/settings-section.tsx
 #: src/components/account/settings-section.tsx
 msgid "Resetting…"
 msgstr "מתבצע איפוס…"

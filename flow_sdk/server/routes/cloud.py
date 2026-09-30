@@ -423,7 +423,20 @@ async def correlated_login_wait(oauth_request_id: str = Query(...)):
 
 
 @router.post("/login/cancel")
-async def correlated_login_cancel(oauth_request_id: str = Query(...)):
+async def login_cancel(oauth_request_id: str | None = Query(None)):
+    """Stop waiting on a sign-in.
+
+    With ``oauth_request_id``: the correlated session ``/login/correlated`` started.
+    Without: the browser sign-in plain ``POST /login`` started — the dialog's Cancel, whose page may
+    never have shown or was closed, so the only way out was the 5-minute timeout
+    (``cloud_login.cancel_window_login``).
+    """
+    if oauth_request_id is None:
+        from flow_sdk.cli.auth.cloud_login import cancel_window_login  # noqa: PLC0415
+
+        await cancel_window_login()
+        return ApiSuccessResponse(data={"status": "cancelled", "cancelled": True})
+
     from flow_sdk.server import state
 
     cancelled = state.cancel_cloud_login_session(oauth_request_id)
