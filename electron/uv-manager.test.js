@@ -11,7 +11,7 @@ const UvManager = require('./uv-manager');
 const {
   needsShellOnWin, quoteWinCmd, parseNetstatPids, isInstallProgressLine,
   pythonVersionFromPyproject, getPythonVersion, tryPythonVersion, upgradeCommand,
-  pythonFloor, maxPythonVersion,
+  pythonFloor, maxPythonVersion, isPolicyBlockError, PY_FLOW_ENTRY, policyBlockedError,
 } = UvManager;
 
 const IS_WIN = process.platform === 'win32';
@@ -476,6 +476,87 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  }
+
+  // ── application control (WDAC / Device Guard): detect the block, find a launcher that runs ──
+  {
+    const blockedCmd = Object.assign(new Error('Command failed'), { stderr: 'This program is blocked by group policy. For more information, contact your system administrator.' });
+    const blockedUv = Object.assign(new Error('Command failed'), { stderr: 'error: Failed to spawn: `flow`\n  Caused by: An Application Control policy has blocked this file. (os error 4551)' });
+    const blockedSpawn = Object.assign(new Error('spawn UNKNOWN'), { code: 'UNKNOWN' });
+    const deviceGuard = Object.assign(new Error("'flow.exe' was blocked by your organization's Device Guard policy"), {});
+    for (const [name, e] of [['cmd.exe group policy', blockedCmd], ['uv os error 4551', blockedUv], ['spawn UNKNOWN', blockedSpawn], ['Device Guard', deviceGuard]]) {
+      eq(isPolicyBlockError(e), true, `isPolicyBlockError: ${name}`);
+    }
+    for (const [name, e] of [
+      ['ENOENT', Object.assign(new Error('spawn flow ENOENT'), { code: 'ENOENT' })],
+      ['a timeout', Object.assign(new Error('Command timed out'), { killed: true, signal: 'SIGTERM' })],
+      ['a normal failure', Object.assign(new Error('Command failed'), { code: 1, stderr: 'error: No solution found when resolving dependencies' })],
+      ['nothing', null],
+    ]) {
+      eq(isPolicyBlockError(e), false, `isPolicyBlockError: ${name} is not a policy block`);
+    }
+
+    // Probe sequence, driven by a fake _run. `outcomes` maps a launcher's command to what it does.
+    const mk = (outcomes) => {
+      const m = new UvManager(silentLog);
+      m._isWindows = () => true;
+      m._flowBin = 'C:\\u\\.local\\bin\\flow.exe';
+      m._venvPython = () => 'C:\\u\\uv\\tools\\flowpad\\Scripts\\python.exe';
+      m.ran = [];
+      m._run = async (cmd, args, opts) => {
+        m.ran.push({ cmd, args, shell: opts && opts.shell });
+        const o = outcomes[cmd.includes('flow.exe') ? 'shim' : cmd === 'uv' ? 'uv' : 'python'];
+        if (o === 'ok') return { stdout: '', stderr: '' };
+        throw o;
+      };
+      return m;
+    };
+    const TIMEOUT = Object.assign(new Error('timed out'), { killed: true, signal: 'SIGTERM' });
+
+    let m = mk({ shim: 'ok' });
+    await m._probeFlowBinOnce();
+    eq([m._launcher, m.ran.length, m._policyBlocked], ['shim', 1, null], 'shim works → nothing else is tried');
+    eq(m._flowCmd(['start']), { cmd: m._flowBin, args: ['start'] }, 'shim launcher: the plain shim command');
+
+    m = mk({ shim: TIMEOUT });
+    await m._probeFlowBinOnce();
+    eq([m._launcher, m.ran.length], ['shim', 1], 'a slow shim is not a policy verdict → no fallbacks tried');
+
+    m = mk({ shim: blockedCmd, uv: 'ok' });
+    await m._probeFlowBinOnce();
+    eq(m._launcher, 'uv', 'shim blocked, uv allowed → `uv tool run`');
+    eq(m._flowCmd(['start']).cmd, 'uv', 'uv launcher command');
+
+    m = mk({ shim: blockedCmd, uv: blockedUv, python: 'ok' });
+    await m._probeFlowBinOnce();
+    eq(m._launcher, 'python', 'shim and uv blocked (uv spawns the same exe), python allowed → the venv python');
+    const pyCmd = m._flowCmd(['start']);
+    eq([pyCmd.cmd, pyCmd.args, pyCmd.shell], ['C:\\u\\uv\\tools\\flowpad\\Scripts\\python.exe', ['-c', PY_FLOW_ENTRY, 'start'], false],
+      'python launcher: -c entry point, args after it, and shell:false (cmd.exe would mangle the -c argument)');
+    ok(/from flow_sdk\.cli import cli_main/.test(PY_FLOW_ENTRY) && /cli_main\(\)/.test(PY_FLOW_ENTRY), 'the entry point is the console script\'s target');
+    eq(m.ran[m.ran.length - 1].shell, false, 'the python probe itself also runs without a shell');
+
+    m = mk({ shim: blockedCmd, uv: Object.assign(new Error('spawn uv ENOENT'), { code: 'ENOENT' }), python: 'ok' });
+    await m._probeFlowBinOnce();
+    eq(m._launcher, 'python', 'uv missing (not a policy block, but not usable) → still tries python');
+
+    m = mk({ shim: blockedCmd, uv: blockedUv, python: blockedSpawn });
+    await m._probeFlowBinOnce();
+    eq(m._launcher, 'shim', 'nothing worked: launcher unchanged');
+    eq(m._policyBlocked.tried.map((t) => t.launcher), ['shim', 'uv tool run', 'venv python'], 'every blocked launcher is recorded');
+    let thrown = null;
+    try { m._assertNotPolicyBlocked(); } catch (e) { thrown = e; }
+    ok(thrown && thrown.policyBlocked === true, 'start() would fail with a policyBlocked error');
+    eq(thrown.blockedPaths.length, 3, 'the error carries the blocked paths for the panel');
+
+    m = mk({ shim: 'ok' });
+    m._isWindows = () => false;
+    await m._probeFlowBinOnce();
+    eq(m.ran.length, 0, 'not Windows → no probing at all');
+
+    m = mk({ shim: 'ok' });
+    await m._probeFlowBinOnce(); await m._probeFlowBinOnce();
+    eq(m.ran.length, 1, 'the probe runs once per session');
   }
 
   // ── _uvToolInstallForce compiles bytecode in the install, not on first boot ─

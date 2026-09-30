@@ -71,4 +71,17 @@ eq(summarizeOutput('  \n\n'), '', 'blank output → nothing');
   ok(d.startsWith('plain string error'), 'a non-Error value is tolerated');
 }
 
+{
+  const e = Object.assign(new Error('This computer’s application-control policy blocks the programs Flowpad needs.'), {
+    policyBlocked: true,
+    blockedPaths: ['C:\\Users\\x\\.local\\bin\\flow.exe', 'uv', 'C:\\Users\\x\\AppData\\Roaming\\uv\\tools\\flowpad\\Scripts\\python.exe', 'uv'],
+  });
+  const d = describeStartupFailure(e);
+  ok(d.includes('application-control policy'), 'a policy block is named as such');
+  ok(d.includes('flow.exe') && d.includes('python.exe') && d.includes('uv.exe (the uv package manager)'), 'every blocked program is listed, uv described');
+  eq(d.split('uv.exe (the uv package manager)').length - 1, 1, 'a program tried twice is listed once');
+  ok(d.includes('IT administrator') && d.includes('click Retry'), 'the panel says who to ask and what to do next');
+  ok(!d.includes('Exit code') && !d.includes('a second attempt is usually quick'), 'no misleading generic retry text');
+}
+
 console.log(`startup-error.test.js: ${passed} assertions passed`);

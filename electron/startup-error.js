@@ -32,8 +32,23 @@ function summarizeOutput(text) {
   return out.join('\n\n');
 }
 
+// Windows application control (WDAC / Device Guard / AppLocker) refused to run every launcher the
+// app can use. "flow start exited with code 2" says nothing to the person at the keyboard; this
+// names the cause and what to ask IT for.
+function describePolicyBlock(error) {
+  const paths = [...new Set((error.blockedPaths || []).map((p) => (p === 'uv' ? 'uv.exe (the uv package manager)' : p)))];
+  return [
+    String(error.message).split('\n')[0],
+    'Blocked:',
+    ...paths.map((p) => `  ${p}`),
+    'Ask your IT administrator to allow these programs (or the folders they live in: ' +
+      '%USERPROFILE%\\.local\\bin and %APPDATA%\\uv), then click Retry.',
+  ].join('\n');
+}
+
 // A signal with no uv `error:` line means the process was killed, not that uv failed.
 function describeStartupFailure(error) {
+  if (error && error.policyBlocked) return describePolicyBlock(error);
   const parts = [String(error?.message || error).split('\n')[0]];
   if (error?.signal) parts.push(`The process was killed (${error.signal}).`);
   else if (typeof error?.code === 'number') parts.push(`Exit code ${error.code}.`);

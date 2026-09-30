@@ -946,10 +946,11 @@ function installProgress(label) {
 // `retryable` adds a Retry button that re-runs the install/start in-app (see
 // installAndStartBackend). Falls back to the native dialog only if the loading
 // window is already gone; returns whether the panel was rendered.
-function showStartupErrorPanel(detail, { retryable = false } = {}) {
+function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false } = {}) {
   const payload = {
     detail,
     retryable,
+    policyBlocked, // hides the "upgrade / diagnose" steps: neither helps when policy blocks the launchers
     upgradeCommand: upgradeCommand(),
     diagnoseCommand: DIAGNOSE_COMMAND,
     logPath: MAIN_DESKTOP_LOG_DIR,
@@ -1164,7 +1165,7 @@ async function installAndStartBackend() {
     // In-app panel with Retry (uv keeps what it already fetched in its
     // cache, so a retry after a slow or flaky download is usually seconds).
     // Only if the loading window is already gone is the failure fatal.
-    if (!showStartupErrorPanel(describeStartupFailure(error), { retryable: true })) {
+    if (!showStartupErrorPanel(describeStartupFailure(error), { retryable: true, policyBlocked: !!(error && error.policyBlocked) })) {
       app.quit();
     }
     return { ok: false };
