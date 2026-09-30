@@ -54,6 +54,23 @@ describe('useShellRun', () => {
     expect(result.current.lastExit).toMatchObject({ exitCode: 3, output: 'out\r\n' });
   });
 
+  it('a run started on a terminal the view has only just been handed survives the hand-over', async () => {
+    const { shell, end } = makeShell();
+    const { result, rerender } = renderHook(({ s }) => useShellRun(s), { initialProps: { s: null as Shell | null } });
+    let first!: Promise<unknown>;
+    act(() => {
+      first = result.current.run('python x.py', { shell });
+    });
+    rerender({ s: shell }); // the view now holds the terminal it just made
+    await waitFor(() => expect(result.current.running).toBe(true));
+    await act(async () => {
+      end(1, 0);
+      await first;
+    });
+    expect(await first).toMatchObject({ exitCode: 0 });
+    expect(result.current.lastExit).toMatchObject({ exitCode: 0 });
+  });
+
   it('Stop is the terminal interrupt', async () => {
     const { shell, posted } = makeShell();
     const { result } = renderHook(() => useShellRun(shell));

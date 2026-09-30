@@ -8,7 +8,6 @@ import { useLingui } from '@lingui/react/macro';
 
 import {
   AgenticProcessEventName,
-  connectionManager,
   dataContext,
   FlowDataSource,
   fsStore,
@@ -108,7 +107,7 @@ import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
 const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
-import { FONT_FAMILY, FONT_SIZE_PX, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
+import { XTERM_BASE_OPTIONS, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
 import { workerCliVendor } from './process-cli-presentation';
 import { isTextInputTarget } from '@src/utils/isTextInputTarget';
 
@@ -835,20 +834,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         perfLog('xterm initializeTerminal (active)');
       }
 
-      const term = new XTerm({
-        scrollback: 50000,
-        convertEol: true,
-        cursorBlink: true,
-        scrollOnUserInput: true,
-        disableStdin: false,
-        cursorStyle: 'block',
-        fontFamily: FONT_FAMILY,
-        fontSize: FONT_SIZE_PX,
-        fontWeight: '400',
-        fontWeightBold: '700',
-        allowTransparency: true,
-        allowProposedApi: true,
-      });
+      const term = new XTerm({ ...XTERM_BASE_OPTIONS, scrollback: 50000 });
 
       const fit = new FitAddon();
       term.loadAddon(fit);

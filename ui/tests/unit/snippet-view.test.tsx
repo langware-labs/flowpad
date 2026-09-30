@@ -90,11 +90,11 @@ function fileTerminal() {
   let marker = '';
   const finish = (code: number, out = 'ok\r\n') =>
     shell.ptyConnection.appendOutput(b64(`\x1b]7770;${marker};s\x07${out}\x1b]7770;${marker};${code}\x07`));
-  vi.spyOn(shell as unknown as { post: (a: string, b: { command?: string }) => Promise<unknown> }, 'post').mockImplementation(
+  vi.spyOn(shell as unknown as { post: (a: string, b: { command?: string; clear?: boolean }) => Promise<unknown> }, 'post').mockImplementation(
     async (action, body) => {
       actions.push(action);
       if (action === 'run-command') {
-        typed.push(body.command ?? '');
+        typed.push(`${body.clear ? '[clear] ' : ''}${body.command ?? ''}`);
         marker = `__flow_m${typed.length}`;
         return { marker };
       }
@@ -277,7 +277,7 @@ describe('SnippetView', () => {
     expect(save).toBeGreaterThan(-1);
     expect(save).toBeLessThan(urls.lastIndexOf('/api/v1/snippet/terminal'));
     expect(calls[save][1]).toEqual({ path: PATH, index: 2, kind: 'snippet', shown: 'print(d + 1)', base: 'print(d)' });
-    expect(typed).toEqual([`clear; ${COMMAND}`]);
+    expect(typed).toEqual([`[clear] ${COMMAND}`]); // a clean screen, in the terminal's own grammar
     expect(screen.getByTestId('terminal').dataset.shell).toBe(SHELL_ID);
     expect(onSynced).toHaveBeenCalledWith('FILE TEXT');
     finish(0);

@@ -109,3 +109,19 @@ export function estimateCols(innerWidth: number): number {
 export function estimateRows(innerHeight: number): number {
   return Math.max(24, Math.floor((innerHeight - RESERVED_Y_PX) / cellH));
 }
+
+
+/** The options every terminal view opens its xterm with; each passes its own `scrollback`. */
+export const XTERM_BASE_OPTIONS = {
+  convertEol: true,
+  cursorBlink: true,
+  scrollOnUserInput: true,
+  disableStdin: false,
+  cursorStyle: 'block',
+  fontFamily: FONT_FAMILY,
+  fontSize: FONT_SIZE_PX,
+  fontWeight: '400',
+  fontWeightBold: '700',
+  allowTransparency: true,
+  allowProposedApi: true,
+} as const;

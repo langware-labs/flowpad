@@ -218,7 +218,9 @@ async def close_shell(deployment) -> None:
     """End the deployment's terminal (a deleted deployment has nothing left to show)."""
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
-    shell = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
+    shell = await Shell.find_belonging_to(f"deployment:{deployment.id}")
+    if shell is None and shell_id_of(deployment):
+        shell = await Shell.get_by_id(shell_id_of(deployment))  # a row from before terminals named their owner
     if shell is not None:
         await shell.close()
 

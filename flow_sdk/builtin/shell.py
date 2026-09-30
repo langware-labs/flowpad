@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import contextlib
 import logging
 import os
 import re
@@ -69,6 +70,31 @@ async def _next_unseen_pty_output(
         seq, chunk = item
         if seq > snapshot_max_seq:
             return chunk
+
+
+class _OutputFeed:
+    """A terminal's output from one moment on: what it had printed (this PTY generation) when the
+    feed opened, then each new chunk as it is written — the live queue, never a re-read of the
+    recorded stream (a whole-file parse, megabytes on a long session). ``Shell._output_feed``."""
+
+    def __init__(self, initial: bytes, queue: asyncio.Queue, snapshot_max_seq: int) -> None:
+        self.initial = initial
+        self._queue = queue
+        self._snapshot_max_seq = snapshot_max_seq
+        self.closed = False
+
+    async def next(self, timeout: float | None = None) -> bytes:
+        """The next chunk not already in ``initial``; ``b""`` after *timeout* or once the PTY closed."""
+        if self.closed:
+            return b""
+        try:
+            chunk = await asyncio.wait_for(_next_unseen_pty_output(self._queue, self._snapshot_max_seq), timeout)
+        except asyncio.TimeoutError:
+            return b""
+        if chunk is None:
+            self.closed = True
+            return b""
+        return chunk
 
 
 class ShellStatus(StrEnum):
@@ -789,7 +815,7 @@ class Shell(Entity):
     SENTINEL_OSC: ClassVar[int] = 7770
 
     @classmethod
-    def sentinel_command(cls, command: str, marker: str, *, shell: str | None = None) -> str:
+    def sentinel_command(cls, command: str, marker: str, *, shell: str | None = None, clear: bool = False) -> str:
         """``<command>`` then an invisible ``ESC ] 7770 ; <marker> ; <exit> BEL``, in the grammar of
         the terminal's *shell* (default: the one a terminal runs, ``default_terminal_shell``).
 
@@ -809,6 +835,8 @@ class Shell(Entity):
         name = os.path.basename(shell).lower().removesuffix(".exe")
         osc = cls.SENTINEL_OSC
         cancel = shlex.quote(str(cls.cancel_path(marker)))
+        if clear:
+            command = f"{'Clear-Host' if name in ('pwsh', 'powershell') else 'clear'}; {command}"
         if name in ("pwsh", "powershell"):
             write = '[Console]::Write("$([char]27)]{osc};{marker};{what}$([char]7)")'.format
             return (
@@ -839,12 +867,14 @@ class Shell(Entity):
     def new_marker(cls) -> str:
         return f"{cls.SENTINEL_PREFIX}{uuid.uuid4().hex[:8]}"
 
-    async def run_command(self, command: str) -> str:
+    async def run_command(self, command: str, *, clear: bool = False) -> str:
         """Type *command* into this terminal followed by its sentinel, and return the marker at
         once — the command runs in the visible terminal; whoever watches its output learns it
-        finished (and how) when the marker arrives (``sentinel_exit``)."""
+        finished (and how) when the marker arrives (``sentinel_exit``). ``clear`` clears the
+        screen and scrollback first, in the terminal's shell's own grammar, so the terminal —
+        and its recording, replayed on a later visit — shows just this run."""
         marker = self.new_marker()
-        await self.write(self.sentinel_command(command, marker))
+        await self.write(self.sentinel_command(command, marker, clear=clear))
         return marker
 
     async def _shell_process(self) -> "psutil.Process | None":
@@ -858,15 +888,15 @@ class Shell(Entity):
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return None
 
-    async def _foreground_command(self) -> "tuple[int, list[psutil.Process]] | None":
-        """The command in the foreground of this terminal — ``(its process group, its processes)``
-        — or ``None`` at the prompt.
+    async def _foreground_pgid(self) -> int | None:
+        """The process group of the command in the foreground of this terminal, or ``None`` at the
+        prompt.
 
-        The foreground process group is the truth where the PTY can tell it: the shell's own at the
-        prompt, the command's job while one runs. The children of the shell are NOT: an async
+        The PTY's foreground group is the truth where it can tell (``tcgetpgrp``): the shell's own
+        at the prompt, the command's job while one runs. The shell's children are NOT: an async
         prompt (a git status helper) spawns children while the prompt sits idle, and a line of
         several commands has none for an instant between two of them. Without a POSIX PTY, the
-        shell's children are the fallback.
+        shell's first child stands in.
         """
         shell = await self._shell_process()
         if shell is None:
@@ -876,19 +906,30 @@ class Shell(Entity):
         try:
             if fg is None:
                 children = shell.children()
-                return (children[0].pid, children) if children else None
-            if fg == os.getpgid(shell.pid):
-                return None
-            job = [p for p in shell.children(recursive=True) if _pgid(p.pid) == fg]
-            return fg, job
+                return children[0].pid if children else None
+            return None if fg == os.getpgid(shell.pid) else fg
         except (psutil.NoSuchProcess, psutil.AccessDenied, ProcessLookupError):
             return None
 
+    async def _foreground_job(self, pgid: int) -> "list[psutil.Process]":
+        """The processes of the foreground job *pgid* (a process-table walk: off the loop)."""
+        shell = await self._shell_process()
+        if shell is None:
+            return []
+
+        def _walk() -> list[psutil.Process]:
+            try:
+                descendants = shell.children(recursive=True)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return []
+            return [p for p in descendants if p.pid == pgid or _pgid(p.pid) == pgid]
+
+        return await asyncio.to_thread(_walk)
+
     async def running(self) -> int | None:
-        """The pid (process group) of the command running in this terminal now, or ``None`` at the
-        prompt — see ``_foreground_command``."""
-        found = await self._foreground_command()
-        return found[0] if found else None
+        """The process group of the command running in this terminal now, or ``None`` at the
+        prompt — see ``_foreground_pgid``."""
+        return await self._foreground_pgid()
 
     async def interrupt(self, grace: float = 2.0, settle: float = 0.3, marker: str | None = None) -> bool:
         """Stop the command running in this terminal and keep the terminal: Ctrl-C to each job that
@@ -909,37 +950,40 @@ class Shell(Entity):
         deadline = loop.time() + grace
         signalled: set[int] = set()
         quiet_since: float | None = None
-        started = marker is None
-        start_marker = b"\x1b]%d;%s;s\x07" % (self.SENTINEL_OSC, (marker or "").encode())
-        if marker is not None and start_marker not in await self.read():
-            # Not started yet: cancel it. The line checks this file at its start and skips the
-            # command; whatever it runs from here on is still signalled below.
-            cancel = self.cancel_path(marker)
-            cancel.parent.mkdir(parents=True, exist_ok=True)
-            cancel.touch()
-        while loop.time() < deadline:
-            if marker is not None:
-                recorded = await self.read()
-                if self.sentinel_exit(recorded, marker):
-                    self.cancel_path(marker).unlink(missing_ok=True)  # the run is over; its cancel is spent
-                    return True
-                started = started or start_marker in recorded
-            found = await self._foreground_command()
-            now = loop.time()
-            if found is None:
-                quiet_since = quiet_since if quiet_since is not None else now
-                if marker is None and signalled and now - quiet_since >= settle:
-                    return True
-            else:
-                quiet_since = None
-                if started and found[0] not in signalled:
-                    await self.write_raw(b"\x03")
-                    signalled.add(found[0])
-            await asyncio.sleep(0.05)
-        found = await self._foreground_command()
-        if found is None:
+        async with self._output_feed() as feed:
+            printed = feed.initial if feed is not None else b""
+            started = marker is None or self.start_sentinel(marker) in printed
+            if not started:
+                # Not started yet: cancel it. The line checks this file at its start and skips the
+                # command; whatever it runs from here on is still signalled below.
+                cancel = self.cancel_path(marker)
+                cancel.parent.mkdir(parents=True, exist_ok=True)
+                cancel.touch()
+            while loop.time() < deadline:
+                if marker is not None:
+                    if self.sentinel_exit(printed, marker):
+                        self.cancel_path(marker).unlink(missing_ok=True)  # the run is over; its cancel is spent
+                        return True
+                    started = started or self.start_sentinel(marker) in printed
+                fg = await self._foreground_pgid()
+                now = loop.time()
+                if fg is None:
+                    quiet_since = quiet_since if quiet_since is not None else now
+                    if marker is None and signalled and now - quiet_since >= settle:
+                        return True
+                else:
+                    quiet_since = None
+                    if started and fg not in signalled:
+                        await self.write_raw(b"\x03")
+                        signalled.add(fg)
+                if feed is not None:
+                    printed += await feed.next(timeout=0.05)  # wakes on new output, else polls
+                else:
+                    await asyncio.sleep(0.05)
+        fg = await self._foreground_pgid()
+        if fg is None:
             return True
-        _, survivors = await asyncio.to_thread(terminate_tree, found[1])
+        _, survivors = await asyncio.to_thread(terminate_tree, await self._foreground_job(fg))
         return not survivors
 
     @classmethod
@@ -949,12 +993,17 @@ class Shell(Entity):
         return (int(match.group(1)), match.start()) if match else None
 
     @classmethod
+    def start_sentinel(cls, marker: str) -> bytes:
+        """The bytes *marker*'s run prints as it starts."""
+        return b"\x1b]%d;%s;s\x07" % (cls.SENTINEL_OSC, marker.encode())
+
+    @classmethod
     def sentinel_output(cls, data: bytes, marker: str) -> bytes:
         """What the command printed: the raw bytes between *marker*'s start and end sentinels (to
         the end of *data* while it still runs). The terminal's echo of the typed command comes
         before the start sentinel, however it wraps, so none of it is output."""
-        start = re.search(rb"\x1b\]%d;%s;s\x07" % (cls.SENTINEL_OSC, re.escape(marker.encode())), data)
-        begin = start.end() if start else len(data)
+        start_at = data.find(cls.start_sentinel(marker))
+        begin = start_at + len(cls.start_sentinel(marker)) if start_at >= 0 else len(data)
         done = cls.sentinel_exit(data, marker)
         return data[begin : done[1] if done else len(data)]
 
@@ -990,32 +1039,27 @@ class Shell(Entity):
 
         executor = str(self.typeid)
         marker = self.new_marker()
-        # Only read what THIS command adds; the stream file holds the whole
-        # session, and a previous `ls` in scrollback must not be reported here.
-        baseline = len(await self.read())
-
         loop = asyncio.get_running_loop()
         started = loop.time()
-        try:
-            await self.write(self.sentinel_command(command, marker))
-        except RuntimeError as exc:  # no PTY session: the command never started
-            return CliResult.of_process(command, None, "", str(exc), executor=executor)
-
-        deadline = started + timeout
-        while True:
-            raw = (await self.read())[baseline:]
-            done = self.sentinel_exit(raw, marker)
-            printed = _strip_pty_keep_lines(self.sentinel_output(raw, marker)).strip("\n")
-            if done:
-                return CliResult.of_process(
-                    command, done[0], printed, duration_s=loop.time() - started, executor=executor,
-                )
-            if loop.time() >= deadline:
-                return CliResult.of_process(
-                    command, None, printed,
-                    timed_out=True, duration_s=loop.time() - started, executor=executor,
-                )
-            await asyncio.sleep(poll_interval)
+        # The live feed, opened BEFORE typing: only what THIS command adds is read — a previous
+        # `ls` in scrollback is not reported here, and the recorded stream is never re-parsed.
+        async with self._output_feed() as feed:
+            try:
+                if feed is None:
+                    raise RuntimeError("No PTY session — call start_pty() first")
+                await self.write(self.sentinel_command(command, marker))
+            except RuntimeError as exc:  # no PTY session: the command never started
+                return CliResult.of_process(command, None, "", str(exc), executor=executor)
+            raw = b""
+            deadline = started + timeout
+            while not (done := self.sentinel_exit(raw, marker)) and loop.time() < deadline and not feed.closed:
+                raw += await feed.next(timeout=min(poll_interval, max(deadline - loop.time(), 0.0)))
+        printed = _strip_pty_keep_lines(self.sentinel_output(raw, marker)).strip("\n")
+        if done:
+            return CliResult.of_process(command, done[0], printed, duration_s=loop.time() - started, executor=executor)
+        return CliResult.of_process(
+            command, None, printed, timed_out=True, duration_s=loop.time() - started, executor=executor
+        )
 
     async def write(self, text: str) -> None:
         """Wait for the shell to be ready then inject text as if typed by the user.
@@ -1037,6 +1081,35 @@ class Shell(Entity):
         this FIRST, or a freshly-(re)booted TUI silently drops the keystrokes.
         """
         await self._wait_for_shell_ready(timeout=timeout)
+
+    @contextlib.asynccontextmanager
+    async def _output_feed(self):
+        """This terminal's output feed (``_OutputFeed``), or ``None`` without a live PTY. The queue is
+        registered BEFORE the snapshot is taken, so no chunk falls between the two."""
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry  # noqa: PLC0415
+
+        await self.ensure_live_compute_node_binding()
+        provider_id = self.compute_node.node_provider_id if self.compute_node else None
+        session = pty_registry.states.get((self.compute_node_id, provider_id, self.id)) if provider_id else None
+        if session is None:
+            yield None
+            return
+        queue: asyncio.Queue = asyncio.Queue()
+        session.sequenced_output_queues.append(queue)
+        try:
+            stream = session.pty_stream_file
+            if stream is not None:
+                initial, snapshot_max_seq = await asyncio.to_thread(
+                    stream.read_output_snapshot_after_seq, session.generation_start_seq
+                )
+            else:
+                initial, snapshot_max_seq = b"", session.generation_start_seq
+            yield _OutputFeed(initial, queue, snapshot_max_seq)
+        finally:
+            try:
+                session.sequenced_output_queues.remove(queue)
+            except ValueError:
+                pass
 
     async def wait_for_composer_ready(
         self,
@@ -1073,38 +1146,25 @@ class Shell(Entity):
 
         await self.ensure_live_compute_node_binding()
         provider_id = self.compute_node.node_provider_id if self.compute_node else None
-        if not provider_id:
-            return False
-        pty_key = (self.compute_node_id, provider_id, self.id)
-        session = pty_registry.states.get(pty_key)
+        session = pty_registry.states.get((self.compute_node_id, provider_id, self.id)) if provider_id else None
         if session is None:
             return False
         # Already confirmed ready for THIS generation — a respawn advances
         # ``generation_start_seq`` past the latch and forces a fresh scan.
         if session.composer_ready_seq is not None and session.composer_ready_seq > session.generation_start_seq:
             return True
-        q: asyncio.Queue = asyncio.Queue()
-        session.sequenced_output_queues.append(q)
-        try:
-            stream = session.pty_stream_file
-            if stream is not None:
-                initial, snapshot_max_seq = stream.read_output_snapshot_after_seq(session.generation_start_seq)
-            else:
-                initial, snapshot_max_seq = b"", session.generation_start_seq
+        async with self._output_feed() as feed:
+            if feed is None:
+                return False
 
-            ready = await pump_composer_ready(
-                pattern,
-                initial,
-                lambda: _next_unseen_pty_output(q, snapshot_max_seq),
-            )
-            if ready:
-                session.composer_ready_seq = session.seq
-            return ready
-        finally:
-            try:
-                session.sequenced_output_queues.remove(q)
-            except ValueError:
-                pass
+            async def next_chunk() -> bytes | None:
+                chunk = await feed.next()
+                return None if feed.closed else chunk
+
+            ready = await pump_composer_ready(pattern, feed.initial, next_chunk)
+        if ready:
+            session.composer_ready_seq = session.seq
+        return ready
 
     async def write_raw(self, data: bytes) -> None:
         """Send raw bytes verbatim to PTY stdin (no \\r, no bracketed paste).
@@ -1447,7 +1507,7 @@ class Shell(Entity):
         """HTTP: type a command into this terminal and answer at once with its ``marker`` — the
         sentinel the output carries when the command finishes, with its exit code.
 
-        POST body: {command: str}.
+        POST body: {command: str, clear?: bool}.
         """
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
@@ -1455,7 +1515,7 @@ class Shell(Entity):
         if not command.strip():
             return ApiFailResponse(message="command is required")
         try:
-            marker = await self.run_command(command)
+            marker = await self.run_command(command, clear=bool(body.get("clear")))
         except RuntimeError as exc:  # no live terminal
             return ApiFailResponse(message=str(exc))
         return ApiSuccessResponse(data={"marker": marker, "osc": self.SENTINEL_OSC})
