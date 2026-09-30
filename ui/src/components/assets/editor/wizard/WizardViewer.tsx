@@ -35,6 +35,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
+import { closeWizardPopup } from './wizard-popup-store';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
 import {
@@ -166,7 +167,19 @@ function AgentRungLabel({ executorTypeId, rowLabel }: { executorTypeId: string; 
   );
 }
 
-export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }) {
+/** How the viewer is shown: as a page (the asset editor's), or as a popup over whatever page is
+ *  showing (`WizardPopupRoot`). Chosen by the caller — a popup wizard's own page is still a page. */
+export type WizardPresentation = 'page' | 'popup';
+
+export function WizardViewer({
+  wizard,
+  fsRef,
+  presentation = 'page',
+}: {
+  wizard: Wizard;
+  fsRef: FSRef;
+  presentation?: WizardPresentation;
+}) {
   const mainRef = useMemo(() => fsRef.child(MAIN_FILE), [fsRef]);
   const { doc, error } = useJsonDoc<WizardDoc>(mainRef);
 
@@ -191,7 +204,16 @@ export function WizardViewer({ wizard, fsRef }: { wizard: Wizard; fsRef: FSRef }
   // remount when the file arrives and discard anything already on screen — an
   // open approval panel, a half-typed answer — because the read resolves a tick
   // or two after the first paint. `useWizardDoc` adopts the document instead.
-  return <WizardViewerBody key={mainRef.path} wizard={current} mainRef={mainRef} initial={doc} docError={error} />;
+  return (
+    <WizardViewerBody
+      key={mainRef.path}
+      wizard={current}
+      mainRef={mainRef}
+      initial={doc}
+      docError={error}
+      presentation={presentation}
+    />
+  );
 }
 
 function WizardViewerBody({
@@ -199,8 +221,10 @@ function WizardViewerBody({
   mainRef,
   initial,
   docError,
+  presentation,
 }: {
   wizard: Wizard;
+  presentation: WizardPresentation;
   mainRef: FSRef;
   initial: WizardDoc | null;
   docError: string | null;
@@ -222,19 +246,20 @@ function WizardViewerBody({
   // as plain arithmetic against each row's own `live` node.
   const now = useClock();
 
-  // A wizard that asks to be a popup (a glanceable one, like first-run setup) is a dialog, not a page — see
-  // `WizardSpec.popup`. The dialog's own content node is the minimize
-  // animation's source; `[data-minimize-anchor="process-chip"]` (the footer's
-  // chip) is its target, resolved by the animation itself.
-  const isPopup = Boolean(wizard.popup);
+  // A popup is a dialog over whatever page is showing (`WizardPopupRoot`); the same wizard opened
+  // at its own address is a page. The dialog's own content node is the minimize animation's
+  // source; `[data-minimize-anchor="process-chip"]` (the footer's chip) is its target, resolved by
+  // the animation itself.
+  const isPopup = presentation === 'popup';
   const dialogContentRef = useRef<HTMLDivElement | null>(null);
   const minimizeAndLeave = useCallback(() => {
     // Nothing to pause: the run is entirely server-side and keeps going
-    // whether or not this dialog is on screen. "Minimize" is just leaving —
-    // the fly animation is what tells a person where it went.
+    // whether or not this dialog is on screen. "Minimize" is just closing it —
+    // the page behind was never left, and the fly animation tells a person
+    // where the wizard went (the footer chip reopens it).
     animateMinimizeToProcessChip(dialogContentRef.current);
-    navigation.goHome({ homePage: true });
-  }, [navigation]);
+    closeWizardPopup();
+  }, []);
 
   // Both hooks run UNCONDITIONALLY. The advanced gate below is a skin — it
   // changes what is rendered, never which hooks execute or what data is

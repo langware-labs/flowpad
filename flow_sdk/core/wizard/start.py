@@ -25,8 +25,11 @@ async def _resolve_llm_source() -> "CliResult":
 
 
 async def navigate_to_wizard(wizard: "Wizard") -> None:
-    """Send whatever tab is open to this wizard's own page — the list of tools
-    and their live status, not whatever screen the person happened to be on.
+    """Put this wizard in front of whatever tab is open.
+
+    A popup wizard opens as a dialog OVER the page the person is on, which stays exactly as it was
+    (`open_wizard_popup`, the same shape as an ask's `open_ask_modal`). Any other wizard takes the
+    tab to its own page — the list of tools and their live status.
 
     Best-effort and silent either way: no live tab (headless, or nobody has
     opened the app yet) means nothing to send anywhere, same as `ask_window`'s
@@ -40,6 +43,9 @@ async def navigate_to_wizard(wizard: "Wizard") -> None:
         if target is None:
             return
         _connection_id, socket = target
+        if wizard.popup:
+            await send_ui_command(socket, "open_wizard_popup", pointer=str(wizard.typeid))
+            return
         await send_ui_command(
             socket,
             "navigate_dock",
@@ -47,11 +53,11 @@ async def navigate_to_wizard(wizard: "Wizard") -> None:
             pointer=f"editor/wizard/typeid/{wizard.typeid}",
         )
     except Exception:  # noqa: BLE001 — no socket, no server: nothing to steer
-        _log.debug("llm setup: no live tab to show the wizard page on", exc_info=True)
+        _log.debug("wizard start: no live tab to show the wizard on", exc_info=True)
 
 
 async def show_wizard_fresh(wizard: "Wizard") -> None:
-    """Clear the wizard's last run and send the active tab to its page — steps blank, nothing
+    """Clear the wizard's last run and show it on the active tab — steps blank, nothing
     running. What `POST /wizard/<id>/open` does, and the first move of every setup run.
 
     A run already in progress keeps its record (`reset_run` refuses), so this never blanks a page

@@ -8,7 +8,7 @@ import { workerStatusConfig } from '@src/components/agentic-progress/shared/stat
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { showWizard } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   agenticProcessName,
@@ -185,7 +185,7 @@ export function PendingActionsChip() {
     (spec: ActivityProgressSpec) => {
       if (!spec.subject_entity?.startsWith('wizard-')) return;
       setOpen(false);
-      navigation.openDock(DockPointer.forAssetEditorByTypeId('wizard', new TypeId(spec.subject_entity)));
+      void showWizard(navigation, new TypeId(spec.subject_entity));
     },
     [navigation],
   );
