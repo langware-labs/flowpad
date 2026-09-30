@@ -57,17 +57,7 @@ const SEGMENTS = [
   'encoded%2Fslash',
 ] as const;
 
-const OPTION_KEYS = [
-  'slot',
-  'q',
-  'message',
-  'filter',
-  'scope',
-  'selected',
-  'cwd',
-  'startCommand',
-  'prefillCommand',
-] as const;
+const OPTION_KEYS = ['slot', 'q', 'message', 'filter', 'scope', 'selected', 'cwd', 'startCommand'] as const;
 const OPTION_VALUES = [
   'tab',
   'activeView',
@@ -123,7 +113,7 @@ function representativePointers(): DockPointer[] {
     // typed into a shell verbatim, so a single mangled character is a
     // different command.
     DockPointer.forShell(U('5he11'), {
-      prefillCommand: 'curl -fsSL https://claude.ai/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"',
+      startCommand: 'curl -fsSL https://claude.ai/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"',
     }),
     DockPointer.forFile('/Users/me/src/main file.ts', { line: 12, column: 4 }, Layout.WIN),
     DockPointer.forFs('/Users/me/src/app.ts'),
