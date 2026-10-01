@@ -258,17 +258,19 @@ export class FlowDataStream extends EventEmitter {
       );
     }
 
+    // A user message is a duplicate only if it is the SAME transcript entry
+    // arriving again (history, then an observe-turn replay of it). Text is not
+    // identity: a user who sends "yes" twice made two turns, and matching on
+    // content swallowed the second one until a reload (FLOWPAD-2196). Rows
+    // without a transcript id (the optimistic echo, most live frames) pass.
     if (elementType === FlowElementTypes.USER_MESSAGE) {
-      const role = item.attributes.role ?? '';
-      const existing = [...this._ownItems]
-        .reverse()
-        .find(
-          (entry) =>
-            entry.elementType === FlowElementTypes.USER_MESSAGE &&
-            (entry.attributes.role ?? '') === role &&
-            entry.content === item.content,
-        );
-      if (existing) {
+      const id = item.transcriptEntryId;
+      if (
+        id &&
+        this._ownItems.some(
+          (entry) => entry.elementType === FlowElementTypes.USER_MESSAGE && entry.transcriptEntryId === id,
+        )
+      ) {
         return null;
       }
     }
