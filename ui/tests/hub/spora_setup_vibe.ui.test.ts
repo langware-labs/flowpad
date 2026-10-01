@@ -59,6 +59,7 @@ const createdArtifacts: Array<{ apiUrl: string; id: string }> = [];
 const createdProcesses: Array<{ apiUrl: string; id: string }> = [];
 const createdAttachments: Array<{ apiUrl: string; id: string }> = [];
 const startedPids: number[] = [];
+const runArtifactNames: string[] = [];
 
 function pythonBin(): string {
   const venvPython = path.join(WORKTREE_ROOT, '.venv', 'bin', 'python');
@@ -256,6 +257,26 @@ afterAll(async () => {
   for (const project of createdProjects) {
     await fetch(`${project.apiUrl}/api/v1/graph/project/${project.id}`, { method: 'DELETE' }).catch(() => undefined);
   }
+  // The seeded artifact-setup worker may run `flow app open` on its own (it served
+  // the staged copy under bob's records_data in practice). That detached server is
+  // not in startedPids and outlives the process close, so every run would strand a
+  // server in the 8000-8099 band. Stop any process whose cwd carries this run's
+  // unique artifact folder name — nothing else can be serving it.
+  try {
+    let pid = 0;
+    for (const line of execFileSync('lsof', ['-d', 'cwd', '-Fpn'], { encoding: 'utf-8' }).split('\n')) {
+      if (line.startsWith('p')) pid = Number(line.slice(1));
+      else if (line.startsWith('n') && runArtifactNames.some((n) => line.includes(n)) && pid !== process.pid) {
+        try {
+          process.kill(pid);
+        } catch {
+          /* gone */
+        }
+      }
+    }
+  } catch {
+    /* lsof unavailable */
+  }
   for (const root of tempRoots) {
     try {
       rmSync(root, { recursive: true, force: true });
@@ -270,6 +291,7 @@ describe('spora copy-share → Vibe setup', () => {
     const fixture = makeStaticFixture();
     const artifactId = randomUUID();
     const artifactName = `spora-sim-${artifactId.slice(0, 8)}`;
+    runArtifactNames.push(artifactName);
 
     // Copy-mode WEBAPP artifact — a real folder, NO git_origin.
     const created = await post(alice.apiUrl, '/graph/artifact', {
