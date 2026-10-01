@@ -49,7 +49,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
 
 logger = logging.getLogger(__name__)
 
@@ -542,7 +542,7 @@ def _write_git_transfer_metadata(
     return rel.as_posix()
 
 
-def _read_graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tuple[str, ...] = ()) -> dict:
+def graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tuple[str, ...] = ()) -> dict:
     """Return the sender's graph entity payload for metadata-only git transfer.
 
     ``strip`` removes machine-local fields that must not travel (e.g. a
@@ -560,27 +560,28 @@ def _read_graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tupl
     return payload
 
 
+def _write_reference_metadata(tmp_root: Path, entry_type: str, entry_id: str, payload: dict) -> str:
+    """Write a git reference's metadata file; returns its bundle-relative path."""
+    rel = PurePosixPath("metadata") / _entry_key(entry_type, entry_id) / "metadata.json"
+    dest = tmp_root / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(dest, payload)
+    return rel.as_posix()
+
+
 def _write_graph_git_transfer_metadata(
     tmp_root: Path,
     entry_type: str,
     entry_id: str,
     ent,
     strip: tuple[str, ...] = (),
-    payload: dict | None = None,
 ) -> str:
-    """Write a git reference's metadata file; ``payload`` overrides the default
-    full-row dump."""
-    key = _entry_key(entry_type, entry_id)
-    rel = PurePosixPath("metadata") / key / "metadata.json"
-    dest = tmp_root / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    if payload is None:
-        payload = _read_graph_entity_metadata(entry_type, entry_id, ent, strip=strip)
-    _write_json(dest, payload)
-    return rel.as_posix()
+    return _write_reference_metadata(
+        tmp_root, entry_type, entry_id, graph_entity_metadata(entry_type, entry_id, ent, strip=strip)
+    )
 
 
-async def _resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
+async def resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
     """The GitOrigin to ship for a graph entity: ``stored`` if usable, else a
     LIVE probe of the entity's local ``path``.
 
@@ -631,9 +632,7 @@ async def _pack_git_reference_attachment(
     key = _entry_key(entry_type, entry_id)
     if origins is not None:
         origins[key] = packed.origin.model_dump(mode="python")
-    metadata_path = _write_graph_git_transfer_metadata(
-        attachment_dir.parent, entry_type, entry_id, None, payload=packed.metadata
-    )
+    metadata_path = _write_reference_metadata(attachment_dir.parent, entry_type, entry_id, packed.metadata)
     transfers[key] = {
         "transfer_mode": _TRANSFER_MODE_GIT,
         "metadata_path": metadata_path,
@@ -1670,9 +1669,7 @@ async def _collect_attachment_envelopes(entry, entities: dict) -> None:
         return
     if entry_type in _HEADER_SERIALIZED_TYPES:
         return
-    from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
-
-    if entry_type in MEMBERSHIP_MIRROR_TYPES:
+    if entry_type in MEMBERSHIP_CONTAINER_TYPES:
         # Org / team / project rows are written only by the hub membership
         # mirror; an envelope here would let the install overlay write the
         # sender's copy over the recipient's. A project rides as its git

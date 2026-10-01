@@ -26,10 +26,10 @@ from pydantic import TypeAdapter
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.organization import Organization
 from flow_sdk.core.entity.entity_model import Entity, remote_reflection
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.db.load_context import lenient_entity_load
 from flow_sdk.fs_store.serializer.hub import HubSerializer
 from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +37,7 @@ logger = logging.getLogger(__name__)
 # The membership containers whose full Hub payload can be mirrored directly.
 # Keep this set shared by invitation previews and live assignment ingest so a
 # newly supported container cannot silently work on only one receive path.
-MEMBERSHIP_MIRROR_TYPES: frozenset[str] = frozenset(
-    {
-        BuiltinEntityType.ORGANIZATION.value,
-        BuiltinEntityType.TEAM.value,
-        BuiltinEntityType.PROJECT.value,
-    }
-)
+MEMBERSHIP_MIRROR_TYPES: frozenset[str] = MEMBERSHIP_CONTAINER_TYPES
 
 # Flat metadata fields we mirror from the hub payload, when present on the type.
 # ``name`` AND ``title`` both ride: every entity carries both slots on both

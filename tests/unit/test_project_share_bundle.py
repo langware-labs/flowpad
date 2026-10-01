@@ -26,19 +26,14 @@ from uuid import uuid4
 import pytest
 
 import flow_sdk.builtin.agentic_process.agentic_process as agentic_process
-from flow_sdk.app.actions.message_attachment_action import _origin_map, handle_attachment_install
+from flow_sdk.app.actions.message_attachment_action import handle_attachment_install
 from flow_sdk.builtin.drivers.git_driver import GitOriginDriver
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
-from flow_sdk.builtin.flow_message_bundle import (
-    _restore_git_reference_entity_entry,
-    pack_bundle,
-    unpack_bundle,
-)
+from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
 from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.builtin.project import Project
 from flow_sdk.cloud_client.shared.errors import HubError
 from flow_sdk.cloud_client.transport import hub_http
-from flow_sdk.fs_store.operations.flow_message import unpacked_dir
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.responses.response import ApiSuccessResponse
@@ -89,13 +84,6 @@ async def _receive(project: Project, tmp_path: Path, *, recipient_has_row: bool 
     await unpack_bundle(zip_path, "local-user-id")
     ma_id = MessageAttachment.allocate_deterministic_id(fm.id, f"project-{project.id}")
     return await MessageAttachment.get_one({"id": ma_id})
-
-
-async def _restore(ma: MessageAttachment) -> bool:
-    key = f"project-{ma.asset_id}"
-    return await _restore_git_reference_entity_entry(
-        unpacked_dir(ma.flow_message_id), key, ma.git_transfer, _origin_map(key, ma), overwrite=False, owner_typeid=None
-    )
 
 
 @pytest.mark.parametrize("transfer_mode", ["copy", "git"])
@@ -170,35 +158,6 @@ async def test_the_invite_stages_the_project_for_review(tmp_path):
     assert await Project.get_one({"id": project.id}) is None, "staging writes no row"
 
 
-async def test_restoring_the_reference_mirrors_and_clones_a_project_this_desktop_lacks(tmp_path, git_clone):
-    project = await _shared_project(tmp_path, origin=_origin())
-    ma = await _receive(project, tmp_path)
-
-    assert await _restore(ma) is True
-
-    row = await Project.get_one({"id": project.id})
-    assert row is not None and row.name == project.name and row.locale == "he"
-    assert row.origin.owner == "langware-labs" and row.remote is True
-    # The recipient's checkout is its own clone, never the sender's path.
-    assert row.fs_storage_mount_path == canonical_posix_path(str(git_clone["checkout"]))
-
-
-async def test_restoring_leaves_a_row_this_desktop_already_has(tmp_path, git_clone):
-    """The hub mirror owns an existing row; a message bundle is a snapshot from
-    when it was sent and must not roll a newer row back."""
-    project = await _shared_project(tmp_path, origin=_origin())
-    ma = await _receive(project, tmp_path, recipient_has_row=True)
-    row = await Project.get_one({"id": project.id})
-    renamed = f"{project.name} (renamed since)"
-    row.name = renamed
-    await row.save(notify=False)
-
-    assert await _restore(ma) is True
-
-    assert (await Project.get_one({"id": project.id})).name == renamed
-    assert git_clone["clones"] == 0, "already set up here: no second clone"
-
-
 @pytest.fixture
 def git_clone(tmp_path, monkeypatch):
     """Stub the clone at the origin driver; the install path above it is real.
@@ -231,7 +190,11 @@ async def test_install_clones_the_project_and_records_it_on_the_attachment(tmp_p
     res = await handle_attachment_install(ma.id, "user", None)
 
     assert isinstance(res, ApiSuccessResponse), res.message
+    # The row lands through the hub membership mirror, from the reference alone.
     row = await Project.get_one({"id": project.id})
+    assert row is not None and row.name == project.name and row.locale == "he"
+    assert row.origin.owner == "langware-labs" and row.remote is True
+    # The recipient's checkout is its own clone, never the sender's path.
     assert row.fs_storage_mount_path == canonical_posix_path(str(git_clone["checkout"]))
     installed = await MessageAttachment.get_one({"id": ma.id})
     # Installed like any git download: globally, the checkout is where it lives.
@@ -239,12 +202,19 @@ async def test_install_clones_the_project_and_records_it_on_the_attachment(tmp_p
 
 
 async def test_installing_a_project_already_set_up_here_does_not_clone_again(tmp_path, git_clone):
+    """The hub mirror owns an existing row; a message bundle is a snapshot from
+    when it was sent and must not roll a newer row back."""
     project = await _shared_project(tmp_path, origin=_origin())
     ma = await _receive(project, tmp_path, recipient_has_row=True)
+    row = await Project.get_one({"id": project.id})
+    renamed = f"{project.name} (renamed since)"
+    row.name = renamed
+    await row.save(notify=False)
 
     res = await handle_attachment_install(ma.id, "user", None)
 
     assert isinstance(res, ApiSuccessResponse), res.message
+    assert (await Project.get_one({"id": project.id})).name == renamed
     assert git_clone["clones"] == 0
     assert (await MessageAttachment.get_one({"id": ma.id})).scope == "user"
 

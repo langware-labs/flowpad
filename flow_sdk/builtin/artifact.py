@@ -159,14 +159,14 @@ class Artifact(Entity):
         origin it packs no reference: the byte-copy carrier
         (``_pack_webapp_artifact_attachment``) takes it instead."""
         from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
-            _TRANSFER_MODE_GIT,
             ReferencePack,
-            _read_graph_entity_metadata,
-            _resolve_git_reference_origin,
+            graph_entity_metadata,
+            resolve_git_reference_origin,
         )
+        from flow_sdk.builtin.message_attachment import TransferMode  # noqa: PLC0415
         from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
 
-        if transfer_mode != _TRANSFER_MODE_GIT:
+        if transfer_mode != TransferMode.GIT.value:
             return None
         ent = await cls.get_one({"id": entity_id})
         if ent is None:
@@ -178,11 +178,11 @@ class Artifact(Entity):
                 stored = raw_origin if isinstance(raw_origin, GitOrigin) else GitOrigin.model_validate(raw_origin)
             except Exception:
                 stored = None
-        origin = await _resolve_git_reference_origin(ent, stored, repo_cache)
+        origin = await resolve_git_reference_origin(ent, stored, repo_cache)
         if origin is None:
             return None
         return ReferencePack(
-            metadata=_read_graph_entity_metadata(EntityType.ARTIFACT.value, entity_id, ent),
+            metadata=graph_entity_metadata(EntityType.ARTIFACT.value, entity_id, ent),
             origin=origin,
         )
 

@@ -41,10 +41,8 @@ class Notification(Entity):
     # Extra context (git_origin, spec_id, sender_name, etc.)
     metadata: Optional[Dict[str, Any]] = APIField(None)
 
-    link_open_destination: ClassVar[str] = "the conversation"
-
     @classmethod
-    async def resolve_open(cls, entity_id: str, someone_typeid: Optional[str] = None) -> Optional["OpenLinkSpec"]:
+    async def resolve_open(cls, entity_id: str, someone_typeid: Optional[str] = None) -> "OpenLinkSpec":
         """A notification's link: land on the task / message it is about."""
         from flow_sdk.app.actions.notification_action import open_notification_params  # noqa: PLC0415
 
