@@ -69,6 +69,7 @@ from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
+from .projected_fields import ProjectedFields
 from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 
 EntityType = TypeVar("EntityType", bound="Entity")
@@ -2670,6 +2671,13 @@ class Entity(DBEntity):
 
         type_info = SchemaRegistry.get(self.get_type())
 
+        async def adopt_stored_projections() -> None:
+            # Inside the writer transaction: a projected field (a conversation's
+            # ``message_ids``) is only ever written by its projection writer —
+            # every other save writes back what is stored. See ``ProjectedFields``.
+            if not was_create and isinstance(self, ProjectedFields):
+                await self._adopt_stored_projections()
+
         async def persist_prepared_entity() -> None:
             await self._save_blobs()
             if type_info is not None and type_info.db_only:
@@ -2677,6 +2685,7 @@ class Entity(DBEntity):
                 # opposite disk→DB sync to serialize against. A searchable one
                 # feeds FTS straight from the row.
                 async with _one_write():
+                    await adopt_stored_projections()
                     await DBEntity.save(self, user_id, notify=notify)
                     if type_info.fts_content:
                         from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
@@ -2692,6 +2701,7 @@ class Entity(DBEntity):
             # it reaches this save through ``from_record``. The guard is taken
             # BEFORE the writer, as it always was — the order every path uses.
             async with record_sync_guard(self.get_type(), self.id), _one_write():
+                await adopt_stored_projections()
                 await DBEntity.save(self, user_id, notify=notify)
                 if not suppress_store:
                     # Sync metadata down to disk + upsert main_ref iff missing
