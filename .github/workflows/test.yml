@@ -17,6 +17,8 @@ name: Tests
 #   - pytest tests/long_tests, tests/hub_tests, tests/migration_e2e,
 #     tests/pty_fuzz — deep/slow tiers needing real worker CLIs or a hub
 #   - vitest long / hub / hub-paired — need real workers or two backends + hub
+#   - Playwright specs tagged `@long` (a minute or more on CI hardware) — the
+#     navigation run passes --grep-invert @long; dispatch e2e-grep to run one
 #
 # NOT excluded, despite being deselected by default: tests marked `long` (>1s)
 # inside tests/unit. They are skipped only to keep the LOCAL inner loop fast,

@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { Trans } from '@lingui/react/macro';
+import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
 import {
   Dialog,
   DialogContent,
@@ -36,6 +37,8 @@ export function AskModalRoot() {
 function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChange: (open: boolean) => void }) {
   const { question, values, setValues, error, busy, settledKind, settledMessage, submit, cancel, agentAnswered } =
     useAskQuestion(questionId);
+  // The question's words were written by the backend (a compute op's prompt, detail and buttons).
+  const bt = useBackendText();
 
   // Settled, however it got there: nothing left for THIS dialog to say — the
   // page it was sitting over (a wizard's own progress view, or anything else)
@@ -78,9 +81,9 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle data-testid="ask-modal-prompt">{question.prompt}</DialogTitle>
+              <DialogTitle data-testid="ask-modal-prompt">{bt(question.prompt)}</DialogTitle>
               {question.detail ? (
-                <DialogDescription data-testid="ask-modal-detail">{question.detail}</DialogDescription>
+                <DialogDescription data-testid="ask-modal-detail">{bt(question.detail)}</DialogDescription>
               ) : null}
             </DialogHeader>
 
@@ -129,10 +132,10 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
 
             <DialogFooter>
               <Button variant="ghost" disabled={busy} onClick={() => void cancel()} data-testid="ask-modal-cancel">
-                {question.cancel_label || <Trans>Cancel</Trans>}
+                {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
               </Button>
               <Button disabled={busy} onClick={() => void submit()} data-testid="ask-modal-submit">
-                {question.submit_label || <Trans>Send</Trans>}
+                {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
               </Button>
             </DialogFooter>
           </>

@@ -175,6 +175,15 @@ describe('dockForScopeEntry — unknown last tab is never guessed (A)', () => {
     expect(dock.pointer).toContain(PROC_ID);
   });
 
+  it('a resumed tab comes back as a real DockPointer, so withOption chains on it', async () => {
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([stampedProcTab()]);
+
+    const dock = await dockForProjectEntry(PROJECT_P);
+
+    expect(dock).toBeInstanceOf(DockPointer);
+    expect(dock.withOption('homePage', 'open').options?.homePage).toBe('open');
+  });
+
   it('openDock seeds a session with ITS project scope, not the one being left', () => {
     // The stored shell tab carries no scope. Seeded from the current project, the
     // URL named the project being LEFT, the loader's scope reconcile redirected,
@@ -280,7 +289,6 @@ describe('the home dock canonicalizes, and the root loader adopts (C)', () => {
   });
 });
 
-
 describe('route-owned startup fallback', () => {
   beforeEach(async () => {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
@@ -304,7 +312,9 @@ describe('route-owned startup fallback', () => {
   it('lets a concrete asset resolve its owner without fetching remembered context', async () => {
     expect(dataContext.project).toBeNull();
     const restore = vi.spyOn(dataContext, 'setupProject').mockResolvedValue(undefined);
-    await loadDockPointer(new DockPointer(ViewType.ASSETS, `markdown/typeid/markdown-${MARKDOWN_ID}`), { requestPath: '/dock/assets' });
+    await loadDockPointer(new DockPointer(ViewType.ASSETS, `markdown/typeid/markdown-${MARKDOWN_ID}`), {
+      requestPath: '/dock/assets',
+    });
     expect(restore).not.toHaveBeenCalled();
   });
 

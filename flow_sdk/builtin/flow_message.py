@@ -7,9 +7,6 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Optional
 
-# An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
-ProgressCallback = Callable[[int, int], Awaitable[None]]
-
 from pydantic import (
     AwareDatetime,
     BaseModel,
@@ -28,6 +25,9 @@ from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderK
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import UserProfile
 from flow_sdk.tags.envelope import parse_target
+
+# An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
+ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 if TYPE_CHECKING:
     from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
@@ -394,7 +394,6 @@ class Attachment(BaseModel):
     prompt_preview: Optional[str] = None
 
 
-
 class MessageEnvelope(DataSpec):
     """A cached message's header, as the projection read it from the item's payload."""
 
@@ -404,6 +403,7 @@ class MessageEnvelope(DataSpec):
     sender: Optional[UserProfile] = None
     recipients: tuple[UserProfile, ...] = ()
     sent_at: Optional[AwareDatetime] = None
+
 
 class FlowMessage(Entity):
     # A FlowMessage owns its body/download and read state locally — see the
@@ -696,6 +696,26 @@ class FlowMessage(Entity):
             "body_missing_attachments": missing,
         }
 
+    def _local_body_state(self) -> dict[str, Any]:
+        """The serializer's own body probe, off throwaway attachment copies.
+
+        Copies because ``_body_download_state`` stamps ``local_path`` onto the
+        dicts it walks — that belongs to serialization, not to a predicate.
+        """
+        return self._body_download_state([att.model_dump() for att in self.attachment or []])
+
+    def is_body_complete(self) -> bool:
+        """True when the bundle is unpacked AND every attachment it carries is
+        locally present — i.e. re-pulling the same bundle cannot add anything.
+
+        STRICTER than ``is_body_downloaded``, deliberately: that one reports an
+        unpacked bundle as downloaded even when the sender shipped it short, so
+        gating a re-pull on it would strand a genuinely incomplete message. Use
+        this one to decide "is another pull pointless", and that one to decide
+        "does the user still owe a click".
+        """
+        return self.is_body_unpacked() and not self._local_body_state()["body_missing_attachments"]
+
     def is_body_unpacked(self) -> bool:
         """True when the bundle's extracted tree persists under this message's
         record-data ``unpacked/`` dir (the staging area install reads from)."""
@@ -727,7 +747,7 @@ class FlowMessage(Entity):
 
     def is_body_downloaded(self) -> bool:
         """Same download state as the API, without serializing the full entity."""
-        return self._body_download_state([att.model_dump() for att in self.attachment or []])["body_downloaded"]
+        return self._local_body_state()["body_downloaded"]
 
     async def to_file(
         self,
