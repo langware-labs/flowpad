@@ -48,6 +48,17 @@ repos:
         additional_dependencies: ['minimatch@10']
         files: '^electron/'
 
+      # The desktop wrapper's unit tests (updater / uv install / shutdown / semver).
+      # Plain node scripts, ~3s. Whole-suite on any electron/ change (they share
+      # helpers), never per-file. Runs through node-hook.sh so git's stripped PATH
+      # still finds a node toolchain; CI runs the same `npm test`.
+      - id: electron-tests
+        name: Electron unit tests
+        entry: scripts/node-hook.sh bash -c 'cd electron && npm test'
+        language: system
+        files: '^electron/.*\.(js|cjs|json)$'
+        pass_filenames: false
+
       # ---------- TypeScript SDK (ts_sdk/) ----------
       # ts_sdk is a top-level SIBLING of ui/ with no TypeScript of its own, so it
       # can't run tsc against its own tsconfig (the @types it references live in

@@ -21,6 +21,7 @@ import { useEffect, useRef } from 'react';
 import { OAuthCodeFlowModal } from '@src/components/oauth/OAuthCodeFlowModal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
+import { ProjectSetupDialogRoot } from '@src/components/project-setup/ProjectSetupDialog';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { SessionTakenOverOverlay } from '@src/components/session-taken-over-overlay';
 import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
@@ -167,6 +168,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
+        {!isHubOnly() && <ProjectSetupDialogRoot />}
         <MigrateLegacyKeychain />
         <SessionTakenOverOverlay />
         <SnifferActiveNotice />

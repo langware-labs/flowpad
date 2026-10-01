@@ -1,6 +1,7 @@
 import { OAUTH_PROVIDERS, OAuthStatus, oauthService, type RepoSummary } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { BranchPicker } from '@src/components/git/BranchPicker';
+import { splitGitBranch } from './git-url';
 import { InvitationsStrip } from '@src/components/git/InvitationsStrip';
 import { RepoPicker } from '@src/components/git/RepoPicker';
 import { Button } from '@src/components/ui/button';
@@ -134,7 +135,9 @@ export function NewProjectFromGitDialog({
 
   const submit = useCallback(
     async (acceptSuggested?: string) => {
-      const target = url.trim();
+      // A pasted `…/tree/<branch>` or `…#<branch>` names the branch too; one picked wins.
+      const { url: target, branch: pastedBranch } = splitGitBranch(url);
+      const chosenBranch = branch ?? pastedBranch;
       if (isBusy || !target) return;
       try {
         // Gate on the SAME credential path the clone will use, so we never
@@ -164,7 +167,7 @@ export function NewProjectFromGitDialog({
         }
 
         setPhase('cloning');
-        const res = await onCreate(target, acceptSuggested, branch ?? undefined);
+        const res = await onCreate(target, acceptSuggested, chosenBranch ?? undefined);
         if (res.ok) {
           onOpenChange(false);
         } else {

@@ -1,4 +1,4 @@
-"""`POST /agent/<id>/deploy {"provider": "local"}` — "This computer": one more running local deployment."""
+"""`POST /agent/<id>/deploy {"provider": "local"}` — "This computer": the agent's one running local deployment."""
 from __future__ import annotations
 
 import uuid
@@ -10,8 +10,8 @@ from flow_sdk.builtin.agent import Agent
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 
-async def test_each_launch_here_is_one_more_running_deployment(bootstrapped_client):
-    """ "This computer" launches a process here each time: the default slot first, then "2", …"""
+async def test_launching_here_again_is_the_same_running_deployment(bootstrapped_client):
+    """ "This computer" runs the agent here — ONE deployment; launching it again converges on it."""
     from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
     agent = await Agent(name=f"deploy-local-{uuid.uuid4().hex[:6]}", worker_type="claude", enabled=True).save()
@@ -20,9 +20,9 @@ async def test_each_launch_here_is_one_more_running_deployment(bootstrapped_clie
     first = (await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/deploy", json={"provider": "local"})).json()
     again = (await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/deploy", json={"provider": "local"})).json()
     assert first["status"] == "SUCCESS" and again["status"] == "SUCCESS", (first, again)
-    assert first["data"]["deployment"]["id"] != again["data"]["deployment"]["id"]
-    rows = sorted(await agent.deployments(), key=lambda d: d.slot)
-    assert [(d.slot, d.serving, d.is_local) for d in rows] == [("", True, True), ("2", True, True)]
+    assert first["data"]["deployment"]["id"] == again["data"]["deployment"]["id"]
+    rows = await agent.deployments()
+    assert [(d.serving, d.is_local, d.identity) for d in rows] == [(True, True, "agent")]
     for row in rows:
         chat = await ServiceEndpoint.find_existing(str(row.typeid), "chat")
         assert chat is not None and chat.backend.type == "channel"

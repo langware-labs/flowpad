@@ -33,11 +33,10 @@ def _answered(backend: str, chat, text: str) -> None:
 
 @pytest.mark.long  # ~8s: a real backend boot, two processes, three turns on the mock worker
 def test_two_local_deployments_are_two_processes_each_answering_its_chat(deployments_backend):
-    owner = agent("proc-agent")
-    first = run(owner.run_locally(snippet=WRAPPER))
-    second = run(owner.run_locally(snippet=WRAPPER))
+    first = run(agent("proc-agent").run_locally(snippet=WRAPPER))
+    second = run(agent("proc-agent-2").run_locally(snippet=WRAPPER))
     try:
-        assert (first.slot, second.slot) == ("", "2") and first.id != second.id
+        assert first.id != second.id, "two agents here: two deployments"
         logs = {d.id: ready(d, 1) for d in (first, second)}
         pids = {deployment_process.pid_of(alive(d)) for d in (first, second)}
         assert len(pids) == 2, "two deployments, two processes"
@@ -48,7 +47,7 @@ def test_two_local_deployments_are_two_processes_each_answering_its_chat(deploym
 
         chats = {d.id: run(ServiceEndpoint.find_existing(str(d.typeid), "chat")) for d in (first, second)}
         for deployment in (first, second):
-            _answered(deployments_backend, chats[deployment.id], f"hello {deployment.slot or 'default'}")
+            _answered(deployments_backend, chats[deployment.id], f"hello {deployment.name}")
             (process,) = run(AgenticProcess.local_rows({"match": {"deployment_id": deployment.id}}))
             assert process.status != "failed", "answered by a process of THIS deployment"
 

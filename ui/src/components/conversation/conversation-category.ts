@@ -69,13 +69,15 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const isArchived = archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
 
   // Unread — the backend owns it. The desktop stamps `conv.is_unread` from the one
-  // rule the badge also counts with (`stream_inbox.conversation_is_unread`: drafts,
+  // rule the badge also counts with (`stream_inbox.conversation_unread_count`: drafts,
   // self-sent and agent replies excluded), so the row renders that answer rather
   // than a second copy of the rule that can drift. A hub runtime has no per-viewer
   // read projection yet (docs/hub-rest-consolidation.md §1): its rows arrive without
   // the field and fall back to the latest message. Invitation rows carry a CTA, so
   // they are unread either way.
-  const hubUnread = latestMessage ? !latestMessage.is_read && !authoredBy(senderOf(latestMessage), [viewer.cloudUserId, viewer.localUserId]) : false;
+  const hubUnread = latestMessage
+    ? !latestMessage.is_read && !authoredBy(senderOf(latestMessage), [viewer.cloudUserId, viewer.localUserId])
+    : false;
   const isUnread = isInvitation || (conv.is_unread ?? hubUnread);
 
   return { kind, isInvitation, isArchived, isUnread };

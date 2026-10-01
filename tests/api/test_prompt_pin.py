@@ -13,6 +13,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.prompt import Prompt
 from flow_sdk.flowpad_types.enums import WorkerType
+from tests.unit._project_names import unique_project_name
 
 pytestmark = pytest.mark.asyncio
 
@@ -24,7 +25,7 @@ def _has_link(entries, type_, id_) -> bool:
 async def _make_project(client, tmp_path) -> str:
     resp = await client.post(
         "/api/v1/graph/project",
-        json={"type": "project", "name": "pinlib", "fs_storage_mount_path": str(tmp_path)},
+        json={"type": "project", "name": unique_project_name("pinlib"), "fs_storage_mount_path": str(tmp_path)},
     )
     assert resp.json().get("status") == "SUCCESS", resp.text
     return resp.json()["data"]["id"]

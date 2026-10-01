@@ -12,6 +12,15 @@ export function useGitRepos(provider: GitProvider, enabled = true) {
   return useLazyAsset(LazyAsset.GitRepos, { provider }, { enabled });
 }
 
+export function useGitOrgs(provider: GitProvider, enabled = true) {
+  return useLazyAsset(LazyAsset.GitOrgs, { provider }, { enabled });
+}
+
+/** One org's repos — only for an owner the full list does not already hold (`''` = off). */
+export function useGitOrgRepos(provider: GitProvider, owner: string) {
+  return useLazyAsset(LazyAsset.GitOrgRepos, { provider, owner }, { enabled: !!owner });
+}
+
 export function useCreateGitRepo(provider: GitProvider) {
   const queryClient = useQueryClient();
   return useMutation({

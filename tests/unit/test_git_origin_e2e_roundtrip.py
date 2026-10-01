@@ -233,7 +233,7 @@ async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_b
 
 async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path, monkeypatch):
     workspace = tmp_path / "flowpad-workspace"
-    monkeypatch.setattr("flow_sdk.config.AGENT_MOUNT_FOLDER", str(workspace))
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
 
     origin = tmp_path / "clone-origin.git"
     subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
@@ -294,7 +294,7 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
 
 async def test_git_checkout_resolution_skips_matching_remote_on_wrong_branch(tmp_path, monkeypatch):
     workspace = tmp_path / "flowpad-workspace"
-    monkeypatch.setattr("flow_sdk.config.AGENT_MOUNT_FOLDER", str(workspace))
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
 
     origin = tmp_path / "branch-origin.git"
     subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
@@ -526,7 +526,7 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
 
 async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_path, monkeypatch):
     workspace = tmp_path / "flowpad-workspace"
-    monkeypatch.setattr("flow_sdk.config.AGENT_MOUNT_FOLDER", str(workspace))
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
 
     origin = tmp_path / "markdown-clone-origin.git"
     subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)

@@ -66,6 +66,7 @@ _BUNDLE_DOWNLOAD_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" 
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.invitation import Invitation
+    from flow_sdk.schema.data_spec.open_link_spec import MessageOpenLinkSpec
 
 
 async def _optional_agent_stream_inbox_scope(agent_id: object) -> AgentStreamInboxScope | None:
@@ -343,9 +344,11 @@ async def upload_flow_message() -> ApiResponse:
         return ApiFailResponse(message=f"Upload failed: {str(e)}")
 
 
-async def handle_open_flow_message(fm_id: str) -> ApiResponse:
-    """Fetch FlowMessage from hub, materialise bundle if needed, delegate to deep-link handler."""
-    from flow_sdk.server.routes.notify import handle_notification_deep_link
+async def open_flow_message_params(fm_id: str, someone_typeid: str | None = None) -> "MessageOpenLinkSpec":
+    """Deep-link resolver for a message (``FlowMessage.resolve_open``): fetch it
+    from the hub, materialise its bundle and conversation, and return the
+    ``action=open`` params that send the UI into the conversation."""
+    from flow_sdk.server.routes.notify import message_deep_link_params
 
     data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
     meta = (data or {}).get("metadata") or {}
@@ -402,8 +405,6 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     # text-only first messages ship without a bundle).
     if conversation_id:
         try:
-            request_info = get_current_request_info()
-            someone_typeid = request_info.someone_typeid if request_info else None
             if someone_typeid:
                 await _ensure_local_conversation_synced(conversation_id, someone_typeid)
         except Exception as e:
@@ -417,7 +418,7 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
         task_id,
     )
 
-    return await handle_notification_deep_link(
+    return message_deep_link_params(
         fm_id=fm_id,
         conversation_id=conversation_id,
         task_id=task_id,
@@ -425,19 +426,6 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
         title=(meta.get("task_title") or meta.get("spec_title") or (data or {}).get("task_title") or "").strip(),
     )
-
-
-@action.get(action_name="open", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def open_flow_message() -> ApiResponse:
-    """Deep-link handler: fetch FlowMessage from hub and redirect to IncomingTaskDialog."""
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found", status_code=400)
-        return await handle_open_flow_message(str(request_info.target_entity_typeid.id))
-    except Exception as e:
-        logger.error("[flow_message_action] open error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Open failed: {str(e)}")
 
 
 @action.get(action_name="create-and-download-local-flowmsg", types=["flow_message"])
@@ -3735,7 +3723,7 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> boo
 async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -> None:
     """Make sure the local DB has the conv + its messages.
 
-    Idempotent. Used by deep-link handlers (``handle_open_flow_message``) for
+    Idempotent. Used by deep-link resolvers (``open_flow_message_params``) for
     flows where the FM ships without a body bundle (e.g. text-only first
     message from a fresh share) and the recipient would otherwise see a
     placeholder or an empty conv.

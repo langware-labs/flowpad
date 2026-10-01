@@ -23,7 +23,6 @@ verbatim and are never absorbed here.
 import asyncio
 import collections
 import functools
-import itertools
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
@@ -34,7 +33,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.auth import LoginRequired
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
 from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
-from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.core import Entity, action
 from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
 from flow_sdk.fs_store.type_id import TypeId
@@ -621,8 +620,8 @@ class Agent(Entity):
 
     # ── deployment ────────────────────────────────────────────────────────
 
-    async def deploy(self, provider: str = "local", *, slot: str = "") -> Deployment:
-        """Idempotent upsert of this agent's placement on *provider* (its *slot* of them: ``""`` the default).
+    async def deploy(self, provider: str = "local") -> Deployment:
+        """Idempotent upsert of this agent's placement on *provider* — one per provider and environment.
 
         Converges through ``Deployment.find_existing`` rather than a derived id:
         the row keeps whatever v4 it was first minted with, forever, on every
@@ -635,11 +634,16 @@ class Agent(Entity):
         return await Deployment.upsert(
             parent_type_id=str(self.typeid),
             provider=provider,
-            kind=KIND_AGENT,
             element=self,
-            slot=slot,
             payload={
-                "name": f"{self.name or self.id} ({provider}{f' {slot}' if slot else ''})",
+                "name": f"{self.name or self.id} ({provider})",
+                # The box a placement runs on logs in as the agent itself.
+                "identity": "agent",
+                # What it exposes: its chat — an HTTP message channel its loop answers. The channel is
+                # made when the loop is launched (``ensure_chat_channel``), so the backend is not declared.
+                "exposes": [
+                    {"name": "chat", "subkind": "agent", "protocol": {"spec_kind": "api.chat.openai"}},
+                ],
                 "target": {
                     "provider": provider,
                     "scope": self.project_id or "machine",
@@ -668,20 +672,17 @@ class Agent(Entity):
         return await self.deploy("local")
 
     async def run_locally(self, *, snippet: Optional[str] = None) -> Deployment:
-        """Launch one more local deployment of this agent: a process on this computer running its loop.
+        """Run this agent on this computer: its one local deployment, as a process running its loop.
 
-        The first takes the default slot (and answers the channels that name no place); each
-        next one is ``2``, ``3``, … . The app's supervisor starts the process
-        (``builtin/deployment_process``) and keeps it running while the deployment is ``serving``.
-        *snippet* runs that Python file instead of the stock loop (``builtin/agent_loop``). Its
-        ``chat`` endpoint — an HTTP message channel — is made here.
+        Idempotent — the agent has one local deployment; running it again (after a pause) starts the
+        same one. The app's supervisor starts the process (``builtin/deployment_process``) and keeps
+        it running while the deployment is ``serving``. *snippet* runs that Python file instead of the
+        stock loop (``builtin/agent_loop``). Its ``chat`` endpoint — an HTTP message channel — is made
+        here.
         """
         from flow_sdk.builtin.agent_serve import answered_sources, ensure_chat_channel, hold_positions  # noqa: PLC0415
 
-        running = {d.slot for d in await self.deployments() if d.target.provider == "local" and d.serving}
-        # The first slot not running: a paused one is launched again rather than a new one minted.
-        slot = next(s for s in itertools.chain([""], map(str, itertools.count(2))) if s not in running)
-        deployment = await self.deploy("local", slot=slot)
+        deployment = await self.deploy("local")
         # Everything it runs over exists BEFORE it is marked serving — the supervisor (in the app,
         # another process) acts on `serving`, and must find a deployment that is ready to run.
         await ensure_chat_channel(self, deployment)

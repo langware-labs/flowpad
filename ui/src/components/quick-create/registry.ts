@@ -59,9 +59,15 @@ export interface QuickCreateCreateArgs {
  * A hardcoded `Icon` here is how the skill tile showed a Sparkles while the rest
  * of the app drew the registry's FileBadge.
  */
+/** Which "Create new" group a type's tile sits in. */
+export type QuickCreateGroup = 'build' | 'write' | 'connect';
+
 export interface QuickCreateDescriptor {
   /** Matches server `AssetTypeInfo.type_name` so labels can be joined at render time. */
   type: string;
+  /** The launcher group its tile belongs to. Required, so a new type picks one
+   *  rather than silently landing in none. */
+  group: QuickCreateGroup;
   /**
    * The type's SINGULAR name, as the thing you are about to create one of.
    *
@@ -104,6 +110,7 @@ export function creationMounts(type: string): string[] {
 export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
     type: Agent.type,
+    group: 'build',
     label: msg`Agent`,
     wikiword: 'Agent Management',
     create: async ({ project, name, destination }) => {
@@ -116,6 +123,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'skill',
+    group: 'build',
     label: msg`Skill`,
     wikiword: 'Skill assets',
     create: async ({ project, name, destination }) => {
@@ -135,6 +143,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'subagent',
+    group: 'build',
     label: msg`Sub agent`,
     wikiword: 'Sub agents',
     create: async ({ project, name, destination }) => {
@@ -154,6 +163,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'dynamic_workflow',
+    group: 'build',
     label: msg`Dynamic Workflow`,
     wikiword: 'Dynamic workflows',
     create: async ({ project, name, destination }) => {
@@ -166,6 +176,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'task',
+    group: 'write',
     label: msg`Task`,
     wikiword: 'Task assets',
     create: async ({ project, name, destination }) => {
@@ -178,6 +189,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'markdown',
+    group: 'write',
     label: msg`Markdown`,
     wikiword: 'Markdown documents',
     create: async ({ project, name, destination }) => {
@@ -190,6 +202,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'whiteboard',
+    group: 'write',
     label: msg`Whiteboard`,
     wikiword: 'Whiteboard assets',
     create: async ({ project, name, destination }) => {
@@ -202,6 +215,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'mcp',
+    group: 'connect',
     label: msg`MCP Server`,
     wikiword: 'MCP servers',
     Dialog: McpCreateDialog,
@@ -217,6 +231,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: Credential.type,
+    group: 'connect',
     label: msg`Credentials`,
     wikiword: 'Credentials',
     allowedScopes: ['user', 'project'],
@@ -244,6 +259,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'prompt',
+    group: 'build',
     label: msg`Prompt`,
     wikiword: 'Prompt library',
     // `prompts/` is Flowpad's own convention, not a harness one — no variants.

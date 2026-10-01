@@ -4,19 +4,36 @@ id: fdde9a09-3dae-48a7-9e7b-7fec22d99c16
 
 # Service endpoints — snippets
 
-A `Deployment` says what runs where. Its `ServiceEndpoint` children say what that
-placement ANSWERS on — one row per exposed service:
+A `Deployment` says what runs where; the machine it runs on is a `ComputeNode` (a box —
+this computer hosts many deployments, a cloud box one). Its `ServiceEndpoint` children say
+what that placement ANSWERS on — one row per exposed service, each with a `subkind` (what
+it is FOR) and a protocol (what it SPEAKS):
 
-    Deployment (runtime.web, provider local | e2b | …)
-      ├── ServiceEndpoint  "shop"       web.app          static  → <app>/dist
-      ├── ServiceEndpoint  "shop-dev"   web.app          proxy   → 127.0.0.1:5173
-      ├── ServiceEndpoint  "port-8080"  web.app          proxy   → 127.0.0.1:8080  (`flow show webapp --port`)
-      └── ServiceEndpoint  "workspace"  flowpad.workspace proxy  → the box's own app (cloud only;
-                                                                     with "shell-mcp" / "fs-mcp")
+    Deployment (parent: a project, provider local | e2b | …)
+      ├── ServiceEndpoint  "shop"       app    web.app          static  → <app>/dist
+      ├── ServiceEndpoint  "shop-dev"   app    web.app          proxy   → 127.0.0.1:5173
+      └── ServiceEndpoint  "port-8080"  app    web.app          proxy   → 127.0.0.1:8080  (`flow show webapp --port`)
 
-    Deployment (runtime.agent — an agent's placement)
-      └── ServiceEndpoint  "chat"       api.chat.openai  channel → a message on the deployment's
-                                                                     chat channel; its loop answers
+    Deployment (parent: an agent)
+      └── ServiceEndpoint  "chat"       agent  api.chat.openai  channel → a message on the deployment's
+                                                                         chat channel; its loop answers
+
+    Deployment (parent: the ComputeNode — the machine's own placement)
+      └── ServiceEndpoint  "workspace"  admin  flowpad.workspace proxy  → the box's own app (with
+                                                                         "shell-mcp" / "fs-mcp", admin)
+
+`subkind` is a closed set — `admin` (administers the machine or a workload), `app` (a UI people
+use), `agent` (talks to an agent: chat, MCP-UI), `service` (anything else: a REST API, a database
+port). The endpoint's kind, `service_endpoint.<subkind>`, is derived; the protocol's kind is open.
+
+A deployment DECLARES what it exposes (`Deployment.exposes`: name, subkind, protocol, check, and
+the backend when it is known); its endpoint rows serve the declaration (`sync_endpoints()`, rows
+found by name). An agent's deployment declares its `chat`. A declared service no row serves is
+failing in the node's health report (§7) — "it should be running" is what the declaration promises.
+
+Hub → box commands (clone, index, place secrets, run a check) are the **control plane**:
+`ComputeNode.run_command` / `http` and the hub's `compute_node_tools`, hub-internal — never an
+endpoint and never a REST verb.
 
 Everything a machine serves is one of these — there is no other serving path: no
 per-process port lookup, no `micro_app` view route, no hub services table.
@@ -43,6 +60,7 @@ endpoint = ServiceEndpoint(
 await endpoint.save()
 
 endpoint.protocol.kind      # "api.chat.openai" — restores its own DataSpec (ChatOpenAIProtocol)
+endpoint.subkind            # "agent" — what it is for; defaulted from the protocol when a writer does not say
 endpoint.surface            # "api" — `web.*` is a browser app, everything else a machine caller
 ```
 
@@ -121,8 +139,9 @@ the hub, and the hub to the box.
 
 ## 5. What the hub serves itself
 
-A machine nothing deployed (a sandbox opened by hand) is its own `compute.node`
-placement: `workspace`, `shell-mcp`, `fs-mcp`. `compute_node/<id>/open-service/<name>`
+A machine nothing deployed (a sandbox opened by hand) is its own placement — one
+parented to the ComputeNode itself — serving `workspace`, `shell-mcp`, `fs-mcp` (all
+`admin`). `compute_node/<id>/open-service/<name>`
 resolves names through those endpoints only. The hub's builtin apps (the chatbot, …)
 are endpoints of `hub`-provider placements, read off the hub's disk; a custom domain
 (`WebDomain`) names an endpoint (`service_endpoint_id`).
@@ -158,3 +177,41 @@ const past = await chat.history(conversationId);
 
 Pinned by `tests/api/test_http_chat_channel.py` (over the real app, the loop on a mock worker) and
 `tests/long_tests/test_local_deployment_process.py` (a real deployment process answering it).
+
+## 7. Health — every service says whether it is alive
+
+Every endpoint has a `health_check()`; a `ComputeNode`'s `health_check()` is the list of all of its
+services'. The check is declared (`check`) or defaulted from the backend:
+
+| backend | default check | alive when |
+| --- | --- | --- |
+| `proxy` | `http` on its `health` path | anything answers below 500 on the loopback port (a gated 403 is up) |
+| `static` | `builtin` | its root folder exists |
+| `channel` | `builtin` | the deployment's answering loop holds its lock |
+| any | `command` (declared) | the command exits 0 on the machine — e.g. `pg_isready` |
+
+```python
+from flow_sdk.builtin.service_endpoint import ServiceEndpoint
+
+db = ServiceEndpoint(
+    name="db",
+    parent_type_id=str(deployment.typeid),
+    subkind="service",
+    protocol={"spec_kind": "api.rest"},
+    backend={"type": "proxy", "port": 5432},
+    check={"type": "command", "cmd": "true"},     # e.g. "pg_isready"
+)
+result = await db.health_check(record=False)      # EndpointHealth — never raises
+assert result.state == "alive"
+```
+
+```
+GET service_endpoint/<id>/health     # check it now → EndpointHealth {state, detail, latency_ms, observed_at}
+GET compute_node/<id>/health         # every service on the machine → NodeHealth {node_id, endpoints: [...]}
+```
+
+The result is recorded on the endpoint (`health`) only when its state changed. On the hub, the same
+checks run over the control plane (`probe` on the box's loopback, a command on the box, the box's own
+app for a channel), and a sweep checks every RUNNING box once a minute — a paused box is never woken
+by a health check. Pinned by `tests/unit/test_endpoint_health_check.py` and `tests/api/test_health_api.py`
+(here) and `test_node_health_check.py` / `test_health_monitor.py` (hub).

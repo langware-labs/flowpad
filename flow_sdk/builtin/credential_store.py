@@ -115,7 +115,7 @@ class Placement:
         """``spec``'s variables that must have a value here: its own required ones, plus what this
         deployment additionally requires."""
         extra = set(self.secrets.require)
-        return [name for name, var in (spec.vars or {}).items() if var.required or name in extra]
+        return [name for name, var in (spec.vars or {}).items() if var.is_must or name in extra]
 
 
 def secret_store_ref(spec: "Credential", scope: CredentialScope, env_var: str, placement: Placement) -> SecretStoreRef:

@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Optional
 
+from flow_sdk.builtin.credential_files import credential_file
 from flow_sdk.builtin.credential_resolver import (
     credentials_in_scope,
     declare,
@@ -17,7 +18,13 @@ from flow_sdk.builtin.credential_resolver import (
     placement_for_deployment,
 )
 from flow_sdk.builtin.credential_store import CredentialScope, project_scope, secret_store_ref, user_scope
-from flow_sdk.schema.data_spec.credential_contract import VALUE_STORE_ENV, VALUE_STORE_VAULT, vault_name
+from flow_sdk.schema.data_spec.credential_contract import (
+    VALUE_STORE_ENV,
+    VALUE_STORE_VAULT,
+    CredentialVarKind,
+    as_requirement,
+    vault_name,
+)
 from flow_sdk.schema.data_spec.credential_status_spec import (
     CredentialsStatusSpec,
     CredentialStatusRowSpec,
@@ -119,6 +126,9 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
                 in_env = env_var in keys
                 in_vault = _in_vault(spec, scope, env_var, environment, vault_names)
                 present = in_vault if ref.type == "vault" else in_env
+                if present and var.kind is CredentialVarKind.FILE:
+                    # The store holds the file's path; the value is only there if the file is.
+                    present = credential_file(spec, scope, env_var, environment).is_file()
                 found_in = VALUE_STORE_VAULT if in_vault else (VALUE_STORE_ENV if in_env else None)
                 warning = None if present else ("wrong-store" if found_in else "missing")
             else:
@@ -137,7 +147,8 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
                     pattern=var.pattern,
                     help_url=var.help_url,
                     secret=var.secret,
-                    required=env_var in required,
+                    required=as_requirement(env_var in required),
+                    kind=var.kind,
                     store=store,
                     present=present,
                     found_in=found_in,
@@ -163,6 +174,7 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
                 help_url=spec.help_url or "",
                 setup_wiki=getattr(spec, "setup_wiki", "") or "",
                 setup=getattr(spec, "setup", "") or "",
+                setup_timeout_seconds=getattr(spec, "setup_timeout_seconds", None),
                 scope=scope.scope,
                 project_id=scope.project_id,
                 environment=environment,

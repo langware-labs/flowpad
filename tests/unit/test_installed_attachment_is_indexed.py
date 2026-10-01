@@ -14,6 +14,7 @@ from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.builtin.project import Project
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]
 
@@ -42,7 +43,7 @@ async def test_an_installed_single_file_asset_is_indexed(tmp_path, t, monkeypatc
     await unpack_bundle(zp, "local-user-id")
     ma = await MessageAttachment.get_one({"id": MessageAttachment.allocate_deterministic_id(fm, key)})
     pr = tmp_path / "proj"; pr.mkdir()
-    p = Project(name="dst", fs_storage_mount_path=str(pr)); await p.save(notify=False)
+    p = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(pr)); await p.save(notify=False)
     res = await handle_attachment_install(ma.id, "project", p.id)
     assert isinstance(res, ApiSuccessResponse), res
     assert (pr / rel.format(s=s)).exists()

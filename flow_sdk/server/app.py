@@ -78,6 +78,7 @@ from .routes import (
     runs_router,
     search_router,
     semantic_checker_router,
+    shell_router,
     snippet_router,
     subgraph_router,
     tags_router,
@@ -243,8 +244,10 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Tag forwarding: failed to arm ({_e})")
 
+    await _lift_this_computer_placement()
     await _lift_credential_stores()
     await _lift_place_settings()
+    await _lift_credential_guides()
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_keep_alive_loop()
@@ -419,6 +422,12 @@ async def _boot_lift(module: str, label: str) -> None:
         logging.getLogger(__name__).exception("%s: lift failed", label)
 
 
+async def _lift_this_computer_placement() -> None:
+    """Deployments lost ``kind``/``slot``: this computer becomes the local node's placement, extra agent
+    slots go — before anything reads this computer (``migration_2026_09_this_computer_placement``)."""
+    await _boot_lift("migration_2026_09_this_computer_placement", "This computer placement")
+
+
 async def _lift_credential_stores() -> None:
     """Where credential values live moves off pre-0.2.178 ``credential.json`` files onto deployments —
     before anything that reads a credential starts (``migration_2026_09_credential_stores``)."""
@@ -429,6 +438,12 @@ async def _lift_place_settings() -> None:
     """A data source's per-machine settings move out of ``data_source.json`` into its credential — before
     any source reads them (``migration_2026_09_place_settings``)."""
     await _boot_lift("migration_2026_09_place_settings", "Place settings")
+
+
+async def _lift_credential_guides() -> None:
+    """An authored credential's inline guide moves into ``setup.md`` beside it
+    (``migration_2026_09_credential_setup_md``)."""
+    await _boot_lift("migration_2026_09_credential_setup_md", "Credential guides")
 
 
 async def _prune_retired_type_rows() -> None:
@@ -824,6 +839,7 @@ server.add_router(runs_router)
 server.add_router(tags_router)
 server.add_router(display_router)
 server.add_router(snippet_router)
+server.add_router(shell_router)
 server.add_router(asset_share_router)
 server.add_router(subgraph_router)
 server.add_router(ask_router)

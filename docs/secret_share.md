@@ -32,7 +32,7 @@ A credential says WHAT is needed; each **Deployment** says WHERE its values live
 (`Deployment.secrets`, a `DeploymentSecretsSpec`): a `store`, per-variable
 `exceptions`, extra `require`d variables and `protected`. The env var NAME is the
 key in every store. **This computer** is one Deployment per instance
-(`Deployment.this_computer()`, kind `compute.this_computer`, environment = the
+(`Deployment.this_computer()`, the local ComputeNode's own placement, environment = the
 instance default): every process with no deployment of its own reads with its
 binding — terminals, `flow credentials`, project setup — and an agent's local
 deployment with no binding inherits it. Deployment == environment: there is no

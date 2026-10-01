@@ -47,7 +47,7 @@ InteractiveTerminal.tsx
   |-- AnnotationGutter.tsx
   |-- side-windows/*                     (GitPanel, PromptIndexPanel, QueuePanel, AnalysisPanel,
   |                                       SkillsAgentsPanel, InputFilesPanel, SimpleDirTree)
-  |-- SidecarShellTerminal.tsx
+  |-- ShellTerminal.tsx                 (a plain shell: sidecar, deployment console, snippet run)
   `-- TerminalBottomRibbon.tsx           (status, queue, side-tab toggles)
 ```
 

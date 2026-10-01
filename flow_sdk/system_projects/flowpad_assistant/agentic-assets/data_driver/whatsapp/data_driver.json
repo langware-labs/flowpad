@@ -69,11 +69,6 @@
       "stage": "test",
       "label": "Test",
       "wizard": "whatsapp-test"
-    },
-    {
-      "stage": "production",
-      "label": "Production",
-      "wizard": "whatsapp-production"
     }
   ]
 }

@@ -139,9 +139,11 @@ CHANNELS.forEach((channel, i) => {
     await expect(row).toBeVisible();
     await row.click();
     await expect(page.getByText(`is it bad ${nonce}?`)).toBeVisible();
-    // A thread shows its newest message; the photo is the one before it.
-    const earlier = page.getByRole('button', { name: /earlier in this thread/ });
-    if (await earlier.first().isVisible().catch(() => false)) await earlier.first().click();
+    // A thread shows its newest message; the photo is the one before it. Both were delivered on one
+    // thread, so the stack is always there — but only once both messages have hydrated: until then the
+    // feed lays them out flat and folds them a beat later. An instant `isVisible()` probe raced that
+    // fold, skipped the click, and the photo then folded away under the next assertion.
+    await page.getByRole('button', { name: /earlier in this thread/ }).click();
 
     // The picture itself, decoded — its bytes were copied while the provider's session was open.
     // (WhatsApp names no photo, so the bubble is found by its caption — the message's words.)

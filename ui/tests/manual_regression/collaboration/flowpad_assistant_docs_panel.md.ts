@@ -4,7 +4,7 @@
  *
  * /dock/project/@flowpad_assistant renders the project asset browser. The
  * "Flowpad Assistant" button toggles the floating chat (does NOT navigate), so
- * the space is reached by direct navigation. The shipped hello-flowpad doc is
+ * the space is reached by direct navigation. The shipped Welcome doc is
  * seeded into the entity and search indexes by startup/reset.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';
@@ -46,7 +46,7 @@ test.describe('Flowpad Assistant project space', () => {
     expect(offending, `Console errors: ${offending.join(', ')}`).toHaveLength(0);
   });
 
-  test('test 2: The shipped hello-flowpad doc is seeded and searchable', async () => {
+  test('test 2: The shipped Welcome doc is seeded and searchable', async () => {
     test.setTimeout(60_000);
     const rq = await apiContext();
     const projectId = await assistantProjectId(rq);
@@ -55,14 +55,14 @@ test.describe('Flowpad Assistant project space', () => {
     // No broad/manual re-index is needed (or allowed to hide a broken seed).
     await expect(async () => {
       const res = await rq.get(
-        `${API}/api/v1/search?record_type=markdown&q=hello&include_system=true&user=false&projects=${projectId}`,
+        `${API}/api/v1/search?record_type=markdown&q=welcome&include_system=true&user=false&projects=${projectId}`,
       );
       expect(res.status()).toBe(200);
       const body = await res.json();
       expect(body.data?.results).toEqual(expect.arrayContaining([
         expect.objectContaining({
-          record_id: 'dc8713d4-8841-47ab-a28d-8e3248106f5a',
-          name: 'Hello from Flowpad',
+          record_id: 'd5335e69-424a-43a7-9f8d-8503656d560f',
+          name: 'Welcome',
           project_id: projectId,
         }),
       ]));

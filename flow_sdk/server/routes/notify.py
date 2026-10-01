@@ -1,11 +1,9 @@
-"""Local notification deep-link utilities.
+"""Local deep-link utilities.
 
-handle_notification_deep_link — shared helper used by the `open` graph action
-(registered in flow_sdk/app/actions/notification_action.py).
-
-The `open` action is registered at:
-  GET /api/v1/graph/notification/{id}/open
-via @action.get(action_name="open", types=["notification"]).
+``deep_link_redirect`` — the redirect page every ``GET <type>/<id>/open`` returns
+(the generic ``open`` action in ``flow_sdk/app/actions/open_action.py``, which
+asks the type's ``resolve_open`` for the params). ``message_deep_link_params``
+builds those params for a message or notification.
 
 Instead of pulling silently, this redirects to the HomeLanding page with URL
 parameters so the dialog-driven flow can guide the user through pulling/cloning.
@@ -16,6 +14,8 @@ import logging
 from urllib.parse import urlencode
 
 from fastapi.responses import HTMLResponse
+
+from flow_sdk.schema.data_spec.open_link_spec import MessageOpenLinkSpec, OpenLinkSpec
 
 logger = logging.getLogger(__name__)
 
@@ -55,17 +55,17 @@ _REDIRECT_HTML = """<!DOCTYPE html>
 </html>"""
 
 
-async def handle_notification_deep_link(
+def message_deep_link_params(
     fm_id: str,
     conversation_id: str = "",
     task_id: str = "",
     git_origin: dict | str | None = None,
     sender_name: str = "",
     title: str = "",
-) -> HTMLResponse:
-    """Redirect the browser to HomeLanding with ``action=open`` deep-link params.
+) -> MessageOpenLinkSpec:
+    """The ``action=open`` deep link for a message or notification.
 
-    The caller (``handle_open_flow_message``) resolves the FM's
+    The resolver (``open_flow_message_params``) takes the FM's
     ``conversation_id`` and ``task_id`` from the just-unpacked bundle and
     passes them in directly, so the UI can navigate without a separate
     lookup. ``fm`` is included for traceability / fallback.
@@ -73,23 +73,21 @@ async def handle_notification_deep_link(
     ``git_origin`` (when present) triggers the git pull/clone dialog before
     navigating into the conversation.
     ``sender_name`` / ``title`` are cosmetic — shown in the brief loading
-    state.
+    state. Empty values are left out of the link.
     """
-    port = _get_ui_port()
+    return MessageOpenLinkSpec(
+        fm=fm_id,
+        conversation_id=conversation_id,
+        task_id=task_id,
+        git_origin=(git_origin if isinstance(git_origin, str) else json.dumps(git_origin)) if git_origin else None,
+        sender_name=sender_name,
+        title=title,
+    )
 
-    params: dict = {"action": "open"}
-    if fm_id:
-        params["fm"] = fm_id
-    if conversation_id:
-        params["conversation_id"] = conversation_id
-    if task_id:
-        params["task_id"] = task_id
-    if git_origin:
-        params["git_origin"] = git_origin if isinstance(git_origin, str) else json.dumps(git_origin)
-    if sender_name:
-        params["sender_name"] = sender_name
-    if title:
-        params["title"] = title
 
-    redirect_url = f"http://localhost:{port}/dock/home?{urlencode(params)}"
+def deep_link_redirect(link: OpenLinkSpec) -> HTMLResponse:
+    """The browser page that hands the desktop UI an ``/dock/home?action=open…``
+    deep link (read by ``IncomingDeepLink``). Shared by every ``open`` action
+    that materializes locally first and only then sends the UI on."""
+    redirect_url = f"http://localhost:{_get_ui_port()}/dock/home?{urlencode(link.to_query())}"
     return HTMLResponse(content=_REDIRECT_HTML.format(redirect_url=redirect_url))

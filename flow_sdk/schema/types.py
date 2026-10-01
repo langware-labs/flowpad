@@ -281,3 +281,11 @@ class EntityType(StrEnum):
     # ── Skillit ──────────────────────────────────────────────────────────────
     SKILLIT_SESSION = "skillit_session"
     SKILLIT_CONFIG = "skillit_config"
+
+
+#: Membership containers: hub-owned roots whose rows only the hub membership
+#: mirror writes. One never rides a message as an entities.json envelope, never
+#: becomes a conversation's child, and never takes a message's context backlink.
+MEMBERSHIP_CONTAINER_TYPES: frozenset[str] = frozenset(
+    {EntityType.ORGANIZATION.value, EntityType.TEAM.value, EntityType.PROJECT.value}
+)

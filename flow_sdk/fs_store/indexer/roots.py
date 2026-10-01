@@ -335,6 +335,29 @@ def classify_path(path: str | Path) -> str | None:
     return None
 
 
+async def owning_project_id(path: str | Path, default: str | None = None) -> str | None:
+    """The id of the DEEPEST Project whose mount contains ``path`` — the entity id
+    credentials, search and scope filters key on — else ``default``."""
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    try:
+        return deepest_project_id_for_path(canonical_posix_path(str(path)), await load_project_mounts(), default)
+    except OSError:
+        return default
+
+
+def scope_for(path: str | Path, project_id: str | None) -> str | None:
+    """``classify_path``, with an owning project authoritative.
+
+    ``classify_path`` knows only the server cwd as a project, so an asset in a
+    workspace project (which lives under the user home) classifies as ``user``.
+    When a project owns the path it is ``project`` — shipped ``system`` content
+    stays system.
+    """
+    scope = classify_path(path)
+    return "project" if project_id and scope != "system" else scope
+
+
 def default_roots() -> list[FSRef]:
     """Return the three canonical roots plus any env-supplied extras.
 

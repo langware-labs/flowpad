@@ -14,12 +14,10 @@
  *       hub read and no re-fetch: hub fan-out → bob's bridge → save(notify) →
  *       local data_op → SDK cache. This is the true end-to-end chain
  *       (alice → alice local server → hub → bob local server → bob client).
- *       It FAILS today: the hub fans membership + flow_message events to
- *       participants but NOT generic conversation field updates, so the rename
- *       never becomes a data_op_msg on bob's bridge. The assertion is kept (not
- *       skipped) precisely so the gap is visible and flips to green the day the
- *       hub fans conversation updates. Mirrors how matrix.bob receives alice's
- *       *messages* over the same path (which the hub does fan).
+ *       The hub routes the update by auto-watch (every live connection whose
+ *       user holds a ROLE path to the conversation), so bob's approved role +
+ *       live hub bridge is the barrier before alice renames. Mirrors how
+ *       matrix.bob receives alice's *messages* over the same path.
  *
  * Run:
  *   FLOW_INSTANCE=$SHARE_INST_2 BOB_EMAIL=<bob>@local.test BOB_PW=<pw> \
@@ -32,7 +30,7 @@ import { Conversation } from '@sdk/entities/conversation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
-import { hubConversationTitle, hubConversationWatchers, hubLogin } from './_hub';
+import { hubApprovedMembership, hubConversationTitle, hubLogin } from './_hub';
 import {
   pollUntil,
   probeHub,
@@ -46,10 +44,12 @@ const JOINED = '/tmp/flowpad_rename_joined.txt';
 const HTTP_DONE = '/tmp/flowpad_rename_http_done.txt';
 const HTTP_CONFIRMED = '/tmp/flowpad_rename_http_confirmed.txt';
 const WS_DONE = '/tmp/flowpad_rename_ws_done.txt';
+const BOB_DONE = '/tmp/flowpad_rename_bob_done.txt';
 
 let skipReason: string | null = null;
 let bobEmail: string | null = null;
 let bobToken: string | null = null;
+let bobUserId: string | null = null;
 
 beforeAll(async () => {
   const hub = await probeHub();
@@ -74,7 +74,10 @@ beforeAll(async () => {
   if (backend.email !== bobEmail) {
     throw new Error(`bob backend identity '${backend.email}' does not match BOB_EMAIL '${bobEmail}'`);
   }
-  bobToken = (await hubLogin(bobEmail, bPass)).token;
+  const bobAuth = await hubLogin(bobEmail, bPass);
+  bobToken = bobAuth.token;
+  bobUserId = bobAuth.user?.id ?? null;
+  if (!bobUserId) throw new Error('hub login returned no user id for bob');
   console.log(`[rename.bob] ready: backend=${bobEmail}`);
 });
 
@@ -109,21 +112,28 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
 
     // Put the conversation in bob's browser context as the active entity — the
     // exact call the real app makes on conversation open (load-conversation.ts).
-    // The SDK's (now self-contained) context reporter mirrors it to bob's
-    // backend, where BrowserContextWatch registers a HUB watch for this remote
-    // conversation so the hub will fan alice's update back to bob. Barrier on
-    // the hub's watcher list so the watch is live BEFORE we signal JOINED (i.e.
-    // before alice renames) — closes the register-vs-rename race.
+    // The SDK's context reporter mirrors it to bob's backend (BrowserContextWatch).
     await dataContext.setActiveEntityTypeId(conv.typeId);
+
+    // Barrier: the hub will route alice's update to bob BEFORE we signal JOINED
+    // (i.e. before alice renames) — closes the route-vs-rename race. The hub's
+    // default routing is auto-watch: a data op fans out to every live connection
+    // whose user holds a ROLE path to the target, and the explicit ``watch``
+    // action (ConnectedThrough) is a no-op whose GET always answers ``[]``. So
+    // the routing precondition is (1) bob holds an approved role on the
+    // conversation on the hub, and (2) bob's backend hub bridge is connected.
     await pollUntil(
       async () => {
-        const w = await hubConversationWatchers(bobToken!, convId);
-        return (w?.length ?? 0) > 0;
+        const member = await hubApprovedMembership(bobToken!, convId, bobUserId!);
+        if (!member) return null;
+        const r = await fetch(`${config.SERVER_URL}/cloud/status`);
+        const body = (await r.json().catch(() => null)) as { data?: { connection?: { status?: string } } } | null;
+        return body?.data?.connection?.status === 'connected' ? member : null;
       },
       15_000,
-      'bob backend registered a hub watch (ConnectedThrough) on the conversation',
+      'hub routes conversation ops to bob (approved role + live hub bridge)',
     );
-    console.log('[rename.bob] hub watch registered via browser context');
+    console.log('[rename.bob] hub routes conversation ops to bob (auto-watch role path)');
 
     await fsp.writeFile(JOINED, convId, 'utf-8');
 
@@ -171,6 +181,8 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
     } finally {
       offSub();
       await offWatch().catch(() => {});
+      // Release alice: her test end deletes the conversation on the hub.
+      await fsp.writeFile(BOB_DONE, convId, 'utf-8');
     }
     expect(receivedOverWs).toBe(wsName);
     console.log(`[rename.bob] received alice's rename over local WS → ${receivedOverWs}`);
