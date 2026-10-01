@@ -154,6 +154,64 @@ class Artifact(Entity):
         return None
 
     @classmethod
+    async def pack_reference(cls, entity_id: str, *, transfer_mode: str, repo_cache: dict | None = None):
+        """An artifact rides as its origin in git mode. With no transportable
+        origin it packs no reference: the byte-copy carrier
+        (``_pack_webapp_artifact_attachment``) takes it instead."""
+        from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+            _TRANSFER_MODE_GIT,
+            ReferencePack,
+            _read_graph_entity_metadata,
+            _resolve_git_reference_origin,
+        )
+        from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+
+        if transfer_mode != _TRANSFER_MODE_GIT:
+            return None
+        ent = await cls.get_one({"id": entity_id})
+        if ent is None:
+            return None
+        raw_origin = getattr(ent, "origin", None)
+        stored = None
+        if raw_origin is not None:
+            try:
+                stored = raw_origin if isinstance(raw_origin, GitOrigin) else GitOrigin.model_validate(raw_origin)
+            except Exception:
+                stored = None
+        origin = await _resolve_git_reference_origin(ent, stored, repo_cache)
+        if origin is None:
+            return None
+        return ReferencePack(
+            metadata=_read_graph_entity_metadata(EntityType.ARTIFACT.value, entity_id, ent),
+            origin=origin,
+        )
+
+    @classmethod
+    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+        """Persist the received declaration and GitOrigin only. The checkout
+        stays unresolved until the receiver opens the artifact and the git
+        setup wizard provides a local path."""
+        from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError  # noqa: PLC0415
+
+        payload = {
+            "type": EntityType.ARTIFACT.value,
+            "id": entity_id,
+            "name": metadata.get("name") or f"artifact-{entity_id[:8]}",
+            "kind": metadata.get("kind") or "application.web",
+            "description": metadata.get("description"),
+            "origin": origin.model_dump(mode="python"),
+        }
+        existing = await cls.get_one({"id": entity_id})
+        if existing is not None and not overwrite:
+            if existing.origin is not None and existing.origin.key() == origin.key():
+                return True
+            raise FlowMessageExistsError([{"type": EntityType.ARTIFACT.value, "id": entity_id, "path": None}])
+        artifact = cls.model_validate(payload)
+        artifact.id = entity_id
+        await artifact.save(owner_typeid)
+        return True
+
+    @classmethod
     def _first_matching_kind(cls, rows, kind: str | None, *, origin_path: str | None = None):
         """First row passing the kind gate (and the local-origin path, if given)."""
         for row in rows:

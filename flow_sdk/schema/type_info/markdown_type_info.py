@@ -38,4 +38,6 @@ MARKDOWN = TypeInfo(
     derive_fields_fn=derive_markdown,
     # On receive, a note has no setup agent — it just opens (setup_skill=None).
     reception_verb="Open",
+    # Its chip opens a file-backed editor, so a live message pulls the bundle.
+    eager_pull=True,
 )

@@ -28,4 +28,6 @@ SUBAGENT = TypeInfo(
     # side agrees with wherever placement may write.
     walk=Walk(roots=("user_home_folder", "real_project_cwd", "cwd_root", "system_root")),
     asset_spec=SubAgentSpec,
+    # Its chip opens a file-backed editor, so a live message pulls the bundle.
+    eager_pull=True,
 )

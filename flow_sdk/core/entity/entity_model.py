@@ -11,6 +11,7 @@ from contextvars import ContextVar
 DEFAULT_BROWSE_LIMIT = 20
 import types
 from typing import (
+    TYPE_CHECKING,
     Any,
     ClassVar,
     Dict,
@@ -71,6 +72,9 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
 from .projected_fields import ProjectedFields
 from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.flow_message_bundle import ReferencePack
 
 EntityType = TypeVar("EntityType", bound="Entity")
 
@@ -2505,6 +2509,39 @@ class Entity(DBEntity):
                 "upsert_from_hub_child: edge recreation failed for %s: %s", ent.typeid, e
             )
         return ent
+
+    # -- Git-reference reception (``TypeInfo.receive_transfer == "git_reference"``).
+    # The bundle code is generic; these hooks hold what is particular to a type.
+
+    @classmethod
+    async def pack_reference(
+        cls, entity_id: str, *, transfer_mode: str, repo_cache: Optional[dict] = None
+    ) -> Optional["ReferencePack"]:
+        """This entity's bundle entry as a git reference: the metadata that
+        rides and the origin the recipient resolves. ``None`` — the default —
+        packs no reference, and the packer falls through to the next family."""
+        return None
+
+    @classmethod
+    async def restore_reference(
+        cls,
+        entity_id: str,
+        metadata: Dict[str, Any],
+        origin: Any,
+        *,
+        overwrite: bool,
+        owner_typeid: Optional[str] = None,
+    ) -> bool:
+        """Write the received row from a staged git reference. ``False`` — the
+        default — means it could not be restored."""
+        return False
+
+    @classmethod
+    async def install_reference(cls, entity_id: str) -> Optional[str]:
+        """Make an installed reference usable here, after its row is restored;
+        the local root it now lives at. ``None`` — the default — means nothing
+        is checked out at install (the checkout resolves later, at open)."""
+        return None
 
     async def ensure_child_edge(self) -> bool:
         """Ensure the local parent→self ``is_child`` role edge exists.

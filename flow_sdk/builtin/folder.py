@@ -25,6 +25,7 @@ context ref resolves. Local origins keep the legacy path-derived v5 id
 links are untouched (zero migration).
 """
 
+import logging
 from typing import ClassVar, Optional
 
 from pydantic import model_validator
@@ -36,6 +37,8 @@ from flow_sdk.core import Entity, action
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path, is_path_under
 from flow_sdk.schema.types import EntityType
+
+logger = logging.getLogger(__name__)
 
 
 class Folder(Entity):
@@ -141,6 +144,63 @@ class Folder(Entity):
         )
         await folder.save()
         return folder
+
+    @classmethod
+    async def pack_reference(cls, entity_id: str, *, transfer_mode: str, repo_cache: Optional[dict] = None):
+        """A git context folder rides as its origin, in git mode only. A folder
+        with no usable origin fails the share closed — there is no byte-copy
+        carrier to fall through to."""
+        from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+            _TRANSFER_MODE_GIT,
+            GitShareOriginError,
+            ReferencePack,
+            _entry_key,
+            _read_graph_entity_metadata,
+            _resolve_git_reference_origin,
+        )
+
+        if transfer_mode != _TRANSFER_MODE_GIT:
+            return None
+        ent = await cls.get_one({"id": entity_id})
+        if ent is None:
+            return None
+        origin = await _resolve_git_reference_origin(ent, ent.origin, repo_cache)
+        if origin is None:
+            # Fail closed. Returning None here fell through to a caller that
+            # packs NOTHING for a folder (no main_subdir), silently delivering a
+            # chip with no origin and no bytes.
+            raise GitShareOriginError(
+                f"{_entry_key(EntityType.FOLDER.value, entity_id)} was shared with Git but is not in a "
+                f"Git repository with a usable origin — set up Git for this folder first."
+            )
+        # Self-heal a degenerate name ("" / ".") from before Folder.derive_name
+        # existed — repo-root folders were named ".", rendering chips as bare
+        # typeids. Persist best-effort so the sender's own chip heals too.
+        if (ent.name or "").strip() in ("", "."):
+            healed = cls.derive_name(origin, ent.path)
+            if healed:
+                ent.name = healed
+                try:
+                    await ent.save()
+                except Exception:
+                    logger.debug("[bundle] folder %s name heal failed", entity_id, exc_info=True)
+        # The local resolved path is machine-local; the receiver derives its own.
+        metadata = _read_graph_entity_metadata(EntityType.FOLDER.value, entity_id, ent, strip=("path",))
+        return ReferencePack(metadata=metadata, origin=origin)
+
+    @classmethod
+    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+        """Mint the receiver-local Folder from the origin — path unset, NO
+        clone; the message chip's wizard resolves a local checkout later."""
+        if not getattr(origin, "transportable", False):
+            return False
+        # Get-or-create keyed by origin (idempotent — a re-received chip
+        # reconciles with an already-minted folder). Local path stays unset.
+        folder = await cls.mint_for_origin(origin)
+        if not getattr(folder, "name", None) and metadata.get("name"):
+            folder.name = metadata["name"]
+            await folder.save(owner_typeid)
+        return True
 
     @classmethod
     async def mint_for_path(cls, path: str) -> "Folder":
