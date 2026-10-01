@@ -40,13 +40,13 @@ class ProjectMeta(BaseMeta):
 
 PROJECT = TypeInfo(
     type_name=EntityType.PROJECT,
-    # An invite message carries the project as a git reference (``Project``
-    # owns the hooks).
-    receive_transfer=RECEIVE_TRANSFER_GIT_REFERENCE,
     shape=File(ext=".md"),
     icon="Briefcase",
     indexed_by_default=True,
     api_visible=True,
     id_namespace=uuid.NAMESPACE_DNS,
     meta_model=ProjectMeta,
+    # An invite message carries the project as a git reference (``Project``
+    # owns the hooks).
+    receive_transfer=RECEIVE_TRANSFER_GIT_REFERENCE,
 )

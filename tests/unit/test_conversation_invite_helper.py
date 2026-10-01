@@ -9,8 +9,7 @@ is a hub-owned root). ``discard_invite_conversation`` removes a conversation
 whose invite failed.
 
 Only the network hops are stubbed: ``FlowpadClient.request`` (create, join,
-add_message header, delete) and ``flow_sdk.utils.hub.hub_post`` (body upload and
-the READY flip), recorded in ONE list so the order is observable.
+invite, delete) and ``flow_sdk.utils.hub.hub_post``.
 
 # do not increase timeout without approval
 """
@@ -19,6 +18,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 
@@ -27,7 +27,6 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
 
 SHARER = "0a0a0a0a-0000-4000-8000-000000000001"
-PROJECT = "project-9e9e9e9e-0000-4000-8000-00000000000a"
 
 
 class _FakeResponse:
@@ -41,32 +40,23 @@ class _FakeResponse:
 
 class _Hub(list):
     """Every hub hop as ``(method, path)`` in call order; ``bodies`` the JSON
-    body of each; ``refuse`` maps a path suffix to the status that hop answers
-    with."""
+    body of each."""
 
-    refuse: dict
     bodies: list
 
 
 @pytest.fixture()
 def hub(monkeypatch):
     calls = _Hub()
-    calls.refuse = {}
     calls.bodies = []
 
     async def fake_request(self, method, path, **kwargs):
         calls.append((method, path))
         calls.bodies.append((path, kwargs.get("json")))
-        for suffix, status in calls.refuse.items():
-            if path.endswith(suffix):
-                return _FakeResponse(status, {"detail": "refused"})
         return _FakeResponse(200, {"status": "success", "data": {}})
 
     async def fake_hub_post(entity_type, data, *path_parts, action=None, **_kwargs):
-        suffix = action or "/".join(str(p) for p in path_parts[1:])
-        calls.append(("HUB_POST", suffix))
-        if suffix in calls.refuse:
-            raise RuntimeError(f"hub refused {suffix}")
+        calls.append(("HUB_POST", action or "/".join(str(p) for p in path_parts[1:])))
         return {}
 
     monkeypatch.setattr(
@@ -132,7 +122,7 @@ async def test_a_team_is_admitted_as_one_group_grant(hub):
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_a_project_in_the_conversation_is_never_reparented_under_it(hub):
-    project = await Project(name=f"Course-{PROJECT[-8:]}").save()
+    project = await Project(name=f"Course-{uuid4().hex[:8]}").save()
     conv = await _conversation()
 
     await conv._link_context_to_conversation([str(project.typeid)])

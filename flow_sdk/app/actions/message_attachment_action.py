@@ -497,9 +497,9 @@ async def handle_attachment_install(
     # Git references (``TypeInfo.receive_transfer``): restored from the staged
     # metadata here — no bytes copied. The type's ``restore_reference`` decides
     # the rest (artifact / folder: the row only, the checkout resolves at open).
-    from flow_sdk.builtin.flow_message_bundle import _git_reference_cls  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message_bundle import git_reference_cls  # noqa: PLC0415
 
-    if _git_reference_cls(ma.asset_type) is not None and ma.transfer_mode == TransferMode.GIT.value:
+    if git_reference_cls(ma.asset_type) is not None and ma.transfer_mode == TransferMode.GIT.value:
         return await _install_git_reference(
             ma,
             scope,

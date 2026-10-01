@@ -201,7 +201,7 @@ class GitReferenceType(Protocol):
         makes it usable here. ``False`` means it could not be restored."""
 
 
-def _git_reference_cls(entry_type: str) -> type[GitReferenceType] | None:
+def git_reference_cls(entry_type: str) -> type[GitReferenceType] | None:
     """The entity class of a type that travels as a git reference
     (``TypeInfo.receive_transfer``), or ``None``."""
     from flow_sdk.fs_store.schema_registry import RECEIVE_TRANSFER_GIT_REFERENCE, SchemaRegistry  # noqa: PLC0415
@@ -574,11 +574,8 @@ def _write_graph_git_transfer_metadata(
     entry_type: str,
     entry_id: str,
     ent,
-    strip: tuple[str, ...] = (),
 ) -> str:
-    return _write_reference_metadata(
-        tmp_root, entry_type, entry_id, graph_entity_metadata(entry_type, entry_id, ent, strip=strip)
-    )
+    return _write_reference_metadata(tmp_root, entry_type, entry_id, graph_entity_metadata(entry_type, entry_id, ent))
 
 
 async def resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
@@ -622,7 +619,7 @@ async def _pack_git_reference_attachment(
     """
     if transfers is None:
         return False
-    cls = _git_reference_cls(entry_type)
+    cls = git_reference_cls(entry_type)
     if cls is None:
         return False
     packed = await cls.pack_reference(entry_id, transfer_mode=transfer_mode, repo_cache=repo_cache)
@@ -1240,7 +1237,7 @@ async def _restore_git_reference_entity_entry(
     if parsed is None:
         return False
     entry_type, entry_id = parsed
-    cls = _git_reference_cls(entry_type)
+    cls = git_reference_cls(entry_type)
     if cls is None:
         return False
     payload = _read_transfer_metadata(tmp_root, transfer)

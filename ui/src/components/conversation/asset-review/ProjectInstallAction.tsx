@@ -63,9 +63,8 @@ export function ProjectInstallAction({
   onDone?: () => void;
 }) {
   const { navigation } = useDockNavigation();
-  const local = useLocalProject(typeId, entityRow);
-  const row = local.row;
-  const installed = attachment ? attachment.installed : local.installed;
+  const { row, installed: rowInstalled } = useLocalProject(typeId, entityRow);
+  const installed = attachment ? attachment.installed : rowInstalled;
   const [phase, setPhase] = useState<'idle' | 'installing' | 'error'>('idle');
   const [reason, setReason] = useState<string | null>(null);
 

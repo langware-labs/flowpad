@@ -69,7 +69,7 @@ def _download_gets(mock_get) -> list:
     return hits
 
 
-# The deep-link ``open`` action (open_flow_message_params) is the incident path:
+# The deep-link ``open`` resolver (open_flow_message_params) is the incident path:
 # it tolerates a hub-only entity (the framework does not require a local row), and
 # a *local* dangling FM would short-circuit before ever reaching the chokepoint —
 # so driving ``open`` against a mocked, hub-only dangling FM is what actually

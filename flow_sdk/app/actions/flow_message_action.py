@@ -66,7 +66,7 @@ _BUNDLE_DOWNLOAD_LOCKS: "WeakValueDictionary[tuple[object, str], asyncio.Lock]" 
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.invitation import Invitation
-    from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
+    from flow_sdk.schema.data_spec.open_link_spec import MessageOpenLinkSpec
 
 
 async def _optional_agent_stream_inbox_scope(agent_id: object) -> AgentStreamInboxScope | None:
@@ -347,7 +347,7 @@ async def upload_flow_message() -> ApiResponse:
         return ApiFailResponse(message=f"Upload failed: {str(e)}")
 
 
-async def open_flow_message_params(fm_id: str, someone_typeid: str | None = None) -> "OpenLinkSpec":
+async def open_flow_message_params(fm_id: str, someone_typeid: str | None = None) -> "MessageOpenLinkSpec":
     """Deep-link resolver for a message (``FlowMessage.resolve_open``): fetch it
     from the hub, materialise its bundle and conversation, and return the
     ``action=open`` params that send the UI into the conversation."""
