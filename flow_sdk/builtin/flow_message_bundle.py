@@ -40,6 +40,7 @@ from flow_sdk.assets.transfer import (
     pack_tree,
 )
 from flow_sdk.builtin.flow_message import (
+    _NON_MATERIALIZING_TYPE_IDS,
     FILE_VFS_PREFIX,
     PROMPT_FILE_VFS_PREFIX,
     AttachmentType,
@@ -497,8 +498,43 @@ async def _resolve_file_backed_source(entry_type: str, entry_id: str):
     ar_path = Path(ar)
     if not ar_path.exists():
         return (info, ent, None)
-    src_root = info.storage_root_for(ar_path)   # the folder for a folder type, the file otherwise
+    src_root = info.storage_root_for(ar_path)  # the folder for a folder type, the file otherwise
     return (info, ent, src_root)
+
+
+async def attachments_that_would_ship_nothing(typeids) -> list[tuple["TypeId", str]]:
+    """The TYPE_ID refs the receiver will REQUIRE in the bundle but the packer would ship nothing for.
+
+    The receiver's probe (``_type_id_attachment_present``) treats every TYPE_ID attachment outside
+    ``_NON_MATERIALIZING_TYPE_IDS`` as something the bundle must carry. For a file-backed type
+    whose row or file is gone, ``_pack_file_backed_attachment`` writes nothing and says nothing —
+    the sender sees success, the hub marks the body ready, and every recipient downloads a bundle
+    that cannot be complete. This answers, BEFORE the message exists, which refs would do that,
+    as ``(typeid, reason)`` pairs; an empty list means everything ships.
+
+    It mirrors the two silent returns of ``_pack_file_backed_attachment`` — no resolvable row, and
+    a row with neither a file nor anything renderable — and only for the types that packer
+    actually owns: the git-reference types and artifacts have their own packers, and the types
+    the receiver never expects are not a gap. ``test_send_session_with_missing_transcript`` pins the
+    pairing, so the two cannot drift apart unnoticed.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    gaps: list[tuple[TypeId, str]] = []
+    for tid in typeids:
+        if tid.type in _NON_MATERIALIZING_TYPE_IDS or tid.type == EntityType.ARTIFACT.value:
+            continue
+        info = SchemaRegistry.get(tid.type)
+        if info is None or getattr(info, "main_subdir", None) is None or getattr(info, "receive_transfer", None):
+            continue
+        resolved = await _resolve_file_backed_source(tid.type, tid.id)
+        if resolved is None:
+            gaps.append((tid, "there is no local record of it"))
+            continue
+        info, ent, src_root = resolved
+        if src_root is None and info.serializer().render(ent, info) is None:
+            gaps.append((tid, "its file is not on this machine"))
+    return gaps
 
 
 def _entry_key(entry_type: str, entry_id: str) -> str:
@@ -782,8 +818,7 @@ async def _pack_file_backed_attachment(
             return  # nothing renderable to ship
         from flow_sdk.assets.transfer import materialize_rendered_asset
 
-        materialize_rendered_asset(info, subdir, _safe_entity_name(ent), text,
-                                   TypeId(type=entry_type, id=entry_id))
+        materialize_rendered_asset(info, subdir, _safe_entity_name(ent), text, TypeId(type=entry_type, id=entry_id))
         return
 
     # Origin present → key by repo-relative path (mirror sender layout); else the
@@ -795,8 +830,6 @@ async def _pack_file_backed_attachment(
     dest = entry_root / PurePosixPath(origin.rel_path if origin is not None else portable_rel_path(src_root, info))
     dest.parent.mkdir(parents=True, exist_ok=True)
     pack_tree(src_root, dest, type_name=entry_type)
-
-
 
 
 def _safe_entity_name(entity) -> str:
@@ -811,6 +844,7 @@ def _restore_file_backed_entry(
     entry_dir: Path, project_root: Path, overwrite: bool, *, placed: list[Path] | None = None
 ) -> bool:
     from flow_sdk.assets.transfer import AssetTransferConflict, restore_tree
+
     try:
         return restore_tree(entry_dir, project_root, overwrite=overwrite, placed=placed)
     except AssetTransferConflict as exc:
@@ -1000,7 +1034,9 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
             info = SchemaRegistry.get(item.asset_type)
             single_file = info is not None and not isinstance(info.shape, Folder)
             if item.scope == AttachmentScope.PROJECT.value:
-                if not (single_file and await _index_received_files(item.files, item.asset_type, project_id=project_id)):
+                if not (
+                    single_file and await _index_received_files(item.files, item.asset_type, project_id=project_id)
+                ):
                     await _reindex_received_assets(item.root, types, project_id=project_id)
             else:
                 await _reindex_root(item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id)
@@ -1347,9 +1383,7 @@ async def _stamp_origins(
                 origin_payload,
             )
         except Exception:
-            logger.warning(
-                "[bundle] failed to persist origin metadata on %s-@%s", entry_type, entry_id, exc_info=True
-            )
+            logger.warning("[bundle] failed to persist origin metadata on %s-@%s", entry_type, entry_id, exc_info=True)
         ent.origin = origin
         try:
             await _save_entity_db_only(ent, owner_typeid)
@@ -1393,8 +1427,6 @@ async def _notify_received_assets(entries: "set[tuple[str, str]]") -> None:
             await ent.add_entity_op_notification(op, notify_immediately=True)
         except Exception:
             logger.exception("[bundle] notify CREATE failed for %s-%s", entry_type, entry_id)
-
-
 
 
 async def _stage_attachment(
@@ -1586,8 +1618,6 @@ async def _notify_staged_attachments(mas: list) -> None:
             logger.exception("[bundle] notify CREATE failed for message_attachment %s", ma.id)
 
 
-
-
 def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:
     """Zip ``tmp_root`` contents into ``<dest_dir>/<slug>.flowmsg`` and return the path."""
     short_id = fm_id[:8] if fm_id else "msg"
@@ -1640,7 +1670,9 @@ async def _row_as_its_file_says(entry_type: str, ent):
         await index_one(resolved, scope=getattr(ent, "scope", None), project_id=getattr(ent, "project_id", None))
         return await type(ent).get_one({"id": eid}) or ent
     except Exception:  # noqa: BLE001
-        logger.warning("[bundle] could not re-read %s-%s from its file; packing the row", entry_type, eid, exc_info=True)
+        logger.warning(
+            "[bundle] could not re-read %s-%s from its file; packing the row", entry_type, eid, exc_info=True
+        )
         return ent
 
 
@@ -1839,9 +1871,7 @@ def _write_json(path: Path, data) -> None:
     """Serialize ``data`` to ``path``. The write counterpart to ``_read_json``,
     holding the three encoding decisions (``_json_default`` for Enums, no ASCII
     escaping, utf-8) in one place so a bundle file cannot drift from the rest."""
-    path.write_text(
-        json.dumps(data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
+    path.write_text(json.dumps(data, default=_json_default, ensure_ascii=False), encoding="utf-8")
 
 
 def _read_json(path: Path, default):
@@ -2096,7 +2126,9 @@ class _UnpackCtx:
     staged_mas: list
 
 
-async def _unpack_auto_policy_entry(entry_dir: Path, name: str, entry_type: str, entry_id: str, ctx: "_UnpackCtx") -> None:
+async def _unpack_auto_policy_entry(
+    entry_dir: Path, name: str, entry_type: str, entry_id: str, ctx: "_UnpackCtx"
+) -> None:
     """Row-only auto payload (claude_session, flowpad_diagnosis): staged like
     every payload entry, then installed IMMEDIATELY through the one install
     action — 'auto' means "no review gate", not "skip the pipeline". The row
@@ -2156,7 +2188,8 @@ async def _unpack_remote_worker_session_entry(entry_dir: Path, entry_id: str, ct
         from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
 
         await RemoteWorkerSession.adopt_snapshot(
-            {**rws_data, "id": rws_data.get("id") or entry_id}, someone_typeid=ctx.owner_typeid,
+            {**rws_data, "id": rws_data.get("id") or entry_id},
+            someone_typeid=ctx.owner_typeid,
         )
 
 
@@ -2201,14 +2234,9 @@ async def _unpack_conversation_entry(entry_dir: Path, entry_id: str, ctx: "_Unpa
 
     task_obj = await Task.get_one({"id": task_id_for_conv}) if task_id_for_conv else None
     task_title_slug = (
-        _re.sub(r"[^a-z0-9]+", "-", (task_obj.title or "task").lower()).strip("-")[:60]
-        if task_obj
-        else "task"
+        _re.sub(r"[^a-z0-9]+", "-", (task_obj.title or "task").lower()).strip("-")[:60] if task_obj else "task"
     )
-    perm_task_dir = (
-        get_instance_settings().tasks_dir
-        / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
-    )
+    perm_task_dir = get_instance_settings().tasks_dir / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
     perm_task_dir.mkdir(parents=True, exist_ok=True)
     perm_jsonl = perm_task_dir / "conversation.jsonl"
     _merge_conversation_jsonl(jsonl_file, perm_jsonl)
@@ -2660,13 +2688,17 @@ async def unpack_bundle(
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
-        target_conv_id = conversation_id or msg_data.get("conversation_id") or next(
-            (
-                TypeId(c).id
-                for c in msg_data.get("shared_context_entities", [])
-                if TypeId(c).type == BuiltinEntityType.CONVERSATION.value
-            ),
-            None,
+        target_conv_id = (
+            conversation_id
+            or msg_data.get("conversation_id")
+            or next(
+                (
+                    TypeId(c).id
+                    for c in msg_data.get("shared_context_entities", [])
+                    if TypeId(c).type == BuiltinEntityType.CONVERSATION.value
+                ),
+                None,
+            )
         )
         # Lightweight bundles (no Conversation attachment dir, no
         # shared_context_entities entry) still reference the parent

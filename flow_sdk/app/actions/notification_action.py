@@ -886,6 +886,46 @@ def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> N
         pass
 
 
+def _unshippable_payload(gaps) -> list[dict]:
+    """The wire shape of the refs a send would ship nothing for — shared by the send refusal and the preflight."""
+    return [{"type_id": str(tid), "reason": why} for tid, why in gaps]
+
+
+async def find_unshippable_references(asset_references: list) -> list[tuple[TypeId, str]]:
+    """Which of these asset references would the packer silently ship nothing for?
+
+    Does what a send does first — a session being shared may have no index row yet, so it is
+    indexed from its transcript if one can be found — and then asks the packer's own question.
+    Writes nothing else, so a caller can ask BEFORE it creates a conversation or invites anyone.
+    """
+    from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
+
+    typeids: list[TypeId] = []
+    for raw in dict.fromkeys(asset_references):
+        try:
+            typeids.append(TypeId(raw))
+        except Exception:  # noqa: BLE001 — a malformed ref is the send's problem to report, not the preflight's
+            continue
+    await _ensure_claude_session_rows(typeids)
+    return await attachments_that_would_ship_nothing(typeids)
+
+
+@action.post(action_name="check-attachments", types=None)
+async def check_attachments() -> ApiResponse:
+    """Preflight for a share: which of ``asset_references`` would arrive empty? Read-only.
+
+    The share dialog asks this BEFORE it creates a conversation and invites the recipient — a
+    refusal after the invite would leave them holding an invitation to an empty conversation.
+    ``handle_add_message`` still refuses on its own; this is what lets the UI offer
+    "send without it" instead of failing after the fact.
+    """
+    request_info = get_current_request_info()
+    body = (await request_info.get_post_data() if request_info else None) or {}
+    refs = _parse_asset_references(body.get("asset_references") if isinstance(body, dict) else None)
+    gaps = await find_unshippable_references(refs)
+    return ApiSuccessResponse(data={"unshippable": _unshippable_payload(gaps)})
+
+
 async def handle_add_message(
     body: dict,
     someone_typeid: str,
@@ -1004,6 +1044,22 @@ async def handle_add_message(
     # Shared ClaudeTranscripts may not be indexed yet — materialize their rows
     # first so the merge/backlink below (and the chip's name lookup) resolve.
     await _ensure_claude_session_rows(context_typeids)
+    # Refuse BEFORE anything is written: an attachment the packer would ship nothing for
+    # leaves the sender told "sent" and the recipient holding a bundle that cannot be complete.
+    from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
+
+    gaps = await attachments_that_would_ship_nothing(_parse_context_typeids(conv, asset_references, []))
+    if gaps:
+        names = "; ".join(f"{tid} — {why}" for tid, why in gaps)
+        return ApiFailResponse(
+            message=(
+                f"Cannot send: {names}. The recipient would receive nothing for it "
+                "(the file may have been removed, or it was never created — a session with no "
+                "conversation yet has no transcript). Nothing was sent."
+            ),
+            status_code=400,
+            data={"unshippable": _unshippable_payload(gaps)},
+        )
     await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     sender_participant = await User.current_sender_participant(body.get("sender_name"))

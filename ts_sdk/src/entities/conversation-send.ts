@@ -53,6 +53,56 @@ export async function sendToExistingConversation(
   );
 }
 
+/** An attachment the sender cannot actually ship — the packer would write nothing for it, so the
+ *  recipient would get a bundle without it and nobody would be told. */
+export interface UnshippableReference {
+  /** The serialized TypeId, e.g. ``"claude_session-<uuid>"``. */
+  type_id: string;
+  /** Why it would arrive empty, in a sentence. */
+  reason: string;
+}
+
+/**
+ * Ask the backend which of these asset references would arrive empty — BEFORE anything is created.
+ *
+ * Sharing into a NEW conversation creates it and invites the recipient first and sends second, so a
+ * refusal at send time leaves them holding an invitation to an empty conversation. Asking here costs
+ * one read-only call and lets the caller offer "send without it" instead.
+ */
+export async function findUnshippableReferences(
+  assetReferences: readonly string[],
+): Promise<UnshippableReference[]> {
+  const refs = [...new Set(assetReferences)];
+  if (refs.length === 0) return [];
+  const info = new ActionInfo('check-attachments', null, null, 'POST');
+  info.bodyParameters = { asset_references: refs };
+  const result = await dataManager.callAction<{ asset_references: string[] }, { unshippable?: UnshippableReference[] }>(
+    info,
+  );
+  return result?.unshippable ?? [];
+}
+
+/** The same payload minus these references — from the attachments AND from the shared context, so
+ *  the conversation is never left pointing at something that was not sent. */
+export function withoutReferences(
+  payload: ConversationSendPayload,
+  drop: ReadonlySet<string>,
+): ConversationSendPayload {
+  return {
+    ...payload,
+    ...(payload.assetReferences ? { assetReferences: payload.assetReferences.filter((r) => !drop.has(r)) } : {}),
+    ...(payload.sharedContextEntities
+      ? { sharedContextEntities: payload.sharedContextEntities.filter((r) => !drop.has(r)) }
+      : {}),
+  };
+}
+
+/** Whether a send still carries anything the backend will accept (text, files or an attachment —
+ *  shared context alone is not a message). */
+export function hasSomethingToSend(payload: ConversationSendPayload): boolean {
+  return !!(payload.text.trim() || payload.files?.length || payload.assetReferences?.length);
+}
+
 /**
  * Forward a diagnosis into a conversation by **attaching the FlowpadDiagnosis
  * entity** (a TYPE_ID attachment) — not by pasting its full text. It renders as
