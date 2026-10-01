@@ -284,7 +284,10 @@ async def handle_record_action():
 
     from flow_sdk.storage.asset_vfs import local_asset_vfs_binding
 
-    asset_binding = local_asset_vfs_binding(entity)
+    # Only Git-publishable assets ARE entity-VFS records; a type that merely
+    # keeps its files in its folder (``files_in_asset_folder``) keeps its refs.
+    info = SchemaRegistry.get(entity.get_type())
+    asset_binding = local_asset_vfs_binding(entity) if info is not None and info.git_publishable else None
     if asset_binding is not None:
         type_id = str(entity.typeid)
         return ApiSuccessResponse(

@@ -121,6 +121,27 @@ async def _get_storage_for_entity(request_info: RequestInfo) -> LocalStorageDriv
     return get_entity_storage(target_entity, entity=entity)
 
 
+def _legacy_embedded_storage(typeid, storage) -> LocalStorageDriver | None:
+    """Where a ``files_in_asset_folder`` entity kept its files BEFORE they moved
+    into its asset folder — or None when there is nothing to fall back to.
+
+    Read-only fallback (no migration): files attached earlier stay in
+    ``records_data/<type>/<id>/embedded/`` and keep listing, opening and
+    rendering from there. Only consulted when ``storage`` is the asset folder;
+    an entity already on the embedded store has no older place to look.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+
+    info = SchemaRegistry.get(str(getattr(typeid, "type", "") or ""))
+    if info is None or not info.files_in_asset_folder:
+        return None
+    legacy = get_entity_embedded_storage(typeid)
+    if os.path.normpath(str(legacy.mount_path)) == os.path.normpath(str(storage.mount_path)):
+        return None
+    return legacy
+
+
 async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[List[FSEntry]]:
     """List directory contents.
 
@@ -141,8 +162,15 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
 
     try:
         storage = await _get_storage_for_entity(request_info)
-        items = await storage.list_dir(fs_info.vpath.abs_vfspath)
-        _stamp_local_paths(items, storage, fs_info.vpath.abs_vfspath)
+        path = fs_info.vpath.abs_vfspath
+        items = await storage.list_dir(path)
+        _stamp_local_paths(items, storage)
+        legacy = _legacy_embedded_storage(fs_info.vpath.typeid, storage)
+        if legacy is not None:
+            names = {i.display_name for i in items}
+            older = [i for i in await legacy.list_dir(path) if i.display_name not in names]
+            _stamp_local_paths(older, legacy)
+            items = items + older
         return ApiSuccessResponse(data=items)
     except FileNotFoundError as e:
         logger.error(f"Browse error: {e}")
@@ -155,7 +183,7 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to browse directory: {str(e)}")
 
 
-def _stamp_local_paths(items, storage, root: str) -> None:
+def _stamp_local_paths(items, storage) -> None:
     """Fill each item's transient ``local_path`` when its bytes are on disk.
 
     Only the server can resolve an entity's storage root (embedded storage sits
@@ -165,13 +193,13 @@ def _stamp_local_paths(items, storage, root: str) -> None:
     """
     from pathlib import Path
 
-    root = (root or "").strip("/")
     for item in items or []:
         if getattr(item, "is_dir", False):
             continue
-        rel = str(getattr(item, "vfs_abs_path", "") or "").strip("/")
-        if root and rel.startswith(root + "/"):
-            rel = rel[len(root) + 1 :]
+        # Entity-relative path, sub-folders kept: ``vfs_abs_path`` is
+        # ``<type>-<id>/<sub>/<name>``, and only the entity prefix goes — stripping
+        # the whole browsed folder resolved ``attachments/x.png`` at the root.
+        rel = VFSPath(str(getattr(item, "vfs_abs_path", "") or "").strip("/")).entity_sub_path or ""
         try:
             p = Path(storage.get_storage_path(rel))
             if p.is_file():
@@ -247,28 +275,19 @@ async def push_entity_files_to_hub(entity) -> int:
         root = Path(asset_ref.path) if asset_ref is not None else None
         if root is None or not root.is_dir():
             return 0
+        return await _push_folder_to_hub(et, entity, root)
 
-        pushed = 0
-        for source in sorted(root.rglob("*")):
-            # Never follow a sender-local symlink outside the declared asset.
-            if source.is_symlink() or not source.is_file():
-                continue
-            rel = source.relative_to(root)
-            parent = rel.parent.as_posix()
-            sub_path = "upload" if parent == "." else f"upload/{parent}"
-            try:
-                await hub_upload_entity_file(
-                    et,
-                    entity.id,
-                    rel.name,
-                    source.read_bytes(),
-                    sub_path=sub_path,
-                )
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"share: file push failed for {entity.typeid}/{rel.as_posix()}: {e}")
-                continue
-            pushed += 1
-        return pushed
+    pushed = 0
+    if _info is not None and _info.files_in_asset_folder:
+        # Files live in the asset folder; its own documents (the main file and
+        # whatever the type keeps home) are fields, not files — the share POST
+        # already carried them.
+        from flow_sdk.storage.asset_vfs import local_asset_vfs_binding  # noqa: PLC0415
+
+        binding = local_asset_vfs_binding(entity)
+        if binding is not None:
+            skip = {binding.main_ref, *(_info.pack_exclude or ())}
+            pushed += await _push_folder_to_hub(et, entity, binding.root, skip_top=skip)
 
     try:
         storage = get_entity_storage(entity.typeid)
@@ -276,9 +295,8 @@ async def push_entity_files_to_hub(entity) -> int:
         items = await storage.list_dir(root)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"share: no files to push for {entity.typeid}: {e}")
-        return 0
+        return pushed
 
-    pushed = 0
     for item in items or []:
         name = getattr(item, "display_name", None)
         if getattr(item, "is_dir", False) or not name:
@@ -294,6 +312,30 @@ async def push_entity_files_to_hub(entity) -> int:
             await hub_upload_entity_file(et, entity.id, name, content)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{name}: {e}")
+            continue
+        pushed += 1
+    return pushed
+
+
+async def _push_folder_to_hub(et, entity, root: Path, *, skip_top: set[str] = frozenset()) -> int:
+    """Upload every file under ``root`` to the entity's hub twin, keeping relative
+    paths. ``skip_top`` names files at the folder root to leave out."""
+    from flow_sdk.utils.hub import hub_upload_entity_file  # noqa: PLC0415
+
+    pushed = 0
+    for source in sorted(root.rglob("*")):
+        # Never follow a sender-local symlink outside the declared asset.
+        if source.is_symlink() or not source.is_file():
+            continue
+        rel = source.relative_to(root)
+        parent = rel.parent.as_posix()
+        if parent == "." and rel.name in skip_top:
+            continue
+        sub_path = "upload" if parent == "." else f"upload/{parent}"
+        try:
+            await hub_upload_entity_file(et, entity.id, rel.name, source.read_bytes(), sub_path=sub_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"share: file push failed for {entity.typeid}/{rel.as_posix()}: {e}")
             continue
         pushed += 1
     return pushed
@@ -496,7 +538,10 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
         # ``remote`` flag rather than its type — a task's attachment and a
         # flow_message's file are the same problem.
         if not await storage.exists(fs_info.vpath.abs_vfspath):
-            if not await fetch_remote_entity_file(
+            legacy = _legacy_embedded_storage(fs_info.vpath.typeid, storage)
+            if legacy is not None and await legacy.exists(fs_info.vpath.abs_vfspath):
+                storage = legacy
+            elif not await fetch_remote_entity_file(
                 fs_info.vpath.typeid,
                 fs_info.vpath.entity_sub_path,
                 storage,

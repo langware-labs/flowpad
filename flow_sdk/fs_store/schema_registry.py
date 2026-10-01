@@ -256,6 +256,13 @@ class TypeInfo:
     cloud_file_transport: Literal["embedded", "git"] = field(
         default="embedded", compare=False, repr=False, metadata=_MERGE
     )
+    # True ⇒ the entity's file storage (``fs/upload`` / ``browse`` / ``download``)
+    # is its own asset folder, not ``records_data/<type>/<id>/embedded/``. Files
+    # then live INSIDE the asset, so the bundle packer (which copies the folder
+    # verbatim) carries them and the receiver restores them in place. Unlike
+    # ``cloud_file_transport="git"`` it changes nothing about hub delivery.
+    # Runtime-only; not part of the schema hash.
+    files_in_asset_folder: bool = field(default=False, compare=False, repr=False, metadata=_MERGE)
     # Per-type pydantic metadata model: the FS↔DB schema. Its field set defines
     # which entity fields with ``persist=DEFAULT`` are mirrored to metadata.json,
     # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
