@@ -57,8 +57,10 @@ export function chipStateFor(
   // resolution is irrelevant for them. TASK follows the same rule for the
   // opposite reason: unpack materializes a slim Task row immediately (the
   // conversation branch needs it), so entity resolution would mark a staged
-  // task installed before the user ever reviewed it.
-  if (ma && (ma.asset_type === 'file' || ma.asset_type === 'task')) {
+  // task installed before the user ever reviewed it. PROJECT likewise: a
+  // hub-mirrored membership row resolves long before anything is cloned, so
+  // only the attachment's own install says it is installed here.
+  if (ma && (ma.asset_type === 'file' || ma.asset_type === 'task' || ma.asset_type === 'project')) {
     return ma.installed ? 'installed' : 'staged';
   }
   if (entityResolved) return 'installed';

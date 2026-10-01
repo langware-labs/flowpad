@@ -437,6 +437,7 @@ function AttachmentReviewDialog({
           {selectedProjectTypeId ? (
             <ProjectInstallAction
               typeId={selectedProjectTypeId}
+              attachment={selected}
               entityRow={selectedProjectRow}
               entityUnavailable={selectedProjectNotFound || selectedProjectError}
               onDone={onClose}

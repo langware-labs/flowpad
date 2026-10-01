@@ -194,6 +194,7 @@ export function EntityChip({
       disabled={muted}
       aria-disabled={muted}
       data-testid={`entity-chip-${entity.type}-${entity.id}`}
+      data-state={muted ? 'unavailable' : staged ? 'staged' : 'installed'}
       className={`${baseLayout} ${typeStyle}${muted ? 'cursor-default opacity-60' : ''}`}
     >
       <Icon className="h-3 w-3" />
