@@ -9,7 +9,7 @@
     "commands": {
       "darwin": "brew install python3",
       "linux": "apt-get update && apt-get install -y python3",
-      "win32": "winget install --id Python.Python.3 --silent"
+      "win32": "winget install --id Python.Python.3 --silent --source winget; if ($LASTEXITCODE -ne 0) { winget install --id Python.Python.3 --silent }"
     },
     "timeout_seconds": 600
   },
