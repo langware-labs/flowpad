@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -30,6 +32,20 @@ from flow_sdk.sources.values.items import UserProfile
 from flow_sdk.tags.envelope import parse_target
 
 logger = logging.getLogger(__name__)
+
+#: True only inside ``releasing_prompt`` — the one writer allowed to clear a
+#: consumed ``prompt_auto_handled`` (see ``FlowMessage.preserved_fields_on_save``).
+_RELEASING_PROMPT: ContextVar[bool] = ContextVar("flow_message_releasing_prompt", default=False)
+
+
+@contextmanager
+def releasing_prompt():
+    """Scope a save that hands a consumed prompt back to the session queue."""
+    token = _RELEASING_PROMPT.set(True)
+    try:
+        yield
+    finally:
+        _RELEASING_PROMPT.reset(token)
 
 
 class AttachmentType(str, Enum):
@@ -604,6 +620,27 @@ class FlowMessage(Entity):
     # hub refresh. A parked prompt (session PENDING) stays False until approve
     # re-drives it.
     prompt_auto_handled: bool = APIField(default=False, sharing=Sharing.HUB_WRITE)
+
+    @classmethod
+    def preserved_fields_on_save(cls, current_data: dict) -> tuple[str, ...]:
+        """A consumed prompt stays consumed through every stale whole-row save.
+
+        Message writes are whole-row upserts, and several writers hold a copy read
+        before the host consumed the prompt — the conversation catch-up's LWW
+        refresh (``_process_single_hub_message``: ``get_one`` … hub download …
+        ``merge_hub_payload`` … ``save``) is the one caught in the act. Whichever
+        saved last wrote ``False`` back over the consume, the session drain
+        re-selected the prompt, and the guest got the same turn answered twice.
+
+        Read under the writer transaction (``_preserve_managed_data_fields``), so
+        no consume can land between the check and the write. Only
+        ``release_prompt`` — crash recovery handing a dead turn back — may clear
+        it, and it says so through ``releasing_prompt``.
+        """
+        if current_data.get("prompt_auto_handled") and not _RELEASING_PROMPT.get():
+            return ("prompt_auto_handled",)
+        return ()
+
     #: The body held across a reference row's write — see ``save``.
     _hydrated_text: Optional[str] = None
     _api_visible: ClassVar[bool] = True
