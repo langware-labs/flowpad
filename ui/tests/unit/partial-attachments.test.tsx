@@ -84,7 +84,7 @@ describe('partial attachment downloads', () => {
     fireEvent.click(button);
     expect(downloads).toBe(1);
     rerender(<AttachmentDownloadWarning attachments={[missing]} onDownload={onDownload} downloading />);
-    const busy = screen.getByRole('button', { name: 'Downloading…' }) as HTMLButtonElement;
+    const busy = screen.getByRole('button', { name: 'Downloading…' });
     expect(busy.disabled).toBe(true);
     fireEvent.click(busy);
     expect(downloads).toBe(1);
@@ -169,5 +169,26 @@ describe('partial attachment downloads', () => {
     expect(copyTargets).not.toContain('ready — available to pull');
     // The copied path drops the verb — you paste a path, not "GET /path".
     expect(copyTargets.some((v) => v.startsWith('GET '))).toBe(false);
+  });
+});
+
+describe('shared-context aggregation — the reply marker', () => {
+  it('never lists a prompt_completion reply as a shared-context row, missing or not', () => {
+    const reply = {
+      attachment_type: AttachmentType.TYPE_ID,
+      data: 'prompt_completion-cccccccc-cccc-4ccc-8ccc-000000000001',
+    };
+    for (const body_missing_attachments of [[reply], []]) {
+      const fm = new FlowMessage({
+        id: '33333333-3333-4333-8333-333333333333',
+        attachment: [reply, available],
+        body_downloaded: true,
+        body_missing_attachments,
+      });
+      const entries = buildSharedEntities([fm], new Set());
+      expect(entries.find((e) => e.typeId.type === 'prompt_completion')).toBeUndefined();
+      // The real attachment next to it is untouched.
+      expect(entries.find((e) => e.typeId.equals(new TypeId(available.data)))).toBeDefined();
+    }
   });
 });

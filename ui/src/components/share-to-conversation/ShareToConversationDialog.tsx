@@ -3,7 +3,9 @@ import { Check, Download, GitBranch, Loader2, MessageSquarePlus, Send } from 'lu
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Conversation,
+  findUnshippableReferences,
   hasRemoteParticipant,
+  hasSomethingToSend,
   normalizeEmail,
   oauthService,
   OAUTH_PROVIDERS,
@@ -11,6 +13,8 @@ import {
   type Project,
   type ConversationParticipant,
   type ConversationSendPayload,
+  type UnshippableReference,
+  withoutReferences,
 } from '@sdk';
 import { useOAuthFlowComplete } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks';
@@ -169,6 +173,14 @@ export function ShareToConversationDialog({
   const [selected, setSelected] = useState<string>(NEW_CONVERSATION);
   const [sharedConversationId, setSharedConversationId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
+  // Attachments that would arrive EMPTY (a session whose transcript is gone). Found before anything is
+  // created or anyone is invited; the notice offers to send without them. `canSendWithout` is false when
+  // nothing else would be sent, so the offer is not made for a message with nothing in it.
+  const [unshippable, setUnshippable] = useState<{
+    existingId: string | null;
+    gaps: UnshippableReference[];
+    canSendWithout: boolean;
+  } | null>(null);
   // A non-null id is the single source of truth for "share succeeded".
   const shared = sharedConversationId !== null;
 
@@ -213,6 +225,7 @@ export function ShareToConversationDialog({
     setGitSharing(false);
     setSharedConversationId(null);
     setLocalError(null);
+    setUnshippable(null);
     resetDraft();
   }, [open, resetDraft]);
 
@@ -290,9 +303,10 @@ export function ShareToConversationDialog({
     }
   };
 
-  const doShare = async (existingId: string | null) => {
+  const doShare = async (existingId: string | null, dropRefs?: ReadonlySet<string>) => {
     if (busy) return;
     setLocalError(null);
+    setUnshippable(null);
     // Fail closed: Git is on but the asset isn't (yet) eligible. Never fall back
     // to a silent copy — the sender must turn Git off to share it as a copy.
     if (gitBlocked) {
@@ -362,6 +376,30 @@ export function ShareToConversationDialog({
         sharedContextEntities: prepared.sharedContextEntities,
         shareConfig: mergedShareConfig,
       };
+      if (dropRefs) {
+        // "Send without it": the references that would arrive empty come off the message AND off the
+        // shared context, so the conversation is never left pointing at something that was not sent.
+        payload = withoutReferences(payload, dropRefs);
+        if (!hasSomethingToSend(payload)) {
+          setLocalError(t`There is nothing left to send — add a message first.`);
+          return;
+        }
+      } else {
+        // Ask BEFORE anything is created: sharing into a new conversation creates it and invites the
+        // recipient first, so a refusal after that would leave them holding an empty conversation.
+        // Fail open — if the check itself cannot run, the send's own refusal is still the backstop.
+        let gaps: UnshippableReference[] = [];
+        try {
+          gaps = await findUnshippableReferences(payload.assetReferences ?? []);
+        } catch (checkErr) {
+          console.warn('[share] could not check what would arrive empty', checkErr);
+        }
+        if (gaps.length > 0) {
+          const without = withoutReferences(payload, new Set(gaps.map((g) => g.type_id)));
+          setUnshippable({ existingId, gaps, canSendWithout: hasSomethingToSend(without) });
+          return;
+        }
+      }
       const target: SendTarget = existingId
         ? { kind: 'existing', conversationId: existingId }
         : {
@@ -370,7 +408,7 @@ export function ShareToConversationDialog({
               project_id: isRemote && !associateProjectOnRemote ? null : effectiveProjectId,
               participants,
               title: effectiveTitle,
-              shared_context_entities: prepared.sharedContextEntities,
+              shared_context_entities: payload.sharedContextEntities,
             },
           };
       let convId: string | null;
@@ -447,7 +485,7 @@ export function ShareToConversationDialog({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="ms-auto me-6 h-7 gap-1.5 text-xs"
+                className="me-6 ms-auto h-7 gap-1.5 text-xs"
                 onClick={() => void openDownload()}
                 disabled={busy}
                 data-testid="share-download"
@@ -459,9 +497,7 @@ export function ShareToConversationDialog({
             )}
           </DialogTitle>
         </DialogHeader>
-        {downloadRefs && (
-          <DownloadMessageDialog open onClose={() => setDownloadRefs(null)} initial={downloadRefs} />
-        )}
+        {downloadRefs && <DownloadMessageDialog open onClose={() => setDownloadRefs(null)} initial={downloadRefs} />}
 
         {shared ? (
           <div className="flex flex-col items-center gap-4 py-6 text-sm" data-testid="share-status">
@@ -717,6 +753,54 @@ export function ShareToConversationDialog({
               )}
             </div>
 
+            {unshippable && (
+              <div
+                className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+                data-testid="share-unshippable"
+              >
+                <p className="font-medium">
+                  <Trans>Nothing would arrive for this, so it was not sent:</Trans>
+                </p>
+                <ul className="list-disc ps-4">
+                  {unshippable.gaps.map((gap) => (
+                    <li key={gap.type_id} className="break-all">
+                      <span className="font-mono">{gap.type_id}</span> — {gap.reason}
+                    </li>
+                  ))}
+                </ul>
+                <p>
+                  <Trans>
+                    The file may have been removed, or it was never created — a session with no conversation yet has no
+                    transcript.
+                  </Trans>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {unshippable.canSendWithout ? (
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        void doShare(unshippable.existingId, new Set(unshippable.gaps.map((g) => g.type_id)))
+                      }
+                      disabled={busy}
+                      data-testid="share-send-without"
+                    >
+                      {unshippable.gaps.every((g) => g.type_id.startsWith('claude_session-')) ? (
+                        <Trans>Send without the session</Trans>
+                      ) : (
+                        <Trans>Send without it</Trans>
+                      )}
+                    </Button>
+                  ) : (
+                    <span>
+                      <Trans>Add a message to send without it.</Trans>
+                    </span>
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => setUnshippable(null)} disabled={busy}>
+                    <Trans>Dismiss</Trans>
+                  </Button>
+                </div>
+              </div>
+            )}
             {shownError && <p className="text-xs text-destructive">{shownError}</p>}
 
             <div className="flex items-center gap-2 pt-1">
