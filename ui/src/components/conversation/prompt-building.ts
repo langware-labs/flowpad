@@ -83,10 +83,9 @@ export function buildAssistancePrompt(sharedTypeIds: readonly TypeId[], privateT
  * itself, so its first answer is where the conversation stands now.
  */
 export function buildConversationStatusPrompt(conversationTypeId: TypeId): string {
-  const [entityLine] = buildContextEntityLines([conversationTypeId]);
   return (
     `Use Flowpad Assistant to read the Flowpad conversation ${conversationTypeId.toUrlString()} ` +
-    'and report its latest status: what was discussed most recently, what is still open, and who is waiting on whom.' +
-    (entityLine ? `\n\n${entityLine}` : '')
+    'and report its latest status: what was discussed most recently, what is still open, and who is waiting on whom.\n\n' +
+    buildContextEntityLines([conversationTypeId]).join('\n')
   );
 }
