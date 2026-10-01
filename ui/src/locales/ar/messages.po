@@ -2675,6 +2675,10 @@ msgstr ""
 #~ msgid "Asks for"
 #~ msgstr ""
 
+#: src/notifications/renderDesktopNotification.ts
+msgid "Asks you to run a prompt"
+msgstr "يطلب منك تشغيل موجّه"
+
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "asset"
 msgstr "أصل"
@@ -19055,6 +19059,11 @@ msgstr ""
 #: src/components/install/InstallButton.tsx
 msgid "Sent to your desktop — confirm it there."
 msgstr ""
+
+#. placeholder {0}: labelForType(sent[1])
+#: src/notifications/renderDesktopNotification.ts
+msgid "Sent you: {0}"
+msgstr "أُرسل إليك: {0}"
 
 #: src/components/terminal/interactive-terminal/TimeGutter.tsx
 msgid "Seq #"
