@@ -7,6 +7,7 @@ its own, so its whole behaviour is assertable in milliseconds.
 The case that carries the design is the one where the call REPORTS SUCCESS and
 the goal is still not met — `exit 0` is never the verdict, the re-check is.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,6 +42,7 @@ def _spec(**over) -> ComputeOpSpec:
 
 def _shell(code_for, *, seen=None):
     """A shell whose exit code is a function of the command."""
+
     async def shell(command, **_kw):
         if seen is not None:
             seen.append(command)
@@ -48,22 +50,32 @@ def _shell(code_for, *, seen=None):
         if code == "timeout":
             return CliResult.of_process(command, None, timed_out=True)
         return CliResult.of_process(command, code, "", f"{command}: nope" if code else "")
+
     return shell
 
 
 async def _run_op(spec, shell, launch=None, *, tmp_path, **over):
     kw = {"launch": launch} if launch is not None else {}
     return await run_op(
-        spec, trusted=True, workdir=Path(tmp_path), platform="linux", shell=shell, **kw, **over,
+        spec,
+        trusted=True,
+        workdir=Path(tmp_path),
+        platform="linux",
+        shell=shell,
+        **kw,
+        **over,
     )
 
 
 # ── the check, on its own ────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_check_is_cheap_and_answers_three_ways(tmp_path):
     spec = _spec(not_applicable_codes=[99])
-    ask = lambda code: check_op(spec, workdir=tmp_path, platform="linux", shell=_shell(lambda _c: code))
+
+    def ask(code):
+        return check_op(spec, workdir=tmp_path, platform="linux", shell=_shell(lambda _c: code))
 
     assert (await ask(0)).exit_code is ExitCode.OK
     assert (await ask(1)).exit_code is ExitCode.NOT_YET
@@ -88,12 +100,14 @@ async def test_a_timed_out_check_is_not_a_satisfied_one(tmp_path):
 
 @pytest.mark.asyncio
 async def test_no_check_at_all_means_work_to_do(tmp_path):
-    answer = await check_op(_spec(completion_check=None), workdir=tmp_path, platform="linux",
-                            shell=_shell(lambda _c: 0))
+    answer = await check_op(
+        _spec(completion_check=None), workdir=tmp_path, platform="linux", shell=_shell(lambda _c: 0)
+    )
     assert answer.exit_code is ExitCode.NOT_YET and answer.ran is False
 
 
 # ── one call, then the re-check ──────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_satisfied_costs_one_check_and_runs_nothing(tmp_path):
@@ -129,14 +143,18 @@ async def test_a_call_that_exits_zero_without_reaching_the_goal_is_not_yet(tmp_p
     `uv` installs happily into ~/.local/bin and the shell still cannot find it.
     The call succeeds, the CHECK does not — and the check is the verdict.
     """
+
     async def shell(command, **_kw):
         if command == "install uv":
             return CliResult.of_process(command, 0, "installed to ~/.local/bin")
         return CliResult.of_process(command, 1, "", "uv: not found")
 
-    spec = _spec(name="uv-on-path", label="uv",
-                 exe_data={"commands": {"linux": "install uv"}},
-                 completion_check={"commands": {"linux": "uv --version"}})
+    spec = _spec(
+        name="uv-on-path",
+        label="uv",
+        exe_data={"commands": {"linux": "install uv"}},
+        completion_check={"commands": {"linux": "uv --version"}},
+    )
     answer = await _run_op(spec, shell, tmp_path=tmp_path)
 
     assert answer.ok is False and answer.exit_code is ExitCode.NOT_YET
@@ -194,11 +212,12 @@ async def test_a_call_silent_on_this_platform_stays_not_applicable_after_the_rec
 
 @pytest.mark.asyncio
 async def test_a_call_that_never_started_keeps_its_own_reason(tmp_path):
-    """"Nothing ran" must not be reported as "it ran and the check still fails".
+    """ "Nothing ran" must not be reported as "it ran and the check still fails".
 
     The launcher answers the way it does with no harness on the box: NOT_YET,
     ``ran=False``, and the sentence that is the only account of why.
     """
+
     async def launch(*_a, **_kw):
         return PromptResult.not_yet("No coding-agent harness is available to run this.", ran=False)
 
@@ -211,6 +230,7 @@ async def test_a_call_that_never_started_keeps_its_own_reason(tmp_path):
 
 
 # ── the agent subkind ────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_the_agent_is_told_the_goal_the_manual_way_and_the_bar(tmp_path):
@@ -244,8 +264,9 @@ async def test_an_executor_continues_that_process_instead_of_spawning(tmp_path):
         seen.append(kw)
         return PromptResult.satisfied("The agent finished.", executor="agentic_process-p1")
 
-    spec = _spec(subkind="agent", exe_data={"agent": "provisioner", "prompt": "the check still fails"},
-                 completion_check=None)
+    spec = _spec(
+        subkind="agent", exe_data={"agent": "provisioner", "prompt": "the check still fails"}, completion_check=None
+    )
     answer = await _run_op(spec, _shell(lambda _c: 0), launch, tmp_path=tmp_path, executor="agentic_process-p1")
 
     assert seen[0]["executor"] == "agentic_process-p1", "the executor is handed on as-is, never re-parsed"
@@ -255,11 +276,13 @@ async def test_an_executor_continues_that_process_instead_of_spawning(tmp_path):
 
 # ── trust ────────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_an_unapproved_op_is_refused_before_it_asks_anything(tmp_path):
     seen: list[str] = []
-    answer = await run_op(_spec(), trusted=False, workdir=Path(tmp_path), platform="linux",
-                          shell=_shell(lambda _c: 0, seen=seen))
+    answer = await run_op(
+        _spec(), trusted=False, workdir=Path(tmp_path), platform="linux", shell=_shell(lambda _c: 0, seen=seen)
+    )
     # Refused, returned — never raised, never blocked, nothing run to find out.
     assert answer.exit_code is ExitCode.REFUSED and answer.ran is False
     assert seen == []
@@ -267,13 +290,17 @@ async def test_an_unapproved_op_is_refused_before_it_asks_anything(tmp_path):
 
 # ── a cli op returns a value ─────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_a_cli_op_returns_its_declared_kind(tmp_path):
-    op = ComputeOpSpec.model_validate({
-        "name": "pick-port", "subkind": "cli",
-        "exe_data": {"commands": {"linux": "free-port"}},
-        "output_spec_kind": "test.runner.port",
-    })
+    op = ComputeOpSpec.model_validate(
+        {
+            "name": "pick-port",
+            "subkind": "cli",
+            "exe_data": {"commands": {"linux": "free-port"}},
+            "output_spec_kind": "test.runner.port",
+        }
+    )
 
     async def shell(command, **_kw):
         return CliResult.of_process(command, 0, '{"port": 8099}\n')
@@ -285,10 +312,14 @@ async def test_a_cli_op_returns_its_declared_kind(tmp_path):
 
 @pytest.mark.asyncio
 async def test_a_command_that_prints_plain_text_returns_it_as_a_string(tmp_path):
-    op = ComputeOpSpec.model_validate({
-        "name": "whoami", "subkind": "cli", "output_spec_kind": "string",
-        "exe_data": {"commands": {"linux": "whoami"}},
-    })
+    op = ComputeOpSpec.model_validate(
+        {
+            "name": "whoami",
+            "subkind": "cli",
+            "output_spec_kind": "string",
+            "exe_data": {"commands": {"linux": "whoami"}},
+        }
+    )
 
     async def shell(command, **_kw):
         return CliResult.of_process(command, 0, "  ada  \n")
@@ -298,11 +329,14 @@ async def test_a_command_that_prints_plain_text_returns_it_as_a_string(tmp_path)
 
 @pytest.mark.asyncio
 async def test_a_value_that_is_not_the_declared_kind_fails_the_op(tmp_path):
-    op = ComputeOpSpec.model_validate({
-        "name": "pick-port", "subkind": "cli",
-        "exe_data": {"commands": {"linux": "free-port"}},
-        "output_spec_kind": "test.runner.port",
-    })
+    op = ComputeOpSpec.model_validate(
+        {
+            "name": "pick-port",
+            "subkind": "cli",
+            "exe_data": {"commands": {"linux": "free-port"}},
+            "output_spec_kind": "test.runner.port",
+        }
+    )
 
     async def shell(command, **_kw):
         return CliResult.of_process(command, 0, "not json")
@@ -326,8 +360,7 @@ async def test_a_call_silent_on_this_platform_with_a_declared_kind_stays_not_app
     with "returned a value that is not an int". Nothing ran; there is no value
     to hold to anything.
     """
-    spec = _spec(exe_data={"commands": {"darwin": "echo 8080"}}, completion_check=None,
-                 output_spec_kind="int")
+    spec = _spec(exe_data={"commands": {"darwin": "echo 8080"}}, completion_check=None, output_spec_kind="int")
     answer = await _run_op(spec, _shell(lambda _c: 0), tmp_path=tmp_path)
 
     assert answer.exit_code is ExitCode.NOT_APPLICABLE
@@ -344,3 +377,96 @@ async def test_a_failed_call_says_why_in_its_own_words(tmp_path):
 
     quiet = await _run_op(_spec(), _shell(lambda c: 0 if c.startswith("install") else 1), tmp_path=tmp_path)
     assert quiet.detail == "jq: the cli call ran, but the check still fails."
+
+
+# ── a Windows permission prompt is the person's turn, not a hang ─────────────
+
+
+@pytest.mark.asyncio
+async def test_an_open_windows_permission_prompt_says_waiting_for_you_until_it_closes(tmp_path, monkeypatch):
+    import asyncio
+
+    from flow_sdk.core.compute_op import runner
+
+    prompt = {"open": True}
+    monkeypatch.setattr(runner, "_permission_prompt_open", lambda: prompt["open"])
+    monkeypatch.setattr(runner, "_PERMISSION_PROMPT_POLL_SECONDS", 0.01)
+    said: list[str] = []
+
+    async def until(pred):
+        while not pred():
+            await asyncio.sleep(0.01)
+
+    installed: list[bool] = []
+
+    async def shell(command, **_kw):
+        if command == "install jq":
+            await until(lambda: any("waiting for you" in s for s in said))
+            prompt["open"] = False
+            await until(lambda: said[-1] == "jq: cli")
+            installed.append(True)
+            return CliResult.of_process(command, 0, "", "")
+        return CliResult.of_process(command, 0 if installed else 1, "", "")
+
+    spec = _spec(exe_data={"commands": {"win32": "install jq"}}, completion_check={"commands": {"win32": "have jq"}})
+    answer = await run_op(spec, trusted=True, workdir=tmp_path, platform="win32", shell=shell, on_status=said.append)
+
+    assert answer.exit_code is ExitCode.OK
+    assert any("waiting for you" in s and "Windows permission prompt" in s for s in said)
+
+
+@pytest.mark.asyncio
+async def test_no_permission_prompt_watch_off_windows(tmp_path, monkeypatch):
+    from flow_sdk.core.compute_op import runner
+
+    probed: list[bool] = []
+    monkeypatch.setattr(runner, "_permission_prompt_open", lambda: probed.append(True) or True)
+    said: list[str] = []
+    installed: list[bool] = []
+
+    def code_for(command):
+        if command == "install jq":
+            installed.append(True)
+        return 0 if installed else 1
+
+    answer = await _run_op(_spec(), _shell(code_for), tmp_path=tmp_path, on_status=said.append)
+    assert answer.exit_code is ExitCode.OK
+    assert probed == [] and not any("waiting for you" in s for s in said)
+
+
+@pytest.mark.asyncio
+async def test_an_agent_blocked_on_a_windows_permission_prompt_says_waiting_for_you(tmp_path, monkeypatch):
+    import asyncio
+
+    from flow_sdk.core.compute.process_step import ProcessProgress
+    from flow_sdk.core.compute_op import runner
+
+    prompt = {"open": True}
+    monkeypatch.setattr(runner, "_permission_prompt_open", lambda: prompt["open"])
+    monkeypatch.setattr(runner, "_PERMISSION_PROMPT_POLL_SECONDS", 0.01)
+    said: list[str] = []
+
+    async def until(pred):
+        while not pred():
+            await asyncio.sleep(0.01)
+
+    async def launch(*, on_status, **_kw):
+        await until(lambda: any("waiting for you" in s for s in said))
+        on_status(ProcessProgress(text="jq: installing"))
+        assert "waiting for you" in said[-1], "the agent's own line must not hide an open prompt"
+        prompt["open"] = False
+        await until(lambda: said[-1] == "jq: installing")
+        return PromptResult.satisfied("The agent finished.")
+
+    spec = _spec(subkind="agent", exe_data={"agent": "provisioner"}, completion_check=None)
+    answer = await run_op(
+        spec,
+        trusted=True,
+        workdir=tmp_path,
+        platform="win32",
+        shell=_shell(lambda _c: 0),
+        launch=launch,
+        on_status=said.append,
+    )
+
+    assert answer.exit_code is ExitCode.OK
