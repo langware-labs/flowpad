@@ -4,7 +4,7 @@ import uuid
 from typing import Optional
 
 from flow_sdk.assets.layout import File
-from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.fs_store.schema_registry import RECEIVE_TRANSFER_GIT_REFERENCE, TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -40,6 +40,10 @@ class ProjectMeta(BaseMeta):
 
 PROJECT = TypeInfo(
     type_name=EntityType.PROJECT,
+    # An invite message carries the project as a git reference (``Project``
+    # owns the hooks), and a live invite pulls its bundle so the chip can install.
+    receive_transfer=RECEIVE_TRANSFER_GIT_REFERENCE,
+    eager_pull=True,
     shape=File(ext=".md"),
     icon="Briefcase",
     indexed_by_default=True,
