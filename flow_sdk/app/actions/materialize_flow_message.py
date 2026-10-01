@@ -183,7 +183,7 @@ async def _adopt_header_session_snapshot(fm: "FlowMessage", someone_typeid: str)
         logger.warning("[session] header snapshot adopt failed for fm=%s: %s", fm.id, e)
 
 
-async def _mirror_referenced_projects(fm: "FlowMessage", someone_typeid: str | None) -> None:
+async def mirror_referenced_projects(fm: "FlowMessage", someone_typeid: str | None) -> None:
     """Backward compatibility (FLOWPAD-2199; remove in FLOWPAD-2200): mirror each
     ``project-<id>`` a received message references but this box lacks.
 
@@ -304,7 +304,7 @@ async def materialize_flow_message(
             fm = await fm.save(someone_typeid, notify=False)
         if remote:
             await _adopt_header_session_snapshot(fm, someone_typeid)
-            await _mirror_referenced_projects(fm, someone_typeid)
+            await mirror_referenced_projects(fm, someone_typeid)
 
     # Emit the explicit local CREATE that drives entity-event subscribers
     # (TS SDK ``conv.on('message')``).

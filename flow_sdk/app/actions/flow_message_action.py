@@ -2236,6 +2236,8 @@ async def _process_single_hub_message(raw: dict) -> str | None:
          locally-sent messages never produce a bundle) and every pure-text
          reply from a peer.
     """
+    from flow_sdk.app.actions.materialize_flow_message import mirror_referenced_projects  # noqa: PLC0415
+
     fm_id = (raw.get("id") or "").strip()
     if not fm_id:
         return None
@@ -2271,6 +2273,8 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 # would preserve its stale HUB_WRITE values and overwrite the
                 # freshly unpacked state.
                 existing = await FlowMessage.get_one({"id": fm_id})
+                if existing is not None:
+                    await mirror_referenced_projects(existing, None)
                 if existing is None:
                     # A no-row success means unpack materialized the message;
                     # there is no separate header write left to perform.
@@ -2344,6 +2348,7 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     except Exception as e:  # noqa: BLE001
         logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
         return None
+    await mirror_referenced_projects(fm, None)
     conv_id = (raw.get("conversation_id") or "").strip()
     if conv_id:
         # Set before the edge block so the announcement below is well-defined
