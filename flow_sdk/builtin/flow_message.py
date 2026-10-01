@@ -201,7 +201,13 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     # and cloned from its Git origin. Treating it as materializable pinned
     # every project share at body_downloaded=false with a permanent
     # ``body_missing_attachments: [project-<id>]``.
-    {"conversation", "flow_message", "task", "remote_worker_session", "project"}
+    #
+    # A ``prompt_completion`` is the same kind of thing: a typed reply marker
+    # whose full text rides in the attachment's header ``prompt_preview``. The
+    # entity itself stays on the host (it declares no ``main_subdir``, so the
+    # packer never ships it), and the receiver never gets a row or folder for it.
+    # Probing for one reported EVERY reply as missing, forever.
+    {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder

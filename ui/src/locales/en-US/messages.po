@@ -1473,6 +1473,10 @@ msgstr "Add a key in \"LLM API keys\" above to use it here"
 msgid "Add a machine"
 msgstr "Add a machine"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Add a message to send without it."
+msgstr "Add a message to send without it."
+
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "Add a note to the running session about this message"
@@ -7342,6 +7346,7 @@ msgstr "Discuss analysis"
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "Dismiss"
@@ -14534,6 +14539,10 @@ msgstr "Nothing was installed. You can close this tab."
 msgid "Nothing was launched. You can close this tab."
 msgstr "Nothing was launched. You can close this tab."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Nothing would arrive for this, so it was not sent:"
+msgstr "Nothing would arrive for this, so it was not sent:"
+
 #: src/components/events/EventFeed.tsx
 msgid "Nothing yet. Rule fires are read from each rule's log; live events show what the backend has forwarded since it started — the bus keeps no history of its own."
 msgstr "Nothing yet. Rule fires are read from each rule's log; live events show what the backend has forwarded since it started — the bus keeps no history of its own."
@@ -19029,6 +19038,14 @@ msgstr "Send message"
 msgid "Send one minimal call through this endpoint"
 msgstr "Send one minimal call through this endpoint"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Send without it"
+msgstr "Send without it"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Send without the session"
+msgstr "Send without the session"
+
 #: src/components/assets/editor/agent-profile/deployment/ThreadPane.tsx
 msgid "Sender refused"
 msgstr "Sender refused"
@@ -21350,6 +21367,10 @@ msgstr "The file changed outside the editor — reloaded it."
 msgid "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
 msgstr "The file may have been deleted, moved, or doesn't match the {typeLabel} format."
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "The file may have been removed, or it was never created — a session with no conversation yet has no transcript."
+msgstr "The file may have been removed, or it was never created — a session with no conversation yet has no transcript."
+
 #: src/components/asset-manager/AssetScopeToggles.tsx
 msgid "The Flowpad Assistant's assets"
 msgstr "The Flowpad Assistant's assets"
@@ -21630,6 +21651,10 @@ msgstr "The worker exited immediately after launch, so auto-relaunch is paused. 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
 msgstr "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "There is nothing left to send — add a message first."
+msgstr "There is nothing left to send — add a message first."
 
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
