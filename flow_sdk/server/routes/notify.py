@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 
 from fastapi.responses import HTMLResponse
 
-from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
+from flow_sdk.schema.data_spec.open_link_spec import MessageOpenLinkSpec, OpenLinkSpec
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ def message_deep_link_params(
     git_origin: dict | str | None = None,
     sender_name: str = "",
     title: str = "",
-) -> OpenLinkSpec:
+) -> MessageOpenLinkSpec:
     """The ``action=open`` deep link for a message or notification.
 
     The resolver (``open_flow_message_params``) takes the FM's
@@ -75,7 +75,7 @@ def message_deep_link_params(
     ``sender_name`` / ``title`` are cosmetic — shown in the brief loading
     state. Empty values are left out of the link.
     """
-    return OpenLinkSpec(
+    return MessageOpenLinkSpec(
         fm=fm_id,
         conversation_id=conversation_id or None,
         task_id=task_id or None,

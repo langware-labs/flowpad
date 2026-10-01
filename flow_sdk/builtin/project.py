@@ -61,6 +61,7 @@ from flow_sdk.schema.data_spec.share_result_spec import (
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
+    from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec
     from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 log = logging.getLogger(__name__)
@@ -2154,6 +2155,56 @@ class Project(Entity):
         if not project.fs_storage_mount_path:
             await project.setup_from_git_origin()
         return True
+
+    @classmethod
+    async def hydrate_from_hub(cls, project_id: str, someone_typeid: str | None = None) -> "Project | None":
+        """This project as the hub holds it, mirrored locally — for a caller
+        that holds only its id (a deep link). Hub-first, through the membership
+        mirror. ``None`` when the hub refuses (gone, or not yours); raises
+        ``HubError`` when the hub can't answer (no hub, signed out, unreachable),
+        so the caller can offer a retry instead of calling it gone."""
+        from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        try:
+            payload = await hub_http.hub_get_or_raise(BuiltinEntityType.PROJECT, project_id)
+        except HubError as e:
+            if e.status_code in (403, 404, 422):
+                return None
+            raise
+        if not isinstance(payload, dict) or not payload.get("id"):
+            return None
+        return await materialize_remote_membership_entity(cls, payload, someone_typeid)
+
+    @classmethod
+    async def resolve_open(cls, entity_id: str, someone_typeid: str | None = None) -> "ProjectOpenLinkSpec":
+        """A shared project's link: hydrate it from the hub, then hand the UI
+        the "X shared a project with you" set-up (``setup_git`` + origin), the
+        project itself when it is installed here, or why it can't open."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec  # noqa: PLC0415
+
+        try:
+            project = await cls.hydrate_from_hub(entity_id, someone_typeid)
+        except HubError as e:
+            log.warning("[project.open] %s: hub unavailable (%s)", entity_id, e)
+            return ProjectOpenLinkSpec(project_id=entity_id, project_error="unreachable")
+        if project is None:
+            return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+        if project.fs_storage_mount_path:
+            return ProjectOpenLinkSpec(project_id=entity_id)
+        origin = as_git(project.origin)
+        if origin is None:
+            return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+        return ProjectOpenLinkSpec(
+            project_id=entity_id,
+            setup_git="1",
+            git_origin=json.dumps(origin.model_dump(mode="json")),
+            title=project.name or None,
+        )
 
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor
