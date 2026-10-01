@@ -9,6 +9,7 @@ names. A ``credential.json`` written before 0.2.178 still says where; the boot l
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 from pathlib import Path
@@ -154,6 +155,22 @@ async def test_a_vault_exception_keeps_production_out_of_every_file(home, projec
     assert dict(dotenv_values(mount / ".env.local")) == {"DATABASE_URL": "dev"}
     prod = await resolve_project_secrets(project, placement=await Placement.of(production))
     assert prod["DATABASE_URL"].get_secret_value() == "prod"
+
+
+async def test_two_credentials_saved_at_once_both_keep_their_store(home):
+    """Each save chooses a store on this computer's ONE binding. Saved concurrently (the channel doubles
+    plant every driver's credential at once), the second must not write back the binding it read
+    before the first wrote — that dropped the first credential's variables to the default store,
+    where its values (written to the vault) were never found."""
+    await Deployment.this_computer()  # exists before either save, as it does on a running instance
+    saved = await asyncio.gather(*(
+        save_credential(scope="user", manifest=_manifest(name, var), values={var: "v"}, store="vault")
+        for name, var in (("first", "FIRST_TOKEN"), ("second", "SECOND_TOKEN"))
+    ))
+
+    here = await Deployment.this_computer()
+    for spec in saved:
+        assert (await spec.secret_store(here)).ref.type == "vault", spec.name
 
 
 async def test_an_agents_local_deployment_reads_what_this_computer_reads(home, project):
