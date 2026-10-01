@@ -61,6 +61,7 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => {
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: h.openDock }, currentDock: null }),
   useCurrentDock: () => null,
+  useIsHomeSurface: () => false,
 }));
 
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hubOnly }));
