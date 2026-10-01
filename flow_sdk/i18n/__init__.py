@@ -1,5 +1,6 @@
 """Backend i18n — the single source of truth for which locales the app ships."""
 
+from flow_sdk.i18n.os_languages import get_os_languages
 from flow_sdk.i18n.supported_locales import SUPPORTED_LOCALES, get_supported_locales
 from flow_sdk.i18n.translation_targets import (
     TRANSLATION_TARGETS,
@@ -10,6 +11,7 @@ from flow_sdk.i18n.translation_targets import (
 __all__ = [
     "SUPPORTED_LOCALES",
     "get_supported_locales",
+    "get_os_languages",
     "TRANSLATION_TARGETS",
     "get_translation_target",
     "get_translation_targets",

@@ -37,9 +37,12 @@ import { defineGlobal } from '@sdk/utils';
  *        - exactly 1 → that language
  *        - 2+        → the best system match; the footer chip lets them switch.
  *
- * The footer picker is shown whenever the BACKEND ships 2+ locales. The OS
- * intersection above only picks the first-run DEFAULT — it never decides whether
- * the picker is offered (see `LanguageSelector`).
+ * The footer's QUICK switch is offered only when the user and the app share 2+
+ * languages (`useQuickLocaleSwitch`). "The user's languages" is the union of
+ * `navigator.languages` and the backend's `user_languages` — the OS display
+ * languages plus KEYBOARD LAYOUTS, which the browser cannot see: a Hebrew
+ * keyboard on an English OS is a Hebrew reader. Every supported language stays
+ * reachable from Settings → Language whatever the overlap.
  *
  * Catalogs are loaded lazily per locale (dynamic `*.po` import → `i18n.load` →
  * `i18n.activate`) so only the active locale's messages are fetched.
@@ -72,6 +75,9 @@ const FALLBACK_LOCALES: LocaleInfo[] = [
 // it reactively via `useSupportedLocales` (useSyncExternalStore).
 let _supported: LocaleInfo[] = FALLBACK_LOCALES;
 const _supportedListeners = new Set<() => void>();
+// OS display + keyboard languages reported by the backend (bootstrap
+// `user_languages`). Written alongside `_supported`, so it shares its listeners.
+let _osLanguages: readonly string[] = [];
 
 /** Current supported locales (backend-derived, or the en-US fallback pre-bootstrap). */
 export function getSupportedLocales(): LocaleInfo[] {
@@ -120,6 +126,22 @@ export function systemIntersection(): LocaleInfo[] {
   const seen = new Set<string>();
   const out: LocaleInfo[] = [];
   for (const raw of navigatorLanguages()) {
+    const code = matchLanguageTag(raw);
+    if (!code || seen.has(code)) continue;
+    seen.add(code);
+    out.push(localeInfo(code));
+  }
+  return out;
+}
+
+/**
+ * Supported locales the USER uses: `navigator.languages` ∪ the backend's OS
+ * display + keyboard languages, matched to supported codes and de-duped.
+ */
+export function userLocaleOverlap(): LocaleInfo[] {
+  const seen = new Set<string>();
+  const out: LocaleInfo[] = [];
+  for (const raw of [...navigatorLanguages(), ..._osLanguages]) {
     const code = matchLanguageTag(raw);
     if (!code || seen.has(code)) continue;
     seen.add(code);
@@ -335,8 +357,12 @@ export async function initLocale(): Promise<void> {
  * auto-pick). Call once after bootstrap, from the root loader, before the app
  * tree mounts.
  */
-export async function applySupportedLocales(list: LocaleInfo[] | null | undefined): Promise<void> {
+export async function applySupportedLocales(
+  list: LocaleInfo[] | null | undefined,
+  osLanguages?: readonly string[] | null,
+): Promise<void> {
   _supported = list && list.length > 0 ? list : FALLBACK_LOCALES;
+  _osLanguages = osLanguages ?? [];
   _supportedListeners.forEach((fn) => fn());
   await resolveAndApply(true);
   // From here on a project's language can actually be resolved, so start
@@ -468,6 +494,15 @@ export function useLocale(): string {
 /** Reactive accessor for the full active LocaleInfo. */
 export function useLocaleInfo(): LocaleInfo {
   return localeInfo(useLocale());
+}
+
+/**
+ * Whether the footer offers its quick language switch: the user and the app
+ * share 2+ languages (see `userLocaleOverlap`). Re-evaluates when bootstrap lands.
+ */
+export function useQuickLocaleSwitch(): boolean {
+  useSupportedLocales();
+  return userLocaleOverlap().length >= 2;
 }
 
 /** Reactive accessor for the backend-derived supported locales. */

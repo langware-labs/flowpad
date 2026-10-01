@@ -2113,7 +2113,7 @@ async def initialize_bootstrap() -> BootstrapInfo:
             _local_entities = None
             await _ensure_local_entities()
         user, project, workspace, compute_node = _local_entities
-        from flow_sdk.i18n import get_supported_locales, get_translation_targets
+        from flow_sdk.i18n import get_os_languages, get_supported_locales, get_translation_targets
         from flow_sdk.icons import icons as icon_registry
         from flow_sdk.instance_settings import get_instance_settings
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode
@@ -2138,6 +2138,8 @@ async def initialize_bootstrap() -> BootstrapInfo:
             desktop_info=get_desktop_bootstrap_info(),
             records_root=str(settings.records_root),
             supported_locales=get_supported_locales(),
+            # Off the loop: the Linux probe shells out to gsettings (cached after).
+            user_languages=await asyncio.to_thread(get_os_languages),
             translation_targets=get_translation_targets(),
             supported_pages=_resolve_supported_pages(),
             privacy_mode=get_privacy_mode(),
