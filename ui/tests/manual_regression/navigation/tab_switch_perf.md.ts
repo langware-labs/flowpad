@@ -637,8 +637,15 @@ test('cold open of a terminal with a large recording: from its checkpoint, withi
   // Steering goes to the active tab: with the first page still open, the reopen's steer can land
   // there and the fresh page never leaves the desktop.
   await firstPage.close();
-  const again = await coldOpen(await browser.newPage(), a);
-  console.log(`[perf] cold open from the checkpoint: ${again.ms}ms — ${again.line}`);
-  expect(again.line, 'the reopen was not a cold terminal mount').toContain('mode=cold');
-  expect(again.ms, `cold open of a large recording (budget ${coldTerminalMs}ms)`).toBeLessThanOrEqual(coldTerminalMs);
+  // Its own browser context outlives the test unless closed: a page left connected is a tab the
+  // next spec's steer can land on.
+  const againPage = await browser.newPage();
+  try {
+    const again = await coldOpen(againPage, a);
+    console.log(`[perf] cold open from the checkpoint: ${again.ms}ms — ${again.line}`);
+    expect(again.line, 'the reopen was not a cold terminal mount').toContain('mode=cold');
+    expect(again.ms, `cold open of a large recording (budget ${coldTerminalMs}ms)`).toBeLessThanOrEqual(coldTerminalMs);
+  } finally {
+    await againPage.close();
+  }
 });
