@@ -25,11 +25,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { createServer } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { HUB_URL, getAliceCreds, hubAvailable, hubLogin } from './_hub';
+import { HUB_URL, getAliceCreds, hubAvailable, hubJson, hubLogin } from './_hub';
 import { pollUntil } from './_matrix';
 import {
   HUB_INST_1 as INST_1,
@@ -60,6 +59,7 @@ const createdArtifacts: Array<{ apiUrl: string; id: string }> = [];
 const createdProcesses: Array<{ apiUrl: string; id: string }> = [];
 const createdAttachments: Array<{ apiUrl: string; id: string }> = [];
 const startedPids: number[] = [];
+const runArtifactNames: string[] = [];
 
 function pythonBin(): string {
   const venvPython = path.join(WORKTREE_ROOT, '.venv', 'bin', 'python');
@@ -99,42 +99,32 @@ function makeStaticFixture() {
   return { root, appDir, token };
 }
 
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      const port = typeof address === 'object' && address ? address.port : 0;
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-async function downloadHubBundle(fmId: string, zipPath: string): Promise<void> {
-  const creds = await getAliceCreds();
-  if (!creds || creds.email !== alice.email) throw new Error(`missing canonical hub credentials for ${alice.name}`);
-  const login = await hubLogin(creds.email, creds.password);
+async function downloadHubBundle(fmId: string, zipPath: string, token: string): Promise<void> {
   const r = await fetch(`${HUB_URL}/api/v1/graph/flow_message/${fmId}/fs/download/${BODY_FILENAME}`, {
-    headers: { Authorization: `Bearer ${login.token}` },
+    headers: { Authorization: `Bearer ${token}` },
   });
   if (!r.ok) throw new Error(`hub body download failed (${r.status}): ${await r.text()}`);
   writeFileSync(zipPath, Buffer.from(await r.arrayBuffer()));
 }
 
+/** Wait for the hub's own readiness signal — body_status READY, which the sender
+ *  stamps (`set_body_status`) only after its `fs/upload` POST has returned — and
+ *  only then download. A 200 from `fs/download` is NOT that signal: the hub's local
+ *  storage driver opens the final path with "wb" before writing, so a GET during
+ *  the upload answers 200 with a 0-byte (or partial) file. */
 async function waitForHubBundle(fmId: string, zipPath: string): Promise<void> {
+  const creds = await getAliceCreds();
+  if (!creds || creds.email !== alice.email) throw new Error(`missing canonical hub credentials for ${alice.name}`);
+  const { token } = await hubLogin(creds.email, creds.password);
   await pollUntil(
     async () => {
-      try {
-        await downloadHubBundle(fmId, zipPath);
-        return true;
-      } catch {
-        return null;
-      }
+      const fm = await hubJson(token, `/graph/flow_message/${fmId}`).catch(() => null);
+      return fm?.body_status === 'ready' ? true : null;
     },
     30_000,
-    'hub body bundle upload',
+    'hub body_status READY',
   );
+  await downloadHubBundle(fmId, zipPath, token);
 }
 
 function bundleNames(zipPath: string): string[] {
@@ -267,6 +257,26 @@ afterAll(async () => {
   for (const project of createdProjects) {
     await fetch(`${project.apiUrl}/api/v1/graph/project/${project.id}`, { method: 'DELETE' }).catch(() => undefined);
   }
+  // The seeded artifact-setup worker may run `flow app open` on its own (it served
+  // the staged copy under bob's records_data in practice). That detached server is
+  // not in startedPids and outlives the process close, so every run would strand a
+  // server in the 8000-8099 band. Stop any process whose cwd carries this run's
+  // unique artifact folder name — nothing else can be serving it.
+  try {
+    let pid = 0;
+    for (const line of execFileSync('lsof', ['-d', 'cwd', '-Fpn'], { encoding: 'utf-8' }).split('\n')) {
+      if (line.startsWith('p')) pid = Number(line.slice(1));
+      else if (line.startsWith('n') && runArtifactNames.some((n) => line.includes(n)) && pid !== process.pid) {
+        try {
+          process.kill(pid);
+        } catch {
+          /* gone */
+        }
+      }
+    }
+  } catch {
+    /* lsof unavailable */
+  }
   for (const root of tempRoots) {
     try {
       rmSync(root, { recursive: true, force: true });
@@ -281,7 +291,7 @@ describe('spora copy-share → Vibe setup', () => {
     const fixture = makeStaticFixture();
     const artifactId = randomUUID();
     const artifactName = `spora-sim-${artifactId.slice(0, 8)}`;
-    const appPort = await freePort();
+    runArtifactNames.push(artifactName);
 
     // Copy-mode WEBAPP artifact — a real folder, NO git_origin.
     const created = await post(alice.apiUrl, '/graph/artifact', {
@@ -374,8 +384,12 @@ describe('spora copy-share → Vibe setup', () => {
             served,
             '--process',
             `agentic_process-${vibeProcId}`,
-            '--port',
-            String(appPort),
+            // No `--port`: `flow app open` picks a port from its own static band
+            // (8000-8099) and binds it in the same call. A port chosen here would be
+            // an OS-ephemeral one probed on 127.0.0.1 only, then held unbound for the
+            // whole share/install leg — any IPv6-wildcard socket on it (or a later
+            // binder) makes the dual-stack `http.server` die with EADDRINUSE and the
+            // call fail as APP_START_TIMEOUT.
             '--timeout',
             '25',
           ],

@@ -55,6 +55,9 @@ class AssetEditor(StrEnum):
     # there is no local row at all (see flow_sdk/builtin/llm_endpoint.py), so the
     # view reads the box listing rather than an asset file.
     LLM_ENDPOINT = "llm_endpoint"
+    # A credential (agentic-assets/credential/<name>/credential.json): what it
+    # declares, where its values live and which are set — never the values.
+    CREDENTIAL = "credential"
     # File-only display viewers — no backing record type, routed by extension
     # on the TS side (like CODE, they never appear in TYPE_TO_EDITOR).
     HTML = "html"
@@ -95,6 +98,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.WIZARD: [EntityType.WIZARD],
     AssetEditor.MCP: [EntityType.MCP],
     AssetEditor.LLM_ENDPOINT: [EntityType.LLM_ENDPOINT],
+    AssetEditor.CREDENTIAL: [EntityType.CREDENTIAL],
     AssetEditor.HTML: [],
     AssetEditor.MCP_APP: [],
     AssetEditor.IMAGE: [],

@@ -112,6 +112,7 @@ RENDEZVOUS_FILES=(
   /tmp/flowpad_rename_http_done.txt
   /tmp/flowpad_rename_http_confirmed.txt
   /tmp/flowpad_rename_ws_done.txt
+  /tmp/flowpad_rename_bob_done.txt
 )
 cleanup_rendezvous() { rm -f "${RENDEZVOUS_FILES[@]}"; }
 trap cleanup_rendezvous EXIT

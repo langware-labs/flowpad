@@ -22,6 +22,7 @@ from flow_sdk.app.actions.watch_registry import (
 from flow_sdk.builtin.project import Project
 from flow_sdk.core.network.connections import get_all_connections
 from flow_sdk.server.app import app
+from tests.unit._project_names import unique_project_name
 
 
 @pytest.fixture
@@ -39,7 +40,7 @@ def connection_id():
 async def watched_project(bootstrapped_client, tmp_path):
     project = Project(
         id=mint_uuid(),
-        name="Watch fixture",
+        name=unique_project_name("Watch fixture"),
         fs_storage_mount_path=str(tmp_path / "project"),
     )
     await project.save(notify=False)
@@ -122,6 +123,11 @@ def _receive_ws_messages(ws, *, target=None, count=1):
                 ws._raise_on_close(frame)
                 assert frame["type"] == "websocket.send"
                 message = json.loads(frame["text"])
+                if message.get("message_type") == "tag_msg":
+                    # A bus event every connection receives (tags/ws_forward.py forwards
+                    # `ingest.*.sync.*`, `agent.status`, …): a background source syncing is
+                    # not an operation on any entity, let alone on our target.
+                    continue
                 if target is not None and message.get("to_entity") != target:
                     # CREATE broadcasts can arrive for background entities.
                     # Never filter an unexpected operation on our own target.

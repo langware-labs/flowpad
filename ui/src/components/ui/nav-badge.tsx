@@ -13,10 +13,11 @@ import { cn } from '@src/lib/utils';
  * tighter host — the bar's star is 14px, where the rail's inset would put the
  * chip in the middle of the icon.
  */
-export function NavBadge({ count, className }: { count: number; className?: string }) {
+export function NavBadge({ count, className, testId }: { count: number; className?: string; testId?: string }) {
   if (count <= 0) return null;
   return (
     <span
+      data-testid={testId}
       className={cn(
         'pointer-events-none absolute end-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-bold leading-none text-destructive-foreground',
         className,

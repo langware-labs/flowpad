@@ -1,12 +1,13 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
+import apiClient from '../client';
 import { dataContext } from '../FlowSync/context';
 import { QueryRequest } from '../FlowSync/query';
 import { IEntity, EntityMerge } from '../IEntity';
 import { ActionInfo } from '../models';
 import { TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
-import { PtyConnection } from '../services/shell/ptyConnection';
+import { PtyConnection, stripAnsi } from '../services/shell/ptyConnection';
 import { ViewType } from '../utils/ui/view-types';
 import type { CliResult } from '../models/ReturnedValue';
 
@@ -57,6 +58,18 @@ export interface IShell extends IEntity {
   claude_session_id?: string | null;
   created_at?: string | null;
   env?: Record<string, string> | null;
+  /** What this terminal is the terminal OF (`snippet:<path>`, `deployment:<id>`) — see `Shell.belongingTo`. */
+  belongs_to?: string | null;
+}
+
+/** How a command typed into a terminal ended (`Shell.runCommand`). */
+export interface ShellRunResult {
+  /** The command's exit code; 130 after a Ctrl-C. */
+  exitCode: number;
+  /** What it printed (its last `Shell.RUN_OUTPUT_CAP` characters), escapes stripped — without
+   *  the terminal's echo of the command. */
+  output: string;
+  durationS: number;
 }
 
 // Connection membership is backend-owned (PtyRegistry.on_ws_connect/on_ws_disconnect
@@ -99,6 +112,13 @@ export class Shell extends APIEntity<Shell> implements IShell {
   /** Epoch-ms (base-Entity field); legacy rows may deliver an ISO string. */
   last_active_at: number | string | null = null;
   error_message: string | null = null;
+  belongs_to: string | null = null;
+
+  /** The start in flight, so concurrent callers of `ensureStarted` share one. */
+  private _starting: Promise<void> | null = null;
+
+  /** The marker of the run `runCommand` is waiting on — what makes `interrupt()` exact. */
+  private _runMarker: string | null = null;
 
   /**
    * The single PTY interface — always present, eagerly created.
@@ -272,6 +292,21 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this.pty_pid ?? this.id;
   }
 
+  /**
+   * This terminal live and attached, started if it is not — ONE start however many callers
+   * ask at once (a view mounting, a Run click). The way to get a live terminal; `start` is the
+   * raw open it wraps.
+   */
+  async ensureStarted(opts: IShellStartOptions = {}): Promise<void> {
+    if (this.ptyConnection.isLive) return;
+    this._starting ??= this.start(opts)
+      .then(() => undefined)
+      .finally(() => {
+        this._starting = null;
+      });
+    return this._starting;
+  }
+
   // ── PTY lifecycle entry point ─────────────────────────────────────────────
 
   /**
@@ -328,10 +363,89 @@ export class Shell extends APIEntity<Shell> implements IShell {
     }
   }
 
-  /** Run `command` in a subprocess. The answer is the command's `CliResult`:
-   *  `returncode` is its own exit, `exit_code` the verdict. */
-  async run(command: string): Promise<CliResult> {
-    return await this.post<CliResult>('run', { command });
+  // ── Commands in the terminal ──────────────────────────────────────────────
+
+  /**
+   * Type `command` into this terminal and resolve when it ends: its exit code and what it
+   * printed. The output shows in the terminal as it is printed; the backend wraps the command in
+   * invisible start/end markers (`Shell.sentinel_command`), read off the live stream here — the
+   * end arrives however the command ends, a Ctrl-C included (exit 130), and `output` is exactly
+   * what lies between them, never the terminal's echo of the command. `signal` stops the WAIT,
+   * never the command: stopping it is `interrupt()`.
+   */
+  async runCommand(command: string, opts: { signal?: AbortSignal; clear?: boolean } = {}): Promise<ShellRunResult> {
+    const started = performance.now();
+    const { signal } = opts;
+    let raw = '';
+    let scanned = 0;
+    let marker: { start: string; end: RegExp } | null = null;
+    let finish: (result: ShellRunResult) => void = () => undefined;
+    const ended = new Promise<ShellRunResult>((resolve) => (finish = resolve));
+    const aborted = new Promise<never>((_, reject) => {
+      const fail = () => reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'));
+      if (signal?.aborted) fail();
+      signal?.addEventListener('abort', fail, { once: true });
+    });
+    aborted.catch(() => undefined); // an abort after the command ended has nobody to tell
+    // Only new text can hold the end (plus a marker's length of what came before it).
+    const look = () => {
+      if (!marker) return;
+      const from = Math.max(0, scanned - 64);
+      const m = marker.end.exec(raw.slice(from));
+      scanned = raw.length;
+      if (m) {
+        const at = raw.indexOf(marker.start);
+        const printed = raw.slice(at < 0 ? 0 : at + marker.start.length, from + m.index);
+        finish({ exitCode: Number(m[1]), output: stripAnsi(printed), durationS: (performance.now() - started) / 1000 });
+      } else if (raw.length > Shell.RUN_OUTPUT_CAP * 2) {
+        raw = raw.slice(-Shell.RUN_OUTPUT_CAP); // a run that prints for hours
+        scanned = raw.length;
+      }
+    };
+    // Listen before asking: a quick command's end can arrive before the answer that names it.
+    const off = this.ptyConnection.onText((text) => {
+      raw += text;
+      look();
+    });
+    try {
+      const answer = await this.post<{ marker: string; osc?: number } | null>('run-command', {
+        command,
+        ...(opts.clear ? { clear: true } : {}),
+      });
+      if (!answer?.marker) throw new Error(`Shell ${this.id} could not run the command`);
+      this._runMarker = answer.marker;
+      const prefix = `\x1b]${answer.osc ?? Shell.SENTINEL_OSC};${answer.marker};`;
+      marker = { start: `${prefix}s\x07`, end: new RegExp(`${prefix.replace(/[\]\[]/g, '\\$&')}(-?\\d+)\x07`) };
+      scanned = 0;
+      look();
+      return await Promise.race([ended, aborted]);
+    } finally {
+      off();
+      this._runMarker = null;
+    }
+  }
+
+  /** Stop the command running in this terminal (Ctrl-C, then what is left is killed); the
+   *  terminal stays. Whether nothing of it is left running. A run `runCommand` is waiting on is
+   *  named by its marker, so the stop reaches exactly its jobs and waits for its end. */
+  async interrupt(): Promise<boolean> {
+    const answer = await this.post<{ stopped: boolean } | null>('interrupt', this._runMarker ? { marker: this._runMarker } : {});
+    return Boolean(answer?.stopped);
+  }
+
+  /** Whether a command runs in this terminal now — the backend's answer, not a guess from output. */
+  async runState(): Promise<{ running_pid: number | null; status: string }> {
+    const action = new ActionInfo('run-state', Shell.type, this.id, 'GET');
+    return (await dataManager.callAction<undefined, { running_pid: number | null; status: string }>(action)) ?? {
+      running_pid: null,
+      status: this.status,
+    };
+  }
+
+  /** Run `command` in a subprocess OUTSIDE the terminal (nothing shows in it). The answer is
+   *  the command's `CliResult`: `returncode` is its own exit, `exit_code` the verdict. */
+  async runDetached(command: string): Promise<CliResult> {
+    return await this.post<CliResult>('run-detached', { command });
   }
 
   async setEnv(vars: Record<string, string>): Promise<void> {
@@ -343,6 +457,49 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   // ── Static helpers ────────────────────────────────────────────────────────
+
+  /** The OSC number of the backend's run markers (`Shell.SENTINEL_OSC`) — `run-command` answers it too. */
+  static SENTINEL_OSC = 7770;
+  /** How much of a run's output `runCommand` keeps: the last megabyte (the terminal shows all). */
+  static RUN_OUTPUT_CAP = 1 << 20;
+
+  /**
+   * The terminal of `what` — a natural name (`run:<project path>`) — the one it had, else a new
+   * one, with a live PTY on the backend. Attach with `ensureStarted()`.
+   */
+  static async belongingTo(what: string, opts: { workdir?: string; name?: string } = {}): Promise<Shell> {
+    const data = await apiClient.post<IShell>('/api/v1/shell/belonging-to', { what, ...opts });
+    return Shell.adopt(data);
+  }
+
+  /** The snippet file's own terminal (made now if it has none) and the command that runs the file there. */
+  static async forSnippet(path: string): Promise<{ shell: Shell; command: string }> {
+    const found = await Shell.snippetTerminal(path, true);
+    if (!found) throw new Error(`the terminal of ${path} could not be opened`);
+    return found;
+  }
+
+  /** The snippet file's terminal if it already has one — found, never made (no PTY is started). */
+  static async findForSnippet(path: string): Promise<{ shell: Shell; command: string } | null> {
+    return Shell.snippetTerminal(path, false);
+  }
+
+  private static async snippetTerminal(path: string, create: boolean): Promise<{ shell: Shell; command: string } | null> {
+    const data = await apiClient.post<{ shell_id: string | null; command: string }>('/api/v1/snippet/terminal', { path, create });
+    const shell = data.shell_id ? ((await Shell.getById(data.shell_id)) as Shell | null) : null;
+    return shell ? { shell, command: data.command } : null;
+  }
+
+  /** The cached instance for these fields, refreshed — never a second instance of one shell
+   *  (a second one orphans the first's output subscribers). */
+  private static adopt(data: Partial<IShell>): Shell {
+    const existing = data.id ? Shell.getByIdFromCache(data.id) : null;
+    if (existing) {
+      Object.assign(existing, data);
+      return existing as Shell;
+    }
+    return new Shell(data);
+  }
 
   static create(
     computeNode: { id: string; uname?: string | null; typeId?: any },
@@ -378,21 +535,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const results: Shell[] = [];
     for (const d of data) {
       try {
-        const id = (d as any)?.id;
-        // Prefer the cached instance — constructing `new Shell(d)` registers
-        // in the DataManager cache and orphans any previous instance, breaking
-        // existing subscribers (InteractiveTerminal's onOutput would keep firing
-        // on the orphaned instance while PTY routing hits the new one). Merge
-        // fresh fields into the cached instance instead.
-        if (id) {
-          const existing = Shell.getByIdFromCache(id);
-          if (existing) {
-            Object.assign(existing, d);
-            results.push(existing);
-            continue;
-          }
-        }
-        results.push(new Shell(d));
+        // The cached instance, refreshed — a second `new Shell(d)` would orphan the first's
+        // subscribers (InteractiveTerminal's onOutput would keep firing on it while PTY routing
+        // hits the new one).
+        results.push(Shell.adopt(d));
       } catch {
         // skip entries with invalid IDs (e.g. non-UUID legacy records)
       }

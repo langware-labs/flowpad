@@ -30,7 +30,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
-from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider, is_hidden_project
+from flow_sdk.config import PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
@@ -61,6 +61,7 @@ from flow_sdk.schema.data_spec.share_result_spec import (
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
+    from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec
     from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 log = logging.getLogger(__name__)
@@ -162,12 +163,29 @@ def _detach_git_history(repo_root: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
 
 
+def _workspace_root() -> Path:
+    """This instance's agent mount root, read at call time (see ``agent_workspace_root``)."""
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+
+    return agent_workspace_root()
+
+
 #: A row on a temp ROOT is not a real work folder, so it is no one's parent project.
 _TEMP_ROOTS = frozenset(canonical_posix_path(p) for p in (tempfile.gettempdir(), "/tmp", "/var/tmp"))
 
 
 class NestedProjectError(ValueError):
     """A project was about to be created inside another project's folder, or around one."""
+
+
+class DuplicateProjectNameError(ValueError):
+    """A project was about to take a name another visible project already has."""
+
+
+def project_name_key(name: str | None) -> str:
+    """The name two projects may not share: case-insensitive, and spaces, ``-`` and
+    ``_`` fold together — "GTM Studio", "gtm-studio" and "gtm_studio" are one name."""
+    return re.sub(r"[\s_\-]+", "-", (name or "").casefold()).strip("-")
 
 
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
@@ -669,6 +687,31 @@ class Project(Entity):
             log.warning("project home page failed for %s: %s", self.id, exc)
             return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
+    # ── setup: is this project ready here, and the wizard that makes it so ─────────
+
+    @action.get(action_name="setup-requirements")
+    async def setup_requirements_action(self) -> "ApiResponse":
+        """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.
+        Every MUST value and needed connection counts; OPTIONAL values never do. Names only."""
+        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @action.post(action_name="setup")
+    async def setup_action(self) -> "ApiResponse":
+        """`POST /project/<id>/setup` — start the setup wizard here; its questions come to the app.
+        Answers at once with the run's address, which a screen claims to draw them in place."""
+        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"run": await start_setup(self)})
+
+    @action.get(action_name="setup-run")
+    async def setup_run_action(self) -> "ApiResponse":
+        """`GET /project/<id>/setup-run` — whether the setup is running, and its steps so far."""
+        from flow_sdk.builtin.project_setup import setup_run  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=setup_run(str(self.id)))
+
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:
         """Validate a ``brand`` block from ``string.json``, or ``None``.
@@ -750,6 +793,20 @@ class Project(Entity):
 
     @computed_field
     @property
+    def folder_name_mismatch(self) -> str | None:
+        """The mount folder's own name when it is not the project's name, else None.
+
+        A rename changes the name, never the folder (the path keys sessions,
+        records and discovery), so the two drift apart; the UI flags the drift.
+        Compared as ``project_name_key``, so "gtm studio" in ``gtm-studio/`` matches."""
+        mount = self.fs_storage_mount_path
+        if not mount or self.hidden:
+            return None
+        folder = PurePosixPath(mount).name
+        return folder if folder and project_name_key(folder) != project_name_key(self.name) else None
+
+    @computed_field
+    @property
     def context_dir_infos(self) -> list[dict[str, str]]:
         """Per-context-folder info the UI needs beyond the bare path.
 
@@ -799,7 +856,7 @@ class Project(Entity):
                 # Name is a VFS-relative path - convert to absolute OS path
                 # VFS root maps to OS root ("/" on Unix, "C:\" on Windows)
                 if sys.platform == PLATFORM_WIN32:
-                    drive = os.path.splitdrive(AGENT_MOUNT_FOLDER)[0]
+                    drive = os.path.splitdrive(str(_workspace_root()))[0]
                     os_root = drive + os.sep
                 else:
                     os_root = os.sep
@@ -809,7 +866,7 @@ class Project(Entity):
             else:
                 # Simple name like "my_first_project"
                 leaf = os.path.basename(self.name)
-                self.fs_storage_mount_path = os.path.join(AGENT_MOUNT_FOLDER, leaf)
+                self.fs_storage_mount_path = os.path.join(str(_workspace_root()), leaf)
 
         # Retain protected legacy paths so the model carries one truthful source
         # value. They remain readable for cleanup/migration, but must never be
@@ -1058,7 +1115,7 @@ class Project(Entity):
 
         # A record with no path is LOCATIONLESS — never fall through to a
         # construction from `name`. `set_fs_storage_mount_path`'s simple-name
-        # branch would root it at `<AGENT_MOUNT_FOLDER>/<name>`, which for any
+        # branch would root it at `<agent_workspace_root()>/<name>`, which for any
         # project living outside the agent workspace silently RELOCATES it
         # there; the next PTY spawn (`os.makedirs(cwd)`) then materializes that
         # folder, so deleting it never sticks. A project whose record lost its
@@ -1326,13 +1383,13 @@ class Project(Entity):
     ) -> None:
         """Invite each new person and grant each new team; the outcome lands on ``last_share_result``.
 
-        A PERSON gets a project invite whose second target is a fresh 1:1 invite
-        conversation, then the invite message in it. A TEAM is granted on the hub
-        as ONE group principal (no expansion into people), then gets one invite
-        conversation granted to the whole team, so its current and future members
-        all read it. The sharing client, not the hub, writes both conversations.
+        A PERSON gets a project invite, then a fresh 1:1 invite conversation with
+        the invite message in it. A TEAM is granted on the hub as ONE group
+        principal (no expansion into people), then gets one invite conversation
+        granted to the whole team, so its current and future members all read it.
+        Both conversations take the generic share-message path
+        (``_invite_conversation``); only the project grant is project-specific.
         """
-        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
         from flow_sdk.builtin.user import recipient_user_id as parse_recipient_user_id  # noqa: PLC0415
 
@@ -1392,20 +1449,14 @@ class Project(Entity):
 
         async def send_person(person: _SharePerson):
             async with gate:
-                try:
-                    conversation = await Conversation.open_invite_conversation(project_name, client)
-                except Exception as exc:  # noqa: BLE001 — reported per person, never stops the rest
-                    status = _hub_status_of(exc) if isinstance(exc, ValueError) else None
-                    return ShareFailedSpec(**person.identity(), status=status, message=str(exc))
                 if person.user_id:
                     field, recipient_key = "recipient_user_id", person.user_id
+                    admit = {"recipient_user_ids": [person.user_id]}
                 else:
                     field, recipient_key = "recipient_email", person.email
-                # Two invitations, one target each: the project invite is the one
-                # the hub emails, so its link lands on the project; the conversation
-                # invite sends no email. One invitation carrying both would land the
-                # email on the conversation, and removing a pending member from the
-                # project would leave its invitation linked (hub remove_member).
+                    admit = {"recipients": [person.email]}
+                # The project invite is the one the hub emails, so its link lands
+                # on the project; the conversation invite below sends no email.
                 request = {
                     field: recipient_key,
                     "invitation_targets": [{"typeid": project_ref, "role": person.role or PROJECT_DEFAULT_INVITE_ROLE}],
@@ -1418,27 +1469,11 @@ class Project(Entity):
                 try:
                     await client.post(f"/graph/project/{self.id}/members", request)
                 except ValueError as exc:  # any non-200 (``FlowpadClient._unwrap``)
-                    await conversation.discard_invite_conversation(client)
                     return ShareFailedSpec(**person.identity(), status=_hub_status_of(exc), message=str(exc))
-                conversation_ref = f"conversation-{conversation.id}"
-                try:
-                    await client.post(
-                        f"/graph/conversation/{conversation.id}/members",
-                        {
-                            field: recipient_key,
-                            "invitation_targets": [{"typeid": conversation_ref, "role": "member"}],
-                            "notify_by_email": False,
-                        },
-                    )
-                except ValueError as exc:  # the project invite landed; only the message can't reach them
-                    logging.warning("[project.share] invite conversation for %s refused: %s", recipient_key, exc)
-                    await conversation.discard_invite_conversation(client)
-                    return ShareInvitedSpec(**person.identity(), conversation_id=None)
-                try:
-                    await conversation.post_invite_message(message_text, project_ref)
-                except Exception as exc:  # noqa: BLE001 — the invite landed; only the message is missing
-                    logging.warning("[project.share] invite message to %s failed: %s", recipient_key, exc)
-                return ShareInvitedSpec(**person.identity(), conversation_id=conversation.id)
+                conversation_id = await self._invite_conversation(
+                    client, project_name, message_text, notify_by_email=False, **admit
+                )
+                return ShareInvitedSpec(**person.identity(), conversation_id=conversation_id)
 
         async def grant_team(team_ref: str):
             try:
@@ -1451,22 +1486,9 @@ class Project(Entity):
                 )
             except ValueError as exc:
                 return ShareFailedTeamSpec(team=team_ref, status=_hub_status_of(exc), message=str(exc))
-            # The grant landed. Everything below only delivers the invite
-            # message, so a failure is reported as a grant with no conversation.
-            try:
-                conversation = await Conversation.open_invite_conversation(project_name, client)
-                await client.post(
-                    f"/graph/conversation/{conversation.id}/members",
-                    {
-                        "principal": team_ref,
-                        "invitation_targets": [{"typeid": f"conversation-{conversation.id}", "role": "member"}],
-                    },
-                )
-                await conversation.post_invite_message(message_text, project_ref)
-            except Exception as exc:  # noqa: BLE001
-                logging.warning("[project.share] team invite conversation for %s failed: %s", team_ref, exc)
-                return ShareGrantedTeamSpec(team=team_ref, conversation_id=None)
-            return ShareGrantedTeamSpec(team=team_ref, conversation_id=conversation.id)
+            # The grant landed; the conversation only delivers the invite message.
+            conversation_id = await self._invite_conversation(client, project_name, message_text, principals=[team_ref])
+            return ShareGrantedTeamSpec(team=team_ref, conversation_id=conversation_id)
 
         person_outcomes = await asyncio.gather(*(send_person(p) for p in to_send))
         # Teams run one at a time: a share names a handful of them, and each
@@ -1481,6 +1503,43 @@ class Project(Entity):
             skipped_teams=skipped_teams,
             failed_teams=[o for o in team_outcomes if isinstance(o, ShareFailedTeamSpec)],
         )
+
+    async def _invite_conversation(self, client, title: str, text: str, **admit) -> str | None:
+        """Deliver the invite message the way any shared entity is sent: a new
+        conversation shared to the invitee (``Conversation.share``, ``admit`` =
+        its recipient / principal / email options), then the message carrying
+        ``project-<id>`` (``handle_add_message``, the ``add_message`` handler).
+        Root-level on purpose: a project's child conversation is readable by
+        every project member, which would leak the note. The project grant
+        already landed, so this is best-effort: ``None`` when the conversation
+        could not be shared — it is removed — and its id otherwise, even when
+        only the message failed.
+        """
+        from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+        local = await User.get_local()
+        someone_typeid = str(local.typeid) if local else None
+        conversation = Conversation.model_validate({"title": title, "status": "open"})
+        conversation.id = Conversation.allocate_id(conversation.model_dump())
+        try:
+            await conversation.save(someone_typeid)
+            await conversation.share(**admit)
+            conversation.remote = True
+            await conversation.save(someone_typeid)
+        except Exception as exc:  # noqa: BLE001 — reported as "invited, no conversation"
+            logging.warning("[project.share] invite conversation (%s) failed: %s", ", ".join(sorted(admit)), exc)
+            await conversation.discard_invite_conversation(client)
+            return None
+        sent = await handle_add_message(
+            {"conversation_id": conversation.id, "message": text, "asset_references": [f"project-{self.id}"]},
+            someone_typeid,
+        )
+        if isinstance(sent, ApiFailResponse):
+            logging.warning("[project.share] invite message in %s failed: %s", conversation.id, sent.message)
+        return conversation.id
 
     @property
     def last_share_result(self) -> Optional[ShareResultSpec]:
@@ -1989,6 +2048,7 @@ class Project(Entity):
         if self.legacy_include_dirs_:
             await self._migrate_legacy_context_dirs()
         was_create = not self.exist_in_db
+        await self._refuse_duplicate_name()
         if was_create:
             await self._refuse_nested_mount()
             await self._warn_if_mount_owned_elsewhere()
@@ -2023,6 +2083,130 @@ class Project(Entity):
         invalidate_projects_cache()
         return result
 
+    def _visible(self) -> bool:
+        """A real work folder: neither hidden (see ``hidden``) nor a row on the temp dir."""
+        return not self.hidden and (self.fs_storage_mount_path or "") not in _TEMP_ROOTS
+
+    async def _refuse_duplicate_name(self) -> None:
+        """No two visible projects share a name (``project_name_key``), on create and rename."""
+        key = project_name_key(self.name)
+        if not key or not self._visible():
+            return
+        if self.exist_in_db:
+            # Only a rename is checked, so rows that collided before the rule keep saving.
+            # The stored row, not the entity cache, which may already hold the new name.
+            stored = await type(self)._db.get_by_id(str(self.id), self.type)
+            if stored and project_name_key(stored.name) == key:
+                return
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # Names are stored as typed; LIKE (case-insensitive) with the separators widened
+        # to "%" narrows to the candidates, and the key decides.
+        candidates = await type(self).get_all(QueryFilter(
+            match=ExpressionNode(op=QueryOp.LIKE, operands=["name", key.replace("-", "%")])))
+        for other in candidates:
+            if str(other.id) != str(self.id) and other._visible() and project_name_key(other.name) == key:
+                raise DuplicateProjectNameError(
+                    f"a project named {other.name!r} already exists ({other.fs_storage_mount_path}); "
+                    "project names must be unique")
+
+    # -- Git-reference reception (``TypeInfo.receive_transfer``): an invite
+    # message carries the project as its row + GitOrigin; installing it clones.
+
+    @classmethod
+    async def pack_reference(cls, entity_id: str, *, transfer_mode: str, repo_cache: dict | None = None):
+        """A project rides as a git reference in EITHER transfer mode: its work
+        lives in its repository, so no bytes ride. The row rides exactly as a
+        share sends it to the hub (``_hub_body`` plus the shared-context
+        origins) — what the recipient's membership mirror reads back. A project
+        with no git origin has nothing to clone and packs nothing."""
+        from flow_sdk.builtin.flow_message_bundle import ReferencePack  # noqa: PLC0415
+
+        project = await cls.get_one({"id": entity_id})
+        origin = as_git(project.origin) if project is not None else None
+        if origin is None:
+            return None
+        metadata = project._hub_body()
+        # The hub ignores these; they can hold local directory paths and the
+        # local folder name.
+        for not_mirrored in ("legacy_include_dirs_", "expand", "folder_name_mismatch"):
+            metadata.pop(not_mirrored, None)
+        shared_context_origins = await project._shared_context_origin_payload()
+        if shared_context_origins:
+            metadata["shared_context_origins"] = shared_context_origins
+        return ReferencePack(metadata=metadata, origin=origin)
+
+    @classmethod
+    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+        """Install a received project: its row through the hub membership mirror
+        when this desktop has none (an existing row is the mirror's — the bundle
+        is a snapshot from when the message was sent and must not roll it back),
+        then its own clone unless it is already set up here."""
+        from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
+
+        origin = as_git(origin)
+        if origin is None:
+            return False
+        project = await cls.get_one({"id": entity_id})
+        if project is None:
+            payload = {**metadata, "id": entity_id, "origin": origin.model_dump(mode="json")}
+            project = await materialize_remote_membership_entity(cls, payload, owner_typeid)
+            if project is None:
+                return False
+        if not project.fs_storage_mount_path:
+            await project.setup_from_git_origin()
+        return True
+
+    @classmethod
+    async def hydrate_from_hub(cls, project_id: str, someone_typeid: str | None = None) -> "Project | None":
+        """This project as the hub holds it, mirrored locally — for a caller
+        that holds only its id (a deep link). Hub-first, through the membership
+        mirror. ``None`` when the hub refuses (gone, or not yours); raises
+        ``HubError`` when the hub can't answer (no hub, signed out, unreachable),
+        so the caller can offer a retry instead of calling it gone."""
+        from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport import hub_http  # noqa: PLC0415
+
+        try:
+            payload = await hub_http.hub_get_or_raise(BuiltinEntityType.PROJECT, project_id)
+        except HubError as e:
+            if e.status_code in (403, 404, 422):
+                return None
+            raise
+        if not isinstance(payload, dict) or not payload.get("id"):
+            return None
+        return await materialize_remote_membership_entity(cls, payload, someone_typeid)
+
+    @classmethod
+    async def resolve_open(cls, entity_id: str, someone_typeid: str | None = None) -> "ProjectOpenLinkSpec":
+        """A shared project's link: hydrate it from the hub, then hand the UI
+        the "X shared a project with you" set-up (``setup_git`` + origin), the
+        project itself when it is installed here, or why it can't open."""
+        import json  # noqa: PLC0415
+
+        from flow_sdk.cloud_client.shared.errors import HubError  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec  # noqa: PLC0415
+
+        try:
+            project = await cls.hydrate_from_hub(entity_id, someone_typeid)
+        except HubError as e:
+            log.warning("[project.open] %s: hub unavailable (%s)", entity_id, e)
+            return ProjectOpenLinkSpec(project_id=entity_id, project_error="unreachable")
+        if project is None:
+            return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+        if project.fs_storage_mount_path:
+            return ProjectOpenLinkSpec(project_id=entity_id)
+        origin = as_git(project.origin)
+        if origin is None:
+            return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
+        return ProjectOpenLinkSpec(
+            project_id=entity_id,
+            setup_git="1",
+            git_origin=json.dumps(origin.model_dump(mode="json")),
+            title=project.name or None,
+        )
+
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor
         contain one. A folder belongs to exactly one project — a subfolder an agent
@@ -2035,10 +2219,7 @@ class Project(Entity):
             return
 
         def _counts(other: "Project") -> bool:
-            other_mount = other.fs_storage_mount_path or ""
-            return (str(other.id) != str(self.id)
-                    and not is_hidden_project(other_mount, bool(other.system))
-                    and other_mount not in _TEMP_ROOTS)
+            return str(other.id) != str(self.id) and other._visible()
 
         for parent in PurePosixPath(mount).parents:
             for owner in await self._mount_owners(str(parent)):
@@ -2059,8 +2240,7 @@ class Project(Entity):
     async def _warn_if_mount_owned_elsewhere(self) -> None:
         """Log (never raise) when a brand-new project lands on a folder another
         project already owns: the caller skipped ``find_by_cwd``, the natural
-        key. Names are display-only and may legitimately repeat, so they are
-        not checked. Only the indexed EQ query runs — no table scan on create."""
+        key. Only the indexed EQ query runs — no table scan on create."""
         mount = self.fs_storage_mount_path
         if not mount:
             return

@@ -221,13 +221,18 @@ export class QueryFilter extends ExpansionRequest {
         const greaterThanOperator = (a: any, b: any) => a <= b;
         return this.isValid(data, operands, greaterThanOperator);
       }
-      case '$IN': {
-        const greaterThanOperator = (a: any, b: any) => a.includes(b);
-        return this.isValid(data, operands, greaterThanOperator, true);
-      }
+      case '$IN':
       case '$NIN': {
-        const greaterThanOperator = (a: any, b: any) => !a.includes(b);
-        return this.isValid(data, operands, greaterThanOperator, true);
+        // Two shapes. The backend's own — ``[field, [values]]``, "the field is one of these" (a
+        // batch by ids) — must re-check the same way here, or every update of a row in such a live
+        // query splices it OUT of the results (the Vibe help button lost its unread count that way).
+        // The older ``[value, {$PROP: field}]`` — "this array field contains the value" — is kept.
+        if (Array.isArray(operands[1])) {
+          const hit = (operands[1] as unknown[]).includes(data?.[operands[0] as string]);
+          return op === '$IN' ? hit : !hit;
+        }
+        const contains = (a: any, b: any) => (op === '$IN' ? a.includes(b) : !a.includes(b));
+        return this.isValid(data, operands, contains, true);
       }
       case '$LIKE': {
         // Mirror the SQL driver's ``field LIKE %value%``: case-insensitive
@@ -235,7 +240,9 @@ export class QueryFilter extends ExpansionRequest {
         // tested against the query — backwards, and regex metachars in either
         // side could throw or mismatch live data_op re-validation vs SQL.)
         const greaterThanOperator = (a: any, b: any) =>
-          String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
+          String(a ?? '')
+            .toLowerCase()
+            .includes(String(b ?? '').toLowerCase());
         return this.isValid(data, operands, greaterThanOperator);
       }
       // Loose null-check on purpose: an unset field is `undefined` on the

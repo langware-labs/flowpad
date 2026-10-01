@@ -733,6 +733,7 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
           // skip them) and the quick-tab-switch submenu. A card of its own, not
           // WikiTip: WikiTip is a one-line help tip, this is a navigation menu.
           const mountPath = bucket.project?.fs_storage_mount_path ?? null;
+          const folderMismatch = bucket.project?.folderNameMismatch ?? null;
           const selectButton = (
             <button
               type="button"
@@ -744,6 +745,16 @@ export function ProjectListPopoverContent({ menu }: { menu: ProjectListMenu }) {
               <RowGuides guides={guides} />
               {leadingIcon}
               <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
+              {folderMismatch ? (
+                <span
+                  className="flex max-w-[9rem] shrink-0 items-center gap-1 rounded border border-amber-500/40 px-1 py-0.5 text-[10px] text-amber-600 dark:text-amber-400"
+                  title={t`The project is named "${bucketRowLabel(bucket)}" but its folder is "${folderMismatch}"`}
+                  data-testid={`project-folder-mismatch-${bucket.projectId}`}
+                >
+                  <FolderOpen className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{folderMismatch}</span>
+                </span>
+              ) : null}
               {isMissing && !isRecovering ? (
                 <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
                   <Trans>recover</Trans>

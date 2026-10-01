@@ -2,13 +2,13 @@
 
     flow project setup              — walk through every connection and credential it needs
     flow project setup --dry-run    — only list them, and which already hold
-    flow project setup --no-ai      — never hand a value to the AI setup
+    flow project setup --no-ai      — never hand a value to AI Assist
 
 ``setup`` collects what the project needs (``builtin/project_setup``), compiles it into a wizard
 held in memory, and runs it HERE with the stock runner: each question is asked on this terminal
-(a secret masked), each value is stored through ``flow credentials set``, and each credential that
-carries ``setup`` instructions gets an AI rung — the ``provisioner`` agent — for whatever was left
-empty. Running it again is the resume: whatever holds is skipped.
+(a secret masked), each value is stored through ``flow credentials set``, and a question of a
+credential that carries ``setup`` instructions left empty goes to AI Assist — the ``provisioner``
+agent answers it (``_assist_at_backend``). Running it again is the resume: whatever holds is skipped.
 
 Exit codes are ``ExitCode``'s: 0 when everything the project needs holds; 1 when something does
 not yet (the output says what); 2 when there is no project here.
@@ -76,9 +76,38 @@ async def _answer_questions(stop: asyncio.Event) -> None:
             if question.id in seen:
                 continue
             seen.add(question.id)
-            value = await asyncio.to_thread(_read, question.prompt, question.secret)
-            ask.answer(question.id, value.strip())
+            offer = "\n(Leave it empty for AI Assist.)" if question.assist_agent else ""
+            value: Any = (await asyncio.to_thread(_read, question.prompt + offer, question.secret)).strip()
+            if not value and question.assist_agent:
+                typer.echo("AI Assist is working on it…", err=True)
+                # The setup's own span from here, as in the app.
+                ask.extend(question.id, question.setup_timeout)
+                value = await _assist(question)
+            ask.answer(question.id, value)
         await asyncio.sleep(0.05)
+
+
+async def _assist_at_backend(question: Any) -> Any:
+    """AI Assist for a question this terminal holds: the agent answers with ``flow ask answer``, which
+    reaches the backend — so the same question is raised THERE with its assist started, and what the
+    agent answers is this question's answer. Empty when it did not answer (why is said, never a value)."""
+    from flow_sdk.core.compute_op import ask  # noqa: PLC0415
+
+    said = await ask.ask_through_backend(
+        question.op_name, question.prompt, question.shape, timeout=question.setup_timeout,
+        label=question.prompt.splitlines()[0] if question.prompt else question.op_name,
+        secret=question.secret, file=question.file, guide=question.guide,
+        assist_agent=question.assist_agent, setup_timeout=question.setup_timeout, workdir=question.workdir,
+        assist_now=True,
+    )
+    if not said.ok:
+        typer.echo(f"AI Assist: {said.detail}", err=True)
+        return ""
+    return said.value
+
+
+#: How an empty answer reaches AI Assist — a seam a test replaces.
+_assist: Callable[[Any], Any] = _assist_at_backend
 
 
 def _state(req: "SetupRequirementSpec") -> str:
@@ -125,7 +154,7 @@ def _requirement_done(req: "SetupRequirementSpec", steps: dict[str, Any]) -> boo
     """Whether a requirement ended holding: its connect / store / AI step reached the goal."""
     if req.kind == REQUIREMENT_GAP:
         return False
-    names = [f"connect-{req.name}"] if req.kind == REQUIREMENT_OAUTH else [f"store-{req.name}", f"ai-{req.name}"]
+    names = [f"connect-{req.name}"] if req.kind == REQUIREMENT_OAUTH else [f"store-{req.name}"]
     return any(steps.get(n) is not None and steps[n].ok for n in names)
 
 
@@ -196,7 +225,7 @@ async def _run(project_id: Optional[str], *, dry_run: bool, ai: bool, as_json: b
 def setup_project(
     project: Annotated[Optional[str], typer.Option("--project", help="Project id (default: the working directory's).")] = None,
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Only list what is needed, and what already holds.")] = False,
-    no_ai: Annotated[bool, typer.Option("--no-ai", help="No AI setup: a value left empty stays missing.")] = False,
+    no_ai: Annotated[bool, typer.Option("--no-ai", help="No AI Assist: a value left empty stays missing.")] = False,
     as_json: Annotated[bool, typer.Option("--json", help="One JSON line; no values in it.")] = False,
     deployment: Annotated[Optional[str], typer.Option("--deployment", help="Set up the values a deployment keeps (default: this computer's).")] = None,
 ) -> None:

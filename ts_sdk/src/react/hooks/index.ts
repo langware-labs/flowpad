@@ -20,6 +20,7 @@ export * from './useOAuthConnection';
 export * from './useOAuthFlowComplete';
 export * from './useProject';
 export * from './use-cleanup-summary';
+export * from './use-project-readiness';
 export * from './useWarnings';
 
 // Entity hooks

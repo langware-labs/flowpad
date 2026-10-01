@@ -144,22 +144,34 @@ def test_a_deployment_process_takes_its_tasks_channel(deployments_backend):
         end(deployment)
 
 
-@pytest.mark.long  # ~15s: a real backend boot, two deployment processes, one turn
+@pytest.mark.long  # ~15s: a real backend boot, a deployment process, one turn
 @pytest.mark.parametrize("doubles", ["whatsapp"], indirect=True)
-def test_a_channel_pinned_to_the_second_deployment_is_answered_only_there(doubles):
+def test_a_channel_pinned_to_another_place_is_answered_only_there(doubles):
+    """``answer_place`` names the ONE placement that answers a channel. An agent has one local
+    deployment (``run_locally`` converges on it), so the other place is its placement elsewhere
+    (an e2b row, never run here): while the channel names it, the local process leaves it alone;
+    pinned to the local deployment, the local process answers it."""
     owner = agent("pinned")
-    first = run(owner.run_locally(snippet=WRAPPER))
-    second = run(owner.run_locally(snippet=WRAPPER))
-    _owned(doubles, owner, "whatsapp", answer_place=second.id)
+    elsewhere = run(owner.deploy("e2b"))
+    source = _owned(doubles, owner, "whatsapp", answer_place=elsewhere.id)
+    here = run(owner.run_locally(snippet=WRAPPER))
+    assert here.id != elsewhere.id
     try:
-        ready(first, 1)   # its chat only — the WhatsApp channel names the second
-        ready(second, 2)
+        ready(here, 1)  # its chat only — the WhatsApp channel names the other place
+        doubles.deliver("whatsapp", "not for here", None)
+        time.sleep(2)  # an answer from here would land by now — it must not
+        assert doubles.sent("whatsapp") == [], "a channel pinned elsewhere is not answered here"
+        assert not _turns(here), "the local deployment never takes it"
+
+        fresh = run(DataSource.get_by_id(source.id))
+        fresh.answer_place = str(here.id)
+        run(fresh.save())
+        ready(here, 2)  # a new place restarts the loop over the channel
         doubles.deliver("whatsapp", "who answers?", None)
-        until("the reply", lambda: doubles.sent("whatsapp"), within=45)
-        assert _turns(second)
-        assert not _turns(first), "the first never takes it"
+        until("the reply here", lambda: [r for r in doubles.sent("whatsapp") if "who answers?" in r["text"]], within=45)
+        assert _turns(here), "the turn ran in the local deployment, now that the channel names it"
     finally:
-        end(first, second)
+        end(here)
 
 
 @pytest.mark.long  # ~20s: a real backend boot, a process stopped and started again, one turn

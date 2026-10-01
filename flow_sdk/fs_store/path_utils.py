@@ -174,16 +174,18 @@ def is_protected_path(path: Path | str | None) -> bool:
     if home and _same_or_under(home, candidate):
         return True
 
+    # This instance's workspace root, and prod's ``~/Flowpad workspace`` — the user's
+    # own projects live there whichever instance is asking.
+    if home and candidate == home + ("/flowpad workspace" if flavour == "windows" else "/Flowpad workspace"):
+        return True
     try:
-        from flow_sdk.config import AGENT_MOUNT_FOLDER, agent_workspace_root  # noqa: PLC0415
+        from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
 
-        agent_roots = (AGENT_MOUNT_FOLDER, agent_workspace_root())
+        root = _same_flavour_key(agent_workspace_root(), flavour)
     except Exception:
-        agent_roots = ()
-    for raw_root in agent_roots:
-        root = _same_flavour_key(raw_root, flavour)
-        if root and candidate == root:
-            return True
+        root = None
+    if root and candidate == root:
+        return True
 
     if candidate in _temp_root_keys(flavour):
         return True

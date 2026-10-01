@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.config import agent_workspace_root
 
 
 def _cn_id(bootstrap_payload: dict) -> str:
@@ -41,7 +41,7 @@ async def test_free_name_is_available(bootstrapped_client):
 async def test_taken_name_reports_the_suffix_materialize_would_use(bootstrapped_client):
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _cn_id(bootstrap.json())
-    taken = Path(AGENT_MOUNT_FOLDER) / "occupied-repo"
+    taken = agent_workspace_root() / "occupied-repo"
     taken.mkdir(parents=True, exist_ok=True)
 
     data = await _validate(bootstrapped_client, cn_id, "occupied-repo")
@@ -57,7 +57,7 @@ async def test_validation_writes_nothing(bootstrapped_client):
     """It is a question. Asking it must not create the folder it asks about."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _cn_id(bootstrap.json())
-    probe = Path(AGENT_MOUNT_FOLDER) / "never-created-by-asking"
+    probe = agent_workspace_root() / "never-created-by-asking"
 
     await _validate(bootstrapped_client, cn_id, "never-created-by-asking")
 

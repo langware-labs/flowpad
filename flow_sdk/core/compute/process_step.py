@@ -49,6 +49,8 @@ class ProcessProgress(DataSpec):
     text: str
     counters: dict = Field(default_factory=dict)
     blocked: bool = False
+    #: The agent process doing it (``agentic_process-<id>``), so a caller can link to it.
+    executor: str = ""
 
 
 #: Worker states collapse to a handful of words on purpose. A row that flickers
@@ -260,7 +262,7 @@ async def launch_step_process(
     if on_status is not None:
         # Immediately: the row should move when the process exists, not two
         # seconds later when the first poll lands.
-        on_status(ProcessProgress(text="starting the agent"))
+        on_status(ProcessProgress(text="starting the agent", executor=str(process.typeid)))
     return await _prompt_and_wait(process, prompt, timeout_seconds=timeout_seconds, on_status=on_status)
 
 

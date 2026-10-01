@@ -57,7 +57,14 @@ if (process.env.FLOWPAD_STORE_BUILD === "1") {
   console.log(`[electron-builder.config] Microsoft Store build: unsigned .appx, identity ${base.appx.identityName} / ${base.appx.publisher}`);
 } else {
     const azure = base.win.azureSignOptions || {};
-    const identityMissing = ["endpoint", "codeSigningAccountName", "certificateProfileName", "publisherName"].filter(k => !azure[k]);
+    // The repo JSON carries a placeholder publisherName ("Your Company LTD") that CI patches
+    // with the certificate's real CN. electron-builder bakes the same value into the app's
+    // app-update.yml, and electron-updater rejects any update whose signer differs from it —
+    // so a shipped placeholder makes EVERY Windows update fail at runtime, while the signing
+    // itself (account + profile) still succeeds. Treat the placeholder as missing.
+    const PLACEHOLDER_PUBLISHER = /your company/i;
+    const isMissing = (k) => !azure[k] || (k === "publisherName" && PLACEHOLDER_PUBLISHER.test([].concat(azure[k]).join(" ")));
+    const identityMissing = ["endpoint", "codeSigningAccountName", "certificateProfileName", "publisherName"].filter(isMissing);
     const credsMissing = ["AZURE_TENANT_ID", "AZURE_CLIENT_ID"].filter(k => !process.env[k]);
     if (!process.env.AZURE_CLIENT_SECRET && !process.env.AZURE_CLIENT_CERTIFICATE_PATH) credsMissing.push("AZURE_CLIENT_SECRET");
     const required = process.env.FLOWPAD_SIGNING === "required";

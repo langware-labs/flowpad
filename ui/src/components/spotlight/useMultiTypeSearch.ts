@@ -10,6 +10,10 @@ const DEFAULT_DEBOUNCE_MS = 250;
 export interface UseMultiTypeSearchResult {
   results: SearchResult[];
   isLoading: boolean;
+  /** The query `results` answer ('' before the first answer). Lets a caller
+   *  tell "answered: nothing" from "not asked yet" in the render where the
+   *  query changes, before the loading flag (set in an effect) catches up. */
+  answeredQuery: string;
 }
 
 /**
@@ -28,6 +32,7 @@ export function useMultiTypeSearch(
 ): UseMultiTypeSearchResult {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [answeredQuery, setAnsweredQuery] = useState('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reqIdRef = useRef(0);
 
@@ -42,7 +47,9 @@ export function useMultiTypeSearch(
       // fails the `myReqId === reqIdRef.current` guard and can't overwrite
       // the cleared results.
       reqIdRef.current++;
-      setResults([]);
+      // Keep the SAME empty array: a fresh `[]` re-renders the caller, and a
+      // caller passing a per-render scope object would re-run this forever.
+      setResults((prev) => (prev.length === 0 ? prev : []));
       setIsLoading(false);
       return;
     }
@@ -69,6 +76,7 @@ export function useMultiTypeSearch(
           return tb - ta;
         });
         setResults(merged);
+        setAnsweredQuery(trimmed);
         setIsLoading(false);
       });
     }, debounceMs);
@@ -78,5 +86,5 @@ export function useMultiTypeSearch(
     };
   }, [trimmed, typesKey, scopeKey, debounceMs, recordTypes, scope]);
 
-  return { results, isLoading };
+  return { results, isLoading, answeredQuery };
 }

@@ -188,6 +188,14 @@ export const assetDefinitions = {
     key: (p: { git_origin: GitOrigin }) => [p.git_origin.provider, p.git_origin.owner, p.git_origin.name],
     load: async (p: { git_origin: GitOrigin }) => (await import('../services/git-providers')).fetchBranches(p),
   }),
+  [LazyAsset.GitOrgs]: defineAsset({
+    load: async (p: { provider: GitProvider }) => (await import('../services/git-providers')).fetchOrgs(p.provider),
+  }),
+  [LazyAsset.GitOrgRepos]: defineAsset({
+    key: (p: { provider: GitProvider; owner: string }) => [p.provider, p.owner.toLowerCase()],
+    load: async (p: { provider: GitProvider; owner: string }) =>
+      (await import('../services/git-providers')).fetchOrgRepos(p.provider, p.owner),
+  }),
   [LazyAsset.GitInvitations]: defineAsset({
     load: async (p: { provider: GitProvider }) => (await import('../services/git-providers')).fetchInvitations(p.provider),
   }),

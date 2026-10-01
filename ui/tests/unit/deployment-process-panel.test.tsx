@@ -8,8 +8,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deployment, DeploymentProcess } from '@sdk';
 
-vi.mock('@src/components/terminal/interactive-terminal/SidecarShellTerminal', () => ({
-  SidecarShellTerminal: ({ shellId }: { shellId: string }) => <div data-testid="terminal" data-shell={shellId} />,
+vi.mock('@src/components/terminal/interactive-terminal/ShellTerminal', () => ({
+  ShellTerminal: ({ shellId }: { shellId: string }) => <div data-testid="terminal" data-shell={shellId} />,
 }));
 vi.mock('@monaco-editor/react', () => ({ default: () => null, loader: { init: () => Promise.resolve({}) } }));
 vi.mock('@src/components/code-editor/shikiMonaco', () => ({ ensureShikiMonaco: () => Promise.resolve(), monacoTheme: () => 'x' }));

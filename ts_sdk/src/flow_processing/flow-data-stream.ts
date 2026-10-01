@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { v4 as uuid } from 'uuid';
-import { FlowData } from './flow-data';
+import { FlowData, FlowDataAttribute } from './flow-data';
 import { toplog } from '../services/toplog';
 import { FlowElementType, FlowElementTypes, isStreamableElementType } from './flow-element-types';
 import { FlowDataEvents, FlowEvents } from './flow-events';
@@ -258,17 +258,19 @@ export class FlowDataStream extends EventEmitter {
       );
     }
 
+    // A user message is a duplicate only if it is the SAME transcript entry
+    // arriving again (history, then an observe-turn replay of it). Text is not
+    // identity: a user who sends "yes" twice made two turns, and matching on
+    // content swallowed the second one until a reload (FLOWPAD-2196). Rows
+    // without a transcript id (the optimistic echo, most live frames) pass.
     if (elementType === FlowElementTypes.USER_MESSAGE) {
-      const role = item.attributes.role ?? '';
-      const existing = [...this._ownItems]
-        .reverse()
-        .find(
-          (entry) =>
-            entry.elementType === FlowElementTypes.USER_MESSAGE &&
-            (entry.attributes.role ?? '') === role &&
-            entry.content === item.content,
-        );
-      if (existing) {
+      const id = item.transcriptEntryId;
+      if (
+        id &&
+        this._ownItems.some(
+          (entry) => entry.elementType === FlowElementTypes.USER_MESSAGE && entry.transcriptEntryId === id,
+        )
+      ) {
         return null;
       }
     }
@@ -514,6 +516,14 @@ export class FlowDataStream extends EventEmitter {
     } else {
       // Consolidate into current group
       const tracked = this._openGroups.get(this._currentGroupId!)!;
+      // A group only grows from the channel that opened it. Two live channels can
+      // carry the same message (a queue drain: observe-turn + the WS broadcast);
+      // the other channel's copy is a twin, not this row's next chunk (FLOWPAD-2042).
+      const owner = tracked.attributes[FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE];
+      const from = item.attributes[FlowDataAttribute.FRONTEND_EV_SOURCE_TYPE];
+      if (owner && from && owner !== from) {
+        return null;
+      }
       if (this._isDuplicateChunk(item, this._currentGroupId!)) {
         return null;
       }

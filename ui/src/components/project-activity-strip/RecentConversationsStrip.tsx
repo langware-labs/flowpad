@@ -41,6 +41,7 @@ import { useIsAdvanced } from '@src/components/view-mode';
 import { useContext } from '@src/hooks/useContext';
 import { streamInboxConversationsRequest } from '@src/components/stream-inbox-view/channel-owner';
 import { formatTimeAgo } from './project-activity-utils';
+import { attachmentSummary } from '@src/components/conversation/useAttachments';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 const VISIBLE_COUNT = 5;
@@ -107,8 +108,15 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     () => (localUserId ? streamInboxConversationsRequest(new TypeId(User.type, localUserId)) : null),
     [localUserId],
   );
-  const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'recent-conversations:idle' }), []);
-  const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request ?? idleRequest, {
+  const idleRequest = useMemo(
+    () => new QueryRequest({ type: Conversation.type, name: 'recent-conversations:idle' }),
+    [],
+  );
+  const {
+    data: conversations = [],
+    refetch,
+    isLoading,
+  } = useEntitiesQuery<Conversation>(request ?? idleRequest, {
     enabled: request !== null,
   });
 
@@ -279,9 +287,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
   return (
     <div className="flex flex-col rounded-lg border" data-testid="recent-conversations-strip">
-      {review && (
-        <UploadedMessageReview {...review} projectId={project?.id ?? null} onClose={() => setReview(null)} />
-      )}
+      {review && <UploadedMessageReview {...review} projectId={project?.id ?? null} onClose={() => setReview(null)} />}
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
@@ -544,8 +550,8 @@ function ConversationRow({
   // fallback instead.
   const rawPreview = isInvitationRow
     ? firstMessage?.text?.trim()
-    : latestMessage?.text
-        ?.trim()
+    : (latestMessage?.text || attachmentSummary(latestMessage))
+        .trim()
         .split('\n')
         .find((l) => l.trim());
   const previewText = isTypeId(rawPreview)

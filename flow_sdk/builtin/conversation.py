@@ -14,7 +14,7 @@ from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.schema.data_spec.channel_spec import ChannelSpec
-from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
 from flow_sdk.tags.envelope import parse_target
 
 
@@ -80,7 +80,7 @@ if TYPE_CHECKING:  # pragma: no cover
 # shared `ProjectedFields` mixin (one sentinel for every projected entity).
 _PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
-_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread"})
+_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread", "unread_count"})
 
 
 # Process-scoped FlowpadClient cache, keyed by api_key. ``Conversation.share`` /
@@ -245,11 +245,15 @@ class Conversation(ProjectedFields, Entity):
     hub_updated_date: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     # Whether this conversation is unread for the local viewer — the ONE answer every
     # row and the badge render, computed by `stream_inbox.recompute_unread` from
-    # `conversation_is_unread` (latest received message unread, or a pending
+    # `conversation_unread_count` > 0 (latest received message unread, or a pending
     # invitation). The frontend reads it; it does not recompute it. LOCAL_ONLY.
     is_unread: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    #: How many messages are waiting for this user, newest first up to the first one read or sent
+    #: by them (``stream_inbox.conversation_unread_count``); a pending invitation is at least 1.
+    #: Projected beside ``is_unread`` by the same recompute, so the two never disagree.
+    unread_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
-    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread)"
+    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count)"
 
     @classmethod
     def hub_clock_moved(cls, local: "Conversation", hub_updated: Optional[datetime]) -> bool:
@@ -425,10 +429,13 @@ class Conversation(ProjectedFields, Entity):
         self,
         recipients: Optional[List[str]] = None,
         recipient_user_ids: Optional[List[str]] = None,
+        *,
+        principals: Optional[List[str]] = None,
+        notify_by_email: bool = True,
     ) -> "Conversation":
         """Push to hub + admit people via the standard hub pattern.
 
-        Without either list: equivalent to ``Entity.share()`` — POSTs to
+        With no one to admit: equivalent to ``Entity.share()`` — POSTs to
         ``/graph/conversation`` so the hub-side row exists; the caller then
         has ``owner`` role.
 
@@ -456,7 +463,14 @@ class Conversation(ProjectedFields, Entity):
         address them. The hub resolves the id to their address server-side. Use
         it for a contact whose email we do not have and cannot get.
 
-        Both lists may be passed together; each person should appear in only
+        ``principals`` (group typeids, e.g. ``"team-<id>"``) — a group admitted
+        as ONE grant, so its current and future members all read it.
+
+        ``notify_by_email=False`` admits without the hub's invitation email —
+        for a share whose recipient another invitation already emails (a
+        project invite carries its own).
+
+        The person lists may be passed together; each person should appear in only
         one (the hub refuses a request naming both). Persisting ``remote=True``
         to the local DB is the caller's responsibility
         (``share_action.share_entity`` does the local row UPDATE immediately
@@ -466,7 +480,7 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
         await super().share()
-        if not recipients and not recipient_user_ids:
+        if not recipients and not recipient_user_ids and not principals:
             # Link each shared-context doc to this conversation locally (the hub
             # doesn't host doc types). This makes the doc effective-remote so a
             # comment on it auto-shares under the conversation (the hub parent).
@@ -519,6 +533,8 @@ class Conversation(ProjectedFields, Entity):
                 }
                 if callback_override:
                     body["callback_override"] = callback_override
+                if not notify_by_email:
+                    body["notify_by_email"] = False
                 return body
 
             # One invitation per recipient.
@@ -542,6 +558,13 @@ class Conversation(ProjectedFields, Entity):
                     f"/graph/conversation/{self.id}/members",
                     _membership_body(recipient_user_id=user_id),
                 )
+            # One grant per group principal (a team).
+            for principal in principals or []:
+                if principal:
+                    await client.post(
+                        f"/graph/conversation/{self.id}/members",
+                        _membership_body(principal=principal),
+                    )
         return self
 
     async def _link_context_to_conversation(self, refs=None, someone_typeid: str | None = None) -> None:
@@ -569,6 +592,11 @@ class Conversation(ProjectedFields, Entity):
             try:
                 tid = _coerce_context_typeid(ref)
                 if tid is None:
+                    continue
+                if tid.type in MEMBERSHIP_CONTAINER_TYPES:
+                    # An org / team / project is a hub-owned root, never a
+                    # conversation's child — linking it would re-parent the
+                    # shared container under the message it rode in.
                     continue
                 cls = SchemaRegistry.get_entity_cls(tid.type)
                 if cls is None or not tid.id or "parent_type_id" not in cls.model_fields:
@@ -685,79 +713,8 @@ class Conversation(ProjectedFields, Entity):
             if fm.body_status == BodyStatus.UPLOADING:
                 await _upload_body_and_finalize(fm, self.id)
 
-    # ------------------------------------------------------------------ invite conversation
-    #
-    # The sharer's client (not the hub) writes the invite conversation of a project
-    # share: ``open_invite_conversation`` creates a ROOT-level hub conversation owned
-    # by the sharer, the caller grants the recipient (a person as a second target on
-    # their project invite, a team as a group principal), and only then
-    # ``post_invite_message`` sends the one message — so an auto-accepted invitee is
-    # already a member and receives it live. Root-level on purpose: a project's child
-    # conversation is readable by every project member, which would leak the note.
-    # The join lives here, not in ``Project``, because the share identity test forbids
-    # ``/join`` in the project share path.
-
-    @classmethod
-    async def open_invite_conversation(cls, title: str, client) -> "Conversation":
-        """Create a local conversation, publish it root-level on the hub and join it.
-
-        ``client`` is the caller's open ``FlowpadClient``. Raises when the hub
-        refuses the create or the join; nothing is left half-owned, because the
-        join (which stamps ``initiated_by``) directly follows the create.
-        """
-        from flow_sdk.builtin.user import User  # noqa: PLC0415
-
-        conv = cls.model_validate({"title": title, "status": "open"})
-        conv.id = cls.allocate_id(conv.model_dump())
-        local = await User.get_local()
-        await conv.save(str(local.typeid) if local else None)
-        await Entity.share(conv)
-        await client.post(f"/graph/conversation/{conv.id}/join", {})
-        conv.remote = True
-        await conv.save(str(local.typeid) if local else None)
-        return conv
-
-    async def post_invite_message(self, text: str, reference: str) -> "FlowMessage":
-        """Send the invite message — ``text`` plus a TYPE_ID ``reference``
-        (``project-<id>``) — through the normal send pipeline.
-
-        Header first, then the body bundle: the hub stamps a client-sent TYPE_ID
-        message ``uploading`` and receivers wait for READY, so the body upload is
-        what lets the Install chip resolve. Raises on a refused header or a failed
-        upload instead of logging, so the caller can report the recipient's outcome.
-        """
-        from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
-            _append_message_to_conversation,
-            _attach_asset_references,
-            _build_reply_flow_message,
-            _send_conversation_message_header,
-        )
-        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
-        from flow_sdk.builtin.user import User  # noqa: PLC0415
-
-        sender = await User.current_sender_participant()
-        local = await User.get_local()
-        someone_typeid = str(local.typeid) if local else None
-        fm = _build_reply_flow_message(
-            conv_id=self.id,
-            message=text,
-            sender_id=sender.get("user_id") or None,
-            sender_name=sender.get("name") or "",
-        )
-        await _attach_asset_references(fm, [reference])
-        fm.body_status = BodyStatus.UPLOADING
-        fm = await fm.save(someone_typeid)
-        await _append_message_to_conversation(conv=self, fm_id=fm.id, someone_typeid=someone_typeid)
-        if not await _send_conversation_message_header(self, fm):
-            raise RuntimeError(f"the hub did not accept the invite message in conversation {self.id}")
-        fm.remote = True
-        await fm.save()
-        await fm.upload_body()
-        await fm.save()
-        return fm
-
     async def discard_invite_conversation(self, client) -> None:
-        """Delete an invite conversation whose grant failed — the hub row (the
+        """Delete an invite conversation whose share failed — the hub row (the
         sharer owns it once joined) and the local row — so a refused invite leaves
         no empty conversation behind. Best-effort on each side."""
         try:
@@ -895,6 +852,10 @@ class Conversation(ProjectedFields, Entity):
         if not refs:
             return None
         return max(refs, key=_ref_sort_key)
+
+    def message_refs_newest_first(self) -> "list[MessageRef]":
+        """``message_refs`` newest-first, by the same timestamp order ``latest_message_ref`` uses."""
+        return sorted(self.message_refs(), key=_ref_sort_key, reverse=True)
 
     def is_archived(self) -> bool:
         """Conversation-level archive with auto-revive (see ``archived_at``):

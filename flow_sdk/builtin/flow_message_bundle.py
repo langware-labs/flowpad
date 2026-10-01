@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.transfer import (
@@ -49,7 +49,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +169,47 @@ class GitShareOriginError(Exception):
     copying bytes (the sender selected Git; a copy would misrepresent the share).
     The dialog's preflight blocks ineligible assets up front; this is the pack-time
     backstop for an origin that vanished between preflight and packing."""
+
+
+@dataclass(frozen=True)
+class ReferencePack:
+    """A git-reference type's bundle entry (``GitReferenceType.pack_reference``): the
+    metadata that rides, and the transportable origin the recipient resolves."""
+
+    metadata: dict
+    origin: Any
+
+
+class GitReferenceType(Protocol):
+    """What an entity class implements when its ``TypeInfo`` declares
+    ``receive_transfer`` as a git reference (artifact, folder, project).
+    The bundle code is generic; these hooks hold what is particular to a type."""
+
+    @classmethod
+    async def pack_reference(
+        cls, entity_id: str, *, transfer_mode: str, repo_cache: dict | None = None
+    ) -> ReferencePack | None:
+        """The bundle entry: the metadata that rides and the origin the
+        recipient resolves. ``None`` packs no reference — the packer falls
+        through to the next family."""
+
+    @classmethod
+    async def restore_reference(
+        cls, entity_id: str, metadata: dict, origin: Any, *, overwrite: bool, owner_typeid: str | None = None
+    ) -> bool:
+        """Install a staged reference: write the received row, and whatever else
+        makes it usable here. ``False`` means it could not be restored."""
+
+
+def git_reference_cls(entry_type: str) -> type[GitReferenceType] | None:
+    """The entity class of a type that travels as a git reference
+    (``TypeInfo.receive_transfer``), or ``None``."""
+    from flow_sdk.fs_store.schema_registry import RECEIVE_TRANSFER_GIT_REFERENCE, SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entry_type)
+    if info is None or info.receive_transfer != RECEIVE_TRANSFER_GIT_REFERENCE:
+        return None
+    return SchemaRegistry.get_entity_cls(entry_type)
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +542,7 @@ def _write_git_transfer_metadata(
     return rel.as_posix()
 
 
-def _read_graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tuple[str, ...] = ()) -> dict:
+def graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tuple[str, ...] = ()) -> dict:
     """Return the sender's graph entity payload for metadata-only git transfer.
 
     ``strip`` removes machine-local fields that must not travel (e.g. a
@@ -519,22 +560,25 @@ def _read_graph_entity_metadata(entry_type: str, entry_id: str, ent, strip: tupl
     return payload
 
 
+def _write_reference_metadata(tmp_root: Path, entry_type: str, entry_id: str, payload: dict) -> str:
+    """Write a git reference's metadata file; returns its bundle-relative path."""
+    rel = PurePosixPath("metadata") / _entry_key(entry_type, entry_id) / "metadata.json"
+    dest = tmp_root / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(dest, payload)
+    return rel.as_posix()
+
+
 def _write_graph_git_transfer_metadata(
     tmp_root: Path,
     entry_type: str,
     entry_id: str,
     ent,
-    strip: tuple[str, ...] = (),
 ) -> str:
-    key = _entry_key(entry_type, entry_id)
-    rel = PurePosixPath("metadata") / key / "metadata.json"
-    dest = tmp_root / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    _write_json(dest, _read_graph_entity_metadata(entry_type, entry_id, ent, strip=strip))
-    return rel.as_posix()
+    return _write_reference_metadata(tmp_root, entry_type, entry_id, graph_entity_metadata(entry_type, entry_id, ent))
 
 
-async def _resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
+async def resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
     """The GitOrigin to ship for a graph entity: ``stored`` if usable, else a
     LIVE probe of the entity's local ``path``.
 
@@ -565,83 +609,27 @@ async def _pack_git_reference_attachment(
     transfers: dict | None,
     transfer_mode: str,
 ) -> bool:
-    """Pack a graph entity whose data is expected to arrive through git.
+    """Pack an entity whose data is expected to arrive through git.
 
-    This is intentionally narrower than file-backed asset packing. ``artifact``
-    and ``folder`` are graph entities, not FSRecord types, so git mode carries
-    their metadata and GitOrigin only — zero repository bytes travel, and
-    nothing is cloned at pack time. The receiver materializes the row as
-    pending and resolves the checkout later through the git wizard/open path
-    (artifact: open-artifact → git-setup; folder: the message chip →
-    git-context-folder wizard).
+    Applies to the types that declare ``TypeInfo.receive_transfer`` as a git
+    reference: their metadata and GitOrigin ride — zero repository bytes, and
+    nothing is cloned at pack time. The type's ``pack_reference`` hook decides
+    whether it packs in this transfer mode and what metadata rides; ``False``
+    falls through to the next family.
     """
-    if transfer_mode != _TRANSFER_MODE_GIT or transfers is None:
+    if transfers is None:
         return False
-    if entry_type not in (EntityType.ARTIFACT.value, EntityType.FOLDER.value):
+    cls = git_reference_cls(entry_type)
+    if cls is None:
         return False
-
-    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
-
-    strip_fields: tuple[str, ...] = ()
-    if entry_type == EntityType.FOLDER.value:
-        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-
-        ent = await Folder.get_one({"id": entry_id})
-        if ent is None:
-            return False
-        origin = await _resolve_git_reference_origin(ent, ent.origin, repo_cache)
-        if origin is None:
-            # Fail closed. Returning False here fell through to a caller that
-            # packs NOTHING for a folder (no main_subdir), silently delivering a
-            # chip with no origin and no bytes.
-            raise GitShareOriginError(
-                f"{_entry_key(entry_type, entry_id)} was shared with Git but is not in a "
-                f"Git repository with a usable origin — set up Git for this folder first."
-            )
-        # Self-heal a degenerate name ("" / ".") from before Folder.derive_name
-        # existed — repo-root folders were named ".", rendering chips as bare
-        # typeids. Persist best-effort so the sender's own chip heals too.
-        if (ent.name or "").strip() in ("", "."):
-            healed = Folder.derive_name(origin, ent.path)
-            if healed:
-                ent.name = healed
-                try:
-                    await ent.save()
-                except Exception:
-                    logger.debug("[bundle] folder %s name heal failed", entry_id, exc_info=True)
-        # The local resolved path is machine-local; the receiver derives its own.
-        strip_fields = ("path",)
-    else:
-        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-
-        ent = await Artifact.get_one({"id": entry_id})
-        if ent is None:
-            return False
-
-        raw_origin = getattr(ent, "origin", None)
-        stored = None
-        if raw_origin is not None:
-            try:
-                stored = raw_origin if isinstance(raw_origin, GitOrigin) else GitOrigin.model_validate(raw_origin)
-            except Exception:
-                stored = None
-        origin = await _resolve_git_reference_origin(ent, stored, repo_cache)
-        if origin is None:
-            # Unlike a folder, an artifact HAS a byte-copy carrier to fall
-            # through to (`_pack_webapp_artifact_attachment`), so this is a
-            # handoff, not a silent drop.
-            return False
+    packed = await cls.pack_reference(entry_id, transfer_mode=transfer_mode, repo_cache=repo_cache)
+    if packed is None:
+        return False
 
     key = _entry_key(entry_type, entry_id)
     if origins is not None:
-        origins[key] = origin.model_dump(mode="python")
-    metadata_path = _write_graph_git_transfer_metadata(
-        attachment_dir.parent,
-        entry_type,
-        entry_id,
-        ent,
-        strip=strip_fields,
-    )
+        origins[key] = packed.origin.model_dump(mode="python")
+    metadata_path = _write_reference_metadata(attachment_dir.parent, entry_type, entry_id, packed.metadata)
     transfers[key] = {
         "transfer_mode": _TRANSFER_MODE_GIT,
         "metadata_path": metadata_path,
@@ -799,9 +787,12 @@ async def _pack_file_backed_attachment(
         return
 
     # Origin present → key by repo-relative path (mirror sender layout); else the
-    # canonical <main_subdir>/<leaf>. The restore is anchor-free, so the in-bundle
-    # relpath IS the receiver's placement relpath under the project root.
-    dest = (entry_root / PurePosixPath(origin.rel_path)) if origin is not None else (subdir / src_root.name)
+    # portable <main_subdir>/<leaf> — kept nested under its enclosing asset when
+    # it lives inside one. The restore is anchor-free, so the in-bundle relpath
+    # IS the receiver's placement relpath under the project root.
+    from flow_sdk.assets.transfer import portable_rel_path  # noqa: PLC0415
+
+    dest = entry_root / PurePosixPath(origin.rel_path if origin is not None else portable_rel_path(src_root, info))
     dest.parent.mkdir(parents=True, exist_ok=True)
     pack_tree(src_root, dest, type_name=entry_type)
 
@@ -1234,14 +1225,11 @@ async def _restore_git_reference_entity_entry(
     overwrite: bool,
     owner_typeid: str | None,
 ) -> bool:
-    """Materialize graph entities whose bytes are supplied by git, not bundle.
+    """Materialize an entity whose bytes are supplied by git, not the bundle.
 
-    For ``artifact`` we only persist the received declaration and GitOrigin. The
-    checkout remains unresolved until the receiver opens the artifact and the
-    git setup wizard can provide a local path. For ``folder`` (a git context
-    folder chip) we mint the receiver-local Folder from the origin — path
-    unset, NO clone — and the message chip's wizard resolves a local checkout
-    later.
+    Generic over the types that declare ``TypeInfo.receive_transfer`` as a git
+    reference: read the staged metadata and origin, then let the type's
+    ``restore_reference`` hook write its row (and, for a project, clone it).
     """
     if not isinstance(transfer, dict) or transfer.get("transfer_mode") != _TRANSFER_MODE_GIT:
         return False
@@ -1249,57 +1237,14 @@ async def _restore_git_reference_entity_entry(
     if parsed is None:
         return False
     entry_type, entry_id = parsed
-    if entry_type == EntityType.FOLDER.value:
-        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
-
-        payload = _read_transfer_metadata(tmp_root, transfer)
-        origin = ORIGIN_ADAPTER.validate_python(origins_map.get(key) or payload.get("origin"))
-        if origin is None or not getattr(origin, "transportable", False):
-            return False
-        # Get-or-create keyed by origin (idempotent — a re-received chip
-        # reconciles with an already-minted folder). Local path stays unset.
-        folder = await Folder.mint_for_origin(origin)
-        if not getattr(folder, "name", None) and payload.get("name"):
-            folder.name = payload["name"]
-            await folder.save(owner_typeid)
-        return True
-    if entry_type != EntityType.ARTIFACT.value:
+    cls = git_reference_cls(entry_type)
+    if cls is None:
         return False
-
-    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
-
     payload = _read_transfer_metadata(tmp_root, transfer)
     origin = ORIGIN_ADAPTER.validate_python(origins_map.get(key) or payload.get("origin"))
     if origin is None:
         return False
-
-    payload = {
-        "type": entry_type,
-        "id": entry_id,
-        "name": payload.get("name") or f"artifact-{entry_id[:8]}",
-        "kind": payload.get("kind") or "application.web",
-        "description": payload.get("description"),
-        "origin": origin.model_dump(mode="python"),
-    }
-
-    existing = await Artifact.get_one({"id": entry_id})
-    if existing is not None and not overwrite:
-        if existing.origin is not None and existing.origin.key() == origin.key():
-            return True
-        raise FlowMessageExistsError(
-            [
-                {
-                    "type": entry_type,
-                    "id": entry_id,
-                    "path": None,
-                }
-            ]
-        )
-
-    artifact = Artifact.model_validate(payload)
-    artifact.id = entry_id
-    await artifact.save(owner_typeid)
-    return True
+    return await cls.restore_reference(entry_id, payload, origin, overwrite=overwrite, owner_typeid=owner_typeid)
 
 
 async def _restore_webapp_artifact_entry(
@@ -1720,6 +1665,12 @@ async def _collect_attachment_envelopes(entry, entities: dict) -> None:
     if not entry_type or not entry_id:
         return
     if entry_type in _HEADER_SERIALIZED_TYPES:
+        return
+    if entry_type in MEMBERSHIP_CONTAINER_TYPES:
+        # Org / team / project rows are written only by the hub membership
+        # mirror; an envelope here would let the install overlay write the
+        # sender's copy over the recipient's. A project rides as its git
+        # reference instead.
         return
     cls = SchemaRegistry.get_entity_cls(entry_type)
     if cls is None:

@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Iterator
 
-from flow_sdk.config import agent_workspace_root, is_hidden_project
+from flow_sdk.config import is_hidden_project
 from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _read_codex_projects_from_config,
@@ -143,12 +143,15 @@ def iter_codex_project_paths(include_temp: bool = False) -> Iterator[Path]:
 def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """Yield every immediate, non-hidden subdirectory of the Flowpad workspace.
 
-    Each top-level folder under ``<user_home>/Flowpad workspace`` whose name does
+    Each top-level folder under this instance's workspace root (``~/Flowpad
+    workspace`` for prod only — see ``agent_workspace_root``) whose name does
     not start with ``.`` is treated as a project, even with no worker
     worker history. Hidden folders (``.claude``, ``.flow``, ``.git`` …) are
     skipped. Same semantics as the Claude/Codex iterators: only existing dirs,
     temp paths excluded unless ``include_temp``.
     """
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415 — call time, per instance
+
     workspace = agent_workspace_root()
     try:
         # list() forces eager evaluation: iterdir() is a lazy generator, so a
@@ -324,11 +327,17 @@ async def join_projects(
     # Sequential saves: SQLite serializes writes anyway and asyncio.gather hits
     # "database is locked" under contention from concurrent indexer scans.
     if create_missing and to_create:
+        import logging
+
+        from flow_sdk.builtin.project import DuplicateProjectNameError  # noqa: PLC0415 — cycle
+
         for info in to_create:
             try:
                 await _materialize(info, include_temp=include_temp)
+            except DuplicateProjectNameError as exc:
+                # Refused loudly: the folder stays unindexed until it (or the other project) is renamed.
+                logging.error("get_all_projects: skip materialize %s: %s", info.cwd, exc)
             except Exception as exc:  # noqa: BLE001
-                import logging
                 logging.warning("get_all_projects: skip materialize %s: %s", info.cwd, exc)
 
     for cwd, proj in by_cwd.items():

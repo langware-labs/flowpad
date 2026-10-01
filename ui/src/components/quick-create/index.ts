@@ -1,4 +1,4 @@
-export { MiniDesktop } from './MiniDesktop';
+export { QuickCreateTile } from './QuickCreateTile';
 export { QuickCreatePanel, TileSection, useQuickCreatePick } from './QuickCreatePanel';
 export type { PanelHandlers, QuickCreateSection } from './QuickCreatePanel';
 export { QuickCreateDialog } from './QuickCreateDialog';
