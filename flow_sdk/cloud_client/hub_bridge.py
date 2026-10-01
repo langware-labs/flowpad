@@ -27,12 +27,26 @@ from flow_sdk.tags.envelope import parse_target
 logger = logging.getLogger(__name__)
 
 
-def _has_eager_pull_attachment(attachments: Any) -> bool:
-    """True iff ``attachments`` includes a TYPE_ID attachment whose type pulls
-    its bundle on arrival (``TypeInfo.eager_pull``): its chip needs the staged
-    entry before it is usable — e.g. a file-backed asset's editor 404s on
-    discover until the bundle is on disk. Media-only FMs stay on the manual
-    download.
+# Asset-entity types whose chips open a file-backed editor (Skill.md,
+# Agent.md, etc.). When an inbound FlowMessage attaches one of these via a
+# TYPE_ID attachment, the recipient needs the bundle on disk before the chip
+# is clickable — otherwise the asset editor's ``useEntityByPath`` discover
+# step 404s. We eager-pull the bundle for these and skip the pull for
+# media-only FMs (FILE attachments stay manual).
+_ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
+    {
+        "skill",
+        "subagent",
+        "markdown",
+        "spec",
+        "whiteboard",
+    }
+)
+
+
+def _has_asset_typeid_attachment(attachments: Any) -> bool:
+    """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
+    asset entity (skill / agent / markdown / spec / whiteboard).
 
     Tolerates both the hub wire shape (list of dicts) and the local model
     shape (list of ``Attachment`` instances) — the ``data`` field is a
@@ -40,8 +54,6 @@ def _has_eager_pull_attachment(attachments: Any) -> bool:
     """
     if not attachments:
         return False
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
     for att in attachments:
         att_type = att.get("attachment_type") if isinstance(att, dict) else getattr(att, "attachment_type", None)
         if att_type != "type_id":
@@ -52,8 +64,7 @@ def _has_eager_pull_attachment(attachments: Any) -> bool:
         dash = data.find("-")
         if dash <= 0:
             continue
-        info = SchemaRegistry.get(data[:dash])
-        if info is not None and info.eager_pull:
+        if data[:dash] in _ASSET_TYPEID_TYPES:
             return True
     return False
 
@@ -136,7 +147,7 @@ async def _maybe_eager_pull_bundle(
     """
     if not attachment_filename:
         return
-    if not (_has_eager_pull_attachment(attachments) or _has_session_carrier_attachment(attachments)):
+    if not (_has_asset_typeid_attachment(attachments) or _has_session_carrier_attachment(attachments)):
         return
     if fm_id in _INFLIGHT_BUNDLE_PULLS:
         return
