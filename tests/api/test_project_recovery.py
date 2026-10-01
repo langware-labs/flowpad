@@ -10,6 +10,8 @@ remains idempotent without making the path-derived record alias the entity id.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,6 +20,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.project import Project
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from tests.unit._project_names import unique_project_name
 
 # ---------------------------------------------------------------------------
 # Project.recover_by_path
@@ -102,7 +105,6 @@ async def test_recover_by_path_refuses_agent_mount_root(bootstrapped_client, tmp
     canonical = canonical_posix_path(mount_root)
 
     # Point the mount-root predicate at our tmp workspace.
-    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical)
     monkeypatch.setattr(cfg, "agent_workspace_root", lambda: mount_root)
 
     assert await Project.recover_by_path(str(mount_root)) is None
@@ -134,7 +136,6 @@ async def test_reap_protected_path_projects(bootstrapped_client, tmp_path, monke
     mount_root.mkdir()
     (mount_root / "source.txt").write_text("keep")
     canonical = canonical_posix_path(mount_root)
-    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical)
     monkeypatch.setattr(cfg, "agent_workspace_root", lambda: mount_root)
 
     # Stale mount-root project: construct safely, then bypass the new validator
@@ -161,7 +162,7 @@ async def test_reap_protected_path_projects(bootstrapped_client, tmp_path, monke
     sub = mount_root / "real-project"
     sub.mkdir()
     sub_path = canonical_posix_path(sub)
-    keep = Project(name="real-project", fs_storage_mount_path=sub_path)
+    keep = Project(name=unique_project_name("real-project"), fs_storage_mount_path=sub_path)
     keep.id = Project.allocate_id(keep.model_dump())
     await keep.save()
     await stale.add_child(keep)

@@ -381,3 +381,44 @@ async def test_reinit_db_rebinds_lazy_db_driver(
     assert DBRelationship._db is rebound_driver, (
         "DBRelationship._db still points at the pre-reinit driver — split-brain"
     )
+
+
+def test_only_prod_places_projects_in_the_users_flowpad_workspace():
+    """``~/Flowpad workspace`` is prod's. Any other instance sharing the user's home
+    (``oss``, ``dev-1``, an e2e ``test-*``) gets ``~/Flowpad workspaces/<name>`` — nothing a dev instance or a test
+    run creates lands among real projects, and a project can live there (nothing
+    under ``flow_home`` can)."""
+    import dataclasses
+
+    from flow_sdk.instance_settings import get_instance_settings
+    from flow_sdk.instance_settings.base_settings import BaseInstanceSettings
+
+    current = get_instance_settings()
+    fields = {f.name: getattr(current, f.name) for f in dataclasses.fields(current)}
+
+    def as_instance(name: str) -> BaseInstanceSettings:
+        return BaseInstanceSettings(**{**fields, "instance_name": name})
+
+    users_workspace = current.user_home / "Flowpad workspace"
+    assert as_instance("prod").workspace_root == users_workspace
+    for name in ("oss", "dev-1", "test-4f2a"):
+        settings = as_instance(name)
+        assert settings.workspace_root == current.user_home / "Flowpad workspaces" / name
+        assert users_workspace not in (settings.workspace_root, *settings.workspace_root.parents)
+        assert settings.flow_home not in settings.workspace_root.parents
+
+
+def test_only_prod_keeps_user_docs_in_the_users_home(tmp_path, monkeypatch):
+    """``~/docs`` is prod's user vault. Any other instance keeps its user docs in its
+    own instance dir, so a test that leaves a document behind never lands in the
+    user's real vault (906 test files had piled up in ~/docs by 2026-09-28)."""
+    from flow_sdk.instance_settings.base_settings import ENV_FLOW_HOME, BaseInstanceSettings
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv(ENV_FLOW_HOME, str(tmp_path / ".flow"))
+
+    assert BaseInstanceSettings.from_env("prod").user_docs_dir == tmp_path / "docs"
+    for name in ("oss", "dev-1", "test-4f2a"):
+        settings = BaseInstanceSettings.from_env(name)
+        assert settings.user_docs_dir == tmp_path / ".flow" / "instances" / name / "docs"
+        assert tmp_path / "docs" not in (settings.user_docs_dir, *settings.user_docs_dir.parents)

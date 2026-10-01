@@ -118,10 +118,16 @@ def catalogue(monkeypatch):
     from flow_sdk.builtin.credential import Credential
     from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 
-    shipped_root = Path(credential_service.__file__).parents[1] / "system_projects/flowpad_assistant/agentic-assets/credential"
+    shipped = Path(credential_service.__file__).parents[1] / "system_projects/flowpad_assistant/agentic-assets"
 
     def template(name: str) -> Credential:
-        spec = CredentialSpec.model_validate(json.loads((shipped_root / name / "credential.json").read_text()))
+        # A driver's own credential lives in its folder (data_driver/<d>/agentic-assets/credential/<name>);
+        # one no single driver owns stays at the top (credential/<name>). Either is a shipped template.
+        (path,) = [*shipped.glob(f"credential/{name}/credential.json"),
+                   *shipped.glob(f"data_driver/*/agentic-assets/credential/{name}/credential.json")]
+        guide = path.parent / "setup.md"  # the body lives beside the manifest, as the indexer reads it
+        spec = CredentialSpec.model_validate({**json.loads(path.read_text()),
+                                              "setup": guide.read_text().strip() if guide.is_file() else ""})
         fields = {f: getattr(spec, f) for f in credential_service._MANIFEST_FIELDS}
         return Credential(name=spec.name, scope="system", manifest_schema=spec.manifest_schema, **fields)
 

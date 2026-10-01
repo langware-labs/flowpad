@@ -27,6 +27,7 @@ from flow_sdk.core.entity.entity_env.env_utils import build_shared_var_name
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.request_context.methods import get_user_credentials
 from flow_sdk.schema.type_info import register_all
+from tests.unit._project_names import unique_project_name
 
 register_all()
 
@@ -43,7 +44,7 @@ async def _user_with_token(name="attach-user"):
 
 
 async def _project(name="attach-proj"):
-    project = Project(name=name)
+    project = Project(name=unique_project_name(name))
     await project.save()
     return project
 

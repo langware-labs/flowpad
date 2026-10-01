@@ -21,6 +21,7 @@ CREDENTIAL = TypeInfo(
     display_name="Credentials",
     api_visible=True,
     creatable=True,
+    editor="credential",
     # The row is authoritative once created in-app: an edit rewrites
     # credential.json from the row.
     owns_main_ref=True,

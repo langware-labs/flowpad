@@ -33,6 +33,9 @@ export enum AssetEditor {
   // file-backed — the row is a projection of hub state with no local record, so
   // the router resolves it from the box listing instead of an FSRef.
   LLM_ENDPOINT = 'llm_endpoint',
+  // A credential (agentic-assets/credential/<name>/credential.json): what it
+  // declares, where its values live and which are set — never the values.
+  CREDENTIAL = 'credential',
   // File-only display viewers — no backing record type, routed by extension
   // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
   HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
@@ -124,6 +127,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.JOURNEY]: [RecordType.JOURNEY],
   [AssetEditor.MCP]: [RecordType.MCP],
   [AssetEditor.LLM_ENDPOINT]: [RecordType.LLM_ENDPOINT],
+  [AssetEditor.CREDENTIAL]: [RecordType.CREDENTIAL],
   [AssetEditor.HTML]: [],
   [AssetEditor.MCP_APP]: [],
   [AssetEditor.IMAGE]: [],

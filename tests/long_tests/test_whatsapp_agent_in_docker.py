@@ -81,8 +81,9 @@ def container(tmp_path_factory):
     key = _openrouter_key()
     if not key:
         pytest.skip("OPENROUTER_API_KEY is not set (env or .env.local)")
-    if _sh("docker", "image", "inspect", IMAGE, check=False).returncode != 0:
-        _sh("docker", "build", "-f", "docker/Dockerfile.flow-backend", "-t", IMAGE, ".", cwd=REPO)
+    # Always build: the image must be THIS tree (layer cache keeps a no-change rebuild quick). Building
+    # only when the tag was missing ran a weeks-old image against today's snippet.
+    _sh("docker", "build", "-f", "docker/Dockerfile.flow-backend", "-t", IMAGE, ".", cwd=REPO)
     name, port = f"flowpad-snippet-{uuid.uuid4().hex[:6]}", _free_port()
     _sh("docker", "run", "-d", "--name", name, "-p", f"{port}:{port}", "-e", f"LOCAL_SERVER_PORT={port}",
         "-e", "IS_SANDBOX=1", "-e", "MINIHUB_RELOAD=False", IMAGE)

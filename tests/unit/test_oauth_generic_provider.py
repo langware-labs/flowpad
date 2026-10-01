@@ -260,6 +260,14 @@ def test_linears_probe_is_graphql_over_get():
     assert dict(ln.probe.headers) == {"Content-Type": "application/json"}
 
 
+def test_zooms_probe_is_users_me():
+    """`/users/me` answers for any token carrying `user:read:user` and names the
+    person who consented — a user-level Zoom token only ever sees its own user."""
+    zm = registry.get_local_provider("zoom")
+    assert zm.probe.url == "https://api.zoom.us/v2/users/me"
+    assert zm.probe.account_key_fields == ("id",)
+
+
 def test_a_loopback_provider_without_a_client_id_runs_on_the_hub(monkeypatch):
     """Google's desktop entry has endpoints but no default client id. Without
     GOOGLE_CLIENT_ID the loopback flow cannot even build an authorize URL, so

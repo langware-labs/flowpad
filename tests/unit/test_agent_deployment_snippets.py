@@ -133,10 +133,10 @@ async def test_6_serve_it_your_way(monkeypatch, tmp_path):
 
 
 async def test_7_run_it_on_this_computer():
-    """Two launches, two running deployments, each with its chat channel — the processes themselves
-    are ``tests/long_tests/test_local_deployment_process.py``."""
+    """Two launches, ONE running deployment with its chat channel — the processes themselves are
+    ``tests/long_tests/test_local_deployment_process.py``."""
     ns = await run_fence(fence_under(doc(DOC), "7."), await _placed(), filename=f"{DOC} §7")
-    assert ns["first"].id == ns["here"].id, "the default slot IS the placement §1 made — now running"
+    assert ns["here"].id == ns["again"].id, "one local deployment per agent — the placement §1 made, now running"
     assert ns["chat"].backend.type == "channel"
 
 
@@ -182,7 +182,7 @@ async def test_5_a_machine_of_its_own(monkeypatch):
     async def plan(etype, payload, eid=None, action=None, **_):
         assert action == "plan_deployment"
         return {"deployment": {"id": "0f8d0356-504f-466c-a0e9-ee2ac90e4a4b", "name": "researcher (e2b)",
-                               "kind": "runtime.agent", "environment": payload["environment"],
+                               "environment": payload["environment"],
                                "target": {"provider": "e2b", "scope": "agent"}}}
 
     monkeypatch.setattr(flow_sdk.auth, "login", login)

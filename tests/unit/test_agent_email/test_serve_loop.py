@@ -61,16 +61,16 @@ async def test_a_source_is_answered_where_its_answer_place_says(mail_db):
     assert str(elsewhere.id) not in served
 
 
-async def test_a_second_local_deployment_answers_only_what_names_it(mail_db):
+async def test_running_an_agent_here_again_is_the_same_deployment(mail_db):
+    """One local deployment per agent: running it again starts the same one, never a second."""
     agent = await _agent()
     first = await agent.run_locally()
     second = await agent.run_locally()
     unplaced = await _channel(agent)
-    pinned = await _channel(agent, answer_place=second.id)
 
-    assert (first.slot, second.slot) == ("", "2")
+    assert first.id == second.id
+    assert [d.id for d in await agent.deployments() if d.target.provider == "local"] == [first.id]
     assert str(unplaced.id) in _ids(await answered_sources(agent, first))
-    assert _ids(s for s in await answered_sources(agent, second) if s.provider == "slack") == {str(pinned.id)}
 
 
 @pytest.fixture
@@ -137,9 +137,9 @@ async def test_a_process_that_died_is_started_again(mail_db, processes):
 
 async def test_stopping_serving_or_switching_the_agent_off_stops_the_process(mail_db, processes):
     running, _started = processes
-    agent = await _agent()
+    agent, other = await _agent(), await _agent()
     first = await agent.run_locally()
-    second = await agent.run_locally()
+    second = await other.run_locally()
     server = AgentServer()
     await server.reconcile()
     assert set(running) == {str(first.id), str(second.id)}
@@ -149,8 +149,8 @@ async def test_stopping_serving_or_switching_the_agent_off_stops_the_process(mai
     await server.reconcile()
     assert set(running) == {str(second.id)}
 
-    agent.enabled = False
-    await agent.save()
+    other.enabled = False
+    await other.save()
     await server.reconcile()
     assert running == {} and server.running() == set()
 
@@ -225,21 +225,21 @@ async def test_a_deployment_process_polls_the_channels_the_app_leaves_to_it(mail
 
 
 async def test_an_agent_mailbox_is_answered_by_one_deployment_never_two(mail_db):
-    """A mailbox with no place of its own is the default deployment's — or the agent's email place's.
-    Two processes answering it would mail the outsider twice."""
+    """A mailbox with no place of its own is the agent's deployment here — or the agent's email place's.
+    Two places answering it would mail the outsider twice."""
     agent = await _agent()
     first = await agent.run_locally()
-    second = await agent.run_locally()
+    second = await agent.deploy("e2b")
     mailbox = DataSource(name="mailbox", provider="cloud_email", channel="email", owner=agent.typeid,
                          config={"agent_id": agent.id, "address": f"{agent.name}@agentmail.to"},
                          account_key=f"{agent.name}@agentmail.to")
     await mailbox.save()
 
     async def answering():
-        return [d.slot for d in (first, second) if str(mailbox.id) in _ids(await answered_sources(agent, d))]
+        return [d.target.provider for d in (first, second) if str(mailbox.id) in _ids(await answered_sources(agent, d))]
 
-    assert await answering() == [""], "the default deployment, alone"
+    assert "local" in await answering(), "the agent's deployment here"
 
     agent.email_place = second.id
     await agent.save()
-    assert await answering() == ["2"], "the agent's email place, alone"
+    assert await answering() == ["e2b"], "the agent's email place, alone"

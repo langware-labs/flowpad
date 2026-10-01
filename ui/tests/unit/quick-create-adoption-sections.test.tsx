@@ -59,7 +59,7 @@ describe('quick-create adoption sections', () => {
     const modalSections = ALL_SECTIONS.filter((s) => !ADOPTION_SECTIONS.has(s));
     expect(modalSections).not.toContain('helpdesk');
     expect(modalSections).not.toContain('folder');
-    expect(modalSections).toContain('asset');
+    expect(modalSections).toEqual(['chat', 'build', 'write', 'connect', 'project']);
   });
 
   it('renders the Add help desk tile in the helpdesk section', () => {

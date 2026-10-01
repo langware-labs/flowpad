@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Agent } from '@sdk';
 import { ExternalLink, MessageSquare } from 'lucide-react';
@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
+import { MediaLightbox } from '@src/components/ui/media-lightbox';
 import { cn } from '@src/lib/utils';
 import { AgentAvatar } from './AgentAvatar';
 
@@ -53,14 +54,31 @@ export function AgentIntroCard({
     agent.permission_mode,
   ].filter((chip): chip is string => !!chip);
   const ActionIcon = onUse ? MessageSquare : ExternalLink;
+  // The lightbox state lives here, not in the card body: opening it clicks
+  // outside the popover, which closes (unmounts) the body.
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const avatarImageUrl = agent.avatarImageUrl;
+  const avatar = <AgentAvatar agent={agent} className="h-12 w-12 text-lg" glyphClassName="h-6 w-6 text-2xl" />;
 
   // ONE card body, two ways of opening it — never a second description popover
-  // that could drift from this one. Spelled out as two returns rather than a
+  // that could drift from this one. Spelled out as two JSX trees rather than a
   // swapped component tuple so each primitive's own props stay type-checked.
   const body = (
     <>
       <div className="flex items-start gap-3 p-3">
-        <AgentAvatar agent={agent} className="h-12 w-12 text-lg" glyphClassName="h-6 w-6 text-2xl" />
+        {avatarImageUrl ? (
+          <button
+            type="button"
+            className="shrink-0 cursor-zoom-in rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={() => setAvatarOpen(true)}
+            aria-label={t`View ${title} avatar`}
+            data-testid="agent-intro-card-avatar"
+          >
+            {avatar}
+          </button>
+        ) : (
+          avatar
+        )}
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-semibold text-foreground" data-testid="agent-intro-card-title">
             {title}
@@ -104,23 +122,31 @@ export function AgentIntroCard({
     </>
   );
 
-  if (trigger === 'hover') {
-    return (
+  const lightbox = avatarOpen && avatarImageUrl && (
+    <MediaLightbox url={avatarImageUrl} name={`${title} avatar.png`} onClose={() => setAvatarOpen(false)} />
+  );
+
+  const card =
+    trigger === 'hover' ? (
       <HoverCard openDelay={200} closeDelay={100}>
         <HoverCardTrigger asChild>{children}</HoverCardTrigger>
         <HoverCardContent align="start" className="w-72 p-0" data-testid="agent-intro-card">
           {body}
         </HoverCardContent>
       </HoverCard>
+    ) : (
+      <Popover>
+        <PopoverTrigger asChild>{children}</PopoverTrigger>
+        <PopoverContent align="start" className="w-72 p-0" data-testid="agent-intro-card">
+          {body}
+        </PopoverContent>
+      </Popover>
     );
-  }
   return (
-    <Popover>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-0" data-testid="agent-intro-card">
-        {body}
-      </PopoverContent>
-    </Popover>
+    <>
+      {card}
+      {lightbox}
+    </>
   );
 }
 

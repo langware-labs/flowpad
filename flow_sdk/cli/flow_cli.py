@@ -1350,6 +1350,10 @@ from flow_sdk.cli.commands.task_cmd import task_app
 
 app.add_typer(task_app, name="task")
 
+from flow_sdk.cli.commands.ask_cmd import ask_app
+
+app.add_typer(ask_app, name="ask")
+
 from flow_sdk.cli.commands.wizard_cmd import wizard_command
 
 app.command(

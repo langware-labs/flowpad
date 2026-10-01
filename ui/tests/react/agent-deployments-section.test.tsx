@@ -48,7 +48,6 @@ describe('AgentDeploymentsSection', () => {
     const first = new Deployment({
       id: '00000000-0000-4000-8000-000000000002',
       name: 'First GCP box',
-      kind: 'runtime.agent',
       parent_type_id: 'agent-00000000-0000-4000-8000-000000000001',
       target: { provider: 'gcp_vm', scope: 'agent-00000000-0000-4000-8000-000000000001' },
       status: { sync_state: 'current', provider_state: 'running' },
@@ -56,7 +55,6 @@ describe('AgentDeploymentsSection', () => {
     const second = new Deployment({
       id: '00000000-0000-4000-8000-000000000003',
       name: 'Second GCP box',
-      kind: 'runtime.agent',
       parent_type_id: 'agent-00000000-0000-4000-8000-000000000001',
       target: { provider: 'gcp_vm', scope: 'agent-00000000-0000-4000-8000-000000000001' },
       status: { sync_state: 'current', provider_state: 'running' },
@@ -83,7 +81,6 @@ describe('AgentDeploymentsSection', () => {
     const deployment = new Deployment({
       id: '00000000-0000-4000-8000-000000000002',
       name: 'GCP agent box',
-      kind: 'runtime.agent',
       parent_type_id: 'agent-00000000-0000-4000-8000-000000000001',
       target: { provider: 'gcp_vm', scope: 'agent-00000000-0000-4000-8000-000000000001' },
       origin: {

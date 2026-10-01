@@ -4,7 +4,8 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import apiClient from '@sdk/client';
 import { Button } from '@src/components/ui/button';
-import { Input } from '@src/components/ui/input';
+import { AskAssist, type AssistState } from './AskAssist';
+import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
 
 /**
@@ -30,8 +31,13 @@ interface Question {
   fields: Shape;
   /** The answer is a secret (an API key): drawn masked. */
   secret?: boolean;
+  /** The answer is a file's content (a key file): drawn as a file picker. */
+  file?: boolean;
   /** How a person finds the value — the op's `setup.md`, markdown. */
   guide?: string;
+  /** The op names an agent that can answer instead (AI Assist). */
+  assist_available?: boolean;
+  assist?: AssistState | null;
 }
 
 /** The field names to draw. An object shape is its keys; anything else is one
@@ -97,6 +103,11 @@ export function AskForm({
     [questionId, onSettled, _],
   );
 
+  const agentAnswered = useCallback(() => {
+    setSettled(_(msg`AI Assist answered it.`));
+    onSettled?.('answered');
+  }, [onSettled, _]);
+
   const submit = useCallback(() => {
     const names = fieldsOf(question?.fields ?? null);
     const value =
@@ -134,6 +145,13 @@ export function AskForm({
         </div>
       ) : null}
 
+      <AskAssist
+        questionId={questionId}
+        available={question.assist_available}
+        initial={question.assist}
+        onAnswered={agentAnswered}
+      />
+
       {fieldsOf(question.fields).map((name) => (
         <div key={name} className="flex flex-col gap-1">
           {name ? (
@@ -141,23 +159,23 @@ export function AskForm({
               {name}
             </label>
           ) : null}
-          <Input
+          <AskValueInput
             id={`ask-${name}`}
-            data-testid={`ask-input-${name || 'value'}`}
-            autoFocus
-            type={question.secret ? 'password' : 'text'}
-            autoComplete={question.secret ? 'off' : undefined}
+            testId={`ask-input-${name || 'value'}`}
+            secret={question.secret}
+            file={question.file}
             value={values[name] ?? ''}
-            onChange={(e) => setValues((prev) => ({ ...prev, [name]: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void submit();
-            }}
+            onChange={(value) => setValues((prev) => ({ ...prev, [name]: value }))}
+            onEnter={() => void submit()}
           />
         </div>
       ))}
 
       {error ? (
-        <p className="text-sm text-destructive" data-testid="ask-error">
+        <p
+          className="rounded border border-destructive/60 bg-destructive/10 px-3 py-2 text-sm text-foreground"
+          data-testid="ask-error"
+        >
           {error}
         </p>
       ) : null}

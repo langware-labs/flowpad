@@ -3,7 +3,7 @@ import filecmp
 import json
 import logging
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from flow_sdk.assets.materialize import materialize_asset_sync
 
@@ -153,6 +153,52 @@ def remove_transferred_tree(entry_dir: Path, root: Path) -> None:
             except OSError:
                 break
             parent = parent.parent
+
+
+def portable_rel_path(src_root: Path, info) -> PurePosixPath:
+    """The scope-relative path an on-disk asset travels at in a bundle.
+
+    ``<main_subdir>/<leaf>`` — unless the asset is a REPO asset nested inside
+    another repo asset's folder (``<outer>/agentic-assets/<family>/<leaf>``, e.g.
+    a credential its one driver owns). Then it is the enclosing asset's own
+    portable path plus that tail, recursively, so the receiver restores it where
+    it lived instead of minting a flattened second copy at its type's top level.
+    """
+    from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
+
+    canonical = PurePosixPath(info.main_subdir) / src_root.name
+    enclosing = _enclosing_repo_asset(src_root, info)
+    if enclosing is None:
+        return canonical
+    outer_root, outer_info = enclosing
+    tail = src_root.relative_to(outer_root / AGENTIC_ASSETS_DIR)
+    return portable_rel_path(outer_root, outer_info) / AGENTIC_ASSETS_DIR / PurePosixPath(tail.as_posix())
+
+
+def _enclosing_repo_asset(root: Path, info) -> "tuple[Path, object] | None":
+    """``(folder, TypeInfo)`` of the repo asset whose ``agentic-assets/`` holds
+    ``root``, or None when ``root`` sits in a plain scope (a project, a home)."""
+    from flow_sdk.assets.layout import LayoutKind  # noqa: PLC0415
+    from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    family_dir = root if getattr(info, "singleton", False) else root.parent
+    if not getattr(info, "family", None) or family_dir.name != info.family or family_dir.parent.name != AGENTIC_ASSETS_DIR:
+        return None
+    container = family_dir.parent.parent
+    families = SchemaRegistry.repo_family_to_info()
+    # The container is itself an asset when it sits in a family dir (or IS a
+    # singleton's family dir) and that type's shape recognizes it.
+    for outer_family_dir, candidate in ((container.parent, container), (container, container)):
+        outer = families.get(outer_family_dir.name)
+        if outer is None or outer_family_dir.parent.name != AGENTIC_ASSETS_DIR:
+            continue
+        if (outer_family_dir is container) != bool(outer.singleton):
+            continue
+        layout = outer.layout_of(candidate, verify=True)
+        if layout.kind is LayoutKind.FOLDER and layout.root == candidate:
+            return candidate, outer
+    return None
 
 
 def portable_asset_name(name: str) -> str:

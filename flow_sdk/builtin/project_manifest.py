@@ -210,8 +210,11 @@ async def set_published(entity: Entity, *, published: bool, project_id: str | No
             ),
         )
         await ensure_manifest_indexed(project)
-        reflect_manifest_to_hub_soon(project)
-        publish_body_to_hub_soon(entity, project, actor)
+        # ONE task, in order: the two hub calls write the same hub project row,
+        # and the hub saves a whole row — run side by side, `hosted_repo` read
+        # the row before `publish_manifest` committed and wrote it back over it,
+        # emptying the published ledger until the body publish re-reflected.
+        reflect_and_publish_body_soon(entity, project, actor)
     else:
         await drop_row(project, typeid)
 
@@ -466,12 +469,15 @@ async def _point_row_at_hub_repo(entity: Entity, project) -> None:
     await reflect_manifest_to_hub(project)
 
 
-def publish_body_to_hub_soon(entity: Entity, project, actor) -> None:
-    """Run ``publish_body_to_hub`` in the background and remember its outcome."""
+def reflect_and_publish_body_soon(entity: Entity, project, actor) -> None:
+    """In the background: reflect the manifest, THEN run ``publish_body_to_hub``
+    and remember its outcome. One task so the two never write the hub project
+    row concurrently (see ``set_published``)."""
     typeid = str(entity.typeid)
 
     async def _run() -> None:
         try:
+            await reflect_manifest_to_hub(project)
             _HUB_BODY[typeid] = await publish_body_to_hub(entity, project, actor)
         except Exception as exc:  # noqa: BLE001 — never into the toggle
             logger.warning("[project_manifest] hub body publish failed for %s: %s", typeid, exc)

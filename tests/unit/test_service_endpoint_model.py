@@ -39,6 +39,8 @@ from flow_sdk.schema.types import EntityType
 CONTRACT_FIELDS = {
     "artifact_id",
     "backend",
+    "check",
+    "health",
     "name",
     "parent_type_id",
     "project_id",

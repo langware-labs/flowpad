@@ -31,7 +31,13 @@ interface FixtureCase {
   }>;
   expected: number;
   /** Present only for single-conversation cases where FE facets apply. */
-  facets?: { conversation: string; isUnread: boolean; isArchived: boolean; isInvitation: boolean };
+  facets?: {
+    conversation: string;
+    isUnread: boolean;
+    isArchived: boolean;
+    isInvitation: boolean;
+    unreadCount: number;
+  };
 }
 
 const viewer = {
@@ -48,13 +54,15 @@ describe('stream inbox unread truth table — conversationFacets parity', () => 
     const firstFm = conv.pointers[0] ? c.messages[conv.pointers[0].fm] : undefined;
     const lastPtr = conv.pointers[conv.pointers.length - 1];
     const latestFm = lastPtr ? c.messages[lastPtr.fm] : undefined;
-    const invitation = c.invitations.find(
-      (i) => i.target_url_path === `/conversation/${conv.id}`,
-    );
+    const invitation = c.invitations.find((i) => i.target_url_path === `/conversation/${conv.id}`);
 
     const facets = conversationFacets({
       // The flag as the backend stamped it (`facets.isUnread` is what the backend test pins).
-      conv: { archived_at: conv.archived_at ?? undefined, is_unread: c.facets!.isUnread } as unknown as Conversation,
+      conv: {
+        archived_at: conv.archived_at ?? undefined,
+        is_unread: c.facets!.isUnread,
+        unread_count: c.facets!.unreadCount,
+      } as unknown as Conversation,
       firstMessage: (firstFm ?? null) as unknown as FlowMessage | null,
       latestMessage: (latestFm ?? null) as unknown as FlowMessage | null,
       latestPtrTs: lastPtr?.ts ?? null,
