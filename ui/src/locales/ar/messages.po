@@ -2627,6 +2627,10 @@ msgstr "طلب المساعدة من شخص آخر"
 msgid "Ask the agent to connect one"
 msgstr ""
 
+#: src/components/top-nav-bar/AddressAskField.tsx
+msgid "Ask the Flowpad Assistant"
+msgstr ""
+
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "Ask the Flowpad Assistant anything about this page."
 msgstr ""
@@ -4246,6 +4250,7 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/PaneBar.tsx
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
+#: src/components/top-nav-bar/AddressAskField.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -23612,6 +23617,10 @@ msgstr "ماذا تغيّر؟ سيُرسل إلى المستلمين أدناه�
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "What do you need help with?"
 msgstr "بماذا يمكننا مساعدتك؟"
+
+#: src/components/top-nav-bar/AddressAskField.tsx
+msgid "What do you want to do?"
+msgstr ""
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"

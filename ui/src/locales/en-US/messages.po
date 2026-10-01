@@ -2627,6 +2627,10 @@ msgstr "Ask someone for help"
 msgid "Ask the agent to connect one"
 msgstr "Ask the agent to connect one"
 
+#: src/components/top-nav-bar/AddressAskField.tsx
+msgid "Ask the Flowpad Assistant"
+msgstr "Ask the Flowpad Assistant"
+
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "Ask the Flowpad Assistant anything about this page."
 msgstr "Ask the Flowpad Assistant anything about this page."
@@ -4246,6 +4250,7 @@ msgstr "Cloning…"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/PaneBar.tsx
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
+#: src/components/top-nav-bar/AddressAskField.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -23612,6 +23617,10 @@ msgstr "What changed? Sent to the recipients below…"
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "What do you need help with?"
 msgstr "What do you need help with?"
+
+#: src/components/top-nav-bar/AddressAskField.tsx
+msgid "What do you want to do?"
+msgstr "What do you want to do?"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"
