@@ -2790,6 +2790,10 @@ msgstr "إرفاق أصل (مهارة، وكيل، وثيقة، مواصفة)"
 msgid "Attach files"
 msgstr "إرفاق ملفات"
 
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Attach files or a screenshot (or paste one into the details)"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Attach session transcript"
 msgstr "إرفاق سجل الجلسة"
@@ -5221,14 +5225,18 @@ msgstr "تعذر تعليق العرض"
 msgid "Could not assign"
 msgstr "تعذر الإسناد"
 
-#. placeholder {0}: file.name
 #: src/components/assets/editor/task/TaskAttachments.tsx
-msgid "Could not attach {0}"
-msgstr "تعذر إرفاق {0}"
+#~ msgid "Could not attach {0}"
+#~ msgstr "تعذر إرفاق {0}"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not attach {name}"
 msgstr "تعذر إرفاق {name}"
+
+#. placeholder {0}: failed.join(', ')
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Could not attach: {0}"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "Could not change {key}"

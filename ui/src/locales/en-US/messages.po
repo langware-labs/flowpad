@@ -2790,6 +2790,10 @@ msgstr "Attach an asset (skill, agent, doc, spec)"
 msgid "Attach files"
 msgstr "Attach files"
 
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Attach files or a screenshot (or paste one into the details)"
+msgstr "Attach files or a screenshot (or paste one into the details)"
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Attach session transcript"
 msgstr "Attach session transcript"
@@ -5221,14 +5225,18 @@ msgstr "Could not annotate view"
 msgid "Could not assign"
 msgstr "Could not assign"
 
-#. placeholder {0}: file.name
 #: src/components/assets/editor/task/TaskAttachments.tsx
-msgid "Could not attach {0}"
-msgstr "Could not attach {0}"
+#~ msgid "Could not attach {0}"
+#~ msgstr "Could not attach {0}"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not attach {name}"
 msgstr "Could not attach {name}"
+
+#. placeholder {0}: failed.join(', ')
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Could not attach: {0}"
+msgstr "Could not attach: {0}"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "Could not change {key}"
