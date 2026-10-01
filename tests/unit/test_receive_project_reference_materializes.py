@@ -1,4 +1,5 @@
-"""A received message that references a project this box lacks mirrors it.
+"""A received message that references a project this box lacks mirrors it —
+live (``materialize_flow_message``) and on catch-up (``_process_single_hub_message``).
 
 Backward compatibility (FLOWPAD-2199; remove in FLOWPAD-2200): an invite from a
 sender without the generic route carries no project in its bundle, and the
@@ -119,3 +120,20 @@ async def test_a_local_origin_message_does_not_fetch(hub):
     await materialize_flow_message(_message(project_id), str(uuid.uuid4()), someone_typeid=None)
 
     assert hub.calls == []
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_catch_up_of_a_bundle_less_message_mirrors_its_project(hub):
+    from flow_sdk.app.actions.flow_message_action import _process_single_hub_message
+
+    project_id = str(uuid.uuid4())
+    name = f"Course-{project_id[:8]}"  # project names are unique per box
+    hub.projects[project_id] = {"type": "project", "id": project_id, "name": name}
+
+    assert await _process_single_hub_message(_message(project_id)) is not None
+
+    mirrored = await Project.get_one({"id": project_id})
+    assert mirrored is not None, "catch-up did not mirror the referenced project"
+    assert mirrored.name == name
