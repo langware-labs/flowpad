@@ -10,10 +10,12 @@ import {
   Task,
   TypeId,
   VFSPath,
+  isImagePath,
   type GitOrigin,
 } from '@sdk';
 import { resolveLocalGitRoot } from '@src/utils/gitUtils';
 import { type Attachment, attachmentKey, makeAttachmentEntry, normalizeAttachments } from './task-attachments-utils';
+import { TASK_ATTACHMENTS_DIR, uploadFilesToTask } from './task-attachment-upload';
 import { useEntity } from '@sdk/react/hooks';
 import { hasBrowseableDrag, hasExternalFilesDrag, readBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { isFsDragItem } from '@src/components/browseable-tree/adapters/fsFolderRoot';
@@ -62,6 +64,27 @@ function writeInstalledGitPaths(taskId: string, paths: ReadonlySet<string>): voi
   } catch {
     // Storage unavailable / quota — the in-memory set still holds for this load.
   }
+}
+
+function notifyAttachFailed(name: string, e: unknown) {
+  notify.error({ title: t`Could not attach ${name}`, message: e instanceof Error ? e.message : 'Copy failed.' });
+}
+
+/** An attached image shows as itself, not a file glyph. Falls back to the
+ *  glyph when the bytes can't be fetched (e.g. not synced yet). */
+function TaskImageThumb({ task, vfs, onOpen }: { task: Task; vfs: string; onOpen: () => void }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <FileIcon className="h-4 w-4 text-muted-foreground" />;
+  return (
+    <img
+      src={fsManager.getDownloadUrl(task.typeId, vfs)}
+      alt=""
+      onClick={onOpen}
+      onError={() => setFailed(true)}
+      className="h-16 w-24 cursor-pointer rounded border object-cover"
+      data-testid="task-attachment-thumb"
+    />
+  );
 }
 
 /** Heuristic: an attachment label with no file extension is a folder. */
@@ -214,19 +237,19 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           continue;
         }
 
-        if (existingKeys.has(name)) continue;
+        if (existingKeys.has(`${TASK_ATTACHMENTS_DIR}/${name}`)) continue;
+        let file: File;
         try {
-          const blob = await fsManager.download(sourceTypeId, rel, { asBlob: true });
-          await fsManager.uploadFromBlob(task.typeId, '/', blob as Blob, name);
+          const blob = (await fsManager.download(sourceTypeId, rel, { asBlob: true })) as Blob;
+          file = new File([blob], name, { type: blob.type });
         } catch (e) {
-          notify.error({
-            title: t`Could not attach ${name}`,
-            message: e instanceof Error ? e.message : 'Copy failed.',
-          });
+          notifyAttachFailed(name, e);
           continue;
         }
-        existingKeys.add(name);
-        added.push({ vfs: name, label: name });
+        const entries = await uploadFilesToTask(task.typeId, [file], [...attachments, ...added], (f, e) =>
+          notifyAttachFailed(f.name, e),
+        );
+        added.push(...entries);
       }
       if (added.length) persist([...attachments, ...added]);
     },
@@ -243,6 +266,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
     async (files: File[]) => {
       const existingKeys = new Set(attachments.map(attachmentKey));
       const added: Attachment[] = [];
+      const plain: File[] = [];
       for (const file of files) {
         const machinePath = (file as unknown as { path?: string }).path;
         const gitOrigin = machinePath ? await resolveGitOrigin(machinePath) : undefined;
@@ -253,19 +277,13 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           added.push(entry);
           continue;
         }
-        if (!file.name || existingKeys.has(file.name)) continue;
-        try {
-          await fsManager.uploadFile(task.typeId, '/', file);
-        } catch (e) {
-          notify.error({
-            title: t`Could not attach ${file.name}`,
-            message: e instanceof Error ? e.message : 'Copy failed.',
-          });
-          continue;
-        }
-        existingKeys.add(file.name);
-        added.push({ vfs: file.name, label: file.name });
+        plain.push(file);
       }
+      added.push(
+        ...(await uploadFilesToTask(task.typeId, plain, [...attachments, ...added], (f, e) =>
+          notifyAttachFailed(f.name, e),
+        )),
+      );
       if (added.length) persist([...attachments, ...added]);
     },
     [attachments, persist, task.typeId, resolveGitOrigin, gitDirFor],
@@ -335,8 +353,11 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           // temp dir), so `local_path` is the one trustworthy answer. Same
           // contract as a message attachment's `local_path`.
           await fsManager.download(task.typeId, a.vfs, { asBlob: true });
-          const { items } = await fsManager.listDirectory(task.typeId, '/');
-          const local = items.find((i) => i.display_name === a.vfs)?.local_path;
+          const slash = a.vfs.lastIndexOf('/');
+          const dir = slash > 0 ? `/${a.vfs.slice(0, slash)}` : '/';
+          const name = a.vfs.slice(slash + 1);
+          const { items } = await fsManager.listDirectory(task.typeId, dir);
+          const local = items.find((i) => i.display_name === name)?.local_path;
           if (!local) throw new Error('file not on local disk');
           openPathContent(local, false);
         } catch (e) {
@@ -477,7 +498,9 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
               return (
                 <div key={key} className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
                   <span className="relative shrink-0">
-                    {isFolderish ? (
+                    {a.vfs && isImagePath(a.label) ? (
+                      <TaskImageThumb task={task} vfs={a.vfs} onOpen={() => void openEntry(a)} />
+                    ) : isFolderish ? (
                       <FolderIcon className="h-4 w-4 text-muted-foreground" />
                     ) : (
                       <FileIcon className="h-4 w-4 text-muted-foreground" />
