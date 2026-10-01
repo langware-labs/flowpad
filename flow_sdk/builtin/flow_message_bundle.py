@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.transfer import (
@@ -173,14 +173,35 @@ class GitShareOriginError(Exception):
 
 @dataclass(frozen=True)
 class ReferencePack:
-    """A git-reference type's bundle entry (``Entity.pack_reference``): the
+    """A git-reference type's bundle entry (``GitReferenceType.pack_reference``): the
     metadata that rides, and the transportable origin the recipient resolves."""
 
     metadata: dict
     origin: Any
 
 
-def _git_reference_cls(entry_type: str):
+class GitReferenceType(Protocol):
+    """What an entity class implements when its ``TypeInfo`` declares
+    ``receive_transfer`` as a git reference (artifact, folder, project).
+    The bundle code is generic; these hooks hold what is particular to a type."""
+
+    @classmethod
+    async def pack_reference(
+        cls, entity_id: str, *, transfer_mode: str, repo_cache: dict | None = None
+    ) -> ReferencePack | None:
+        """The bundle entry: the metadata that rides and the origin the
+        recipient resolves. ``None`` packs no reference — the packer falls
+        through to the next family."""
+
+    @classmethod
+    async def restore_reference(
+        cls, entity_id: str, metadata: dict, origin: Any, *, overwrite: bool, owner_typeid: str | None = None
+    ) -> bool:
+        """Install a staged reference: write the received row, and whatever else
+        makes it usable here. ``False`` means it could not be restored."""
+
+
+def _git_reference_cls(entry_type: str) -> type[GitReferenceType] | None:
     """The entity class of a type that travels as a git reference
     (``TypeInfo.receive_transfer``), or ``None``."""
     from flow_sdk.fs_store.schema_registry import RECEIVE_TRANSFER_GIT_REFERENCE, SchemaRegistry  # noqa: PLC0415
