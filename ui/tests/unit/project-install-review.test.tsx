@@ -19,7 +19,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
-import { Agent, Project, TypeId } from '@sdk';
+import { Agent, MessageAttachment, Project, TypeId } from '@sdk';
 
 type EntityState = { data: unknown; isLoading: boolean; notFound: boolean; isError: boolean };
 
@@ -60,6 +60,7 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => {
 // back in mid-factory, and they would bind the real hook instead of this one.
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: h.openDock }, currentDock: null }),
+  useCurrentDock: () => null,
 }));
 
 vi.mock('@src/navigation/hub-runtime', () => ({ isHubOnly: () => h.hubOnly }));
@@ -93,16 +94,33 @@ function sharedRow(mount: string | null = null): Project {
   return new Project({ id: PID, name: 'Apollo', fs_storage_mount_path: mount } as Partial<Project>);
 }
 
-function chip(typeId: TypeId = PROJECT_TID) {
+function chip(typeId: TypeId = PROJECT_TID, attachment?: MessageAttachment) {
   return (
     <MemoryRouter>
-      <MessageEntityChip typeId={typeId} conversationId={CONV} forceShow={false} />
+      <MessageEntityChip typeId={typeId} conversationId={CONV} forceShow={false} attachment={attachment} />
     </MemoryRouter>
   );
 }
 
-function renderChip(typeId: TypeId = PROJECT_TID) {
-  return render(chip(typeId));
+function renderChip(typeId: TypeId = PROJECT_TID, attachment?: MessageAttachment) {
+  return render(chip(typeId, attachment));
+}
+
+/** The project as the invite's bundle staged it. */
+function stagedProject(scope: 'user' | null = null): MessageAttachment {
+  return new MessageAttachment({
+    id: '44444444-4444-4444-8444-444444444444',
+    asset_type: 'project',
+    asset_id: PID,
+    name: 'Apollo',
+    transfer_mode: 'git',
+    scope,
+  } as Partial<MessageAttachment>);
+}
+
+/** The generic entity chip of the staged project. */
+function genericChip(): HTMLElement {
+  return screen.getByTestId(`entity-chip-project-${PID}`);
 }
 
 function chipState(): string | null {
@@ -283,5 +301,83 @@ describe('MessageEntityChip — project reference', () => {
     expect(screen.queryByTestId('project-chip')).toBeNull();
     // The existing entity chip renders the agent.
     expect(screen.getByText('Helper')).toBeTruthy();
+  });
+
+  describe('a project the invite staged (generic attachment path)', () => {
+    it('renders the generic dashed chip whose popup offers Clone & Open', () => {
+      renderChip(PROJECT_TID, stagedProject());
+
+      expect(screen.queryByTestId('project-chip')).toBeNull();
+      expect(genericChip().getAttribute('data-state')).toBe('staged');
+      fireEvent.click(genericChip());
+      expect(screen.getByTestId('asset-review-dialog')).toBeTruthy();
+      expect(actionState()).toBe('install');
+      expect(screen.getByTestId('project-install-button').textContent).toContain('Clone & Open');
+      expect(screen.queryByTestId('asset-install-project')).toBeNull();
+      expect(screen.queryByTestId('asset-install-global')).toBeNull();
+    });
+
+    it('Clone & Open installs the attachment like a git download, then lands in the project', async () => {
+      const install = vi.spyOn(MessageAttachment.prototype, 'install').mockResolvedValue(null);
+      const setup = vi.spyOn(Project.prototype, 'setupFromGitOrigin');
+      renderChip(PROJECT_TID, stagedProject());
+      fireEvent.click(genericChip());
+
+      fireEvent.click(screen.getByTestId('project-install-button'));
+
+      await waitFor(() => expect(install).toHaveBeenCalledWith('user'));
+      await waitFor(() => expect(h.openDock).toHaveBeenCalledTimes(1));
+      expect(String(h.openDock.mock.calls[0][0].toUrl())).toContain(`/project/${PID}`);
+      expect(setup).not.toHaveBeenCalled();
+    });
+
+    it('a failed install shows the reason, and retry returns to Install', async () => {
+      vi.spyOn(MessageAttachment.prototype, 'install').mockRejectedValue(new Error('Repository not found'));
+      renderChip(PROJECT_TID, stagedProject());
+      fireEvent.click(genericChip());
+
+      fireEvent.click(screen.getByTestId('project-install-button'));
+
+      await waitFor(() => expect(actionState()).toBe('error'));
+      expect(screen.getByTestId('project-install-error').textContent).toContain('Repository not found');
+      expect(h.openDock).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('project-install-retry'));
+      expect(actionState()).toBe('install');
+    });
+
+    it('a project already cloned here (email link) still offers Clone & Open, to record the install', () => {
+      h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
+      entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
+      renderChip(PROJECT_TID, stagedProject());
+
+      expect(genericChip().getAttribute('data-state')).toBe('staged');
+      fireEvent.click(genericChip());
+      expect(actionState()).toBe('install');
+    });
+
+    it('installed once its attachment is installed: the chip opens the project (Standard)', () => {
+      h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
+      entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
+      renderChip(PROJECT_TID, stagedProject('user'));
+
+      expect(genericChip().getAttribute('data-state')).toBe('installed');
+      fireEvent.click(genericChip());
+      expect(screen.queryByTestId('asset-review-dialog')).toBeNull();
+      expect(h.openDock).toHaveBeenCalledTimes(1);
+    });
+
+    it('installed, Advanced: the chip reopens the popup with Open and no Uninstall', () => {
+      h.advanced = true;
+      h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
+      entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
+      renderChip(PROJECT_TID, stagedProject('user'));
+
+      fireEvent.click(genericChip());
+
+      expect(actionState()).toBe('open');
+      expect(screen.getByTestId('asset-open-entity')).toBeTruthy();
+      expect(screen.queryByTestId('asset-uninstall-project')).toBeNull();
+      expect(screen.queryByTestId('asset-uninstall-global')).toBeNull();
+    });
   });
 });

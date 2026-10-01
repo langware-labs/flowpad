@@ -977,10 +977,11 @@ export function MessageEntityChip({
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
-  // A project reference (a project invite) is the generic chip too, but
-  // stated from the local Project row's mount path — NOT `chipStateFor`, which
-  // would call a hub-pushed, not-yet-cloned row "installed" (KTD10).
-  if (typeId.type === Project.type) {
+  // A project the message staged (its bundle carried it) is an ordinary
+  // attachment chip below. A project reference with no staged attachment — an
+  // invite sent before projects rode the bundle — keeps the project chip,
+  // stated from the local row's mount path (KTD10).
+  if (typeId.type === Project.type && !attachment) {
     return (
       <ProjectMessageChip
         typeId={typeId}
