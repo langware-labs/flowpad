@@ -4,6 +4,7 @@
  */
 export {
   usePreference,
+  usePreferenceValue,
   usePreferenceResolved,
   usePreferencesVersion,
 } from '@sdk/react/hooks/use-preference';

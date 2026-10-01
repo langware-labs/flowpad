@@ -34,7 +34,7 @@ import { tagAttrs } from '@src/tags/tag-attrs';
  * the Vibe-mode spacer that reserves this footprint (flow-page.tsx) can't drift.
  */
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
-import { BadgeCheck, Bug, ChevronDown, Compass, History, KeyRound, Mail, Plug, RadioTower, Webhook, Workflow } from 'lucide-react';
+import { BadgeCheck, Bug, ChevronDown, Compass, History, Mail, Plug, RadioTower, Sparkles, Webhook, Workflow } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
@@ -88,9 +88,8 @@ export function CollapsedSidebar() {
     // slot and an AgenticProcess entity are one thing to a user, so one TypeInfo.
     chats: { title: t`Chats`, icon: iconForType(AgenticProcess.type), viewType: ViewType.SHELL },
     stream_inbox: { title: t`Stream Inbox`, icon: Mail, viewType: ViewType.STREAM_INBOX },
-    // `Plug`, not the screen's own `KeyRound` (VIEWER_REGISTRY): `llm-sources`
-    // already wears KeyRound on this rail, and two slots with one glyph is worse
-    // than a slot whose glyph differs from its header. A literal is right here —
+    // `Plug`, not the screen's own `KeyRound` (VIEWER_REGISTRY): a connection is
+    // more than a key, and the rail reads better with a glyph per job. A literal is right here —
     // the CLAUDE.md registry rule governs per-ENTITY-TYPE icons, and this slot is
     // a screen, like `stream_inbox` and `events` beside it.
     credentials: { title: t`Connections`, icon: Plug, viewType: ViewType.CREDENTIALS },
@@ -98,7 +97,7 @@ export function CollapsedSidebar() {
     events: { title: t`Events`, icon: RadioTower, viewType: ViewType.EVENTS },
     hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
-    'llm-sources': { title: t`LLM sources`, icon: KeyRound, viewType: ViewType.LLM_SOURCES },
+    'llm-sources': { title: t`LLM sources`, icon: Sparkles, viewType: ViewType.LLM_SOURCES },
     'graph-workflows': { title: t`Graph Workflows`, icon: Workflow, viewType: ViewType.GRAPH_WORKFLOWS },
     // Glyph from the type registry, never a literal — same rule the project
     // item follows, so a TypeInfo icon change reaches the rail too.

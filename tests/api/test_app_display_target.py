@@ -33,7 +33,6 @@ async def _artifact(name: str = "Todo") -> Artifact:
 async def _deployment(artifact: Artifact) -> Deployment:
     deployment = Deployment(
         name=f"{artifact.name} (local)",
-        kind="runtime.web",
         artifact_id=artifact.id,
         target={"provider": "local", "scope": "machine"},
     )

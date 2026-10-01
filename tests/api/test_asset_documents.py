@@ -4,12 +4,13 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.api.api_types.identifier import mint_uuid
+from tests.unit._project_names import unique_project_name
 
 pytestmark = pytest.mark.asyncio
 
 
 async def project_at(client, path):
-    response = await client.post("/api/v1/graph/project", json={"name": "asset-documents", "fs_storage_mount_path": str(path)})
+    response = await client.post("/api/v1/graph/project", json={"name": unique_project_name("asset-documents"), "fs_storage_mount_path": str(path)})
     assert response.status_code == 200, response.text
     return response.json()["data"]["id"]
 

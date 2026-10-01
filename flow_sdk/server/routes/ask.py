@@ -19,8 +19,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
+from flow_sdk.core.compute_op.ask import AssistRefused, ask_person, assist, open_questions, pending, serve_here
 from flow_sdk.core.compute_op.ask import answer as deliver_answer
-from flow_sdk.core.compute_op.ask import ask_person, open_questions, pending, serve_here
 from flow_sdk.core.compute_op.ask import cancel as decline
 from flow_sdk.responses.response import ApiSuccessResponse
 
@@ -63,10 +63,18 @@ class AskRequest(BaseModel):
     cancel_label: str = ""
     #: The answer is a secret: the window masks it.
     secret: bool = False
+    #: The answer is a file's content: the window offers a file picker and a paste box.
+    file: bool = False
     #: The Wizard entity this question is a step of, when it is one.
     wizard_id: str = ""
     #: How a person finds the value (the op's ``setup.md``).
     guide: str = ""
+    #: AI Assist: the agent that can answer instead, how long it gets, and where it works.
+    assist_agent: str = ""
+    setup_timeout: float = 0.0
+    workdir: str = ""
+    #: Start the assist as soon as the question is raised — a terminal whose person left it empty.
+    assist_now: bool = False
 
 
 @router.post("")
@@ -83,8 +91,13 @@ async def ask_for_another_process(body: AskRequest):
         submit_label=body.submit_label,
         cancel_label=body.cancel_label,
         secret=body.secret,
+        file=body.file,
         wizard_id=body.wizard_id,
         guide=body.guide,
+        assist_agent=body.assist_agent,
+        setup_timeout=body.setup_timeout,
+        workdir=body.workdir,
+        assist_now=body.assist_now,
     )
     return ApiSuccessResponse(data=said.model_dump(mode="json"))
 
@@ -136,3 +149,15 @@ async def cancel_question(question_id: str):
     if not decline(question_id):
         return _fail("that question is no longer waiting", 404)
     return ApiSuccessResponse(data={"cancelled": question_id})
+
+
+@router.post("/{question_id}/assist")
+async def assist_question(question_id: str):
+    """AI Assist: the question's agent follows its guide and answers it. The question stays open —
+    the person can still answer — and now waits the setup's own span. 409 when it cannot start."""
+    try:
+        state = assist(question_id)
+    except AssistRefused as refused:
+        status = 404 if pending(question_id) is None else 409
+        return _fail(str(refused), status)
+    return ApiSuccessResponse(data=state)

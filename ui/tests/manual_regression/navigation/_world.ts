@@ -2,7 +2,7 @@
  * A real world for browser navigation specs (docs/navigation/dock-loading.md):
  * a project with a markdown report, a PTY agentic process running the MOCK
  * worker, and a plain shell — all created through the HTTP API on a disposable
- * instance, and driven in-app through the real control plane (`flow navigate`).
+ * instance, and driven in-app through the real control plane (`flow navigate`'s own request).
  *
  * The instance must be launched with the mock worker first on PATH so the
  * process's terminal runs a scripted program instead of an LLM:
@@ -11,12 +11,13 @@
  *   SHELL=$PWD/tests/fixtures/mock_worker_shell \
  *     scripts/instance_ctl.sh launch dlm-7
  */
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { homedir, tmpdir } from 'os';
 import path from 'path';
 import { expect, type Page } from '@playwright/test';
 import { apiOrigin } from '../_shared/api';
-import { awaitSteerable as awaitSteerableOn, flow } from '../_shared/control-plane';
+import { awaitSteerable as awaitSteerableOn } from '../_shared/control-plane';
 
 export const INSTANCE = process.env.FLOW_INSTANCE || 'dlm-7';
 export const BACKEND = apiOrigin();
@@ -108,6 +109,138 @@ export async function destroyWorld(world: World): Promise<void> {
   rmSync(world.root, { recursive: true, force: true });
 }
 
+/** A chat session with a long history, in a world's project. */
+export interface LongChat {
+  processId: string;
+  transcriptPath: string;
+}
+
+/**
+ * A stopped chat session whose transcript is long enough to be expensive to lay
+ * out: `turns` × (prompt, tool call, tool result, ~2 KB answer of wrapping prose
+ * plus a list, a code block and a table). 300 turns render ~39k nodes and ~900 KB
+ * of wrapping text — the shape of the 42 MB "wizard" session that froze prod
+ * 0.2.179 for 7–15 s per switch away from it (FLOWPAD-2193).
+ *
+ * The transcript is written where the backend's Claude session lookup scans
+ * (`$CLAUDE_CONFIG_DIR/projects`, default `~/.claude/projects`) — the same
+ * same-machine assumption the report file above already makes.
+ */
+export async function createLongChat(world: World, turns = 300): Promise<LongChat> {
+  const sessionId = randomUUID();
+  const claudeHome = process.env.CLAUDE_CONFIG_DIR || path.join(homedir(), '.claude');
+  const dir = path.join(claudeHome, 'projects', world.root.replace(/[^A-Za-z0-9]/g, '-'));
+  mkdirSync(dir, { recursive: true });
+  const transcriptPath = path.join(dir, `${sessionId}.jsonl`);
+  writeFileSync(transcriptPath, longTranscript(sessionId, world.root, turns));
+  const proc = await data<{ id: string }>(
+    await post('graph/agentic_process', {
+      name: 'long chat',
+      project_id: world.projectId,
+      workdir: world.root,
+      worker_type: 'claude_code',
+      session_id: sessionId,
+      status: 'stopped',
+      visible: true,
+      pty_mode: false,
+    }),
+  );
+  return { processId: proc.id, transcriptPath };
+}
+
+export function destroyLongChat(chat: LongChat): void {
+  rmSync(path.dirname(chat.transcriptPath), { recursive: true, force: true });
+}
+
+function longTranscript(sessionId: string, cwd: string, turns: number): string {
+  const lines: object[] = [];
+  let parent: string | null = null;
+  const t0 = Date.parse('2026-09-01T08:00:00Z');
+  const entry = (type: 'user' | 'assistant', n: number, message: object) => {
+    const uuid = randomUUID();
+    lines.push({
+      parentUuid: parent,
+      isSidechain: false,
+      type,
+      message,
+      uuid,
+      timestamp: new Date(t0 + n * 7_000).toISOString(),
+      userType: 'external',
+      entrypoint: 'cli',
+      cwd,
+      sessionId,
+      version: '2.1.119',
+      gitBranch: 'main',
+    });
+    parent = uuid;
+  };
+  const code = Array.from(
+    { length: 14 },
+    (_, j) => `    result_${j} = compute(step=${j}, mode='fast')  # line ${j}`,
+  ).join('\n');
+  for (let i = 0; i < turns; i++) {
+    const tool = `toolu_${String(i).padStart(6, '0')}`;
+    entry('user', 4 * i, {
+      role: 'user',
+      content: `Turn ${i}: summarize what changed in module ${i} and list the follow-ups.`,
+    });
+    entry('assistant', 4 * i + 1, {
+      id: `msg_${i}_a`,
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-opus-5-5',
+      content: [
+        { type: 'tool_use', id: tool, name: 'Bash', input: { command: `git log --oneline -5 -- module_${i}` } },
+      ],
+      stop_reason: 'tool_use',
+      usage: { input_tokens: 10, output_tokens: 20 },
+    });
+    entry('user', 4 * i + 2, {
+      role: 'user',
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: tool,
+          content: Array.from(
+            { length: 5 },
+            (_, j) => `${j.toString(16).padStart(7, '0')} change ${j} in module ${i}`,
+          ).join('\n'),
+        },
+      ],
+    });
+    const prose = Array.from({ length: 3 }, (_, k) =>
+      (
+        `Paragraph ${k} of turn ${i}: the handler in /srv/app/modules/module_${i}/handlers/request_pipeline_${k}.py ` +
+        'validated its input late, so an empty payload reached the serializer and the retry loop re-queued it ' +
+        'until the worker gave up; moving the check to the entry point returns early, keeps the queue clean, and ' +
+        'makes the failure visible in the log line that operators already watch. '
+      ).repeat(2),
+    ).join('\n\n');
+    const text =
+      `${prose}\n\n## Module ${i}\n\nThe module changed in **five** commits. Details:\n\n` +
+      Array.from(
+        { length: 8 },
+        (_, j) => `- item ${j}: \`func_${j}()\` now returns *early* when the input is empty`,
+      ).join('\n') +
+      `\n\n\`\`\`python\ndef handler_${i}():\n${code}\n\`\`\`\n\n| file | lines | risk |\n|---|---|---|\n` +
+      Array.from({ length: 4 }, (_, j) => `| mod_${i}/f${j}.py | ${j * 13} | low |`).join('\n') +
+      '\n\nFollow-ups: add tests, update docs.';
+    entry('assistant', 4 * i + 3, {
+      id: `msg_${i}_b`,
+      type: 'message',
+      role: 'assistant',
+      model: 'claude-opus-5-5',
+      content: [{ type: 'text', text }],
+      // Without a stop reason the backend reads the last turn as still in flight: the session
+      // reports `busy` / `thinking`, and the view-mode toggle locks itself ("not while the agent
+      // is working") on a session nobody is talking to.
+      stop_reason: 'end_turn',
+      usage: { input_tokens: 10, output_tokens: 20 },
+    });
+  }
+  return lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
+}
+
 /** Wait until the backend can steer this page (see _shared/control-plane). */
 export const awaitSteerable = (page: Page) => awaitSteerableOn(page, BACKEND);
 
@@ -119,8 +252,11 @@ export const awaitSteerable = (page: Page) => awaitSteerableOn(page, BACKEND);
  */
 export async function navigateTo(page: Page, address: string, expectPath: string): Promise<void> {
   const committedBefore = await committedPaths(page);
-  const res = flow(['navigate', 'view', address], INSTANCE);
-  expect(res.code, `flow navigate view ${address} → ${res.out}`).toBe(0);
+  // The request `flow navigate view` makes, without the CLI around it: a Python process per steer
+  // cost ~1 s of a spec's wall clock on CI, ten times over in a spec — none of it the app's.
+  const res = await post('agent/navigate/view', { view: address });
+  const verdict = (await res.json()) as { ok?: boolean; error?: string };
+  expect(verdict.ok, `navigate view ${address} → ${JSON.stringify(verdict)}`).toBe(true);
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: 15_000 }).toContain(expectPath);
   if (committedBefore === null) return; // tab_switch tracing is off on this page: the URL is all there is
   await expect

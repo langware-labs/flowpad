@@ -132,7 +132,12 @@ export function ContactPicker({
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
           onDoubleClick={() => setListOpen(true)}
-          onBlur={() => setTimeout(() => setListOpen(false), 150)}
+          onBlur={() => {
+            // Moving on from a complete email adds it, as Enter would: the person typed who they
+            // meant and went to the next field. A partial name is left for the list.
+            if (EMAIL_RE.test(filterText.trim())) addFreeFormEmail();
+            setTimeout(() => setListOpen(false), 150);
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
               setListOpen(false);

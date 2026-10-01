@@ -21,4 +21,6 @@ export enum LazyAsset {
   GitRepos = 'git-repos',
   GitBranches = 'git-branches',
   GitInvitations = 'git-invitations',
+  GitOrgs = 'git-orgs',
+  GitOrgRepos = 'git-org-repos',
 }

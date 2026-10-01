@@ -6,6 +6,8 @@ reports what happened as ``hub_body`` so the row can say why the document is
 repo and the manifest is reflected to the hub again."""
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 import flow_sdk.builtin.project_manifest as pm
@@ -33,9 +35,11 @@ async def test_the_toggle_reports_what_it_did_about_the_hub_body(
     bootstrapped_client, tmp_path, monkeypatch, linked, publish_raises, expected, publishes
 ):
     calls = {"publish": [], "manifest": []}
+    seq: list[str] = []  # every hub write, in the order it started/ended
 
     async def fake_publish(entity, actor):
         calls["publish"].append(str(entity.typeid))
+        seq.append("publish")
         if publish_raises is not None:
             raise publish_raises
         entity.origin = HubRepoOrigin(repo=REPO, rel_path=".claude/skills/rca", head_commit="a" * 40, tree="b" * 40)
@@ -44,6 +48,9 @@ async def test_the_toggle_reports_what_it_did_about_the_hub_body(
     async def fake_post(entity_type, payload, entity_id=None, action=None, sub_path=None, **kw):
         if action == "publish_manifest":
             calls["manifest"].append(payload["manifest"])
+            seq.append("manifest:start")
+            await asyncio.sleep(0)  # a real round-trip yields: let a concurrent writer in
+            seq.append("manifest:end")
         return {}
 
     monkeypatch.setattr("flow_sdk.builtin.asset_publishing.publish_git_asset", fake_publish)
@@ -68,5 +75,10 @@ async def test_the_toggle_reports_what_it_did_about_the_hub_body(
         assert row["origin"]["kind"] == "hub_repo"
         assert (row["origin"]["repo"], row["origin"]["rel_path"]) == (REPO, ".claude/skills/rca")
         assert calls["manifest"], "the re-pointed manifest was reflected to the hub"
+        # The hub saves its project row WHOLE, so the manifest reflection and the
+        # body publish (whose `hosted_repo` call writes that same row) must never
+        # be in flight together — run concurrently, `hosted_repo` wrote back the
+        # row it read before `publish_manifest` committed and emptied the ledger.
+        assert seq == ["manifest:start", "manifest:end", "publish", "manifest:start", "manifest:end"], seq
     else:
         assert (row["origin"] or {}).get("kind") != "hub_repo"

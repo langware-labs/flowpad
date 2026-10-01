@@ -198,7 +198,11 @@ def _seed(root: Path, tag: str, words: dict[str, str]) -> dict[str, str]:
     # A real shipped driver, renamed and given an ontology namespace: what an external connector looks like.
     drv_name = f"ext{tag}"
     drv = assets / "data_driver" / drv_name
-    shutil.copytree(SHIPPED / "data_driver" / DRIVER, drv, ignore=shutil.ignore_patterns("__pycache__", ".DS_Store", "tests"))
+    # ``.flow`` too: the driver carries its own credential folder, and a copied identity capsule would give
+    # the renamed copy the shipped credential's id.
+    shutil.copytree(
+        SHIPPED / "data_driver" / DRIVER, drv, ignore=shutil.ignore_patterns("__pycache__", ".DS_Store", "tests", ".flow")
+    )
     manifest = json.loads((drv / "data_driver.json").read_text(encoding="utf-8"))
     manifest.update(name=drv_name, ns="offlineshare", kind=f"offlineshare.datasource.{drv_name}")
     manifest["auth"]["credential"] = drv_name
@@ -206,9 +210,12 @@ def _seed(root: Path, tag: str, words: dict[str, str]) -> dict[str, str]:
     source = (drv / "source.py").read_text(encoding="utf-8")
     assert f'provider = "{DRIVER}"' in source
     (drv / "source.py").write_text(source.replace(f'provider = "{DRIVER}"', f'provider = "{drv_name}"'), encoding="utf-8")
-    cred = assets / "credential" / drv_name
-    cred.mkdir(parents=True)
-    body = json.loads((SHIPPED / "credential" / DRIVER / "credential.json").read_text(encoding="utf-8"))
+    # A credential exactly one driver names lives in that driver's folder (data-source-asset.md), so the
+    # renamed driver's credential is its own copy, renamed with it.
+    shipped_cred = drv / "agentic-assets" / "credential" / DRIVER
+    cred = shipped_cred.with_name(drv_name)
+    shipped_cred.rename(cred)
+    body = json.loads((cred / "credential.json").read_text(encoding="utf-8"))
     body["name"] = drv_name
     (cred / "credential.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
     return {

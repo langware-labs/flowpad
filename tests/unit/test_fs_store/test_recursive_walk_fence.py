@@ -19,6 +19,10 @@ PATTERN = re.compile(r"os\.walk\(|\.rglob\(|\.walk\(\)")
 #: file → why a raw recursive walk is acceptable there.
 ALLOWED: dict[str, str] = {
     "flow_sdk/fs_store/operations/markdown_dirs.py": "prunes with is_ignored on every level",
+    "flow_sdk/system_projects/flowpad_assistant/.claude/skills/cred-scan/scripts/cred_scan.py": (
+        "prunes dependency/build/cache dirs and nested repos on every level; must read the "
+        "gitignored .env files (keys only), so gitignore_walk cannot serve it"
+    ),
     "flow_sdk/server/fsop_filters.py": "prunes with the denylist, bounded discovery",
     "flow_sdk/assets/scanning.py": "declared-mount walks; nodes arrive pre-pruned from gitignore_walk",
     "flow_sdk/assets/transfer.py": "walks one extracted asset bundle",

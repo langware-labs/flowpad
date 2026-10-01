@@ -8,10 +8,9 @@ import asyncio
 
 import pytest
 
-from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
-
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.trigger import Trigger, _fire_schedule_job
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 from flow_sdk.schema.data_spec.trigger_action import ActionType, TriggerAction
 from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
@@ -359,12 +358,12 @@ async def test_a_scheduled_run_uses_its_place(initialize_test_db, tmp_path, laun
 
 @pytest.mark.asyncio
 async def test_a_schedule_for_another_place_never_runs_here(initialize_test_db, tmp_path, launches) -> None:
-    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+    from flow_sdk.builtin.deployment import Deployment
 
     calls, log = launches
     agent = await _agent(tmp_path, "sched-place-cloud")
     cloud = Deployment(
-        name="cloud", kind=KIND_AGENT, parent_type_id=str(agent.typeid),
+        name="cloud", parent_type_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
     )

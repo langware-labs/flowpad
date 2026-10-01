@@ -4,8 +4,6 @@ import {
   assetDescriptorHasUsage,
   dataContext,
   dataManager,
-  FLOWPAD_ASSISTANT_PROJECT_NAME,
-  FLOWPAD_ASSISTANT_PROJECT_UNAME,
   isReadOnlySource,
   isTypeId,
   Project,
@@ -28,6 +26,9 @@ import {
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useProcessAssets, type UseProcessAssetsResult } from './useProcessAssets';
 import { additionalDirScope, assetScope, AssetScopeChip, type AssetScope } from './asset-scope';
+import { assetBoardScope, BOARD_SCOPES, loadShownScopes, saveShownScopes, type BoardScope } from './board-scope';
+import { AssetScopeToggles } from './AssetScopeToggles';
+import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { WikiTip } from '@src/components/wiki-tip';
 import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
@@ -189,9 +190,11 @@ export interface AssetManagerPopoverProps {
   onUnpick?: (descriptor: AssetDescriptor) => void | Promise<void>;
 
   // ── process-derived status (props) ─────────────────────────────────────
-  /** Whether the Flowpad Assistant is mounted. Paints the toggle and the
-   *  mounted-location marker; `onToggleAssistant` is what makes them render. */
+  /** Whether the Flowpad Assistant is mounted. Labels the "+" menu's
+   *  mount/unmount item; `onToggleAssistant` is what makes it render. */
   assistantEnabled?: boolean;
+  /** The run's worker (`claude_code`, `codex`, …) — names the worker scope toggle. */
+  workerType?: string | null;
   /** Directories mounted into the process via `--add-dir`. */
   additionalDirs?: readonly string[];
   /** `descriptorKey()` of the asset whose improvement is currently running. */
@@ -253,6 +256,7 @@ export function AssetManagerPopover({
   additionalDirs = NONE,
   improveBusyKey = null,
   canImprove,
+  workerType,
   onToggleAssistant,
   onAddFolder,
   onRemoveDir,
@@ -270,7 +274,7 @@ export function AssetManagerPopover({
     },
     [isControlled, onOpenChange],
   );
-  const [view, setView] = useState<'list' | 'pick-project' | 'assistant'>('list');
+  const [view, setView] = useState<'list' | 'pick-project'>('list');
   const [listFilter, setListFilter] = useState('');
   const [sortBy, setSortBy] = useState<'scope' | 'name'>('scope');
 
@@ -279,33 +283,21 @@ export function AssetManagerPopover({
   // owns the data, so only one fetch is ever in flight.
   const ownAssets = useProcessAssets(null, { enabled: open && !assets });
 
-  // ── Flowpad Assistant drill-down ────────────────────────────────────────
-  // The project catalog identifies assistant-owned assets. For an existing
-  // worker, its verified inventory decides which of those assets are available.
-  const browsingAssistant = view === 'assistant';
-  const assistantAssets = useProcessAssets(null, {
-    enabled: open && browsingAssistant,
-    projectId: `@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`,
-  });
-  // The assistant's OWN assets: the action's scan-dir policy always folds in the
-  // user home, and those rows belong to the user, not to the assistant. Read
-  // through the scope model rather than the raw source string, so a backend
-  // source rename degrades the chip instead of silently emptying this list.
-  const assistantDescriptors = useMemo(() => {
-    const catalog = assistantAssets.descriptors.filter((d) => assetScope(d).kind === 'project');
-    if (!assets?.workerScoped) return catalog;
-    const ids = new Set(catalog.map((d) => d.typeid));
-    const paths = new Set(catalog.map((d) => d.posix_path).filter(Boolean));
-    return assets.descriptors.filter((d) => d.source === 'system' || ids.has(d.typeid) || (d.posix_path && paths.has(d.posix_path)));
-  }, [assistantAssets.descriptors, assets]);
+  const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } =
+    assets ?? ownAssets;
 
-  // What the body lists. A drill-down is a foreign, READ-ONLY board: its own
-  // source and loading flag, one section, no host filter, no dirs, no select or
-  // improve. Decided once here so the rest of the render reads a value instead
-  // of re-asking "are we in the drill-down?" at every row and section.
-  const { descriptors: listDescriptors, isLoading: listIsLoading, error: listError, scanIssues, truncated } = browsingAssistant
-    ? { descriptors: assistantDescriptors, isLoading: assistantAssets.isLoading || !!assets?.isLoading, error: assistantAssets.error || assets?.error, scanIssues: assistantAssets.scanIssues, truncated: assistantAssets.truncated }
-    : (assets ?? ownAssets);
+  // Which scopes the list shows — one header toggle each. Per viewer, kept
+  // across opens and reloads.
+  const [shownScopes, setShownScopes] = useState<Set<BoardScope>>(loadShownScopes);
+  const toggleScope = useCallback((scope: BoardScope) => {
+    setShownScopes((prev) => {
+      const next = new Set(prev);
+      if (next.has(scope)) next.delete(scope);
+      else next.add(scope);
+      saveShownScopes(next);
+      return next;
+    });
+  }, []);
 
   // Project picker — load once when entering pick-project mode.
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
@@ -319,12 +311,6 @@ export function AssetManagerPopover({
     setView('list');
     setListFilter('');
     setProjectQuery('');
-  }, []);
-
-  /** Descend into the Flowpad Assistant's own assets. Same list, new subject. */
-  const openAssistant = useCallback(() => {
-    setListFilter('');
-    setView('assistant');
   }, []);
 
   const handlePickProject = useCallback(
@@ -370,7 +356,7 @@ export function AssetManagerPopover({
   //
   // ``entityVersion`` participates in the deps so newly-loaded entities trigger a
   // fresh build (display labels resolve from the cache).
-  const sections = useMemo(() => {
+  const sections_ = useMemo(() => {
     void entityVersion;
 
     // Resolve each descriptor's scope + label ONCE. Both are cache lookups that
@@ -378,12 +364,12 @@ export function AssetManagerPopover({
     // otherwise re-derive them O(n log n) times — ~20k times for a 1000-asset
     // staging list, on every keystroke in the filter box.
     const selected = new Set(selectedTypeIds);
-    // The host's `filter` scopes what it will accept a pick of; the assistant
-    // drill-down picks nothing, so it shows the project whole.
-    const candidates = filter && !browsingAssistant ? listDescriptors.filter(filter) : listDescriptors;
-    const rows = candidates.map((d) => ({
+    // The host's `filter` scopes what it will accept a pick of.
+    const candidates = filter ? listDescriptors.filter(filter) : listDescriptors;
+    const allRows = candidates.map((d) => ({
       d,
       type: _parseTypeid(d.typeid).type,
+      boardScope: assetBoardScope(d),
       scope: assetScope(d),
       label: _displayLabelForDescriptor(d),
       used: assetDescriptorHasUsage(d),
@@ -391,7 +377,12 @@ export function AssetManagerPopover({
       improvable: !!canImprove?.(d),
       key: descriptorKey(d),
     }));
-    type Row = (typeof rows)[number];
+    type Row = (typeof allRows)[number];
+
+    // Counted before the text filter, so a toggle's number doesn't move while typing.
+    const scopeCounts = Object.fromEntries(BOARD_SCOPES.map((s) => [s, 0])) as Record<BoardScope, number>;
+    for (const r of allRows) scopeCounts[r.boardScope] += 1;
+    const rows = allRows.filter((r) => shownScopes.has(r.boardScope));
 
     const q = listFilter.trim().toLowerCase();
     const filtered = q
@@ -426,14 +417,7 @@ export function AssetManagerPopover({
       );
     };
 
-    // The drill-down has no usage axis of its own — nothing in another project
-    // is "used by" or "selected for" this run — so it collapses to one section.
-    if (browsingAssistant) {
-      const groups = groupByType(filtered);
-      return groups.length ? [{ key: 'available' as const, label: t`Assistant assets`, groups }] : [];
-    }
-
-    return [
+    const list = [
       { key: 'used' as const, label: t`Used assets`, groups: groupByType(filtered.filter((r) => r.used)) },
       { key: 'selected' as const, label: assets?.workerScoped ? t`Attached assets` : t`Selected assets`, groups: groupByType(filtered.filter((r) => r.selected && !r.used)) },
       {
@@ -447,12 +431,13 @@ export function AssetManagerPopover({
         groups: groupByType(filtered.filter((r) => assets?.workerScoped && !r.selected && !r.used && r.d.available !== true)),
       },
     ].filter((s) => s.groups.length > 0);
-  }, [assets?.workerScoped, browsingAssistant, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, sortBy, t]);
+    return { list, scopeCounts };
+  }, [assets?.workerScoped, canImprove, entityVersion, filter, listDescriptors, listFilter, selectedTypeIds, shownScopes, sortBy, t]);
+  const { list: sections, scopeCounts } = sections_;
 
-  // Pinned rows (the launching agent, the assistant marker) sit above the
-  // sections and are not filterable — they hide while a filter is typed and in
-  // the assistant drill-down.
-  const showPinnedRows = !browsingAssistant && !listFilter.trim();
+  // Pinned rows (the launching agent) sit above the sections and are not
+  // filterable — they hide while a filter is typed.
+  const showPinnedRows = !listFilter.trim();
 
   const filteredDirs = useMemo(() => {
     const q = listFilter.trim().toLowerCase();
@@ -533,44 +518,25 @@ export function AssetManagerPopover({
               </button>
               <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
               <span className="min-w-0 truncate">
-                {view === 'pick-project' ? <Trans>Pick project folder</Trans> : FLOWPAD_ASSISTANT_PROJECT_NAME}
+                <Trans>Pick project folder</Trans>
               </span>
             </>
           )}
         </span>
         {view === 'list' && (
           <div className="ms-auto flex items-center gap-1">
-            {onToggleAssistant && (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={assistantEnabled}
-                onClick={() => {
-                  void onToggleAssistant();
-                }}
-                title={
-                  assistantEnabled
-                    ? t`Flowpad Assistant directory is enabled. Asset availability depends on the worker. Click to disable — a restart will be required.`
-                    : t`Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required.`
-                }
-                data-testid="asset-manager-assistant-toggle"
-                data-enabled={assistantEnabled ? 'true' : 'false'}
-                className={
-                  'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-colors ' +
-                  (assistantEnabled
-                    ? 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20'
-                    : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')
-                }
-              >
-                <Sparkles className="h-3 w-3" />
-                <Trans>Assistant</Trans>
-              </button>
-            )}
+            <AssetScopeToggles
+              counts={scopeCounts}
+              shown={shownScopes}
+              onToggle={toggleScope}
+              workerLabel={workerType ? workerLabel(workerType) : undefined}
+              workerIcon={workerType ? workerIcon(workerType) : undefined}
+            />
             {/* Prop-gated: pick surfaces supply neither handler, so no
                   DropdownMenu mounts there at all — which is what keeps this
                   component safe to drop into a composer that forbids nested
                   popovers. */}
-            {(onAddFolder || onAddProjectDir) && (
+            {(onAddFolder || onAddProjectDir || onToggleAssistant) && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -582,7 +548,7 @@ export function AssetManagerPopover({
                     <Plus className="h-3.5 w-3.5" />
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuContent align="end" className="w-56">
                   {onAddFolder && (
                     <DropdownMenuItem
                       onSelect={() => {
@@ -604,6 +570,21 @@ export function AssetManagerPopover({
                     >
                       <FolderPlus className="me-2 h-3.5 w-3.5" />
                       <Trans>Project folder…</Trans>
+                    </DropdownMenuItem>
+                  )}
+                  {/* The Flowpad Assistant is one more folder mounted into the
+                      worker; its assets then show under the Assistant toggle. */}
+                  {onToggleAssistant && (
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        void onToggleAssistant();
+                      }}
+                      title={t`A restart of the worker is required.`}
+                      data-testid="asset-manager-assistant-mount"
+                      data-enabled={assistantEnabled ? 'true' : 'false'}
+                    >
+                      <Sparkles className="me-2 h-3.5 w-3.5" />
+                      {assistantEnabled ? <Trans>Unmount Flowpad Assistant</Trans> : <Trans>Mount Flowpad Assistant</Trans>}
                     </DropdownMenuItem>
                   )}
                 </DropdownMenuContent>
@@ -645,32 +626,8 @@ export function AssetManagerPopover({
           <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
             {/* The run's principal — the Agent it was launched through. */}
             {showPinnedRows && agent && <LaunchingAgentRow agent={agent} />}
-            {/* Flowpad Assistant location marker — its assets live inside the
-                  installed package and are mounted via --add-dir, so they don't
-                  show as individual rows. A light-bordered location row marks
-                  where the flowpad assets come from when the toggle is on, and
-                  descends into them on click. */}
-            {showPinnedRows && assistantEnabled && (
-              <button
-                type="button"
-                onClick={openAssistant}
-                className="m-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5 text-start hover:bg-primary/10"
-                data-testid="asset-manager-flowpad-location"
-                title={t`Flowpad Assistant — click to browse the assets available to this worker.`}
-              >
-                <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
-                <span className="min-w-0 flex-1 truncate text-xs text-foreground">
-                  {FLOWPAD_ASSISTANT_PROJECT_NAME}
-                </span>
-                <span className="flex-shrink-0 rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">
-                  <Trans>mounted</Trans>
-                </span>
-                <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-primary" aria-hidden />
-              </button>
-            )}
-            {!browsingAssistant &&
-              filteredDirs.map((path) => <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />)}
-            {!browsingAssistant && (assets ?? ownAssets).unresolvedUsage?.map((usage) => (
+            {filteredDirs.map((path) => <DirRow key={`dir|${path}`} path={path} onRemove={onRemoveDir} />)}
+            {(assets ?? ownAssets).unresolvedUsage?.map((usage) => (
               <div key={`${usage.resolution}:${usage.reference}`} className="px-3 py-2 text-xs" data-testid="asset-unresolved-usage">
                 <div className="truncate" title={usage.reference}>{usage.reference}</div>
                 <div className="text-muted-foreground">
@@ -691,7 +648,7 @@ export function AssetManagerPopover({
               </div>
             )}
             {!listError && sections.length === 0 && !(assets ?? ownAssets).unresolvedUsage?.length &&
-              (browsingAssistant || filteredDirs.length === 0) &&
+              filteredDirs.length === 0 &&
               (listIsLoading ? (
                 <div
                   className="flex items-center justify-center gap-2 px-3 py-4 text-[11px] text-muted-foreground"
@@ -704,7 +661,13 @@ export function AssetManagerPopover({
                 </div>
               ) : (
                 <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-                  {listFilter.trim() ? <Trans>No matches.</Trans> : <Trans>No assets available.</Trans>}
+                  {listFilter.trim() ? (
+                    <Trans>No matches.</Trans>
+                  ) : BOARD_SCOPES.some((scope) => scopeCounts[scope] > 0) ? (
+                    <Trans>Turn on a scope above to see its assets.</Trans>
+                  ) : (
+                    <Trans>No assets available.</Trans>
+                  )}
                 </div>
               ))}
             {sections.map((section) => (
@@ -721,12 +684,12 @@ export function AssetManagerPopover({
                         descriptor={row.d}
                         scope={row.scope}
                         label={row.label}
-                        selected={!browsingAssistant && row.selected}
+                        selected={row.selected}
                         improvable={row.improvable}
                         busy={improveBusyKey === row.key}
-                        onPick={!browsingAssistant && onPick ? handlePick : undefined}
-                        onUnpick={browsingAssistant ? undefined : onUnpick}
-                        onImprove={browsingAssistant ? undefined : onImprove}
+                        onPick={onPick ? handlePick : undefined}
+                        onUnpick={onUnpick}
+                        onImprove={onImprove}
                       />
                     ))}
                   </Fragment>

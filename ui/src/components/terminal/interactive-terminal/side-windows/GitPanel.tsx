@@ -1,6 +1,6 @@
 import { i18n } from '@lingui/core';
 import { msg, t } from '@lingui/core/macro';
-import { GitWorkdir, type GitStatus, type GitStatusFile } from '@sdk';
+import { GitWorkdir, type GitRevision, type GitStatus, type GitStatusFile } from '@sdk';
 import { useGitPush } from '@src/hooks/use-git-push';
 import {
   Check,
@@ -23,6 +23,7 @@ import { Trans } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { openExternal } from '@src/lib/open-external';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
@@ -217,6 +218,69 @@ const IconBtn: React.FC<{
 
 // ---------------------------------------------------------------------------
 // GitPanel
+// ---------------------------------------------------------------------------
+// ↑N badge — click to list the commits it counts (hash + one-liner). Loaded on
+// open, so the 5s status poll never pays for a `git log`.
+// ---------------------------------------------------------------------------
+
+const UnpushedCommitsBadge: React.FC<{ git: GitWorkdir; ahead: number }> = ({ git, ahead }) => {
+  const [commits, setCommits] = useState<GitRevision[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      setCommits(await git.unpushedCommits());
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [git]);
+
+  return (
+    <Popover onOpenChange={(open) => open && void load()}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title={t`Show unpushed commits`}
+          data-testid="git-panel-ahead"
+          className="shrink-0 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[9px] font-bold text-green-500 hover:bg-green-500/30"
+        >
+          ↑{ahead}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-96 p-0" data-testid="git-panel-ahead-commits">
+        <div className="border-b px-3 py-1.5 text-xs font-medium">
+          <Trans>Not pushed yet</Trans>
+        </div>
+        {error ? (
+          <p className="px-3 py-2 text-xs text-red-500">{error}</p>
+        ) : commits === null ? (
+          <p className="px-3 py-2 text-xs text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </p>
+        ) : commits.length === 0 ? (
+          <p className="px-3 py-2 text-xs text-muted-foreground">
+            <Trans>No unpushed commits</Trans>
+          </p>
+        ) : (
+          <ul className="py-1">
+            {commits.map((c) => (
+              <li
+                key={c.hash}
+                title={`${c.author} · ${new Date(c.date).toLocaleString()}`}
+                className="flex min-w-0 items-baseline gap-2 px-3 py-1 text-xs"
+              >
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{c.hash.slice(0, 7)}</span>
+                <span className="truncate">{c.message}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+};
+
 // ---------------------------------------------------------------------------
 
 export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPushed }) => {
@@ -454,11 +518,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, onPu
                   copiedIconClassName="text-green-500"
                 />
               )}
-              {data && !data.error && data.ahead > 0 && (
-                <span className="shrink-0 rounded-full bg-green-500/20 px-1.5 py-0.5 text-[9px] font-bold text-green-500">
-                  ↑{data.ahead}
-                </span>
-              )}
+              {data && !data.error && data.ahead > 0 && <UnpushedCommitsBadge git={git} ahead={data.ahead} />}
               {data && !data.error && data.behind > 0 && (
                 <span className="shrink-0 rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-500">
                   ↓{data.behind}

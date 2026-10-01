@@ -1,7 +1,8 @@
-"""`flow snippet run` / `flow snippet check` — what the snippet view's Run button and problem markers do.
+"""`flow snippet run` / `flow snippet check` — run a snippet off-screen, and what the view's problem markers say.
 
-In-process (no server): the same ``run_snippet`` the route calls, so what an
-agent sees here is what the user sees under the editor. Prints the
+In-process (no server): ``run_snippet`` runs the file as written — the same
+runner and interpreter the view's terminal types (``terminal_command``) — and
+answers once it ends, so an agent can read the whole result. Prints the
 ``CliResult`` as JSON — the snippet's own ``returncode`` is in it — and exits
 the answer's ``exit_code``, like every `flow` command that runs something: 0 it
 succeeded, 1 it did not (``timed_out`` says when it was cut off), 3 no runner for

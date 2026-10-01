@@ -31,6 +31,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.fs_store.operations import flow_message as fm_data_ops
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -107,7 +108,7 @@ async def test_install_project_scope_copies_indexes_and_stamps(tmp_path, ids):
 
     project_root = tmp_path / "proj"
     project_root.mkdir()
-    project = Project(name="dst", fs_storage_mount_path=str(project_root))
+    project = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(project_root))
     await project.save(notify=False)
 
     res = await handle_attachment_install(ma.id, "project", project.id)
@@ -184,7 +185,7 @@ async def test_install_user_scope_allowed_for_repo_type(tmp_path, ids, monkeypat
 async def test_install_conflict_409_then_overwrite_replaces(tmp_path, ids):
     ma = await _stage(tmp_path, ids)
     project_root = tmp_path / "proj"
-    project = Project(name="dst2", fs_storage_mount_path=str(project_root))
+    project = Project(name=unique_project_name("dst2"), fs_storage_mount_path=str(project_root))
     await project.save(notify=False)
 
     # A DIFFERENT skill already occupies the destination path.
@@ -269,7 +270,7 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
     # --- project scope --------------------------------------------------------
     project_root = tmp_path / "proj"
     project_root.mkdir()
-    project = Project(name="dst", fs_storage_mount_path=str(project_root))
+    project = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(project_root))
     await project.save(notify=False)
 
     res = await handle_attachment_install(ma.id, "project", project.id)

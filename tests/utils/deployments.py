@@ -7,12 +7,11 @@ AGENT = "agent-7b0f6c1e-3d2a-4f5b-9c8d-1e2f3a4b5c6d"
 
 
 async def make_deployment(environment: str, name: str = "qa", **secrets):
-    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
     from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsSpec  # noqa: PLC0415
 
     row = Deployment(
         name=f"{name} ({environment})",
-        kind=KIND_AGENT,
         parent_type_id=AGENT,
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         environment=environment,

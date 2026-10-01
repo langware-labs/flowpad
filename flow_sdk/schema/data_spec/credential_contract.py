@@ -21,7 +21,11 @@ store and the resolver agree on one spelling of each rule.
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import BeforeValidator
+
+from flow_sdk._compat import StrEnum
 
 ENV_VAR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -54,6 +58,49 @@ LM_SECRET_PREFIX = "lm_api."
 VAULT_PREFIX = "credential."
 
 _FORBIDDEN_VALUE_KEYS = {"value", "secret_value", "plaintext", "plain_value"}
+
+
+class CredentialRequirement(StrEnum):
+    """How much a project needs one variable — a credential var's ``required``.
+
+    ``MUST``: the app does not work without it. ``OPTIONAL``: it turns a feature,
+    an integration or a deployment on. Compare against a member, never truthiness —
+    ``"OPTIONAL"`` is a non-empty string.
+    """
+
+    MUST = "MUST"
+    OPTIONAL = "OPTIONAL"
+
+
+def as_requirement(value: Any) -> Any:
+    """``required`` as written anywhere, as a ``CredentialRequirement``.
+
+    Manifests, stored rows and API bodies written before the enum carry a bool
+    (``true`` → ``MUST``, ``false`` → ``OPTIONAL``); the member name is accepted in
+    any case. Anything else is returned as-is for the field to reject.
+    """
+    if isinstance(value, bool):
+        return CredentialRequirement.MUST if value else CredentialRequirement.OPTIONAL
+    if isinstance(value, str) and value.strip().upper() in CredentialRequirement.__members__:
+        return CredentialRequirement(value.strip().upper())
+    return value
+
+
+class CredentialVarKind(StrEnum):
+    """What a credential variable's value IS.
+
+    ``text``: the value itself (an API key, a URL). ``file``: a file's content (a
+    service-account key JSON) — kept as a file on this machine, and the variable
+    holds that file's path, which is what tools like ``GOOGLE_APPLICATION_CREDENTIALS``
+    expect.
+    """
+
+    TEXT = "text"
+    FILE = "file"
+
+
+#: A var's ``required`` field: the enum, reading a pre-enum bool on the way in.
+Requirement = Annotated[CredentialRequirement, BeforeValidator(as_requirement)]
 
 
 def is_valid_env_var(name: str) -> bool:

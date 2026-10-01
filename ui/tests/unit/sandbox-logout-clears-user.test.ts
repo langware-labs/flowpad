@@ -52,6 +52,13 @@ vi.spyOn(ComputeNode.prototype as unknown as { ops: unknown } as never, 'ops' as
   return h.failing.has(op) ? Promise.reject(new Error('the box did not answer')) : Promise.resolve({ status: 'ok' });
 }) as never);
 
+// `sign-out` is its own action on the node, not an `ops/<name>` command; the
+// entity calls its own dataManager, so the seam is the entity method itself.
+vi.spyOn(ComputeNode.prototype, 'signOut').mockImplementation(() => {
+  h.ops.push('sign-out');
+  return h.failing.has('sign-out') ? Promise.reject(new Error('the box did not answer')) : Promise.resolve({});
+});
+
 // Distinct ids per box: the SDK store registers by id, and re-registering the
 // same one from a second test logs a "already registered with different entity".
 let boxes = 0;
@@ -82,7 +89,7 @@ describe('logoutSandbox', () => {
       await result.current.logoutSandbox(node);
     });
 
-    expect(h.ops).toContain('logout-user');
+    expect(h.ops).toContain('sign-out');
     // The regression, in one line: this stayed 'ada@example.com' until reload.
     expect(node.logged_in_user).toBeNull();
     // Still refetched — it is what re-renders the list, and the honest source
@@ -93,7 +100,7 @@ describe('logoutSandbox', () => {
   it('leaves the user in place when the box did not confirm the sign-out', async () => {
     // Direction matters: a card that says "signed out" about a box still holding
     // a live session is worse than a stale one — it makes the session invisible.
-    h.failing.add('logout-user');
+    h.failing.add('sign-out');
     const node = signedInBox();
     const { result } = renderHook(() => useSandboxes());
 

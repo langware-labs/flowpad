@@ -20,6 +20,7 @@ import pytest
 
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
 
@@ -95,7 +96,7 @@ async def _install_fresh(env, fm, zip_path, parent_id, *, scope):
 
     receiver = env / "receiver"
     receiver.mkdir(exist_ok=True)
-    project = Project(name="dst", fs_storage_mount_path=str(receiver))
+    project = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(receiver))
     await project.save(notify=False)
 
     await unpack_bundle(zip_path, "local-user-id")
@@ -259,7 +260,7 @@ async def test_file_backed_markdown_shape(env):
 
     receiver = env / "mdrecv"
     receiver.mkdir()
-    project = Project(name="mddst", fs_storage_mount_path=str(receiver))
+    project = Project(name=unique_project_name("mddst"), fs_storage_mount_path=str(receiver))
     await project.save(notify=False)
     await unpack_bundle(zip_path, "local-user-id")
     ma = await MessageAttachment.get_one(
@@ -389,7 +390,7 @@ async def test_multi_attachment_bundle(env):
 
     receiver = env / "multirecv"
     receiver.mkdir()
-    project = Project(name="multidst", fs_storage_mount_path=str(receiver))
+    project = Project(name=unique_project_name("multidst"), fs_storage_mount_path=str(receiver))
     await project.save(notify=False)
     await unpack_bundle(zip_path, "local-user-id")
     # install each attachment separately (the first install overlays only its own
@@ -492,7 +493,7 @@ async def test_git_transport_body_plus_overlay(env):
     assert ent_map[f"skill-{skill_id}"]["parent_type_id"] == "task-ghost", "metadata axis must travel in git mode"
 
     await (await Skill.get_one({"id": skill_id})).destroy()
-    project = Project(name="gitdst", fs_storage_mount_path=str(recv))
+    project = Project(name=unique_project_name("gitdst"), fs_storage_mount_path=str(recv))
     await project.save(notify=False)
     await unpack_bundle(zip_path, "local-user-id")
     ma = await MessageAttachment.get_one(

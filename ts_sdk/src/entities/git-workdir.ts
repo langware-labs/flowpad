@@ -140,6 +140,11 @@ export class GitWorkdir {
     return (await this._call<{ files: string[] }>('unpushed-files')).files ?? [];
   }
 
+  /** Commits ahead of @{u}, newest first — the list behind `GitStatus.ahead` (empty when no upstream). */
+  async unpushedCommits(): Promise<GitRevision[]> {
+    return (await this._call<{ commits: GitRevision[] }>('unpushed-commits')).commits ?? [];
+  }
+
   /** Current branch name, or null if detached / not a git repo. */
   async getBranch(): Promise<string | null> {
     return (await this._call<{ branch: string | null }>('branch')).branch;

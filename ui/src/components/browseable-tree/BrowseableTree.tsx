@@ -439,13 +439,10 @@ function BrowseableRow({
   // Space reserved (on hover/focus only) so the label clears the
   // absolutely-positioned compact toolbar (pinned to the row's inline end)
   // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1). At rest the toolbar is
-  // hidden, so the label keeps its full width.
-  //
-  // Badge rows reserve the space PERMANENTLY (see the padding class below) —
-  // and always at least TWO button slots, so count badges line up across
-  // sibling rows whose toolbars differ (refresh-only vs refresh+add).
-  const toolbarSpace =
-    node.toolbar && node.toolbar.length > 0 ? Math.max(node.toolbar.length, node.badge ? 2 : 0) * 22 + 6 : 0;
+  // hidden, so the label — badge included — keeps the full width: a badge
+  // row reserves nothing at rest (in a narrow pane a permanent slot truncated
+  // every label to a letter), and its badge gives way to the toolbar on hover.
+  const toolbarSpace = node.toolbar && node.toolbar.length > 0 ? node.toolbar.length * 22 + 6 : 0;
 
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
@@ -578,13 +575,7 @@ function BrowseableRow({
           mirrored ? 'flex-row-reverse text-end' : ''
         } ${
           toolbarSpace
-            ? node.badge
-              ? // A badge sits right-aligned in this zone — reserve the
-                // hover-toolbar slot PERMANENTLY so the badge doesn't jump
-                // left when the toolbar fades in (git pills stay put while
-                // the remove button appears beside them).
-                'pe-[var(--toolbar-space)]'
-              : 'transition-[padding] group-focus-within:pe-[var(--toolbar-space)] group-hover:pe-[var(--toolbar-space)]'
+            ? 'transition-[padding] group-focus-within:pe-[var(--toolbar-space)] group-hover:pe-[var(--toolbar-space)]'
             : ''
         }`}
         style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
@@ -641,7 +632,15 @@ function BrowseableRow({
               <span className="min-w-0 flex-1 truncate" title={node.tooltip ? undefined : node.label}>
                 {node.label}
               </span>
-              {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
+              {node.badge && (
+                <div
+                  className={`flex-shrink-0 ${
+                    toolbarSpace ? 'group-focus-within:invisible group-hover:invisible' : ''
+                  }`}
+                >
+                  {node.badge}
+                </div>
+              )}
             </>
           )}
         </div>

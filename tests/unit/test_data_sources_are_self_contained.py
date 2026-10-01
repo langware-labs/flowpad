@@ -118,3 +118,25 @@ def test_no_provider_knowledge_outside_asset_folders():
 def test_every_exception_carries_its_approval():
     for path, why in EXCEPTIONS.items():
         assert re.match(r"^\d{4}-\d{2}-\d{2} — approved by .+: .+", why), f"{path}: {why!r} must say when, who and why"
+
+
+def test_a_credential_one_driver_owns_lives_in_that_drivers_folder():
+    """Everything one driver needs lives in its folder — its credential too. A shipped credential that
+    exactly one driver names (``auth.credential``) is that driver's, so it sits at
+    ``data_driver/<d>/agentic-assets/credential/<name>/``; one several drivers (or none) name — a model
+    key that funds agents, say — stays in the shipped project's top-level ``credential/``."""
+    import json
+
+    owners: dict[str, list[str]] = {}
+    for manifest in ASSETS.glob("*/data_driver.json"):
+        credential = ((json.loads(manifest.read_text()).get("auth") or {}).get("credential") or "").strip()
+        if credential:
+            owners.setdefault(credential, []).append(manifest.parent.name)
+    top_level = {p.parent.name for p in (ASSETS.parent / "credential").glob("*/credential.json")}
+    misplaced = {name: drivers[0] for name, drivers in owners.items() if len(drivers) == 1 and name in top_level}
+    assert not misplaced, f"move each into its driver's agentic-assets/credential/: {misplaced}"
+    missing = {
+        name: drivers[0] for name, drivers in owners.items()
+        if len(drivers) == 1 and not (ASSETS / drivers[0] / "agentic-assets" / "credential" / name / "credential.json").is_file()
+    }
+    assert not missing, f"a driver names a credential its folder does not carry: {missing}"
