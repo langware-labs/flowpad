@@ -31,8 +31,10 @@ export async function dockForScopeEntry(
 ): Promise<DockPointer> {
   const tabs = (await tabManager.snapshotOrRefresh()).filter((t) => tabInProject(t, projectId));
   const known = tabs.filter(tabHasRecency);
+  // `Tab.dockPointer` is the parsed stored JSON, not the UI class — hydrate it,
+  // or callers chaining `withOption` (`withHomePage`) throw on a plain object.
   const dock = tabManager.resolveNext(known)?.dockPointer ?? null;
-  if (dock) return dock as DockPointer;
+  if (dock) return new DockPointer(dock);
 
   if (isScopeKeyedView(currentDock?.viewType)) {
     return new DockPointer(currentDock.viewType, '').withScopeFilter(

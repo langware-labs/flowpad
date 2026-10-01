@@ -50,8 +50,6 @@ from flow_sdk.utils.hub import hub_get
 
 logger = logging.getLogger(__name__)
 
-PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT = "Please run the following prompt:"
-
 
 def _prompt_file_is_image_or_binary(filename: str, raw: bytes) -> bool:
     """True when an uploaded prompt 'file' must be kept as raw bytes rather than
@@ -979,11 +977,7 @@ async def handle_add_message(
         and not asset_references
     ):
         return ApiFailResponse(message="message, prompt, files, or asset_references required")
-    if not message:
-        # Synthesize a placeholder so the rest of the pipeline (which assumes a
-        # non-empty text body) keeps working for prompt-only / files-only sends.
-        # The frontend suppresses the body when it matches this exact constant.
-        message = PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT
+    # An attachment-only send keeps an empty text: each surface names what it carries.
 
     conv = await Conversation.get_one({"id": conversation_id})
     if not conv:

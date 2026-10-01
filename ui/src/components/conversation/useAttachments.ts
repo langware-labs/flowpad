@@ -8,6 +8,7 @@ import {
   type Attachment,
   type AttachmentReference,
 } from '@sdk/entities/flow-message';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { AttachmentChipState } from './AttachmentChip';
 import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-actions/prompt-attachment';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
@@ -158,6 +159,17 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
         localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
       };
     });
+}
+
+/** What a message with no text carries, named for a one-line preview: the types it shares
+ *  ("Claude Session"), then its file names. Empty when it carries nothing a person would name. */
+export function attachmentSummary(fm: FlowMessage | null | undefined): string {
+  const types = [...new Set(buildEntities(fm).map((t) => t.type))].map(labelForType);
+  const files = (fm?.attachment ?? [])
+    .filter((a) => a.attachment_type === AttachmentType.FILE)
+    .map((a) => attachmentDataString(a).split('/').pop() ?? '')
+    .filter(Boolean);
+  return [...types, ...files].join(', ');
 }
 
 function typeLabel(type: string): string {

@@ -9,7 +9,6 @@ import { MarkdownView } from '@src/components/markdown-view';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForMessage } from './avatar-color';
-import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
@@ -355,9 +354,7 @@ export function MessageBubble({
           />
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
-        {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (
-          <MessageBody content={message.content} isBot={isBot} />
-        )}
+        {message.content && <MessageBody content={message.content} isBot={isBot} />}
         {showPromptRow && (
           <AttachmentActionsRow
             actions={actions}
@@ -373,12 +370,7 @@ export function MessageBubble({
           />
         )}
         {footer}
-        {reactions && reactions.length > 0 && (
-          <ReactionChips
-            reactions={reactions}
-            onToggle={onReact}
-          />
-        )}
+        {reactions && reactions.length > 0 && <ReactionChips reactions={reactions} onToggle={onReact} />}
       </div>
       {onDeleteMessage && (
         <ConfirmDialog

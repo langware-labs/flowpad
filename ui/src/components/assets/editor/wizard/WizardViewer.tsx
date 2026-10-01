@@ -36,6 +36,7 @@ import { useSideWindows } from '@src/navigation/useSideWindows';
 
 import { WizardDebugger } from './WizardDebugger';
 import { closeWizardPopup } from './wizard-popup-store';
+import { rungWord, useBackendText } from './wizard-texts';
 import { WizardForm } from './WizardForm';
 import { useWizardDoc } from './useWizardDoc';
 import {
@@ -234,7 +235,10 @@ function WizardViewerBody({
   initial: WizardDoc | null;
   docError: string | null;
 }) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
+  // What the backend wrote (the wizard's title and messages, a step's progress line) in the
+  // person's language — see `wizard-texts.ts`.
+  const bt = useBackendText();
   const [busy, setBusy] = useState(false);
   const [askApproval, setAskApproval] = useState(false);
 
@@ -424,9 +428,9 @@ function WizardViewerBody({
           <WizardIcon className="h-5 w-5 text-primary" />
         </div>
         <div className="flex-1 pt-0.5">
-          <h2 className="text-base font-medium leading-tight">{wizard.label || wizard.name}</h2>
+          <h2 className="text-base font-medium leading-tight">{bt(wizard.label || wizard.name || '')}</h2>
           {wizard.description ? (
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{wizard.description}</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{bt(wizard.description ?? '')}</p>
           ) : null}
         </div>
         {/* A CONVERSATIONAL wizard has no steps and cannot be run from here: its
@@ -533,8 +537,8 @@ function WizardViewerBody({
               // the rung names, since those are the steps it actually went through.
               const trailText =
                 trail.length === 1 && trail[0] === 'validation' && !ERROR_STATUSES.has(status ?? '')
-                  ? 'validated'
-                  : trail.join(' → ');
+                  ? t`validated`
+                  : trail.map((rung) => rungWord(i18n, rung)).join(' → ');
               const agentExecutor = trail.includes('agent') ? agentExecutorOf(outcome) : null;
               const rowLabel = stepLabels.get(step_id) || step_id;
               // A step actually in flight — no outcome yet — prints its live
@@ -543,7 +547,7 @@ function WizardViewerBody({
               // nothing to see while it runs. The trail and the agent-rung
               // label persist once the step settles, same as this — none of
               // them wait for the WHOLE wizard to finish.
-              const liveText = outcome ? null : live?.current;
+              const liveText = outcome ? null : live?.current ? bt(live.current) : null;
               // A tooltip only for an actual PROBLEM — never a satisfied/
               // completed step's own "already satisfied" sentence, which is
               // not something worth reading, let alone flagging.
@@ -683,7 +687,7 @@ function WizardViewerBody({
       {anyStuck ? (
         <div className="flex justify-center">
           <Button variant="outline" onClick={() => void startWizard()} data-testid="wizard-restart">
-            {wizard.restart_label || <Trans>Restart</Trans>}
+            {wizard.restart_label ? bt(wizard.restart_label) : <Trans>Restart</Trans>}
           </Button>
         </div>
       ) : null}
@@ -693,10 +697,10 @@ function WizardViewerBody({
           className="flex flex-col items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-center"
           data-testid="wizard-not-finished"
         >
-          <p className="text-sm">{wizard.failure_message}</p>
+          <p className="text-sm">{bt(wizard.failure_message ?? '')}</p>
           <div className="flex items-center gap-2">
             <Button onClick={() => void startWizard()} data-testid="wizard-restart">
-              {wizard.restart_label || <Trans>Restart</Trans>}
+              {wizard.restart_label ? bt(wizard.restart_label) : <Trans>Restart</Trans>}
             </Button>
             <Button variant="ghost" onClick={goHome} data-testid="wizard-go-home">
               <Trans>Go to homepage</Trans>
@@ -715,7 +719,7 @@ function WizardViewerBody({
           data-testid="wizard-finished"
         >
           <CheckCircle2 className="h-5 w-5 shrink-0 text-green-500" />
-          <p className="flex-1 text-sm">{wizard.success_message}</p>
+          <p className="flex-1 text-sm">{bt(wizard.success_message ?? '')}</p>
           <Button size="sm" onClick={goHome} data-testid="wizard-go-home">
             <Trans>Go to homepage</Trans>
           </Button>
@@ -783,7 +787,7 @@ function WizardViewerBody({
           {/* Radix wants an accessible name on the dialog; `main`'s own
               visible `<h2>` already says this out loud, so this is silent. */}
           <DialogHeader className="sr-only">
-            <DialogTitle>{wizard.label || wizard.name}</DialogTitle>
+            <DialogTitle>{bt(wizard.label || wizard.name || '')}</DialogTitle>
           </DialogHeader>
           <Button
             variant="ghost"

@@ -20,7 +20,6 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';
 import { SessionEventLine } from '@src/components/conversation/SessionEventLine';
-import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from '@src/components/conversation/constants';
 import {
   grantContactPermission,
   revokeContactPermission,
@@ -57,8 +56,7 @@ function promptTextOf(fm: FlowMessage): string {
       return a.data;
     }
   }
-  const text = fm.text ?? '';
-  return text === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT ? '' : text;
+  return fm.text ?? '';
 }
 
 function resultTextOf(fm: FlowMessage): string | null {
@@ -99,7 +97,15 @@ export function sessionTitle(prompt: string, max = 80): string {
 
 /** Host-only standing grant: future sessions from this guest start approved,
  *  in this project or everywhere. Backed by ONE ContactPermission row. */
-function StandingGrantCheckbox({ contact, projectId, guestName }: { contact: ContactKey; projectId: string | null; guestName: string }) {
+function StandingGrantCheckbox({
+  contact,
+  projectId,
+  guestName,
+}: {
+  contact: ContactKey;
+  projectId: string | null;
+  guestName: string;
+}) {
   const { t } = useLingui();
   const { permissions, refetch } = useContactPermissions(contact);
   const scope = sessionGrantScope(permissions, projectId);
@@ -109,8 +115,10 @@ function StandingGrantCheckbox({ contact, projectId, guestName }: { contact: Con
     async (on: boolean, which: 'project' | 'everywhere') => {
       const target = which === 'project' ? projectId : null;
       // one row at a time: moving scope revokes the other first
-      if (scope === 'project' && which !== 'project') await revokeContactPermission(contact, projectId, PermissionAction.AUTO_APPROVE_SESSION);
-      if (scope === 'global' && which !== 'everywhere') await revokeContactPermission(contact, null, PermissionAction.AUTO_APPROVE_SESSION);
+      if (scope === 'project' && which !== 'project')
+        await revokeContactPermission(contact, projectId, PermissionAction.AUTO_APPROVE_SESSION);
+      if (scope === 'global' && which !== 'everywhere')
+        await revokeContactPermission(contact, null, PermissionAction.AUTO_APPROVE_SESSION);
       if (on) await grantContactPermission(contact, target, PermissionAction.AUTO_APPROVE_SESSION);
       else await revokeContactPermission(contact, target, PermissionAction.AUTO_APPROVE_SESSION);
       await refetch?.();
@@ -139,11 +147,7 @@ function StandingGrantCheckbox({ contact, projectId, guestName }: { contact: Con
         data-testid="live-session-standing-grant-scope"
         className="rounded border border-border bg-background px-1 py-0.5 text-[11px]"
       >
-        {projectId && (
-          <option value="project">
-            {t`in this project`}
-          </option>
-        )}
+        {projectId && <option value="project">{t`in this project`}</option>}
         <option value="everywhere">{t`everywhere`}</option>
       </select>
     </div>
@@ -352,7 +356,11 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
           </div>
           {!terminal && (
             <div className="flex w-full items-center gap-4">
-              <StandingGrantCheckbox contact={guestContact} projectId={session.project_id ?? null} guestName={guestName} />
+              <StandingGrantCheckbox
+                contact={guestContact}
+                projectId={session.project_id ?? null}
+                guestName={guestName}
+              />
             </div>
           )}
         </div>

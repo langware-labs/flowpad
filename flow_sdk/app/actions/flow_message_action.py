@@ -221,8 +221,7 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
             "conversation_id": conv_id,
             "was_new_task": True,
             "attachments": [
-                {"id": ma.id, "asset_type": ma.asset_type, "asset_id": ma.asset_id, "name": ma.name}
-                for ma in staged
+                {"id": ma.id, "asset_type": ma.asset_type, "asset_id": ma.asset_id, "name": ma.name} for ma in staged
             ],
         }
     )
@@ -289,9 +288,7 @@ async def handle_export_flow_message(body: dict) -> ApiResponse:
         if str(tid) not in refs:
             refs.append(str(tid))
     if missing:
-        return ApiFailResponse(
-            message=f"not found: {', '.join(missing)}", status_code=404, data={"missing": missing}
-        )
+        return ApiFailResponse(message=f"not found: {', '.join(missing)}", status_code=404, data={"missing": missing})
 
     sender = await User.current_sender_participant(None)
     fm = FlowMessage(
@@ -2095,16 +2092,63 @@ async def _download_and_unpack_bundle(
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
-    async with _bundle_download_lock(fm_id):
-        return await _download_and_unpack_bundle_locked(
+    if body_status is not None and _body_status_value(body_status) != BodyStatus.READY.value:
+        logger.debug(
+            "[bundle] skip download fm=%s — body_status=%s (no bundle to pull)",
             fm_id,
-            attachment_filename,
-            body_status=body_status,
-            overwrite=overwrite,
-            raise_on_conflict=raise_on_conflict,
-            on_progress=on_progress,
-            hub_updated=hub_updated,
+            _body_status_value(body_status),
         )
+        return False
+    async with _bundle_download_lock(fm_id):
+        # Already fully staged: a second pull of the SAME bundle cannot add
+        # anything, and re-unpacking replaces the staging tree wholesale
+        # (``materialize_asset_sync`` swaps ``unpacked/`` in one move). A
+        # serialization landing inside that swap sees the tree as unpacked but
+        # its entries as gone, and publishes "downloaded, but arrived short" —
+        # a false warning with nothing to retract it, which ALSO filters the
+        # attachment chip out of the bubble and so hides the review dialog that
+        # owns "Select project". The redundant pull is not merely wasted bytes;
+        # it is what opens that window. This matters in practice because the
+        # auto-pull on conversation-open and the user's own Download click
+        # routinely land within the same second.
+        staged = await FlowMessage.get_one({"id": fm_id})
+        if staged is not None and staged.is_body_complete():
+            logger.debug("[bundle] skip download fm=%s — already staged in full", fm_id)
+            await _notify_settled(fm_id)
+            return True
+        try:
+            return await _download_and_unpack_bundle_locked(
+                fm_id,
+                attachment_filename,
+                body_status=body_status,
+                overwrite=overwrite,
+                raise_on_conflict=raise_on_conflict,
+                on_progress=on_progress,
+                hub_updated=hub_updated,
+            )
+        finally:
+            # The LAST word the client hears is always the settled state.
+            # ``body_downloaded`` / ``body_missing_attachments`` are derived
+            # from disk at serialize time, so an UPDATE that raced this unpack
+            # can strand the UI on a half-state that only a manual page reload
+            # cleared. Notifying on EVERY exit — success, skip, conflict,
+            # crash — and from inside the lock (no concurrent swap can be in
+            # flight) makes the client converge on its own.
+            await _notify_settled(fm_id)
+
+
+async def _notify_settled(fm_id: str) -> None:
+    """Fan a fresh UPDATE carrying the message's settled local body state.
+
+    Never raises: this is a convergence courtesy on top of whatever the caller
+    is already reporting, and must not turn a completed unpack into a failure.
+    """
+    try:
+        fm = await FlowMessage.get_one({"id": fm_id})
+        if fm is not None:
+            await fm.notify_updated()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[bundle] settled notify failed fm=%s: %s", fm_id, e)
 
 
 async def _download_and_unpack_bundle_locked(
@@ -2122,15 +2166,6 @@ async def _download_and_unpack_bundle_locked(
         unpack_bundle,
     )
 
-    if body_status is not None:
-        bs = _body_status_value(body_status)
-        if bs != BodyStatus.READY.value:
-            logger.debug(
-                "[bundle] skip download fm=%s — body_status=%s (no bundle to pull)",
-                fm_id,
-                bs,
-            )
-            return False
     bundle_bytes = await hub_get(
         BuiltinEntityType.FLOW_MESSAGE,
         fm_id,
@@ -2149,12 +2184,10 @@ async def _download_and_unpack_bundle_locked(
         tmp.write(bundle_bytes)
     try:
         await unpack_bundle(tmp_path, local_user_id, overwrite=overwrite, hub_updated=hub_updated)
-        # Bundle bytes are on disk now. The FM's ``attachment[].local_path``
-        # is computed lazily by the model serializer from disk state, so the
-        # cached browser entity still reads ``local_path=null`` from the
-        # earlier WS create. Fan a fresh UPDATE so subscribers re-render with
-        # the populated path — without this, image attachments stay as a
-        # generic file chip until a manual refresh re-fetches the FM.
+        # Bundle bytes are on disk now. Stamp the hub-authoritative body_status
+        # so the row stops advertising the sender's pack-time value. The UPDATE
+        # that tells subscribers about it is the caller's unconditional
+        # ``_notify_settled`` — which is why this saves with ``notify=False``.
         try:
             refreshed = await FlowMessage.get_one({"id": fm_id})
             if refreshed:
@@ -2164,17 +2197,16 @@ async def _download_and_unpack_bundle_locked(
                 # .flowmsg BEFORE flipping READY (and ``merge_hub_payload`` treats
                 # body_status as local-only state, so the hub's READY never lands
                 # via the metadata sync). We only reach this success path when the
-                # hub advertised body_status=READY (the gate above) and the body is
-                # now on disk — so the row IS downloadable. Stamp READY so the
+                # hub advertised body_status=READY (the caller's gate) and the body
+                # is now on disk — so the row IS downloadable. Stamp READY so the
                 # receiver reflects that instead of the stale pack-time UPLOADING.
                 target_bs = _body_status_value(body_status) or BodyStatus.READY.value
                 current_bs = _body_status_value(refreshed.body_status)
                 if current_bs != target_bs:
                     refreshed.body_status = BodyStatus(target_bs)
                     await refreshed.save(notify=False)
-                await refreshed.notify_updated()
         except Exception as nerr:
-            logger.warning("[bundle] post-unpack notify failed fm=%s: %s", fm_id, nerr)
+            logger.warning("[bundle] post-unpack body_status stamp failed fm=%s: %s", fm_id, nerr)
         return True
     except FlowMessageExistsError:
         # A GENUINE collision: a different asset already occupies the receiver's
