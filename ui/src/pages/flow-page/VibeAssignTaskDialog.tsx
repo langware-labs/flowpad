@@ -2,10 +2,18 @@ import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ConversationParticipant, normalizeEmail, Task, TaskKind, type TaskAssignOptions, TypeId } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
+import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
 import { loadSessionTranscript } from '@src/hooks/share-sources';
+import {
+  AttachFilesButton,
+  PickedFileList,
+  useAnnotatedImagePaste,
+  usePickedFiles,
+} from '@src/components/conversation/FileAttachmentPicker';
+import { uploadFilesToTask } from '@src/components/assets/editor/task/task-attachment-upload';
 import {
   Dialog,
   DialogContent,
@@ -62,6 +70,11 @@ export function VibeAssignTaskDialog({
   const [attachTranscript, setAttachTranscript] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Screenshots / files for the task — pasted (through the annotator), picked
+  // with "+", or dropped. They are stored IN the task's folder, so the
+  // assignment's .flowmsg carries them.
+  const picker = usePickedFiles({ enabled: true, disabled: busy });
+  const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy });
 
   const person = picked[0] ?? null;
   const canSubmit = !!person && !!title.trim() && !busy;
@@ -114,6 +127,16 @@ export function VibeAssignTaskDialog({
         kind: TaskKind.VIBE,
       }).save(projectId ? [new TypeId('project', projectId)] : []);
 
+      // Before assign: the assignment packs the task folder, so the files must
+      // already be in it — and no field save may follow the assign.
+      if (picker.files.length) {
+        const failed: string[] = [];
+        const entries = await uploadFilesToTask(task.typeId, picker.files, [], (f) => failed.push(f.name));
+        if (failed.length) throw new Error(t`Could not attach: ${failed.join(', ')}`);
+        task.artifacts = entries;
+        await task.save();
+      }
+
       // The notification message must stand on its own: the title IS the issue,
       // so it leads even when the (optional) notes are empty — otherwise the
       // recipient gets a bare chip with no text.
@@ -150,7 +173,10 @@ export function VibeAssignTaskDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3">
+        <div
+          className={cn('flex flex-col gap-3', picker.dragging && 'rounded-md ring-1 ring-primary')}
+          {...picker.dragProps}
+        >
           {/* One owner per task — `max={1}` is the picker's single-select form.
               Members, contacts, and a free-form email all resolve here. */}
           <ContactPicker
@@ -188,22 +214,39 @@ export function VibeAssignTaskDialog({
           <Textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
+            onPaste={handlePaste}
             placeholder={t`Any detail that helps (optional)`}
             rows={4}
             className="resize-none"
             data-testid="vibe-assign-notes"
           />
 
-          {sessionTypeId && (
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={attachTranscript}
-                onChange={(e) => setAttachTranscript(e.target.checked)}
-              />
-              {t`Attach this session's transcript`}
-            </label>
-          )}
+          <PickedFileList
+            files={picker.files}
+            rejected={picker.rejected}
+            disabled={busy}
+            onRemoveAt={picker.removeAt}
+          />
+
+          <div className="flex items-center gap-2">
+            <AttachFilesButton
+              inputId={picker.inputId}
+              onFiles={picker.addFiles}
+              disabled={busy}
+              title={t`Attach files or a screenshot (or paste one into the details)`}
+              testId="vibe-assign-attach"
+            />
+            {sessionTypeId && (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={attachTranscript}
+                  onChange={(e) => setAttachTranscript(e.target.checked)}
+                />
+                {t`Attach this session's transcript`}
+              </label>
+            )}
+          </div>
 
           {error && (
             <p className="rounded border border-destructive/60 bg-destructive/10 px-3 py-2 text-sm text-foreground">
