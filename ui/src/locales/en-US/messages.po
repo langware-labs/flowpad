@@ -5906,6 +5906,11 @@ msgstr "Couldn't open a terminal"
 msgid "Couldn't open the help desk"
 msgstr "Couldn't open the help desk"
 
+#: src/components/task-receive/IncomingDeepLink.tsx
+#: src/components/task-receive/IncomingDeepLink.tsx
+msgid "Couldn't open the project"
+msgstr "Couldn't open the project"
+
 #: src/lib/publish-state.ts
 msgid "Couldn't publish"
 msgstr "Couldn't publish"
@@ -5917,6 +5922,10 @@ msgstr "Couldn't reach {host}."
 #: src/routes/loaders/load-next-process.ts
 msgid "Couldn’t reach backend"
 msgstr "Couldn’t reach backend"
+
+#: src/components/task-receive/IncomingDeepLink.tsx
+msgid "Couldn't reach FlowPad to load this project. Open the link again to retry."
+msgstr "Couldn't reach FlowPad to load this project. Open the link again to retry."
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Couldn't reach that repository. Check the URL and try again."
@@ -21100,6 +21109,7 @@ msgstr "That looks like an {0} key. This endpoint calls {1}, whose keys start wi
 msgid "That project has no local workdir"
 msgstr "That project has no local workdir"
 
+#: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "That project is no longer available."
 msgstr "That project is no longer available."

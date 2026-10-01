@@ -4,7 +4,7 @@ import uuid
 from typing import Optional
 
 from flow_sdk.assets.layout import File
-from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.fs_store.schema_registry import RECEIVE_TRANSFER_GIT_REFERENCE, TypeInfo
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 
@@ -46,4 +46,7 @@ PROJECT = TypeInfo(
     api_visible=True,
     id_namespace=uuid.NAMESPACE_DNS,
     meta_model=ProjectMeta,
+    # An invite message carries the project as a git reference (``Project``
+    # owns the hooks).
+    receive_transfer=RECEIVE_TRANSFER_GIT_REFERENCE,
 )
