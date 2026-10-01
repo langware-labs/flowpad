@@ -27,7 +27,7 @@ from flow_sdk.tags.envelope import parse_target
 logger = logging.getLogger(__name__)
 
 
-def _has_asset_typeid_attachment(attachments: Any) -> bool:
+def _has_eager_pull_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a TYPE_ID attachment whose type pulls
     its bundle on arrival (``TypeInfo.eager_pull``): its chip needs the staged
     entry before it is usable — e.g. a file-backed asset's editor 404s on
@@ -136,7 +136,7 @@ async def _maybe_eager_pull_bundle(
     """
     if not attachment_filename:
         return
-    if not (_has_asset_typeid_attachment(attachments) or _has_session_carrier_attachment(attachments)):
+    if not (_has_eager_pull_attachment(attachments) or _has_session_carrier_attachment(attachments)):
         return
     if fm_id in _INFLIGHT_BUNDLE_PULLS:
         return

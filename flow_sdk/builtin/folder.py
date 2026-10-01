@@ -151,26 +151,24 @@ class Folder(Entity):
         with no usable origin fails the share closed — there is no byte-copy
         carrier to fall through to."""
         from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
-            _TRANSFER_MODE_GIT,
             GitShareOriginError,
             ReferencePack,
-            _entry_key,
-            _read_graph_entity_metadata,
-            _resolve_git_reference_origin,
+            graph_entity_metadata,
+            resolve_git_reference_origin,
         )
+        from flow_sdk.builtin.message_attachment import TransferMode  # noqa: PLC0415
 
-        if transfer_mode != _TRANSFER_MODE_GIT:
+        if transfer_mode != TransferMode.GIT.value:
             return None
         ent = await cls.get_one({"id": entity_id})
         if ent is None:
             return None
-        origin = await _resolve_git_reference_origin(ent, ent.origin, repo_cache)
+        origin = await resolve_git_reference_origin(ent, ent.origin, repo_cache)
         if origin is None:
-            # Fail closed. Returning None here fell through to a caller that
-            # packs NOTHING for a folder (no main_subdir), silently delivering a
-            # chip with no origin and no bytes.
+            # Fail closed: a folder has no other carrier, so packing nothing
+            # would deliver a chip with no origin and no bytes.
             raise GitShareOriginError(
-                f"{_entry_key(EntityType.FOLDER.value, entity_id)} was shared with Git but is not in a "
+                f"{EntityType.FOLDER.value}-{entity_id} was shared with Git but is not in a "
                 f"Git repository with a usable origin — set up Git for this folder first."
             )
         # Self-heal a degenerate name ("" / ".") from before Folder.derive_name
@@ -183,9 +181,9 @@ class Folder(Entity):
                 try:
                     await ent.save()
                 except Exception:
-                    logger.debug("[bundle] folder %s name heal failed", entity_id, exc_info=True)
+                    logger.debug("[folder] %s name heal failed", entity_id, exc_info=True)
         # The local resolved path is machine-local; the receiver derives its own.
-        metadata = _read_graph_entity_metadata(EntityType.FOLDER.value, entity_id, ent, strip=("path",))
+        metadata = graph_entity_metadata(EntityType.FOLDER.value, entity_id, ent, strip=("path",))
         return ReferencePack(metadata=metadata, origin=origin)
 
     @classmethod

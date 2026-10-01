@@ -329,7 +329,7 @@ async def _install_row_entity(
     )
 
 
-async def _install_artifact_reference(
+async def _install_git_reference(
     ma: MessageAttachment,
     scope: str,
     project_id: str | None,
@@ -337,10 +337,10 @@ async def _install_artifact_reference(
     overwrite: bool,
     someone_typeid,
 ) -> ApiResponse:
-    """Install a staged git-reference graph entity (artifact or folder):
-    materialize its graph row from the staged metadata (path unset — the
-    checkout resolves later at open, via the git wizard). No clone here. Then
-    mint the favorite if opted in."""
+    """Install a staged git reference (``TypeInfo.receive_transfer``): the type's
+    ``restore_reference`` writes its row from the staged metadata — an artifact
+    or folder leaves the checkout to open (the git wizard), a project clones
+    here — then mint the favorite if opted in."""
     from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
         FlowMessageExistsError,
         _notify_received_assets,
@@ -371,8 +371,7 @@ async def _install_artifact_reference(
     if not ok:
         return ApiFailResponse(message="git reference restore failed", status_code=500)
     await _notify_received_assets({(ma.asset_type, ma.asset_id)})
-    # A graph artifact has no copied bytes → no installed_root; the checkout
-    # resolves at open. Project scope still records project_id.
+    # No copied bytes → no installed_root. Project scope still records project_id.
     return await _finalize_install(
         ma,
         scope,
@@ -501,7 +500,7 @@ async def handle_attachment_install(
     from flow_sdk.builtin.flow_message_bundle import _git_reference_cls  # noqa: PLC0415
 
     if _git_reference_cls(ma.asset_type) is not None and ma.transfer_mode == TransferMode.GIT.value:
-        return await _install_artifact_reference(
+        return await _install_git_reference(
             ma,
             scope,
             project_id,

@@ -783,10 +783,8 @@ class FlowMessage(Entity):
             return False
         return not (self.remote and self.body_status == BodyStatus.NA)
 
-    link_open_destination: ClassVar[str] = "the conversation"
-
     @classmethod
-    async def resolve_open(cls, entity_id: str, someone_typeid: Optional[str] = None) -> Optional["OpenLinkSpec"]:
+    async def resolve_open(cls, entity_id: str, someone_typeid: Optional[str] = None) -> "OpenLinkSpec":
         """A message's link: pull it (bundle, conversation) and land in its conversation."""
         from flow_sdk.app.actions.flow_message_action import open_flow_message_params  # noqa: PLC0415
 

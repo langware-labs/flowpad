@@ -32,6 +32,7 @@ from flow_sdk.builtin.user import User
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.parent_share import collect_parent_share_typeids
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -40,6 +41,7 @@ from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES
 from flow_sdk.utils.git import (
     find_project_root,
     git_pull,
@@ -483,12 +485,11 @@ async def _link_message_into_context_entities(
     per entity — never blocks the send."""
     if not typeids:
         return
-    from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     fm_tid = TypeId(f"{BuiltinEntityType.FLOW_MESSAGE.value}-{reply_fm.id}")
     for tid in typeids:
-        if tid.type in MEMBERSHIP_MIRROR_TYPES:
+        if tid.type in MEMBERSHIP_CONTAINER_TYPES:
             # An org / team / project's shared context is hub-mirrored — what
             # its members see — so a message it rides in is never written into it.
             continue
@@ -1474,7 +1475,7 @@ def _is_prompt_attachment(a: Any) -> bool:
     return False
 
 
-async def open_notification_params(notification_id: str) -> dict:
+async def open_notification_params(notification_id: str) -> "OpenLinkSpec":
     """Deep-link resolver for a notification (``Notification.resolve_open``):
     fetch it from the hub and return the ``action=open`` params for its task."""
     from flow_sdk.server.routes.notify import message_deep_link_params

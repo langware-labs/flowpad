@@ -14,7 +14,7 @@ from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.schema.data_spec.channel_spec import ChannelSpec
-from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
 from flow_sdk.tags.envelope import parse_target
 
 
@@ -582,7 +582,6 @@ class Conversation(ProjectedFields, Entity):
         link only the items just shared. When omitted, links the full
         ``shared_context_entities`` set (the new-conversation path from
         ``share()``)."""
-        from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         conv_typeid_str = str(self.typeid)
@@ -594,7 +593,7 @@ class Conversation(ProjectedFields, Entity):
                 tid = _coerce_context_typeid(ref)
                 if tid is None:
                     continue
-                if tid.type in MEMBERSHIP_MIRROR_TYPES:
+                if tid.type in MEMBERSHIP_CONTAINER_TYPES:
                     # An org / team / project is a hub-owned root, never a
                     # conversation's child — linking it would re-parent the
                     # shared container under the message it rode in.
@@ -715,7 +714,7 @@ class Conversation(ProjectedFields, Entity):
                 await _upload_body_and_finalize(fm, self.id)
 
     async def discard_invite_conversation(self, client) -> None:
-        """Delete an invite conversation whose grant failed — the hub row (the
+        """Delete an invite conversation whose share failed — the hub row (the
         sharer owns it once joined) and the local row — so a refused invite leaves
         no empty conversation behind. Best-effort on each side."""
         try:

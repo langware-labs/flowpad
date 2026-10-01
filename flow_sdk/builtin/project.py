@@ -1503,15 +1503,16 @@ class Project(Entity):
             failed_teams=[o for o in team_outcomes if isinstance(o, ShareFailedTeamSpec)],
         )
 
-
     async def _invite_conversation(self, client, title: str, text: str, **admit) -> str | None:
         """Deliver the invite message the way any shared entity is sent: a new
-        root-level conversation shared to the invitee (``Conversation.share``,
-        ``admit`` = its recipient / principal / email options), then the message
-        carrying ``project-<id>`` (``handle_add_message``, the ``add_message``
-        handler). The project grant already landed, so this is best-effort:
-        ``None`` when the conversation could not be shared — it is removed — and
-        its id otherwise, even when only the message failed.
+        conversation shared to the invitee (``Conversation.share``, ``admit`` =
+        its recipient / principal / email options), then the message carrying
+        ``project-<id>`` (``handle_add_message``, the ``add_message`` handler).
+        Root-level on purpose: a project's child conversation is readable by
+        every project member, which would leak the note. The project grant
+        already landed, so this is best-effort: ``None`` when the conversation
+        could not be shared — it is removed — and its id otherwise, even when
+        only the message failed.
         """
         from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
         from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
@@ -1528,7 +1529,7 @@ class Project(Entity):
             conversation.remote = True
             await conversation.save(someone_typeid)
         except Exception as exc:  # noqa: BLE001 — reported as "invited, no conversation"
-            logging.warning("[project.share] invite conversation for %s failed: %s", admit, exc)
+            logging.warning("[project.share] invite conversation (%s) failed: %s", ", ".join(sorted(admit)), exc)
             await conversation.discard_invite_conversation(client)
             return None
         sent = await handle_add_message(
@@ -1538,6 +1539,7 @@ class Project(Entity):
         if isinstance(sent, ApiFailResponse):
             logging.warning("[project.share] invite message in %s failed: %s", conversation.id, sent.message)
         return conversation.id
+
     @property
     def last_share_result(self) -> Optional[ShareResultSpec]:
         """Per-person outcome of the last ``share()``/``invite()`` that invited anyone, else ``None``."""

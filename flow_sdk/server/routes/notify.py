@@ -3,8 +3,7 @@
 ``deep_link_redirect`` — the redirect page every ``GET <type>/<id>/open`` returns
 (the generic ``open`` action in ``flow_sdk/app/actions/open_action.py``, which
 asks the type's ``resolve_open`` for the params). ``message_deep_link_params``
-builds those params for a message or notification;
-``handle_notification_deep_link`` is the two together.
+builds those params for a message or notification.
 
 Instead of pulling silently, this redirects to the HomeLanding page with URL
 parameters so the dialog-driven flow can guide the user through pulling/cloning.
@@ -16,7 +15,7 @@ from urllib.parse import urlencode
 
 from fastapi.responses import HTMLResponse
 
-from flow_sdk.schema.data_spec.open_link_spec import MessageOpenLinkSpec, OpenLinkSpec
+from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 
 logger = logging.getLogger(__name__)
 
@@ -50,23 +49,10 @@ _REDIRECT_HTML = """<!DOCTYPE html>
 <div class="card">
   <div class="spinner"></div>
   <h2>Opening FlowPad...</h2>
-  <p>Redirecting you to {destination}.</p>
+  <p>Redirecting you to the conversation.</p>
 </div>
 </body>
 </html>"""
-
-
-async def handle_notification_deep_link(
-    fm_id: str,
-    conversation_id: str = "",
-    task_id: str = "",
-    git_origin: dict | str | None = None,
-    sender_name: str = "",
-    title: str = "",
-) -> HTMLResponse:
-    """Redirect the browser to HomeLanding with a message's ``action=open`` deep link
-    (see :func:`message_deep_link_params`)."""
-    return deep_link_redirect(message_deep_link_params(fm_id, conversation_id, task_id, git_origin, sender_name, title))
 
 
 def message_deep_link_params(
@@ -76,7 +62,7 @@ def message_deep_link_params(
     git_origin: dict | str | None = None,
     sender_name: str = "",
     title: str = "",
-) -> MessageOpenLinkSpec:
+) -> OpenLinkSpec:
     """The ``action=open`` deep link for a message or notification.
 
     The resolver (``open_flow_message_params``) takes the FM's
@@ -89,7 +75,7 @@ def message_deep_link_params(
     ``sender_name`` / ``title`` are cosmetic — shown in the brief loading
     state. Empty values are left out of the link.
     """
-    return MessageOpenLinkSpec(
+    return OpenLinkSpec(
         fm=fm_id,
         conversation_id=conversation_id or None,
         task_id=task_id or None,
@@ -99,9 +85,9 @@ def message_deep_link_params(
     )
 
 
-def deep_link_redirect(link: OpenLinkSpec, *, destination: str = "the conversation") -> HTMLResponse:
+def deep_link_redirect(link: OpenLinkSpec) -> HTMLResponse:
     """The browser page that hands the desktop UI an ``/dock/home?action=open…``
     deep link (read by ``IncomingDeepLink``). Shared by every ``open`` action
     that materializes locally first and only then sends the UI on."""
     redirect_url = f"http://localhost:{_get_ui_port()}/dock/home?{urlencode(link.to_query())}"
-    return HTMLResponse(content=_REDIRECT_HTML.format(redirect_url=redirect_url, destination=destination))
+    return HTMLResponse(content=_REDIRECT_HTML.format(redirect_url=redirect_url))

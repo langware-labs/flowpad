@@ -50,13 +50,9 @@ async def open_entity_link() -> HTMLResponse | ApiResponse:
     if typeid.type not in OPENABLE_TYPES:
         return ApiFailResponse(message=f"A {typeid.type} can't be opened from a link", status_code=400)
     cls = SchemaRegistry.get_entity_cls(typeid.type)
-    if cls is None:
-        return ApiFailResponse(message=f"Unknown entity type: {typeid.type}", status_code=400)
     try:
         link = await cls.resolve_open(str(typeid.id), request_info.someone_typeid)
     except Exception as e:  # noqa: BLE001 — the browser gets a reason, not a stack
         logger.error("[open] %s: %s", typeid, e, exc_info=True)
         return ApiFailResponse(message=f"Open failed: {e}")
-    if link is None:
-        return ApiFailResponse(message=f"A {typeid.type} can't be opened from a link", status_code=400)
-    return deep_link_redirect(link, destination=getattr(cls, "link_open_destination", "FlowPad"))
+    return deep_link_redirect(link)
