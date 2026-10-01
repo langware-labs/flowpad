@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   openDock: vi.fn(),
   notifyError: vi.fn(),
   notifyWarning: vi.fn(),
+  setPendingProject: vi.fn(),
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -26,6 +27,11 @@ vi.mock('@src/notifications/notify', () => ({
   notify: { error: h.notifyError, warning: h.notifyWarning, info: vi.fn(), success: vi.fn() },
 }));
 
+vi.mock('@src/store/use-incoming-project-store', () => ({
+  useIncomingProjectStore: () => ({ pendingProject: null, setPendingProject: h.setPendingProject }),
+}));
+
+import { Project } from '@sdk';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
 
 const PID = '55555555-5555-4555-8555-555555555555';
@@ -80,5 +86,82 @@ describe('IncomingDeepLink — project/<id>/open redirects', () => {
     landOn(`action=open&project_id=${PID}&project_error=unavailable`);
 
     expect(window.location.search).not.toMatch(/project_error|project_id|action=open/);
+  });
+});
+
+/**
+ * FLOWPAD-2199 (backward compatibility; remove in FLOWPAD-2200) — the hub's
+ * email link (`setup_git` + `project_id` + `git_origin`) may reach a box that
+ * holds no row for that project. It hops once through the desktop's
+ * `project/<id>/open`, which mirrors the row and redirects back.
+ */
+describe('IncomingDeepLink — the email set-up link with no local row', () => {
+  const originalLocation = window.location;
+  const ORIGIN = JSON.stringify({
+    owner: 'acme',
+    name: 'course',
+    url: 'https://github.com/acme/course.git',
+    branch: 'main',
+    rel_path: '',
+  });
+  let assign: ReturnType<typeof vi.fn>;
+
+  function landOnEmailLink(): void {
+    const query = `action=open&setup_git=1&project_id=${PID}&title=Course&git_origin=${encodeURIComponent(ORIGIN)}`;
+    window.history.replaceState(null, '', `/dock/home?${query}`);
+    // jsdom's real `location.assign` is unimplemented — swap in a recorder.
+    assign = vi.fn();
+    delete (window as unknown as { location?: Location }).location;
+    (window as unknown as { location: Partial<Location> }).location = {
+      origin: originalLocation.origin,
+      href: originalLocation.href,
+      pathname: originalLocation.pathname,
+      search: originalLocation.search,
+      assign,
+    };
+    render(<IncomingDeepLink />);
+  }
+
+  beforeEach(() => {
+    h.setPendingProject.mockReset();
+    window.sessionStorage.clear();
+  });
+  afterEach(() => {
+    cleanup();
+    (window as unknown as { location: Location }).location = originalLocation;
+    window.history.replaceState(null, '', '/');
+    vi.restoreAllMocks();
+  });
+
+  it('with no local row, hops through project/<id>/open instead of opening the dialog', async () => {
+    vi.spyOn(Project, 'getById').mockResolvedValue(null);
+
+    landOnEmailLink();
+
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledWith(`/api/v1/graph/project/${PID}/open`));
+    expect(h.setPendingProject).not.toHaveBeenCalled();
+  });
+
+  it('with a local row, opens the set-up dialog as before', async () => {
+    vi.spyOn(Project, 'getById').mockResolvedValue({ id: PID } as never);
+
+    landOnEmailLink();
+
+    await vi.waitFor(() => expect(h.setPendingProject).toHaveBeenCalledTimes(1));
+    expect(h.setPendingProject.mock.calls[0][0]).toMatchObject({ projectId: PID, projectName: 'Course' });
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('back from the hop, opens the dialog even if the row is still missing — never loops', async () => {
+    vi.spyOn(Project, 'getById').mockResolvedValue(null);
+    landOnEmailLink();
+    await vi.waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    cleanup();
+    (window as unknown as { location: Location }).location = originalLocation;
+
+    landOnEmailLink();
+
+    await vi.waitFor(() => expect(h.setPendingProject).toHaveBeenCalledTimes(1));
+    expect(assign).not.toHaveBeenCalled();
   });
 });
