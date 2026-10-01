@@ -77,11 +77,11 @@ def message_deep_link_params(
     """
     return MessageOpenLinkSpec(
         fm=fm_id,
-        conversation_id=conversation_id or None,
-        task_id=task_id or None,
+        conversation_id=conversation_id,
+        task_id=task_id,
         git_origin=(git_origin if isinstance(git_origin, str) else json.dumps(git_origin)) if git_origin else None,
-        sender_name=sender_name or None,
-        title=title or None,
+        sender_name=sender_name,
+        title=title,
     )
 
 

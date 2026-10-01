@@ -1,11 +1,11 @@
 import { isCompleteGitOrigin, isInstallableOrigin, type GitOrigin } from '@sdk';
+import { t } from '@lingui/core/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { withHomePage } from '@src/project-home-page/home-page-state';
 import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
-import { t } from '@lingui/core/macro';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { useEffect } from 'react';
 import { IncomingProjectDialog } from './IncomingProjectDialog';

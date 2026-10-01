@@ -5,8 +5,8 @@
 asks it where the link goes (the class's ``resolve_open``): it materializes
 what the UI needs locally — usually from the hub, since the desktop may hold no
 row yet — and returns the ``/dock/home?action=open…`` params, which become the
-redirect page (``deep_link_redirect``). A type opts in by overriding
-``resolve_open`` and is listed in ``OPENABLE_TYPES``; every other type is
+redirect page (``deep_link_redirect``). A type opts in by defining
+``resolve_open`` and being listed in ``OPENABLE_TYPES``; every other type is
 refused here.
 
 GET only. A type with its own ``open`` action (``agentic_process.open``,
@@ -41,7 +41,7 @@ OPENABLE_TYPES: tuple[str, ...] = (
 )
 
 
-@action.all(action_name="open", methods="get", types=list(OPENABLE_TYPES), allow_missing_target=True)
+@action.get(action_name="open", types=list(OPENABLE_TYPES), allow_missing_target=True)
 async def open_entity_link() -> HTMLResponse | ApiResponse:
     from flow_sdk.server.routes.notify import deep_link_redirect  # noqa: PLC0415
 

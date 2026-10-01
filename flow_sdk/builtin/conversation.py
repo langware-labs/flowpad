@@ -435,7 +435,7 @@ class Conversation(ProjectedFields, Entity):
     ) -> "Conversation":
         """Push to hub + admit people via the standard hub pattern.
 
-        Without either list: equivalent to ``Entity.share()`` — POSTs to
+        With no one to admit: equivalent to ``Entity.share()`` — POSTs to
         ``/graph/conversation`` so the hub-side row exists; the caller then
         has ``owner`` role.
 
@@ -470,7 +470,7 @@ class Conversation(ProjectedFields, Entity):
         for a share whose recipient another invitation already emails (a
         project invite carries its own).
 
-        Both lists may be passed together; each person should appear in only
+        The person lists may be passed together; each person should appear in only
         one (the hub refuses a request naming both). Persisting ``remote=True``
         to the local DB is the caller's responsibility
         (``share_action.share_entity`` does the local row UPDATE immediately
