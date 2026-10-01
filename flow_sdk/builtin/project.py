@@ -2115,17 +2115,24 @@ class Project(Entity):
     @classmethod
     async def pack_reference(cls, entity_id: str, *, transfer_mode: str, repo_cache: dict | None = None):
         """A project rides as a git reference in EITHER transfer mode: its work
-        lives in its repository, so no bytes ride. Only the fields the hub
-        membership mirror reads travel (no mount, nothing machine-local). A
-        project with no git origin has nothing to clone and packs nothing."""
-        from flow_sdk.app.actions.membership_sync import membership_mirror_payload  # noqa: PLC0415
+        lives in its repository, so no bytes ride. The row rides exactly as a
+        share sends it to the hub (``_hub_body`` plus the shared-context
+        origins) — what the recipient's membership mirror reads back. A project
+        with no git origin has nothing to clone and packs nothing."""
         from flow_sdk.builtin.flow_message_bundle import ReferencePack  # noqa: PLC0415
 
         project = await cls.get_one({"id": entity_id})
         origin = as_git(project.origin) if project is not None else None
         if origin is None:
             return None
-        return ReferencePack(metadata=membership_mirror_payload(project), origin=origin)
+        metadata = project._hub_body()
+        # The hub ignores these; one can hold local directory paths.
+        for not_mirrored in ("legacy_include_dirs_", "expand"):
+            metadata.pop(not_mirrored, None)
+        shared_context_origins = await project._shared_context_origin_payload()
+        if shared_context_origins:
+            metadata["shared_context_origins"] = shared_context_origins
+        return ReferencePack(metadata=metadata, origin=origin)
 
     @classmethod
     async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:

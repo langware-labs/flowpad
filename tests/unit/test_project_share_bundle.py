@@ -103,13 +103,15 @@ async def test_the_project_packs_as_a_git_reference_in_either_mode(tmp_path, tra
 
 
 async def test_the_senders_checkout_stays_on_the_senders_machine(tmp_path):
+    from flow_sdk.builtin.folder import Folder
+    from flow_sdk.fs_store.origin.local_origin import LocalOrigin
+
     project = await _shared_project(tmp_path, origin=_origin())
-    git_folder, local_folder = f"folder-{uuid4()}", f"folder-{uuid4()}"
-    project.shared_context_entities = [git_folder, local_folder]
-    project.shared_context_origins = {
-        git_folder: _origin().model_dump(mode="json"),
-        local_folder: {"kind": "local", "base": str(tmp_path / "sender-notes"), "rel_path": "."},
-    }
+    git_folder = await Folder.mint_for_origin(
+        GitOrigin(rel_path="docs", provider="github", owner="langware-labs", name="notes", branch="main")
+    )
+    local_folder = await Folder.mint_for_origin(LocalOrigin(base=str(tmp_path / "sender-notes"), rel_path="."))
+    project.shared_context_entities = [str(git_folder.typeid), str(local_folder.typeid)]
     await project.save(notify=False)
 
     with await _pack_invite(project, tmp_path / "out", transfer_mode="copy") as zf:
@@ -121,7 +123,8 @@ async def test_the_senders_checkout_stays_on_the_senders_machine(tmp_path):
     assert "sender-checkout" not in metadata_text and "sender-notes" not in metadata_text
     # A git context folder can be resolved on the recipient's machine; a local
     # one is a path on this machine only.
-    assert list(metadata["shared_context_origins"]) == [git_folder]
+    assert list(metadata["shared_context_origins"]) == [str(git_folder.typeid)]
+    assert "legacy_include_dirs_" not in metadata
 
 
 async def test_the_project_row_never_rides_as_an_overlay_envelope(tmp_path):
