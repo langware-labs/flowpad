@@ -13,7 +13,7 @@ import logging
 import os
 import re
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, NamedTuple, Optional
 from weakref import WeakValueDictionary
@@ -3274,7 +3274,30 @@ async def _drain_conversation_message_fetches(pending: dict[str, Optional[dateti
         finally:
             _conv_fetch_inflight.discard(cid)
 
-    await asyncio.gather(*[_one(c) for c in pending], return_exceptions=True)
+    # Newest hub revision first. The semaphore admits waiters in creation order,
+    # so this order IS the fetch order. The hub lists conversations oldest-first,
+    # and a cold catch-up (a new device, a rebuilt DB) can be hundreds of
+    # conversations deep: in hub order, the one that just got a message waited
+    # behind every stale one before it (~470 deep: >10s on a local hub).
+    await asyncio.gather(*[_one(c) for c in _newest_first(pending)], return_exceptions=True)
+
+
+def _newest_first(pending: dict[str, Optional[datetime]]) -> list[str]:
+    """Conversation ids by hub ``updated_date``, newest first; unknown clocks last.
+
+    A bare iterable of ids (no clocks) keeps its order.
+    """
+    clocks = pending if isinstance(pending, dict) else {}
+
+    def _key(cid: str) -> float:
+        ts = clocks.get(cid)
+        if ts is None:
+            return float("-inf")
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts.timestamp()
+
+    return sorted(pending, key=_key, reverse=True)
 
 
 async def _record_hub_watermark(conv_id: str, hub_updated: Optional[datetime], someone_typeid: str) -> None:
