@@ -250,13 +250,19 @@ async def test_create_under_system_project_does_not_touch_sdk_tree(bootstrapped_
     Old handler joined paths from `fs_storage_mount_path` and would have
     written user data into `flow_sdk/system_projects/flowpad_assistant/`.
     The new handler must not — verify we land in records_data instead.
+
+    System projects are created at server startup (``index_system_content``),
+    which the in-process api client never runs — so create them with the same
+    real function instead of skipping. A skip here fired on every run.
     """
+    from flow_sdk.server.routes.bootstrap import _ensure_system_projects
+
+    await _ensure_system_projects()
     projects = (
         await bootstrapped_client.get("/api/v1/graph/project?include_system=true")
     ).json()["data"]
     assistant = next((p for p in projects if p.get("uname") == "flowpad_assistant"), None)
-    if not assistant:
-        pytest.skip("Flowpad Assistant system project not registered on this instance.")
+    assert assistant, "Flowpad Assistant system project was not registered"
 
     project_id = assistant["id"]
     mount_path = Path(assistant["fs_storage_mount_path"]).resolve()

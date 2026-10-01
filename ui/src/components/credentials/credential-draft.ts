@@ -20,7 +20,7 @@ import type {
   LocalValueStore,
   SaveCredentialRequest,
 } from '@sdk';
-import { isRequired, isSecret } from '@sdk';
+import { CredentialRequirement, isRequired, isSecret, requirementOf } from '@sdk';
 import { MAX_ENV_VAR_VALUE_LENGTH } from '@src/constants/validation';
 
 export type DraftMode = 'custom' | 'template' | 'pack' | 'edit' | 'values';
@@ -165,7 +165,12 @@ export function templateDraft(spec: Credential, scope: CredentialScopeName): Cre
     scope: lmProvider ? 'user' : scope,
     store: lmProvider ? 'vault' : 'env',
     lmProvider,
-    vars: spec.varNames.map((name) => fromManifestVar(name, spec.vars?.[name])),
+    // An entity var may still carry a legacy boolean `required`; the draft round-trips to the
+    // manifest, which takes MUST | OPTIONAL only.
+    vars: spec.varNames.map((name) => {
+      const v = spec.vars?.[name];
+      return fromManifestVar(name, v && { ...v, required: requirementOf(v) });
+    }),
   };
 }
 
@@ -203,6 +208,7 @@ function fromRow(row: CredentialStatusRow, mode: 'edit' | 'values'): CredentialD
         help_url: v.help_url || undefined,
         secret: v.secret,
         required: v.required,
+        kind: v.kind,
       }),
     ),
   };
@@ -285,7 +291,7 @@ export function toSaveRequest(d: CredentialDraft, projectId: string | null, depl
       pattern: v.pattern || undefined,
       help_url: v.helpUrl || undefined,
       secret: v.secret,
-      required: v.required,
+      required: v.required ? CredentialRequirement.MUST : CredentialRequirement.OPTIONAL,
     };
   }
   return {

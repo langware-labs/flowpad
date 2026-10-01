@@ -20,6 +20,7 @@ import pytest
 
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.timeout(30)]  # do not increase without approval
 
@@ -144,7 +145,7 @@ async def test_legacy_dash_at_bundle_still_unpacks_and_installs(env):
 
     receiver = env / "receiver"
     receiver.mkdir()
-    project = Project(name="dst", fs_storage_mount_path=str(receiver))
+    project = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(receiver))
     await project.save(notify=False)
     res = await handle_attachment_install(ma.id, "project", project.id)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)

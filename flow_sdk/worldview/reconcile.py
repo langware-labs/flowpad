@@ -35,7 +35,6 @@ from flow_sdk.worldview.providers.gcp import GCP_ARTIFACT_LABEL, gcp_kind_from_a
 
 _MUTABLE_FIELDS = (
     "name",
-    "kind",
     "target",
     "origin",
     "status",
@@ -48,9 +47,11 @@ _MUTABLE_FIELDS = (
 
 def _origin(provider: str, resource: InventoryResource) -> PlacementOrigin:
     """Where this placement lives — the provider's own resource name. A secret-free,
-    serializable pointer at a resource in someone else's system."""
+    serializable pointer at a resource in someone else's system. ``kind`` is the
+    RESOURCE's kind (``gcp.<service>.<resource>``): the kind of what a placement
+    carries rides on what it carries (``docs/ontology.md`` rule 2), never on the row."""
     return PlacementOrigin(
-        kind=provider,
+        kind=gcp_kind_from_asset_type(resource.asset_type),
         provider=provider,
         external_id=resource.full_resource_name,
         url=resource.provider_uid or "",
@@ -80,7 +81,6 @@ def _deployment_payload(
     scope_parts = [part for part in (organization_scope, *resource.folders, resource.project) if part]
     return {
         "name": resource.name,
-        "kind": gcp_kind_from_asset_type(resource.asset_type),
         "artifact_id": artifact_id,
         "artifact_link_source": artifact_link_source,
         "target": DeploymentTarget(

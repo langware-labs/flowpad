@@ -1,7 +1,7 @@
-import type { AgenticProcess, Shell } from '@sdk';
+import { fsStore, type AgenticProcess, type Shell } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { AppWindow, Copy, ExternalLink, PanelTop, Sparkles } from 'lucide-react';
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +14,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
+import { MediaLightbox, isLightboxMedia } from '@src/components/ui/media-lightbox';
 import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
 import { errorMessage } from '@src/lib/error-message';
 import { useDockNavigation } from '@src/navigation';
@@ -31,8 +32,52 @@ interface LinkMenuHandle {
   open: (link: string, x: number, y: number, host: AgenticProcess | null) => void;
 }
 
+interface LinkPreviewHandle {
+  show: (media: LinkMedia) => void;
+}
+
+interface LinkMedia {
+  url: string;
+  name: string;
+}
+
+/** A position suffix a terminal reference may carry: `a.png:3`, `a.png:3:7`, `a.png#L3`. */
+const POSITION_SUFFIX = /(?::\d+(?::\d+)?|#L\d+)$/;
+
 /**
- * Click opens a link in Flowpad; right-click offers copy / open in Flowpad / open in browser / open in one
+ * The file name to preview a link by, or null when it is not an image or video.
+ * A web URL is judged by its path (not its query); a file reference, without its position.
+ */
+export function lightboxMediaName(link: string): string | null {
+  let name = link;
+  if (/^https?:/i.test(link)) {
+    try {
+      name = new URL(link).pathname;
+    } catch {
+      return null;
+    }
+  } else {
+    name = link.replace(POSITION_SUFFIX, '');
+  }
+  return isLightboxMedia(name) ? name.split(/[/\\]/).pop() || name : null;
+}
+
+/**
+ * The bytes behind an image/video link: a web URL as itself, a file reference as the
+ * shell's own machine serves it (the path the backend resolved, on the shell's compute node).
+ */
+async function mediaFor(link: string, shell: Shell | null): Promise<LinkMedia | null> {
+  const name = lightboxMediaName(link);
+  if (!name) return null;
+  if (/^https?:/i.test(link)) return { url: link, name };
+  const node = shell?.computeNodeTypeId;
+  if (!shell || !node) return null;
+  const path = (await shell.resolveDisplayTarget(link))?.path;
+  return path ? { url: fsStore.getState().getDownloadUrl(node, path), name } : null;
+}
+
+/**
+ * Click opens a link in Flowpad — an image or video in the in-app lightbox, anything else as a tab; right-click offers copy / open in Flowpad / open in browser / open in one
  * browser profile of this machine, and — when the terminal belongs to a process — Vibe: that process in vibe
  * mode with the link as a tab.
  */
@@ -44,9 +89,17 @@ export function useTerminalLinks(source: RefObject<Shell | null>, process?: Agen
   const processRef = useRef(process ?? null);
   processRef.current = process ?? null;
   const menuRef = useRef<LinkMenuHandle>(null);
+  const previewRef = useRef<LinkPreviewHandle>(null);
 
   return useMemo(() => {
     const open = (link: string) => void navRef.current.openLink(link, source.current);
+    // Media previews in place; anything the preview can't resolve opens as a tab, which
+    // also reports the failure the way every other link does.
+    const activate = async (link: string) => {
+      const media = await mediaFor(link, source.current).catch(() => null);
+      if (media) previewRef.current?.show(media);
+      else open(link);
+    };
     const openInBrowser = (link: string) => void navRef.current.openLinkInBrowser(link, source.current);
     const openInVibe = (link: string, host: AgenticProcess) =>
       void navRef.current.openLinkInVibe(link, source.current, host);
@@ -54,17 +107,20 @@ export function useTerminalLinks(source: RefObject<Shell | null>, process?: Agen
       void navRef.current.openLinkInBrowserProfile(link, source.current, browser, profile);
     return {
       handlers: {
-        activate: (_event, link) => open(link),
+        activate: (_event, link) => void activate(link),
         openMenu: (link, x, y) => menuRef.current?.open(link, x, y, processRef.current),
       },
       menu: (
-        <TerminalLinkMenu
-          ref={menuRef}
-          onOpen={open}
-          onOpenInBrowser={openInBrowser}
-          onOpenInVibe={openInVibe}
-          onOpenInProfile={openInProfile}
-        />
+        <>
+          <TerminalLinkMenu
+            ref={menuRef}
+            onOpen={open}
+            onOpenInBrowser={openInBrowser}
+            onOpenInVibe={openInVibe}
+            onOpenInProfile={openInProfile}
+          />
+          <LinkPreview ref={previewRef} />
+        </>
       ),
     };
   }, [source]);
@@ -77,6 +133,14 @@ function copyLink(link: string): void {
       notify.error({ title: t`Could not copy link`, message: errorMessage(error, t`Clipboard unavailable`), forceToast: true }),
   );
 }
+
+/** Owns the preview state, so showing and closing re-renders only this. */
+const LinkPreview = forwardRef<LinkPreviewHandle>(function LinkPreview(_props, ref) {
+  const [media, setMedia] = useState<LinkMedia | null>(null);
+  useImperativeHandle(ref, () => ({ show: setMedia }), []);
+  const close = useCallback(() => setMedia(null), []);
+  return media ? <MediaLightbox url={media.url} name={media.name} onClose={close} /> : null;
+});
 
 /** Owns the menu state, so opening and closing re-renders only this. */
 const TerminalLinkMenu = forwardRef<

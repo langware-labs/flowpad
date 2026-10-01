@@ -9,6 +9,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AgentPlaceCard } from '../AgentPlaceCard';
 import { usePlaceDisplay } from '../use-place-display';
 import { useAgentPlaces } from '../use-agent-places';
+import { DeploymentHealth } from './DeploymentHealth';
 import { DeploymentProcessPanel } from './DeploymentProcessPanel';
 import { DeploymentThreads } from './DeploymentThreads';
 import { ThreadPane, type ThreadView } from './ThreadPane';
@@ -43,7 +44,10 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
   const open = (thread: DeploymentThread) =>
     currentDock &&
     navigation.openDock(
-      currentDock.withOption(THREAD_OPTION, thread.conversation_id).withOption(VIEW_OPTION, null).withOption(TRANSCRIPT_TIME_PARAM, null),
+      currentDock
+        .withOption(THREAD_OPTION, thread.conversation_id)
+        .withOption(VIEW_OPTION, null)
+        .withOption(TRANSCRIPT_TIME_PARAM, null),
     );
   const setView = (next: ThreadView, at: string | null = null) =>
     currentDock &&
@@ -77,11 +81,22 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
             .filter(Boolean)
             .join(' · ')}
         </span>
-        <Button variant="outline" size="sm" className="ms-auto h-8 gap-1.5" onClick={() => setSettings((v) => !v)} aria-expanded={settings}>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ms-auto h-8 gap-1.5"
+          onClick={() => setSettings((v) => !v)}
+          aria-expanded={settings}
+        >
           <Settings2 className="h-3.5 w-3.5" />
           {t`Settings`}
         </Button>
       </header>
+      {deployment && (
+        <div className="px-4">
+          <DeploymentHealth deployment={deployment} />
+        </div>
+      )}
       {settings && place && (
         <div className="border-b px-6 py-4">
           <AgentPlaceCard agent={agent} place={place} onChanged={reload} />

@@ -65,6 +65,8 @@ class Credential(Entity):
     setup_wizards: list[SetupStageSpec] = APIField(default_factory=list)
     #: How an agent obtains and stores the values (``CredentialSpec.setup``).
     setup: str = APIField(default="")
+    #: How long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).
+    setup_timeout_seconds: Optional[float] = APIField(default=None)
     lm_provider: str = APIField(default="")
     vars: dict[str, CredentialVarSpec] = APIField(default_factory=dict)
 
@@ -100,7 +102,7 @@ class Credential(Entity):
     def required_var_names(self) -> list[str]:
         """The variables that must have a value for the credential to be connected
         (a deployment may require more: ``Placement.required``)."""
-        return [name for name, spec in (self.vars or {}).items() if spec.required]
+        return [name for name, spec in (self.vars or {}).items() if spec.is_must]
 
     @property
     def credentials(self) -> SecretRequirements:

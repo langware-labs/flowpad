@@ -18,6 +18,7 @@ import pytest
 
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401  (register types)
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase without approval
 
@@ -141,7 +142,7 @@ async def test_repo_nested_tree_full_lifecycle(env):
 
     receiver = env / "receiver"
     receiver.mkdir()
-    project = Project(name="dst", fs_storage_mount_path=str(receiver))
+    project = Project(name=unique_project_name("dst"), fs_storage_mount_path=str(receiver))
     await project.save(notify=False)
 
     await unpack_bundle(zip_path, "local-user-id")

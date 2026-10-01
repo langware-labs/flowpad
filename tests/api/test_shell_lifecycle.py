@@ -276,7 +276,7 @@ async def test_create_shell_entity_fields(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_run_command(bootstrapped_client):
-    """POST /graph/shell/{id}/run executes command and returns output."""
+    """POST /graph/shell/{id}/run-detached executes command and returns output."""
     # Create entity
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",
@@ -288,7 +288,7 @@ async def test_run_command(bootstrapped_client):
 
     # Run a command
     response = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/run",
+        f"/api/v1/graph/shell/{entity_id}/run-detached",
         json={"command": "echo hello"},
     )
     assert response.status_code == 200, response.text
@@ -312,7 +312,7 @@ async def test_run_command_failure_keeps_the_raw_exit(bootstrapped_client):
     )
     entity_id = ApiResponse(**create_resp.json()).data["id"]
     response = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/run",
+        f"/api/v1/graph/shell/{entity_id}/run-detached",
         json={"command": "exit 7"},
     )
     assert response.status_code == 200, response.text
@@ -350,3 +350,37 @@ async def test_set_env_persists_on_entity(bootstrapped_client):
     assert read_resp.status_code == 200
     read_res = ApiResponse(**read_resp.json())
     assert read_res.data.get("env") == {"FOO": "bar"}
+
+
+@pytest.mark.asyncio
+async def test_a_thing_has_one_terminal_that_runs_its_commands_and_stops_them(bootstrapped_client, tmp_path):
+    """POST /shell/belonging-to names one terminal per thing; run-command / run-state / interrupt
+    drive it — the calls the browser's Shell makes."""
+    import asyncio
+    import uuid
+
+    from flow_sdk.builtin.shell import Shell
+
+    what = f"run:{uuid.uuid4().hex}"
+    body = {"what": what, "workdir": str(tmp_path), "name": "Run"}
+    first = ApiResponse(**(await bootstrapped_client.post("/api/v1/shell/belonging-to", json=body)).json()).data
+    again = ApiResponse(**(await bootstrapped_client.post("/api/v1/shell/belonging-to", json=body)).json()).data
+    assert first["id"] == again["id"] and first["belongs_to"] == what
+    shell_url = f"/api/v1/graph/shell/{first['id']}"
+    try:
+        ran = ApiResponse(**(await bootstrapped_client.post(f"{shell_url}/run-command", json={"command": "sleep 30"})).json())
+        assert ran.status == "SUCCESS" and ran.data["marker"].startswith("__flow_")
+        state = None
+        for _ in range(100):
+            state = ApiResponse(**(await bootstrapped_client.get(f"{shell_url}/run-state")).json()).data
+            if state["running_pid"]:
+                break
+            await asyncio.sleep(0.05)
+        assert state["running_pid"], "the command runs in the terminal"
+        stopped = ApiResponse(**(await bootstrapped_client.post(f"{shell_url}/interrupt", json={})).json()).data
+        assert stopped == {"stopped": True}
+        assert ApiResponse(**(await bootstrapped_client.get(f"{shell_url}/run-state")).json()).data["running_pid"] is None
+    finally:
+        shell = await Shell.get_by_id(first["id"])
+        if shell is not None:
+            await shell.close()

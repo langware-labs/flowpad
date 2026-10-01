@@ -264,7 +264,7 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, subm
       <Dialog open={open} onOpenChange={(o) => !o && requestClose()}>
         <DialogContent
           hideClose
-          className="flex max-h-[92vh] w-auto max-w-[92vw] flex-col gap-3 p-3"
+          className="flex max-h-[92vh] w-auto max-w-[92vw] flex-col gap-2 p-2"
           onEscapeKeyDown={(e) => {
             e.preventDefault();
             requestClose();
@@ -291,8 +291,11 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, subm
             submitLabel={submitLabel}
           />
 
-          <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-md bg-muted/30">
-            <div className="relative">
+          {/* No tinted panel around the image: the only surface is the image
+              itself, edged by a visible border, so there is no area that looks
+              drawable but is not. */}
+          <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto">
+            <div className="relative border border-foreground/40">
               <canvas
                 ref={canvasRef}
                 onPointerDown={onPointerDown}
@@ -300,7 +303,7 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, subm
                 onPointerUp={onPointerUp}
                 onPointerLeave={onPointerUp}
                 onClick={onCanvasClick}
-                className="block max-h-[78vh] max-w-full touch-none"
+                className="block max-h-[calc(92vh-4rem)] max-w-full touch-none"
                 style={{ cursor: tool === 'text' ? 'text' : 'crosshair' }}
               />
               <TextBoxLayer

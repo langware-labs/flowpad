@@ -57,7 +57,7 @@ const statusRow = (over: Partial<CredentialStatusRow> = {}): CredentialStatusRow
   lm_provider: '',
   state: 'connected',
   vars: [
-    { env_var: 'STRIPE_KEY', label: '', hint: 'secret key', placeholder: '', pattern: '', help_url: '', secret: true, required: true, present: true, found_in: 'vault', warning: null, shadowed_by: null },
+    { env_var: 'STRIPE_KEY', label: '', hint: 'secret key', placeholder: '', pattern: '', help_url: '', secret: true, required: 'MUST', present: true, found_in: 'vault', warning: null, shadowed_by: null },
   ],
   ...over,
 });
@@ -168,8 +168,8 @@ describe('toSaveRequest', () => {
         setup: 'From the Stripe dashboard.',
         lm_provider: undefined,
         vars: {
-          STRIPE_KEY: { label: undefined, hint: 'the secret key', placeholder: undefined, pattern: undefined, help_url: undefined, secret: true, required: true },
-          STRIPE_ACCOUNT: { label: undefined, hint: undefined, placeholder: undefined, pattern: undefined, help_url: undefined, secret: false, required: true },
+          STRIPE_KEY: { label: undefined, hint: 'the secret key', placeholder: undefined, pattern: undefined, help_url: undefined, secret: true, required: 'MUST' },
+          STRIPE_ACCOUNT: { label: undefined, hint: undefined, placeholder: undefined, pattern: undefined, help_url: undefined, secret: false, required: 'MUST' },
         },
       },
       values: { STRIPE_KEY: 'sk_test' },

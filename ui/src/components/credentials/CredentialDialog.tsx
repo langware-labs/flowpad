@@ -36,6 +36,7 @@ import {
   type DraftVar,
 } from './credential-draft';
 import { EnvLocalBlockedNotice } from './EnvLocalBlockedNotice';
+import { FileValueInput } from './FileValueInput';
 import { SecretValueInput } from './SecretValueInput';
 
 /** The wiki page the scope and storage info icons open, one section each. */
@@ -98,7 +99,7 @@ export function CredentialDialog({
   const problemText = (p: DraftProblem): string =>
     ({
       'title-required': t`Give the pack a name`,
-      'setup-required': t`Say how to get these values — the AI setup follows it`,
+      'setup-required': t`Say how to get these values — AI Assist follows it`,
       'no-vars': t`Add at least one variable`,
       'bad-env-var': t`Letters, digits and _ only`,
       duplicate: t`Listed twice`,
@@ -227,7 +228,17 @@ export function CredentialDialog({
                         data-testid={`credential-var-name-${index}`}
                       />
                     )}
-                    {asksValues(d) ? (
+                    {asksValues(d) && v.base.kind === 'file' ? (
+                      <div className="min-w-0 flex-1">
+                        <FileValueInput
+                          id={`credential-var-value-${index}`}
+                          testId={`credential-var-value-${index}`}
+                          secret={v.secret}
+                          value={v.value}
+                          onChange={(value) => updateVar(v.id, { value })}
+                        />
+                      </div>
+                    ) : asksValues(d) ? (
                       <SecretValueInput
                         className="min-w-0 flex-1"
                         secret={v.secret}

@@ -122,6 +122,24 @@ def _starting(deployment) -> Optional[int]:
     return None
 
 
+def loop_state(deployment) -> tuple[str, str]:
+    """The answering loop's health: ``alive`` while it holds its lock, ``starting`` while the process
+    typed for it is still importing, else ``failing``. The lock is the truth — no heartbeat involved."""
+    import fcntl  # noqa: PLC0415
+
+    path = _lock_path(str(deployment.id))
+    if path.is_file():
+        with open(path, encoding="utf-8") as fh:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return "alive", ""
+            fcntl.flock(fh, fcntl.LOCK_UN)
+    if _starting(deployment) is not None:
+        return "starting", "the loop's process is starting"
+    return "failing", "no process runs this deployment's loop"
+
+
 def alive(deployment) -> bool:
     """Whether a process runs *deployment* now."""
     return pid_of(deployment) is not None
@@ -137,21 +155,20 @@ def command_of(deployment) -> str:
 
 
 async def _shell(deployment):
-    """The deployment's terminal — the one it had, else a new one — with a live PTY."""
-    from flow_sdk.builtin.faas.compute_node import ComputeNode  # noqa: PLC0415
+    """The deployment's terminal (``Shell.belonging_to``) — the one it had, else a new one — with a live PTY."""
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
-    shell = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
-    if shell is None or shell.status == "closed":
-        node = await ComputeNode.get_local()
-        shell = Shell(
-            compute_node_id=str(node.id),
-            compute_node_uname=getattr(node, "uname", None),
-            name=f"{deployment.name or 'Deployment'} · process",
-            workdir=str(file_of(deployment).parent),
-        )
-        await shell.save()
-    await shell.start_pty(rows=30, cols=120, extra_env={DEPLOYMENT_ENV: str(deployment.id)})
+    what = f"deployment:{deployment.id}"
+    legacy = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
+    if legacy is not None and not legacy.belongs_to and legacy.status != "closed":
+        legacy.belongs_to = what  # a row from before terminals named their owner: it keeps serving
+        await legacy.save()
+    shell = await Shell.belonging_to(
+        what,
+        name=f"{deployment.name or 'Deployment'} · process",
+        workdir=str(file_of(deployment).parent),
+        extra_env={DEPLOYMENT_ENV: str(deployment.id)},
+    )
     _pin(shell)
     return shell
 
@@ -201,7 +218,9 @@ async def close_shell(deployment) -> None:
     """End the deployment's terminal (a deleted deployment has nothing left to show)."""
     from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
-    shell = await Shell.get_by_id(shell_id_of(deployment)) if shell_id_of(deployment) else None
+    shell = await Shell.find_belonging_to(f"deployment:{deployment.id}")
+    if shell is None and shell_id_of(deployment):
+        shell = await Shell.get_by_id(shell_id_of(deployment))  # a row from before terminals named their owner
     if shell is not None:
         await shell.close()
 

@@ -7,12 +7,19 @@ live — each Deployment does (``DeploymentSecretsSpec``). See ``credential_cont
 from __future__ import annotations
 
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Optional
 
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
-from flow_sdk.schema.data_spec.credential_contract import assert_value_free, is_valid_env_var
+from flow_sdk.schema.data_spec.credential_contract import (
+    CredentialRequirement,
+    CredentialVarKind,
+    Requirement,
+    assert_value_free,
+    is_valid_env_var,
+)
+from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.setup_stage_spec import SetupStageSpec, unique_stages
 from flow_sdk.schema.data_spec.spec import DataSpec
 
@@ -40,7 +47,9 @@ class CredentialVarSpec(DataSpec):
     #: What this variable is for — shown under the input.
     hint: str = ""
     placeholder: str = ""
-    required: bool = True
+    #: ``MUST`` (the app does not work without it) or ``OPTIONAL``. Defaults MUST —
+    #: an unmarked variable stays required, the safe direction to be wrong in.
+    required: Requirement = CredentialRequirement.MUST
     #: Regex the value must match.
     pattern: str = ""
     advanced: bool = False
@@ -48,8 +57,14 @@ class CredentialVarSpec(DataSpec):
     account_key: bool = False
     #: Masks the input. Defaults TRUE — the safe direction to be wrong in.
     secret: bool = True
+    #: ``text`` (the value) or ``file`` (a file's content, kept as a file; the variable holds its path).
+    kind: CredentialVarKind = CredentialVarKind.TEXT
     #: Where to get this particular value.
     help_url: str = ""
+
+    @property
+    def is_must(self) -> bool:
+        return self.required is CredentialRequirement.MUST
 
 
 class CredentialSpec(DataSpec):
@@ -70,11 +85,18 @@ class CredentialSpec(DataSpec):
     manifest_schema: int = Field(default=0, alias="schema", validate_default=True)
     help_url: str = ""
     setup_wiki: str = ""
-    #: How to obtain the values and store them, written for an AGENT to follow (markdown): where the
-    #: key is created, what to click, and the ``flow credentials set <name> --stdin`` it is piped into.
-    #: Authoring requires it (``credential_service.save_credential``); a pack read from disk without
-    #: it still loads — ``flow project setup`` reports it, and offers no AI setup for it.
-    setup: str = ""
+    #: How to obtain the values and store them — the file ``setup.md`` beside ``credential.json``,
+    #: markdown a person follows by hand (the setup dialog and the credential page show it) and an agent
+    #: follows too: where each value is created, what to click, and the
+    #: ``flow credentials set <name> --stdin`` it is piped into. Authoring requires it
+    #: (``credential_service.save_credential``); a pack read from disk without it still loads —
+    #: ``flow project setup`` reports it, and offers no AI Assist for it.
+    setup: Text = ""
+    #: How long following ``setup`` may take once an agent runs it (the ask's AI Assist): the question
+    #: waits this long from the moment the agent starts, and the agent is stopped at it. Unset: the
+    #: default ``SETUP_TIMEOUT`` (``compute_op_spec``). A slow console (a key that takes minutes to
+    #: issue) declares its own.
+    setup_timeout_seconds: Optional[float] = Field(default=None, gt=0)
     #: The LLM provider this credential's single key funds. Its value always lives in the vault
     #: entry the funding resolver reads (``lm_api.<provider>``), whatever a deployment says.
     lm_provider: str = ""

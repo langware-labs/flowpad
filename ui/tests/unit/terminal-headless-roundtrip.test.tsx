@@ -163,8 +163,8 @@ vi.mock('@src/components/terminal/interactive-terminal/ColumnHeaderBar', () => (
 vi.mock('@src/components/terminal/interactive-terminal/PaneBar', () => ({ PaneBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/PaneSelectorBar', () => ({ PaneSelectorBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/PaneView', () => ({ PaneView: () => null }));
-vi.mock('@src/components/terminal/interactive-terminal/SidecarShellTerminal', () => ({
-  SidecarShellTerminal: () => null,
+vi.mock('@src/components/terminal/interactive-terminal/ShellTerminal', () => ({
+  ShellTerminal: () => null,
 }));
 vi.mock('@src/components/terminal/interactive-terminal/TerminalSearchBar', () => ({ TerminalSearchBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner', () => ({

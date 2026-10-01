@@ -20,7 +20,7 @@ class FakeHubStore:
 
     def deployment(self, agent_typeid: str, environment: str) -> dict:
         return {"id": self._ids.setdefault((agent_typeid, environment), str(uuid.uuid4())), "name": f"agent ({environment})",
-                "kind": "runtime.agent", "parent_type_id": agent_typeid, "environment": environment,
+                "parent_type_id": agent_typeid, "environment": environment,
                 "target": {"provider": "e2b", "scope": agent_typeid}}
 
     _ids: dict = {}

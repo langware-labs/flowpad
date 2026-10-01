@@ -33,7 +33,7 @@ export function bookmarkInScope(b: Bookmark, scope: ScopeFilter, currentProjectI
  * A favorites-desktop visibility predicate for a scope, or `undefined` when the
  * scope is "show everything" (null/`all`) so the caller can pass no filter. The
  * single owner of "turn a ScopeFilter into a favorites filter" — shared by the
- * MiniDesktop and the full DesktopPage so they never drift. A `project` scope
+ * the DesktopPage and any other favorites view. A `project` scope
  * already carries its `activeProjectId`, so no `currentProjectId` anchor needed.
  */
 export function favoritesFilterForScope(

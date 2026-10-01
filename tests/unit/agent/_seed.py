@@ -10,11 +10,12 @@ from pathlib import Path
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.project import Project
+from tests.unit._project_names import unique_project_name
 
 
 async def seed_project(root: Path, **fields) -> Project:
     root.mkdir(parents=True, exist_ok=True)
-    project = Project(name=root.name, fs_storage_mount_path=str(root), **fields)
+    project = Project(name=unique_project_name(root.name), fs_storage_mount_path=str(root), **fields)
     await project.save()
     return project
 

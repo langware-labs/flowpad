@@ -52,6 +52,9 @@ async def execute_wizard(
     check_only: bool = False,
     target: str = "",
     inputs: Optional[dict] = None,
+    resolve_op=None,
+    cwd: "Optional[Path]" = None,
+    shell=None,
 ) -> WizardResult:
     """Run `spec` as the wizard `wizard_id`, and stamp what it answered.
 
@@ -70,6 +73,11 @@ async def execute_wizard(
     target is its own run — own slot, own record, own resume point — so setting up
     one agent's channel never answers "already running" for another's. `inputs`
     are the values the caller puts in scope (the target's id, its owner…).
+
+    `resolve_op` looks a step's op up by name; the default reads the ComputeOp index. A
+    wizard compiled in memory (``flow_sdk/builtin/project_setup.py``) passes its own ops —
+    its ``wizard_id`` then names the kind of run, not a Wizard row. `cwd` is where the steps
+    run (a project folder); the run's own record stays in its run directory either way.
     """
     key = run_key(wizard_id, target)
     workdir: "Path" = run_dir(key)
@@ -129,12 +137,15 @@ async def execute_wizard(
             # run would inherit the previous run's counters.
             activity_path=activity_path,
             trusted=trusted,
-            workdir=workdir,
+            workdir=cwd or workdir,
             # A step's `ref` is a NAME; only the entity layer knows what is
             # indexed, and only it can say whether a callee is trusted HERE.
             approved=approved,
-            resolve_op=_resolve_op,
+            resolve_op=resolve_op or _resolve_op,
             resolve_wizard=_resolve_wizard,
+            # The shell its ops' commands run in — a caller that can answer some of them itself
+            # (project setup answers its own credential checks in-process) passes its own.
+            **({"shell": shell} if shell is not None else {}),
             wizard_id=wizard_id,
             check_only=check_only,
             # A person watching should see a step's own answer (an agent
@@ -169,8 +180,11 @@ async def _notify_wizard_watchers(wizard_id: str) -> None:
     does the same at its own turn-start/turn-end for `worker_status`, which is
     computed the same way `run_state` is.
     """
+    from flow_sdk.api.api_types.identifier import is_valid_uuid  # noqa: PLC0415
     from flow_sdk.builtin.wizard import Wizard  # noqa: PLC0415
 
+    if not is_valid_uuid(wizard_id):
+        return  # an in-memory wizard (``project-setup``): no row to re-send
     wizard = await Wizard.get_by_id(wizard_id)
     if wizard is not None:
         await wizard.notify_updated()

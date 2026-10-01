@@ -53,8 +53,13 @@ import { seedCourseProject, type SeededCourse } from './_course_fixture';
 import { testEntityName } from '../_cleanup';
 
 /** The only directory an installed project may land in — and the only one this
- *  test is ever allowed to delete from. */
-const WORKSPACE = path.join(homedir(), 'Flowpad workspace');
+ *  test is ever allowed to delete from. Bob's own workspace root: prod's is
+ *  `~/Flowpad workspace`, every other instance gets `~/Flowpad workspaces/<name>`
+ *  (`BaseSettings.workspace_root`). */
+const WORKSPACE =
+  INST_2 === 'prod'
+    ? path.join(homedir(), 'Flowpad workspace')
+    : path.join(homedir(), 'Flowpad workspaces', INST_2);
 
 let skipReason: string | null = null;
 let alice: ResolvedInstance;

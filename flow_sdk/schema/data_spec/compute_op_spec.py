@@ -41,7 +41,7 @@ from __future__ import annotations
 import sys
 from typing import Any, ClassVar, Literal, Optional, Union
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.schema.data_spec import AssetDocumentSpec, DataSpec
@@ -71,6 +71,11 @@ AGENT_TIMEOUT = 1800.0
 #: machine cannot proceed without opts OUT of any deadline with
 #: ``AskOp.until_answered``.
 ASK_TIMEOUT_SECONDS = 60.0
+#: How long an AGENT following an op's ``setup`` gets once a person starts one on a question (the ask's
+#: AI Assist) — a different wait from ``ASK_TIMEOUT_SECONDS``: a person answering takes a minute, an agent
+#: working a provider's console takes minutes. From the launch, the question waits this long and the agent
+#: is stopped at it. An op's ``setup_timeout_seconds`` (a credential's own) sets any other span.
+SETUP_TIMEOUT = 600.0
 
 
 class OpSubkind(StrEnum):
@@ -189,6 +194,8 @@ class AskOp(ExeData):
     prompt: str = ""
     #: The answer is a secret (an API key): it is masked where it is typed and never echoed.
     secret: bool = False
+    #: The answer is a file's content (a key file): the form offers a file picker and a paste box.
+    file: bool = False
     #: A plain-language paragraph under the heading: why it is being asked, and
     #: what each answer does. Not the op's `description` — that one is written for
     #: whoever reads the document, this one for whoever is looking at the window.
@@ -199,6 +206,10 @@ class AskOp(ExeData):
     #: the op's ``cancelled`` answer.
     submit_label: str = ""
     cancel_label: str = ""
+    #: The agent a person can hand this question to (the AI Assist button): it follows the op's
+    #: ``setup`` and answers the SAME question, so the op returns the same ``AskResult`` whoever
+    #: answered. Empty: no assist — the person answers or nobody does. Not a rung: a person starts it.
+    assist_agent: str = ""
     #: Wait for the person with NO deadline. For install-time infrastructure —
     #: a missing toolchain the app cannot run without — where giving up after a
     #: minute only means asking again on the next boot. Safe only because a
@@ -328,6 +339,11 @@ class ComputeOpSpec(AssetDocumentSpec):
     #: How a person does this by hand — the file ``setup.md`` beside the manifest.
     #: Every call that involves a model is given it.
     setup: Text = ""
+    #: How long an agent following ``setup`` gets (an ask's AI Assist). Unset: ``SETUP_TIMEOUT``.
+    setup_timeout_seconds: Optional[float] = Field(default=None, gt=0)
+
+    def setup_timeout(self) -> float:
+        return self.setup_timeout_seconds or SETUP_TIMEOUT
 
     @model_validator(mode="before")
     @classmethod
