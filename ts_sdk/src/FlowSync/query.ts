@@ -227,10 +227,10 @@ export class QueryFilter extends ExpansionRequest {
         // batch by ids) — must re-check the same way here, or every update of a row in such a live
         // query splices it OUT of the results (the Vibe help button lost its unread count that way).
         // The older ``[value, {$PROP: field}]`` — "this array field contains the value" — is kept.
-        const inList = Array.isArray(operands[1])
-          ? (operands[1] as unknown[]).includes(data?.[operands[0] as string])
-          : null;
-        if (inList !== null) return op === '$IN' ? inList : !inList;
+        if (Array.isArray(operands[1])) {
+          const hit = (operands[1] as unknown[]).includes(data?.[operands[0] as string]);
+          return op === '$IN' ? hit : !hit;
+        }
         const contains = (a: any, b: any) => (op === '$IN' ? a.includes(b) : !a.includes(b));
         return this.isValid(data, operands, contains, true);
       }

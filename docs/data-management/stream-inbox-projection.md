@@ -199,8 +199,9 @@ half.
 ## The rest of `flow_sdk/stream_inbox/`
 
 * `__init__.py` — the unread projection, and the ONLY place unread is decided.
-  `conversation_is_unread` is the one rule (a pending invitation, or a latest
-  message received and not read — drafts, self-sent and `agent:` replies excluded);
+  `conversation_unread_count` is the one rule — how many messages wait, > 0 being unread
+  (a pending invitation, or latest messages received and not read — drafts, self-sent and
+  `agent:` replies excluded);
   `recompute_unread` applies it to every conversation, stamps
   `Conversation.is_unread` where it flipped (a projected field — the row renders it,
   the frontend never recomputes it), and publishes `StreamInboxManager.unread`: the

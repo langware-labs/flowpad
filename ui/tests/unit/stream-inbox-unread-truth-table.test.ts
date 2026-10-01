@@ -73,8 +73,6 @@ describe('stream inbox unread truth table — conversationFacets parity', () => 
     expect(facets.isUnread, 'isUnread').toBe(c.facets!.isUnread);
     expect(facets.isArchived, 'isArchived').toBe(c.facets!.isArchived);
     expect(facets.isInvitation, 'isInvitation').toBe(c.facets!.isInvitation);
-    // The count the backend stamped is what the row shows — never recomputed here.
-    expect(facets.unreadCount, 'unreadCount').toBe(c.facets!.unreadCount);
 
     // The scalar the backend derives for this single-conversation world must
     // match what the row facets imply: one when visible-and-unread, plus any

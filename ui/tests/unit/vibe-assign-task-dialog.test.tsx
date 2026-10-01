@@ -19,9 +19,11 @@ vi.mock('@src/hooks/use-my-vibe-tasks', async (orig) => {
     ...real,
     useMyVibeTasks: (projectId: string | null) =>
       real.vibeTaskRows(
-        h.tasks.filter((t) => (t as { project_id?: string }).project_id === projectId) as never,
+        real.openHelpTasks(
+          h.tasks.filter((t) => (t as { project_id?: string }).project_id === projectId) as never,
+          'me@x.com',
+        ),
         h.conversations as never,
-        'me@x.com',
       ),
   };
 });

@@ -8,7 +8,7 @@ The whole surface, no repository framework:
   accept transition): full recompute from canonical rows → save iff changed.
 * ``accept_mark_preview_read(...)`` — the invitation-accept transition (mark the
   *verified* preview read + the Invitation accepted), then recompute.
-* ``conversation_is_unread(...)`` / ``project_unread(...)`` / ``invitation_is_pending(...)`` —
+* ``conversation_unread_count(...)`` / ``project_unread(...)`` / ``invitation_is_pending(...)`` —
   the pure formula (table-tested, no DB). Conversation-domain rules (pointer parsing,
   archive auto-revive) live on the ``Conversation`` entity itself
   (``message_refs()`` / ``is_archived()``), not here.
@@ -105,31 +105,19 @@ def pending_conversation_ids(pending) -> set[str]:
     }
 
 
-def conversation_is_unread(conv, latest, *, pending_conv_ids: set, self_ids: set) -> bool:
-    """THE per-conversation unread rule — what a row shows and what the badge counts.
-
-    A pending invitation is always unread: it carries an action. Otherwise the conversation
-    is unread when its latest message (``latest``, resolved newest-by-timestamp by the
-    caller) was received and not read. Not materialized yet, or a draft, is not unread —
-    the post-materialization recompute picks it up rather than falling back to an older
-    message. "Received" is the typed sender: not ours by ``MessageSender.authored_by`` —
-    one of our user ids, or an Agent we host (an agent's reply is OURS, whether or not its
-    mail is still switched on). A message naming nobody is not unread.
-    """
-    if conv.id in pending_conv_ids:
-        return True
-    if latest is None or getattr(latest, "is_draft", False):
-        return False
-    return bool(not latest.is_read and latest.sender and not latest.sender.authored_by(self_ids))
-
 def conversation_unread_count(conv, fm_by_id: dict, *, pending_conv_ids: set, self_ids: set) -> int:
-    """How many messages wait for this user in ``conv`` — the number a badge on it shows.
+    """THE per-conversation unread rule, as a number — what a row shows (unread = > 0), what the
+    badge counts, and what a badge on the conversation itself reads.
 
-    Newest first, every received message not yet read counts, up to the first one that is read,
-    ours, a draft or not materialized: opening a conversation marks its latest message read, and
-    replying answers what came before, so either brings it to 0. The same rule as
-    :func:`conversation_is_unread` read as a number — it is > 0 exactly when that is true for the
-    message part — and a pending invitation is at least 1.
+    Newest first BY TIMESTAMP (not last-appended: an ingested mailbox hands its history back
+    newest-first, so the last pointer is the OLDEST mail), every received message not yet read
+    counts, up to the first one that is read, ours, a draft or not materialized yet — the
+    post-materialization recompute picks that one up rather than falling back to an older message.
+    Opening a conversation marks its latest message read, and replying answers what came before, so
+    either brings it to 0. "Received" is the typed sender: not ours by ``MessageSender.authored_by``
+    — one of our user ids, or an Agent we host (an agent's reply is OURS, whether or not its mail is
+    still switched on). A message naming nobody is not unread. A pending invitation is at least 1:
+    it carries an action.
     """
     count = 0
     for ref in conv.message_refs_newest_first():
@@ -186,16 +174,10 @@ def project_unread(
     flags: dict = {}
     counts: dict = {}
     for conv in conversations:
-        # NEWEST by timestamp, not last-appended: an ingested mailbox hands
-        # its history back newest-first, so `refs[-1]` there is the OLDEST
-        # mail and the conversation reads as read when it isn't.
-        ref = conv.latest_message_ref()
-        latest = fm_by_id.get(ref.id) if ref is not None else None
-        unread = conversation_is_unread(conv, latest, pending_conv_ids=pending_ids, self_ids=self_ids)
+        count = conversation_unread_count(conv, fm_by_id, pending_conv_ids=pending_ids, self_ids=self_ids)
+        unread = count > 0
         flags[conv.id] = unread
-        counts[conv.id] = conversation_unread_count(
-            conv, fm_by_id, pending_conv_ids=pending_ids, self_ids=self_ids
-        ) if unread else 0
+        counts[conv.id] = count
         if not unread or conv.id in pending_ids or conv.is_archived():
             continue  # a pending invite is already counted; an archived row counts nothing
         if not in_stream_inbox_of(conv, stream_inbox_owner):

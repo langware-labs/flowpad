@@ -245,7 +245,7 @@ class Conversation(ProjectedFields, Entity):
     hub_updated_date: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     # Whether this conversation is unread for the local viewer — the ONE answer every
     # row and the badge render, computed by `stream_inbox.recompute_unread` from
-    # `conversation_is_unread` (latest received message unread, or a pending
+    # `conversation_unread_count` > 0 (latest received message unread, or a pending
     # invitation). The frontend reads it; it does not recompute it. LOCAL_ONLY.
     is_unread: bool = APIField(default=False, sharing=Sharing.PRIVATE)
     #: How many messages are waiting for this user, newest first up to the first one read or sent
