@@ -13,31 +13,33 @@ import { cn } from '@src/lib/utils';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
-import { FileKey, Plus, X } from 'lucide-react';
+import { FileKey, X } from 'lucide-react';
 import React, { useState } from 'react';
 
-/** The chip text: the project's own file by name, a declared one by its project path, the
- *  home folder's with `~/` — so two `.env.local` chips never read the same. */
+/** A file's name in the list: the project's own by name, a declared one by its project
+ *  path, the home folder's with `~/` — so two `.env.local` rows never read the same. */
 export function envFileLabel(file: CredentialScopeFile): string {
   if (file.extra_path) return file.extra_path;
   const name = credentialEnvFileName(file.environment);
   return file.scope === 'user' ? `~/${name}` : name;
 }
 
-/** The chips in reading order: the project's files (its `.env.local`, then the ones it
- *  declares), then the home folder's. A scope's own file shows only when it exists; a
- *  declared one always does, so a missing one can still be removed. */
-export function envFileChips(status: CredentialsStatus): CredentialScopeFile[] {
+/** The files in reading order: the project's (its `.env.local`, then the ones it
+ *  declares), then the home folder's. A scope's own file is listed only when it exists;
+ *  a declared one always is, so a missing one can still be removed. */
+export function envFileList(status: CredentialsStatus): CredentialScopeFile[] {
   return status.files
     .filter((file) => !!file.path && (file.exists || !!file.extra_path))
     .sort((a, b) => Number(a.scope === 'user') - Number(b.scope === 'user'));
 }
 
 /**
- * The env files the credentials table reads, as chips that open them — and, for a
- * project, the list of more env files it reads (`backend/.env`), kept in the project
- * manifest so it travels with the repo. The root `.env.local` is always read and is the
- * only file values are written to; a declared file is read, never written.
+ * The env files the credentials table reads, as ONE chip: the first file's name and,
+ * when there are more, a count. One file and nothing to manage opens it; otherwise the
+ * chip opens the list — each file's name, its full path, its scope — and, for a
+ * project, the place to add or remove the env files it declares (`backend/.env`), kept
+ * in the project manifest so they travel with the repo. The root `.env.local` is always
+ * read and is the only file values are written to; a declared file is read, never written.
  */
 export function EnvFileChips({
   status,
@@ -50,16 +52,26 @@ export function EnvFileChips({
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const [adding, setAdding] = useState(false);
+  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
 
   // Declared files belong to development on this computer; a named environment never reads them.
   const declares = !!project && status.environment === DEFAULT_CREDENTIAL_ENVIRONMENT;
   const declared = status.files.flatMap((file) => (file.extra_path ? [file.extra_path] : []));
+  const files = envFileList(status);
+  if (!files.length && !declares) return null;
+
+  const scopeLabel = (file: CredentialScopeFile) =>
+    file.scope === 'user' ? t`User` : file.extra_path ? t`Project · added` : t`Project`;
+
+  const openFile = (file: CredentialScopeFile) => {
+    setOpen(false);
+    navigation.openMachinePath(file.path!, LOCAL_COMPUTE_NODE);
+  };
 
   const save = async (paths: string[]) => {
-    if (!project) return;
+    if (!project) return false;
     setBusy(true);
     try {
       await project.setEnvFiles(paths);
@@ -75,77 +87,92 @@ export function EnvFileChips({
 
   const add = async () => {
     const path = draft.trim();
-    if (!path) return;
-    if (await save([...declared, path])) {
-      setDraft('');
-      setAdding(false);
-    }
+    if (path && (await save([...declared, path]))) setDraft('');
   };
 
-  return (
-    <>
-      {envFileChips(status).map((file) => (
-        <span key={file.path} className="inline-flex items-center">
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              'h-6 gap-1 rounded-full px-2 font-mono text-[11px] font-normal',
-              file.extra_path && 'rounded-e-none',
-              !file.exists && 'border-dashed text-muted-foreground',
-            )}
-            title={file.exists ? file.path! : t`${file.path} — not found`}
-            disabled={!file.exists}
-            onClick={() => navigation.openMachinePath(file.path!, LOCAL_COMPUTE_NODE)}
-            data-testid={file.extra_path ? `credentials-env-file-extra-${file.extra_path}` : `credentials-env-file-${file.scope}`}
-          >
-            <FileKey className="h-3 w-3" />
-            {envFileLabel(file)}
-          </Button>
-          {file.extra_path && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 rounded-s-none rounded-e-full border-s-0 px-1 text-muted-foreground hover:text-foreground"
-              title={t`Stop reading ${file.extra_path}`}
-              disabled={busy}
-              onClick={() => void save(declared.filter((p) => p !== file.extra_path))}
-              data-testid={`credentials-env-file-remove-${file.extra_path}`}
-            >
-              <X className="h-3 w-3" />
-            </Button>
-          )}
+  const first = files[0];
+  const chip = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-6 gap-1 rounded-full px-2 font-mono text-[11px] font-normal"
+      title={first?.path ?? undefined}
+      data-testid="credentials-env-files"
+    >
+      <FileKey className="h-3 w-3" />
+      {first ? envFileLabel(first) : t`Env files`}
+      {files.length > 1 && (
+        <span
+          className="ms-0.5 rounded-full bg-muted px-1.5 font-sans text-[10px] text-muted-foreground"
+          data-testid="credentials-env-files-count"
+        >
+          {files.length}
         </span>
-      ))}
-      {declares && (
-        <Popover open={adding} onOpenChange={setAdding}>
-          <PopoverTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 rounded-full p-0 text-muted-foreground"
-              title={t`Read another env file`}
-              data-testid="credentials-env-file-add"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-80 space-y-2 p-3" align="start">
-            <div className="text-xs text-muted-foreground">
+      )}
+    </Button>
+  );
+
+  // One file and nothing to manage: the chip IS the file.
+  if (files.length === 1 && !declares) {
+    return React.cloneElement(chip, { onClick: () => openFile(first) });
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{chip}</PopoverTrigger>
+      <PopoverContent className="w-[28rem] p-1" align="start" data-testid="credentials-env-files-list">
+        <ul>
+          {files.map((file) => (
+            <li key={file.path} className="flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-accent">
+              <button
+                type="button"
+                className={cn('min-w-0 flex-1 text-start', !file.exists && 'cursor-default opacity-60')}
+                disabled={!file.exists}
+                onClick={() => openFile(file)}
+                title={file.exists ? undefined : t`Not found`}
+                data-testid={`credentials-env-file-${file.extra_path ?? file.scope}`}
+              >
+                <div className="flex items-center gap-2">
+                  <FileKey className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate font-mono text-xs">{envFileLabel(file)}</span>
+                  <span className="shrink-0 rounded border px-1 text-[10px] text-muted-foreground">
+                    {scopeLabel(file)}
+                  </span>
+                </div>
+                <div className="truncate ps-5 font-mono text-[10px] text-muted-foreground">{file.path}</div>
+              </button>
+              {file.extra_path && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+                  title={t`Stop reading ${file.extra_path}`}
+                  disabled={busy}
+                  onClick={() => void save(declared.filter((p) => p !== file.extra_path))}
+                  data-testid={`credentials-env-file-remove-${file.extra_path}`}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </li>
+          ))}
+        </ul>
+        {declares && (
+          <form
+            className="mt-1 space-y-1.5 border-t px-2 pb-1 pt-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void add();
+            }}
+          >
+            <div className="text-[11px] text-muted-foreground">
               <Trans>
-                A path inside this project. Credentials read it after the project's .env.local, which stays the
-                only file values are written to.
+                Read another env file — a path inside this project. The project's .env.local stays the only file
+                values are written to.
               </Trans>
             </div>
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                void add();
-              }}
-            >
+            <div className="flex gap-2">
               <Input
-                autoFocus
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
                 placeholder="backend/.env"
@@ -155,10 +182,10 @@ export function EnvFileChips({
               <Button type="submit" size="sm" className="h-7" disabled={busy || !draft.trim()}>
                 <Trans>Add</Trans>
               </Button>
-            </form>
-          </PopoverContent>
-        </Popover>
-      )}
-    </>
+            </div>
+          </form>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }

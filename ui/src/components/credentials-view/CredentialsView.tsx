@@ -1,5 +1,5 @@
-import { Trans, useLingui } from '@lingui/react/macro';
-import { CredentialsSubview, PageId, ViewType, EMPTY_CREDENTIALS_STATUS } from '@sdk';
+import { Trans } from '@lingui/react/macro';
+import { EMPTY_CREDENTIALS_STATUS } from '@sdk';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@sdk/react/hooks';
 import { ConnectionsManager } from '@src/components/connections-manager';
@@ -8,17 +8,13 @@ import {
   credentialDeploymentId,
   useCredentialsStatus,
 } from '@src/components/credentials/use-credentials';
-import { ProjectSelector } from '@src/components/project-selector';
-import { projectEntitiesToSelectorItems } from '@src/components/project-selector/project-items';
-import { Button } from '@src/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { ChevronDown, KeyRound } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import { KeyRound } from 'lucide-react';
+import React, { useMemo } from 'react';
 
-import { credentialsPointer, credentialsTabs, parseCredentialsPointer } from './credentials-pointer';
+import { credentialsTabs, parseCredentialsPointer } from './credentials-pointer';
 import { EnvFileChips } from './EnvFileChips';
 import { LoginRequiredPanel } from './LoginRequiredPanel';
 
@@ -27,20 +23,14 @@ import { LoginRequiredPanel } from './LoginRequiredPanel';
  * authenticates with: OAuth connections, API credentials, and bare declared
  * environment variables, all as rows of one table.
  *
- * Page-agnostic on purpose. It reads `currentDock.page` rather than hardcoding
- * the hub, so mounting it on the desk keeps working; `openPage` is what
- * preserves that (`openTab` is desk-only and would silently revert the page).
- *
- * Project selection lives in the pointer, never in local state — a reload lands
- * where you were, and picking a project is a navigation rather than a hidden
- * write.
+ * The project lives in the pointer, never in local state — a reload lands where
+ * you were. There is no picker here: the project is the one already selected in
+ * the app, which the way in (the rail's Connections) puts in the URL.
  */
 export const CredentialsView: React.FC = () => {
-  const { t } = useLingui();
   const { user } = useAuth();
-  const { navigation, currentDock } = useDockNavigation();
-  const { projects, isLoading } = useProjects();
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const { currentDock } = useDockNavigation();
+  const { projects } = useProjects();
 
   // One surface now, so the leading tab is the only tab — and it is still
   // `credentialsTabs` that says so, keeping the URL helper the single authority
@@ -49,8 +39,6 @@ export const CredentialsView: React.FC = () => {
   // saved tabs and bookmarks still resolve.
   const [tab] = credentialsTabs(isHubOnly());
   const { projectId } = parseCredentialsPointer(currentDock?.pointer, tab);
-
-  const items = useMemo(() => projectEntitiesToSelectorItems(projects), [projects]);
 
   // An unscoped URL manages the person's credentials. Falling back to a
   // recent/context project silently turns Test into a project permission check
@@ -69,14 +57,6 @@ export const CredentialsView: React.FC = () => {
   const qc = useQueryClient();
   const refreshStatus = () => qc.invalidateQueries({ queryKey: CREDENTIALS_STATUS_KEY });
 
-  const go = (nextTab: CredentialsSubview, nextProjectId?: string) => {
-    navigation.openPage(
-      currentDock?.page ?? PageId.DESK,
-      ViewType.CREDENTIALS,
-      credentialsPointer(nextTab, nextProjectId ?? selected?.id),
-    );
-  };
-
   if (!user?.id) {
     // One guard for the whole view rather than three near-identical ones.
     return <LoginRequiredPanel message={<Trans>Please log in to view and manage credentials.</Trans>} />;
@@ -84,8 +64,8 @@ export const CredentialsView: React.FC = () => {
 
   return (
     <div className="flex h-full flex-col" data-testid="credentials-view">
-      {/* Fixed height: the picker is taller than the title, so an auto-height
-          header would jump 4px when it renders. */}
+      {/* Fixed height: the chips are taller than the title, so an auto-height
+          header would jump when they render. */}
       <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
         <KeyRound className="h-4 w-4" />
         <h2 className="text-sm font-semibold">
@@ -94,33 +74,6 @@ export const CredentialsView: React.FC = () => {
 
         <EnvFileChips status={status} project={selected} onChanged={refreshStatus} />
 
-        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="ms-auto h-7 gap-1 text-xs"
-                data-testid="credentials-project-picker"
-              >
-                {selected?.displayName ?? selected?.name ?? t`Select a project`}
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-72 p-0" align="end">
-              <div className="max-h-80 min-h-0">
-                <ProjectSelector
-                  projects={items}
-                  selectedId={selected?.id ?? null}
-                  isLoading={isLoading}
-                  emptyMessage={t`No projects yet`}
-                  onSelect={(id) => {
-                    setPickerOpen(false);
-                    if (id) go(tab, id);
-                  }}
-                />
-              </div>
-            </PopoverContent>
-        </Popover>
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
