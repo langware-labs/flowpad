@@ -5,6 +5,7 @@ const os = require('os');
 const { promisify } = require('util');
 const { SEMVER_RE, isNewer } = require('./semver');
 const { createProgressWatchdog } = require('./progress-watchdog');
+const { showFailureDialog } = require('./failure-dialog');
 
 const execFileAsync = promisify(execFile);
 
@@ -364,6 +365,8 @@ class UvManager {
     // Where the "install in progress" marker lives. null → marker disabled
     // (unit tests, tools that must not touch the user's home).
     this._stateDir = stateDir;
+    // Lets native failure dialogs offer "Share with us" (set by main.js; null in tests → "OK" only).
+    this._failureSharer = null;
     this._installing = false;
     this._installChild = null;
     this._installAborted = false;
@@ -2080,6 +2083,11 @@ class UvManager {
     if (version) this._deferredPackageVersion = version;
   }
 
+  /** @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} fn */
+  setFailureSharer(fn) {
+    this._failureSharer = typeof fn === 'function' ? fn : null;
+  }
+
   /** Version offered by the package dialog currently on screen, or null. */
   openPackageDialogVersion() {
     return this._packageDialog ? this._packageDialog.version : null;
@@ -2092,7 +2100,7 @@ class UvManager {
 
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -2194,17 +2202,25 @@ class UvManager {
           mainWindow, { waitForBackend, backendUrl, sendStatus }
         );
         if (!restored && mainWindow && !mainWindow.isDestroyed()) {
-          await require('electron').dialog.showMessageBox(mainWindow, {
+          await showFailureDialog({
+            dialog: require('electron').dialog,
+            parent: mainWindow,
             type: 'error',
             title: 'Update failed',
             message: 'FlowPad couldn’t finish updating and couldn’t restart automatically.',
             detail:
+              `${err && err.message ? `Cause: ${err.message}\n\n` : ''}` +
               'Please quit and reopen FlowPad. If it keeps happening, run:\n\n' +
               `${upgradeCommand()}\n\n` +
               'then reopen FlowPad, or run "flow diagnose".',
-            buttons: ['OK'],
-            defaultId: 0,
+            share: this._failureSharer,
+            log: this.log,
           });
+          // The window still shows "Upgrading Flowpad…" over a dead backend: replace it with the in-app panel
+          // (Share, Copy, Open logs, Quit) so the user is not left on a splash that will never finish.
+          if (onUnrecovered && mainWindow && !mainWindow.isDestroyed()) {
+            try { await onUnrecovered(err); } catch (e) { this.log.warn(`[uv] onUnrecovered failed: ${e && e.message}`); }
+          }
         }
       }
       return false;

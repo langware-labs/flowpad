@@ -15,6 +15,8 @@
  */
 
 /** True for a path Gatekeeper or the OS runs the app from temporarily: AppTranslocation, or a mounted disk image. */
+const { showFailureDialog } = require('./failure-dialog');
+
 function isTransientLocation(execPath) {
   const p = String(execPath || '');
   return /\/AppTranslocation\//.test(p) || /^\/Volumes\//.test(p);
@@ -45,9 +47,10 @@ function shouldOfferMove({ platform, isPackaged, execPath, isInApplicationsFolde
  * @param {string} deps.execPath
  * @param {() => ({offeredFor?: string}|null)} deps.readState
  * @param {(state: object) => void} deps.writeState
+ * @param {((text: string) => Promise<{ok: boolean, error?: string}>)|null} [deps.share]  "Share with us" on the failure dialog
  * @param {{info: Function, warn: Function}} deps.log
  */
-async function offerMoveToApplications({ platform, app, dialog, execPath, readState, writeState, log }) {
+async function offerMoveToApplications({ platform, app, dialog, execPath, readState, writeState, share = null, log }) {
   const state = (() => { try { return readState() || {}; } catch { return {}; } })();
   const decision = shouldOfferMove({
     platform,
@@ -91,15 +94,15 @@ async function offerMoveToApplications({ platform, app, dialog, execPath, readSt
     return 'cancelled';
   } catch (err) {
     log.warn(`[location] moving to Applications failed: ${err.message}`);
-    try {
-      await dialog.showMessageBox({
-        type: 'warning',
-        title: 'Could not move Flowpad',
-        message: 'Flowpad could not move itself to the Applications folder.',
-        detail: `${err.message}\n\nDrag Flowpad.app into the Applications folder yourself, then open it from there.`,
-        buttons: ['OK'],
-      });
-    } catch { /* nothing more to do */ }
+    await showFailureDialog({
+      dialog,
+      type: 'warning',
+      title: 'Could not move Flowpad',
+      message: 'Flowpad could not move itself to the Applications folder.',
+      detail: `${err.message}\n\nDrag Flowpad.app into the Applications folder yourself, then open it from there.`,
+      share,
+      log,
+    });
     return 'failed';
   }
 }
