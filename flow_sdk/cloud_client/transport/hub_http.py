@@ -16,6 +16,7 @@ URL structure follows the Flowpad Hub API guidelines:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib as _contextlib
 import logging
 import uuid as _uuid
@@ -50,9 +51,19 @@ async def _hub_client():
     point is to keep the TLS context + connection pool alive across calls)."""
     global _shared_client
     cfg = ApiConfig.from_env()
+    loop = asyncio.get_running_loop()
+    if _shared_client is not None and getattr(_shared_client, "_bound_loop", None) is not loop:
+        # Built on another event loop (each ``asyncio.run``, each pytest test):
+        # its pool is bound to that loop, and every call would fail with "bound
+        # to a different event loop" — which ``hub_get`` swallows as "hub
+        # unreachable". It cannot be closed from here (its loop may be gone);
+        # drop it. A detached task that outlives a ``close_hub_client()`` on a
+        # dying loop rebuilds the client THERE, so a close alone never covers this.
+        _shared_client = None
     if _shared_client is None or _shared_client.config.api_base_url != cfg.api_base_url:
         await close_hub_client()  # close any stale (URL-changed) client first
         _shared_client = FlowpadClient(cfg)
+        _shared_client._bound_loop = loop
     yield _shared_client
 
 
