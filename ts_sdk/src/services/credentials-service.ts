@@ -86,6 +86,9 @@ export interface CredentialScopeFile {
   environment: string;
   path: string | null;
   exists: boolean;
+  /** Set on an env file the project declared (`project_manifest.json` `env_files`): its
+   *  project-relative path. Read, never written. Null on the scope's own `.env.local`. */
+  extra_path?: string | null;
   /** A value cannot be written here (a committable `.env.local`, no folder). */
   blocked: boolean;
   block_code: string | null;
