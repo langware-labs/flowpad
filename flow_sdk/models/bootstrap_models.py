@@ -174,6 +174,11 @@ class BootstrapInfo(BaseModel):
     # nativeName, dir, flag} descriptor. The UI derives its picker from this —
     # it no longer hardcodes its own list.
     supported_locales: List[Dict[str, Any]] = []
+    # Languages the OS user reads or types on the backend's machine — display
+    # languages AND keyboard layouts (flow_sdk/i18n/os_languages.py). The UI
+    # unions these with navigator.languages and shows the footer's quick
+    # language switch only when that union shares 2+ with supported_locales.
+    user_languages: List[str] = []
     # Target languages for *document* translation (single source of truth:
     # flow_sdk/i18n/translation_targets.py). DISTINCT from supported_locales —
     # this is the broad set the translator worker can render a doc into, not the

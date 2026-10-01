@@ -170,6 +170,11 @@ export interface BootstrapInfo {
   /** Locales the app ships translations for (backend is the source of truth).
    *  The UI derives its picker from this — it does not hardcode a list. */
   supported_locales?: SupportedLocale[];
+  /** Languages the OS user reads or types on the backend's machine — display
+   *  languages AND keyboard layouts (flow_sdk/i18n/os_languages.py), as BCP-47
+   *  tags. Unioned with `navigator.languages`; the footer's quick language
+   *  switch shows only when that union shares 2+ with `supported_locales`. */
+  user_languages?: string[];
   /** Target languages for *document* translation (backend is the source of
    *  truth: flow_sdk/i18n/translation_targets.py). DISTINCT from
    *  `supported_locales` (the UI-catalog set) — this is the broad set the
