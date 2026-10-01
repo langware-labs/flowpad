@@ -1,3 +1,4 @@
+import { t } from '@lingui/core/macro';
 import { DockPointerData, type ViewType } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { notify } from './notify';
@@ -49,9 +50,23 @@ export function dockPointerForClickTarget(target?: NotificationClickTarget): Doc
   return new DockPointerData(target.view_type as ViewType, target.pointer, target.options);
 }
 
+/** The line the backend writes when someone shares a project with you
+ *  (`Project._invite_message_text`), then the sharer's own note after a blank line, if any. */
+const INVITE_TEXT = /^I invited you to project "(.+?)"\.(?:\n\n([\s\S]*))?$/;
+
+/** A notification body in the person's language. The invite line is a fixed sentence the SENDER's
+ *  backend wrote in English, so it is matched here and rebuilt; the sharer's note is theirs and is
+ *  never touched. Any other body is shown as it came. */
+export function localizedBody(body: string): string {
+  const m = body.match(INVITE_TEXT);
+  if (!m) return body;
+  const line = t`I invited you to project "${m[1]}".`;
+  return m[2] ? `${line}\n\n${m[2]}` : line;
+}
+
 export function renderDesktopNotification(payload: NotificationPayload): void {
   const title = payload.title || APP_NAME;
-  const body = payload.body || '';
+  const body = localizedBody(payload.body || '');
 
   const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;
   if (bridge?.desktopNotify) {
@@ -71,7 +86,7 @@ export function renderDesktopNotification(payload: NotificationPayload): void {
     title,
     message: body,
     icon: payload.icon,
-    actions: href ? [{ label: 'Open', href }] : undefined,
+    actions: href ? [{ label: t`Open`, href }] : undefined,
     // A backend that sends an alert through THIS channel is telling the person, on purpose,
     // that something they are waiting on did not happen — the only word they will get, which
     // is what `forceToast` is reserved for. Ambient alerts do not come through here.
