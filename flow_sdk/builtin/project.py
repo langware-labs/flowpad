@@ -2127,29 +2127,24 @@ class Project(Entity):
 
     @classmethod
     async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
-        """Write the row through the hub membership mirror — only when this
-        desktop has none. An existing row is the mirror's: the bundle is a
-        snapshot from when the message was sent and must not roll it back."""
+        """Install a received project: its row through the hub membership mirror
+        when this desktop has none (an existing row is the mirror's — the bundle
+        is a snapshot from when the message was sent and must not roll it back),
+        then its own clone unless it is already set up here."""
         from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
 
         origin = as_git(origin)
         if origin is None:
             return False
-        if await cls.get_one({"id": entity_id}) is not None:
-            return True
-        payload = {**metadata, "id": entity_id, "origin": origin.model_dump(mode="json")}
-        return await materialize_remote_membership_entity(cls, payload, owner_typeid) is not None
-
-    @classmethod
-    async def install_reference(cls, entity_id: str) -> str | None:
-        """Clone the received project unless this desktop already has it set
-        up; its checkout is the install root."""
         project = await cls.get_one({"id": entity_id})
         if project is None:
-            raise RuntimeError("the received project has no local row")
+            payload = {**metadata, "id": entity_id, "origin": origin.model_dump(mode="json")}
+            project = await materialize_remote_membership_entity(cls, payload, owner_typeid)
+            if project is None:
+                return False
         if not project.fs_storage_mount_path:
-            project = await project.setup_from_git_origin()
-        return project.fs_storage_mount_path
+            await project.setup_from_git_origin()
+        return True
 
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor

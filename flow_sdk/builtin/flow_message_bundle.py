@@ -1212,7 +1212,7 @@ async def _restore_git_reference_entity_entry(
 
     Generic over the types that declare ``TypeInfo.receive_transfer`` as a git
     reference: read the staged metadata and origin, then let the type's
-    ``restore_reference`` hook write its row. No clone here.
+    ``restore_reference`` hook write its row (and, for a project, clone it).
     """
     if not isinstance(transfer, dict) or transfer.get("transfer_mode") != _TRANSFER_MODE_GIT:
         return False

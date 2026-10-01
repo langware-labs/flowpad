@@ -384,8 +384,8 @@ class TypeInfo:
     # ``receive_transfer``: how a shared entry of this type travels when it is
     # not a file-backed asset. ``RECEIVE_TRANSFER_GIT_REFERENCE`` ⇒ its row and
     # GitOrigin ride, never repository bytes; the entity class's
-    # ``pack_reference`` / ``restore_reference`` / ``install_reference`` hooks
-    # own what is particular to the type. ``eager_pull``: a live message
+    # ``pack_reference`` / ``restore_reference`` hooks own what is particular
+    # to the type. ``eager_pull``: a live message
     # carrying this type pulls its bundle on arrival, because its chip needs
     # the staged entry before it is usable.
     receive_transfer: str | None = field(default=None, metadata=_MERGE)
