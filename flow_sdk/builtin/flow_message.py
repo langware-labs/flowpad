@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Awaitable, Callable, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Optional
 
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
 ProgressCallback = Callable[[int, int], Awaitable[None]]
@@ -28,6 +28,9 @@ from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderK
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import UserProfile
 from flow_sdk.tags.envelope import parse_target
+
+if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 
 logger = logging.getLogger(__name__)
 
@@ -779,6 +782,15 @@ class FlowMessage(Entity):
         if not self.has_body():
             return False
         return not (self.remote and self.body_status == BodyStatus.NA)
+
+    link_open_destination: ClassVar[str] = "the conversation"
+
+    @classmethod
+    async def resolve_open(cls, entity_id: str, someone_typeid: Optional[str] = None) -> Optional["OpenLinkSpec"]:
+        """A message's link: pull it (bundle, conversation) and land in its conversation."""
+        from flow_sdk.app.actions.flow_message_action import open_flow_message_params  # noqa: PLC0415
+
+        return await open_flow_message_params(entity_id, someone_typeid)
 
     @property
     def occurred_at(self) -> Optional[datetime]:
