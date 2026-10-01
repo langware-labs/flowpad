@@ -4,6 +4,7 @@ const { describeStartupFailure, summarizeOutput } = require('./startup-error');
 const { buildSupportZip, buildMailtoUrl, supportSubject, redact } = require('./support-bundle');
 const { redactUrl, installLogRedaction } = require('./log-redact');
 const { offerMoveToApplications } = require('./app-location');
+const { showFailureDialog } = require('./failure-dialog');
 const { decideOffer, savePendingEngine, markPendingEngineConsented, planAfterDesktopUpdate, createReadyReminder } = require('./update-plan');
 const { createRestartApplier } = require('./update-restart');
 // electron-updater's own token type (its dependency); not re-exported by electron-updater.
@@ -119,13 +120,16 @@ const restartApplier = createRestartApplier({
     // The desktop could not be applied (for example an app running from a temporary macOS location): do not hold
     // engine updates back for a desktop that will not arrive this session.
     pendingDesktopVersion = null;
-    dialog.showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+    showFailureDialog({
+      dialog,
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
       type: 'warning',
       title: 'Update could not be applied',
       message: 'FlowPad could not restart to finish the update.',
       detail: `The update is downloaded and will be applied the next time FlowPad is closed.\n\n${err && err.message ? err.message : err}`,
-      buttons: ['OK'],
-    }).catch((e) => log.warn(`[electron-updater] failure dialog failed: ${e.message}`));
+      share: (text) => shareDiagnostics(text, 'could not restart to apply an update'),
+      log,
+    });
   },
   log,
 });
@@ -298,6 +302,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
   try {
     log.info(`[uv] ${label} package check`);
     await uvManager.checkForUpdatesInBackground(mainWindow, {
+      onUnrecovered: (err) => showStartupErrorPanel(describeStartupFailure(err), { retryable: false }),
       sendStatus,
       waitForBackend,
       backendUrl: BACKEND_URL,
@@ -932,6 +937,34 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // A crashed or failed renderer is a blank window: say so, with a way to reach us, then reload.
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    log.error(`[renderer] process gone: ${details && details.reason} (exit ${details && details.exitCode})`);
+    if (isQuitting || (details && details.reason === 'clean-exit')) return;
+    showFailureDialog({
+      dialog,
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      title: 'Flowpad window crashed',
+      message: 'The Flowpad window stopped unexpectedly.',
+      detail: `Reason: ${(details && details.reason) || 'unknown'}. Flowpad will reload the window.`,
+      share: (text) => shareDiagnostics(text, 'window crashed'),
+      log,
+    }).then(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload(); });
+  });
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (!isMainFrame || code === -3 /* aborted by a newer navigation */ || !isBackendUrl(url)) return;
+    log.error(`[renderer] failed to load ${redactUrl(url)}: ${desc} (${code})`);
+    showFailureDialog({
+      dialog,
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      title: 'Flowpad could not load',
+      message: 'Flowpad could not load its window.',
+      detail: `${desc} (${code})`,
+      share: (text) => shareDiagnostics(text, 'could not load its window'),
+      log,
+    });
+  });
+
   mainWindow.webContents.on('will-navigate', (event, url) => {
     log.info(`[nav] will-navigate url=${redactUrl(url)}`);
     // Allow navigation to the backend (same-origin), block everything else.
@@ -1054,7 +1087,7 @@ function installProgress(label) {
 // `retryable` adds a Retry button that re-runs the install/start in-app (see
 // installAndStartBackend). Falls back to the native dialog only if the loading
 // window is already gone; returns whether the panel was rendered.
-function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false } = {}) {
+async function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false } = {}) {
   const payload = {
     detail,
     retryable,
@@ -1071,12 +1104,19 @@ function showStartupErrorPanel(detail, { retryable = false, policyBlocked = fals
     return true;
   }
   // No window to render into — degrade to the native dialog.
-  dialog.showErrorBox(
-    'Flowpad couldn’t start',
-    `${detail}\n\n` +
+  // Awaited: the caller quits the app when this returns false, and quitting before the user answers would
+  // close the one dialog that explains the failure (and the "Share with us" button on it).
+  await showFailureDialog({
+    dialog,
+    title: 'Flowpad couldn’t start',
+    message: 'Flowpad couldn’t start.',
+    detail:
+      `${detail}\n\n` +
       `1) Upgrade Flowpad, then relaunch:\n   ${upgradeCommand()}\n\n` +
       `2) If that doesn’t work, run:\n   ${DIAGNOSE_COMMAND}`,
-  );
+    share: (text) => shareDiagnostics(text, 'did not start'),
+    log,
+  });
   return false;
 }
 
@@ -1092,6 +1132,7 @@ async function installAndStartBackend() {
   let backendJustUpgraded = false;
   // Install and start backend via uv + flow CLI
   uvManager = new UvManager(log, { stateDir: FLOW_HOME });
+  uvManager.setFailureSharer((text) => shareDiagnostics(text, 'could not finish updating'));
 
   // Did the user just upgrade to a new desktop build? Logged for diagnostics.
   // The engine version saved for this desktop (if any) is installed below.
@@ -1242,7 +1283,7 @@ async function installAndStartBackend() {
     // In-app panel with Retry (uv keeps what it already fetched in its
     // cache, so a retry after a slow or flaky download is usually seconds).
     // Only if the loading window is already gone is the failure fatal.
-    if (!showStartupErrorPanel(describeStartupFailure(error), { retryable: true, policyBlocked: !!(error && error.policyBlocked) })) {
+    if (!(await showStartupErrorPanel(describeStartupFailure(error), { retryable: true, policyBlocked: !!(error && error.policyBlocked) }))) {
       app.quit();
     }
     return { ok: false };
@@ -1278,6 +1319,7 @@ async function startApp() {
       execPath: process.execPath,
       readState: () => { try { return JSON.parse(fs.readFileSync(locationPromptStatePath(), 'utf8')); } catch { return null; } },
       writeState: (state) => fs.writeFileSync(locationPromptStatePath(), JSON.stringify(state), 'utf8'),
+      share: (text) => shareDiagnostics(text, 'could not move itself to Applications'),
       log,
     }).catch((err) => log.warn(`[location] move offer failed: ${err.message}`));
   }
@@ -1358,7 +1400,7 @@ async function startApp() {
     const launcherOutput = backendWait.reason === 'launcher-failed' && launch
       ? `\n\nflow start exited with code ${launch.exit.code}:\n${summarizeOutput(launch.tail())}`
       : '';
-    showStartupErrorPanel(
+    await showStartupErrorPanel(
       `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ${why}` +
         'This usually means the installed Flowpad package is out of date or broken.' +
         launcherOutput,
@@ -1407,8 +1449,29 @@ async function startApp() {
   // running from the pre-start flow).
   checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
 }
+// Anything that escapes to the top level must reach the user with "Share with us" — an unhandled rejection in
+// startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.
+let crashReported = false;
+async function reportStartupCrash(err, where) {
+  const text = redact(String((err && (err.stack || err.message)) || err)).slice(0, 4000);
+  log.error(`[crash] ${where}: ${text}`);
+  if (crashReported) return;
+  crashReported = true;
+  try {
+    // A window to render into → the in-app panel (Share, Copy, Open logs, Quit); otherwise the native dialog.
+    await showStartupErrorPanel(`Flowpad hit an unexpected error (${where}).\n\n${text}`, { retryable: false });
+  } catch (e) {
+    log.error(`[crash] could not show the error: ${e && e.message}`);
+  }
+}
+process.on('uncaughtException', (err) => { reportStartupCrash(err, 'uncaught exception'); });
+process.on('unhandledRejection', (reason) => {
+  // Logged only: most are benign (a cancelled request), and a dialog per rejection would be noise.
+  log.error(`[unhandled rejection] ${redact(String((reason && (reason.stack || reason.message)) || reason)).slice(0, 2000)}`);
+});
+
 // App lifecycle events
-app.whenReady().then(startApp);
+app.whenReady().then(startApp).catch((err) => reportStartupCrash(err, 'startApp'));
 
 app.on('window-all-closed', () => {
   log.info('All windows closed');
@@ -1558,7 +1621,12 @@ ipcMain.handle('open-logs-folder', async () => {
 // Subject: a fixed title + the date (supportSubject).
 const SUPPORT_EMAIL = 'diagnosis@langware.ai';
 
-ipcMain.handle('share-logs', async (_event, detail) => {
+/**
+ * Build the support bundle and open the mail client (nothing is sent until the user presses Send).
+ * `headline` finishes the sentence "Flowpad <version> on <platform> …" in the mail body.
+ * Used by the error panel (IPC) and by every native failure dialog (failure-dialog.js).
+ */
+async function shareDiagnostics(detail, headline = 'did not start') {
   try {
     const { shell } = require('electron');
     const shownError = redact(String(detail || '')).slice(0, 4000);
@@ -1583,7 +1651,7 @@ ipcMain.handle('share-logs', async (_event, detail) => {
       `Please attach this file (it is highlighted in the folder that just opened):`,
       bundle.zipPath,
       '',
-      `Flowpad ${app.getVersion()} on ${process.platform} ${process.arch} did not start.`,
+      `Flowpad ${app.getVersion()} on ${process.platform} ${process.arch} ${headline}.`,
       '',
       shownError.slice(0, 700),
     ].join('\n');
@@ -1593,7 +1661,9 @@ ipcMain.handle('share-logs', async (_event, detail) => {
     log.warn(`[share-logs] failed: ${err.message}`);
     return { ok: false, error: err.message };
   }
-});
+}
+
+ipcMain.handle('share-logs', (_event, detail) => shareDiagnostics(detail, 'did not start'));
 
 ipcMain.on('quit-app', () => {
   app.quit();

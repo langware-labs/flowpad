@@ -20,7 +20,7 @@ const { EventEmitter } = require('events');
 const MAIN = path.join(__dirname, 'main.js');
 const EXPOSE = `
 module.exports.__t = {
-  offerDesktopUpdate, showDesktopReadyPrompt, installAndStartBackend, checkPackageUpdateInBackground,
+  offerDesktopUpdate, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
@@ -45,6 +45,8 @@ function load(opts = {}) {
 
   const dialogCalls = [];
   const responses = [...(opts.dialogResponses || [])];
+  let releaseDialog = () => {};
+  const gate = opts.holdDialog ? new Promise((r) => { releaseDialog = r; }) : null;
   const mk = () => new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => 'stub' : k === 'then' ? undefined : mk()), apply: () => mk(), construct: () => mk(), set: () => true });
   const BW = function () {}; BW.getAllWindows = () => []; BW.getFocusedWindow = () => null;
   const autoUpdater = Object.assign(new EventEmitter(), {
@@ -59,7 +61,7 @@ function load(opts = {}) {
       on() {}, isPackaged: true, getVersion: () => opts.appVersion || '0.2.47', quit() {}, exit() {}, commandLine: { appendSwitch() {} }, setName() {}, setAppUserModelId() {},
     },
     BrowserWindow: BW,
-    dialog: { showMessageBox: async (...a) => { const o = a[a.length - 1]; dialogCalls.push(o); return { response: responses.length ? responses.shift() : 1 }; }, showErrorBox() {} },
+    dialog: { showMessageBox: async (...a) => { const o = a[a.length - 1]; dialogCalls.push(o); if (gate) await gate; return { response: responses.length ? responses.shift() : 1 }; }, showErrorBox() {} },
     ipcMain: { on() {}, handle() {}, once() {} },
     shell: mk(), clipboard: mk(), Menu: mk(), nativeImage: mk(), session: mk(), screen: mk(), Tray: mk(), globalShortcut: mk(), powerMonitor: mk(), protocol: mk(), net: mk(), desktopCapturer: mk(), systemPreferences: mk(), Notification: mk(),
   };
@@ -79,6 +81,7 @@ function load(opts = {}) {
     async startWithBin() {}
     async stop() { uv.stopped = (uv.stopped || 0) + 1; }
     isInstalling() { return false; }
+    setFailureSharer(fn) { this.sharer = fn; }
     openPackageDialogVersion() { return null; }
     async getLatestPypiVersion() { return null; }
     getInstalledFlowBinSync() { return '/fake/bin/flow'; }
@@ -96,17 +99,22 @@ function load(opts = {}) {
     return origLoad.apply(this, arguments);
   };
   let t;
+  const processHandlers = {};
+  const realProcessOn = process.on;
+  // main.js registers top-level crash handlers; capture them instead of installing them in the test process
+  // (they would swallow the test's own failures).
+  process.on = function (ev, fn) { if (ev === 'uncaughtException' || ev === 'unhandledRejection') { processHandlers[ev] = fn; return process; } return realProcessOn.call(process, ev, fn); };
   try {
     const m = new Module(MAIN, null);
     m.filename = MAIN; m.paths = Module._nodeModulePaths(path.dirname(MAIN));
     m._compile(fs.readFileSync(MAIN, 'utf8') + EXPOSE, MAIN);
     t = m.exports.__t;
-  } finally { Module._load = origLoad; } // global.setInterval stays captured: setupElectronAutoUpdater() arms its tick later
+  } finally { Module._load = origLoad; process.on = realProcessOn; } // global.setInterval stays captured: setupElectronAutoUpdater() arms its tick later
 
-  const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send() {} }, loadFile: async () => {}, loadURL() {}, show() {}, hide() {}, focus() {} };
+  const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], loadFile: async () => {}, loadURL() {}, show() {}, hide() {}, focus() {} };
   t.setMainWindow(win);
   t.setUvManager(new FakeUv());
-  return { t, autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } } };
+  return { t, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } } };
 }
 
 const REMINDER_MS = 90 * 60 * 1000;
@@ -246,6 +254,55 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     const r = await env.t.installAndStartBackend();
     eq(r.ok, true, 'startup still succeeds with the current engine');
     ok(env.logLines.some((l) => /installing the agreed engine 0\.2\.180 failed/.test(l)), 'and the failure is logged');
+  }
+
+  {
+    // No window to show the error panel in: the native dialog (with "Share with us") must be AWAITED, because the
+    // caller quits the app as soon as this returns false — quitting first would close the only explanation.
+    const env = load({ holdDialog: true });
+    env.t.setMainWindow(null);
+    let settled = null;
+    const p = env.t.showStartupErrorPanel('boom', { retryable: true }).then((v) => { settled = v; });
+    await tick(); await tick();
+    eq(env.dialogCalls.length, 1, 'the native dialog is shown');
+    ok(env.dialogCalls[0].buttons.includes('Share with us'), 'and it offers Share with us');
+    eq(settled, null, 'the call does not return while the dialog is still open');
+    env.releaseDialog();
+    await p;
+    eq(settled, false, 'it returns false (no window) once the user has answered');
+  }
+
+  {
+    // A crash that escapes to the top level reaches the user with the in-app panel (which has Share), once.
+    const env = load();
+    await env.t.reportStartupCrash(new Error('kaboom at startApp'), 'startApp');
+    const panel = env.sent.filter(([ch]) => ch === 'startup-error');
+    eq(panel.length, 1, 'the error panel is shown for an escaped startApp failure');
+    ok(/kaboom at startApp/.test(panel[0][1].detail), 'with the cause');
+    eq(panel[0][1].retryable, false, 'not retryable (there is no startup loop to resume)');
+    await env.t.reportStartupCrash(new Error('second'), 'uncaught exception');
+    eq(env.sent.filter(([ch]) => ch === 'startup-error').length, 1, 'a second crash does not stack panels');
+  }
+  {
+    const env = load();
+    ok(typeof env.processHandlers.uncaughtException === 'function', 'an uncaughtException handler is installed');
+    env.processHandlers.uncaughtException(new Error('late boom'));
+    await tick(); await tick();
+    ok(env.sent.some(([ch, d]) => ch === 'startup-error' && /late boom/.test(d.detail)), 'an uncaught exception reaches the panel');
+    // Unhandled rejections are logged, never a dialog.
+    const env2 = load();
+    env2.processHandlers.unhandledRejection(new Error('benign'));
+    await tick();
+    eq(env2.sent.length, 0, 'an unhandled rejection shows nothing');
+    ok(env2.logLines.some((l) => /unhandled rejection/.test(l) && /benign/.test(l)), 'but it is logged');
+  }
+  {
+    // No window: the native dialog with Share, awaited (same as the startup path).
+    const env = load({ dialogResponses: [0] });
+    env.t.setMainWindow(null);
+    await env.t.reportStartupCrash(new Error('no window'), 'startApp');
+    eq(env.dialogCalls.length, 1, 'no window → native dialog');
+    ok(env.dialogCalls[0].buttons.includes('Share with us'), 'with Share with us');
   }
 
   console.log(`main-update-flow.test.js: ${passed} assertions passed`);
