@@ -868,10 +868,15 @@ async def release_prompt(fm: "FlowMessage", someone_typeid: str) -> None:
     Only a turn that died before it answered may do this, which keeps the pair the
     single writer of ``prompt_auto_handled``.
     """
+    from flow_sdk.builtin.flow_message import releasing_prompt  # noqa: PLC0415
+
     if not getattr(fm, "prompt_auto_handled", False):
         return
     fm.prompt_auto_handled = False
-    await fm.save(someone_typeid)
+    # A stored True survives every other save (``preserved_fields_on_save``);
+    # this is the one writer that may clear it.
+    with releasing_prompt():
+        await fm.save(someone_typeid)
 
 
 def _is_completion(fm: "FlowMessage") -> bool:

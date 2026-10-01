@@ -239,6 +239,11 @@ class HubWsBridge:
         # Tracked separately so the next login can release exactly these and
         # leave a genuine delete's tombstone standing.
         self._session_deleted_conv_ids: set[str] = set()
+        # Inbound CREATE persists still running, by message id. The hub sends a
+        # message's UPDATEs right behind its CREATE, and the persist is detached —
+        # an UPDATE handled before it lands finds no row. It waits for the
+        # persist instead of being dropped (see the UPDATE branch).
+        self._inbound_persists: dict[str, asyncio.Task] = {}
 
     def install(self) -> None:
         """Register inbound handlers on the manager. Idempotent."""
@@ -697,11 +702,17 @@ class HubWsBridge:
                     # on-disk path, and download_body refuses until body_status=READY —
                     # so running now would strand the prompt with an unreadable
                     # relative VFS path (e.g. ``prompt/image.png``). Defer to the
-                    # body_status→READY UPDATE below, which re-fires this hook; the
-                    # ``prompt_auto_handled`` marker keeps the two trigger points
-                    # idempotent (only one run executes).
+                    # UPDATE below that leaves the row READY, which re-fires this
+                    # hook; the ``prompt_auto_handled`` marker keeps the trigger
+                    # points idempotent (only one run executes).
+                    #
+                    # Decided from the ROW, not this frame: a conversation catch-up
+                    # can pull the body (and stamp READY) before this frame is even
+                    # handled, and then no UPLOADING→READY UPDATE is left to come —
+                    # deferring on the frame's stale "uploading" stranded the prompt.
                     if _has_prompt_attachment(payload.get("attachment")):
-                        if payload.get("body_status") == "uploading":
+                        row = await FlowMessage.get_one({"id": fm_id})
+                        if getattr(row, "body_status", None) == "uploading":  # a str-Enum; equal to its value
                             logger.info(
                                 "[bridge] prompt body still uploading — deferring auto-run until READY fm=%s",
                                 fm_id,
@@ -717,7 +728,13 @@ class HubWsBridge:
                         _err,
                     )
 
-            asyncio.create_task(_persist_inbound())
+            persist = asyncio.create_task(_persist_inbound())
+            self._inbound_persists[fm_id] = persist
+            persist.add_done_callback(
+                lambda t, _id=fm_id: self._inbound_persists.pop(_id, None)
+                if self._inbound_persists.get(_id) is t
+                else None
+            )
 
             # Eager bundle pull for asset-bearing FMs — see
             # ``_maybe_eager_pull_bundle``. Only fires when body_status is
@@ -757,6 +774,17 @@ class HubWsBridge:
             return
 
         if op == "update":
+            pending = self._inbound_persists.get(fm_id)
+            if pending is not None and not pending.done():
+                # The CREATE is still persisting. Dropping this UPDATE lost the
+                # body READY frame for good — the row stayed UPLOADING and a
+                # deferred prompt never ran. Apply it once the row exists.
+                async def _after_create() -> None:
+                    await asyncio.wait([pending])
+                    await self._handle_flow_message_op(op, fm_id, data, parent_conv_id)
+
+                asyncio.create_task(_after_create())
+                return
             existing = await FlowMessage.get_one({"id": fm_id})
             if existing is None:
                 # Update before create — race or out-of-order delivery. Best
@@ -786,6 +814,16 @@ class HubWsBridge:
                 "attachment_filename",
             ):
                 if field not in data:
+                    continue
+                if (
+                    field == "body_status"
+                    and getattr(existing, "body_status", None) == "ready"
+                    and data[field] != "ready"
+                ):
+                    # READY is terminal on the hub; a lower status here is an older
+                    # frame delivered late (the entity auto-notify and the
+                    # conversation fan-out race). Taking it rolled a READY row back
+                    # to UPLOADING.
                     continue
                 if field == "delivery_status" and not delivery_advances(
                     getattr(existing, "delivery_status", None), data[field]
@@ -852,6 +890,7 @@ class HubWsBridge:
                         body_status=new_body_status,
                     )
                 )
+            if new_body_status == "ready" and not is_self_send:
                 # A body-bearing prompt whose auto-run was deferred at CREATE (the
                 # body was still UPLOADING) runs now that body_status=READY —
                 # build_merged_prompt can download the body and resolve every
@@ -859,6 +898,12 @@ class HubWsBridge:
                 # (and re-checked inside the gate: drafts, our own sends, a parked
                 # or terminal session all no-op), so this is safe for prompts
                 # already run or never ours to run.
+                #
+                # On the READY STATE, not the UPLOADING→READY transition: the
+                # conversation catch-up stamps READY when it pulls the body, and
+                # it can do that between the deferral and this frame. The frame
+                # then sees prev=READY, nothing fires, and the prompt was stranded
+                # — the session's last prompt had no later arrival to drain it.
                 conv_id = parent_conv_id or getattr(existing, "conversation_id", None)
                 if conv_id and _has_prompt_attachment(getattr(existing, "attachment", None)):
                     from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
