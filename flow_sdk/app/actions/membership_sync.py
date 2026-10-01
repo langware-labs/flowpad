@@ -72,6 +72,32 @@ _MIRRORED_FIELDS = (
 )
 
 
+def membership_mirror_payload(ent: Entity) -> dict[str, Any]:
+    """The hub-shaped part of a local membership row: exactly what
+    ``materialize_remote_membership_entity`` reads, so a recipient can mirror
+    the row from a message bundle without a hub fetch.
+
+    Nothing machine-local rides — a project's mount and the roots derived from
+    it are not mirrored fields, and a shared-context origin that only resolves
+    on this machine (a local path) is dropped.
+    """
+    from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER  # noqa: PLC0415
+
+    keys = {k for k in (*_MIRRORED_FIELDS, "created_date", "updated_date") if k in type(ent).model_fields}
+    payload = ent.model_dump(mode="json", include=keys, exclude_none=True, context={"skip_api_serializer": True})
+    origins = payload.pop("shared_context_origins", None) or {}
+    portable = {}
+    for key, raw in origins.items():
+        try:
+            if ORIGIN_ADAPTER.validate_python(raw).transportable:
+                portable[key] = raw
+        except Exception:  # noqa: BLE001 -- an unreadable origin can't be resolved elsewhere either
+            continue
+    if portable:
+        payload["shared_context_origins"] = portable
+    return {**payload, "type": ent.type, "id": ent.id}
+
+
 _FIELD_ADAPTERS: dict[tuple[type, str], Any] = {}
 
 

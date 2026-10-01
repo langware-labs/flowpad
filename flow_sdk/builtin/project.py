@@ -2107,6 +2107,50 @@ class Project(Entity):
                     f"a project named {other.name!r} already exists ({other.fs_storage_mount_path}); "
                     "project names must be unique")
 
+    # -- Git-reference reception (``TypeInfo.receive_transfer``): an invite
+    # message carries the project as its row + GitOrigin; installing it clones.
+
+    @classmethod
+    async def pack_reference(cls, entity_id: str, *, transfer_mode: str, repo_cache: dict | None = None):
+        """A project rides as a git reference in EITHER transfer mode: its work
+        lives in its repository, so no bytes ride. Only the fields the hub
+        membership mirror reads travel (no mount, nothing machine-local). A
+        project with no git origin has nothing to clone and packs nothing."""
+        from flow_sdk.app.actions.membership_sync import membership_mirror_payload  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message_bundle import ReferencePack  # noqa: PLC0415
+
+        project = await cls.get_one({"id": entity_id})
+        origin = as_git(project.origin) if project is not None else None
+        if origin is None:
+            return None
+        return ReferencePack(metadata=membership_mirror_payload(project), origin=origin)
+
+    @classmethod
+    async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
+        """Write the row through the hub membership mirror — only when this
+        desktop has none. An existing row is the mirror's: the bundle is a
+        snapshot from when the message was sent and must not roll it back."""
+        from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
+
+        origin = as_git(origin)
+        if origin is None:
+            return False
+        if await cls.get_one({"id": entity_id}) is not None:
+            return True
+        payload = {**metadata, "id": entity_id, "origin": origin.model_dump(mode="json")}
+        return await materialize_remote_membership_entity(cls, payload, owner_typeid) is not None
+
+    @classmethod
+    async def install_reference(cls, entity_id: str) -> str | None:
+        """Clone the received project unless this desktop already has it set
+        up; its checkout is the install root."""
+        project = await cls.get_one({"id": entity_id})
+        if project is None:
+            raise RuntimeError("the received project has no local row")
+        if not project.fs_storage_mount_path:
+            project = await project.setup_from_git_origin()
+        return project.fs_storage_mount_path
+
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor
         contain one. A folder belongs to exactly one project — a subfolder an agent
