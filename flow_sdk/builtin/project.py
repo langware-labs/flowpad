@@ -2137,19 +2137,20 @@ class Project(Entity):
     @classmethod
     async def restore_reference(cls, entity_id, metadata, origin, *, overwrite, owner_typeid=None) -> bool:
         """Install a received project: its row through the hub membership mirror
-        from the packed row — creating it, or updating the one this desktop
-        holds (e.g. the {id, name, icon} stub a pending invitation leaves, which
-        has no origin to clone) — then its own clone unless it is already set
-        up here."""
+        when this desktop has none (an existing row is the mirror's — the bundle
+        is a snapshot from when the message was sent and must not roll it back),
+        then its own clone unless it is already set up here."""
         from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
 
         origin = as_git(origin)
         if origin is None:
             return False
-        payload = {**metadata, "id": entity_id, "origin": origin.model_dump(mode="json")}
-        project = await materialize_remote_membership_entity(cls, payload, owner_typeid)
+        project = await cls.get_one({"id": entity_id})
         if project is None:
-            return False
+            payload = {**metadata, "id": entity_id, "origin": origin.model_dump(mode="json")}
+            project = await materialize_remote_membership_entity(cls, payload, owner_typeid)
+            if project is None:
+                return False
         if not project.fs_storage_mount_path:
             await project.setup_from_git_origin()
         return True
