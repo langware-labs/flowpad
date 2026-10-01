@@ -14,6 +14,7 @@ Only the network hops are stubbed: ``FlowpadClient.request`` and
 """
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -107,6 +108,9 @@ def hub(monkeypatch):
     monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
     monkeypatch.setattr("flow_sdk.utils.hub.hub_post", fake_hub_post)
+    # The invite message takes the generic send, which reaches the hub only for
+    # a logged-in sharer — as every sharer is.
+    monkeypatch.setattr("flow_sdk.app.actions.notification_action.is_logged_in", lambda: True)
     return calls
 
 
@@ -201,6 +205,7 @@ async def test_the_invite_message_carries_the_project_reference_and_the_note(hub
     proj = _project(hub, "Course Project")
 
     await proj.share(invitees=[ShareInvitee(user_id=ISHAY)], note="See you there")
+    await _body_uploads_settled()
 
     (header,) = _message_headers(hub)
     assert header["text"] == 'I invited you to project "Course Project".\n\nSee you there'
@@ -260,7 +265,8 @@ async def test_a_granted_team_whose_conversation_fails_is_granted_without_a_conv
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_a_refused_person_invite_is_failed_and_its_conversation_discarded(hub):
+async def test_a_refused_person_invite_is_failed_and_opens_no_conversation(hub):
+    """The project grant comes first; a refused one leaves nothing to discard."""
     proj = _project(hub, "share-person-refused")
     hub.answers[ISHAY] = 403
 
@@ -269,8 +275,8 @@ async def test_a_refused_person_invite_is_failed_and_its_conversation_discarded(
     result = proj.last_share_result
     assert [(r.user_id, r.status) for r in result.failed] == [(ISHAY, 403)]
     assert result.invited == []
-    deletes = [p for m, p, _ in hub if m == "DELETE"]
-    assert len(deletes) == 1 and deletes[0].startswith("/graph/conversation/")
+    assert _conversation_creates(hub) == []
+    assert [p for m, p, _ in hub if m == "DELETE"] == []
     assert _message_headers(hub) == []
 
 
@@ -496,3 +502,9 @@ async def test_share_action_on_a_published_project_invites_without_publishing(hu
 
 async def _noop():
     return None
+
+
+async def _body_uploads_settled() -> None:
+    """The generic send uploads a message body in a background task; wait for it."""
+    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    await asyncio.wait_for(asyncio.gather(*pending, return_exceptions=True), timeout=10)

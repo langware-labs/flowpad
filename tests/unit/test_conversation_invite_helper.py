@@ -1,10 +1,12 @@
-"""The sharer-built invite conversation of a project share.
+"""The invite conversation of a project share, on the generic share path.
 
-``Conversation.open_invite_conversation`` creates a ROOT-level hub conversation
-and joins it; the caller grants the recipient; ``post_invite_message`` then sends
-the one message — header first, then the body bundle, because the hub stamps a
-client-sent TYPE_ID message ``uploading`` and receivers wait for READY.
-``discard_invite_conversation`` removes it when the grant fails.
+A project invite's conversation is shared like any other (``Conversation.share``):
+its invitation can skip the hub's email, because the project invite already
+emails the person (``notify_by_email=False``), and a team is admitted as one
+group principal (``principals``). The message that carries the project into it
+must not re-parent the project under the conversation (a membership container
+is a hub-owned root). ``discard_invite_conversation`` removes a conversation
+whose invite failed.
 
 Only the network hops are stubbed: ``FlowpadClient.request`` (create, join,
 add_message header, delete) and ``flow_sdk.utils.hub.hub_post`` (body upload and
@@ -12,6 +14,7 @@ the READY flip), recorded in ONE list so the order is observable.
 
 # do not increase timeout without approval
 """
+
 from __future__ import annotations
 
 import json
@@ -20,7 +23,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, FlowMessage
+from flow_sdk.builtin.project import Project
 from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
 
 SHARER = "0a0a0a0a-0000-4000-8000-000000000001"
@@ -37,19 +40,23 @@ class _FakeResponse:
 
 
 class _Hub(list):
-    """Every hub hop as ``(method, path)`` in call order; ``refuse`` maps a
-    path suffix to the status that hop answers with."""
+    """Every hub hop as ``(method, path)`` in call order; ``bodies`` the JSON
+    body of each; ``refuse`` maps a path suffix to the status that hop answers
+    with."""
 
     refuse: dict
+    bodies: list
 
 
 @pytest.fixture()
 def hub(monkeypatch):
     calls = _Hub()
     calls.refuse = {}
+    calls.bodies = []
 
     async def fake_request(self, method, path, **kwargs):
         calls.append((method, path))
+        calls.bodies.append((path, kwargs.get("json")))
         for suffix, status in calls.refuse.items():
             if path.endswith(suffix):
                 return _FakeResponse(status, {"detail": "refused"})
@@ -72,77 +79,75 @@ def hub(monkeypatch):
     return calls
 
 
-def _hops(hub: _Hub) -> list[str]:
-    """Readable call order: the last meaningful path segment of each hop."""
-    out = []
-    for method, path in hub:
-        if method == "HUB_POST":
-            out.append(path)
-        elif path.rstrip("/").endswith("/join"):
-            out.append("join")
-        elif path.rstrip("/").endswith("/add_message"):
-            out.append("add_message")
-        elif method == "POST" and path.rstrip("/").endswith("/conversation"):
-            out.append("create")
-        elif method == "DELETE":
-            out.append("delete")
-    return out
+def _invitations(hub: _Hub) -> list[dict]:
+    """The JSON body of every conversation-membership invitation, in order."""
+    return [body for path, body in hub.bodies if path.rstrip("/").endswith("/members") and body]
+
+
+async def _conversation() -> Conversation:
+    conv = Conversation.model_validate({"title": 'Invite: "Course"', "status": "open"})
+    conv.id = Conversation.allocate_id(conv.model_dump())
+    return await conv.save()
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_open_then_post_runs_create_join_header_then_body(hub):
-    async with FlowpadClient(ApiConfig.from_env(), api_key="test-key") as client:
-        conv = await Conversation.open_invite_conversation('Invite: "Course"', client)
-        fm = await conv.post_invite_message('I invited you to project "Course".', PROJECT)
+async def test_an_invitation_can_skip_the_hubs_email(hub):
+    conv = await _conversation()
 
-    assert _hops(hub) == ["create", "join", "add_message", "fs/upload", "set_body_status"]
-    create = next(path for method, path in hub if method == "POST" and path.rstrip("/").endswith("/conversation"))
-    assert create.rstrip("/").endswith("/graph/conversation"), f"not a root-level create: {create}"
-    assert conv.remote is True
+    await conv.share(recipients=["invitee@example.com"], notify_by_email=False)
 
-    local = await FlowMessage.get_one({"id": fm.id})
-    assert local.remote is True
-    assert local.body_status == BodyStatus.READY
-    references = [a.data for a in local.attachment if a.attachment_type == AttachmentType.TYPE_ID]
-    assert PROJECT in references
-    assert local.text == 'I invited you to project "Course".'
+    (invitation,) = _invitations(hub)
+    assert invitation["recipient_email"] == "invitee@example.com"
+    assert invitation["notify_by_email"] is False
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_a_refused_header_surfaces_and_uploads_nothing(hub):
-    hub.refuse["/add_message"] = 500
-    async with FlowpadClient(ApiConfig.from_env(), api_key="test-key") as client:
-        conv = await Conversation.open_invite_conversation("Invite", client)
-        with pytest.raises(RuntimeError, match="did not accept the invite message"):
-            await conv.post_invite_message("I invited you.", PROJECT)
+async def test_an_invitation_emails_by_default(hub):
+    conv = await _conversation()
 
-    assert "fs/upload" not in _hops(hub)
+    await conv.share(recipients=["invitee@example.com"])
+
+    (invitation,) = _invitations(hub)
+    assert "notify_by_email" not in invitation
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_a_failed_body_upload_surfaces_to_the_caller(hub):
-    hub.refuse["fs/upload"] = 500
-    async with FlowpadClient(ApiConfig.from_env(), api_key="test-key") as client:
-        conv = await Conversation.open_invite_conversation("Invite", client)
-        with pytest.raises(RuntimeError, match="fs/upload"):
-            await conv.post_invite_message("I invited you.", PROJECT)
+async def test_a_team_is_admitted_as_one_group_grant(hub):
+    conv = await _conversation()
 
-    assert "set_body_status" not in _hops(hub)
+    await conv.share(principals=["team-7a7a7a7a-0000-4000-8000-00000000000b"])
+
+    (invitation,) = _invitations(hub)
+    assert invitation["principal"] == "team-7a7a7a7a-0000-4000-8000-00000000000b"
+    assert invitation["invitation_targets"][0]["typeid"] == f"conversation-{conv.id}"
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_a_project_in_the_conversation_is_never_reparented_under_it(hub):
+    project = await Project(name=f"Course-{PROJECT[-8:]}").save()
+    conv = await _conversation()
+
+    await conv._link_context_to_conversation([str(project.typeid)])
+
+    assert (await Project.get_one({"id": project.id})).parent_type_id in (None, "")
 
 
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_discard_deletes_on_the_hub_and_locally(hub):
+    conv = await _conversation()
+    await conv.share(recipients=["invitee@example.com"])
     async with FlowpadClient(ApiConfig.from_env(), api_key="test-key") as client:
-        conv = await Conversation.open_invite_conversation("Invite", client)
         await conv.discard_invite_conversation(client)
 
-    assert _hops(hub)[-1] == "delete"
+    assert hub[-1][0] == "DELETE"
     assert await Conversation.get_one({"id": conv.id}) is None

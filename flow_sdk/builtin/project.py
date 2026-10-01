@@ -1382,13 +1382,13 @@ class Project(Entity):
     ) -> None:
         """Invite each new person and grant each new team; the outcome lands on ``last_share_result``.
 
-        A PERSON gets a project invite whose second target is a fresh 1:1 invite
-        conversation, then the invite message in it. A TEAM is granted on the hub
-        as ONE group principal (no expansion into people), then gets one invite
-        conversation granted to the whole team, so its current and future members
-        all read it. The sharing client, not the hub, writes both conversations.
+        A PERSON gets a project invite, then a fresh 1:1 invite conversation with
+        the invite message in it. A TEAM is granted on the hub as ONE group
+        principal (no expansion into people), then gets one invite conversation
+        granted to the whole team, so its current and future members all read it.
+        Both conversations take the generic share-message path
+        (``_invite_conversation``); only the project grant is project-specific.
         """
-        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
         from flow_sdk.builtin.user import recipient_user_id as parse_recipient_user_id  # noqa: PLC0415
 
@@ -1448,20 +1448,14 @@ class Project(Entity):
 
         async def send_person(person: _SharePerson):
             async with gate:
-                try:
-                    conversation = await Conversation.open_invite_conversation(project_name, client)
-                except Exception as exc:  # noqa: BLE001 — reported per person, never stops the rest
-                    status = _hub_status_of(exc) if isinstance(exc, ValueError) else None
-                    return ShareFailedSpec(**person.identity(), status=status, message=str(exc))
                 if person.user_id:
                     field, recipient_key = "recipient_user_id", person.user_id
+                    admit = {"recipient_user_ids": [person.user_id]}
                 else:
                     field, recipient_key = "recipient_email", person.email
-                # Two invitations, one target each: the project invite is the one
-                # the hub emails, so its link lands on the project; the conversation
-                # invite sends no email. One invitation carrying both would land the
-                # email on the conversation, and removing a pending member from the
-                # project would leave its invitation linked (hub remove_member).
+                    admit = {"recipients": [person.email]}
+                # The project invite is the one the hub emails, so its link lands
+                # on the project; the conversation invite below sends no email.
                 request = {
                     field: recipient_key,
                     "invitation_targets": [{"typeid": project_ref, "role": person.role or PROJECT_DEFAULT_INVITE_ROLE}],
@@ -1474,27 +1468,11 @@ class Project(Entity):
                 try:
                     await client.post(f"/graph/project/{self.id}/members", request)
                 except ValueError as exc:  # any non-200 (``FlowpadClient._unwrap``)
-                    await conversation.discard_invite_conversation(client)
                     return ShareFailedSpec(**person.identity(), status=_hub_status_of(exc), message=str(exc))
-                conversation_ref = f"conversation-{conversation.id}"
-                try:
-                    await client.post(
-                        f"/graph/conversation/{conversation.id}/members",
-                        {
-                            field: recipient_key,
-                            "invitation_targets": [{"typeid": conversation_ref, "role": "member"}],
-                            "notify_by_email": False,
-                        },
-                    )
-                except ValueError as exc:  # the project invite landed; only the message can't reach them
-                    logging.warning("[project.share] invite conversation for %s refused: %s", recipient_key, exc)
-                    await conversation.discard_invite_conversation(client)
-                    return ShareInvitedSpec(**person.identity(), conversation_id=None)
-                try:
-                    await conversation.post_invite_message(message_text, project_ref)
-                except Exception as exc:  # noqa: BLE001 — the invite landed; only the message is missing
-                    logging.warning("[project.share] invite message to %s failed: %s", recipient_key, exc)
-                return ShareInvitedSpec(**person.identity(), conversation_id=conversation.id)
+                conversation_id = await self._invite_conversation(
+                    client, project_name, message_text, notify_by_email=False, **admit
+                )
+                return ShareInvitedSpec(**person.identity(), conversation_id=conversation_id)
 
         async def grant_team(team_ref: str):
             try:
@@ -1507,22 +1485,9 @@ class Project(Entity):
                 )
             except ValueError as exc:
                 return ShareFailedTeamSpec(team=team_ref, status=_hub_status_of(exc), message=str(exc))
-            # The grant landed. Everything below only delivers the invite
-            # message, so a failure is reported as a grant with no conversation.
-            try:
-                conversation = await Conversation.open_invite_conversation(project_name, client)
-                await client.post(
-                    f"/graph/conversation/{conversation.id}/members",
-                    {
-                        "principal": team_ref,
-                        "invitation_targets": [{"typeid": f"conversation-{conversation.id}", "role": "member"}],
-                    },
-                )
-                await conversation.post_invite_message(message_text, project_ref)
-            except Exception as exc:  # noqa: BLE001
-                logging.warning("[project.share] team invite conversation for %s failed: %s", team_ref, exc)
-                return ShareGrantedTeamSpec(team=team_ref, conversation_id=None)
-            return ShareGrantedTeamSpec(team=team_ref, conversation_id=conversation.id)
+            # The grant landed; the conversation only delivers the invite message.
+            conversation_id = await self._invite_conversation(client, project_name, message_text, principals=[team_ref])
+            return ShareGrantedTeamSpec(team=team_ref, conversation_id=conversation_id)
 
         person_outcomes = await asyncio.gather(*(send_person(p) for p in to_send))
         # Teams run one at a time: a share names a handful of them, and each
@@ -1538,6 +1503,41 @@ class Project(Entity):
             failed_teams=[o for o in team_outcomes if isinstance(o, ShareFailedTeamSpec)],
         )
 
+
+    async def _invite_conversation(self, client, title: str, text: str, **admit) -> str | None:
+        """Deliver the invite message the way any shared entity is sent: a new
+        root-level conversation shared to the invitee (``Conversation.share``,
+        ``admit`` = its recipient / principal / email options), then the message
+        carrying ``project-<id>`` (``handle_add_message``, the ``add_message``
+        handler). The project grant already landed, so this is best-effort:
+        ``None`` when the conversation could not be shared — it is removed — and
+        its id otherwise, even when only the message failed.
+        """
+        from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse  # noqa: PLC0415
+
+        local = await User.get_local()
+        someone_typeid = str(local.typeid) if local else None
+        conversation = Conversation.model_validate({"title": title, "status": "open"})
+        conversation.id = Conversation.allocate_id(conversation.model_dump())
+        try:
+            await conversation.save(someone_typeid)
+            await conversation.share(**admit)
+            conversation.remote = True
+            await conversation.save(someone_typeid)
+        except Exception as exc:  # noqa: BLE001 — reported as "invited, no conversation"
+            logging.warning("[project.share] invite conversation for %s failed: %s", admit, exc)
+            await conversation.discard_invite_conversation(client)
+            return None
+        sent = await handle_add_message(
+            {"conversation_id": conversation.id, "message": text, "asset_references": [f"project-{self.id}"]},
+            someone_typeid,
+        )
+        if isinstance(sent, ApiFailResponse):
+            logging.warning("[project.share] invite message in %s failed: %s", conversation.id, sent.message)
+        return conversation.id
     @property
     def last_share_result(self) -> Optional[ShareResultSpec]:
         """Per-person outcome of the last ``share()``/``invite()`` that invited anyone, else ``None``."""
