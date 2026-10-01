@@ -42,9 +42,6 @@ export interface ConversationFacets {
   /** Latest RECEIVED message is unread (invitation rows count as unread).
    *  Viewer-relative: a self-sent latest message never makes the row unread. */
   isUnread: boolean;
-  /** How many messages wait — the backend's `unread_count`, rendered, never recomputed. An
-   *  unread row the backend has not counted (a hub runtime) reads as 1. */
-  unreadCount: number;
 }
 
 /** Derive the category facets for a conversation row. Pure — no hooks, safe to
@@ -72,7 +69,7 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const isArchived = archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
 
   // Unread — the backend owns it. The desktop stamps `conv.is_unread` from the one
-  // rule the badge also counts with (`stream_inbox.conversation_is_unread`: drafts,
+  // rule the badge also counts with (`stream_inbox.conversation_unread_count`: drafts,
   // self-sent and agent replies excluded), so the row renders that answer rather
   // than a second copy of the rule that can drift. A hub runtime has no per-viewer
   // read projection yet (docs/hub-rest-consolidation.md §1): its rows arrive without
@@ -83,9 +80,7 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
     : false;
   const isUnread = isInvitation || (conv.is_unread ?? hubUnread);
 
-  const unreadCount = isUnread ? Math.max(conv.unread_count ?? 1, 1) : 0;
-
-  return { kind, isInvitation, isArchived, isUnread, unreadCount };
+  return { kind, isInvitation, isArchived, isUnread };
 }
 
 // ── Recency sort — shared by StreamInboxView + RecentConversationsStrip ────────────

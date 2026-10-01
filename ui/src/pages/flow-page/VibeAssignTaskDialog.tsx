@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
-import { ConversationParticipant, Task, TaskKind, type TaskAssignOptions, TypeId } from '@sdk';
+import { ConversationParticipant, normalizeEmail, Task, TaskKind, type TaskAssignOptions, TypeId } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -67,9 +67,9 @@ export function VibeAssignTaskDialog({
   const canSubmit = !!person && !!title.trim() && !busy;
   // Same opener, same person, same project: the request already open with them. Asking again
   // is still allowed — this only offers the way back to it.
-  const pickedEmail = (person?.email ?? '').trim().toLowerCase();
+  const pickedEmail = normalizeEmail(person?.email);
   const alreadyAsked = pickedEmail
-    ? openTasks.find((row) => (row.task.assignee ?? '').trim().toLowerCase() === pickedEmail)
+    ? openTasks.find((row) => normalizeEmail(row.task.assignee) === pickedEmail)
     : undefined;
 
   /** The session transcript, or nothing. Never blocks the assign — a missing

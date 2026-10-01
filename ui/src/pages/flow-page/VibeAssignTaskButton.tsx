@@ -85,14 +85,11 @@ export function VibeAssignTaskButton({
                     <span className="block truncate text-xs text-muted-foreground">{row.task.assignee}</span>
                   )}
                 </span>
-                {row.unread > 0 && (
-                  <span
-                    className="shrink-0 rounded-full bg-destructive px-1.5 text-[10px] font-bold leading-4 text-destructive-foreground"
-                    data-testid={`vibe-help-task-unread-${row.task.id}`}
-                  >
-                    {row.unread > 99 ? '99+' : row.unread}
-                  </span>
-                )}
+                <NavBadge
+                  count={row.unread}
+                  className="static shrink-0"
+                  testId={`vibe-help-task-unread-${row.task.id}`}
+                />
               </button>
             ))}
             <div className="my-1 border-t" />

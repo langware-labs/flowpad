@@ -695,7 +695,7 @@ async def _sender_for(item, source, channel: str, *, ours: Optional[bool] = None
     """``(sender, sender_name)`` — who wrote this item, typed, and what to call them.
 
     Load-bearing, not cosmetic. The unread rule gates on the sender
-    (``stream_inbox.conversation_is_unread``), so an item WE authored — every
+    (``stream_inbox.conversation_unread_count``), so an item WE authored — every
     message in a Sent folder, and every reply we send — would otherwise count as
     unread mail from a stranger. Our own address is the local user; on an agent's
     own source it is that Agent; anyone else is EXTERNAL on this channel.
