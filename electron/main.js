@@ -302,6 +302,7 @@ async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 
   try {
     log.info(`[uv] ${label} package check`);
     await uvManager.checkForUpdatesInBackground(mainWindow, {
+      onUnrecovered: (err) => showStartupErrorPanel(describeStartupFailure(err), { retryable: false }),
       sendStatus,
       waitForBackend,
       backendUrl: BACKEND_URL,
@@ -936,6 +937,34 @@ function createWindow() {
     return { action: 'deny' };
   });
 
+  // A crashed or failed renderer is a blank window: say so, with a way to reach us, then reload.
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    log.error(`[renderer] process gone: ${details && details.reason} (exit ${details && details.exitCode})`);
+    if (isQuitting || (details && details.reason === 'clean-exit')) return;
+    showFailureDialog({
+      dialog,
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      title: 'Flowpad window crashed',
+      message: 'The Flowpad window stopped unexpectedly.',
+      detail: `Reason: ${(details && details.reason) || 'unknown'}. Flowpad will reload the window.`,
+      share: (text) => shareDiagnostics(text, 'window crashed'),
+      log,
+    }).then(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload(); });
+  });
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url, isMainFrame) => {
+    if (!isMainFrame || code === -3 /* aborted by a newer navigation */ || !isBackendUrl(url)) return;
+    log.error(`[renderer] failed to load ${redactUrl(url)}: ${desc} (${code})`);
+    showFailureDialog({
+      dialog,
+      parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+      title: 'Flowpad could not load',
+      message: 'Flowpad could not load its window.',
+      detail: `${desc} (${code})`,
+      share: (text) => shareDiagnostics(text, 'could not load its window'),
+      log,
+    });
+  });
+
   mainWindow.webContents.on('will-navigate', (event, url) => {
     log.info(`[nav] will-navigate url=${redactUrl(url)}`);
     // Allow navigation to the backend (same-origin), block everything else.
@@ -1058,7 +1087,7 @@ function installProgress(label) {
 // `retryable` adds a Retry button that re-runs the install/start in-app (see
 // installAndStartBackend). Falls back to the native dialog only if the loading
 // window is already gone; returns whether the panel was rendered.
-function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false } = {}) {
+async function showStartupErrorPanel(detail, { retryable = false, policyBlocked = false } = {}) {
   const payload = {
     detail,
     retryable,
@@ -1075,7 +1104,9 @@ function showStartupErrorPanel(detail, { retryable = false, policyBlocked = fals
     return true;
   }
   // No window to render into — degrade to the native dialog.
-  showFailureDialog({
+  // Awaited: the caller quits the app when this returns false, and quitting before the user answers would
+  // close the one dialog that explains the failure (and the "Share with us" button on it).
+  await showFailureDialog({
     dialog,
     title: 'Flowpad couldn’t start',
     message: 'Flowpad couldn’t start.',
@@ -1252,7 +1283,7 @@ async function installAndStartBackend() {
     // In-app panel with Retry (uv keeps what it already fetched in its
     // cache, so a retry after a slow or flaky download is usually seconds).
     // Only if the loading window is already gone is the failure fatal.
-    if (!showStartupErrorPanel(describeStartupFailure(error), { retryable: true, policyBlocked: !!(error && error.policyBlocked) })) {
+    if (!(await showStartupErrorPanel(describeStartupFailure(error), { retryable: true, policyBlocked: !!(error && error.policyBlocked) }))) {
       app.quit();
     }
     return { ok: false };
@@ -1369,7 +1400,7 @@ async function startApp() {
     const launcherOutput = backendWait.reason === 'launcher-failed' && launch
       ? `\n\nflow start exited with code ${launch.exit.code}:\n${summarizeOutput(launch.tail())}`
       : '';
-    showStartupErrorPanel(
+    await showStartupErrorPanel(
       `Flowpad’s backend didn’t respond within ${timeoutSec} seconds. ${why}` +
         'This usually means the installed Flowpad package is out of date or broken.' +
         launcherOutput,
@@ -1418,8 +1449,29 @@ async function startApp() {
   // running from the pre-start flow).
   checkPackageUpdateInBackground({ compareWithPypi: false, label: 'post-boot' });
 }
+// Anything that escapes to the top level must reach the user with "Share with us" — an unhandled rejection in
+// startApp used to leave the loading splash up forever, and an uncaught exception only got Electron's stock box.
+let crashReported = false;
+async function reportStartupCrash(err, where) {
+  const text = redact(String((err && (err.stack || err.message)) || err)).slice(0, 4000);
+  log.error(`[crash] ${where}: ${text}`);
+  if (crashReported) return;
+  crashReported = true;
+  try {
+    // A window to render into → the in-app panel (Share, Copy, Open logs, Quit); otherwise the native dialog.
+    await showStartupErrorPanel(`Flowpad hit an unexpected error (${where}).\n\n${text}`, { retryable: false });
+  } catch (e) {
+    log.error(`[crash] could not show the error: ${e && e.message}`);
+  }
+}
+process.on('uncaughtException', (err) => { reportStartupCrash(err, 'uncaught exception'); });
+process.on('unhandledRejection', (reason) => {
+  // Logged only: most are benign (a cancelled request), and a dialog per rejection would be noise.
+  log.error(`[unhandled rejection] ${redact(String((reason && (reason.stack || reason.message)) || reason)).slice(0, 2000)}`);
+});
+
 // App lifecycle events
-app.whenReady().then(startApp);
+app.whenReady().then(startApp).catch((err) => reportStartupCrash(err, 'startApp'));
 
 app.on('window-all-closed', () => {
   log.info('All windows closed');

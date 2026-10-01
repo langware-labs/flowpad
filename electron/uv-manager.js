@@ -2100,7 +2100,7 @@ class UvManager {
 
   async checkForUpdatesInBackground(
     mainWindow,
-    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart }
+    { sendStatus, waitForBackend, backendUrl, cloudUrl, beforeBackendStart = false, compareWithPypi = beforeBackendStart, onUnrecovered = null }
   ) {
     try {
       // Pre-start: the backend is down and the install may even be broken, so
@@ -2216,6 +2216,11 @@ class UvManager {
             share: this._failureSharer,
             log: this.log,
           });
+          // The window still shows "Upgrading Flowpad…" over a dead backend: replace it with the in-app panel
+          // (Share, Copy, Open logs, Quit) so the user is not left on a splash that will never finish.
+          if (onUnrecovered && mainWindow && !mainWindow.isDestroyed()) {
+            try { await onUnrecovered(err); } catch (e) { this.log.warn(`[uv] onUnrecovered failed: ${e && e.message}`); }
+          }
         }
       }
       return false;
