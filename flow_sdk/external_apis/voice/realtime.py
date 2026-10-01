@@ -202,10 +202,10 @@ class RealtimeCallSession:
             # The line is read here, not when the caller of ``events`` asks for the next event: what it
             # does with one (store a sentence) must not hold up the next request to speak. Read lazily,
             # the answer queued behind the greeting went out only once the greeting's sentence was saved.
-            inbox: asyncio.Queue[Optional[CallEvent]] = asyncio.Queue()
-            reader = asyncio.get_running_loop().create_task(self._read(conn, inbox))
+            arrived: asyncio.Queue[Optional[CallEvent]] = asyncio.Queue()
+            reader = asyncio.get_running_loop().create_task(self._read(conn, arrived))
             try:
-                while (event := await inbox.get()) is not None:
+                while (event := await arrived.get()) is not None:
                     yield event
                 await reader  # a read that failed fails the call, as it did when read inline
             finally:
@@ -214,7 +214,7 @@ class RealtimeCallSession:
                 self._conn = None
         yield CallEvent(kind="ended")
 
-    async def _read(self, conn, inbox: "asyncio.Queue[Optional[CallEvent]]") -> None:
+    async def _read(self, conn, arrived: "asyncio.Queue[Optional[CallEvent]]") -> None:
         """Read the line to its end: keep the speaking turn as frames arrive, and pass on the events."""
         try:
             async for raw in conn:
@@ -238,13 +238,13 @@ class RealtimeCallSession:
                     continue
                 event = event_of(payload)
                 if event is not None:
-                    inbox.put_nowait(event)
+                    arrived.put_nowait(event)
         except ConnectionClosed as exc:
             # The line went away without a goodbye (a browser tab closed, a phone dropped): that
             # is how calls end, not a failure of this one.
             logger.info("[voice] call %s: the provider closed the line (%s)", self.call_id, exc)
         finally:
-            inbox.put_nowait(None)
+            arrived.put_nowait(None)
 
     async def _respond(self, response: dict) -> None:
         """Ask the voice to speak — now, or right after the response it is speaking (a filler while
