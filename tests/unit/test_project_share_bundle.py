@@ -222,6 +222,28 @@ async def test_installing_a_project_already_set_up_here_does_not_clone_again(tmp
     assert (await MessageAttachment.get_one({"id": ma.id})).scope == "user"
 
 
+async def test_install_completes_the_stub_row_a_pending_invitation_left(tmp_path, git_clone):
+    """Catch-up mirrors a pending project invitation as an {id, name, icon}
+    stub — no origin. Installing the staged project fills the row from the
+    packed one (origin included) and clones."""
+    project = await _shared_project(tmp_path, origin=_origin())
+    fm, zip_path = await _send_invite(project, tmp_path / "out")
+    await (await Project.get_one({"id": project.id})).destroy()
+    await Project(id=project.id, name=project.name).save(notify=False)
+    await unpack_bundle(zip_path, "local-user-id")
+    ma = await MessageAttachment.get_one(
+        {"id": MessageAttachment.allocate_deterministic_id(fm.id, f"project-{project.id}")}
+    )
+
+    res = await handle_attachment_install(ma.id, "user", None)
+
+    assert isinstance(res, ApiSuccessResponse), res.message
+    row = await Project.get_one({"id": project.id})
+    assert row.origin.owner == "langware-labs" and row.locale == "he"
+    assert row.fs_storage_mount_path == canonical_posix_path(str(git_clone["checkout"]))
+    assert git_clone["clones"] == 1
+
+
 async def test_a_failed_clone_surfaces_and_leaves_the_project_to_retry(tmp_path, git_clone):
     project = await _shared_project(tmp_path, origin=_origin())
     ma = await _receive(project, tmp_path)
