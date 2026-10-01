@@ -3,6 +3,7 @@ import { DockPointerData, type ViewType } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { notify } from './notify';
 import { APP_NAME } from '@src/constants/app';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 
 /**
  * Layer-1 notification renderer — GENERIC by contract.
@@ -54,10 +55,16 @@ export function dockPointerForClickTarget(target?: NotificationClickTarget): Doc
  *  (`Project._invite_message_text`), then the sharer's own note after a blank line, if any. */
 const INVITE_TEXT = /^I invited you to project "(.+?)"\.(?:\n\n([\s\S]*))?$/;
 
-/** A notification body in the person's language. The invite line is a fixed sentence the SENDER's
- *  backend wrote in English, so it is matched here and rebuilt; the sharer's note is theirs and is
- *  never touched. Any other body is shown as it came. */
+/** The line the backend writes for a message with no text (`hub_bridge._attachment_only_body`):
+ *  the type of the first thing it shares. */
+const SENT_YOU_TEXT = /^Sent you: ([a-z0-9_]+)$/;
+
+/** A notification body in the person's language. The invite and sent-you lines are fixed sentences
+ *  the backend wrote in English, so they are matched here and rebuilt; the sharer's note is theirs
+ *  and is never touched. Any other body is shown as it came. */
 export function localizedBody(body: string): string {
+  const sent = body.match(SENT_YOU_TEXT);
+  if (sent) return sent[1] === 'prompt' ? t`Asks you to run a prompt` : t`Sent you: ${labelForType(sent[1])}`;
   const m = body.match(INVITE_TEXT);
   if (!m) return body;
   const line = t`I invited you to project "${m[1]}".`;
