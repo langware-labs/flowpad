@@ -58,11 +58,26 @@ in_list() {
 RESERVED_PORTS="5001"
 port_reserved() { in_list "$1" "$RESERVED_PORTS"; }
 
-# find_free_port <band_base> <preferred>  -> echoes a free port in [preferred, band_base+99]
+# port_claimed_by_other <port> <self-name> -> true when ANOTHER instance's
+# launcher registry records <port>. A sibling that is still booting is not
+# listening yet, so the listener check alone hands its port out twice — and a
+# later `kill` of either one then takes down both.
+port_claimed_by_other() {
+  local port="$1" self="$2" reg
+  for reg in "$FLOW_HOME"/instances/*/launcher.json; do
+    [ -f "$reg" ] || continue
+    [ "$reg" = "$(registry "$self")" ] && continue
+    grep -qE "\"(backend|frontend)_port\": *$port[^0-9]" "$reg" && return 0
+  done
+  return 1
+}
+
+# find_free_port <band_base> <preferred> <self-name> -> echoes a free port in [preferred, band_base+99]
 find_free_port() {
-  local base="$1" pref="$2" p
+  local base="$1" pref="$2" self="${3:-}" p
   for (( p=pref; p<=base+99; p++ )); do
     port_reserved "$p" && continue
+    port_claimed_by_other "$p" "$self" && continue
     port_in_use "$p" || { echo "$p"; return 0; }
   done
   return 1
@@ -210,8 +225,8 @@ cmd_launch() {
   local idx; idx="$(name_index "$name")"
   local pref_fe=$((5000 + idx)) pref_be=$((6000 + idx))
   local fe_port be_port
-  fe_port="$(find_free_port 5000 "$pref_fe")" || die "no free frontend port in 50xx band"
-  be_port="$(find_free_port 6000 "$pref_be")" || die "no free backend port in 60xx band"
+  fe_port="$(find_free_port 5000 "$pref_fe" "$name")" || die "no free frontend port in 50xx band"
+  be_port="$(find_free_port 6000 "$pref_be" "$name")" || die "no free backend port in 60xx band"
   [ "$fe_port" = "$pref_fe" ] || warn "frontend pref $pref_fe busy -> using $fe_port"
   [ "$be_port" = "$pref_be" ] || warn "backend  pref $pref_be busy -> using $be_port"
 
@@ -379,6 +394,12 @@ cmd_kill() {
   # Port-based fallback (handles re-parented strays not under the recorded PIDs).
   for p in "$be_port" "$fe_port"; do
     [ -n "$p" ] || continue
+    # The listener on a port another instance's registry records is THAT
+    # instance — never ours to kill.
+    if port_claimed_by_other "$p" "$name"; then
+      warn "port $p belongs to another instance's registry — not killing its listener"
+      continue
+    fi
     local pids; pids=$(lsof -nP -tiTCP:"$p" -sTCP:LISTEN 2>/dev/null || true)
     if [ -n "$pids" ]; then
       log "killing leftover PIDs on port $p: $pids"

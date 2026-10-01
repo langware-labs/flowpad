@@ -34,6 +34,7 @@ from flow_sdk.builtin.bootstrap_manifest import (
 )
 from flow_sdk.builtin.project import Project
 from flow_sdk.schema.type_info import register_all
+from tests.unit._project_names import unique_project_name
 
 register_all()
 
@@ -81,7 +82,7 @@ def bootstrap_repo(tmp_path: Path, helpdesk_repo: str) -> str:
 
 
 async def _project(name: str = "customer-engagement") -> Project:
-    project = Project(name=name)
+    project = Project(name=unique_project_name(name))
     await project.save()
     return project
 
@@ -292,7 +293,7 @@ async def test_reconcile_bootstrap_attaches_content_project_once(
         ),
         encoding="utf-8",
     )
-    project = Project(name="customer-project", fs_storage_mount_path=str(target_root))
+    project = Project(name=unique_project_name("customer-project"), fs_storage_mount_path=str(target_root))
     await project.save()
 
     first = await project.reconcile_bootstrap()
@@ -333,7 +334,7 @@ async def test_reconcile_rejects_aliases_with_conflicting_branch_before_mutation
         ),
         encoding="utf-8",
     )
-    project = Project(name="customer-conflicting-content", fs_storage_mount_path=str(target_root))
+    project = Project(name=unique_project_name("customer-conflicting-content"), fs_storage_mount_path=str(target_root))
     await project.save()
 
     response = await project.reconcile_bootstrap()
@@ -369,7 +370,7 @@ async def test_reconcile_dedupes_equivalent_git_url_aliases(
         ),
         encoding="utf-8",
     )
-    project = Project(name="customer-aliased-content", fs_storage_mount_path=str(target_root))
+    project = Project(name=unique_project_name("customer-aliased-content"), fs_storage_mount_path=str(target_root))
     await project.save()
 
     calls: list[str] = []
@@ -510,7 +511,7 @@ def test_an_empty_reservation_is_not_a_collision(tmp_path: Path, monkeypatch) ->
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    monkeypatch.setattr("flow_sdk.config.AGENT_MOUNT_FOLDER", str(workspace))
+    monkeypatch.setattr("flow_sdk.config.agent_workspace_root", lambda: workspace)
 
     # Nothing there yet → the plain name.
     assert fresh_clone_slot("acme").name == "acme"

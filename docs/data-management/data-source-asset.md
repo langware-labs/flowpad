@@ -61,6 +61,8 @@ agentic-assets/data_driver/<name>/
   tests/matrix.py           # its Double (loopback provider) and its case in the data source matrix
   tests/fixtures/…          # the responder packs those tests serve
   agentic-assets/webapp/editor/   # optional editor
+  agentic-assets/credential/<cred>/  # its credential, when only this driver names it (credential.json + setup.md)
+  agentic-assets/wizard/…, compute_op/…  # its setup wizards (setup_wizards) and their steps
   README.md                 # setup, credentials, live-validation notes
 ```
 
@@ -184,8 +186,10 @@ is resolved for the row's OWNER the way a worker process resolves its secrets �
 agent's project scope over the user scope, read from that scope's `.env.local` or vault — so
 an agent's channel is configured by declaring the credential in the agent's project, never by
 pasting a token into the source. The Credential itself is declared in the project
-(`credentials/save`) or shipped as a template (`agentic-assets/credential/telegram/`), not beside
-the source.
+(`credentials/save`) or shipped as a template. A template only this driver names ships INSIDE the
+driver (`data_driver/telegram/agentic-assets/credential/telegram/`) — it is still a system-scope
+template, found by name; one several drivers or agents share (a model key) stays in the shipped
+project's top-level `credential/`. `test_data_sources_are_self_contained.py` enforces the split.
 
 **A value that differs by where the source runs is a credential variable, never config.**
 `data_source.json` travels with the repo to every machine that runs the project; where a

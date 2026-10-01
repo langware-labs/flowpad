@@ -8,7 +8,12 @@ from typing import Optional
 
 from pydantic import ConfigDict
 
-from flow_sdk.schema.data_spec.credential_contract import DEFAULT_ENVIRONMENT
+from flow_sdk.schema.data_spec.credential_contract import (
+    DEFAULT_ENVIRONMENT,
+    CredentialRequirement,
+    CredentialVarKind,
+    Requirement,
+)
 from flow_sdk.schema.data_spec.spec import DataSpec
 
 
@@ -22,7 +27,10 @@ class CredentialVarStatusSpec(DataSpec):
     pattern: str = ""
     help_url: str = ""
     secret: bool = True
-    required: bool = True
+    #: What THIS deployment needs: the var's own ``required``, raised to ``MUST`` when the
+    #: deployment requires it beyond the credential (``DeploymentSecretsSpec.require``).
+    required: Requirement = CredentialRequirement.MUST
+    kind: CredentialVarKind = CredentialVarKind.TEXT
     #: The store this deployment keeps the variable in: ``env`` / ``vault`` / a remote store type.
     store: str = "env"
     #: A value exists in that store.
@@ -35,6 +43,10 @@ class CredentialVarStatusSpec(DataSpec):
     #: The typeid of the project credential overriding this user one, if any.
     shadowed_by: Optional[str] = None
 
+    @property
+    def is_must(self) -> bool:
+        return self.required is CredentialRequirement.MUST
+
 
 class CredentialStatusRowSpec(DataSpec):
     model_config = ConfigDict(frozen=True)
@@ -46,8 +58,10 @@ class CredentialStatusRowSpec(DataSpec):
     icon_name: str = ""
     help_url: str = ""
     setup_wiki: str = ""
-    #: How an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI setup.
+    #: How an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI Assist.
     setup: str = ""
+    #: How long an agent following ``setup`` gets; ``None`` = the default.
+    setup_timeout_seconds: Optional[float] = None
     scope: str
     project_id: Optional[str] = None
     #: The environment of the deployment these presences were read for.

@@ -6,24 +6,38 @@ import { isTypeId, TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { WorldViewProjection } from '../worldview/projection';
 import { DEFAULT_CREDENTIAL_ENVIRONMENT } from '../services/credentials-service';
-import { ServiceEndpoint, type IServiceEndpoint } from './service-endpoint';
+import {
+  type EndpointSubkind,
+  type HealthCheck,
+  type HealthState,
+  type IServiceEndpoint,
+  ServiceEndpoint,
+  type ServiceBackend,
+  type ServiceProtocol,
+  worstHealth,
+} from './service-endpoint';
 
 export type ArtifactLinkSource = 'manual' | 'gcp_label';
 export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
 export type DeploymentObservationKind = 'cost' | 'size' | 'activity';
 export type ObservationCoverage = 'available' | 'unavailable' | 'unattributed' | 'stale';
 
-/** What is placed. WHERE it runs is `target.provider` — two axes, two fields. */
-export const KIND_AGENT = 'runtime.agent';
-export const KIND_WEB = 'runtime.web';
-export const KIND_NODE = 'compute.node';
+/** Who a box logs in as for a deployment: nobody, the placed agent itself, or its owner. */
+export type DeploymentIdentity = 'none' | 'agent' | 'user';
 
 /**
  * Providers that place a resource on a ComputeNode, so `origin.external_id`
  * names that node. An inventoried `gcp` resource is not node-backed — its
  * `external_id` is the provider's own resource name.
  */
-export const NODE_PROVIDERS: ReadonlySet<string> = new Set(['local', 'local_machine', 'e2b', 'docker', 'gcp_vm', 'user_machine']);
+export const NODE_PROVIDERS: ReadonlySet<string> = new Set([
+  'local',
+  'local_machine',
+  'e2b',
+  'docker',
+  'gcp_vm',
+  'user_machine',
+]);
 
 /** Provider-normalized signal; unavailable data is represented explicitly, never as zero. */
 export interface DeploymentObservation {
@@ -67,9 +81,21 @@ export interface DeploymentStatus {
   message?: string | null;
 }
 
+/** One service a deployment declares it exposes. Twin of `EndpointDeclaration`. */
+export interface EndpointDeclaration {
+  name: string;
+  subkind: EndpointSubkind;
+  protocol: ServiceProtocol;
+  backend?: ServiceBackend | null;
+  check?: HealthCheck | null;
+}
+
 export interface IDeployment extends Omit<IEntity, 'status'> {
   name: string;
-  kind: string;
+  /** Every service this deployment declares it exposes; its endpoint rows serve the declaration. */
+  exposes?: EndpointDeclaration[];
+  /** Who the box logs in as for this placement. What it places is its PARENT (`elementType`). */
+  identity?: DeploymentIdentity;
   artifact_id?: string | null;
   artifact_link_source?: ArtifactLinkSource | null;
   target: DeploymentTarget;
@@ -184,7 +210,8 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   static type: string = 'deployment';
 
   name: string;
-  kind: string;
+  identity: DeploymentIdentity;
+  exposes: EndpointDeclaration[];
   artifact_id: string | null;
   artifact_link_source: ArtifactLinkSource | null;
   target: DeploymentTarget;
@@ -202,8 +229,8 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
     super(entity);
     const deployment = entity as Partial<IDeployment>;
     this.name = deployment.name ?? '';
-    if (!deployment.kind) throw new Error('Invalid Deployment structure: kind is required');
-    this.kind = normalizeKind(deployment.kind);
+    this.identity = deployment.identity ?? 'user';
+    this.exposes = deployment.exposes ?? [];
     this.artifact_id = deployment.artifact_id ?? null;
     this.artifact_link_source = deployment.artifact_link_source ?? null;
     this.target = {
@@ -239,6 +266,13 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
       focus: `${Deployment.type}-${this.id}`,
       selected: `${Deployment.type}-${this.id}`,
     });
+  }
+
+  /** What this places — its parent's type (`agent`, `project`, `compute_node`, …), or null. */
+  get elementType(): string | null {
+    const parent = this.parent_type_id;
+    if (!parent || !isTypeId(parent)) return null;
+    return new TypeId(parent).type;
   }
 
   /** The Agent this places, or null when the deployed element is something else. */
@@ -293,6 +327,11 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   /** Take `provider` back: the machine's next token ask is refused. */
   async revoke(provider: string): Promise<void> {
     await this.post('authorize', { provider, revoke: true });
+  }
+
+  /** As healthy as its least healthy service, by each endpoint's last check. Derived, never stored. */
+  async health(): Promise<HealthState> {
+    return worstHealth((await this.endpoints()).map((e) => e.health?.state ?? 'unknown'));
   }
 
   /** What this placement serves — for a cloud placement, as the hub has it now (held here at the hub's ids). */

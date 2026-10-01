@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from pydantic import ValidationError
 
+from flow_sdk.builtin.credential_files import credential_file, remove_credential_files, write_credential_file
 from flow_sdk.builtin.credential_store import (
     CredentialScope,
     Placement,
@@ -35,6 +36,7 @@ from flow_sdk.schema.data_spec.credential_contract import (
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
     SCOPE_USER,
+    CredentialVarKind,
 )
 from flow_sdk.schema.data_spec.credential_status_spec import CredentialDeletedSpec
 from flow_sdk.schema.data_spec.deployment_secrets_spec import store_ref
@@ -47,7 +49,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MANIFEST_FIELDS = ("title", "description", "icon_name", "help_url", "setup_wiki", "setup", "lm_provider", "vars")
+_MANIFEST_FIELDS = ("title", "description", "icon_name", "help_url", "setup_wiki", "setup", "setup_timeout_seconds", "lm_provider", "vars")
 
 
 class CredentialError(ValueError):
@@ -113,6 +115,11 @@ async def _write_values(spec: "Credential", scope: CredentialScope, values: dict
         raise CredentialError(f"{', '.join(unknown)} is not a variable of this credential")
     if spec.lm_provider and placement.environment != DEFAULT_ENVIRONMENT and any(values.values()):
         raise CredentialError("an LLM provider key has no per-environment value; deployments are hub-funded")
+    # A file var's content, read now: the pattern is checked against it, not against an ``@path``.
+    values = {
+        name: _file_content(str(v)) if spec.vars[name].kind is CredentialVarKind.FILE and v not in (None, "") else v
+        for name, v in values.items()
+    }
     for env_var, value in values.items():
         pattern = spec.vars[env_var].pattern
         # ``search``, as the form's ``RegExp.test`` does: a pattern that means the whole value anchors itself.
@@ -121,9 +128,25 @@ async def _write_values(spec: "Credential", scope: CredentialScope, values: dict
     try:
         for env_var, value in values.items():
             if value is not None and str(value) != "":
+                if spec.vars[env_var].kind is CredentialVarKind.FILE:
+                    # The content is kept as a file; the variable holds its path.
+                    path = credential_file(spec, scope, env_var, placement.environment)
+                    write_credential_file(path, str(value))
+                    value = str(path)
                 await write_value(spec, scope, env_var, str(value), placement)
     except (EnvLocalNotWritable, VaultNotEnabled) as e:
         raise CredentialError(str(e), code=e.code) from e
+
+
+def _file_content(value: str) -> str:
+    """A ``file`` var's value as given: the content itself, or ``@<path>`` naming a file to read —
+    how a ``VAR=VALUE`` line (``flow credentials set --stdin``) carries a key file."""
+    if value.startswith("@") and "\n" not in value:
+        source = Path(value[1:]).expanduser()
+        if not source.is_file():
+            raise CredentialError(f"no file at {source}", code="file")
+        return source.read_text(encoding="utf-8")
+    return value
 
 
 async def _clash_in_scope(
@@ -333,6 +356,7 @@ async def delete_credential(typeid: str) -> CredentialDeletedSpec:
     names = spec.var_names()
     removed = not kept
     if removed:
+        remove_credential_files(spec)
         if spec.asset_ref and Path(spec.asset_ref).is_dir():
             Asset.from_path(spec.asset_ref).remove()
         await spec.delete()

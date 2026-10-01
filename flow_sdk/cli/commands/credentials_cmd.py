@@ -47,6 +47,7 @@ from flow_sdk.cli.commands._common import (
     post_graph_json,
     project_for_path,
 )
+from flow_sdk.schema.data_spec.credential_contract import CredentialRequirement
 from flow_sdk.schema.data_spec.project_setup_spec import input_name
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
@@ -205,7 +206,7 @@ def declare_credential(
 def _missing(row: Optional[dict]) -> list[str]:
     if row is None:
         return []
-    return [v["env_var"] for v in row.get("vars") or [] if v.get("required") and not v.get("present")]
+    return [v["env_var"] for v in row.get("vars") or [] if v.get("required") == CredentialRequirement.MUST and not v.get("present")]
 
 
 _DEPLOYMENT = typer.Option("--deployment", help="A deployment id (default: this computer).")

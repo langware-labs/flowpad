@@ -30,14 +30,14 @@ vi.mock('@sdk', async (orig) => {
 });
 
 import { AgentCredentialsSection } from '@src/components/agent-resources/AgentCredentialsSection';
-import { CredentialChild } from '@src/components/assets/editor/agent-profile/CredentialChild';
+import { CredentialView } from '@src/components/credentials-view/CredentialView';
 
 function row(extra: Partial<CredentialStatusRow>): CredentialStatusRow {
   return {
     typeid: 'credential-1', name: 'openai', title: 'OpenAI', description: '', icon_name: '', help_url: '', setup_wiki: '',
     setup: 'Create a key at platform.openai.com', scope: 'user', project_id: null, environment: 'development',
     value_store: 'env', default_value_store: 'env', environments: {}, lm_provider: '', state: 'connected',
-    vars: [{ env_var: 'OPENAI_API_KEY', label: 'API key', hint: '', placeholder: '', pattern: '', help_url: '', secret: true, required: true, present: true, found_in: 'env', warning: null, shadowed_by: null }],
+    vars: [{ env_var: 'OPENAI_API_KEY', label: 'API key', hint: '', placeholder: '', pattern: '', help_url: '', secret: true, required: 'MUST', present: true, found_in: 'env', warning: null, shadowed_by: null }],
     ...extra,
   } as CredentialStatusRow;
 }
@@ -82,10 +82,10 @@ describe('agent credentials', () => {
     creds.status = status([
       row({ scope: 'project', value_store: 'vault', state: 'partial', vars: [
         row({}).vars[0],
-        { ...row({}).vars[0], env_var: 'OPENAI_ORG', label: 'Org', present: false, required: false },
+        { ...row({}).vars[0], env_var: 'OPENAI_ORG', label: 'Org', present: false, required: 'OPTIONAL' },
       ] }),
     ]);
-    render(<CredentialChild typeid="credential-1" onGone={() => undefined} />);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
     expect(screen.getByTestId('credential-child-scope')).toHaveTextContent('project');
     expect(screen.getByTestId('credential-child-store')).toHaveTextContent('the vault');
     expect(screen.getByTestId('credential-var-OPENAI_API_KEY')).toHaveTextContent('set');
@@ -95,21 +95,21 @@ describe('agent credentials', () => {
 
   it('Set values opens the one credential form with a values draft', async () => {
     creds.status = status([row({})]);
-    render(<CredentialChild typeid="credential-1" onGone={() => undefined} />);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
     await act(async () => fireEvent.click(screen.getByTestId('credential-child-set-values')));
     expect(screen.getByTestId('credential-dialog')).toHaveAttribute('data-mode', 'values');
   });
 
   it('a user credential the project overrides says so', () => {
     creds.status = status([row({ vars: [{ ...row({}).vars[0], shadowed_by: 'credential-9' }] })]);
-    render(<CredentialChild typeid="credential-1" onGone={() => undefined} />);
+    render(<CredentialView typeid="credential-1" onGone={() => undefined} />);
     expect(screen.getByTestId('credential-child-state')).toHaveTextContent("overridden by the project's");
     expect(screen.getByTestId('credential-child-shadowed')).toBeInTheDocument();
   });
 
   it('a credential gone from the status says so', () => {
     creds.status = status([]);
-    render(<CredentialChild typeid="credential-404" onGone={() => undefined} />);
+    render(<CredentialView typeid="credential-404" onGone={() => undefined} />);
     expect(screen.getByTestId('credential-child-missing')).toBeInTheDocument();
   });
 });

@@ -80,3 +80,6 @@ def test_unread_truth_table(case):
     facets = case.get("facets")
     if facets:
         assert projection.by_conversation[facets["conversation"]] is facets["isUnread"], case["name"]
+        # The per-conversation COUNT (a Vibe help task's badge) — > 0 exactly when the flag is set.
+        assert projection.counts[facets["conversation"]] == facets["unreadCount"], case["name"]
+        assert (projection.counts[facets["conversation"]] > 0) is facets["isUnread"], case["name"]

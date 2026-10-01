@@ -22,6 +22,7 @@ from typing import Annotated, Any, ClassVar, Literal, Optional, Union
 
 from pydantic import BeforeValidator, ConfigDict, Field, PlainSerializer
 
+from flow_sdk.schema.data_spec.health_spec import HealthCheck
 from flow_sdk.schema.data_spec.spec import DataSpec, spec_tag
 from flow_sdk.tags.grammar import NAMESPACE_SEGMENT_PATTERN, normalize_tag
 
@@ -52,6 +53,35 @@ def surface_of(kind: str) -> Literal["web", "api"]:
     if NAMESPACE_SEGMENT_PATTERN.fullmatch(segments[0]):
         segments = segments[1:]
     return "web" if segments and segments[0] in _WEB_FAMILIES else "api"
+
+
+# ── what an endpoint is for ─────────────────────────────────────────────────
+
+#: A ``ServiceEndpoint``'s subkind — what it is FOR, a closed set (``docs/ontology.md``: a subkind is a
+#: variant within one type; the endpoint's kind, ``service_endpoint.<subkind>``, is derived). What it
+#: SPEAKS is the protocol's own kind, open and namespaced.
+#:
+#: * ``admin`` — administers the machine or a workload: the box's FlowPad app, its shell/fs MCP, a pgAdmin.
+#: * ``app``   — a UI people use: a web app.
+#: * ``agent`` — talks to an agent: its ``chat`` (``api.chat.openai``), an MCP-UI surface.
+#: * ``service`` — anything else the deployment exposes (a REST API, a database port).
+EndpointSubkind = Literal["admin", "app", "agent", "service"]
+ENDPOINT_SUBKINDS: tuple[str, ...] = ("admin", "app", "agent", "service")
+
+
+def default_subkind(protocol_kind: str) -> str:
+    """What an endpoint speaking *protocol_kind* is for, when its writer does not say."""
+    try:
+        kind = normalize_tag(protocol_kind) if protocol_kind else ""
+    except ValueError:
+        return "service"  # an ill-formed kind is refused by the protocol's own validation, not here
+    if kind == PROTOCOL_WORKSPACE:
+        return "admin"
+    if kind == PROTOCOL_API_CHAT_OPENAI:
+        return "agent"
+    if kind and surface_of(kind) == "web":
+        return "app"
+    return "service"
 
 
 # ── protocols ───────────────────────────────────────────────────────────────
@@ -208,7 +238,34 @@ class ChannelBackend(DataSpec):
 Backend = Annotated[Union[StaticBackend, ProxyBackend, ChannelBackend], Field(discriminator="type")]
 
 
+# ── what a deployment declares it exposes ───────────────────────────────────
+
+
+class EndpointDeclaration(DataSpec):
+    """One service a deployment DECLARES it exposes — ``Deployment.exposes``.
+
+    The declaration is the deployment's own: what it serves, what for, what it speaks and how to tell it
+    is alive. ``backend`` is the one part that may be unknown when the deployment is declared (a port is
+    picked when the service starts, a channel is made when the loop is launched); the endpoint row fills
+    it in. A declared endpoint with no row serving it is a failing service in the node's health report.
+    """
+
+    spec_kind: ClassVar[str] = "endpoint.declaration"
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    subkind: EndpointSubkind
+    protocol: TaggedProtocol
+    backend: Optional[Backend] = None
+    #: How to tell it is alive; ``None`` = the backend's default (``health_spec``).
+    check: Optional[HealthCheck] = None
+
+
 __all__ = [
+    "EndpointDeclaration",
+    "ENDPOINT_SUBKINDS",
+    "EndpointSubkind",
+    "default_subkind",
     "Backend",
     "ChannelBackend",
     "ChatOpenAIProtocol",

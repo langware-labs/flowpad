@@ -8,6 +8,7 @@
  * the page (openTab would silently drop it back to desk), that the selected
  * project reaches the pane, and that a logged-out user meets one guard.
  */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -55,6 +56,16 @@ vi.mock('@src/components/project-selector', () => ({
 
 import { CredentialsView } from '@src/components/credentials-view/CredentialsView';
 
+/** The view reads credentials through react-query (`use-credentials`), so it renders under a client. */
+function renderView() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <CredentialsView />
+    </QueryClientProvider>,
+  );
+}
+
 describe('CredentialsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -66,7 +77,7 @@ describe('CredentialsView', () => {
   afterEach(() => cleanup());
 
   it('keeps personal connections unscoped even when recent projects exist', () => {
-    render(<CredentialsView />);
+    renderView();
 
     expect(screen.getByTestId('pane-connections').textContent).toBe('undefined');
   });
@@ -74,14 +85,14 @@ describe('CredentialsView', () => {
   it('does not grant or test against a context project absent from the URL', () => {
     h.pointer = undefined;
     h.contextProject = { id: 'proj-b' };
-    render(<CredentialsView />);
+    renderView();
 
     expect(screen.getByTestId('pane-connections').textContent).toBe('undefined');
   });
 
   it('does not substitute a recent project for an unresolved URL project', () => {
     h.pointer = 'connections/missing-project';
-    render(<CredentialsView />);
+    renderView();
 
     expect(screen.getByTestId('pane-connections').textContent).toBe('undefined');
   });
@@ -90,13 +101,13 @@ describe('CredentialsView', () => {
     // `environment` and `api-keys` are still in the cross-language enum and
     // still reachable from persisted tabs, so they must land somewhere real.
     h.pointer = 'environment/proj-b';
-    render(<CredentialsView />);
+    renderView();
 
     expect(screen.getByTestId('pane-connections').textContent).toBe('project-b');
   });
 
   it('navigates on project pick, preserving the page', async () => {
-    render(<CredentialsView />);
+    renderView();
 
     await userEvent.click(screen.getByTestId('credentials-project-picker'));
     await userEvent.click(screen.getByTestId('pick-proj-b'));
@@ -109,7 +120,7 @@ describe('CredentialsView', () => {
 
   it('carries the page through even on desk', async () => {
     h.page = 'desk';
-    render(<CredentialsView />);
+    renderView();
 
     await userEvent.click(screen.getByTestId('credentials-project-picker'));
     await userEvent.click(screen.getByTestId('pick-proj-b'));
@@ -119,14 +130,14 @@ describe('CredentialsView', () => {
 
   it('reads the selected project from the pointer', () => {
     h.pointer = 'connections/proj-b';
-    render(<CredentialsView />);
+    renderView();
 
     expect(screen.getByTestId('pane-connections').textContent).toBe('project-b');
   });
 
   it('shows one login guard and no panes when logged out', () => {
     h.user = null;
-    render(<CredentialsView />);
+    renderView();
 
     expect(screen.getByTestId('login-required')).toBeTruthy();
     // The pane, not the retired ones — asserting testids that no longer exist
@@ -140,7 +151,7 @@ describe('CredentialsView', () => {
     // user-scoped, so the table has something to say either way. Only the
     // project-scoped credential rows go quiet.
     h.projects = [];
-    render(<CredentialsView />);
+    renderView();
 
     expect(screen.getByTestId('pane-connections')).toBeTruthy();
     expect(screen.getByTestId('pane-connections').textContent).toBe('undefined');

@@ -27,12 +27,13 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.type_info import register_all
+from tests.unit._project_names import unique_project_name
 
 register_all()
 
 
 async def _make_project(tmp_path, name="ctx-proj"):
-    project = Project(name=str(tmp_path / name))
+    project = Project(name=unique_project_name(name), fs_storage_mount_path=str(tmp_path / name))
     await project.save()
     return project
 
@@ -281,7 +282,7 @@ async def test_remote_project_materializes_shared_context_folder_with_empty_side
         Project,
         {
             "id": str(uuid4()),
-            "name": "Shared Project",
+            "name": unique_project_name("Shared Project"),
             "shared_context_entities": [tid],
             "shared_context_origins": {tid: origin.model_dump(mode="json")},
         },

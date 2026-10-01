@@ -45,7 +45,6 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.builtin.workspace import Workspace
 from flow_sdk.config import (
-    AGENT_MOUNT_FOLDER,
     FLOWPAD_ASSISTANT_DIRNAME,
     FLOWPAD_ASSISTANT_PROJECT_NAME,
     FLOWPAD_ASSISTANT_PROJECT_UNAME,
@@ -1695,7 +1694,9 @@ def setup_desktop_filesystem() -> None:
       - <instance_dir>/preferences.json  (defaults written if missing;
         legacy ~/Flowpad workspace/.flow/settings.json migrated on first run)
     """
-    workspace_path = Path(AGENT_MOUNT_FOLDER)
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+
+    workspace_path = agent_workspace_root()
 
     # Create skills folder structure if it doesn't exist
     skills_path = workspace_path / ".claude" / "skills"

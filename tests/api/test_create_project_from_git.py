@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.config import agent_workspace_root
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 
 
@@ -45,7 +45,7 @@ async def test_create_project_from_git_happy_path(bootstrapped_client):
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _cn_id(bootstrap.json())
 
-    target = Path(AGENT_MOUNT_FOLDER) / "Hello-World"
+    target = agent_workspace_root() / "Hello-World"
     if target.exists():
         # Sandboxed HOME — but be defensive against parallel-test leakage.
         import shutil
@@ -84,7 +84,7 @@ async def test_create_project_from_git_indexes_clone(bootstrapped_client, monkey
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "Indexed-World"
-    target = Path(AGENT_MOUNT_FOLDER) / leaf
+    target = agent_workspace_root() / leaf
     if target.exists():
         import shutil
         shutil.rmtree(target)
@@ -124,7 +124,7 @@ async def test_create_project_from_git_clones_with_user_token(bootstrapped_clien
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "Private-World"
-    target = Path(AGENT_MOUNT_FOLDER) / leaf
+    target = agent_workspace_root() / leaf
     if target.exists():
         import shutil
         shutil.rmtree(target)
@@ -154,7 +154,7 @@ async def test_create_project_from_git_collision_suggests(bootstrapped_client):
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "preexisting-repo"
-    existing = Path(AGENT_MOUNT_FOLDER) / leaf
+    existing = agent_workspace_root() / leaf
     existing.mkdir(parents=True, exist_ok=True)
     (existing / "marker").write_text("untouched")
 
@@ -180,8 +180,8 @@ async def test_create_project_from_git_accepts_suggested(bootstrapped_client):
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "twice-cloned"
-    base = Path(AGENT_MOUNT_FOLDER) / leaf
-    suggested = Path(AGENT_MOUNT_FOLDER) / f"{leaf}-2"
+    base = agent_workspace_root() / leaf
+    suggested = agent_workspace_root() / f"{leaf}-2"
     base.mkdir(parents=True, exist_ok=True)
     # Clean up the suggestion-target from any prior leaked run so the test is
     # idempotent — without this, a prior pass leaves the folder behind and the
@@ -234,7 +234,7 @@ async def test_create_project_from_git_clone_failure(bootstrapped_client):
 
     leaf = "does-not-exist"
     # Make sure the slot is free so we reach the clone call.
-    target = Path(AGENT_MOUNT_FOLDER) / leaf
+    target = agent_workspace_root() / leaf
     if target.exists():
         import shutil
         shutil.rmtree(target)

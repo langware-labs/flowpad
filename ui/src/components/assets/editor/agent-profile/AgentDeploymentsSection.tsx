@@ -11,6 +11,7 @@ import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal'
 
 import { AgentDeployChecklist } from './AgentDeployChecklist';
 import { DeployedAgentChatPanel } from './DeployedAgentChatPanel';
+import { DeploymentHealth } from './deployment/DeploymentHealth';
 
 interface AgentDeploymentsSectionProps {
   agent: Agent;
@@ -214,6 +215,7 @@ export function AgentDeploymentsSection({ agent }: AgentDeploymentsSectionProps)
                   )}
                 </Button>
               </div>
+              <DeploymentHealth deployment={deployment} />
               {chatOpen && <DeployedAgentChatPanel agent={agent} deployment={deployment} />}
             </div>
           );

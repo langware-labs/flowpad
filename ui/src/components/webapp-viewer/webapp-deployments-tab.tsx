@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
-import { KIND_WEB, WorldViewProjection } from '@sdk';
+import { WorldViewProjection } from '@sdk';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { useCurrentDeployments } from '@src/hooks/flow-hooks';
 import { DockPointer, useDockNavigation } from '@src/navigation';
@@ -55,12 +55,11 @@ export const WebappDeploymentsTab: React.FC = () => {
     </Button>
   );
 
-  // WEB placements only. Every placement is now ONE entity, so without this the
-  // web-app viewer would also list an agent's sandbox and a cloud desktop.
-  // Prefix match, not equality: the ontology is hierarchical, and a row refined
-  // to `runtime.web.vite` is still a web runtime.
+  // WEB placements only: a project's own placements. Every placement is ONE entity, so without
+  // this the web-app viewer would also list an agent's sandbox and a cloud desktop. What a
+  // placement places is its parent.
   const deployments = React.useMemo(
-    () => allDeployments.filter((d) => d.kind === KIND_WEB || d.kind.startsWith(`${KIND_WEB}.`)),
+    () => allDeployments.filter((d) => d.elementType === 'project'),
     [allDeployments],
   );
 
@@ -109,7 +108,7 @@ export const WebappDeploymentsTab: React.FC = () => {
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{deployment.displayName}</span>
               <span className="text-xs text-muted-foreground">{deployment.status.sync_state}</span>
             </div>
-            <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{deployment.kind}</p>
+            <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{deployment.target.provider}</p>
             <p className="mt-1 truncate text-xs text-muted-foreground">{deployment.target.scope}</p>
           </button>
         ))}

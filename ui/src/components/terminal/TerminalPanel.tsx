@@ -154,7 +154,7 @@ function startProcessRuntime(process: AgenticProcess, cols: number, rows: number
 
 /** A plain shell: `open` (re)creates or re-finds its PTY, then attaches it. */
 function startShellRuntime(shell: Shell, cols: number, rows: number): Promise<void> {
-  return startRuntime(shell.typeId.toString(), () => shell.start({ cols, rows, workdir: shell.workdir ?? undefined }));
+  return startRuntime(shell.typeId.toString(), () => shell.ensureStarted({ cols, rows, workdir: shell.workdir ?? undefined }));
 }
 
 /** A plain shell whose `open` failed: say so on the panel, with a way to try again. */

@@ -37,7 +37,7 @@ import {
 import { WikiButton, WikiTip } from '@src/components/wiki-tip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { QuickCreateDialog } from './QuickCreateDialog';
-import { QUICK_CREATE_REGISTRY, getDescriptor } from './registry';
+import { QUICK_CREATE_REGISTRY, getDescriptor, type QuickCreateGroup } from './registry';
 import { providerMetaFor } from '@src/tabs/provider-meta';
 
 /** Registry types deliberately absent from this launcher (still creatable from
@@ -85,7 +85,7 @@ export type DesktopTileProps = {
 
 /**
  * The square icon-over-label tile every "New …" affordance on project home
- * uses — sized to match the home MiniDesktop / favorites grid. Exported so
+ * uses — sized to match the favorites desktop grid. Exported so
  * sibling surfaces (hub home's projects and desktops) present the same shape
  * rather than inventing a second look for the same kind of act.
  *
@@ -152,7 +152,7 @@ export function TileSection({
   return (
     <section>
       <div className="mb-2 flex items-center gap-3">
-        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         {headerExtra}
       </div>
       <div className="flex flex-wrap gap-3">{children}</div>
@@ -289,8 +289,8 @@ export function useQuickCreatePick() {
 export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles'>;
 
 /** The tile groups this panel can render, in order. */
-export type QuickCreateSection = 'session' | 'message' | 'project' | 'asset' | 'folder' | 'helpdesk';
-export const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'project', 'asset', 'folder', 'helpdesk'];
+export type QuickCreateSection = 'chat' | 'build' | 'write' | 'connect' | 'project' | 'folder' | 'helpdesk';
+export const ALL_SECTIONS: QuickCreateSection[] = ['chat', 'build', 'write', 'connect', 'project', 'folder', 'helpdesk'];
 
 /** Sections that point the project at something that ALREADY EXISTS rather than
  *  creating it. `QuickCreateModal` excludes them wholesale — see the reason in
@@ -313,13 +313,13 @@ export interface QuickCreatePanelProps {
   /** Dismiss the host, if there is one to dismiss. A modal closes; a page no-ops. */
   onDone?: () => void;
   /**
-   * Which tile groups to render, in this order. Defaults to all four (the "+"
-   * modal). The tabbed ProjectHome splits: `session` renders under its own
-   * tagged wrapper, `asset` + `folder` below the mini-desktop.
+   * Which tile groups to render, in this order. Defaults to all of them (the
+   * "+" modal drops the adoption ones). The tabbed ProjectHome splits: `chat`
+   * renders under its own tagged wrapper, the asset groups + `folder` below it.
    */
   sections?: QuickCreateSection[];
   /**
-   * Host-supplied tiles appended to the `session` group — e.g. ProjectHome's
+   * Host-supplied tiles appended to the `chat` group's sessions — e.g. ProjectHome's
    * Terminal opener, whose creation path (and modals) live on the terminal
    * strip controller rather than in this panel.
    */
@@ -403,6 +403,7 @@ export function QuickCreatePanel({
         // gives a "New Skills" tile.
         .map((d) => ({
           type: d.type,
+          group: d.group,
           Icon: iconForType(d.type) as TileIcon,
           label: t(d.label),
           wikiword: d.wikiword,
@@ -439,11 +440,36 @@ export function QuickCreatePanel({
   // passed by value, so the host still has it after this panel unmounts.
   const folderSources = useContextFolderSources();
 
+  // One registry group's tiles; a group the server leaves empty renders nothing.
+  const assetGroup = (group: QuickCreateGroup, title: ReactNode) => {
+    const items = assetItems.filter((item) => item.group === group);
+    if (items.length === 0) return null;
+    return (
+      <TileSection title={title}>
+        {items.map((item) => (
+          <TippedTile
+            key={item.type}
+            wikiword={item.wikiword}
+            Icon={item.Icon}
+            label={item.label}
+            onClick={() => {
+              onDone?.();
+              onPick(item.type);
+            }}
+          />
+        ))}
+      </TileSection>
+    );
+  };
+
   // Keyed by section so `sections` controls both membership AND order — the
   // group is looked up, not laid out, so the caller's order is what renders.
   const bySection: Record<QuickCreateSection, ReactNode> = {
-    session: (
-      <TileSection title={<Trans>New session</Trans>}>
+    // Agent sessions and a message to a person, side by side: both start a
+    // conversation. The message tile is hardcoded — a conversation is neither a
+    // registry type nor server-`creatable`.
+    chat: (
+      <TileSection title={<Trans>Chat</Trans>}>
         {[...sessionTiles, ...extraSessionTiles].map((tile) => (
           <TippedTile
             key={tile.key}
@@ -455,13 +481,6 @@ export function QuickCreatePanel({
             onClick={tile.onClick}
           />
         ))}
-      </TileSection>
-    ),
-    // A conversation is a message to a person, not an agent session, and not a
-    // file asset — hence its own section and a hardcoded tile (the asset grid is
-    // registry types filtered by server `creatable`, and `conversation` is neither).
-    message: (
-      <TileSection title={<Trans>New message</Trans>}>
         <TippedTile
           wikiword={CONVERSATION_WIKI}
           Icon={MessageSquarePlus}
@@ -479,7 +498,7 @@ export function QuickCreatePanel({
     // hardcoded tiles — the same pair the "New" dropdown offers. Before this
     // group existed, "Create new" had no way to create a project at all.
     project: (
-      <TileSection title={<Trans>New project</Trans>}>
+      <TileSection title={<Trans>Project</Trans>}>
         {/* Backend type registry owns the glyph (TypeInfo.icon) — the same
             briefcase every other surface draws for a project, never a
             hand-picked lucide stand-in. */}
@@ -507,28 +526,15 @@ export function QuickCreatePanel({
         />
       </TileSection>
     ),
-    asset: (
-      <TileSection title={<Trans>New asset</Trans>}>
-        {assetItems.map((item) => (
-          <TippedTile
-            key={item.type}
-            wikiword={item.wikiword}
-            Icon={item.Icon}
-            label={item.label}
-            onClick={() => {
-              onDone?.();
-              onPick(item.type);
-            }}
-          />
-        ))}
-      </TileSection>
-    ),
+    build: assetGroup('build', <Trans>Build AI</Trans>),
+    write: assetGroup('write', <Trans>Write & plan</Trans>),
+    connect: assetGroup('connect', <Trans>Connect</Trans>),
     folder: (
       <TileSection
         title={
           <span className="flex items-center gap-1">
-            {/* Sentence case, matching the sibling headings ("New session",
-                "New asset") and the AddContextFolderDialog title — same string,
+            {/* Sentence case, matching the sibling headings and the
+                AddContextFolderDialog title — same string,
                 one catalog entry. */}
             <Trans>Add context folder</Trans>
             <Tooltip delayDuration={150}>
@@ -595,7 +601,7 @@ export function QuickCreatePanel({
   };
 
   return (
-    <div className="flex flex-col gap-4 pt-1" data-testid="quick-create-panel">
+    <div className="flex flex-col gap-6 pt-1" data-testid="quick-create-panel">
       {sections.map((s) => (
         <Fragment key={s}>{bySection[s]}</Fragment>
       ))}

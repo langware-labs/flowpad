@@ -3,10 +3,12 @@
  * its status read back.
  *
  *   1. `new Project(...).save()` and `credentialsService.save(...)` declare `demo-service` in it;
- *   2. the literal `flow project setup`, nobody at the terminal — every question left empty, so the
- *      AI rung runs. The agent is the mock worker (`tests/utils/demo_credential`): a few lines of
- *      Python that pipe the setup's values into the store command its prompt names, so this pins
- *      the I/O between the pieces, not a model;
+ *   2. the literal `flow project setup`, nobody at the terminal — every question left empty, which
+ *      hands it to AI Assist. The assist runs at the BACKEND (the terminal re-raises the question
+ *      there), so the backend runs on the mock worker (`tests/e2e/mock_worker_backend.py`) with the
+ *      `tests/utils/demo_credential` behavior: a few lines of Python that produce the asked value and
+ *      pipe it into the `flow ask answer` command its prompt names, so this pins the I/O between the
+ *      pieces, not a model;
  *   3. `credentialsService.status(projectId)` reports it connected, every value present in the
  *      project's env file, and no value anywhere in the payload.
  *
@@ -81,11 +83,15 @@ beforeAll(async () => {
     MINIHUB_RELOAD: 'False',
     FLOWPAD_SKIP_DOTENV: 'true',
     FLOWPAD_SKIP_LOCK: 'true',
+    // AI Assist runs at the backend: its agents are the mock worker on the demo-credential behavior.
+    MOCK_TRANSCRIPTS: path.join(tmpRoot, 'transcripts'),
+    MOCK_BEHAVIOR: 'tests.utils.demo_credential:follow_setup',
+    PYTHONPATH: REPO_ROOT,
   };
   const logPath = `/tmp/credentials_declare_fill_status.${INSTANCE}.log`;
   const logHandle = await fs.open(logPath, 'w');
   try {
-    proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
+    proc = spawn('uv', ['run', 'python', 'tests/e2e/mock_worker_backend.py'], {
       cwd: REPO_ROOT,
       env: backendEnv,
       stdio: ['ignore', logHandle.fd, logHandle.fd],

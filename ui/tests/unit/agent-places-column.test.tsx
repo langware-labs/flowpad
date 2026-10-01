@@ -30,7 +30,6 @@ function place(id: string, isLocal: boolean, extra: Partial<AgentPlace> = {}): A
     deployment: {
       id,
       name: isLocal ? 'brief (local)' : 'brief-1',
-      kind: 'runtime.agent',
       target: { provider: isLocal ? 'local' : 'e2b', scope: 'machine', location: null },
       status: { sync_state: 'current', provider_state: 'running' },
     },

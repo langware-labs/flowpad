@@ -45,6 +45,7 @@ from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.schema.type_info import register_all
+from tests.unit._project_names import unique_project_name
 
 register_all()
 
@@ -120,7 +121,7 @@ def _tracked_changes(repo: Path) -> list[str]:
 async def _project(tmp_path: Path, name: str) -> Project:
     work = tmp_path / name
     work.mkdir()
-    project = Project(name=name, fs_storage_mount_path=str(work))
+    project = Project(name=unique_project_name(name), fs_storage_mount_path=str(work))
     await project.save()
     return project
 

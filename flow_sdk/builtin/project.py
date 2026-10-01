@@ -30,7 +30,7 @@ from flow_sdk.api.api_types.identifier import is_valid_entity_id, mint_uuid
 from flow_sdk.builtin.asset_menu import BrowsingOptions
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
-from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider, is_hidden_project
+from flow_sdk.config import PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
@@ -162,12 +162,29 @@ def _detach_git_history(repo_root: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=root, capture_output=True, timeout=30, check=False)
 
 
+def _workspace_root() -> Path:
+    """This instance's agent mount root, read at call time (see ``agent_workspace_root``)."""
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
+
+    return agent_workspace_root()
+
+
 #: A row on a temp ROOT is not a real work folder, so it is no one's parent project.
 _TEMP_ROOTS = frozenset(canonical_posix_path(p) for p in (tempfile.gettempdir(), "/tmp", "/var/tmp"))
 
 
 class NestedProjectError(ValueError):
     """A project was about to be created inside another project's folder, or around one."""
+
+
+class DuplicateProjectNameError(ValueError):
+    """A project was about to take a name another visible project already has."""
+
+
+def project_name_key(name: str | None) -> str:
+    """The name two projects may not share: case-insensitive, and spaces, ``-`` and
+    ``_`` fold together — "GTM Studio", "gtm-studio" and "gtm_studio" are one name."""
+    return re.sub(r"[\s_\-]+", "-", (name or "").casefold()).strip("-")
 
 
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
@@ -669,6 +686,31 @@ class Project(Entity):
             log.warning("project home page failed for %s: %s", self.id, exc)
             return ApiSuccessResponse(data={"asset": None, "type": None, "error": str(exc)})
 
+    # ── setup: is this project ready here, and the wizard that makes it so ─────────
+
+    @action.get(action_name="setup-requirements")
+    async def setup_requirements_action(self) -> "ApiResponse":
+        """`GET /project/<id>/setup-requirements` — ``ready``, what is left to set up, and the gaps.
+        Every MUST value and needed connection counts; OPTIONAL values never do. Names only."""
+        from flow_sdk.builtin.project_setup import readiness_of  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=(await readiness_of(self)).model_dump(mode="json"))
+
+    @action.post(action_name="setup")
+    async def setup_action(self) -> "ApiResponse":
+        """`POST /project/<id>/setup` — start the setup wizard here; its questions come to the app.
+        Answers at once with the run's address, which a screen claims to draw them in place."""
+        from flow_sdk.builtin.project_setup import start_setup  # noqa: PLC0415
+
+        return ApiSuccessResponse(data={"run": await start_setup(self)})
+
+    @action.get(action_name="setup-run")
+    async def setup_run_action(self) -> "ApiResponse":
+        """`GET /project/<id>/setup-run` — whether the setup is running, and its steps so far."""
+        from flow_sdk.builtin.project_setup import setup_run  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=setup_run(str(self.id)))
+
     @staticmethod
     def _read_brand(raw: Any, root: "Path") -> dict[str, Any] | None:
         """Validate a ``brand`` block from ``string.json``, or ``None``.
@@ -750,6 +792,20 @@ class Project(Entity):
 
     @computed_field
     @property
+    def folder_name_mismatch(self) -> str | None:
+        """The mount folder's own name when it is not the project's name, else None.
+
+        A rename changes the name, never the folder (the path keys sessions,
+        records and discovery), so the two drift apart; the UI flags the drift.
+        Compared as ``project_name_key``, so "gtm studio" in ``gtm-studio/`` matches."""
+        mount = self.fs_storage_mount_path
+        if not mount or self.hidden:
+            return None
+        folder = PurePosixPath(mount).name
+        return folder if folder and project_name_key(folder) != project_name_key(self.name) else None
+
+    @computed_field
+    @property
     def context_dir_infos(self) -> list[dict[str, str]]:
         """Per-context-folder info the UI needs beyond the bare path.
 
@@ -799,7 +855,7 @@ class Project(Entity):
                 # Name is a VFS-relative path - convert to absolute OS path
                 # VFS root maps to OS root ("/" on Unix, "C:\" on Windows)
                 if sys.platform == PLATFORM_WIN32:
-                    drive = os.path.splitdrive(AGENT_MOUNT_FOLDER)[0]
+                    drive = os.path.splitdrive(str(_workspace_root()))[0]
                     os_root = drive + os.sep
                 else:
                     os_root = os.sep
@@ -809,7 +865,7 @@ class Project(Entity):
             else:
                 # Simple name like "my_first_project"
                 leaf = os.path.basename(self.name)
-                self.fs_storage_mount_path = os.path.join(AGENT_MOUNT_FOLDER, leaf)
+                self.fs_storage_mount_path = os.path.join(str(_workspace_root()), leaf)
 
         # Retain protected legacy paths so the model carries one truthful source
         # value. They remain readable for cleanup/migration, but must never be
@@ -1058,7 +1114,7 @@ class Project(Entity):
 
         # A record with no path is LOCATIONLESS — never fall through to a
         # construction from `name`. `set_fs_storage_mount_path`'s simple-name
-        # branch would root it at `<AGENT_MOUNT_FOLDER>/<name>`, which for any
+        # branch would root it at `<agent_workspace_root()>/<name>`, which for any
         # project living outside the agent workspace silently RELOCATES it
         # there; the next PTY spawn (`os.makedirs(cwd)`) then materializes that
         # folder, so deleting it never sticks. A project whose record lost its
@@ -1989,6 +2045,7 @@ class Project(Entity):
         if self.legacy_include_dirs_:
             await self._migrate_legacy_context_dirs()
         was_create = not self.exist_in_db
+        await self._refuse_duplicate_name()
         if was_create:
             await self._refuse_nested_mount()
             await self._warn_if_mount_owned_elsewhere()
@@ -2023,6 +2080,33 @@ class Project(Entity):
         invalidate_projects_cache()
         return result
 
+    def _visible(self) -> bool:
+        """A real work folder: neither hidden (see ``hidden``) nor a row on the temp dir."""
+        return not self.hidden and (self.fs_storage_mount_path or "") not in _TEMP_ROOTS
+
+    async def _refuse_duplicate_name(self) -> None:
+        """No two visible projects share a name (``project_name_key``), on create and rename."""
+        key = project_name_key(self.name)
+        if not key or not self._visible():
+            return
+        if self.exist_in_db:
+            # Only a rename is checked, so rows that collided before the rule keep saving.
+            # The stored row, not the entity cache, which may already hold the new name.
+            stored = await type(self)._db.get_by_id(str(self.id), self.type)
+            if stored and project_name_key(stored.name) == key:
+                return
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        # Names are stored as typed; LIKE (case-insensitive) with the separators widened
+        # to "%" narrows to the candidates, and the key decides.
+        candidates = await type(self).get_all(QueryFilter(
+            match=ExpressionNode(op=QueryOp.LIKE, operands=["name", key.replace("-", "%")])))
+        for other in candidates:
+            if str(other.id) != str(self.id) and other._visible() and project_name_key(other.name) == key:
+                raise DuplicateProjectNameError(
+                    f"a project named {other.name!r} already exists ({other.fs_storage_mount_path}); "
+                    "project names must be unique")
+
     async def _refuse_nested_mount(self) -> None:
         """Projects do not nest: a new one may not sit inside a project's folder, nor
         contain one. A folder belongs to exactly one project — a subfolder an agent
@@ -2035,10 +2119,7 @@ class Project(Entity):
             return
 
         def _counts(other: "Project") -> bool:
-            other_mount = other.fs_storage_mount_path or ""
-            return (str(other.id) != str(self.id)
-                    and not is_hidden_project(other_mount, bool(other.system))
-                    and other_mount not in _TEMP_ROOTS)
+            return str(other.id) != str(self.id) and other._visible()
 
         for parent in PurePosixPath(mount).parents:
             for owner in await self._mount_owners(str(parent)):
@@ -2059,8 +2140,7 @@ class Project(Entity):
     async def _warn_if_mount_owned_elsewhere(self) -> None:
         """Log (never raise) when a brand-new project lands on a folder another
         project already owns: the caller skipped ``find_by_cwd``, the natural
-        key. Names are display-only and may legitimately repeat, so they are
-        not checked. Only the indexed EQ query runs — no table scan on create."""
+        key. Only the indexed EQ query runs — no table scan on create."""
         mount = self.fs_storage_mount_path
         if not mount:
             return

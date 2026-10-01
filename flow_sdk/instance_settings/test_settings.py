@@ -45,6 +45,12 @@ DEFAULT_TEST_PORT = 9009
 class TestInstanceSettings(BaseInstanceSettings):
     """Test-mode settings. All paths anchored under a sandbox dir."""
 
+    @property
+    def workspace_root(self) -> Path:
+        """The sandbox's own ``Flowpad workspace`` — follows ``user_home``, so a test
+        that points ``user_home`` somewhere gets its workspace there too."""
+        return self.user_home / "Flowpad workspace"
+
     @classmethod
     def from_env(cls) -> "TestInstanceSettings":
         sandbox = cls._resolve_sandbox()
