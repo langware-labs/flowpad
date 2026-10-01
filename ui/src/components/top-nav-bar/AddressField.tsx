@@ -14,6 +14,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { cn } from '@src/lib/utils';
 import { ADDRESS_PILL_CLASS } from './address-pill';
 import { CrumbDetailsPopover } from './CrumbDetailsPopover';
 import { ProjectCrumbHoverCard } from './ProjectCrumbHoverCard';
@@ -34,7 +35,16 @@ import type { Crumb } from './use-entity-breadcrumbs';
  * I in" is the more useful question from an address bar; the briefcase button in
  * the nav cluster opens the project itself.
  */
-export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: () => void }) {
+export function AddressField({
+  crumbs,
+  onSearch,
+  onAsk,
+}: {
+  crumbs: Crumb[];
+  onSearch: () => void;
+  /** A click on the pill's dead space — not on a crumb or a control — asks the assistant. */
+  onAsk?: () => void;
+}) {
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
@@ -139,7 +149,19 @@ export function AddressField({ crumbs, onSearch }: { crumbs: Crumb[]; onSearch: 
 
   return (
     <>
-      <div ref={fieldRef} data-testid="top-nav-address" className={ADDRESS_PILL_CLASS}>
+      <div
+        ref={fieldRef}
+        data-testid="top-nav-address"
+        className={cn(ADDRESS_PILL_CLASS, onAsk && 'cursor-text')}
+        onClick={(e) => {
+          // Dead space only: crumbs, the overflow ellipsis and the search button
+          // keep their own clicks. Separators count as dead space — they are
+          // between things, not things.
+          if (!onAsk) return;
+          if ((e.target as HTMLElement).closest('[data-crumb], button, a')) return;
+          onAsk();
+        }}
+      >
         <Breadcrumb className="min-w-0">
           <BreadcrumbList ref={listRef} className="flex-nowrap gap-1.5 text-sm sm:gap-1.5">
             {visible.map((crumb, i) => {

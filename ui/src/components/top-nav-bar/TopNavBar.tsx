@@ -10,6 +10,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
 import { useDocumentTitle, windowTitleFor } from '@src/navigation/window-title';
+import { useOptionalFloatingChat } from '@src/components/floating-chat/FloatingChatContext';
+import { AddressAskField } from './AddressAskField';
 import { AddressField } from './AddressField';
 import { AddressSearchField } from './AddressSearchField';
 import { NewChatButton } from './NewChatButton';
@@ -33,7 +35,9 @@ import { useEntityBreadcrumbs } from './use-entity-breadcrumbs';
  */
 export function TopNavBar() {
   const { t } = useLingui();
-  const [searching, setSearching] = useState(false);
+  // The address slot's mode: where you are, where you'd rather be, or what you want done.
+  const [mode, setMode] = useState<'address' | 'search' | 'ask'>('address');
+  const assistant = useOptionalFloatingChat();
   const { currentDock, navigation } = useDockNavigation();
   const { runtimeKind, project } = useContext();
   const { canGoBack, canGoForward, goBack, goForward, reload } = useHistoryNav();
@@ -87,14 +91,26 @@ export function TopNavBar() {
         testId="top-nav-files"
       />
       <RuntimeChip kind={runtimeKind} project={project} />
-      {/* One slot, two modes — the address is where you are, and search is
-          where you'd rather be. Same pill, same width, so the row doesn't
-          reflow when it flips; the magnifier that flips it sits on the pill's
+      {/* One slot, three modes — the address is where you are, search is
+          where you'd rather be, and ask (a click on the pill's dead space) is
+          what you want done, handed to the Flowpad Assistant. Same pill, same
+          width, so the row doesn't reflow when it flips; the magnifier that flips it sits on the pill's
           right edge, which is also where the rail's search used to live. */}
-      {searching ? (
-        <AddressSearchField onClose={() => setSearching(false)} />
+      {mode === 'search' ? (
+        <AddressSearchField onClose={() => setMode('address')} />
+      ) : mode === 'ask' && assistant ? (
+        <AddressAskField
+          onAsk={(text, rect) =>
+            assistant.ask(text, { rect: rect && { x: rect.left, y: rect.top, width: rect.width, height: rect.height } })
+          }
+          onClose={() => setMode('address')}
+        />
       ) : (
-        <AddressField crumbs={crumbs} onSearch={() => setSearching(true)} />
+        <AddressField
+          crumbs={crumbs}
+          onSearch={() => setMode('search')}
+          onAsk={assistant ? () => setMode('ask') : undefined}
+        />
       )}
       <TopBarActions targetTypeId={targetTypeId} targetTitle={targetTitle} dock={currentDock} />
       {/* Quick launch, last in the row: unlike the actions beside it, it acts
