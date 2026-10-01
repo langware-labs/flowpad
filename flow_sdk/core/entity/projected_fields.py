@@ -15,6 +15,14 @@ Three pieces, and all three are needed:
   leaky in the other direction: generic graph CRUD breaks.
 * ``_set_projection`` is the one sanctioned writer, gated on a module-private
   sentinel so a call site has to reach for it deliberately.
+* ``_adopt_stored_projections`` closes the last door: a SAVE. A save writes the
+  whole row, so any writer holding a copy read before the projection last moved
+  (a hub frame, a disk→DB record refresh, the unread recount) wrote its stale
+  ``message_ids`` back over the fresh ones — the new message stayed in the
+  pointer index and the edge table, and vanished from the row the UI renders.
+  ``Entity.save`` calls it inside the record guard and the writer transaction,
+  so every projection a save did not itself set is re-read from the stored row
+  and written back unchanged.
 
 Declare ``projected_fields`` and ``projection_writer`` on the subclass; the
 latter names the function that IS allowed to write, and appears in the error a
@@ -68,6 +76,32 @@ class ProjectedFields:
         object.__setattr__(self, "_allow_projection_write", True)
         try:
             setattr(self, key, value)
+        finally:
+            object.__setattr__(self, "_allow_projection_write", False)
+        written = self.__dict__.get("_projections_set")
+        object.__setattr__(self, "_projections_set", (written or frozenset()) | {key})
+
+    async def _adopt_stored_projections(self) -> None:
+        """Before a save of an existing row: take every projected field this
+        instance did NOT set through ``_set_projection`` from the stored row.
+
+        The caller holds the record guard and the writer transaction, so the
+        read and the write that follows are one step — no projection can land
+        between them. Clears the set afterwards: the next save of this same
+        instance starts from "set nothing" again.
+        """
+        written = self.__dict__.get("_projections_set") or frozenset()
+        object.__setattr__(self, "_projections_set", frozenset())
+        stale = [f for f in self.projected_fields if f not in written]
+        if not stale:
+            return
+        stored = await self._db.get_by_id(str(self.id), self.get_type())
+        if stored is None:
+            return
+        object.__setattr__(self, "_allow_projection_write", True)
+        try:
+            for field in stale:
+                setattr(self, field, getattr(stored, field, None))
         finally:
             object.__setattr__(self, "_allow_projection_write", False)
 
