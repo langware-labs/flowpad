@@ -40,6 +40,7 @@ _ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
         "markdown",
         "spec",
         "whiteboard",
+        "project",
     }
 )
 
