@@ -2127,8 +2127,9 @@ class Project(Entity):
         if origin is None:
             return None
         metadata = project._hub_body()
-        # The hub ignores these; one can hold local directory paths.
-        for not_mirrored in ("legacy_include_dirs_", "expand"):
+        # The hub ignores these; they can hold local directory paths and the
+        # local folder name.
+        for not_mirrored in ("legacy_include_dirs_", "expand", "folder_name_mismatch"):
             metadata.pop(not_mirrored, None)
         shared_context_origins = await project._shared_context_origin_payload()
         if shared_context_origins:

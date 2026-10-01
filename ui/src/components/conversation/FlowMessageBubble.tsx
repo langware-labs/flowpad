@@ -985,7 +985,6 @@ export function MessageEntityChip({
     return (
       <ProjectMessageChip
         typeId={typeId}
-        name={attachment?.name}
         entityRow={data as unknown as Project | null | undefined}
         entityUnavailable={notFound || isError}
         conversationId={conversationId}
