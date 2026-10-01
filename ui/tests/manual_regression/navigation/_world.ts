@@ -2,7 +2,7 @@
  * A real world for browser navigation specs (docs/navigation/dock-loading.md):
  * a project with a markdown report, a PTY agentic process running the MOCK
  * worker, and a plain shell — all created through the HTTP API on a disposable
- * instance, and driven in-app through the real control plane (`flow navigate`).
+ * instance, and driven in-app through the real control plane (`flow navigate`'s own request).
  *
  * The instance must be launched with the mock worker first on PATH so the
  * process's terminal runs a scripted program instead of an LLM:
@@ -17,7 +17,7 @@ import { homedir, tmpdir } from 'os';
 import path from 'path';
 import { expect, type Page } from '@playwright/test';
 import { apiOrigin } from '../_shared/api';
-import { awaitSteerable as awaitSteerableOn, flow } from '../_shared/control-plane';
+import { awaitSteerable as awaitSteerableOn } from '../_shared/control-plane';
 
 export const INSTANCE = process.env.FLOW_INSTANCE || 'dlm-7';
 export const BACKEND = apiOrigin();
@@ -252,8 +252,11 @@ export const awaitSteerable = (page: Page) => awaitSteerableOn(page, BACKEND);
  */
 export async function navigateTo(page: Page, address: string, expectPath: string): Promise<void> {
   const committedBefore = await committedPaths(page);
-  const res = flow(['navigate', 'view', address], INSTANCE);
-  expect(res.code, `flow navigate view ${address} → ${res.out}`).toBe(0);
+  // The request `flow navigate view` makes, without the CLI around it: a Python process per steer
+  // cost ~1 s of a spec's wall clock on CI, ten times over in a spec — none of it the app's.
+  const res = await post('agent/navigate/view', { view: address });
+  const verdict = (await res.json()) as { ok?: boolean; error?: string };
+  expect(verdict.ok, `navigate view ${address} → ${JSON.stringify(verdict)}`).toBe(true);
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: 15_000 }).toContain(expectPath);
   if (committedBefore === null) return; // tab_switch tracing is off on this page: the URL is all there is
   await expect
