@@ -2273,12 +2273,11 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 # would preserve its stale HUB_WRITE values and overwrite the
                 # freshly unpacked state.
                 existing = await FlowMessage.get_one({"id": fm_id})
-                if existing is not None:
-                    await mirror_referenced_projects(existing, None)
                 if existing is None:
                     # A no-row success means unpack materialized the message;
                     # there is no separate header write left to perform.
                     return fm_id
+                await mirror_referenced_projects(existing, None)
             # Download failed (body still uploading, a transient hub error, or —
             # the receiver pre-accept case — the recipient can't pull the bundle
             # body yet). Do NOT return empty: fall through to materialize the FM

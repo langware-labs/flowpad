@@ -184,26 +184,23 @@ async def _adopt_header_session_snapshot(fm: "FlowMessage", someone_typeid: str)
 
 
 async def mirror_referenced_projects(fm: "FlowMessage", someone_typeid: str | None) -> None:
-    """Backward compatibility (FLOWPAD-2199; remove in FLOWPAD-2200): mirror each
-    ``project-<id>`` a received message references but this box lacks.
-
-    An invite from a sender without the generic route carries no project in its
-    bundle, and the invite email's set-up link needs a local row — both relied
-    on this arrival-time mirror. Best-effort: a hub refusal leaves no row."""
+    """Backward compatibility (FLOWPAD-2199; remove in FLOWPAD-2200): mirror from
+    the hub each ``project-<id>`` a received message references but this box
+    lacks — an old sender's invite chip and the email set-up link both need the
+    local row. Best-effort: a hub refusal or outage leaves no row."""
     from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
 
+    project_prefix = f"{BuiltinEntityType.PROJECT.value}-"
     for att in fm.attachment or []:
-        if att.attachment_type != AttachmentType.TYPE_ID or not att.data:
+        if att.attachment_type != AttachmentType.TYPE_ID or not (att.data or "").startswith(project_prefix):
             continue
         try:
             tid = TypeId(att.data)
         except (ValueError, TypeError):
             continue
-        if tid.type != BuiltinEntityType.PROJECT.value or not tid.id:
-            continue
-        if await Project.get_one({"id": tid.id}) is not None:
+        if not tid.id or await Project.get_one({"id": tid.id}) is not None:
             continue
         try:
             await Project.hydrate_from_hub(tid.id, someone_typeid)
