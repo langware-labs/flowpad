@@ -174,7 +174,9 @@ async def test_each_conversation_is_one_thread_with_its_own_events(deployed, boo
     assert resp.status_code == 200, resp.text
     threads = resp.json()["data"]["threads"]
     assert len(threads) == 2, "two chats, two threads"
-    assert all(t["status"] == "idle" and t["messages"] == 2 and t["turns"] == 1 for t in threads), threads
+    # The shape of each thread, short enough that a failure prints all of it (a whole thread is truncated).
+    shapes = [(t["title"][:20], t["status"], t["messages"], t["turns"]) for t in threads]
+    assert all(t["status"] == "idle" and t["messages"] == 2 and t["turns"] == 1 for t in threads), shapes
     assert [t["last_text"].startswith("Mock reply") for t in threads] == [True, True]
     assert all(t["channel"] == "http_chat" and t["process_id"] for t in threads)
 
