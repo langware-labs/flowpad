@@ -487,6 +487,20 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
   }
 
   /**
+   * The transcript entry this row was built from, or `null`.
+   *
+   * History rows carry it in the typed `processEntry`; live frames lose that
+   * payload in `to_xml`, so the ones stamped with the `transcript-entry-id`
+   * attribute carry it only there. The optimistic echo and most live frames
+   * have neither — they are not (yet) transcript entries.
+   */
+  get transcriptEntryId(): string | null {
+    const entry = (this.processEntry as { transcript_entry?: { id?: unknown } } | null)?.transcript_entry;
+    const id = entry?.id ?? this.attributes['transcript-entry-id'];
+    return typeof id === 'string' && id ? id : null;
+  }
+
+  /**
    * Get the parsed data as JSON object (only valid when dataType is Object)
    */
   getJsonData(): T {
