@@ -9,7 +9,7 @@
     "commands": {
       "darwin": "brew install node",
       "linux": "apt-get update && apt-get install -y nodejs",
-      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; winget install --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"
+      "win32": "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }; $v = (Invoke-RestMethod https://nodejs.org/dist/index.json | ForEach-Object { $_ } | Where-Object { $_.lts } | Select-Object -First 1).version; $root = Join-Path $env:LOCALAPPDATA 'Programs'; $dir = Join-Path $root \"node-$v-win-$arch\"; if (-not (Test-Path (Join-Path $dir 'node.exe'))) { $zip = Join-Path $env:TEMP \"node-$v-win-$arch.zip\"; Invoke-WebRequest \"https://nodejs.org/dist/$v/node-$v-win-$arch.zip\" -OutFile $zip -UseBasicParsing; Expand-Archive $zip $root -Force; Remove-Item $zip -Force }; $user = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not ((\"$user\" -split ';') | Where-Object { $_ -and ([IO.Path]::GetFullPath($_).TrimEnd('\\') -ieq $dir) })) { [Environment]::SetEnvironmentVariable('Path', ($dir + ';' + $user).TrimEnd(';'), 'User') }"
     },
     "timeout_seconds": 600
   },
