@@ -32,6 +32,4 @@ WHITEBOARD = TypeInfo(
     scaffold_spec=WhiteboardSpec,
     identity_carrier=frontmatter_identity(),
     asset_hash_fn=whiteboard_asset_hash,
-    # Its chip opens a file-backed editor, so a live message pulls the bundle.
-    eager_pull=True,
 )

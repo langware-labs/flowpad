@@ -385,11 +385,8 @@ class TypeInfo:
     # not a file-backed asset. ``RECEIVE_TRANSFER_GIT_REFERENCE`` ⇒ its row and
     # GitOrigin ride, never repository bytes; the entity class's
     # ``pack_reference`` / ``restore_reference`` hooks own what is particular
-    # to the type (not the hub's ``cloud_file_transport``). ``eager_pull``: a
-    # live message carrying this type pulls its bundle on arrival, because its
-    # chip needs the staged entry before it is usable.
+    # to the type (not the hub's ``cloud_file_transport``).
     receive_transfer: str | None = field(default=None, metadata=_MERGE)
-    eager_pull: bool = field(default=False, metadata=_MERGE)
 
     @property
     def git_publishable(self) -> bool:

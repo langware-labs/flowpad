@@ -41,9 +41,8 @@ class ProjectMeta(BaseMeta):
 PROJECT = TypeInfo(
     type_name=EntityType.PROJECT,
     # An invite message carries the project as a git reference (``Project``
-    # owns the hooks), and a live invite pulls its bundle so the chip can install.
+    # owns the hooks).
     receive_transfer=RECEIVE_TRANSFER_GIT_REFERENCE,
-    eager_pull=True,
     shape=File(ext=".md"),
     icon="Briefcase",
     indexed_by_default=True,
