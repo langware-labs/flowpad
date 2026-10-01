@@ -142,7 +142,7 @@ async def handle_request(
     if request_info.action.lower() == "resetAvailableOnlyForLocalUserOnTesting".lower():
         return await handle_reset_action(request)
 
-    a = action.get_by_name(request_info.action, request_info.resource_type, method=request_info.method or None)
+    a = action.get_by_name(request_info.action, request_info.resource_type)
     if not a:
         raise HTTPException(status_code=400, detail=f"Unknown action: {request_info.action}")
     if not a.handler:
