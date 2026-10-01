@@ -103,8 +103,15 @@ def write_entity_bodies(obj: Any, info: Any, root: Path) -> None:
 
     if info is None or not info.is_entity_document or info.body_file is None:
         return
-    text = (getattr(obj, info.body_file, "") or "").strip()
-    _atomic_write_text(entity_body_path(root, info.body_file), f"{text}\n" if text else "")
+    _write_body_file(obj, info.body_file, root)
+
+
+def _write_body_file(obj: Any, field: str, root: Path) -> None:
+    """One markdown body beside its manifest — stripped, one trailing newline (empty stays empty)."""
+    from flow_sdk.assets.frontmatter import _atomic_write_text  # noqa: PLC0415
+
+    text = (getattr(obj, field, "") or "").strip()
+    _atomic_write_text(entity_body_path(root, field), f"{text}\n" if text else "")
 
 
 def read_entity_json(info: Any, root: Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -242,6 +249,14 @@ def read_main(info: Any, root: Path, *, field_data: dict | None = None) -> tuple
             header_raw = load_json_dict(main)
             if lay.free and header_raw:
                 data[lay.free] = header_raw
+            if lay.body:
+                # The spec's markdown body is its own file beside the manifest (a credential's
+                # ``setup.md``); a manifest written before that still carries it inline.
+                body = entity_body_path(main.parent, lay.body)
+                if body.is_file():
+                    data[lay.body] = body.read_text(encoding="utf-8").strip()
+                elif isinstance(header_raw.get(lay.body), str):
+                    data[lay.body] = header_raw[lay.body]
     elif main is not None:
         ref = FrontMatterFsRef(main)
         header_raw = ref.read_frontmatter()
@@ -420,6 +435,10 @@ def _write_main(obj: Any, info: Any, root: Path, main: Optional[Path]) -> None:
         text = render_asset(obj, info)
         if text is not None:
             _atomic_write_text(main, _with_carried_id(info, main, text))
+            if body_field := spec_layout(info.asset_spec).body:
+                # A flat manifest's markdown body is its own file (a credential's ``setup.md``): the
+                # manifest carries the header fields only, so without this the body would be lost.
+                _write_body_file(obj, body_field, root)
     else:
         write_document(main, body=f"\n{_body(obj, info)}\n", fields=_frontmatter(obj, info), replace_fields=True)
 

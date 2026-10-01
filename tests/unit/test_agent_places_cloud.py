@@ -18,7 +18,7 @@ import pytest
 
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.agent_places import PlaceError, _agent_repo, adopt_placement, behind_count, list_places
-from flow_sdk.builtin.deployment import KIND_AGENT, Deployment, DeploymentActionError
+from flow_sdk.builtin.deployment import Deployment, DeploymentActionError
 from tests.unit.agent._seed import seed_agent, seed_project
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
@@ -34,7 +34,6 @@ async def _agent(tmp_path: Path, name: str, **fields) -> Agent:
 async def _cloud_place(agent: Agent, **fields) -> Deployment:
     deployment = Deployment(
         name=f"{agent.name} (e2b)",
-        kind=KIND_AGENT,
         parent_type_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},

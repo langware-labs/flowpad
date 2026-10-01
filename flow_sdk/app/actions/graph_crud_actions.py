@@ -408,7 +408,7 @@ async def handle_create_entity(request: Request):
         # omitted from the model's own defaults — silently overwriting stored
         # data. `Project` derives `fs_storage_mount_path` from `name`, so a
         # create carrying id+name and no mount RELOCATED an existing project to
-        # `<AGENT_MOUNT_FOLDER>/<name>`; the next PTY spawn (`os.makedirs(cwd)`)
+        # `<agent_workspace_root()>/<name>`; the next PTY spawn (`os.makedirs(cwd)`)
         # then materialized that folder, which is why deleting it never stuck.
         # Merge onto the stored row through the same seam the UPDATE route uses.
         #

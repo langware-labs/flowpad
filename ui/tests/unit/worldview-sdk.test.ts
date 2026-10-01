@@ -80,7 +80,6 @@ describe('Artifact and Deployment SDK models', () => {
       id: DEPLOYMENT_ID,
       type: 'deployment',
       name: 'Cloud Run website',
-      kind: ' GCP.Run.Service ',
       artifact_id: ARTIFACT_ID,
       artifact_link_source: 'manual',
       target: { provider: 'gcp', scope: 'projects/demo', location: 'us-central1' },
@@ -114,7 +113,9 @@ describe('Artifact and Deployment SDK models', () => {
       source_revision: 'abc123',
     });
 
-    expect(deployment.kind).toBe('gcp.run.service');
+    expect('kind' in deployment).toBe(false); // what a placement places is its parent
+    expect(deployment.elementType).toBeNull();
+    expect(deployment.identity).toBe('user');
     expect(deployment.toJSON()).toMatchObject({
       type: 'deployment',
       artifact_id: ARTIFACT_ID,

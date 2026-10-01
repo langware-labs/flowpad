@@ -46,7 +46,7 @@ describe('shell_run_setenv', () => {
 
   it('run returns the CliResult of a successful command', async () => {
     const shell = await makeShell();
-    const result = await shell.run('echo hello-from-run');
+    const result = await shell.runDetached('echo hello-from-run');
     expect(result.stdout).toContain('hello-from-run');
     expect(result.stderr).toBe('');
     expect(result.returncode).toBe(0);
@@ -55,7 +55,7 @@ describe('shell_run_setenv', () => {
 
   it('run maps a non-zero exit code and captures stderr', async () => {
     const shell = await makeShell();
-    const result = await shell.run('echo oops 1>&2; exit 3');
+    const result = await shell.runDetached('echo oops 1>&2; exit 3');
     expect(result.returncode).toBe(3);
     expect(result.exit_code).toBe(ExitCode.NOT_YET);
     expect(result.stderr).toContain('oops');
@@ -71,7 +71,7 @@ describe('shell_run_setenv', () => {
 
     // And the one-shot subprocess run inherits it (proves the backend merged
     // the persisted env into the command environment).
-    const result = await shell.run('echo "$FLOW_TEST_VAR"');
+    const result = await shell.runDetached('echo "$FLOW_TEST_VAR"');
     expect(result.stdout).toContain('flowpad-value');
     expect(result.returncode).toBe(0);
   }, 15000);
@@ -80,7 +80,7 @@ describe('shell_run_setenv', () => {
     const shell = await makeShell();
     await shell.setEnv({ FIRST_VAR: 'one' });
     await shell.setEnv({ SECOND_VAR: 'two' });
-    const result = await shell.run('echo "$FIRST_VAR:$SECOND_VAR"');
+    const result = await shell.runDetached('echo "$FIRST_VAR:$SECOND_VAR"');
     expect(result.stdout).toContain('one:two');
   }, 15000);
 });

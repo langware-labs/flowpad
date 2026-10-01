@@ -25,7 +25,7 @@ import { guardCloudAction } from '@src/services/privacy-guard';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { SendProgressNotice } from '@src/components/conversation/SendProgressNotice';
 import type { ShareSource } from '@src/hooks/share-sources';
-import { DownloadMessageDialog } from '@src/components/share-to-conversation/DownloadMessageForm';
+import { type CarriedEntity, DownloadMessageDialog } from '@src/components/share-to-conversation/DownloadMessageForm';
 import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
 import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
@@ -146,7 +146,8 @@ export function ShareToConversationDialog({
   const { send, busy: sendBusy, error, resetDraft } = useSendToConversation();
   // Busy state for custom commits — useSendToConversation only tracks its own.
   const [commitBusy, setCommitBusy] = useState(false);
-  const [downloadOpen, setDownloadOpen] = useState(false);
+  // What a download carries: exactly what Share would send (`source.prepare`), minus the recipients.
+  const [downloadRefs, setDownloadRefs] = useState<CarriedEntity[] | null>(null);
   const busy = sendBusy || commitBusy;
 
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
@@ -405,6 +406,28 @@ export function ShareToConversationDialog({
     }
   };
 
+  // Download = this share as a file: the same prep Share runs, so every kind of share (a session's
+  // transcript, an asset, an artifact) carries what it would have sent. Files picked here cannot ride
+  // an export yet — only entities.
+  const openDownload = async () => {
+    setLocalError(null);
+    try {
+      const prepared = await source.prepare({
+        recipientEmails: [],
+        senderName: localUser?.name ?? null,
+        senderId: localUser?.id ?? null,
+        title: effectiveTitle,
+        projectId: effectiveProjectId,
+        attachTranscript,
+        files,
+      });
+      const refs = [...new Set(prepared.assetReferences)];
+      setDownloadRefs(refs.map((typeid, i) => ({ typeid, label: i === 0 ? source.label : typeid })));
+    } catch (e) {
+      setLocalError(errorMessage(e, t`This could not be prepared for download.`));
+    }
+  };
+
   const shownError = localError ?? error;
 
   return (
@@ -419,13 +442,13 @@ export function ShareToConversationDialog({
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-primary rtl:-scale-x-100" />
             {heading ?? <Trans>Share</Trans>}
-            {source.exportRef && !shared && (
+            {!shared && (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="ms-auto me-6 h-7 gap-1.5 text-xs"
-                onClick={() => setDownloadOpen(true)}
+                onClick={() => void openDownload()}
                 disabled={busy}
                 data-testid="share-download"
                 title={t`Download as a file instead of sending`}
@@ -436,12 +459,8 @@ export function ShareToConversationDialog({
             )}
           </DialogTitle>
         </DialogHeader>
-        {source.exportRef && (
-          <DownloadMessageDialog
-            open={downloadOpen}
-            onClose={() => setDownloadOpen(false)}
-            initial={[{ typeid: source.exportRef.toString(), label: source.label }]}
-          />
+        {downloadRefs && (
+          <DownloadMessageDialog open onClose={() => setDownloadRefs(null)} initial={downloadRefs} />
         )}
 
         {shared ? (

@@ -493,7 +493,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
         "base": str(tmp_path),
         "rel_path": "frontend",
     }
-    assert deployment["kind"] == "runtime.web"
+    assert "kind" not in deployment, "what a placement places is its parent; no kind is stored"
     assert deployment["artifact_id"] == artifact["id"]
     # The port is a fact about what the placement EXPOSES, not a label on it.
     assert deployment["provider_labels"] == {}
@@ -502,6 +502,7 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     assert dev["artifact_id"] == artifact["id"]
     assert dev["parent_type_id"] == f"deployment-{deployment['id']}"
     assert dev["protocol"]["spec_kind"] == "web.app"
+    assert dev["subkind"] == "app", "a web app's endpoint is for people to use"
     # A web app is something the run PRODUCED, so it carries the same provenance
     # edge `register-artifact` stamps. Without it the app is invisible to
     # `artifacts` (a match on `generated_by`), and "everything this run
@@ -531,14 +532,11 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     assert [item["id"] for item in listed_data["artifacts"]] == [artifact["id"]]
     assert [e["id"] for e in listed_data["artifacts"][0]["endpoints"]] == [dev["id"]]
 
-    # Kind filters honor exact-or-descendant ontology semantics.
+    # Kind filters honor exact-or-descendant ontology semantics (the artifact's kind — a placement has none).
     artifact_entity = await Artifact.get_by_id(artifact["id"])
-    deployment_entity = await Deployment.get_by_id(deployment["id"])
-    assert artifact_entity is not None and deployment_entity is not None
+    assert artifact_entity is not None
     artifact_entity.kind = "application.web.react"
-    deployment_entity.kind = "runtime.web.vite"
     await artifact_entity.save(notify=False)
-    await deployment_entity.save(notify=False)
     descendant_list = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
     descendant_data = ApiResponse(**descendant_list.json()).data
     assert [item["id"] for item in descendant_data["artifacts"]] == [artifact["id"]]

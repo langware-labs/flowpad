@@ -62,6 +62,7 @@ export const WARNING_IDS = {
   SNIFFER_ACTIVE: 'sniffer-active',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
   EMPTY_PROJECTS: 'empty-projects',
+  PROJECT_SETUP_REQUIRED: 'project-setup-required',
 } as const;
 
 /**
@@ -228,6 +229,22 @@ export function createEmptyProjectsWarning(count: number): UserWarning {
     description: 'Old workspace folders with no sessions or files. Click to review and clean up.',
     targetView: ViewType.LENS,
     targetPointer: 'projects/cleanup',
+  };
+}
+
+/**
+ * The current project cannot run here yet: a MUST credential value is unset, or a connection it
+ * needs is not held. The warnings popover routes clicks on this id to the project setup wizard.
+ */
+export function createProjectSetupRequiredWarning(projectName: string, count: number): UserWarning {
+  return {
+    id: WARNING_IDS.PROJECT_SETUP_REQUIRED,
+    icon: 'KeyRound',
+    color: 'yellow',
+    message: 'Project setup required',
+    description: `${projectName}: ${count} ${count === 1 ? 'thing' : 'things'} to set up before it can run. Click to set up.`,
+    targetView: ViewType.CREDENTIALS,
+    targetPointer: CredentialsSubview.CONNECTIONS,
   };
 }
 

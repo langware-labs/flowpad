@@ -291,33 +291,14 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       // Expand terminal and switch to run tab
       setIsTerminalExpanded(true);
 
-      // Find or create the 'run' shell on demand
-      const cn = dataContext.computeNode;
-      if (!cn) {
-        console.error('[CodeEditor] No compute node');
-        return;
-      }
-
-      let runShell: Shell | null = null;
-      const shells = await Shell.list(cn.id);
-      runShell = shells.find((s) => s.name === 'Run') ?? null;
-
-      if (!runShell) {
-        runShell = Shell.create(cn, { name: 'Run', workdir: dataContext.project?.fs_storage_mount_path || undefined });
-        await runShell.save(cn.typeId);
-      }
+      // The project's Run terminal: the one it has, else a new one (looked up by what it belongs to).
+      const workdir = dataContext.project?.fs_storage_mount_path || undefined;
+      const runShell = await Shell.belongingTo(`run:${workdir ?? 'local'}`, { name: 'Run', workdir });
 
       dataContext.setActiveShellId(runShell.id);
       dataContext.setActiveTerminalTargetTypeId(new TypeId(Shell.type, runShell.id));
 
-      if (!runShell.ptyConnection?.isLive) {
-        await runShell.start({
-          cols: 80,
-          rows: 24,
-          workdir: runShell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined,
-        });
-      }
-      await runShell.resize(80, 24);
+      await runShell.ensureStarted({ workdir });
       await runShell.sendInput(command.trim() + '\r');
     },
     [setIsTerminalExpanded],

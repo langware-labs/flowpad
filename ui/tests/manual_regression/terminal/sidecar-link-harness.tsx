@@ -3,7 +3,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { Router, createPath } from 'react-router';
 import { router } from '@src/router';
-import { SidecarShellTerminal } from '@src/components/terminal/interactive-terminal/SidecarShellTerminal';
+import { ShellTerminal } from '@src/components/terminal/interactive-terminal/ShellTerminal';
 
 export function mountSidecar(shellId: string): () => void {
   const host = document.createElement('div');
@@ -20,7 +20,7 @@ export function mountSidecar(shellId: string): () => void {
       push: (to, state) => { void router.navigate(to, { state }); },
       replace: (to, state) => { void router.navigate(to, { state, replace: true }); },
     }}>
-      <SidecarShellTerminal shellId={shellId} active />
+      <ShellTerminal shellId={shellId} active />
     </Router>,
   );
   return () => { root.unmount(); host.remove(); };

@@ -10,7 +10,7 @@ carries `id` + `name` but no `fs_storage_mount_path`, and
       -> graph_crud_actions.py:390 handle_create_entity
         -> entity_model.model_validate(sanitized_data)
           -> Project.set_fs_storage_mount_path "simple name" branch
-             -> AGENT_MOUNT_FOLDER/<name>
+             -> agent_workspace_root()/<name>
 
 Every project living OUTSIDE the agent workspace is silently moved into it, and
 the next PTY spawn (`os.makedirs(cwd)`) materializes the folder — which is why
@@ -34,9 +34,10 @@ import pytest
 
 from flow_sdk.app.actions.graph_crud_actions import handle_create_entity
 from flow_sdk.builtin.project import Project
-from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.config import agent_workspace_root
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.type_id import TypeId
+from tests.unit._project_names import unique_project_name
 
 OWNER = TypeId("user-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 
@@ -72,7 +73,7 @@ async def test_create_with_partial_body_does_not_relocate_an_existing_project(tm
     project = Project(
         id=str(uuid.uuid4()),
         type="project",
-        name="flowpad-oss",
+        name=unique_project_name("flowpad-oss"),
         fs_storage_mount_path=str(real_dir),
     )
     await project.save()
@@ -83,7 +84,7 @@ async def test_create_with_partial_body_does_not_relocate_an_existing_project(tm
     body = {
         "id": str(project.id),
         "type": "project",
-        "name": "flowpad-oss",
+        "name": project.name,
         "visitor_role": "owner",
     }
     request = _create_request(body)
@@ -99,7 +100,7 @@ async def test_create_with_partial_body_does_not_relocate_an_existing_project(tm
     stored = await Project.get_by_id(str(project.id))
     assert stored is not None, "the project vanished on create"
     mount = Path(str(stored.fs_storage_mount_path)).resolve()
-    workspace = Path(AGENT_MOUNT_FOLDER).resolve()
+    workspace = agent_workspace_root().resolve()
 
     assert workspace not in mount.parents, (
         f"zombie: a create that omitted the mount RELOCATED the project from "
@@ -142,7 +143,7 @@ async def test_opening_the_same_folder_twice_yields_one_project(tmp_path):
 
     Same body ``use-open-project.ts`` sends: ``{type, name: <path>}``.
     """
-    folder = tmp_path / "Documents" / "dev" / "flowpad-oss"
+    folder = tmp_path / "Documents" / "dev" / unique_project_name("flowpad-oss")
     folder.mkdir(parents=True)
     body = {"type": "project", "name": str(folder)}
 

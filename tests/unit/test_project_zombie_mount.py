@@ -7,7 +7,7 @@ own fs-record carries `cwd: None` (verified on the prod instance), and
 `fs_storage_mount_path or cwd or real_path`, then `name` only if absolute.
 With every one of those empty, the record falls through to a plain construction
 from `name`, where `set_fs_storage_mount_path`'s "simple name" branch roots the
-project at `AGENT_MOUNT_FOLDER/<name>` — a folder the user never chose. The next
+project at `agent_workspace_root()/<name>` — a folder the user never chose. The next
 PTY spawn runs `os.makedirs(cwd)` and the folder is back.
 
 A record is an INPUT here, not the component under test, so it is a real
@@ -20,13 +20,15 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.project import Project
-from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk.config import agent_workspace_root
 from flow_sdk.fs_store.fs_record import FSRecord
+from tests.unit._project_names import unique_project_name
 
 # Resolve both sides: `canonical_posix_path` resolves symlinks on the mount it
 # stores (on macOS /var -> /private/var), so an unresolved workspace root would
 # never match a stored mount's parents and the assert would silently pass.
-WORKSPACE = Path(AGENT_MOUNT_FOLDER).resolve()
+def _workspace():
+    return agent_workspace_root().resolve()
 
 
 async def _mount_from_record(record: FSRecord) -> str:
@@ -46,9 +48,9 @@ async def test_record_without_a_path_does_not_invent_a_workspace_mount():
 
     mount = await _mount_from_record(record)
 
-    assert WORKSPACE not in Path(mount).resolve().parents, (
+    assert _workspace() not in Path(mount).resolve().parents, (
         f"zombie: a record with no cwd was rooted at {mount!r}, inside the agent "
-        f"workspace {str(WORKSPACE)!r}, instead of being rejected as locationless"
+        f"workspace {str(_workspace())!r}, instead of being rejected as locationless"
     )
 
 
@@ -57,6 +59,6 @@ async def test_record_with_a_cwd_is_left_where_it_lives(tmp_path):
     """The control: with `cwd` present the real location survives."""
     real = tmp_path / "Documents" / "dev" / "flowpad-oss"
     real.mkdir(parents=True)
-    record = FSRecord(type="project", name="flowpad-oss", cwd=str(real))
+    record = FSRecord(type="project", name=unique_project_name("flowpad-oss"), cwd=str(real))
 
     assert Path(await _mount_from_record(record)).resolve() == real.resolve()

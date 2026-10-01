@@ -99,7 +99,7 @@ the wrong one, leaves the row in logical order.
   vendor on Windows while `process` loads — bounded, versus a permanently bare
   container.
 
-* `SidecarShellTerminal.tsx:133` — passes `'unknown'`. A plain shell emits
+* `ShellTerminal.tsx` — passes `'unknown'`. A plain shell emits
   logical order on every platform.
 
 * `ui/src/styles/xterm.css` — `.xterm-rtl-grid .xterm-rows > div, … span`

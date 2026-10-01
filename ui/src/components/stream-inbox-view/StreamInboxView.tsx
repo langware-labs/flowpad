@@ -360,15 +360,15 @@ export function ConversationListRow({
       } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-s-violet-500/60' : ''}`}
     >
       {/* Multi-select tick. Stops propagation so ticking a row never opens it.
-          Always visible per line but faded (light border, dimmed) so it doesn't
-          compete with the message content; brightens on hover and when ticked. */}
+          Always visible per line with a readable border — a dimmed one (/30 at
+          50% opacity) vanished on the dark rows; brightens on hover, fills when ticked. */}
       <span onClick={(e) => e.stopPropagation()} className="flex shrink-0 items-center">
         <Checkbox
           checked={!!selected}
           onCheckedChange={() => convId && onToggleSelect?.(convId)}
           aria-label={t`Select conversation`}
           data-testid="stream-inbox-row-select"
-          className="h-3.5 w-3.5 border-muted-foreground/30 opacity-50 transition-opacity hover:opacity-100 data-[state=checked]:border-primary data-[state=checked]:opacity-100"
+          className="h-3.5 w-3.5 border-muted-foreground transition-colors hover:border-foreground data-[state=checked]:border-primary"
         />
       </span>
       <span
@@ -942,182 +942,187 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
         />
       )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
-        {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
-        <div className="flex flex-1 items-center">
-          <div
-            className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
-            role="tablist"
-            aria-label={t`Stream inbox view`}
-            data-testid="stream-inbox-view-bar"
-          >
-            {renderViewPill('all', t`All`, InboxIcon)}
-            {renderViewPill('unread', t`Unread`, MailPlus)}
-            {renderViewPill('archived', t`Archived`, Archive)}
+        {/* Selection mode takes over the whole toolbar: the view pills, search and
+            New buttons act on the list, not on the ticked rows, so they step aside
+            until the selection is closed (X). */}
+        {selectedCount > 0 ? (
+          <div className="flex flex-1 items-center gap-1" data-testid="stream-inbox-selection-bar">
+            <span className="me-1 text-xs text-muted-foreground" data-testid="stream-inbox-selection-count">
+              <Trans>{selectedCount} selected</Trans>
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => void handleBulkMarkRead(true)}
+              data-testid="stream-inbox-selection-mark-read"
+            >
+              <MailOpen className="me-1 h-3.5 w-3.5" />
+              <Trans>Read</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => void handleBulkMarkRead(false)}
+              data-testid="stream-inbox-selection-mark-unread"
+            >
+              <Mail className="me-1 h-3.5 w-3.5" />
+              <Trans>Unread</Trans>
+            </Button>
+            {!inArchivedView && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={() => void handleBulkArchive()}
+                data-testid="stream-inbox-selection-archive"
+              >
+                <Archive className="me-1 h-3.5 w-3.5" />
+                <Trans>Archive</Trans>
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => void handleBulkDelete()}
+              data-testid="stream-inbox-selection-delete"
+            >
+              <Trash2 className="me-1 h-3.5 w-3.5" />
+              <Trans>Delete</Trans>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ms-auto h-7 w-7"
+              onClick={clearSelection}
+              title={t`Clear selection`}
+              data-testid="stream-inbox-selection-clear"
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
           </div>
-          {/* Text search — filters the list below to conversations whose
-              messages contain the query, spanning archived rows. */}
-          <div className="relative ms-2 flex items-center">
-              <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t`Search messages`}
-                className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                data-testid="stream-inbox-search-input"
-                aria-label={t`Search messages`}
-              />
-              {searchActive && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                  aria-label={t`Clear search`}
-                  data-testid="stream-inbox-search-clear"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
+        ) : (
+          <>
+            {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
+            <div className="flex flex-1 items-center">
+              <div
+                className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
+                role="tablist"
+                aria-label={t`Stream inbox view`}
+                data-testid="stream-inbox-view-bar"
+              >
+                {renderViewPill('all', t`All`, InboxIcon)}
+                {renderViewPill('unread', t`Unread`, MailPlus)}
+                {renderViewPill('archived', t`Archived`, Archive)}
+              </div>
+              {/* Text search — filters the list below to conversations whose
+                  messages contain the query, spanning archived rows. */}
+              <div className="relative ms-2 flex items-center">
+                  <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t`Search messages`}
+                    className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    data-testid="stream-inbox-search-input"
+                    aria-label={t`Search messages`}
+                  />
+                  {searchActive && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                      aria-label={t`Clear search`}
+                      data-testid="stream-inbox-search-clear"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
             </div>
-        </div>
-        {/* CENTER — new conversation / new contacts group */}
-        {!agentId && <div className="flex shrink-0 items-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setShowNewConversation(true)}
-            data-testid="stream-inbox-new-conversation-button"
-            title={t`Start a new conversation`}
-          >
-            <SquarePen className="me-1 h-3.5 w-3.5" />
-            <Trans>New</Trans>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setShowNewContactsGroup(true)}
-            data-testid="stream-inbox-new-contacts-group-button"
-            title={t`Create a contacts group — add its members to any conversation in one click`}
-          >
-            <UsersRound className="me-1 h-3.5 w-3.5" />
-            <Trans>New group</Trans>
-          </Button>
-        </div>}
-        {/* RIGHT — actions for the current view */}
-        <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
-          {selectedCount > 0 ? (
-            <div className="flex items-center gap-1" data-testid="stream-inbox-selection-bar">
-              <span className="me-1 text-xs text-muted-foreground" data-testid="stream-inbox-selection-count">
-                <Trans>{selectedCount} selected</Trans>
-              </span>
+            {/* CENTER — new conversation / new contacts group */}
+            {!agentId && <div className="flex shrink-0 items-center">
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 text-xs"
-                onClick={() => void handleBulkMarkRead(true)}
-                data-testid="stream-inbox-selection-mark-read"
+                onClick={() => setShowNewConversation(true)}
+                data-testid="stream-inbox-new-conversation-button"
+                title={t`Start a new conversation`}
               >
-                <MailOpen className="me-1 h-3.5 w-3.5" />
-                <Trans>Read</Trans>
+                <SquarePen className="me-1 h-3.5 w-3.5" />
+                <Trans>New</Trans>
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-7 text-xs"
-                onClick={() => void handleBulkMarkRead(false)}
-                data-testid="stream-inbox-selection-mark-unread"
+                onClick={() => setShowNewContactsGroup(true)}
+                data-testid="stream-inbox-new-contacts-group-button"
+                title={t`Create a contacts group — add its members to any conversation in one click`}
               >
-                <Mail className="me-1 h-3.5 w-3.5" />
-                <Trans>Unread</Trans>
+                <UsersRound className="me-1 h-3.5 w-3.5" />
+                <Trans>New group</Trans>
               </Button>
-              {!inArchivedView && (
+            </div>}
+            {/* RIGHT — actions for the current view */}
+            <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
+              <>
+                {!inArchivedView && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => void handleMarkAllRead()}
+                    disabled={isLoading || visibleCount === 0}
+                  >
+                    <Trans>Mark all read</Trans>
+                  </Button>
+                )}
+                {/* Archive all archives every conversation regardless of read state;
+                hide it in the Archived view where it makes no sense. */}
+                {!inArchivedView && !inUnreadView && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => void handleArchiveAll()}
+                    disabled={isLoading || visibleCount === 0}
+                    data-testid="stream-inbox-archive-all-button"
+                  >
+                    <Trans>Archive all</Trans>
+                  </Button>
+                )}
+                {inArchivedView && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => void handleDeleteArchived()}
+                    disabled={isLoading || visibleCount === 0}
+                    data-testid="stream-inbox-delete-archived-button"
+                  >
+                    <Trash2 className="me-1 h-3.5 w-3.5" />
+                    <Trans>Delete all</Trans>
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => void handleBulkArchive()}
-                  data-testid="stream-inbox-selection-archive"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => void handleRefresh()}
+                  disabled={fetching}
+                  title={t`Fetch new messages from hub`}
                 >
-                  <Archive className="me-1 h-3.5 w-3.5" />
-                  <Trans>Archive</Trans>
+                  <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => void handleBulkDelete()}
-                data-testid="stream-inbox-selection-delete"
-              >
-                <Trash2 className="me-1 h-3.5 w-3.5" />
-                <Trans>Delete</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={clearSelection}
-                title={t`Clear selection`}
-                data-testid="stream-inbox-selection-clear"
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              </>
             </div>
-          ) : (
-            <>
-              {!inArchivedView && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => void handleMarkAllRead()}
-                  disabled={isLoading || visibleCount === 0}
-                >
-                  <Trans>Mark all read</Trans>
-                </Button>
-              )}
-              {/* Archive all archives every conversation regardless of read state;
-              hide it in the Archived view where it makes no sense. */}
-              {!inArchivedView && !inUnreadView && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => void handleArchiveAll()}
-                  disabled={isLoading || visibleCount === 0}
-                  data-testid="stream-inbox-archive-all-button"
-                >
-                  <Trans>Archive all</Trans>
-                </Button>
-              )}
-              {inArchivedView && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => void handleDeleteArchived()}
-                  disabled={isLoading || visibleCount === 0}
-                  data-testid="stream-inbox-delete-archived-button"
-                >
-                  <Trash2 className="me-1 h-3.5 w-3.5" />
-                  <Trans>Delete all</Trans>
-                </Button>
-              )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => void handleRefresh()}
-                disabled={fetching}
-                title={t`Fetch new messages from hub`}
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
-              </Button>
-            </>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto">

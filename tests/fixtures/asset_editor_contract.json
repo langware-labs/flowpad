@@ -19,6 +19,7 @@
     "wizard",
     "mcp",
     "llm_endpoint",
+    "credential",
     "html",
     "mcp_app",
     "image",
@@ -85,6 +86,9 @@
     "llm_endpoint": [
       "llm_endpoint"
     ],
+    "credential": [
+      "credential"
+    ],
     "html": [],
     "mcp_app": [],
     "image": [],
@@ -115,7 +119,8 @@
     "journey": "journey",
     "wizard": "wizard",
     "mcp": "mcp",
-    "llm_endpoint": "llm_endpoint"
+    "llm_endpoint": "llm_endpoint",
+    "credential": "credential"
   },
   "url_cases": [
     {

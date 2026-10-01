@@ -20,6 +20,8 @@ import { RepoPicker } from '@src/components/git/RepoPicker';
 const mockUseGitRepos = vi.fn();
 vi.mock('@src/hooks/use-git-providers', () => ({
   useGitRepos: (...args: unknown[]) => mockUseGitRepos(...args),
+  useGitOrgs: () => ({ data: undefined }),
+  useGitOrgRepos: () => ({ data: undefined, isLoading: false, isError: false }),
 }));
 
 function errored() {

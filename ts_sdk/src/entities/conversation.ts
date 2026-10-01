@@ -174,6 +174,9 @@ export interface IConversation extends IEntity {
   /** Unread for the local viewer, stamped by the backend (`stream_inbox.recompute_unread`).
    *  Render it; never recompute it. Absent on a hub runtime, which has no such projection. */
   is_unread?: boolean;
+  /** How many messages wait for the local viewer (`stream_inbox.conversation_unread_count`),
+   *  stamped beside `is_unread` by the same recompute. Render it; never recompute it. */
+  unread_count?: number;
 }
 
 /**
@@ -207,6 +210,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   archived_at?: string | Date | null;
   owner?: string | null;
   is_unread?: boolean;
+  unread_count?: number;
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
@@ -230,6 +234,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.archived_at = entity.archived_at ?? null;
     this.owner = entity.owner ?? null;
     this.is_unread = entity.is_unread;
+    this.unread_count = entity.unread_count;
   }
 
   /**

@@ -41,6 +41,8 @@ class SetupVarSpec(DataSpec):
     help_url: str = ""
     pattern: str = ""
     secret: bool = True
+    #: The value is a file's content (a key file) — asked with a file picker, kept as a file.
+    file: bool = False
     present: bool = False
 
 
@@ -59,8 +61,10 @@ class SetupRequirementSpec(DataSpec):
     scopes: list[str] = []
     #: pack: the values it needs in development.
     vars: list[SetupVarSpec] = []
-    #: pack: how an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI setup.
+    #: pack: how an agent obtains and stores the values (``CredentialSpec.setup``); empty = no AI Assist.
     setup: str = ""
+    #: pack: how long an agent following ``setup`` gets (``CredentialSpec.setup_timeout_seconds``).
+    setup_timeout_seconds: Optional[float] = None
     help_url: str = ""
     #: pack: declared in the project or user scope — else it is added from its shipped template.
     declared: bool = True
@@ -74,3 +78,17 @@ class SetupRequirementSpec(DataSpec):
     @property
     def missing(self) -> list[SetupVarSpec]:
         return [v for v in self.vars if not v.present]
+
+
+class ProjectReadinessSpec(DataSpec):
+    """Is a project ready to run here — every MUST value set, every connection it needs held?"""
+
+    spec_kind: ClassVar[str] = "project.setup.readiness"
+    model_config = ConfigDict(frozen=True)
+
+    project_id: str
+    ready: bool
+    #: What still needs someone — what the setup wizard walks through.
+    to_do: list[SetupRequirementSpec] = []
+    #: What no credential declares: reported, never runnable (``note`` says what to add).
+    gaps: list[SetupRequirementSpec] = []

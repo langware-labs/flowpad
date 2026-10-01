@@ -68,9 +68,11 @@ class AgentOp(ExeData):                       # compute_op.agent — a harness w
 class AskOp(ExeData):                         # compute_op.ask — a person
     prompt: str
     secret: bool                              # masked where it is typed (an API key)
+    file: bool                                # the answer is a file's content (a key file): a file picker
     detail: str                               # a paragraph under the heading: why, and what each answer does
     submit_label: str                         # the button words; empty ⇒ Send / Cancel
     cancel_label: str
+    assist_agent: str                         # AI Assist: this agent follows setup and answers the SAME question
     until_answered: bool                      # no deadline — refuses alongside timeout_seconds
 
 class Rung(DataSpec):                         # compute_op.rung — one further attempt, same shape as the op's own
@@ -88,6 +90,7 @@ class ComputeOpSpec(AssetDocumentSpec):       # compute_op.json
     attempts: list[Rung]                      # further rungs, any kind but ask, tried in order
     not_applicable_codes: list[int]
     setup: Text                               # setup.md — what an agent or a model is given
+    setup_timeout_seconds: float | None       # how long an assist agent gets; unset ⇒ SETUP_TIMEOUT (10 min)
 ```
 
 ```jsonc

@@ -241,6 +241,51 @@ async def test_export_ignores_the_senders_repo_layout(tmp_path):
     assert "fs_origins.json" not in names
 
 
+async def test_an_asset_nested_in_another_asset_lands_once_at_its_nested_place(tmp_path):
+    """A credential that one driver owns lives INSIDE the driver's folder
+    (``data_driver/<d>/agentic-assets/credential/<c>``). Shared beside its driver,
+    it must arrive where it was — not a second copy flattened to the type's
+    top-level ``agentic-assets/credential/<c>`` that the row then indexes."""
+    tag = uuid.uuid4().hex[:8]
+    sender_root = tmp_path / "sender"
+    sender = await _project(sender_root, f"nested-{tag}")
+    name = f"drv{tag}"
+    drv = sender_root / "agentic-assets" / "data_driver" / name
+    drv.mkdir(parents=True)
+    (drv / "data_driver.json").write_text(
+        json.dumps({"schema": 1, "name": name, "ns": "sharetest", "title": "Nested driver",
+                    "auth": {"credential": name, "vars": {"api_key": "NESTED_KEY"}}}),
+        encoding="utf-8",
+    )
+    (drv / "source.py").write_text("# the driver's source\n", encoding="utf-8")
+    cred = drv / "agentic-assets" / "credential" / name
+    cred.mkdir(parents=True)
+    (cred / "credential.json").write_text(
+        json.dumps({"name": name, "title": "Nested credential", "schema": 2, "vars": {"NESTED_KEY": {"label": "Key"}}}),
+        encoding="utf-8",
+    )
+    await _reindex_root(sender_root, RecordType.REAL_PROJECT_CWD, project_id=sender.id)
+    rows = {t: await _row_at(t, sender_root, p.relative_to(sender_root)) for t, p in (("data_driver", drv), ("credential", cred))}
+    assert all(rows.values()), rows
+
+    package = await _export([str(r.typeid) for r in rows.values()], tmp_path)
+    for row in rows.values():
+        await row.destroy()
+    shutil.rmtree(sender_root)
+
+    receiver_root = tmp_path / "receiver"
+    receiver = await _project(receiver_root, f"nested-rx-{tag}")
+    up = await handle_upload_flow_message(_Upload(package), overwrite=False)
+    res = await handle_message_install_all(up.data["message_id"], receiver.id)
+    assert isinstance(res, ApiSuccessResponse) and not res.data["failed"], res
+
+    flattened = receiver_root / "agentic-assets" / "credential" / name
+    assert not flattened.exists(), "the nested credential was also flattened to its type's top-level place"
+    rel = cred.relative_to(sender_root)
+    got = await _row_at("credential", receiver_root, rel)
+    assert got is not None and got.id == rows["credential"].id, f"credential not indexed at {rel}: {got}"
+
+
 async def test_export_refuses_a_reference_that_names_nothing():
     missing = f"skill-{uuid.uuid4()}"
     resp = await handle_export_flow_message({"asset_references": [missing]})
@@ -293,3 +338,35 @@ async def test_a_row_that_lags_its_file_ships_what_the_file_says(tmp_path):
     assert (receiver_root / rel).read_bytes() == shipped, "install rewrote the file it received"
     installed = json.loads((receiver_root / agent_dir.relative_to(sender_root) / "agent.json").read_text(encoding="utf-8"))
     assert installed.get("skills") == wanted, f"the installed file lost its value: {installed}"
+
+
+async def test_a_session_downloads_with_its_transcript(tmp_path):
+    """A session share's Download carries what the share would send: the transcript
+    (``claude_session-<id>``). It installs into a project like any other attachment."""
+    from flow_sdk.builtin.claude_session import ClaudeSession
+
+    # As Claude writes one: named after its session id, which every line carries — that id IS the entity id.
+    sid, marker = str(uuid.uuid4()), uuid.uuid4().hex
+    transcript = tmp_path / f"{sid}.jsonl"
+    transcript.write_text(
+        f'{{"type":"user","sessionId":"{sid}","message":{{"role":"user","content":"{marker}"}}}}\n', encoding="utf-8"
+    )
+    session = ClaudeSession.model_validate(
+        {"id": sid, "name": f"session {marker[:6]}", "slug": f"s-{marker[:6]}", "asset_ref": str(transcript)}
+    )
+    await session.save(None)
+
+    package = await _export([str(session.typeid)], tmp_path)
+    await session.delete()
+
+    receiver_root = tmp_path / "receiver"
+    receiver = await _project(receiver_root, f"session-rx-{marker[:6]}")
+    up = await handle_upload_flow_message(_Upload(package), overwrite=False)
+    assert [(a["asset_type"], a["asset_id"]) for a in up.data["attachments"]] == [("claude_session", session.id)]
+    res = await handle_message_install_all(up.data["message_id"], receiver.id)
+    assert isinstance(res, ApiSuccessResponse) and not res.data["failed"], res
+
+    got = await ClaudeSession.get_one({"id": session.id})
+    placed = sorted(str(p.relative_to(receiver_root)) for p in receiver_root.rglob("*") if p.is_file())
+    assert got is not None, f"the session did not install; placed: {placed}; result {res.data}"
+    assert marker in Path(got.asset_ref).read_text(encoding="utf-8"), "the transcript did not travel"
