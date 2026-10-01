@@ -1,4 +1,4 @@
-import { isCompleteGitOrigin, isInstallableOrigin, type GitOrigin } from '@sdk';
+import { isCompleteGitOrigin, isInstallableOrigin, Project, type GitOrigin } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
@@ -45,6 +45,19 @@ const DEEP_LINK_PARAMS = [
   'git_origin',
 ] as const;
 
+/** True the first time this tab sees `projectId`'s set-up link, so the hop
+ *  through `project/<id>/open` happens at most once and can never loop. */
+function claimHydrateHop(projectId: string): boolean {
+  const key = `flowpad:deep-link-hydrated:${projectId}`;
+  try {
+    if (window.sessionStorage.getItem(key)) return false;
+    window.sessionStorage.setItem(key, '1');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function IncomingDeepLink() {
   const { navigation } = useDockNavigation();
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
@@ -81,7 +94,21 @@ export function IncomingDeepLink() {
     // indexed Project on THIS box. Checked before the task branch because a
     // git-setup link also carries a git_origin (but no task_id).
     if (isGitSetup && gitOrigin) {
-      setPendingProject({ gitOrigin, projectName: title, senderName, projectId });
+      const pending = { gitOrigin, projectName: title, senderName, projectId };
+      if (!projectId || !claimHydrateHop(projectId)) {
+        setPendingProject(pending);
+        return;
+      }
+      // Backward compatibility (FLOWPAD-2199; remove in FLOWPAD-2200): the hub's
+      // email link sends a shared project this box may hold no row for. Route it
+      // once through `project/<id>/open`, which mirrors the row from the hub and
+      // redirects back here — with the same set-up, or a `project_error`.
+      void Project.getById(projectId)
+        .catch(() => null)
+        .then((row) => {
+          if (row) setPendingProject(pending);
+          else window.location.assign(`/api/v1/graph/project/${encodeURIComponent(projectId)}/open`);
+        });
       return;
     }
 
