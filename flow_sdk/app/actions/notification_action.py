@@ -1474,22 +1474,17 @@ def _is_prompt_attachment(a: Any) -> bool:
     return False
 
 
-@action.get(action_name="open", types=["notification"])
-async def open_notification() -> ApiResponse:
-    """Deep-link handler: fetch notification from hub, redirect to UI dialog."""
-    from flow_sdk.server.routes.notify import handle_notification_deep_link
+async def open_notification_params(notification_id: str) -> dict:
+    """Deep-link resolver for a notification (``Notification.resolve_open``):
+    fetch it from the hub and return the ``action=open`` params for its task."""
+    from flow_sdk.server.routes.notify import message_deep_link_params
 
-    request_info = get_current_request_info()
-    if not request_info or not request_info.target_entity_typeid:
-        return ApiFailResponse(message="No request info found", status_code=400)
-
-    notification_id = str(request_info.target_entity_typeid.id)
     data = await hub_get(BuiltinEntityType.NOTIFICATION, notification_id)
 
     meta = data.get("metadata") or {} if data else {}
     # Notification.id is the same as the hub FlowMessage id (set in
     # _save_local_notification), so we use notification_id as fm_id.
-    return await handle_notification_deep_link(
+    return message_deep_link_params(
         fm_id=notification_id,
         task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
         git_origin=(meta.get("git_origin") or (data or {}).get("git_origin")),
