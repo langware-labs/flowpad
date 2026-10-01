@@ -29,4 +29,6 @@ SPEC = TypeInfo(
     # the file is USER DATA — preserved verbatim, never re-rendered on save
     # (re-rendering would mutate the user's file). Original filenames from a
     # received bundle are kept as-is via the record's existing asset_ref.
+    # Its chip opens a file-backed editor, so a live message pulls the bundle.
+    eager_pull=True,
 )

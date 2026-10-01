@@ -47,4 +47,6 @@ SKILL = TypeInfo(
     # <this skill's name> skill …").
     setup_skill=EntityType.SKILL.value,
     reception_verb="Run",
+    # Its chip opens a file-backed editor, so a live message pulls the bundle.
+    eager_pull=True,
 )
