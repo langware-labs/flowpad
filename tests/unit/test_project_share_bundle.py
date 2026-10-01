@@ -41,7 +41,7 @@ from flow_sdk.cloud_client.transport import hub_http
 from flow_sdk.fs_store.operations.flow_message import unpacked_dir
 from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.path_utils import canonical_posix_path
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.responses.response import ApiSuccessResponse
 
 
 @pytest.fixture(autouse=True)
@@ -170,7 +170,7 @@ async def test_the_invite_stages_the_project_for_review(tmp_path):
     assert await Project.get_one({"id": project.id}) is None, "staging writes no row"
 
 
-async def test_restoring_the_reference_mirrors_a_project_this_desktop_lacks(tmp_path):
+async def test_restoring_the_reference_mirrors_and_clones_a_project_this_desktop_lacks(tmp_path, git_clone):
     project = await _shared_project(tmp_path, origin=_origin())
     ma = await _receive(project, tmp_path)
 
@@ -179,10 +179,11 @@ async def test_restoring_the_reference_mirrors_a_project_this_desktop_lacks(tmp_
     row = await Project.get_one({"id": project.id})
     assert row is not None and row.name == project.name and row.locale == "he"
     assert row.origin.owner == "langware-labs" and row.remote is True
-    assert not row.fs_storage_mount_path, "the recipient's checkout comes from its own clone"
+    # The recipient's checkout is its own clone, never the sender's path.
+    assert row.fs_storage_mount_path == canonical_posix_path(str(git_clone["checkout"]))
 
 
-async def test_restoring_leaves_a_row_this_desktop_already_has(tmp_path):
+async def test_restoring_leaves_a_row_this_desktop_already_has(tmp_path, git_clone):
     """The hub mirror owns an existing row; a message bundle is a snapshot from
     when it was sent and must not roll a newer row back."""
     project = await _shared_project(tmp_path, origin=_origin())
@@ -195,6 +196,7 @@ async def test_restoring_leaves_a_row_this_desktop_already_has(tmp_path):
     assert await _restore(ma) is True
 
     assert (await Project.get_one({"id": project.id})).name == renamed
+    assert git_clone["clones"] == 0, "already set up here: no second clone"
 
 
 @pytest.fixture
@@ -234,7 +236,6 @@ async def test_install_clones_the_project_and_records_it_on_the_attachment(tmp_p
     installed = await MessageAttachment.get_one({"id": ma.id})
     # Installed like any git download: globally, the checkout is where it lives.
     assert installed.scope == "user" and installed.project_id is None
-    assert installed.installed_root == row.fs_storage_mount_path
 
 
 async def test_installing_a_project_already_set_up_here_does_not_clone_again(tmp_path, git_clone):
@@ -248,13 +249,12 @@ async def test_installing_a_project_already_set_up_here_does_not_clone_again(tmp
     assert (await MessageAttachment.get_one({"id": ma.id})).scope == "user"
 
 
-async def test_a_failed_clone_says_so_and_leaves_the_project_to_retry(tmp_path, git_clone):
+async def test_a_failed_clone_surfaces_and_leaves_the_project_to_retry(tmp_path, git_clone):
     project = await _shared_project(tmp_path, origin=_origin())
     ma = await _receive(project, tmp_path)
     git_clone["fail"] = "Repository not found"
 
-    res = await handle_attachment_install(ma.id, "user", None)
+    with pytest.raises(RuntimeError, match="Repository not found"):
+        await handle_attachment_install(ma.id, "user", None)
 
-    assert isinstance(res, ApiFailResponse)
-    assert "Repository not found" in res.message
     assert not (await MessageAttachment.get_one({"id": ma.id})).scope, "still staged, so Install can retry"

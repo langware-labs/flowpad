@@ -2532,16 +2532,10 @@ class Entity(DBEntity):
         overwrite: bool,
         owner_typeid: Optional[str] = None,
     ) -> bool:
-        """Write the received row from a staged git reference. ``False`` — the
-        default — means it could not be restored."""
+        """Install a staged git reference: write the received row, and whatever
+        else makes it usable here. ``False`` — the default — means it could not
+        be restored."""
         return False
-
-    @classmethod
-    async def install_reference(cls, entity_id: str) -> Optional[str]:
-        """Make an installed reference usable here, after its row is restored;
-        the local root it now lives at. ``None`` — the default — means nothing
-        is checked out at install (the checkout resolves later, at open)."""
-        return None
 
     async def ensure_child_edge(self) -> bool:
         """Ensure the local parent→self ``is_child`` role edge exists.
