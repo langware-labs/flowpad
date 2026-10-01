@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 #: ``resolve_open``. Enforced in the handler: the dispatcher never reads an
 #: action's ``types``, and a multi-type action registers under its bare name.
 OPENABLE_TYPES: tuple[str, ...] = (
+    BuiltinEntityType.PROJECT.value,
     BuiltinEntityType.FLOW_MESSAGE.value,
     BuiltinEntityType.NOTIFICATION.value,
 )
