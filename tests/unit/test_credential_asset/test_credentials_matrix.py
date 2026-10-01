@@ -420,3 +420,15 @@ async def test_flow_credentials_delete_removes_it_and_reports_each_store(home, p
 
     gone = await run_flow("credentials", "delete", "team", "--project", str(project.id))
     assert gone.exit_code == 4, "gone: not found"
+
+
+async def test_a_saved_credential_writes_its_setup_as_setup_md(home, project):
+    """Authored in-app: the guide lands in setup.md beside credential.json, never inline."""
+    import json as _json
+
+    manifest = {**_manifest("guided", "QA_GUIDED"), "setup": "## Where\n\nPipe it into `flow credentials set guided --stdin`."}
+    spec = await save_credential(scope="user", manifest=manifest)
+
+    folder = Path(spec.asset_ref)
+    assert (folder / "setup.md").read_text(encoding="utf-8").startswith("## Where")
+    assert "setup" not in _json.loads((folder / "credential.json").read_text())

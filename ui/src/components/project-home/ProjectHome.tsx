@@ -72,7 +72,7 @@ const SessionTiles: React.FC<{ spawnProjectId?: string | null; panelProps: Panel
 
   return (
     <div data-testid="project-home-start-session" {...tagAttrs(NEW_SESSION_TAG, 'button')}>
-      <QuickCreatePanel {...panelProps} sections={['session']} extraSessionTiles={terminalTile} />
+      <QuickCreatePanel {...panelProps} sections={['chat']} extraSessionTiles={terminalTile} />
       {modals}
     </div>
   );
@@ -93,7 +93,7 @@ const CreateTab: React.FC<{
     {/* The project's own agents, right under the vendor session tiles: both
         answer "start something", and an agent IS a session starter. */}
     <ProjectAgentsStrip projectId={projectId} />
-    <QuickCreatePanel {...panelProps} sections={['asset', 'folder', 'helpdesk']} />
+    <QuickCreatePanel {...panelProps} sections={['build', 'write', 'connect', 'folder', 'helpdesk']} />
   </div>
 );
 

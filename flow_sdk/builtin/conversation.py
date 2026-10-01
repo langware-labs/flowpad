@@ -80,7 +80,7 @@ if TYPE_CHECKING:  # pragma: no cover
 # shared `ProjectedFields` mixin (one sentinel for every projected entity).
 _PROJECTION_SENTINEL = PROJECTION_SENTINEL
 
-_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread"})
+_PROJECTED_FIELDS = frozenset({"message_ids", "message_count", "is_unread", "unread_count"})
 
 
 # Process-scoped FlowpadClient cache, keyed by api_key. ``Conversation.share`` /
@@ -245,11 +245,15 @@ class Conversation(ProjectedFields, Entity):
     hub_updated_date: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     # Whether this conversation is unread for the local viewer — the ONE answer every
     # row and the badge render, computed by `stream_inbox.recompute_unread` from
-    # `conversation_is_unread` (latest received message unread, or a pending
+    # `conversation_unread_count` > 0 (latest received message unread, or a pending
     # invitation). The frontend reads it; it does not recompute it. LOCAL_ONLY.
     is_unread: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    #: How many messages are waiting for this user, newest first up to the first one read or sent
+    #: by them (``stream_inbox.conversation_unread_count``); a pending invitation is at least 1.
+    #: Projected beside ``is_unread`` by the same recompute, so the two never disagree.
+    unread_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
-    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread)"
+    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count)"
 
     @classmethod
     def hub_clock_moved(cls, local: "Conversation", hub_updated: Optional[datetime]) -> bool:
@@ -895,6 +899,10 @@ class Conversation(ProjectedFields, Entity):
         if not refs:
             return None
         return max(refs, key=_ref_sort_key)
+
+    def message_refs_newest_first(self) -> "list[MessageRef]":
+        """``message_refs`` newest-first, by the same timestamp order ``latest_message_ref`` uses."""
+        return sorted(self.message_refs(), key=_ref_sort_key, reverse=True)
 
     def is_archived(self) -> bool:
         """Conversation-level archive with auto-revive (see ``archived_at``):

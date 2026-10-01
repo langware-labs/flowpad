@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.usefixtures("fresh_user_scope")]
 
@@ -37,7 +38,7 @@ def fresh_user_scope(tmp_path, monkeypatch):
 
 async def _project(client, tmp_path) -> str:
     resp = await client.post(
-        "/api/v1/graph/project", json={"type": "project", "name": "curate", "fs_storage_mount_path": str(tmp_path)}
+        "/api/v1/graph/project", json={"type": "project", "name": unique_project_name("curate"), "fs_storage_mount_path": str(tmp_path)}
     )
     assert resp.json().get("status") == "SUCCESS", resp.text
     return resp.json()["data"]["id"]

@@ -127,6 +127,12 @@ class GitUnpushedFiles(_CamelModel):
     files: list[str] = []
 
 
+class GitUnpushedCommits(_CamelModel):
+    # Commits ahead of @{u}, newest first — the list behind the panel's ↑N
+    # badge (empty when no upstream).
+    commits: list[GitRevision] = []
+
+
 class GitRestoreResult(_CamelModel):
     ok: bool
     message: str
@@ -691,6 +697,25 @@ class GitRepo:
             return GitUnpushedFiles(files=[])
         return GitUnpushedFiles(files=[line.strip() for line in names.stdout.splitlines() if line.strip()])
 
+    async def get_unpushed_commits(self) -> GitUnpushedCommits:
+        """Commits ahead of the upstream, newest first — the same range the
+        status header's ``ahead`` count measures, so the list and the badge agree.
+
+        No upstream (``@{u}`` unresolvable) is "nothing unpushed", like
+        ``get_unpushed_files``.
+        """
+        logged = await self._git("log", "--format=%H%x1f%an%x1f%aI%x1f%s", "@{u}..HEAD")
+        if not logged.ok:
+            return GitUnpushedCommits(commits=[])
+        commits: list[GitRevision] = []
+        for line in logged.stdout.splitlines():
+            parts = line.split("\x1f")
+            if len(parts) < 4:
+                continue
+            hash_, author, date, message = parts[0], parts[1], parts[2], parts[3]
+            commits.append(GitRevision(hash=hash_, message=message, date=date, author=author))
+        return GitUnpushedCommits(commits=commits)
+
     async def compare_file_revision(self, file_path: str, commit_hash: str) -> GitFileDiff:
         """Unified diff of an asset between a past revision and the working tree —
         a single file, or the whole folder for a folder-backed asset (skill), so
@@ -963,6 +988,7 @@ class GitRepo:
         Sub-paths:
             status              → get_status()           → GitStatus (camelCase; ?lineCounts=true adds +/-)
             unpushed-files      → get_unpushed_files()   → {files} (repo-rel, ahead of @{u})
+            unpushed-commits    → get_unpushed_commits() → {commits} (ahead of @{u}, newest first)
             diff?filepath=...   → get_diff(filepath)     → GitDiffData
             branch              → get_branch()           → {branch}
             is-init             → is_init()              → {isInit}
@@ -992,6 +1018,8 @@ class GitRepo:
             return ApiSuccessResponse(data=(await self.get_status(line_counts=line_counts)).model_dump(by_alias=True))
         if sub == "unpushed-files":
             return ApiSuccessResponse(data=(await self.get_unpushed_files()).model_dump(by_alias=True))
+        if sub == "unpushed-commits":
+            return ApiSuccessResponse(data=(await self.get_unpushed_commits()).model_dump(by_alias=True))
         if sub == "branch":
             return ApiSuccessResponse(
                 data=GitCurrentBranchData(branch=await self.get_branch()).model_dump(by_alias=True)

@@ -1,3 +1,6 @@
+---
+id: 6ab6265e-6014-4ff6-ab56-dd672a1b83c3
+---
 # Flow SDK: Agentic orchestration SDK. Git-native agents you own.
 
 Flow is a git- and file-system-native library for managing and processing data with agents. Build agents and harnesses in a few lines of Python that run on any vendor's models, on your own machines or on-prem, and grow into enterprise-grade agents that keep learning from your data.
@@ -349,21 +352,22 @@ call = await line.start(to="+972501234567", body="Confirm tomorrow's delivery wi
 call.address                                         # ["+972501234567"]: who it is with
 ```
 
-### Many deployments, each with HTTP
+### Its own process, with HTTP
 
-Each deployment is its own process with its own chat endpoint.
+An agent runs here as one deployment: its own process, with its own chat endpoint.
 
 ```python
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name("researcher")
-first = await agent.run_locally()               # a process on this computer running the agent loop
-second = await agent.run_locally()              # one more — its own process, its own chat
-assert (first.slot, second.slot) == ("", "2") and first.serving and second.serving
+here = await agent.run_locally()                # a process on this computer running the agent loop
+again = await agent.run_locally()               # the same deployment — one per agent here
+assert again.id == here.id and here.serving
 
-chat = await ServiceEndpoint.find_existing(str(second.typeid), "chat")
+chat = await ServiceEndpoint.find_existing(str(here.typeid), "chat")
 assert chat.backend.type == "channel"           # POST v1/chat/completions → a message → its loop answers
+assert chat.subkind == "agent"                  # what it is for: talking to the agent
 ```
 
 ## Nine chapters
@@ -959,7 +963,8 @@ here = await agent.deploy("local")             # "This computer" — nothing is 
 again = await agent.deploy("local")
 assert again.id == here.id                     # converges by lookup, never a derived id
 
-assert here.kind == "runtime.agent"
+assert here.element_type == "agent"            # what it places is its parent — no stored kind
+assert here.identity == "agent"                # a box it runs on logs in as the agent
 assert here.target.provider == "local"
 assert here.is_local                           # an id comparison, not a provider test
 ```
@@ -973,12 +978,13 @@ from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.service_endpoint import ServiceEndpoint
 
 agent = await Agent.by_name("researcher")
-first = await agent.run_locally()               # a process on this computer running the agent loop
-second = await agent.run_locally()              # one more — its own process, its own chat
-assert (first.slot, second.slot) == ("", "2") and first.serving and second.serving
+here = await agent.run_locally()                # a process on this computer running the agent loop
+again = await agent.run_locally()               # the same deployment — one per agent here
+assert again.id == here.id and here.serving
 
-chat = await ServiceEndpoint.find_existing(str(second.typeid), "chat")
+chat = await ServiceEndpoint.find_existing(str(here.typeid), "chat")
 assert chat.backend.type == "channel"           # POST v1/chat/completions → a message → its loop answers
+assert chat.subkind == "agent"                  # what it is for: talking to the agent
 ```
 
 ### Serve it your way

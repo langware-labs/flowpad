@@ -352,6 +352,35 @@ async def test_dispatch_unpushed_files_no_upstream():
 
 
 # ---------------------------------------------------------------------------
+# dispatch("unpushed-commits")
+# ---------------------------------------------------------------------------
+
+
+async def test_dispatch_unpushed_commits():
+    """`log @{u}..HEAD` lines come back as commits, newest first, one-liner as message."""
+    responses = [
+        make_cmd(
+            "aaa\x1fAda\x1f2026-09-28T10:00:00+00:00\x1fSecond change\n"
+            "bbb\x1fAda\x1f2026-09-27T10:00:00+00:00\x1fFirst change"
+        )
+    ]
+    result = await make_repo(responses).dispatch("unpushed-commits")
+    assert result.status == "SUCCESS"
+    assert [(c["hash"], c["message"]) for c in result.data["commits"]] == [
+        ("aaa", "Second change"),
+        ("bbb", "First change"),
+    ]
+
+
+async def test_dispatch_unpushed_commits_no_upstream():
+    """No upstream is 'nothing unpushed', not an error."""
+    responses = [make_cmd("", exit_code=128)]
+    result = await make_repo(responses).dispatch("unpushed-commits")
+    assert result.status == "SUCCESS"
+    assert result.data["commits"] == []
+
+
+# ---------------------------------------------------------------------------
 # dispatch(unknown)
 # ---------------------------------------------------------------------------
 

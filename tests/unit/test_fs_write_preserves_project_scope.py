@@ -34,6 +34,7 @@ from flow_sdk.fs_store.indexer.builtin import get_shared_indexer
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.reindex import reindex_paths
 from flow_sdk.instance_settings import reset_instance_settings
+from tests.unit._project_names import unique_project_name
 
 AGENT_JSON = {"type": "agent", "name": "greeter", "description": "fixture agent"}
 
@@ -66,7 +67,7 @@ async def _project_with_agent(mount: Path) -> tuple[Project, Agent, Path]:
     md.write_text(json.dumps(AGENT_JSON, indent=2) + "\n", encoding="utf-8")
     (md.parent / "system_prompt.md").write_text("You are a greeter.\n", encoding="utf-8")
 
-    project = Project(name=mount.name, fs_storage_mount_path=str(mount))
+    project = Project(name=unique_project_name(mount.name), fs_storage_mount_path=str(mount))
     await project.save()
 
     await get_shared_indexer().index(

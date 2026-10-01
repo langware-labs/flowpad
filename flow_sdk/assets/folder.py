@@ -11,7 +11,7 @@ from pydantic import field_validator
 from flow_sdk.assets.asset import Asset, NotAnAsset, entry_path
 from flow_sdk.assets.identity_carrier import Absent
 from flow_sdk.assets.layout import Folder
-from flow_sdk.assets.placement import mount_matches
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches
 from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult
 from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -58,6 +58,18 @@ def _remove_husk(folder: Path) -> bool:
         return False
     log.info("asset scan: removed husk %s (identity without a main document)", folder)
     return True
+
+
+def _is_project_root(directory: Path) -> bool:
+    """A folder with its own ``agentic-assets/`` is another project's root.
+
+    Projects do not nest, so a recursive walk stops there instead of claiming
+    that project's assets for the one being scanned — a checkout of Flowpad
+    itself holds the shipped system project's source under
+    ``flow_sdk/system_projects/``, whose compute ops are not the checkout's.
+    The scanned root itself is never a child, so its own assets are kept.
+    """
+    return (directory / AGENTIC_ASSETS_DIR).is_dir()
 
 
 class AssetFolder(DataSpec):
@@ -196,7 +208,7 @@ class AssetFolder(DataSpec):
                     asset = collect(child, allowed)
                     if asset is not None and isinstance(asset.info.shape, Folder):
                         scan_mounts(asset.path, chain)
-                    elif recursive and child.is_dir() and child not in failed:
+                    elif recursive and child.is_dir() and child not in failed and not _is_project_root(child):
                         walk(child, recursive, chain, allowed)
             finally:
                 del ignore_stack[len(ignore_stack) - pushed:]

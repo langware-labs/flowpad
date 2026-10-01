@@ -29,7 +29,6 @@ function renderInQuery(ui: React.ReactElement) {
 const DEPLOYMENT = {
   id: '22222222-2222-4222-8222-222222222222',
   name: 'brief (production)',
-  kind: 'runtime.agent',
   environment: 'production',
   target: { provider: 'e2b', scope: 'machine', location: null },
   status: { sync_state: 'current', provider_state: 'planned' },

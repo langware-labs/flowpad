@@ -12,7 +12,7 @@ tags: [whiteboard, create, persistence]
 
 ### C1: Quick-create via UI
 * Navigate to `${APP_URL}/`.
-* On the landing page, locate the quick-create surface (MiniDesktop). It's a row of asset-type buttons or a "+" / "New" button — click the trigger to open the dropdown menu.
+* On the landing page, locate the quick-create surface . It's a row of asset-type buttons or a "+" / "New" button — click the trigger to open the dropdown menu.
   * If no menu opens, fall back to navigating directly to `${APP_URL}/dock/assets/list/whiteboard` and using the asset-list page's "Create" / "+" affordance.
 * Find a row labelled "Whiteboard" with a Palette icon.
 * Click "Whiteboard". A name input dialog appears.

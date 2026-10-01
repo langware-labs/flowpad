@@ -881,10 +881,17 @@ class FSIndexer:
 
         project_mounts = await load_project_mounts()
         # No nesting anywhere → every walk root's own project is already the
-        # deepest containing mount, so drop the snapshot and let the stamp
-        # site stay a straight chain-inherit (no per-record realpath).
-        if not has_nested_project_mounts(project_mounts):
-            project_mounts = ()
+        # deepest containing mount, so a project-rooted ref stays a straight
+        # chain-inherit (no per-record realpath). A ref with NO project still
+        # checks: a user-scope walk (the one-shot scan of a freshly cloned
+        # project, a context folder) can reach into a project's folder.
+        nested_mounts = has_nested_project_mounts(project_mounts)
+        # A walk run FOR a project (POST /graph/project/<id>/…, e.g. add-context-dir)
+        # leaves a record with no project as it is: the save then stamps the
+        # requesting project (Entity._resolve_scope_project) — who linked the folder
+        # owns what it brings. Only a walk no project asked for (the one-shot scan
+        # of a fresh clone) files such a record under the project whose folder it is in.
+        requested_by_project = _walk_requested_by_project()
 
         async def _flush_fts() -> None:
             """Flush the accumulated FTS batch (if any) and reset it."""
@@ -1096,11 +1103,17 @@ class FSIndexer:
                     # Loop-invariant — read once, stamp on each record.
                     ref_scope = ref.scope
                     ref_pid = ref.project_id
-                    if ref_pid is not None and project_mounts:
+                    unowned = ref_pid is None and not requested_by_project
+                    nested_owned = nested_mounts and ref_pid is not None
+                    if project_mounts and (nested_owned or unowned) and str(ref_scope) != "system":
                         # Association rule: deepest project wins. The walk
                         # root's project may be an umbrella containing a
                         # nested project — re-associate to the innermost
-                        # mount that contains this record's path.
+                        # mount that contains this record's path. A root
+                        # with no project that reaches into one's folder
+                        # (a workspace project lives under the user home)
+                        # files the record under that project, as project
+                        # content — not as the user's.
                         try:
                             ref_pid = deepest_project_id_for_path(
                                 canonical_posix_path(str(ref._path)),
@@ -1109,6 +1122,8 @@ class FSIndexer:
                             )
                         except OSError:
                             pass
+                        if unowned and ref_pid is not None:
+                            ref_scope = "project"
                     # Enclosure-derived parenthood: a repo asset physically
                     # nested inside another repo asset's folder inherits it as
                     # its parent, so a child re-indexed purely from disk (e.g.
@@ -1717,3 +1732,12 @@ class FSIndexer:
 
 
 # reload-trigger 1778603346.7940538
+
+
+def _walk_requested_by_project() -> bool:
+    """Is this walk running for a project-scoped request (``/graph/project/<id>/…``)?"""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    info = get_current_request_info()
+    target = getattr(info, "target_entity_typeid", None) if info is not None else None
+    return target is not None and target.type == "project"

@@ -175,7 +175,6 @@ async def test_a_schedule_one_second_ahead_runs_the_agent_headlessly(tmp_path: P
         cloud = await _data(client, "POST", "/api/v1/graph/deployment", json={
             "type": "deployment",
             "name": f"{agent_name} (e2b)",
-            "kind": "runtime.agent",
             "parent_type_id": f"agent-{agent_id}",
             "target": {"provider": "e2b", "scope": "machine", "location": "sandbox"},
             "origin": {"kind": "e2b", "provider": "e2b", "external_id": f"compute_node-{uuid.uuid4()}"},

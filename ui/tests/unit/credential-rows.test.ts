@@ -33,7 +33,7 @@ const v = (env_var: string, over: Partial<CredentialStatusRow['vars'][number]> =
   pattern: '',
   help_url: '',
   secret: true,
-  required: true,
+  required: 'MUST',
   present: true,
   found_in: 'env' as const,
   warning: null,
@@ -98,7 +98,7 @@ describe('buildCredentialRows', () => {
             name: 'twilio',
             scope: 'project',
             state: 'partial',
-            vars: [v('SID'), v('TOKEN', { present: false, warning: 'missing' }), v('OPTIONAL', { required: false, present: false })],
+            vars: [v('SID'), v('TOKEN', { present: false, warning: 'missing' }), v('OPTIONAL', { required: 'OPTIONAL', present: false })],
           }),
         ],
       }),
@@ -106,6 +106,20 @@ describe('buildCredentialRows', () => {
 
     expect(r.state).toBe('needs-values');
     expect(r.missing).toEqual(['TOKEN']);
+  });
+
+  it('a credential is MUST when any variable is, OPTIONAL when none is', () => {
+    const [must, optional] = buildCredentialRows(
+      status({
+        credentials: [
+          row({ name: 'a-must', scope: 'project', vars: [v('A'), v('B', { required: 'OPTIONAL' })] }),
+          row({ name: 'b-optional', scope: 'project', vars: [v('C', { required: 'OPTIONAL' })] }),
+        ],
+      }),
+    );
+
+    expect([must.required, optional.required]).toEqual(['MUST', 'OPTIONAL']);
+    expect(must.vars.map((x) => x.required)).toEqual(['MUST', 'OPTIONAL']);
   });
 
   it('keys rows by typeid, so the same name in both scopes is two rows', () => {

@@ -93,14 +93,22 @@ export async function hubConversationTitle(token: string, convId: string): Promi
   }
 }
 
-/** Read the hub's watcher list for a conversation (the GET side of the `watch`
- *  action — its `ConnectedThrough` peers). Non-empty once a backend has
- *  registered a hub watch (e.g. via BrowserContextWatch). Returns null on
- *  non-200, else the (possibly empty) list. */
-export async function hubConversationWatchers(token: string, convId: string): Promise<unknown[] | null> {
+/** Bob's approved membership row on a hub conversation, read by `token`'s user
+ *  (`GET <conv>/list_members/<userId>`). Under the hub's default auto-watch
+ *  routing (`AUTO_WATCH_ENABLED`, flowpad/hub/core/network/resource_tracker.py)
+ *  an entity's data ops fan out to every live connection whose user holds a
+ *  ROLE path to it — so an approved row IS the hub's routing edge. The legacy
+ *  explicit `watch` action is a compatibility no-op there, and its GET always
+ *  answers `[]`, so it cannot be a barrier. Null on non-200 or no approved row. */
+export async function hubApprovedMembership(
+  token: string,
+  convId: string,
+  userId: string,
+): Promise<{ role: string; status: string } | null> {
   try {
-    const data = await hubJson(token, `/graph/conversation/${convId}/watch`);
-    return Array.isArray(data) ? data : null;
+    const rows = await hubJson(token, `/graph/conversation/${convId}/list_members/${userId}`);
+    if (!Array.isArray(rows)) return null;
+    return rows.find((r: any) => r?.status === 'approved') ?? null;
   } catch {
     return null;
   }

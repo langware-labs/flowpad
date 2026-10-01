@@ -57,6 +57,15 @@
       ]
     },
     {
+      "kind": "zoom",
+      "asset": "zoom.svg",
+      "tintable": false,
+      "aliases": [
+        "Zoom"
+      ],
+      "source": "simplified brand mark (blue tile, camera)"
+    },
+    {
       "kind": "notion",
       "asset": "notion.svg",
       "tintable": false,

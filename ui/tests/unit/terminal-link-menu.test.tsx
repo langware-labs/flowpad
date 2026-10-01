@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   runtimeKind: 'browser',
   openLinkInBrowserProfile: vi.fn(),
+  openLink: vi.fn(),
 }));
 
 vi.mock('@sdk/client', () => ({ __esModule: true, default: { get: mocks.get, post: mocks.post } }));
@@ -28,7 +29,7 @@ vi.mock('@sdk', async (importOriginal) => ({
 vi.mock('@src/navigation', () => ({
   useDockNavigation: () => ({
     navigation: {
-      openLink: vi.fn(),
+      openLink: mocks.openLink,
       openLinkInBrowser: vi.fn(),
       openLinkInVibe: vi.fn(),
       openLinkInBrowserProfile: mocks.openLinkInBrowserProfile,
@@ -36,7 +37,7 @@ vi.mock('@src/navigation', () => ({
   }),
 }));
 
-const { useTerminalLinks } = await import('@src/components/terminal/interactive-terminal/TerminalLinkMenu');
+const { useTerminalLinks, lightboxMediaName } = await import('@src/components/terminal/interactive-terminal/TerminalLinkMenu');
 const { fetchBrowserProfiles } = await import('@src/lib/browser-profiles');
 
 const BROWSERS = [
@@ -72,6 +73,7 @@ beforeEach(() => {
   mocks.get.mockReset();
   mocks.post.mockReset();
   mocks.openLinkInBrowserProfile.mockReset();
+  mocks.openLink.mockReset();
   mocks.runtimeKind = 'browser';
 });
 afterEach(cleanup);
@@ -130,5 +132,51 @@ describe('fetchBrowserProfiles', () => {
     mocks.runtimeKind = 'hub';
     expect(await fetchBrowserProfiles()).toEqual([]);
     expect(mocks.get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('click: media previews in place, the rest opens as a tab', () => {
+  it('names only images and videos, ignoring a position or a query', () => {
+    expect(lightboxMediaName('out/chart.png:3')).toBe('chart.png');
+    expect(lightboxMediaName('/tmp/shot.JPG#L2')).toBe('shot.JPG');
+    expect(lightboxMediaName('rec/demo.mp4')).toBe('demo.mp4');
+    expect(lightboxMediaName('https://x.test/a/pic.webp?v=1')).toBe('pic.webp');
+    expect(lightboxMediaName('src/app.ts:12')).toBeNull();
+    expect(lightboxMediaName('https://x.test/page?img=a.png')).toBeNull();
+  });
+
+  function ClickHarness({ link, shell }: { link: string; shell: unknown }) {
+    const { handlers, menu } = useTerminalLinks({ current: shell as never });
+    useEffect(() => handlers.activate(new MouseEvent('mouseup'), link), [handlers, link]);
+    return <>{menu}</>;
+  }
+
+  it('shows an image file in the lightbox, served from the shell\'s machine', async () => {
+    const shell = {
+      computeNodeTypeId: { toString: () => 'compute_node-n1' },
+      resolveDisplayTarget: vi.fn().mockResolvedValue({ kind: 'vfs', path: '/work/out/chart.png' }),
+    };
+    render(<ClickHarness link="out/chart.png" shell={shell} />);
+    const img = await screen.findByRole('img', { name: 'chart.png' });
+    expect(img.getAttribute('src')).toContain('chart.png');
+    expect(shell.resolveDisplayTarget).toHaveBeenCalledWith('out/chart.png');
+    expect(mocks.openLink).not.toHaveBeenCalled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('media-lightbox')).toBeNull();
+  });
+
+  it('opens a non-media link as a tab, without resolving it for a preview', async () => {
+    const shell = { computeNodeTypeId: {}, resolveDisplayTarget: vi.fn() };
+    render(<ClickHarness link="src/app.ts:12" shell={shell} />);
+    await waitFor(() => expect(mocks.openLink).toHaveBeenCalledWith('src/app.ts:12', shell));
+    expect(shell.resolveDisplayTarget).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('media-lightbox')).toBeNull();
+  });
+
+  it('falls back to a tab when the image does not resolve', async () => {
+    const shell = { computeNodeTypeId: {}, resolveDisplayTarget: vi.fn().mockResolvedValue(null) };
+    render(<ClickHarness link="missing.png" shell={shell} />);
+    await waitFor(() => expect(mocks.openLink).toHaveBeenCalledWith('missing.png', shell));
+    expect(screen.queryByTestId('media-lightbox')).toBeNull();
   });
 });

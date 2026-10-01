@@ -1,4 +1,7 @@
-Open **WhatsApp → API Setup** in your Meta app.
+In your Meta app, **Quickstart → Start using the API** opens **API Setup**:
 
-- **Phone number ID** and **WhatsApp Business Account ID** are listed under the test number (*From*) — copy the IDs, not the phone number.
-- **Temporary access token**: press **Generate access token** at the top. It lasts 24 hours; Flowpad trades it for a longer one using your App secret.
+- **WhatsApp Business Account ID** — at the top of API Setup.
+- **Phone number ID** — under **From**, the free test number (copy the ID, not the number).
+- **Access token** — press **Generate access token**. It lasts 24 hours; Flowpad extends it using your App secret when Meta allows.
+
+While you are there, add your own number under **To** and type the code Meta texts you — the next step messages it.

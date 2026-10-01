@@ -184,6 +184,15 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                   <span className="hidden max-w-[10rem] truncate sm:inline">
                     {menu.projectName ?? <RuntimeLabel kind={kind} />}
                   </span>
+                  {menu.projectName && project?.folderNameMismatch ? (
+                    <span
+                      className="-ms-1 hidden sm:inline"
+                      title={t`The project's folder is named "${project.folderNameMismatch}"`}
+                      data-testid="top-nav-project-folder-mismatch"
+                    >
+                      *
+                    </span>
+                  ) : null}
                   <ProjectCountBadge menu={menu} />
                   <ChevronDown className="h-3 w-3 shrink-0 opacity-80" />
                 </button>

@@ -10,9 +10,13 @@ import { FolderOpen, FolderPlus, FolderSearch, GitBranch, Loader2 } from 'lucide
 import { useMemo, useState, type ComponentType } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
-/** Ghost-link presentation — the Vibe hero's under-input strip. */
+/**
+ * Compact outlined-button presentation — the Vibe hero's under-input strip.
+ * Bordered, filled and foreground-coloured so each action reads as a button,
+ * not as muted hint text.
+ */
 const LINK_CLASS =
-  'inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
 /** One action, in whichever presentation the host asked for. */
 function ActionButton({
@@ -113,7 +117,7 @@ export function ProjectActionsRow({
   return (
     <>
       <div
-        className={`flex flex-wrap items-center ${variant === 'tiles' ? 'gap-3' : 'gap-1.5'} ${className}`}
+        className={`flex flex-wrap items-center ${variant === 'tiles' ? 'gap-3' : 'gap-2'} ${className}`}
         data-testid="project-actions-row"
       >
         {canPickHostFolder && (

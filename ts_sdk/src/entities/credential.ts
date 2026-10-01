@@ -12,13 +12,26 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity, EntityMerge } from '../IEntity';
 
+/**
+ * How much a project needs one variable (`flow_sdk` `CredentialRequirement`).
+ * `MUST`: the app does not work without it. `OPTIONAL`: it turns a feature, an
+ * integration or a deployment on.
+ */
+export const CredentialRequirement = { MUST: 'MUST', OPTIONAL: 'OPTIONAL' } as const;
+export type CredentialRequirement = (typeof CredentialRequirement)[keyof typeof CredentialRequirement];
+
+/** What a variable's value IS: the value (`text`), or a file's content kept as a file (`file`) — the
+ *  variable then holds the file's path. */
+export type CredentialVarKind = 'text' | 'file';
+
 /** One environment variable a credential is made of, as the manifest declares it. */
 export interface CredentialVar {
   label?: string;
   hint?: string;
   placeholder?: string;
-  /** Backend default is TRUE — see `isRequired`, never read this raw. */
-  required?: boolean;
+  /** Backend default is `MUST` — see `isRequired`, never read this raw. A manifest or row
+   *  written before the enum may still carry a boolean. */
+  required?: CredentialRequirement | boolean;
   /** Regex the value must match. */
   pattern?: string;
   advanced?: boolean;
@@ -28,15 +41,23 @@ export interface CredentialVar {
   secret?: boolean;
   /** Where to obtain THIS value; differs per member within one credential. */
   help_url?: string;
+  /** Backend default is `text`. */
+  kind?: CredentialVarKind;
 }
 
 /**
- * `required` and `secret` both default TRUE on the backend, and a manifest that
- * accepts the default sends NOTHING. Reading `v.secret` directly would treat
- * the common case as `false` — the unsafe direction for a secret.
+ * `required` defaults `MUST` and `secret` defaults TRUE on the backend, and a
+ * manifest that accepts the default sends NOTHING. Reading `v.secret` directly
+ * would treat the common case as `false` — the unsafe direction for a secret;
+ * reading `v.required` for truth would treat `'OPTIONAL'` (a non-empty string) as
+ * required.
  */
-export function isRequired(v: CredentialVar | undefined): boolean {
-  return v?.required !== false;
+export function requirementOf(v: { required?: CredentialRequirement | boolean } | undefined): CredentialRequirement {
+  const r = v?.required;
+  return r === false || r === CredentialRequirement.OPTIONAL ? CredentialRequirement.OPTIONAL : CredentialRequirement.MUST;
+}
+export function isRequired(v: { required?: CredentialRequirement | boolean } | undefined): boolean {
+  return requirementOf(v) === CredentialRequirement.MUST;
 }
 export function isSecret(v: CredentialVar | undefined): boolean {
   return v?.secret !== false;
@@ -50,6 +71,8 @@ export interface ICredential extends IEntity {
   setup_wiki?: string;
   /** How an agent obtains and stores the values (`flow project setup`'s AI setup). */
   setup?: string;
+  /** How long an agent following `setup` gets (seconds); unset = the default. */
+  setup_timeout_seconds?: number | null;
   /** The LLM API provider this credential's single key funds, if any. */
   lm_provider?: string;
   vars?: Record<string, CredentialVar>;
@@ -73,6 +96,7 @@ export class Credential extends APIEntity<Credential> implements ICredential {
   help_url: string = '';
   setup_wiki: string = '';
   setup: string = '';
+  setup_timeout_seconds: number | null = null;
   lm_provider: string = '';
   vars: Record<string, CredentialVar> = {};
   manifest_schema: number = 2;
