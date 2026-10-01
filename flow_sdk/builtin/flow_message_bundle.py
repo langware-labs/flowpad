@@ -1649,6 +1649,14 @@ async def _collect_attachment_envelopes(entry, entities: dict) -> None:
         return
     if entry_type in _HEADER_SERIALIZED_TYPES:
         return
+    from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
+
+    if entry_type in MEMBERSHIP_MIRROR_TYPES:
+        # Org / team / project rows are written only by the hub membership
+        # mirror; an envelope here would let the install overlay write the
+        # sender's copy over the recipient's. A project rides as its git
+        # reference instead.
+        return
     cls = SchemaRegistry.get_entity_cls(entry_type)
     if cls is None:
         return
