@@ -211,7 +211,10 @@ async def _default_store() -> SecretStore:
             "no current project to take a default store from; run inside a project folder, or name one: "
             'SecretStore.get("env_file", {"env_file_path": ...})'
         )
-    return SecretStore.from_ref(SecretStoreRef(type="env_file", config={"env_file_path": str(path)}))
+    from flow_sdk.builtin.credential_store import project_scope  # noqa: PLC0415
+
+    # The project's credential env store: its .env.local, then the env files it declares.
+    return SecretStore.from_ref(project_scope(project).env_file_ref())
 
 
 __all__ = ["SecretStore", "SecretStoreRef", "load_all", "plain_values", "register_store"]

@@ -40,6 +40,10 @@ class ProjectManifest(Entity):
         default=None,
         description="TypeId of the asset the Home button opens for this project. None = the default home.",
     )
+    env_files: list[str] = APIField(
+        default_factory=list,
+        description="Project-relative env files credentials also read, after the root .env.local.",
+    )
     asset_ref: str = APIField(default="")
 
 

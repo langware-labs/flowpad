@@ -139,19 +139,21 @@ async def _env_files(out: _Sweep, project_id: str, names: list[str], roots: Iter
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
 
         project = await Project.get_by_id(project_id)
-        root = project_scope(project).root if project is not None else None
+        scope = project_scope(project) if project is not None else None
     else:
-        root = user_scope().root
-    if root is not None:
-        places.append(root)
+        scope = user_scope()
+    if scope is not None and scope.root is not None:
+        places.append(scope.root)
     out.checked.append("env_file")
-    for place in dict.fromkeys(p for p in places if p.is_dir()):
-        for path in sorted(place.glob(".env*")):
-            if not path.is_file():
-                continue
-            for row in await asyncio.to_thread(list_env_file, path):
-                if row["key"] in names:
-                    out.found.append(LeftoverSpec(store="env_file", where=str(path), name=row["key"]))
+    files = [path for place in dict.fromkeys(p for p in places if p.is_dir()) for path in sorted(place.glob(".env*"))]
+    # The project's declared env files sit anywhere inside it, not only beside .env.local.
+    files += [path for path, declared in (scope.env_files() if scope is not None else []) if declared and path]
+    for path in dict.fromkeys(files):
+        if not path.is_file():
+            continue
+        for row in await asyncio.to_thread(list_env_file, path):
+            if row["key"] in names:
+                out.found.append(LeftoverSpec(store="env_file", where=str(path), name=row["key"]))
 
 
 async def _bound_stores(out: _Sweep, names: list[str]) -> None:

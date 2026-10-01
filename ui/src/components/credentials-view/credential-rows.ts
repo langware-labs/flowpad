@@ -50,11 +50,15 @@ export interface DetectedGroup {
   scope: CredentialScopeName;
   projectId: string | null;
   path: string | null;
+  /** The project-relative path of a file the project declared; null for the scope's own `.env.local`. */
+  extraPath: string | null;
   keys: { key: string; line: number }[];
 }
 
 /** One row per declared credential: project first, then the user's; by title within. */
 export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] {
+  // The scope's own `.env.local` first — the one values are written to — else the first
+  // declared env file that exists (the server lists the scope's own file first).
   const envFile = (row: CredentialStatusRow) =>
     row.value_store === 'env'
       ? status.files.find((f) => f.scope === row.scope && f.project_id === row.project_id && f.exists)?.path ?? undefined
@@ -96,18 +100,27 @@ export function takenInScope(
 }
 
 /**
- * The `.env.local` keys no credential in their scope declares yet — what can be
- * packed. A scope whose file declares everything is left out.
+ * The env-file keys no credential in their scope declares yet — what can be
+ * packed, one group per file. A key an earlier file of the same scope already
+ * lists is left out of the later one (the earlier file is the one read), and a
+ * file whose keys are all taken is left out.
  */
 export function buildDetectedGroups(status: CredentialsStatus): DetectedGroup[] {
+  const seen = new Map<string, Set<string>>();
   return status.files
     .map((file) => {
       const taken = takenInScope(status, file.scope);
+      const scopeKey = `${file.scope}:${file.project_id ?? ''}`;
+      const earlier = seen.get(scopeKey) ?? new Set<string>();
+      seen.set(scopeKey, new Set([...earlier, ...file.detected.map((k) => k.key)]));
       return {
         scope: file.scope,
         projectId: file.project_id,
         path: file.path,
-        keys: file.detected.filter((k) => !taken.has(k.key)).map((k) => ({ key: k.key, line: k.line })),
+        extraPath: file.extra_path ?? null,
+        keys: file.detected
+          .filter((k) => !taken.has(k.key) && !earlier.has(k.key))
+          .map((k) => ({ key: k.key, line: k.line })),
       };
     })
     .filter((group) => group.keys.length > 0)

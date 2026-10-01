@@ -654,6 +654,26 @@ class Project(Entity):
             return ApiFailResponse(message=str(exc), status_code=400)
         return ApiSuccessResponse(data={"home_page": spec.home_page})
 
+    @action.post(action_name="set-env-files")
+    async def set_env_files_action(self, paths: list[str] | None = None) -> "ApiResponse":
+        """`POST /project/<id>/set-env-files {paths}` — replace the env files this project's
+        credentials read besides the root ``.env.local``.
+
+        Written into ``project_manifest.json`` so it travels with the repo. Each path is
+        project-relative; one that could leave the project is refused, not dropped.
+        """
+        from flow_sdk.assets.project_manifest import ManifestError, set_env_files  # noqa: PLC0415
+
+        if not self.fs_storage_mount_path:
+            return ApiFailResponse(message="Project has no local working directory")
+        if paths is not None and not isinstance(paths, list):
+            return ApiFailResponse(message="paths must be a list of project-relative paths", status_code=400)
+        try:
+            spec = set_env_files(Path(self.fs_storage_mount_path), [str(p) for p in paths or []])
+        except ManifestError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        return ApiSuccessResponse(data={"env_files": spec.env_files})
+
     async def _own_asset(self, typeid: str) -> Entity | None:
         """The entity ``typeid`` names, if it lives in this Project or a direct
         context folder (the auto-launch boundary), else ``None``."""
@@ -949,7 +969,8 @@ class Project(Entity):
 
     def env_file_path(self, environment: Optional[str] = None) -> "Path | None":
         """This project's env file for ``environment`` (default ``development``: ``.env.local``), or
-        ``None`` when the project has no folder on this machine."""
+        ``None`` when the project has no folder on this machine. The one credential values are
+        WRITTEN to; the env files the project declares (``set-env-files``) are only read."""
         from flow_sdk.builtin.credential_store import project_scope  # noqa: PLC0415
         from flow_sdk.builtin.env_local_store import env_local_path  # noqa: PLC0415
         from flow_sdk.schema.data_spec.credential_contract import normalize_environment  # noqa: PLC0415

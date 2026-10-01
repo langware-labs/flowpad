@@ -53,24 +53,29 @@ def _vault_names() -> tuple[bool, set[str]]:
     return enabled, names
 
 
-def _file_status(scope: CredentialScope, environment: str) -> tuple[dict, list[dict]]:
+def _file_status(scope: CredentialScope, environment: str) -> list[tuple[dict, list[dict]]]:
+    """``(head, keys)`` per env file the scope reads: the written one first, then its declared extras.
+
+    Only the written file can be blocked — an extra is read, never written, so git has no say."""
     from flow_sdk.builtin.env_local_store import (  # noqa: PLC0415
         env_local_block,
-        env_local_path,
         gitignore_status,
-        list_env_local,
+        list_env_file,
     )
 
-    path = env_local_path(scope.root, environment)
-    block = env_local_block(gitignore_status(scope.root, environment))
-    head = {
-        "path": str(path) if path is not None else None,
-        "exists": bool(path is not None and path.exists()),
-        "blocked": block is not None,
-        "block_code": block["code"] if block else None,
-        "block_reason": block["reason"] if block else None,
-    }
-    return head, list_env_local(scope.root, environment)
+    out: list[tuple[dict, list[dict]]] = []
+    for path, declared in scope.env_files(environment):
+        block = env_local_block(gitignore_status(scope.root, environment)) if declared is None else None
+        head = {
+            "path": str(path) if path is not None else None,
+            "exists": bool(path is not None and path.is_file()),
+            "extra_path": declared,
+            "blocked": block is not None,
+            "block_code": block["code"] if block else None,
+            "block_reason": block["reason"] if block else None,
+        }
+        out.append((head, list_env_file(path)))
+    return out
 
 
 def _in_vault(spec, scope: CredentialScope, env_var: str, environment: str, names: set[str]) -> bool:
@@ -107,7 +112,8 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
 
     scopes = [user_scope()] + ([project_scope(project)] if project is not None else [])
     files = await asyncio.gather(*(asyncio.to_thread(_file_status, s, environment) for s in scopes))
-    env_keys = {s.key: {row["key"] for row in rows} for s, (_, rows) in zip(scopes, files)}
+    # A variable is in a scope's env store when ANY file it reads holds it — the store reads them all.
+    env_keys = {s.key: {row["key"] for _, rows in per_scope for row in rows} for s, per_scope in zip(scopes, files)}
 
     refs = {(str(spec.id), name): secret_store_ref(spec, scope, name, placement) for spec, scope in pairs for name in spec.var_names()}
     remote = await _remote_names([ref for ref in refs.values() if ref.type not in LOCAL_STORE_TYPES])
@@ -193,7 +199,8 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
             **head,
             detected=[DetectedKeySpec(key=row["key"], line=row["line"]) for row in keys],
         )
-        for scope, (head, keys) in zip(scopes, files)
+        for scope, per_scope in zip(scopes, files)
+        for head, keys in per_scope
     ]
 
     return CredentialsStatusSpec(

@@ -59,6 +59,7 @@ from flow_sdk.schema.data_spec.project_manifest_spec import (
     DependencySpec,
     ProjectManifestSpec,
     PublishedAssetSpec,
+    normalize_env_file_path,
 )
 
 MANIFEST_TYPE = "project_manifest"
@@ -298,6 +299,43 @@ def set_home_page(root: Path, typeid: Optional[str]) -> ProjectManifestSpec:
         spec = ProjectManifestSpec.model_validate({**base.to_document(), "home_page": typeid})
         if typeid is not None and spec.home_page is None:
             raise ManifestError(f"home page {typeid!r} is not an asset TypeId (<type>-<uuid>)")
+        if current is None or _render(spec) != _render(current):
+            _write(path, spec)
+        return spec
+
+
+def read_env_files(root: Path) -> list[str]:
+    """The extra env files the manifest declares (project-relative). Never raises.
+
+    Read on every credential status and spawn, so an unreadable ledger means
+    "no extra env files" — the same rule as ``read_home_page``.
+    """
+    try:
+        spec = read_manifest(root)
+    except ManifestError:
+        return []
+    return list(spec.env_files) if spec is not None else []
+
+
+def set_env_files(root: Path, paths: list[str]) -> ProjectManifestSpec:
+    """Replace the project's extra env files; returns the manifest.
+
+    Every path must be inside the project — a path the spec would drop is refused
+    here instead, so the caller hears why. Clearing never CREATES a manifest.
+    """
+    bad = [p for p in paths if normalize_env_file_path(p) is None]
+    if bad:
+        raise ManifestError(
+            f"{', '.join(repr(p) for p in bad)}: an env file must be a path inside the project, "
+            "and not the root .env.local (always read)"
+        )
+    path = manifest_path(root)
+    with capsule_lock(path):
+        current = _read(path, ProjectManifestSpec)
+        if current is None and not paths:
+            return ProjectManifestSpec.empty()
+        base = current or ProjectManifestSpec.empty()
+        spec = ProjectManifestSpec.model_validate({**base.to_document(), "env_files": list(paths)})
         if current is None or _render(spec) != _render(current):
             _write(path, spec)
         return spec
