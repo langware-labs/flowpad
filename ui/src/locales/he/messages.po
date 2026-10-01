@@ -2790,6 +2790,10 @@ msgstr "צרף asset (skill, agent, doc, spec)"
 msgid "Attach files"
 msgstr "צרף קבצים"
 
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Attach files or a screenshot (or paste one into the details)"
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Attach session transcript"
 msgstr "צרף תמליל סשן"
@@ -5221,14 +5225,18 @@ msgstr "לא ניתן להוסיף הערות לתצוגה"
 msgid "Could not assign"
 msgstr "לא ניתן להקצות"
 
-#. placeholder {0}: file.name
 #: src/components/assets/editor/task/TaskAttachments.tsx
-msgid "Could not attach {0}"
-msgstr "לא ניתן היה לצרף את {0}"
+#~ msgid "Could not attach {0}"
+#~ msgstr "לא ניתן היה לצרף את {0}"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not attach {name}"
 msgstr "לא ניתן היה לצרף את {name}"
+
+#. placeholder {0}: failed.join(', ')
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Could not attach: {0}"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "Could not change {key}"
