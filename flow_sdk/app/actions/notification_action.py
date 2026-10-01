@@ -483,10 +483,15 @@ async def _link_message_into_context_entities(
     per entity — never blocks the send."""
     if not typeids:
         return
+    from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     fm_tid = TypeId(f"{BuiltinEntityType.FLOW_MESSAGE.value}-{reply_fm.id}")
     for tid in typeids:
+        if tid.type in MEMBERSHIP_MIRROR_TYPES:
+            # An org / team / project's shared context is hub-mirrored — what
+            # its members see — so a message it rides in is never written into it.
+            continue
         try:
             cls = SchemaRegistry.get_entity_cls(tid.type)
             if cls is None:

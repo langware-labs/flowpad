@@ -429,6 +429,9 @@ class Conversation(ProjectedFields, Entity):
         self,
         recipients: Optional[List[str]] = None,
         recipient_user_ids: Optional[List[str]] = None,
+        *,
+        principals: Optional[List[str]] = None,
+        notify_by_email: bool = True,
     ) -> "Conversation":
         """Push to hub + admit people via the standard hub pattern.
 
@@ -460,6 +463,13 @@ class Conversation(ProjectedFields, Entity):
         address them. The hub resolves the id to their address server-side. Use
         it for a contact whose email we do not have and cannot get.
 
+        ``principals`` (group typeids, e.g. ``"team-<id>"``) — a group admitted
+        as ONE grant, so its current and future members all read it.
+
+        ``notify_by_email=False`` admits without the hub's invitation email —
+        for a share whose recipient another invitation already emails (a
+        project invite carries its own).
+
         Both lists may be passed together; each person should appear in only
         one (the hub refuses a request naming both). Persisting ``remote=True``
         to the local DB is the caller's responsibility
@@ -470,7 +480,7 @@ class Conversation(ProjectedFields, Entity):
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
         await super().share()
-        if not recipients and not recipient_user_ids:
+        if not recipients and not recipient_user_ids and not principals:
             # Link each shared-context doc to this conversation locally (the hub
             # doesn't host doc types). This makes the doc effective-remote so a
             # comment on it auto-shares under the conversation (the hub parent).
@@ -523,6 +533,8 @@ class Conversation(ProjectedFields, Entity):
                 }
                 if callback_override:
                     body["callback_override"] = callback_override
+                if not notify_by_email:
+                    body["notify_by_email"] = False
                 return body
 
             # One invitation per recipient.
@@ -546,6 +558,13 @@ class Conversation(ProjectedFields, Entity):
                     f"/graph/conversation/{self.id}/members",
                     _membership_body(recipient_user_id=user_id),
                 )
+            # One grant per group principal (a team).
+            for principal in principals or []:
+                if principal:
+                    await client.post(
+                        f"/graph/conversation/{self.id}/members",
+                        _membership_body(principal=principal),
+                    )
         return self
 
     async def _link_context_to_conversation(self, refs=None, someone_typeid: str | None = None) -> None:
@@ -563,6 +582,7 @@ class Conversation(ProjectedFields, Entity):
         link only the items just shared. When omitted, links the full
         ``shared_context_entities`` set (the new-conversation path from
         ``share()``)."""
+        from flow_sdk.app.actions.membership_sync import MEMBERSHIP_MIRROR_TYPES  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         conv_typeid_str = str(self.typeid)
@@ -573,6 +593,11 @@ class Conversation(ProjectedFields, Entity):
             try:
                 tid = _coerce_context_typeid(ref)
                 if tid is None:
+                    continue
+                if tid.type in MEMBERSHIP_MIRROR_TYPES:
+                    # An org / team / project is a hub-owned root, never a
+                    # conversation's child — linking it would re-parent the
+                    # shared container under the message it rode in.
                     continue
                 cls = SchemaRegistry.get_entity_cls(tid.type)
                 if cls is None or not tid.id or "parent_type_id" not in cls.model_fields:
@@ -688,77 +713,6 @@ class Conversation(ProjectedFields, Entity):
             await fm.save()
             if fm.body_status == BodyStatus.UPLOADING:
                 await _upload_body_and_finalize(fm, self.id)
-
-    # ------------------------------------------------------------------ invite conversation
-    #
-    # The sharer's client (not the hub) writes the invite conversation of a project
-    # share: ``open_invite_conversation`` creates a ROOT-level hub conversation owned
-    # by the sharer, the caller grants the recipient (a person as a second target on
-    # their project invite, a team as a group principal), and only then
-    # ``post_invite_message`` sends the one message — so an auto-accepted invitee is
-    # already a member and receives it live. Root-level on purpose: a project's child
-    # conversation is readable by every project member, which would leak the note.
-    # The join lives here, not in ``Project``, because the share identity test forbids
-    # ``/join`` in the project share path.
-
-    @classmethod
-    async def open_invite_conversation(cls, title: str, client) -> "Conversation":
-        """Create a local conversation, publish it root-level on the hub and join it.
-
-        ``client`` is the caller's open ``FlowpadClient``. Raises when the hub
-        refuses the create or the join; nothing is left half-owned, because the
-        join (which stamps ``initiated_by``) directly follows the create.
-        """
-        from flow_sdk.builtin.user import User  # noqa: PLC0415
-
-        conv = cls.model_validate({"title": title, "status": "open"})
-        conv.id = cls.allocate_id(conv.model_dump())
-        local = await User.get_local()
-        await conv.save(str(local.typeid) if local else None)
-        await Entity.share(conv)
-        await client.post(f"/graph/conversation/{conv.id}/join", {})
-        conv.remote = True
-        await conv.save(str(local.typeid) if local else None)
-        return conv
-
-    async def post_invite_message(self, text: str, reference: str) -> "FlowMessage":
-        """Send the invite message — ``text`` plus a TYPE_ID ``reference``
-        (``project-<id>``) — through the normal send pipeline.
-
-        Header first, then the body bundle: the hub stamps a client-sent TYPE_ID
-        message ``uploading`` and receivers wait for READY, so the body upload is
-        what lets the Install chip resolve. Raises on a refused header or a failed
-        upload instead of logging, so the caller can report the recipient's outcome.
-        """
-        from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
-            _append_message_to_conversation,
-            _attach_asset_references,
-            _build_reply_flow_message,
-            _send_conversation_message_header,
-        )
-        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
-        from flow_sdk.builtin.user import User  # noqa: PLC0415
-
-        sender = await User.current_sender_participant()
-        local = await User.get_local()
-        someone_typeid = str(local.typeid) if local else None
-        fm = _build_reply_flow_message(
-            conv_id=self.id,
-            message=text,
-            sender_id=sender.get("user_id") or None,
-            sender_name=sender.get("name") or "",
-        )
-        await _attach_asset_references(fm, [reference])
-        fm.body_status = BodyStatus.UPLOADING
-        fm = await fm.save(someone_typeid)
-        await _append_message_to_conversation(conv=self, fm_id=fm.id, someone_typeid=someone_typeid)
-        if not await _send_conversation_message_header(self, fm):
-            raise RuntimeError(f"the hub did not accept the invite message in conversation {self.id}")
-        fm.remote = True
-        await fm.save()
-        await fm.upload_body()
-        await fm.save()
-        return fm
 
     async def discard_invite_conversation(self, client) -> None:
         """Delete an invite conversation whose grant failed — the hub row (the
