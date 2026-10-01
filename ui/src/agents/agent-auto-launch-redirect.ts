@@ -38,8 +38,9 @@ export function resetAgentAutoLaunchForTests(): void {
  * scope project is adopted, never blocks the load (any failure means no
  * auto-launch), and lands the user on the session as real URL state. The
  * backend owns the policy — which agent, once per project, oldest wins — and
- * queues the prompt; this side embeds the vibe persona BEFORE kicking the
- * queue (the order `useAgentLauncher` guarantees), then redirects into Vibe.
+ * queues the auto prompt (as `Agent.use` does for every opted-in session);
+ * this side runs `prepareAgentSession`, which embeds the vibe persona BEFORE
+ * kicking the queue, then redirects into Vibe.
  */
 export async function agentAutoLaunchRedirect(request: Request): Promise<Response | null> {
   if (isHubOnly()) return null;
@@ -79,10 +80,9 @@ export async function agentAutoLaunchRedirect(request: Request): Promise<Respons
   if (!data?.process_id) return null;
 
   try {
-    const proc = await prepareAgentSession(data.process_id);
-    // The prompt is already queued server-side; this is the kick that runs it,
-    // now that the persona stack is complete.
-    await proc?.drainQueue().catch((e) => console.warn('[agent-auto-launch] drain kick failed', e));
+    // The auto prompt is already queued server-side; prepareAgentSession embeds
+    // the persona stack and then kicks the queue that runs it.
+    await prepareAgentSession(data.process_id);
   } catch (e) {
     console.warn('[agent-auto-launch] pre-turn setup failed; opening the session anyway', e);
   }

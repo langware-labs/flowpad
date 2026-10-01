@@ -43,7 +43,7 @@ A piece of **code the user should see and run** (not a whole app) is a snippet:
 `# %% flowpad:hidden` (imports) / `# %% flowpad:init` / `# %% flowpad:snippet`
 marker lines (`//` for js/rs). The file runs as written, so it must be a complete
 program (rust: `fn main() { ... }` inside the snippet region). It opens with a Run
-button and the output below;
+button that runs the file in its own terminal below it;
 To run it yourself, show it FIRST, then `flow snippet run <path>` with the `path`
 the show answered — never a separate copy (`python3 -c ...`), which is not the
 program the user sees. Details: flowpad-navigation skill.

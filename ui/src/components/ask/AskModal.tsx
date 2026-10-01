@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { Trans } from '@lingui/react/macro';
+import { useBackendText } from '@src/components/assets/editor/wizard/wizard-texts';
 import {
   Dialog,
   DialogContent,
@@ -8,10 +9,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { Input } from '@src/components/ui/input';
 import { Button } from '@src/components/ui/button';
+import { AskValueInput } from './AskValueInput';
 import { MarkdownView } from '@src/components/markdown-view';
 import { useAskModalStore } from './ask-modal-store';
+import { AskAssist } from './AskAssist';
 import { fieldsOf, useAskQuestion } from './use-ask-question';
 
 /**
@@ -33,8 +35,10 @@ export function AskModalRoot() {
 }
 
 function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChange: (open: boolean) => void }) {
-  const { question, values, setValues, error, busy, settledKind, settledMessage, submit, cancel } =
+  const { question, values, setValues, error, busy, settledKind, settledMessage, submit, cancel, agentAnswered } =
     useAskQuestion(questionId);
+  // The question's words were written by the backend (a compute op's prompt, detail and buttons).
+  const bt = useBackendText();
 
   // Settled, however it got there: nothing left for THIS dialog to say — the
   // page it was sitting over (a wizard's own progress view, or anything else)
@@ -77,9 +81,9 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle data-testid="ask-modal-prompt">{question.prompt}</DialogTitle>
+              <DialogTitle data-testid="ask-modal-prompt">{bt(question.prompt)}</DialogTitle>
               {question.detail ? (
-                <DialogDescription data-testid="ask-modal-detail">{question.detail}</DialogDescription>
+                <DialogDescription data-testid="ask-modal-detail">{bt(question.detail)}</DialogDescription>
               ) : null}
             </DialogHeader>
 
@@ -94,6 +98,13 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
               </div>
             ) : null}
 
+            <AskAssist
+              questionId={questionId}
+              available={question.assist_available}
+              initial={question.assist}
+              onAnswered={agentAnswered}
+            />
+
             {fieldsOf(question.fields).map((name) => (
               <div key={name} className="flex flex-col gap-1">
                 {name ? (
@@ -101,17 +112,14 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
                     {name}
                   </label>
                 ) : null}
-                <Input
+                <AskValueInput
                   id={`ask-modal-${name}`}
-                  data-testid={`ask-modal-input-${name || 'value'}`}
-                  autoFocus
-                  type={question.secret ? 'password' : 'text'}
-                  autoComplete={question.secret ? 'off' : undefined}
+                  testId={`ask-modal-input-${name || 'value'}`}
+                  secret={question.secret}
+                  file={question.file}
                   value={values[name] ?? ''}
-                  onChange={(e) => setValues((prev) => ({ ...prev, [name]: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void submit();
-                  }}
+                  onChange={(value) => setValues((prev) => ({ ...prev, [name]: value }))}
+                  onEnter={() => void submit()}
                 />
               </div>
             ))}
@@ -124,10 +132,10 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
 
             <DialogFooter>
               <Button variant="ghost" disabled={busy} onClick={() => void cancel()} data-testid="ask-modal-cancel">
-                {question.cancel_label || <Trans>Cancel</Trans>}
+                {question.cancel_label ? bt(question.cancel_label) : <Trans>Cancel</Trans>}
               </Button>
               <Button disabled={busy} onClick={() => void submit()} data-testid="ask-modal-submit">
-                {question.submit_label || <Trans>Send</Trans>}
+                {question.submit_label ? bt(question.submit_label) : <Trans>Send</Trans>}
               </Button>
             </DialogFooter>
           </>

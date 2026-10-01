@@ -37,6 +37,7 @@ export * from './icons';
 // Import the component from '@sdk/react/FlowIcon', as the react hooks already
 // are.
 export * from './stores/project-cleanup-store';
+export * from './stores/project-readiness-store';
 export * from './utils';
 export * from './websocket';
 export * from './worldview';

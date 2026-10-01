@@ -54,7 +54,7 @@ flow conversation summary <conversation-uuid>
 ## Read — Step 2: open the attachment body
 
 Most inbound messages carry their payload as an attachment (`claude_session-<uuid>`,
-`prompt-<uuid>`, a file, …), and the text is just `Please run the following prompt:`.
+`prompt-<uuid>`, a file, …), and the text is empty.
 Those entities are usually **not** in the local graph (`GET /graph/claude_session/<id>`
 returns 404) — read them from the unpacked message body on disk instead:
 

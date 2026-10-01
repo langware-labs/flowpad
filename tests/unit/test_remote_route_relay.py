@@ -168,6 +168,37 @@ async def test_use_action_selects_the_exact_deployment_and_rejects_a_foreign_one
     ]
 
 
+@pytest.mark.asyncio
+async def test_the_auto_prompt_opt_in_never_rides_the_hub_body(hub):
+    """FLOWPAD-2180: the placement machine sees its deployment as local, so the
+    opt-in must stay on the originating tier — the hub body is built here."""
+    agent = Agent(name="prompted-relay", system_prompt="relay me", auto_launch_prompt="Say hello")
+    await agent.save()
+    there = await _remote_placement(agent)
+
+    route = await agent.use(deployment=there, auto_prompt=True)
+
+    assert hub.calls[0] == ("POST", "agent", agent.id, "use", {"deployment_id": there.id})
+    assert route.hub_route is True
+
+
+@pytest.mark.asyncio
+async def test_a_relayed_use_on_the_placement_machine_queues_no_auto_prompt(monkeypatch):
+    """The placement machine's side of a hub relay: ``use_action`` with the body
+    the hub forwards (``deployment_id`` only) on a deployment local HERE."""
+    agent = Agent(name="placement-side", system_prompt="relay me", auto_launch_prompt="Say hello")
+    await agent.save()
+    here = await agent.local_deployment()
+    assert here.is_local is True
+
+    _request({"deployment_id": here.id}, monkeypatch)
+    answer = await agent.use_action()
+
+    assert isinstance(answer, ApiSuccessResponse), answer
+    process = await AgenticProcess.get_by_id(answer.data["process_id"])
+    assert process.queue.read()["entries"] == []
+
+
 # ── relayed actions ─────────────────────────────────────────────────────────
 
 

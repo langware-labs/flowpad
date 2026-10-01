@@ -8,6 +8,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { showWizard } from '@src/components/assets/editor/wizard/wizard-popup-store';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { pickLiveActivity, useActivitySpec } from '@src/store/activity-store';
+import type { AssistState } from './AskAssist';
 
 /**
  * A question a ComputeOp put to a person — the data and actions behind it,
@@ -32,11 +33,16 @@ export interface AskQuestion {
   fields: Shape;
   /** The answer is a secret (an API key): drawn masked. */
   secret?: boolean;
+  /** The answer is a file's content (a key file): drawn as a file picker. */
+  file?: boolean;
   /** The Wizard this question is one step of, when it is one. Empty for a
    *  question an op raised outside any wizard. */
   wizard_id?: string;
   /** How a person finds the value — the op's `setup.md`, markdown. */
   guide?: string;
+  /** The op names an agent that can answer instead (AI Assist). */
+  assist_available?: boolean;
+  assist?: AssistState | null;
 }
 
 /** The field names to draw. An object shape is its keys; anything else is one
@@ -101,6 +107,8 @@ export function useAskQuestion(questionId: string | undefined) {
   }, [question, values, send]);
 
   const cancel = useCallback(() => send('/cancel'), [send]);
+  /** The question settled while AI Assist worked on it: the agent answered. */
+  const agentAnswered = useCallback(() => setSettledKind('answered'), []);
 
   // This question is one step of a Wizard that is still running the next one
   // right now — the answer just unblocked it. Opening the wizard's own editor
@@ -146,6 +154,7 @@ export function useAskQuestion(questionId: string | undefined) {
     settledMessage,
     submit,
     cancel,
+    agentAnswered,
     wizardId,
     openWizard,
     runningNow,

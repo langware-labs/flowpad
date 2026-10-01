@@ -21,6 +21,8 @@ from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.credential_spec import CredentialSpec
 
+from tests.unit.test_credential_asset._shipped import shipped_credential_folders
+
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 TWILIO = {
@@ -35,9 +37,7 @@ TWILIO = {
     },
 }
 
-SHIPPED_ROOT = (
-    Path(__file__).resolve().parents[3] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets/credential"
-)
+SHIPPED = shipped_credential_folders()
 
 
 def _seed(root: Path, name: str, manifest: dict) -> Path:
@@ -125,23 +125,22 @@ def test_the_type_is_a_creatable_asset_with_a_writable_id():
     assert info.owns_main_ref is True
 
 
-@pytest.mark.parametrize("folder", sorted(p.name for p in SHIPPED_ROOT.iterdir() if p.is_dir()))
+@pytest.mark.parametrize("folder", sorted(SHIPPED))
 def test_every_shipped_template_commits_a_unique_v4_id(folder):
     """One template is one row on every install — the id travels in the wheel."""
-    capsule = SHIPPED_ROOT / folder / ".flow" / "capsules" / "identity.json"
+    capsule = SHIPPED[folder] / ".flow" / "capsules" / "identity.json"
     ids = {
         json.loads((p / ".flow/capsules/identity.json").read_text())["data"]["id"]
-        for p in SHIPPED_ROOT.iterdir()
-        if p.is_dir()
+        for p in SHIPPED.values()
     }
 
     entity_id = json.loads(capsule.read_text())["data"]["id"]
     assert uuid.UUID(entity_id).version == 4
-    assert len(ids) == len([p for p in SHIPPED_ROOT.iterdir() if p.is_dir()]), "shipped ids must be unique"
+    assert len(ids) == len(SHIPPED), "shipped ids must be unique"
 
 
 def test_the_shipped_gmail_definition_is_valid():
-    manifest = CredentialSpec.model_validate(json.loads((SHIPPED_ROOT / "gmail/credential.json").read_text()))
+    manifest = CredentialSpec.model_validate(json.loads((SHIPPED["gmail"] / "credential.json").read_text()))
 
     assert manifest.name == "gmail"
     assert list(manifest.vars) == ["GMAIL_ADDRESS", "GMAIL_APP_PASSWORD"]
@@ -182,7 +181,7 @@ SHIPPED_LM = {
 @pytest.mark.parametrize("folder, expected", sorted(SHIPPED_LM.items()))
 def test_the_shipped_llm_definitions_are_valid(folder, expected):
     provider, env_var = expected
-    manifest = CredentialSpec.model_validate(json.loads((SHIPPED_ROOT / folder / "credential.json").read_text()))
+    manifest = CredentialSpec.model_validate(json.loads((SHIPPED[folder] / "credential.json").read_text()))
 
     assert manifest.lm_provider == provider
     assert list(manifest.vars) == [env_var]
@@ -211,3 +210,25 @@ def test_a_provider_key_is_stored_where_the_funding_resolver_reads():
 def test_lm_provider_authoring_rules_are_load_errors(override, why):
     with pytest.raises(Exception):
         CredentialSpec.model_validate({**TWILIO, **override})
+
+
+@pytest.mark.asyncio
+async def test_setup_is_the_setup_md_beside_the_manifest(folder_db, tmp_path):
+    """How to obtain the values is markdown a person reads and an agent follows — its own file."""
+    folder = _seed(tmp_path, "twilio", TWILIO)
+    (folder / "setup.md").write_text("1. Open **Console → Account**.\n", encoding="utf-8")
+
+    await _index(tmp_path)
+
+    ent = await Entity.get_by_asset_ref(str(folder))
+    assert ent.setup == "1. Open **Console → Account**."
+
+
+@pytest.mark.asyncio
+async def test_a_manifest_still_carrying_setup_inline_is_read_not_lost(folder_db, tmp_path):
+    """Written before setup became a file: read the inline value (a boot migration moves it out)."""
+    folder = _seed(tmp_path, "twilio", {**TWILIO, "setup": "Open the console."})
+
+    await _index(tmp_path)
+
+    assert (await Entity.get_by_asset_ref(str(folder))).setup == "Open the console."

@@ -180,3 +180,21 @@ def test_recursive_scan_skips_gitignored_and_vendor_dirs_but_keeps_claude(tmp_pa
     skill(nested / "generated" / "ignored_by_nested", mint_uuid())
     found = {asset.path for asset in collect_assets([AssetFolder(path=tmp_path, recursive=True)])}
     assert found == {kept, forced}
+
+
+def test_recursive_scan_stops_at_a_nested_project_root(tmp_path):
+    # A Flowpad checkout holds the shipped system project's source; its compute
+    # ops belong to that project, so the checkout's menu must not count them.
+    import shutil
+    from pathlib import Path
+
+    import flow_sdk
+
+    shipped = Path(flow_sdk.__file__).parent / "system_projects" / "flowpad_assistant" / "agentic-assets" / "compute_op" / "git-on-path"
+    own = tmp_path / "agentic-assets" / "compute_op" / "own-op"
+    shutil.copytree(shipped, own)
+    shutil.copytree(shipped, tmp_path / "pkg" / "system_projects" / "assistant" / "agentic-assets" / "compute_op" / "shipped-op")
+    kept = skill(tmp_path / "src" / "kept", mint_uuid())
+    skill(tmp_path / "pkg" / "system_projects" / "assistant" / "src" / "theirs", mint_uuid())
+    found = {asset.path for asset in collect_assets([AssetFolder(path=tmp_path, recursive=True)])}
+    assert found == {own, kept}

@@ -21,8 +21,6 @@ export const RESERVED_TAG_ROOTS: ReadonlySet<string> = new Set([
   'content',
   'datasource',
   'gcp',
-  'runtime',
-  'compute',
 ]);
 
 export interface ITag extends IEntity {

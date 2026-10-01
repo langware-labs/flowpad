@@ -29,6 +29,8 @@ import {
   type AppUpgrade,
   ComputeProviderType,
   type NodeStatus,
+  type ProvisionResult,
+  type ProvisionSetup,
   RuntimeEnvironment,
   SANDBOX_PROVIDERS,
   type WorkspaceReady,
@@ -37,6 +39,7 @@ import {
 import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
+import type { NodeHealth } from '../service-endpoint';
 import { GitWorkdir } from '../git-workdir';
 
 /**
@@ -494,39 +497,26 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     return this.ops<AppUpgrade>('upgrade-app');
   }
 
-  // ── computeNodeTools: setting a box's projects up ────────────────────
+  /** Every service on this machine, checked now — each endpoint's result, in one report. */
+  async healthCheck(): Promise<NodeHealth> {
+    const action = new ActionInfo('health', ComputeNode.type, this.id, 'GET');
+    return dataManager.callAction<undefined, NodeHealth>(action);
+  }
+
+  // ── setting a box's project up ───────────────────────────────────────
   //
-  // One method per hub command, same names. These are the composable half:
-  // a box usually needs more than one project (the engagement, plus help desks
-  // and context projects), so the caller sequences them rather than asking for
-  // one do-everything call.
+  // The box commands underneath (validate, clone, index, attach, default…) are
+  // the hub's control plane and are not reachable from here. A client asks for
+  // the outcome; the hub runs the sequence.
 
-  async validateProjectName(name: string): Promise<{ available: boolean; suggested?: string }> {
-    return this.ops('validate-project-name', { name });
-  }
-
-  async cloneProject(body: Record<string, unknown>): Promise<{ project?: { id: string }; path?: string }> {
-    return this.ops('clone-project', body);
-  }
-
-  async initEmptyProject(name: string, projectId: string): Promise<{ project?: { id: string }; path?: string }> {
-    return this.ops('init-empty-project', { name, project_id: projectId });
-  }
-
-  async indexProject(path: string, projectId: string): Promise<unknown> {
-    return this.ops('index-project', { path, project_id: projectId });
-  }
-
-  async reconcileManifest(projectId: string): Promise<unknown> {
-    return this.ops('reconcile-manifest', { project_id: projectId });
-  }
-
-  async attachContextProject(projectId: string, contextPath: string, scope = 'shared'): Promise<unknown> {
-    return this.ops('attach-context-project', { project_id: projectId, context_path: contextPath, scope });
-  }
-
-  async setDefaultProject(projectId: string): Promise<unknown> {
-    return this.ops('set-default-project', { project_id: projectId });
+  /**
+   * Set the box up with its project and make it the one the box opens on —
+   * the whole first-launch sequence, run by the hub. `steps` names each step's
+   * outcome, and a failed call carries them too, so a checklist can say which
+   * step broke.
+   */
+  async provisionProject(setup: ProvisionSetup): Promise<ProvisionResult> {
+    return this.ops<ProvisionResult>('provision-project', setup as unknown as Record<string, unknown>);
   }
 
   /**
@@ -535,22 +525,14 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Deliberately NOT the same thing as turning `auto_login` off. That also
    * revokes the node-bound API key, which is a change to how the box behaves
    * from now on; this is just "end the session that is running in there", and
-   * leaves the setting alone. The consequence is worth knowing: with
-   * `auto_login` on, the next open signs the box straight back in — which is the
-   * correct behaviour for "log me out of it now", not a gap.
+   * leaves the setting alone. With `auto_login` on, the next open signs the box
+   * straight back in — the correct behaviour for "log me out of it now".
    *
-   * Signing the box out never touches the caller's OWN hub session: the
-   * credentials live on the box's disk, and this asks the box to clear them.
+   * Signing the box out never touches the caller's OWN hub session.
    */
-  async logoutUser(): Promise<unknown> {
-    return this.ops('logout-user');
-  }
-
-  /** Who the box is signed in as, asked of the box itself. The cached
-   *  `logged_in_user` field is the cheap answer; this is the authoritative one
-   *  and costs a round-trip to a machine that may be paused. */
-  async loginStatus(): Promise<{ logged_in: boolean; logged_in_user?: string | null }> {
-    return this.ops('login-status');
+  async signOut(): Promise<unknown> {
+    const action = new ActionInfo('sign-out', ComputeNode.type, this.id, 'POST');
+    return dataManager.callAction<undefined, unknown>(action);
   }
 
   /**

@@ -65,38 +65,75 @@ def test_shell_target_builder_shape() -> None:
 
 
 def test_sentinel_grammar_is_pinned() -> None:
-    """MIRROR of `ui/src/terminal/run-in-terminal.ts`.
+    """The ONE sentinel: built here, read by the browser (``PtyConnection.onText``) by its OSC
+    number — invisible escapes around the command (start, then end with the exit code), a cancel
+    check at its start, in the grammar of the terminal's shell."""
+    import shlex
 
-    The agent (python) and a guided journey (browser) both assert on a command
-    by appending this exact echo. If either side edits the format, the other
-    stops recognising the sentinel and every assertion hangs — so both pin the
-    literal shape.
-    """
-    assert Shell.SENTINEL_PREFIX == "__flow_"
-    assert Shell.sentinel_command("ls -la", "__flow_abc123") == 'ls -la; echo "__flow_abc123_$?"'
+    assert Shell.SENTINEL_PREFIX == "__flow_" and Shell.SENTINEL_OSC == 7770
+    m = "__flow_abc123"
+    cancel = shlex.quote(str(Shell.cancel_path(m)))
+    start = f"printf '\\033]7770;{m};s\\007'"
+    end = f"printf '\\033]7770;{m};%d\\007'"
+    guarded = f"if [ -e {cancel} ]; then (exit 130); else ls -la; fi"
+    interrupted = shlex.quote(f"printf '\\033]7770;{m};130\\007'; trap - INT")
+    assert Shell.sentinel_command("ls -la", m, shell="/bin/bash") == (
+        f"trap {interrupted} INT; {start}; {guarded}; {end} $?; trap - INT"
+    )
+    background = f"if [ -e {cancel} ]; then (exit 130); else sleep 9 & fi"
+    assert f"; {background};" in Shell.sentinel_command("sleep 9 &", m, shell="/bin/bash"), "bash refuses '&;'"
+    assert Shell.sentinel_command("ls -la", m, shell="/bin/zsh") == f"{{ {start}; {guarded} }} always {{ {end} $? }}"
+    assert Shell.sentinel_command("ls", m, shell="/usr/local/bin/fish") == f"{start}; if test -e {cancel}; false; else; ls; end; {end} $status"
+    assert Shell.sentinel_command("dir", m, shell="C:/x/pwsh.exe") == (
+        f'[Console]::Write("$([char]27)]7770;{m};s$([char]7)"); if (Test-Path {cancel}) {{ }} else {{ dir }}; '
+        f'[Console]::Write("$([char]27)]7770;{m};$LASTEXITCODE$([char]7)")'
+    )
 
 
-def test_sentinel_body_drops_the_echoed_command() -> None:
-    """The terminal echoes what was typed, and what was typed ENDS in the
-    sentinel echo — so the first marker-bearing line is the echo, never output.
-    Without dropping it, every captured result is prefixed by the command that
-    produced it."""
-    from flow_sdk.builtin.shell import _sentinel_body
+def test_a_run_cancelled_before_it_starts_skips_its_command_and_still_ends() -> None:
+    """What a real shell does with a cancelled line: the command never runs, the end marker prints."""
+    import subprocess
+
+    m = "__flow_cancel01"
+    cancel = Shell.cancel_path(m)
+    cancel.parent.mkdir(parents=True, exist_ok=True)
+    cancel.touch()
+    try:
+        typed = Shell.sentinel_command("echo SHOULD-NOT-RUN", m, shell="sh")
+        printed = subprocess.run(["sh", "-c", typed], capture_output=True, check=False).stdout
+        assert b"SHOULD-NOT-RUN" not in printed
+        assert Shell.sentinel_exit(printed, m)[0] == 130
+    finally:
+        cancel.unlink(missing_ok=True)
+
+
+def test_the_sentinel_a_shell_prints_is_read_with_its_exit_code() -> None:
+    """What a real shell prints for the posix form: the escape itself, never the typed text —
+    the echoed command line holds ``\\033`` as four characters and must not match."""
+    import subprocess
 
     marker = "__flow_abc123"
+    typed = Shell.sentinel_command("echo hi; (exit 3)", marker, shell="sh")
+    printed = subprocess.run(["sh", "-c", typed], capture_output=True, check=False).stdout
+    assert Shell.sentinel_exit(printed, marker) == (3, printed.rindex(b"\x1b]7770"))
+    assert Shell.sentinel_output(printed, marker) == b"hi\n"
+    assert Shell.sentinel_exit(typed.encode(), marker) is None, "the echoed command is not the sentinel"
+    assert Shell.sentinel_exit(printed, "__flow_other") is None
+
+
+def test_the_output_is_what_lies_between_the_markers_however_the_echo_wraps() -> None:
+    """The terminal echoes the typed command — wrapped at its width, redrawn by the line editor —
+    before the start marker. Only what comes after it, up to the end marker, is output."""
+    marker = "__flow_abc123"
     stream = (
-        f'shlom@Mac proj % ls -la; echo "{marker}_$?"\n'
-        "total 8\n"
-        "drwxr-xr-x  2 shlom  staff   64 Jul 27 20:31 .\n"
-        f"{marker}_0\n"
+        b"shlom@Mac proj % { printf '\\033]7770;__flow_abc123;s\\007'; ls } al\r\nways { printf '"
+        b"\\033]7770;__flow_abc123;%d\\007' $? }\r\n"
+        b"\x1b]7770;__flow_abc123;s\x07total 8\r\nfile.txt\r\n\x1b]7770;__flow_abc123;0\x07shlom@Mac proj % "
     )
-    end = stream.index(f"{marker}_0")
-
-    body = _sentinel_body(stream, marker, end)
-
-    assert "echo" not in body, "the echoed command must not be reported as output"
-    assert body.splitlines()[0] == "total 8"
-    assert body.splitlines()[-1].endswith(" .")
+    assert Shell.sentinel_output(stream, marker) == b"total 8\r\nfile.txt\r\n"
+    assert Shell.sentinel_exit(stream, marker)[0] == 0
+    running = stream[: stream.index(b"file.txt")]
+    assert Shell.sentinel_output(running, marker) == b"total 8\r\n" and Shell.sentinel_exit(running, marker) is None
 
 
 def test_strip_pty_keeps_line_structure() -> None:
@@ -108,74 +145,3 @@ def test_strip_pty_keeps_line_structure() -> None:
     assert _strip_pty_keep_lines(raw) == "file.txt\nsecond\n"
 
 
-# ── run_and_capture answers with a CliResult ──────────────────────────────────
-# The PTY itself is faked at `read`/`write` (the terminal's two I/O seams); the
-# sentinel parsing and the answer are the real code.
-
-
-def _fake_terminal(monkeypatch, *, output: str, exit_code: "int | None"):
-    """A terminal whose stream grows by `output` (+ sentinel) once a command is typed."""
-    stream = {"data": b"prompt % "}
-
-    async def read(self) -> bytes:
-        return stream["data"]
-
-    async def write(self, text: str) -> None:
-        marker = text.rsplit('echo "', 1)[1].split("_$?")[0]
-        tail = f"{text}\n{output}"
-        if exit_code is not None:
-            tail += f"{marker}_{exit_code}\n"
-        stream["data"] += tail.encode()
-
-    monkeypatch.setattr(Shell, "read", read)
-    monkeypatch.setattr(Shell, "write", write)
-
-
-@pytest.mark.asyncio
-async def test_run_and_capture_answers_with_a_cli_result(monkeypatch) -> None:
-    from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode
-
-    _fake_terminal(monkeypatch, output="hello\n", exit_code=3)
-    shell = Shell(name="t", workdir="/tmp")
-
-    answer = await shell.run_and_capture("echo hello; exit 3", timeout=2, poll_interval=0.01)
-
-    assert isinstance(answer, CliResult)
-    assert answer.stdout.strip() == "hello"
-    assert answer.returncode == 3
-    assert answer.exit_code is ExitCode.NOT_YET
-    assert answer.command == "echo hello; exit 3"
-    assert answer.executor == f"shell-{shell.id}"
-
-
-@pytest.mark.asyncio
-async def test_run_and_capture_that_outlives_the_wait_is_timed_out(monkeypatch) -> None:
-    _fake_terminal(monkeypatch, output="still going\n", exit_code=None)
-    shell = Shell(name="t", workdir="/tmp")
-
-    answer = await shell.run_and_capture("sleep 100", timeout=0.05, poll_interval=0.01)
-
-    # Still running in the user's terminal: no exit status, the output so far.
-    assert answer.timed_out is True
-    assert answer.returncode is None
-    assert answer.ok is False
-    assert "still going" in answer.stdout
-
-
-@pytest.mark.asyncio
-async def test_run_and_capture_without_a_terminal_is_returned_not_raised(monkeypatch) -> None:
-    async def read(self) -> bytes:
-        return b""
-
-    async def write(self, text: str) -> None:
-        raise RuntimeError("No PTY session — call start_pty() first")
-
-    monkeypatch.setattr(Shell, "read", read)
-    monkeypatch.setattr(Shell, "write", write)
-    shell = Shell(name="t", workdir="/tmp")
-
-    answer = await shell.run_and_capture("ls", timeout=1)
-
-    assert answer.returncode is None
-    assert answer.ran is False
-    assert "No PTY session" in answer.stderr

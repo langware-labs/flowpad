@@ -86,6 +86,8 @@ describe('project agent auto-launch redirect', () => {
     expect(mocks.embed).toHaveBeenCalledTimes(1);
     // Persona first, then the kick: the queued prompt must not run before vibe is embedded.
     expect(mocks.embed.mock.invocationCallOrder[0]).toBeLessThan(mocks.drainQueue.mock.invocationCallOrder[0]);
+    // One kick, owned by prepareAgentSession — the redirect adds none of its own.
+    expect(mocks.drainQueue).toHaveBeenCalledTimes(1);
     expect(response?.status).toBe(302);
     const location = response?.headers.get('Location') ?? '';
     expect(location).toContain(`/dock/shell/agentic_process-${PROCESS_ID}`);

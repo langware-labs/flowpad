@@ -46,6 +46,10 @@ export enum FlowDataAttribute {
   /** Marks a client-minted placeholder row that an authoritative source will
    *  replace — see `FlowData.isOptimisticEcho`. */
   OPTIMISTIC_ECHO = 'optimistic-echo',
+  /** The client channel that delivered this item, stamped at the seam that built
+   *  it — a literal of that class's name, since minified builds rename classes.
+   *  A raw group only grows from the channel that opened it (FLOWPAD-2042). */
+  FRONTEND_EV_SOURCE_TYPE = 'frontend-ev-source-type',
 }
 
 /**
@@ -480,6 +484,20 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
    */
   get isOptimisticEcho(): boolean {
     return this.attributes[FlowDataAttribute.OPTIMISTIC_ECHO] === 'true';
+  }
+
+  /**
+   * The transcript entry this row was built from, or `null`.
+   *
+   * History rows carry it in the typed `processEntry`; live frames lose that
+   * payload in `to_xml`, so the ones stamped with the `transcript-entry-id`
+   * attribute carry it only there. The optimistic echo and most live frames
+   * have neither — they are not (yet) transcript entries.
+   */
+  get transcriptEntryId(): string | null {
+    const entry = (this.processEntry as { transcript_entry?: { id?: unknown } } | null)?.transcript_entry;
+    const id = entry?.id ?? this.attributes['transcript-entry-id'];
+    return typeof id === 'string' && id ? id : null;
   }
 
   /**

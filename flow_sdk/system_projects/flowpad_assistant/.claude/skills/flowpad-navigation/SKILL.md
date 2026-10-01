@@ -67,7 +67,8 @@ flow navigate entity <data.typeid>
 
 When you and the user are working on a piece of code they should see **and run**,
 show it as a snippet: one code file split by comment markers into regions. Imports
-and setup stay folded away; the snippet view has a Run button with the output below.
+and setup stay folded away; the snippet view has a Run button, and the file runs in its
+own terminal below it — output streams as it is printed.
 
 ```bash
 flow show snippet --lang py --name load-data <<'SNIP'
@@ -98,12 +99,15 @@ SNIP
   file on screen, and a copy that passes proves nothing about it:
 
 ```bash
-flow snippet run <path> --timeout 30   # JSON stdout/stderr; exit = the snippet's own, 124 on timeout
+flow snippet run <path> --timeout 30   # JSON stdout/stderr/returncode; exit 0 ok, 1 failed or timed out, 3 no runner, 4 no such file
 ```
 
-- A run that never ends is killed at its timeout (the Run button's is a preference,
-  30s by default), keeping whatever it printed; the view also has a Stop button that
-  kills it at once. stdin is closed, so `input()` fails instead of waiting.
+- `flow snippet run` runs off-screen and answers once the file ends; a run that never
+  ends is killed at `--timeout`, keeping whatever it printed, and its stdin is closed,
+  so `input()` fails instead of waiting. The Run button is different: the file runs in
+  its own terminal under the editor (one per file — the last run is still there on the
+  next visit), with no time limit; Stop interrupts it (Ctrl-C, then kills what is left)
+  and the terminal stays.
 - The view watches the file: when you edit it on a later turn the open view
   updates by itself — no need to show it again.
 

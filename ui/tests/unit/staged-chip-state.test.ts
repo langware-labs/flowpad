@@ -89,3 +89,26 @@ describe('chipStateFor — raw file rows', () => {
     expect(chipStateFor(false, fileInstalledProject, true)).toBe('installed');
   });
 });
+
+/**
+ * Project rows: a project the invite's bundle staged. Its hub-mirrored
+ * membership row resolves long before anything is cloned here, so — like a
+ * task — installed-ness comes from the MA row, never from entity resolution.
+ */
+describe('chipStateFor — project rows', () => {
+  const projectStaged = new MessageAttachment({
+    id: 'bbbbbbb1-1111-4111-8111-111111111111', asset_type: 'project', scope: null,
+  });
+  const projectInstalled = new MessageAttachment({
+    id: 'bbbbbbb2-2222-4222-8222-222222222222', asset_type: 'project', scope: 'user',
+  });
+
+  it('stays staged while the hub-mirrored row already resolves', () => {
+    expect(chipStateFor(true, projectStaged, true)).toBe('staged');
+  });
+
+  it('installed once its attachment is installed', () => {
+    expect(chipStateFor(true, projectInstalled, true)).toBe('installed');
+    expect(chipStateFor(false, projectInstalled, false)).toBe('installed');
+  });
+});

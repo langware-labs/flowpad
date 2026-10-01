@@ -63,12 +63,11 @@ RUNNERS: dict[str, str] = {
     ".sh": "sh {file}",
 }
 
-#: What differs on Windows, where ``run_shell`` runs POWERSHELL: the same
-#: interpreter, but PowerShell only RUNS a quoted path behind its call operator
-#: ``&`` (without it, a quoted path is just a string). The script's exit code is
-#: the snippet's, not PowerShell's own verdict.
+#: What differs on Windows, where the shell is POWERSHELL: the same interpreter, but
+#: PowerShell only RUNS a quoted path behind its call operator ``&`` (without it, a
+#: quoted path is just a string). A one-shot run adds the exit (``oneshot_command``).
 WIN32_RUNNERS: dict[str, str] = {
-    ".py": "& {python} -m flow_sdk.snippet_launch {file}; exit $LASTEXITCODE",
+    ".py": "& {python} -m flow_sdk.snippet_launch {file}",
 }
 
 
@@ -77,6 +76,41 @@ def runner_for(suffix: str, platform: str = "") -> Optional[str]:
     if (platform or sys.platform) == "win32" and suffix in WIN32_RUNNERS:
         return WIN32_RUNNERS[suffix]
     return RUNNERS.get(suffix)
+
+
+def terminal_command(path: Path, platform: str = "") -> Optional[str]:
+    """What is typed into a terminal to run the file at *path* as written, or ``None`` for a
+    language with no runner. Typed, not spawned: the terminal's own shell runs it, so its output
+    streams as it is printed. A compiled language builds into a folder of its own per file.
+
+    In a terminal the command must not end the shell: PowerShell's ``exit $LASTEXITCODE`` (how a
+    one-shot ``run_shell`` hands back the snippet's code) would close it, so it is dropped here —
+    the terminal's end marker carries the code instead (``Shell.sentinel_command``).
+    """
+    path = Path(path)
+    template = runner_for(path.suffix.lower(), platform)
+    if template is None:
+        return None
+    build = Path(tempfile.gettempdir()) / "flowpad-snippet-build" / hashlib.sha256(str(path).encode()).hexdigest()[:16]
+    if "{out}" in template:
+        build.mkdir(parents=True, exist_ok=True)
+    return _runner_command(template, path, build / "snippet")
+
+
+def oneshot_command(path: Path, out: Path, platform: str = "") -> Optional[str]:
+    """What ``run_snippet`` spawns for the file at *path*: the runner, and on Windows its exit —
+    a one-shot PowerShell otherwise answers its own verdict, not the snippet's. (Typed into a
+    terminal that exit would close it: ``terminal_command`` never has it.)"""
+    template = runner_for(Path(path).suffix.lower(), platform)
+    if template is None:
+        return None
+    command = _runner_command(template, Path(path), out)
+    return f"{command}; exit $LASTEXITCODE" if template.startswith("& ") else command
+
+
+def _runner_command(template: str, path: Path, out: Path) -> str:
+    """A runner template filled in: the file, the build output and this interpreter, shell-quoted."""
+    return template.format(file=shlex.quote(str(path)), out=shlex.quote(str(out)), python=shlex.quote(sys.executable))
 
 
 #: Where a snippet with no file of its own is written. The OS temp dir: outside
@@ -199,25 +233,17 @@ class SnippetSaveRequest(DataSpec):
     base: Optional[str] = None
 
 
-class SnippetRunRequest(DataSpec):
-    """``POST /api/v1/snippet/run``. ``run_id`` (the caller's) is what a stop names;
-    ``connection_id`` ties the run to a WebSocket, so it ends when the socket does."""
+class SnippetTerminalRequest(DataSpec):
+    """``POST /api/v1/snippet/terminal`` — the file's terminal, and the command that runs it there.
+    ``create=False`` only finds one (a view showing the last run, before anything is run)."""
 
     path: str
-    timeout_seconds: float = Field(default=30.0, gt=0, le=600)
-    run_id: Optional[str] = None
-    connection_id: Optional[str] = None
-
-
-class SnippetStopRequest(DataSpec):
-    """``POST /api/v1/snippet/stop``."""
-
-    run_id: str
+    create: bool = True
 
 
 class SnippetCheckRequest(DataSpec):
-    """``POST /api/v1/snippet/check``. ``timeout_seconds`` bounds the check as it bounds a run:
-    the check imports the file's modules, and a module may hang on import."""
+    """``POST /api/v1/snippet/check``. ``timeout_seconds`` bounds the check: it imports the file's
+    modules, and a module may hang on import."""
 
     path: str
     timeout_seconds: float = Field(default=30.0, gt=0, le=600)
@@ -298,11 +324,6 @@ def _terminal_path() -> str:
     return capture_terminal_path()
 
 
-#: Runs in flight by the caller's run id: the event ``stop_snippet`` sets, and
-#: the connection that started it.
-_RUNNING: dict[str, tuple[asyncio.Event, Optional[str]]] = {}
-
-
 #: A check's answer by (file, content): the editor re-checks after every save, and an unchanged
 #: file must not re-import its modules each time.
 _CHECKED: dict[tuple[str, str], list[SnippetDiagnostic]] = {}
@@ -353,44 +374,18 @@ async def check_snippet(
     return found
 
 
-def stop_snippet(run_id: str) -> bool:
-    """Stop a run in flight: its process group is killed and the run answers with
-    what it printed. False when nothing by that id is running (already done)."""
-    running = _RUNNING.get(run_id)
-    if running is None:
-        return False
-    running[0].set()
-    return True
-
-
-def stop_runs_of(connection_id: str) -> int:
-    """Stop every run a WebSocket connection started — called when it drops. A
-    closed or reloaded tab never runs its unmount cleanup, and its run would
-    otherwise go on until its timeout."""
-    stopped = 0
-    for stop, owner in list(_RUNNING.values()):
-        if owner == connection_id and not stop.is_set():
-            stop.set()
-            stopped += 1
-    if stopped:
-        logger.info("snippet: stopped %d run(s) of dropped connection %s", stopped, connection_id)
-    return stopped
-
-
 async def run_snippet(
     path: Path,
     *,
     timeout_seconds: float,
     env_path: Optional[str] = None,
-    run_id: Optional[str] = None,
-    connection_id: Optional[str] = None,
 ) -> CliResult:
-    """Run the file as written. Never raises: a missing file, an unknown language,
-    a compile error, an exception, a hang and a stop are all a ``CliResult``.
+    """Run the file as written, off-screen, and answer with ALL it printed once it ends — for a
+    caller with no terminal to watch (``flow snippet run``, a test). Never raises: a missing file,
+    an unknown language, a compile error, an exception and a hang are all a ``CliResult``. The
+    viewer runs a snippet in its terminal instead (``terminal_command``), where output streams.
 
-    ``env_path`` overrides the PATH the language toolchain is looked up on;
-    ``run_id`` makes the run stoppable by ``stop_snippet``, and ``connection_id``
-    by ``stop_runs_of``.
+    ``env_path`` overrides the PATH the language toolchain is looked up on.
     """
     if env_path is None:
         # Off the event loop: the first capture runs a login shell (~1s).
@@ -406,30 +401,17 @@ async def run_snippet(
         known = ", ".join(sorted(RUNNERS))
         message = f"no runner for '{path.suffix}' files (runnable: {known})"
         return CliResult.not_applicable(message, command=str(path), stderr=message)
-    stop = asyncio.Event()
-    # Registered under the caller's run id when it has one, else a key of its own:
-    # ``stop_runs_of`` finds it by owner, and ``stop_snippet`` only knows real run ids.
-    key = run_id or f"run:{secrets.token_hex(8)}"
-    _RUNNING[key] = (stop, connection_id)
-    try:
-        with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
-            command = template.format(
-                file=shlex.quote(str(path)),
-                out=shlex.quote(str(Path(build) / "snippet")),
-                python=shlex.quote(sys.executable),
-            )
-            said = await run_shell(
-                command,
-                timeout_seconds=timeout_seconds,
-                workdir=path.parent,
-                extra_env={"PATH": env_path},
-                stop=stop,
-            )
-            # Shown to a PERSON under the editor, never parsed — so this is a
-            # boundary where output is trimmed, like a record written to disk.
-            return said.trimmed()
-    finally:
-        _RUNNING.pop(key, None)
+    with tempfile.TemporaryDirectory(prefix="flowpad-snippet-build-") as build:
+        command = oneshot_command(path, Path(build) / "snippet")
+        said = await run_shell(
+            command,
+            timeout_seconds=timeout_seconds,
+            workdir=path.parent,
+            extra_env={"PATH": env_path},
+        )
+        # Shown to a PERSON, never parsed — so this is a boundary where output is
+        # trimmed, like a record written to disk.
+        return said.trimmed()
 
 
 __all__ = [
@@ -437,14 +419,12 @@ __all__ = [
     "WIN32_RUNNERS",
     "SnippetDoc",
     "SnippetReadRequest",
-    "SnippetRunRequest",
     "SnippetSaveRequest",
-    "SnippetStopRequest",
+    "SnippetTerminalRequest",
     "SnippetRegion",
     "read_snippet",
     "run_snippet",
-    "stop_runs_of",
-    "stop_snippet",
+    "terminal_command",
     "edit_region",
     "write_temp_snippet",
 ]

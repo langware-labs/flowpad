@@ -8,7 +8,7 @@ The whole surface, no repository framework:
   accept transition): full recompute from canonical rows → save iff changed.
 * ``accept_mark_preview_read(...)`` — the invitation-accept transition (mark the
   *verified* preview read + the Invitation accepted), then recompute.
-* ``conversation_is_unread(...)`` / ``project_unread(...)`` / ``invitation_is_pending(...)`` —
+* ``conversation_unread_count(...)`` / ``project_unread(...)`` / ``invitation_is_pending(...)`` —
   the pure formula (table-tested, no DB). Conversation-domain rules (pointer parsing,
   archive auto-revive) live on the ``Conversation`` entity itself
   (``message_refs()`` / ``is_archived()``), not here.
@@ -105,22 +105,30 @@ def pending_conversation_ids(pending) -> set[str]:
     }
 
 
-def conversation_is_unread(conv, latest, *, pending_conv_ids: set, self_ids: set) -> bool:
-    """THE per-conversation unread rule — what a row shows and what the badge counts.
+def conversation_unread_count(conv, fm_by_id: dict, *, pending_conv_ids: set, self_ids: set) -> int:
+    """THE per-conversation unread rule, as a number — what a row shows (unread = > 0), what the
+    badge counts, and what a badge on the conversation itself reads.
 
-    A pending invitation is always unread: it carries an action. Otherwise the conversation
-    is unread when its latest message (``latest``, resolved newest-by-timestamp by the
-    caller) was received and not read. Not materialized yet, or a draft, is not unread —
-    the post-materialization recompute picks it up rather than falling back to an older
-    message. "Received" is the typed sender: not ours by ``MessageSender.authored_by`` —
-    one of our user ids, or an Agent we host (an agent's reply is OURS, whether or not its
-    mail is still switched on). A message naming nobody is not unread.
+    Newest first BY TIMESTAMP (not last-appended: an ingested mailbox hands its history back
+    newest-first, so the last pointer is the OLDEST mail), every received message not yet read
+    counts, up to the first one that is read, ours, a draft or not materialized yet — the
+    post-materialization recompute picks that one up rather than falling back to an older message.
+    Opening a conversation marks its latest message read, and replying answers what came before, so
+    either brings it to 0. "Received" is the typed sender: not ours by ``MessageSender.authored_by``
+    — one of our user ids, or an Agent we host (an agent's reply is OURS, whether or not its mail is
+    still switched on). A message naming nobody is not unread. A pending invitation is at least 1:
+    it carries an action.
     """
-    if conv.id in pending_conv_ids:
-        return True
-    if latest is None or getattr(latest, "is_draft", False):
-        return False
-    return bool(not latest.is_read and latest.sender and not latest.sender.authored_by(self_ids))
+    count = 0
+    for ref in conv.message_refs_newest_first():
+        message = fm_by_id.get(ref.id)
+        if message is None or getattr(message, "is_draft", False) or message.is_read:
+            break
+        if not message.sender or message.sender.authored_by(self_ids):
+            break
+        count += 1
+    return max(count, 1) if conv.id in pending_conv_ids else count
+
 
 def in_stream_inbox_of(conv, owner) -> bool:
     """Whether ``conv`` is listed in ``owner``'s stream inbox. A row written before
@@ -135,6 +143,8 @@ class UnreadProjection:
 
     total: int
     by_conversation: dict
+    #: Each conversation's unread MESSAGE count (:func:`conversation_unread_count`).
+    counts: dict
 
 
 def project_unread(
@@ -162,20 +172,18 @@ def project_unread(
     pending_ids = pending_conversation_ids(pending)
     total = len(pending)
     flags: dict = {}
+    counts: dict = {}
     for conv in conversations:
-        # NEWEST by timestamp, not last-appended: an ingested mailbox hands
-        # its history back newest-first, so `refs[-1]` there is the OLDEST
-        # mail and the conversation reads as read when it isn't.
-        ref = conv.latest_message_ref()
-        latest = fm_by_id.get(ref.id) if ref is not None else None
-        unread = conversation_is_unread(conv, latest, pending_conv_ids=pending_ids, self_ids=self_ids)
+        count = conversation_unread_count(conv, fm_by_id, pending_conv_ids=pending_ids, self_ids=self_ids)
+        unread = count > 0
         flags[conv.id] = unread
+        counts[conv.id] = count
         if not unread or conv.id in pending_ids or conv.is_archived():
             continue  # a pending invite is already counted; an archived row counts nothing
         if not in_stream_inbox_of(conv, stream_inbox_owner):
             continue
         total += 1
-    return UnreadProjection(total=total, by_conversation=flags)
+    return UnreadProjection(total=total, by_conversation=flags, counts=counts)
 
 
 def count_unread(**rows) -> int:
@@ -286,15 +294,17 @@ async def recompute_unread(reason: str, owner: "TypeId | None" = None) -> "Strea
         projection = project_unread(**rows)
         for conv in conversations:
             flag = projection.by_conversation[conv.id]
-            if bool(conv.is_unread) == flag:
+            count = projection.counts[conv.id]
+            if bool(conv.is_unread) == flag and int(conv.unread_count or 0) == count:
                 continue
             # Stamp a FRESH read, never the snapshot the count was taken from: between that
             # load and this save another writer may have archived, repointed or deleted the
             # row, and saving the snapshot would undo the first two and resurrect the third.
             fresh = await Conversation.get_by_id(conv.id)
-            if fresh is None or bool(fresh.is_unread) == flag:
+            if fresh is None or (bool(fresh.is_unread) == flag and int(fresh.unread_count or 0) == count):
                 continue
             fresh._set_projection("is_unread", flag, PROJECTION_SENTINEL)
+            fresh._set_projection("unread_count", count, PROJECTION_SENTINEL)
             await fresh.save(None, notify=True)
         if manager.unread != projection.total:
             logger.info("[stream-inbox] unread %d -> %d (%s)", manager.unread, projection.total, reason)

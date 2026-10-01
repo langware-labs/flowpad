@@ -23,7 +23,6 @@ verbatim and are never absorbed here.
 import asyncio
 import collections
 import functools
-import itertools
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar, Optional
@@ -34,7 +33,7 @@ from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.auth import LoginRequired
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
 from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
-from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.core import Entity, action
 from flow_sdk.flowpad_types.vendors import Vendor, default_vendor, vendor_for
 from flow_sdk.fs_store.type_id import TypeId
@@ -261,8 +260,9 @@ class Agent(Entity):
     )
     auto_launch_prompt: str = APIField(
         default="",
-        description="First prompt of the auto-launched session, delivered through the process "
-        "prompt queue. Empty = open the session with no first turn.",
+        description="The agent's auto prompt: the first turn of every new session opened as it "
+        "(Use, home page, auto-launch), delivered through the process prompt queue. Independent "
+        "of ``auto_launch``. Empty = open sessions with no first turn.",
     )
 
     # ── places ────────────────────────────────────────────────────────────
@@ -489,15 +489,30 @@ class Agent(Entity):
         return self
 
     async def use(
-        self, project_id: str | None = None, *, deployment: "Deployment | None" = None, owner=None
+        self,
+        project_id: str | None = None,
+        *,
+        deployment: "Deployment | None" = None,
+        owner=None,
+        auto_prompt: bool = False,
     ) -> "AgenticProcess":
-        """Open a session AS this agent — saved, visible, no first turn.
+        """Open a session AS this agent — saved, visible, no turn started.
 
         ``owner`` is the human opening it, recorded on the process row; a
         remote ``deployment`` opens through the hub (``Deployment.use``).
+
+        ``auto_prompt=True`` queues (never sends) the agent's auto prompt as the
+        first turn, on a local deployment only; the caller starts it once the
+        session is set up (the UI's ``prepareAgentSession``, or ``process.submit()``).
         """
         target = deployment or await self.local_deployment()
-        return await target.use(project_id=project_id, owner=owner)
+        process = await target.use(project_id=project_id, owner=owner)
+        prompt = self.auto_prompt_text
+        if auto_prompt and prompt and target.is_local:
+            # Straight into the queue: the ``enqueue`` action would also start a
+            # drain, running turn 1 before the caller embeds its layers.
+            process.queue.enqueue(prompt, source="auto_prompt")
+        return process
 
     @staticmethod
     async def reset_auto_launch(project_id: str, agent_id: str) -> None:
@@ -524,9 +539,9 @@ class Agent(Entity):
         folders (``assets_under_roots``, the same scoping journeys use), enabled,
         ``auto_launch`` on, and not yet marked. Every candidate — winner and
         cancelled — is marked ONCE per project (see the ``auto_launch`` field),
-        under a per-project lock. The prompt is enqueued, not sent: the caller
-        kicks the queue (``drain-queue``) after the vibe persona is embedded, the
-        order ``useAgentLauncher`` uses.
+        under a per-project lock. The winner is opened with ``use(auto_prompt=True)``,
+        so its auto prompt is queued exactly as on any other session; the caller
+        starts it (``prepareAgentSession`` drains after the vibe embed).
 
         The mark is written only once the session actually opened, and the lock
         is held across that open. Marking first was cheaper but wrote off the
@@ -557,15 +572,15 @@ class Agent(Entity):
             candidates.sort(key=age_key)
             winner, cancelled = candidates[0], candidates[1:]
 
-            process = await (await winner.fresh()).use(project_id=project_id)
+            launched = await winner.fresh()
+            process = await launched.use(project_id=project_id, auto_prompt=True)
             update_project_device_state(
                 project_id, **{_AUTO_LAUNCHED_KEY: sorted(done | {agent.id for agent in candidates})}
             )
 
-        prompt = (winner.auto_launch_prompt or "").strip()
-        if prompt:
-            process.queue.enqueue(prompt, source="auto_launch")
-        return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=bool(prompt))
+        # The queueing itself is done by ``use`` above.
+        prompt_queued = bool(launched.auto_prompt_text)
+        return AutoLaunchOutcome(agent=winner, process=process, cancelled=cancelled, prompt_queued=prompt_queued)
 
     def process_messages(self):
         """Scope message processing so each thread reuses one AgenticProcess."""
@@ -605,8 +620,8 @@ class Agent(Entity):
 
     # ── deployment ────────────────────────────────────────────────────────
 
-    async def deploy(self, provider: str = "local", *, slot: str = "") -> Deployment:
-        """Idempotent upsert of this agent's placement on *provider* (its *slot* of them: ``""`` the default).
+    async def deploy(self, provider: str = "local") -> Deployment:
+        """Idempotent upsert of this agent's placement on *provider* — one per provider and environment.
 
         Converges through ``Deployment.find_existing`` rather than a derived id:
         the row keeps whatever v4 it was first minted with, forever, on every
@@ -619,11 +634,16 @@ class Agent(Entity):
         return await Deployment.upsert(
             parent_type_id=str(self.typeid),
             provider=provider,
-            kind=KIND_AGENT,
             element=self,
-            slot=slot,
             payload={
-                "name": f"{self.name or self.id} ({provider}{f' {slot}' if slot else ''})",
+                "name": f"{self.name or self.id} ({provider})",
+                # The box a placement runs on logs in as the agent itself.
+                "identity": "agent",
+                # What it exposes: its chat — an HTTP message channel its loop answers. The channel is
+                # made when the loop is launched (``ensure_chat_channel``), so the backend is not declared.
+                "exposes": [
+                    {"name": "chat", "subkind": "agent", "protocol": {"spec_kind": "api.chat.openai"}},
+                ],
                 "target": {
                     "provider": provider,
                     "scope": self.project_id or "machine",
@@ -652,20 +672,17 @@ class Agent(Entity):
         return await self.deploy("local")
 
     async def run_locally(self, *, snippet: Optional[str] = None) -> Deployment:
-        """Launch one more local deployment of this agent: a process on this computer running its loop.
+        """Run this agent on this computer: its one local deployment, as a process running its loop.
 
-        The first takes the default slot (and answers the channels that name no place); each
-        next one is ``2``, ``3``, … . The app's supervisor starts the process
-        (``builtin/deployment_process``) and keeps it running while the deployment is ``serving``.
-        *snippet* runs that Python file instead of the stock loop (``builtin/agent_loop``). Its
-        ``chat`` endpoint — an HTTP message channel — is made here.
+        Idempotent — the agent has one local deployment; running it again (after a pause) starts the
+        same one. The app's supervisor starts the process (``builtin/deployment_process``) and keeps
+        it running while the deployment is ``serving``. *snippet* runs that Python file instead of the
+        stock loop (``builtin/agent_loop``). Its ``chat`` endpoint — an HTTP message channel — is made
+        here.
         """
         from flow_sdk.builtin.agent_serve import answered_sources, ensure_chat_channel, hold_positions  # noqa: PLC0415
 
-        running = {d.slot for d in await self.deployments() if d.target.provider == "local" and d.serving}
-        # The first slot not running: a paused one is launched again rather than a new one minted.
-        slot = next(s for s in itertools.chain([""], map(str, itertools.count(2))) if s not in running)
-        deployment = await self.deploy("local", slot=slot)
+        deployment = await self.deploy("local")
         # Everything it runs over exists BEFORE it is marked serving — the supervisor (in the app,
         # another process) acts on `serving`, and must find a deployment that is ready to run.
         await ensure_chat_channel(self, deployment)
@@ -1311,8 +1328,11 @@ class Agent(Entity):
     async def use_action(self):
         """Open a session as this agent. `POST /agent/<id>/use` → process id.
 
-        No prompt: the process is created and shown, and the human types the
-        first message. Local placement only — same routing rule as ``run``.
+        No turn is started: the process is created and shown. The optional body
+        ``auto_prompt: true`` queues the agent's auto prompt as the first turn
+        (see ``Agent.use``); the UI sends it and starts the turn after its
+        session setup, and the hub never forwards it to a placement machine.
+        Local placement only — same routing rule as ``run``.
 
         The optional body ``project_id`` names the project the session ACTS IN,
         which is not always the project the agent lives in — see ``Agent.use``
@@ -1332,6 +1352,7 @@ class Agent(Entity):
         body = await request_info.get_post_data() if request_info else {}
         project_id = str((body or {}).get("project_id") or "").strip() or None
         deployment_id = str((body or {}).get("deployment_id") or "").strip()
+        auto_prompt = (body or {}).get("auto_prompt") is True
 
         agent = await self.fresh()
         if deployment_id:
@@ -1345,7 +1366,7 @@ class Agent(Entity):
             deployment = await agent.local_deployment()
         owner = request_info.someone_typeid if request_info else None
         try:
-            process = await agent.use(project_id=project_id, deployment=deployment, owner=owner)
+            process = await agent.use(project_id=project_id, deployment=deployment, owner=owner, auto_prompt=auto_prompt)
         except NotImplementedError as exc:
             return ApiFailResponse(message=str(exc))
         except Exception as exc:  # noqa: BLE001 — incl. the disabled-agent refusal from create_process()
@@ -1359,6 +1380,11 @@ class Agent(Entity):
         )
 
     # ── projection into the launch bundle ─────────────────────────────────
+
+    @property
+    def auto_prompt_text(self) -> str:
+        """The auto prompt as ``use(auto_prompt=True)`` queues it; empty = none."""
+        return (self.auto_launch_prompt or "").strip()
 
     @property
     def display_name(self) -> str:

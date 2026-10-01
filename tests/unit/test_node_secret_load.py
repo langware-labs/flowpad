@@ -17,13 +17,13 @@ from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.project import Project
 from flow_sdk.core.flow.models.execution.env_context import resolve_node_secret_env
 from flow_sdk.schema.type_info import register_all
+from tests.unit._project_names import unique_project_name
 
 register_all()
 
 
 async def _project_with_values(tmp_path, **secrets):
-    project = Project(name=str(tmp_path / "load-proj"))
-    project.fs_storage_mount_path = str(tmp_path)
+    project = Project(name=unique_project_name("load-proj"), fs_storage_mount_path=str(tmp_path))
     await project.save()
     if secrets:
         await save_credential(

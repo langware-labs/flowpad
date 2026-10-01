@@ -142,9 +142,19 @@ vi.mock('@src/components/terminal/interactive-terminal/PtySyncContext', () => ({
 // swapped views.
 // ---------------------------------------------------------------------------
 vi.mock('@src/components/terminal/interactive-terminal/ProcessToolbar', () => ({ ProcessToolbar: () => null }));
-vi.mock('@src/components/terminal/interactive-terminal/SimpleChatPane', () => ({
-  SimpleChatPane: () => <div data-testid="simple-chat" />,
-}));
+// The view-mode SURFACE and the chat pane's mount count, driven by the tests below.
+const paneControls = vi.hoisted(() => ({ surface: 'terminal' as string, mounts: 0 }));
+vi.mock('@src/components/terminal/interactive-terminal/SimpleChatPane', async () => {
+  const { useEffect } = await import('react');
+  return {
+    SimpleChatPane: () => {
+      useEffect(() => {
+        paneControls.mounts += 1;
+      }, []);
+      return <div data-testid="simple-chat" />;
+    },
+  };
+});
 vi.mock('@src/components/terminal/interactive-terminal/ChatComposerBar', () => ({ ChatComposerBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/TerminalBottomRibbon', () => ({
   TerminalBottomRibbon: () => null,
@@ -153,8 +163,8 @@ vi.mock('@src/components/terminal/interactive-terminal/ColumnHeaderBar', () => (
 vi.mock('@src/components/terminal/interactive-terminal/PaneBar', () => ({ PaneBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/PaneSelectorBar', () => ({ PaneSelectorBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/PaneView', () => ({ PaneView: () => null }));
-vi.mock('@src/components/terminal/interactive-terminal/SidecarShellTerminal', () => ({
-  SidecarShellTerminal: () => null,
+vi.mock('@src/components/terminal/interactive-terminal/ShellTerminal', () => ({
+  ShellTerminal: () => null,
 }));
 vi.mock('@src/components/terminal/interactive-terminal/TerminalSearchBar', () => ({ TerminalSearchBar: () => null }));
 vi.mock('@src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner', () => ({
@@ -259,11 +269,11 @@ vi.mock('@src/navigation', () => ({
 }));
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'light' }) }));
 vi.mock('@src/components/view-mode', () => ({ useIsAdvanced: () => true }));
-// Pinned to the terminal surface so only the pty_mode TRANSPORT flip moves the
-// view — which is the round trip under test.
+// On the terminal surface unless a test moves it, so in the transport round trip only the
+// pty_mode flip moves the view.
 vi.mock('@src/contexts/view-mode-context', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@src/contexts/view-mode-context')>()),
-  useSessionSurface: () => 'terminal',
+  useSessionSurface: () => paneControls.surface,
   useViewMode: () => 'advanced',
 }));
 vi.mock('@src/notifications/notify', () => ({
@@ -295,6 +305,8 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  paneControls.surface = 'terminal';
+  paneControls.mounts = 0;
   // Deterministic timers: the lifecycle defers fit (50ms) and dispose (10ms)
   // behind setTimeout; fake timers keep each test synchronous and stop one
   // test's deferred dispose from leaking into the next test's spy counts.
@@ -356,7 +368,7 @@ const mockProcess = {
 // re-render comes from the reactive entity update after switchMode.
 const ui = (marker: string) => (
   <MemoryRouter>
-    <InteractiveTerminal sessionId="shell-sess-1" active={false} process={mockProcess} className={marker} />
+    <InteractiveTerminal sessionId="shell-sess-1" active process={mockProcess} className={marker} />
   </MemoryRouter>
 );
 
@@ -375,6 +387,10 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
     // terminal → chat: container unmounts, chat pane is the whole view.
     headless = true;
     rerender(ui('r2'));
+    // The pane mounts a frame after the panel is shown as chat (see `chatMounted`).
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
     expect(container.querySelector('[data-testid="simple-chat"]')).toBeTruthy();
     expect(container.contains(firstContainer)).toBe(false);
     expect(xtermSpies.open.calls).toBe(1); // no phantom re-init while headless
@@ -384,7 +400,9 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
     // leaving both the xterm and the chat pane absent (blank window).
     headless = false;
     rerender(ui('r3'));
-    expect(container.querySelector('[data-testid="simple-chat"]')).toBeNull();
+    // The pane is HIDDEN, not rebuilt, when the surface moves on — a flip back to chat
+    // must not re-render the transcript (FLOWPAD-2193) — so it stays in the tree, out of sight.
+    expect(container.querySelector('[data-testid="simple-chat-overlay"]')?.getAttribute('data-shown')).toBe('false');
     expect(xtermSpies.open.calls).toBe(2);
     expect(xtermSpies.open.lastContainer).not.toBe(firstContainer);
     expect(container.contains(xtermSpies.open.lastContainer)).toBe(true);
@@ -404,6 +422,74 @@ describe('InteractiveTerminal — headless (pty_mode) round trip re-initializes 
       vi.advanceTimersByTime(15);
     });
     expect(xtermSpies.dispose.calls).toBe(1);
+  });
+});
+
+describe('InteractiveTerminal — the chat pane follows the panel being SHOWN, not the global surface', () => {
+  const frame = () =>
+    act(() => {
+      vi.advanceTimersByTime(20);
+    });
+  const withProps = (active: boolean, marker: string) => (
+    <MemoryRouter>
+      <InteractiveTerminal sessionId="shell-sess-1" active={active} process={mockProcess} className={marker} />
+    </MemoryRouter>
+  );
+  const overlay = (c: HTMLElement) => c.querySelector('[data-testid="simple-chat-overlay"]');
+
+  // The surface (view mode) is one value for the whole app, and every pooled panel — shown
+  // or not — reads it. A flip to chat used to mount a full transcript render in EACH of them
+  // and the flip back unmounted them all: 11 s with three long chats pooled (FLOWPAD-2193).
+  it('mounts nothing in a panel that is not shown when the surface flips to chat', () => {
+    headless = false;
+    const { container, rerender } = render(withProps(false, 'a1'));
+    paneControls.surface = 'chat';
+    rerender(withProps(false, 'a2'));
+    frame();
+
+    expect(overlay(container), 'a hidden panel rendered a whole transcript').toBeNull();
+    expect(paneControls.mounts).toBe(0);
+  });
+
+  it('does not mount a pane on the tab being LEFT when the surface moves first', () => {
+    // On a switch the surface follows the new url at once, while the pool still lists the
+    // old panel as shown for one commit. That commit must not be enough to mount.
+    headless = false;
+    const { container, rerender } = render(withProps(true, 'b1'));
+    paneControls.surface = 'chat';
+    rerender(withProps(true, 'b2')); // surface is chat, panel still "active"
+    rerender(withProps(false, 'b3')); // ...and the very next commit it is not
+    frame();
+
+    expect(overlay(container), 'the tab being left mounted a pane').toBeNull();
+    expect(paneControls.mounts).toBe(0);
+  });
+
+  it('mounts the pane once when shown as chat, and hides — never rebuilds — it when the surface moves on', () => {
+    headless = false;
+    const { container, rerender } = render(withProps(true, 'c1'));
+    expect(overlay(container)).toBeNull(); // terminal surface: no pane
+
+    paneControls.surface = 'chat';
+    rerender(withProps(true, 'c2'));
+    frame();
+    const pane = overlay(container);
+    expect(pane, 'the pane did not mount for the panel shown as chat').not.toBeNull();
+    expect(pane!.getAttribute('data-shown')).toBe('true');
+    expect(paneControls.mounts).toBe(1);
+
+    paneControls.surface = 'terminal';
+    rerender(withProps(true, 'c3'));
+    frame();
+    expect(overlay(container), 'the flip to terminal rebuilt the pane').toBe(pane);
+    expect(pane!.getAttribute('data-shown')).toBe('false');
+
+    paneControls.surface = 'chat';
+    rerender(withProps(true, 'c4'));
+    frame();
+    expect(overlay(container), 'the flip back to chat rebuilt the pane').toBe(pane);
+    expect(pane!.getAttribute('data-shown')).toBe('true');
+    expect(paneControls.mounts, 'the transcript was rendered again on a flip').toBe(1);
   });
 });
 

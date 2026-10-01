@@ -47,6 +47,7 @@ from flow_sdk.fs_store.operations.all_projects import (
 )
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.preferences import write_instance_pref
+from tests.unit._project_names import unique_project_name
 
 # The root types the folder walker is registered on in production (builtin.py) —
 # NOT USER_HOME_FOLDER, which is expanded only by narrow ~/.claude/* functions.
@@ -110,7 +111,7 @@ async def test_project_in_protected_folder_is_not_walked(
 
     proj = Project(
         id=Project.derive_id_for_path(str(proj_root)),
-        name="flowpad-oss",
+        name=unique_project_name("flowpad-oss"),
         fs_storage_mount_path=str(proj_root),
     )
     await proj.save()
@@ -160,7 +161,7 @@ async def _project_under(folder: str, tmp_path: Path, monkeypatch: pytest.Monkey
     (proj_root / "README.md").write_text("# repo\n")
     proj = Project(
         id=Project.derive_id_for_path(str(proj_root)),
-        name="proj",
+        name=unique_project_name("proj"),
         fs_storage_mount_path=str(proj_root),
     )
     await proj.save()

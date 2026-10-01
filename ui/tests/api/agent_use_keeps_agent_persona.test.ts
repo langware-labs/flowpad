@@ -97,4 +97,36 @@ describe('agent session persona', () => {
     },
     TIMEOUT,
   );
+
+  // FLOWPAD-2180: an opted-in `use` queues the agent's auto prompt, and
+  // prepareAgentSession starts it — after the vibe layer — with no prompt sent
+  // by the caller. The turn the drain starts is what materializes CLAUDE.md.
+  it(
+    "an opted-in use runs the agent's auto prompt as turn 1, after the vibe layer",
+    async () => {
+      const created = await apiClient.post<{ id: string }>(`/api/v1/graph/project/${project.id}/agent`, {
+        type: 'agent',
+        name: `Auto Prompt Probe ${Date.now()}`,
+        system_prompt: AGENT_MARKER,
+        auto_launch_prompt: 'Reply with the single word: ok',
+      });
+      trackTypeId('agent', created.id);
+      const prompted = (await Agent.getById<Agent>(created.id))!;
+
+      const { process_id } = await prompted.use(project.id, true);
+      trackTypeId('agentic_process', process_id);
+      const proc = await prepareAgentSession(process_id);
+      expect(proc, 'prepareAgentSession must resolve the used process').not.toBeNull();
+
+      const row = await fetchRow('agentic_process', process_id);
+      const rendered = await waitForFile(path.join(row.exe_folder.path, 'assets', 'CLAUDE.md'), 60_000);
+      const state = await apiClient.get<{ queue: { entries: unknown[] } }>(`/api/v1/graph/agentic_process/${process_id}`);
+      await proc!.cancelPrompt().catch(() => {});
+
+      expect(state.queue.entries).toEqual([]);
+      expect(rendered).toContain(AGENT_MARKER);
+      expect(rendered).not.toContain("# You are the 'vibe' agent");
+    },
+    TIMEOUT,
+  );
 });

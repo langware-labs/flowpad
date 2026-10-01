@@ -20,6 +20,8 @@ Real DB (session ``initialize_test_db`` fixture), real ``ComputeNode`` +
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -97,7 +99,6 @@ async def test_project_delete_preserves_dynamic_protected_source(
     assert not project.protected_path
 
     canonical = canonical_posix_path(source)
-    monkeypatch.setattr(config, "AGENT_MOUNT_FOLDER", canonical)
     monkeypatch.setattr(config, "agent_workspace_root", lambda: source)
     assert project.protected_path
 

@@ -1,8 +1,10 @@
 """``Agent.auto_launch_for`` — the once-per-project selection.
 
 The session itself is stubbed (``Agent.use`` → a fake process with a fake
-queue): what is under test is WHICH agent, WHEN, and what lands in the queue
-and the project marker — not the worker spawn.
+queue): what is under test is WHICH agent, WHEN, whether it asks ``use()`` for
+the auto prompt, and the project marker — not the worker spawn. Queueing the
+prompt is ``use()``'s job (FLOWPAD-2180), covered through the real route in
+``tests/api/test_agent_use_queues_auto_launch_prompt.py``.
 """
 from __future__ import annotations
 
@@ -23,11 +25,12 @@ class _FakeQueue:
 
 
 class _FakeProcess:
-    def __init__(self, agent: Agent, project_id: str | None):
+    def __init__(self, agent: Agent, project_id: str | None, auto_prompt: bool):
         self.id = f"proc-{agent.name}"
         self.typeid = f"agentic_process-{self.id}"
         self.agent = agent
         self.project_id = project_id
+        self.auto_prompt = auto_prompt
         self.queue = _FakeQueue()
 
 
@@ -36,8 +39,8 @@ def used(monkeypatch):
     """Stub ``Agent.use`` and capture every session it would have opened."""
     opened: list[_FakeProcess] = []
 
-    async def _use(self, project_id=None, *, deployment=None):
-        proc = _FakeProcess(self, project_id)
+    async def _use(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
+        proc = _FakeProcess(self, project_id, auto_prompt)
         opened.append(proc)
         return proc
 
@@ -57,7 +60,7 @@ async def test_single_candidate_launches_and_queues_its_prompt(tmp_path, used):
     assert payload["agent_id"] == agent.id and payload["process_id"] == used[0].id
     assert payload["cancelled"] == [] and payload["prompt_queued"] is True
     assert used[0].project_id == project.id
-    assert used[0].queue.entries == [("Say hello", "auto_launch")]
+    assert used[0].auto_prompt is True and used[0].queue.entries == []
     assert Agent.auto_launched_ids(project.id) == [agent.id]
 
 
@@ -84,7 +87,7 @@ async def test_oldest_wins_and_the_rest_are_cancelled_for_good(tmp_path, used):
 
     assert outcome is not None and outcome.agent.id == oldest.id
     assert [a.id for a in outcome.cancelled] == [middle.id, newer.id]
-    assert used[0].queue.entries == [("c", "auto_launch")]
+    assert used[0].auto_prompt is True
     assert set(Agent.auto_launched_ids(project.id)) == {oldest.id, middle.id, newer.id}
     # Cancelled means cancelled: the next open does not fall through to them.
     assert await Agent.auto_launch_for(project.id) is None
@@ -176,7 +179,7 @@ async def test_a_failed_session_open_leaves_the_mark_unset_so_the_next_open_retr
 
     working = Agent.use  # the fixture's stub, restored for the retry below
 
-    async def _boom(self, project_id=None, *, deployment=None):
+    async def _boom(self, project_id=None, *, deployment=None, owner=None, auto_prompt=False):
         raise RuntimeError("no worker binary")
 
     monkeypatch.setattr(Agent, "use", _boom)

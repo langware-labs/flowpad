@@ -1,5 +1,7 @@
 """Process configuration adapters for the filesystem asset utilities."""
 
+from pathlib import Path
+
 from flow_sdk.assets.catalog import AssetSource, add_source_dir
 
 
@@ -21,9 +23,14 @@ async def process_asset_sources(process):
                 for path in project.include_dirs or []:
                     add_source_dir(pairs, seen, path, AssetSource.CONTEXT_DIR)
     add_source_dir(pairs, seen, process.workdir, AssetSource.WORKDIR)
+    from flow_sdk.config import flowpad_assistant_canonical_root
+    assistant_root = flowpad_assistant_canonical_root()
+    assistant_key = str(Path(assistant_root).expanduser().resolve()) if assistant_root else None
     for path in process.additional_dirs or []:
-        add_source_dir(pairs, seen, path, AssetSource.ADDITIONAL_DIR)
+        # A live worker's launch snapshot folds the assistant root into its
+        # --add-dir list; it is still the assistant, not a folder the user added.
+        is_assistant = assistant_key is not None and str(Path(path).expanduser().resolve()) == assistant_key
+        add_source_dir(pairs, seen, path, AssetSource.SYSTEM if is_assistant else AssetSource.ADDITIONAL_DIR)
     if process.assistant_enabled:
-        from flow_sdk.config import flowpad_assistant_canonical_root
-        add_source_dir(pairs, seen, flowpad_assistant_canonical_root(), AssetSource.SYSTEM)
+        add_source_dir(pairs, seen, assistant_root, AssetSource.SYSTEM)
     return pairs

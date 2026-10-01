@@ -123,6 +123,12 @@ async def require_assignable_task(action_name: str) -> tuple[Task, RequestInfo, 
     if not creds or not creds.api_key:
         raise HTTPException(status_code=403, detail=f"Cloud login required to {action_name}")
 
+    task, request_info, body = await _target_task(action_name)
+    return task, request_info, body, normalize_email((creds.user or {}).get("email"))
+
+
+async def _target_task(action_name: str) -> tuple[Task, RequestInfo, dict]:
+    """The task a ``/task/<id>/<action>`` call targets, and its request body."""
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
         raise HTTPException(status_code=400, detail=f"{action_name}: target task typeid required")
@@ -138,7 +144,7 @@ async def require_assignable_task(action_name: str) -> tuple[Task, RequestInfo, 
         body = await request_info.get_post_data() or {}
     except JSONDecodeError:
         body = {}
-    return task, request_info, body, normalize_email((creds.user or {}).get("email"))
+    return task, request_info, body
 
 
 @action.post(action_name="assign-task", types=["task"])
@@ -181,3 +187,22 @@ async def assign_task() -> ApiResponse:
         "members",
     )
     return ApiSuccessResponse(data={"self": False, "assignee": email})
+
+
+@action.post(action_name="link-conversation", types=["task"])
+async def link_conversation() -> ApiResponse:
+    """``POST /graph/task/<id>/link-conversation`` — the conversation this task was asked in.
+
+    Body: ``{"conversation_id": ...}``. Stored as ``origin_conversation``, a PRIVATE field: it is a
+    local row id, the hub's task does not model it, and a shared task's field save round-trips
+    through the hub (``_hub_reflect``), which drops every field the hub does not echo. This action
+    runs HERE — a server-side save never hub-reflects — so the link stays on this machine, where
+    opening the task (the Vibe "Ask for help" button) opens that conversation.
+    """
+    task, request_info, body = await _target_task("link-conversation")
+    conversation_id = str(body.get("conversation_id") or "").strip()
+    if not conversation_id:
+        raise HTTPException(status_code=400, detail="link-conversation: 'conversation_id' required")
+    task.origin_conversation = conversation_id
+    await task.save(request_info.someone_typeid)
+    return ApiSuccessResponse(data={"origin_conversation": conversation_id})

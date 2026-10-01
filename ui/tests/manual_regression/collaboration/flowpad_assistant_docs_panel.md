@@ -23,13 +23,13 @@ test 1: Open the Flowpad Assistant project space (asset browser)
 - check console for errors
 - validate no errors appeared
 
-test 2: The shipped hello-flowpad doc is seeded and searchable
+test 2: The shipped Welcome doc is seeded and searchable
 # Startup and desktop reset synchronously seed the Flowpad Assistant's shipped
 # markdown entities and their FTS rows. A manual broad re-index would mask a
 # broken reset contract, so query the exact system-project scope directly.
 - resolve the @flowpad_assistant Project entity id
-- [bash] run "curl -s '{API_URL}/api/v1/search?record_type=markdown&q=hello&include_system=true&user=false&projects={PROJECT_ID}'"
-- validate the search response includes the shipped "Hello from Flowpad" entity with id dc8713d4-8841-47ab-a28d-8e3248106f5a and the resolved project id
+- [bash] run "curl -s '{API_URL}/api/v1/search?record_type=markdown&q=welcome&include_system=true&user=false&projects={PROJECT_ID}'"
+- validate the search response includes the shipped "Welcome" entity with id d5335e69-424a-43a7-9f8d-8503656d560f and the resolved project id
 
 test 3: The assistant project view mounts without an error boundary
 - navigate to {APP_URL}/dock/project/@flowpad_assistant

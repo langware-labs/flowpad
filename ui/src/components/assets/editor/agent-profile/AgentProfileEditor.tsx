@@ -63,7 +63,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
   const description = content.fields.description ?? '';
   const prompt = content.body;
   const intro = content.fields.intro ?? '';
-  const autoLaunchPrompt = content.fields.auto_launch_prompt ?? '';
+  const autoPrompt = content.fields.auto_launch_prompt ?? '';
   const [avatarRevision, setAvatarRevision] = useState(0);
   const [version, setVersion] = useState<AgentVersionState | null>(null);
 
@@ -304,7 +304,7 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                 <ChevronRight className="h-3.5 w-3.5 transition group-open:rotate-90" />
                 <Trans>More</Trans>
                 <span className="text-xs font-normal text-muted-foreground">
-                  <Trans>name · description · intro · auto-launch · Flowpad assistant · declared fields</Trans>
+                  <Trans>name · description · intro · auto prompt · auto-launch · Flowpad assistant · declared fields</Trans>
                 </span>
               </summary>
               <div className="flex flex-col gap-4 border-t border-border px-3 py-3">
@@ -350,6 +350,23 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                   value={profile.phone}
                   onCommit={(v) => void save({ phone: v })}
                 />
+                {/* Its own setting: sent on every new session, not only an auto-launch.
+                    Stored as `auto_launch_prompt` — AgentSpec forbids unknown keys. */}
+                <div>
+                  <div className="mb-1 text-xs text-muted-foreground">
+                    <Trans>Auto prompt — sent as the first message of every new session with this agent</Trans>
+                  </div>
+                  <Textarea
+                    value={autoPrompt}
+                    onChange={(e) => content.setField('auto_launch_prompt', e.target.value)}
+                    onBlur={() => commit('auto_launch_prompt', autoPrompt.trim())}
+                    placeholder={t`First message to send when a session starts…`}
+                    aria-label={t`Auto prompt`}
+                    data-testid="agent-auto-prompt"
+                    className="min-h-16 resize-none text-sm"
+                    rows={2}
+                  />
+                </div>
                 <div className="rounded-md border border-border px-3 py-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm">
@@ -362,24 +379,11 @@ export function AgentProfileEditor({ agent, mainRef }: AgentProfileEditorProps) 
                       data-testid="agent-auto-launch"
                     />
                   </div>
-                  {profile.auto_launch ? (
-                    <Textarea
-                      value={autoLaunchPrompt}
-                      onChange={(e) => content.setField('auto_launch_prompt', e.target.value)}
-                      onBlur={() => commit('auto_launch_prompt', autoLaunchPrompt.trim())}
-                      placeholder={t`First prompt to send when the project opens…`}
-                      aria-label={t`Auto-launch prompt`}
-                      data-testid="agent-auto-launch-prompt"
-                      className="mt-2 min-h-16 resize-none text-sm"
-                      rows={2}
-                    />
-                  ) : (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      <Trans>
-                        Once per project, the first time it is opened. Oldest agent wins if several set this.
-                      </Trans>
-                    </p>
-                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    <Trans>
+                      Once per project, the first time it is opened. Oldest agent wins if several set this.
+                    </Trans>
+                  </p>
                   {autoLaunched !== null ? (
                     <div className="mt-2 flex items-center justify-between gap-2" data-testid="agent-auto-launch-status">
                       <span className="text-xs text-muted-foreground">

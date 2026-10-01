@@ -17,7 +17,6 @@ import type { WorkerHistoryEntry, WorkerType } from '@src/hooks/useWorkerHistory
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
-import { terminalProfile } from '@src/components/spotlight/profiles';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
@@ -45,14 +44,22 @@ export function ChatsNavigator() {
     title: string;
   } | null>(null);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
+  // Session quick search (the magnifier on the "New" row). Closing clears it.
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const handleSearchOpenChange = useCallback((open: boolean) => {
+    setSearchOpen(open);
+    if (!open) setSearch('');
+  }, []);
+  const searching = searchOpen && search.trim().length > 0;
 
   const scope = useMemo<ScopeFilter>(
     () => currentDock?.scopeFilter ?? defaultScopeFilter(project?.id ?? null),
     [currentDock, project?.id],
   );
 
-  const filters = useMemo(() => ({ scope, search: '' }), [scope]);
-  const { buckets, total, isLoading, refetch } = useChatHistory(filters);
+  const filters = useMemo(() => ({ scope, search }), [scope, search]);
+  const { buckets, matches, total, isLoading, isSearchingContent, refetch } = useChatHistory(filters);
 
   // Active row = the process the Shell URL currently targets (URL-first).
   const activeProcessId =
@@ -166,18 +173,24 @@ export function ChatsNavigator() {
             onScopeChange={handleScopeChange}
           />
         ),
-        filterBar: <ChatsFilterBar onNewChat={handleNewChat} onResumeById={() => setResumeByIdOpen(true)} />,
-      },
-      search: {
-        recordTypes: terminalProfile.allowedEntityTypes ?? [],
-        scope,
-        routeViaTerminal: true,
-        placeholder: t`Search chats…`,
+        filterBar: (
+          <ChatsFilterBar
+            onNewChat={handleNewChat}
+            onResumeById={() => setResumeByIdOpen(true)}
+            searchOpen={searchOpen}
+            search={search}
+            onSearchChange={setSearch}
+            onSearchOpenChange={handleSearchOpenChange}
+          />
+        ),
       },
       customBody: (
         <ChatsList
           buckets={buckets}
           isLoading={isLoading}
+          searching={searching}
+          matches={matches}
+          isSearchingContent={searching && isSearchingContent}
           activeProcessId={activeProcessId}
           openProcessIds={openProcessIds}
           onSelect={handleSelect}
@@ -189,10 +202,16 @@ export function ChatsNavigator() {
     [
       total,
       handleNewChat,
+      searchOpen,
+      search,
+      searching,
+      isSearchingContent,
+      handleSearchOpenChange,
       scope,
       project,
       handleScopeChange,
       buckets,
+      matches,
       isLoading,
       activeProcessId,
       openProcessIds,

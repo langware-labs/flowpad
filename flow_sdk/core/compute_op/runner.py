@@ -566,7 +566,13 @@ def _permission_prompt_open() -> bool:
 
 
 async def _ask(
-    spec: ComputeOpSpec, *, ask_timeout: Optional[float], say: Callable[[str], None], wizard_id: str = "", **_: Any
+    spec: ComputeOpSpec,
+    *,
+    ask_timeout: Optional[float],
+    say: Callable[[str], None],
+    workdir: Path,
+    wizard_id: str = "",
+    **_: Any,
 ) -> AskResult:
     """Put the op's declared output to a person and wait for the answer.
 
@@ -600,8 +606,14 @@ async def _ask(
         submit_label=spec.exe_data.submit_label,
         cancel_label=spec.exe_data.cancel_label,
         secret=spec.exe_data.secret,
+        file=spec.exe_data.file,
         wizard_id=wizard_id,
         guide=spec.setup or "",
+        # AI Assist: the agent follows the same guide, for the setup's own span once started.
+        assist_agent=spec.exe_data.assist_agent,
+        setup_timeout=spec.setup_timeout(),
+        workdir=str(workdir),
+        say=say,
     )
 
 

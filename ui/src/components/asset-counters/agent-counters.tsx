@@ -1,4 +1,4 @@
-import { Agent, Deployment, KIND_AGENT, QueryRequest } from '@sdk';
+import { Agent, Deployment, QueryRequest } from '@sdk';
 import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
 import { Trans } from '@lingui/react/macro';
 import { AgentAvatar } from '@src/components/agents/AgentAvatar';
@@ -16,12 +16,12 @@ export interface AgentRow {
 // Every agent on the machine: the Total counter IS this list, so the number and
 // its table are one fact.
 const ALL_AGENTS = new QueryRequest({ type: Agent.type, scope: [], name: 'assetCounters:agents' });
-// `query`, never `match` — see AgentDeploymentsSection: a `match` key is dropped
-// and the list silently becomes every deployment on the machine.
+// Every deployment; `deploymentsByAgent` keeps the ones whose parent is an agent (what a placement
+// places is its parent — there is no stored kind to query by).
 const AGENT_DEPLOYMENTS = new QueryRequest({
   type: Deployment.type,
   scope: [],
-  query: { kind: KIND_AGENT },
+  query: null,
   name: 'assetCounters:agentDeployments',
 });
 

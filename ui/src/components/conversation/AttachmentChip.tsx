@@ -19,36 +19,11 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { isImagePath } from '@sdk';
-
-const VIDEO_EXTS = new Set(['mp4', 'mov', 'm4v', 'webm', 'ogv', 'ogg']);
-const VIDEO_MIME: Record<string, string> = {
-  mp4: 'video/mp4',
-  m4v: 'video/mp4',
-  // `.mov` is the QuickTime container, but it's ISO-BMFF just like `.mp4` — an
-  // H.264/AAC `.mov` plays in Chrome/Chromium IFF the <source> is labeled
-  // `video/mp4`. `video/quicktime` makes Chrome reject it outright
-  // (`canPlayType('video/quicktime') === ''`), so the preview fell back to a
-  // file icon. (Chrome guidance: never use `type=video/quicktime` for `.mov`.)
-  // HEVC/ProRes `.mov` still can't decode and falls through to the icon.
-  mov: 'video/mp4',
-  webm: 'video/webm',
-  ogv: 'video/ogg',
-  ogg: 'video/ogg',
-};
+import { MediaLightbox, isVideoPath, videoSource } from '@src/components/ui/media-lightbox';
 
 function extOf(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
-}
-
-function isVideo(name: string): boolean {
-  return VIDEO_EXTS.has(extOf(name));
-}
-
-// A <source> for a video url, typed by extension when we recognise it.
-export function videoSource(url: string, name: string) {
-  const mime = VIDEO_MIME[extOf(name)];
-  return mime ? <source src={url} type={mime} /> : <source src={url} />;
 }
 
 interface FileMeta {
@@ -174,16 +149,6 @@ export function AttachmentChip({
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [menuOpen]);
-
-  // Esc closes the in-app image preview (lightbox).
-  useEffect(() => {
-    if (!lightbox) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setLightbox(false);
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [lightbox]);
 
   // UPLOADING / READY / UNAVAILABLE: the bytes aren't on this machine, so there
   // is no live URL to link or inline-render. Render a status row instead —
@@ -348,37 +313,7 @@ export function AttachmentChip({
     </div>
   );
 
-  // Fullscreen preview shared by image and video. Backdrop click + Esc close;
-  // clicking the media itself does not (stopPropagation). Media-aware so a video
-  // attachment gets the same expand-to-fullscreen experience as an image.
-  const lightboxNode = lightbox && (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={filename}
-      onClick={() => setLightbox(false)}
-      className="fixed inset-0 z-[100] flex cursor-zoom-out items-center justify-center bg-black/80 p-6"
-    >
-      {isVideo(filename) ? (
-        <video
-          controls
-          autoPlay
-          playsInline
-          onClick={(e) => e.stopPropagation()}
-          className="max-h-full max-w-full cursor-default rounded-lg bg-black shadow-2xl"
-        >
-          {videoSource(url, filename)}
-        </video>
-      ) : (
-        <img
-          src={url}
-          alt={filename}
-          onClick={(e) => e.stopPropagation()}
-          className="max-h-full max-w-full cursor-default rounded-lg object-contain shadow-2xl"
-        />
-      )}
-    </div>
-  );
+  const lightboxNode = lightbox && <MediaLightbox url={url} name={filename} onClose={() => setLightbox(false)} />;
 
   if (isImagePath(filename) && !imgFailed) {
     return (
@@ -404,7 +339,7 @@ export function AttachmentChip({
     );
   }
 
-  if (isVideo(filename) && !videoFailed) {
+  if (isVideoPath(filename) && !videoFailed) {
     return (
       <div ref={containerRef} className="group relative inline-block">
         <div className="block max-w-[360px] overflow-hidden rounded-lg border border-border bg-black" title={filename}>

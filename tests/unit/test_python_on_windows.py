@@ -53,8 +53,16 @@ def test_a_snippet_on_windows_runs_on_flowpads_own_interpreter():
     assert "python3" not in command and "py -3" not in command
     # PowerShell runs a quoted path only behind its call operator.
     assert command.startswith("& 'C:\\Program Files\\Flowpad\\python.exe' -m flow_sdk.snippet_launch 'C:\\snips\\a.py'")
-    # The script's exit code is the snippet's, not PowerShell's own verdict.
-    assert command.endswith("exit $LASTEXITCODE")
+
+
+def test_a_one_shot_run_on_windows_hands_back_the_snippets_exit_and_a_terminal_run_never_exits(tmp_path):
+    """The script's exit code is the snippet's, not PowerShell's own verdict — for a one-shot run.
+    Typed into a terminal, the same exit would close the terminal."""
+    from flow_sdk.core.snippet import oneshot_command, terminal_command
+
+    assert oneshot_command(tmp_path / "a.py", tmp_path / "out", "win32").endswith("; exit $LASTEXITCODE")
+    assert "exit" not in terminal_command(tmp_path / "a.py", "win32")
+    assert "exit" not in oneshot_command(tmp_path / "a.py", tmp_path / "out", "darwin")
 
 
 def test_a_snippet_off_windows_runs_on_flowpads_own_interpreter():

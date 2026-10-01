@@ -33,6 +33,9 @@ class RepoActions:
     INVITATIONS = "invitations"
     INVITATION_ACCEPT = "invitation-accept"
     INVITATION_DECLINE = "invitation-decline"
+    # The owner select: who the user is and which orgs GitHub reports, then one org's repos.
+    ORGS = "orgs"
+    ORG_REPOS = "org-repos"
 
 
 GITHUB_PROVIDER = "github"
@@ -43,6 +46,9 @@ class GithubApiRequestConsts:
     API_BASE_URL = "https://api.github.com/repos"
     GRAPHQL_URL = "https://api.github.com/graphql"
     USER_REPOS_URL = "https://api.github.com/user/repos"
+    USER_URL = "https://api.github.com/user"
+    USER_ORGS_URL = "https://api.github.com/user/orgs"
+    ORGS_URL = "https://api.github.com/orgs"
     INVITATIONS_URL = "https://api.github.com/user/repository_invitations"
     ACCEPT_HEADER = "application/vnd.github.v3+json"
     USER_AGENT = "FlowPad-Backend/1.0"
@@ -58,6 +64,7 @@ class RequestFields:
     PAGE = "page"
     INVITATION_ID = "invitation_id"
     NAME = "name"
+    OWNER = "owner"
 
 
 allowed_repo_actions = [
@@ -67,6 +74,8 @@ allowed_repo_actions = [
     RepoActions.INVITATIONS,
     RepoActions.INVITATION_ACCEPT,
     RepoActions.INVITATION_DECLINE,
+    RepoActions.ORGS,
+    RepoActions.ORG_REPOS,
 ]
 
 
@@ -484,6 +493,72 @@ def _repo_summary(raw: dict, *, default_role: str = "read") -> dict:
     }
 
 
+async def _github_get(token: str, url: str, params: Optional[dict] = None) -> "requests.Response":
+    """One GET off the event loop (the picker's other calls do the same)."""
+    return await asyncio.to_thread(
+        requests.get, url, headers=_prepare_github_headers(token), params=params or {},
+        timeout=GithubApiRequestConsts.REQUEST_TIMEOUT,
+    )
+
+
+async def list_user_orgs(request_info: RequestInfo) -> ApiResponse:
+    """Who the token is, and the organizations GitHub reports for it — the owner select's list.
+
+    An org that restricts third-party (OAuth App) access is NOT reported here even when the person is
+    a member: GitHub hides it from this token. That is why the select also takes a typed org name
+    (``org-repos``), and says so when an org shows nothing."""
+    token = await _get_github_token(request_info)
+    if not token:
+        return ApiFailResponse(message="GitHub not connected")
+    try:
+        user = await _github_get(token, GithubApiRequestConsts.USER_URL)
+        orgs = await _github_get(token, GithubApiRequestConsts.USER_ORGS_URL, {"per_page": 100})
+    except requests.exceptions.RequestException as exc:
+        return ApiFailResponse(message=f"Failed to list organizations: {exc}")
+    for response in (user, orgs):
+        classified = _classify_github_error(response)
+        if classified is not None:
+            return classified
+    return ApiSuccessResponse(data={
+        "login": (user.json() or {}).get("login", ""),
+        "orgs": [{"login": o.get("login", ""), "avatar_url": o.get("avatar_url", "")} for o in orgs.json() or []],
+    })
+
+
+async def list_org_repos(request_info: RequestInfo, owner: str, *, page: int = 1) -> ApiResponse:
+    """One organization's repos the token can see: ``{repos, next_page, page, restricted}``.
+
+    ``restricted``: the org exists but not one repo of it is visible — what an org that restricts
+    third-party apps looks like from outside (GitHub answers 200 with an empty list, not a refusal).
+    An empty org reads the same; the picker words it as the likely cause, not a certainty."""
+    safe_owner = _safe_slug(owner)
+    if not safe_owner:
+        return ApiFailResponse(message="owner must be a GitHub organization name", status_code=400)
+    token = await _get_github_token(request_info)
+    if not token:
+        return ApiFailResponse(message="GitHub not connected")
+    url = f"{GithubApiRequestConsts.ORGS_URL}/{safe_owner}/repos"
+    try:
+        response = await _github_get(token, url, {"per_page": 100, "page": max(1, page), "type": "all", "sort": "pushed"})
+    except requests.exceptions.RequestException as exc:
+        return ApiFailResponse(message=f"Failed to list {safe_owner}'s repos: {exc}")
+    if response.status_code == 404:
+        return ApiFailResponse(
+            message=f"GitHub has no organization named {safe_owner}.",
+            data={"reason": "no_such_org", "status": 404},
+        )
+    classified = _classify_github_error(response)
+    if classified is not None:
+        return classified
+    repos = [_repo_summary(r) for r in response.json() or []]
+    return ApiSuccessResponse(data={
+        "repos": repos,
+        "next_page": _parse_next_page_from_link(response.headers.get("Link")),
+        "page": max(1, page),
+        "restricted": page <= 1 and not repos,
+    })
+
+
 async def create_private_repo(request_info: RequestInfo, name: str) -> ApiResponse:
     """Create one initialized private GitHub repository for install targeting."""
     safe_name = _safe_slug(name)
@@ -632,6 +707,10 @@ async def repo() -> ApiResponse:
             return await get_branches_list(current_request_info, repo_info)
         if repo_info.repo_action == RepoActions.LIST:
             return await list_user_repos(current_request_info, page=page)
+        if repo_info.repo_action == RepoActions.ORGS:
+            return await list_user_orgs(current_request_info)
+        if repo_info.repo_action == RepoActions.ORG_REPOS:
+            return await list_org_repos(current_request_info, str(body.get(RequestFields.OWNER) or ""), page=page)
         if repo_info.repo_action == RepoActions.CREATE:
             return await create_private_repo(current_request_info, repo_name)
         if repo_info.repo_action == RepoActions.INVITATIONS:

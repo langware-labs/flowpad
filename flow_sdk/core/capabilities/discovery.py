@@ -283,11 +283,15 @@ async def _resolve_login_states(discovered: dict[str, CapabilityValue]) -> None:
 
     async def probe(kind: str, worker_type: str) -> None:
         try:
+            # Probe FIRST, read the row after: the probe spawns the vendor CLI (seconds), and a
+            # row read before it is a stale copy whose save below writes back every field — it
+            # undid an LLM-source pick (``auth_mode``) made while the boot sweep's probe ran.
+            result = await get_driver(worker_type).auth_probe()
             row = await Capability.get_by_kind(kind)
             if row is None:
                 return
             before = row.login_state
-            await row._mirror_probe_to_login_state(await get_driver(worker_type).auth_probe())
+            await row._mirror_probe_to_login_state(result)
             if row.login_state != before:
                 # ``_mirror_probe_to_login_state`` writes the field and broadcasts, but does
                 # NOT save -- ``notify_updated`` only publishes. ``login_state`` is
@@ -339,6 +343,11 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
             else:
                 check = await registry.test(kind)
                 last_check = check.result.model_dump(mode="json")
+                # Re-read after the test: a row read before it is stale, and its save below
+                # would write back fields a user changed meanwhile (an LLM-source pick).
+                row = await Capability.get_by_kind(kind)
+                if row is None:
+                    continue
                 # Passive sweep (attempted=False): may flip a row to AVAILABLE
                 # or back off a stale AVAILABLE, but never promotes NONE
                 # ("never tried") to NOT_AVAILABLE — that takes an explicit
