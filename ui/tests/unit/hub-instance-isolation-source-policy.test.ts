@@ -321,7 +321,7 @@ describe('hub launched-instance isolation source policy', () => {
       'run_pair tests/hub/conversation_messages.test.ts tests/hub/conversation_messages.bob.test.ts',
     );
     expect(PAIRED_RUNNER).toContain('run_pair tests/hub/rename.alice.test.ts tests/hub/rename.bob.test.ts');
-    expect(PAIRED_RUNNER.match(/\/tmp\/flowpad_[a-z_]+\.txt/g)).toHaveLength(6);
+    expect(PAIRED_RUNNER.match(/\/tmp\/flowpad_[a-z_]+\.txt/g)).toHaveLength(7);
     expect(PAIRED_RUNNER).not.toContain('source .env.local');
     expect(PAIRED_RUNNER).not.toContain('instance_ctl.sh');
     expect(PAIRED_RUNNER).not.toContain('bobqa');
