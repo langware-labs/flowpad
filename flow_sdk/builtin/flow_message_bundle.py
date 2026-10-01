@@ -799,9 +799,12 @@ async def _pack_file_backed_attachment(
         return
 
     # Origin present → key by repo-relative path (mirror sender layout); else the
-    # canonical <main_subdir>/<leaf>. The restore is anchor-free, so the in-bundle
-    # relpath IS the receiver's placement relpath under the project root.
-    dest = (entry_root / PurePosixPath(origin.rel_path)) if origin is not None else (subdir / src_root.name)
+    # portable <main_subdir>/<leaf> — kept nested under its enclosing asset when
+    # it lives inside one. The restore is anchor-free, so the in-bundle relpath
+    # IS the receiver's placement relpath under the project root.
+    from flow_sdk.assets.transfer import portable_rel_path  # noqa: PLC0415
+
+    dest = entry_root / PurePosixPath(origin.rel_path if origin is not None else portable_rel_path(src_root, info))
     dest.parent.mkdir(parents=True, exist_ok=True)
     pack_tree(src_root, dest, type_name=entry_type)
 
