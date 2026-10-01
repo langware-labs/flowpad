@@ -1554,7 +1554,7 @@ ipcMain.handle('open-logs-folder', async () => {
 // newest backend-server log (tails, obvious secrets masked), opens the user's own mail client
 // with a short message to the team, and shows the zip in the file manager to attach — a
 // mailto: URL cannot carry an attachment, and nothing is sent until the user presses Send.
-// Recipient: the diagnosis inbox (also where the in-app "Report issue" mail goes, flow_sdk/app/actions/report_action.py).
+// Recipient: the diagnosis mailbox (also where the in-app "Report issue" mail goes, flow_sdk/app/actions/report_action.py).
 // Subject: a fixed title + the date (supportSubject).
 const SUPPORT_EMAIL = 'diagnosis@langware.ai';
 
