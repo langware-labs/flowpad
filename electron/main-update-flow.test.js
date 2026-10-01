@@ -79,6 +79,7 @@ function load(opts = {}) {
     async startWithBin() {}
     async stop() { uv.stopped = (uv.stopped || 0) + 1; }
     isInstalling() { return false; }
+    setFailureSharer(fn) { this.sharer = fn; }
     openPackageDialogVersion() { return null; }
     async getLatestPypiVersion() { return null; }
     getInstalledFlowBinSync() { return '/fake/bin/flow'; }
