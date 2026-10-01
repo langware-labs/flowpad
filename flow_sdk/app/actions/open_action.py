@@ -9,8 +9,9 @@ redirect page (``deep_link_redirect``). A type opts in by overriding
 ``resolve_open`` and is listed in ``OPENABLE_TYPES``; every other type is
 refused here.
 
-GET only: a type's own POST ``open`` (``agentic_process.open``, ``shell.open``)
-is a different action, and lookup honours the method so a GET link never runs it.
+GET only. A type with its own ``open`` action (``agentic_process.open``,
+``shell.open``) keeps it — lookup prefers the type-scoped action — so such a
+type is not reachable through this route.
 Runs with no local row (``allow_missing_target``): that row is what the
 resolver is there to fetch.
 """

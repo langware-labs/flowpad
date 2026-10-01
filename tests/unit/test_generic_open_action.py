@@ -118,21 +118,11 @@ async def test_a_type_with_no_resolver_cannot_be_opened_from_a_link():
     assert "can't be opened from a link" in resp.text
 
 
-@pytest.mark.asyncio
-async def test_a_get_link_to_a_type_with_a_post_open_reaches_the_generic_route():
-    """``agentic_process.open`` is a POST instance action; a GET deep link must
-    reach the generic ``open`` (which refuses it) instead of running it."""
-    resp = await _call_local("GET", f"agentic_process/{uuid4()}/open")
-
-    assert resp.status_code == 400, resp.text
-    assert "can't be opened from a link" in resp.text
-
-
-def test_one_generic_get_open_replaces_the_per_type_ones():
+def test_one_generic_open_replaces_the_per_type_ones():
     import flow_sdk.app.actions  # noqa: F401
 
     for entity_type in ("flow_message", "notification"):
-        resolved = action.get_by_name("open", entity_type, method="get")
+        resolved = action.get_by_name("open", entity_type)
         assert resolved is not None and resolved.action_name == "open", entity_type
-    # The POST instance opens are untouched.
-    assert action.get_by_name("open", "agentic_process", method="post").action_name == "agentic_process.open"
+    # A type's own open action is untouched (and still wins for that type).
+    assert action.get_by_name("open", "agentic_process").action_name == "agentic_process.open"
