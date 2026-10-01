@@ -17,6 +17,7 @@ The key never reaches the browser, and the sideband is always opened on a call t
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, AsyncIterator, Callable, Mapping, Optional
@@ -198,36 +199,52 @@ class RealtimeCallSession:
                 await conn.send({"type": "session.update", "session": self._update})
             if self._greet:
                 await self._respond({"instructions": self._greet})
+            # The line is read here, not when the caller of ``events`` asks for the next event: what it
+            # does with one (store a sentence) must not hold up the next request to speak. Read lazily,
+            # the answer queued behind the greeting went out only once the greeting's sentence was saved.
+            inbox: asyncio.Queue[Optional[CallEvent]] = asyncio.Queue()
+            reader = asyncio.get_running_loop().create_task(self._read(conn, inbox))
             try:
-                async for raw in conn:
-                    payload = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
-                    kind = payload.get("type")
-                    if kind == "response.created":
-                        self._responding = True
-                    elif kind == "response.done":
-                        self._responding = False
-                        if self._queued:
-                            await self._respond(self._queued.pop(0))
-                    if kind == "error":
-                        error = payload.get("error") or {}
-                        if error.get("code") == "conversation_already_has_active_response" and self._last is not None:
-                            # The voice began a response of its own (the caller stopped talking) just as
-                            # ours was sent: ours goes first in line behind it.
-                            self._responding = True
-                            self._queued.insert(0, self._last)
-                            continue
-                        logger.warning("[voice] call %s: provider error %s", self.call_id, error)
-                        continue
-                    event = event_of(payload)
-                    if event is not None:
-                        yield event
-            except ConnectionClosed as exc:
-                # The line went away without a goodbye (a browser tab closed, a phone dropped): that
-                # is how calls end, not a failure of this one.
-                logger.info("[voice] call %s: the provider closed the line (%s)", self.call_id, exc)
+                while (event := await inbox.get()) is not None:
+                    yield event
+                await reader  # a read that failed fails the call, as it did when read inline
             finally:
+                reader.cancel()
+                await asyncio.gather(reader, return_exceptions=True)
                 self._conn = None
         yield CallEvent(kind="ended")
+
+    async def _read(self, conn, inbox: "asyncio.Queue[Optional[CallEvent]]") -> None:
+        """Read the line to its end: keep the speaking turn as frames arrive, and pass on the events."""
+        try:
+            async for raw in conn:
+                payload = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+                kind = payload.get("type")
+                if kind == "response.created":
+                    self._responding = True
+                elif kind == "response.done":
+                    self._responding = False
+                    if self._queued:
+                        await self._respond(self._queued.pop(0))
+                if kind == "error":
+                    error = payload.get("error") or {}
+                    if error.get("code") == "conversation_already_has_active_response" and self._last is not None:
+                        # The voice began a response of its own (the caller stopped talking) just as
+                        # ours was sent: ours goes first in line behind it.
+                        self._responding = True
+                        self._queued.insert(0, self._last)
+                        continue
+                    logger.warning("[voice] call %s: provider error %s", self.call_id, error)
+                    continue
+                event = event_of(payload)
+                if event is not None:
+                    inbox.put_nowait(event)
+        except ConnectionClosed as exc:
+            # The line went away without a goodbye (a browser tab closed, a phone dropped): that
+            # is how calls end, not a failure of this one.
+            logger.info("[voice] call %s: the provider closed the line (%s)", self.call_id, exc)
+        finally:
+            inbox.put_nowait(None)
 
     async def _respond(self, response: dict) -> None:
         """Ask the voice to speak — now, or right after the response it is speaking (a filler while
