@@ -136,6 +136,18 @@ async def test_the_senders_checkout_stays_on_the_senders_machine(tmp_path):
     assert list(metadata["shared_context_origins"]) == [git_folder]
 
 
+async def test_the_project_row_never_rides_as_an_overlay_envelope(tmp_path):
+    """The install overlay applies every entities.json envelope whose row
+    exists, so a project envelope would write the sender's copy over the
+    recipient's hub-mirrored row. The row travels only as the reference."""
+    project = await _shared_project(tmp_path, origin=_origin())
+
+    with await _pack_invite(project, tmp_path / "out", transfer_mode="copy") as zf:
+        entities = json.loads(zf.read("entities.json")) if "entities.json" in zf.namelist() else {}
+
+    assert f"project-{project.id}" not in entities
+
+
 async def test_a_project_with_no_git_origin_packs_no_reference(tmp_path):
     project = await _shared_project(tmp_path, origin=None)
 
