@@ -76,3 +76,17 @@ export function buildAssistancePrompt(sharedTypeIds: readonly TypeId[], privateT
     'Read each referenced entity folder to ground your answers in the actual entity contents.';
   return ctx ? `${intro}\n\n${ctx}` : intro;
 }
+
+/**
+ * Build the instruction injected when the user launches a worker from the
+ * conversation header: the session starts by catching up on the conversation
+ * itself, so its first answer is where the conversation stands now.
+ */
+export function buildConversationStatusPrompt(conversationTypeId: TypeId): string {
+  const [entityLine] = buildContextEntityLines([conversationTypeId]);
+  return (
+    `Use Flowpad Assistant to read the Flowpad conversation ${conversationTypeId.toUrlString()} ` +
+    'and report its latest status: what was discussed most recently, what is still open, and who is waiting on whom.' +
+    (entityLine ? `\n\n${entityLine}` : '')
+  );
+}

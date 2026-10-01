@@ -8,6 +8,7 @@ import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/tran
 import { LAUNCHABLE_WORKERS, type WorkerType } from '@src/components/workers/worker-types';
 import { useLastWorkerType } from '@src/components/terminal/openers/useLastWorkerType';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
+import { providerMetaFor } from '@src/tabs/provider-meta';
 
 export type WorkerToolbarMode = 'lastOpened' | 'all';
 export type WorkerToolbarVariant = 'icon-row' | 'menu-list';
@@ -171,7 +172,7 @@ export function WorkerToolbar({
               data-testid={`${testIdPrefix}-launch-${worker}`}
               className={cn(MENU_ITEM_CLASS, 'text-foreground', starting && 'opacity-50')}
             >
-              <Icon className="h-3 w-3" />
+              <Icon className={cn('h-3 w-3', providerMetaFor(worker).iconClassName)} />
               <Trans>Session — {workerLabel(worker)}</Trans>
             </button>
           );
@@ -207,7 +208,7 @@ export function WorkerToolbar({
             title={t`Start ${workerLabel(worker)}`}
             className={WORKER_ICON_BUTTON_CLASS}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon className={cn('h-3.5 w-3.5', providerMetaFor(worker).iconClassName)} />
           </button>
         );
       })}
