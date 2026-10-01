@@ -186,8 +186,9 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     );
     taskId = task.id;
     expect(task.assignee).toBe(bob.email);
-    // The ask leaves her task a PLAIN task — it is not a one-member group.
-    expect(task.kind ?? 'standard').toBe('standard');
+    // A help request is a `kind=vibe` task (what the raised-hand button lists) —
+    // never a one-member group.
+    expect(task.kind).toBe('vibe');
     expect(task.group_name ?? null).toBeNull();
     expect(task.description, 'the notes become the task body').toContain(token);
   }, 30_000);
