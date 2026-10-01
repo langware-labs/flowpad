@@ -1311,6 +1311,29 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       ok(calls.includes('recover'), 'post-boot upgrade: recovery path ran');
       eq(loads.length, 0, 'post-boot upgrade: dead backend URL was NOT loaded');
 
+      // Recovery ALSO failed: the "Update failed" dialog offers Share, then the in-app panel replaces the stuck
+      // "Upgrading Flowpad…" splash (onUnrecovered) — the user is never left on a splash that cannot finish.
+      {
+        const shown = [];
+        require.cache[electronId].exports.dialog.showMessageBox = async (_w, opts) => { shown.push(opts); return { response: 0 }; };
+        const mu = new UvManager(silentLog);
+        mu._pypiUpdateStatus = m._pypiUpdateStatus; mu.stop = m.stop; mu.start = m.start;
+        mu.upgrade = async () => { throw new Error('uv failed: locked'); };
+        mu._recoverRunningBackendAfterFailedUpgrade = async () => false;
+        mu.setFailureSharer(async () => ({ ok: true }));
+        const unrecovered = [];
+        // First dialog is "Update Available" (Upgrade = 0), the next is the failure dialog.
+        const resU = await mu.checkForUpdatesInBackground(mainWindow, {
+          sendStatus: () => {}, waitForBackend: async () => true, backendUrl: 'http://localhost:9007',
+          cloudUrl: 'https://x', compareWithPypi: true, onUnrecovered: async (e) => { unrecovered.push(e.message); },
+        });
+        eq(resU, false, 'unrecovered upgrade reports failure');
+        const failure = shown.find((o) => o.title === 'Update failed');
+        ok(failure && failure.buttons.includes('Share with us'), 'the Update failed dialog offers Share with us');
+        ok(/uv failed: locked/.test(failure.detail), 'and names the cause');
+        eq(unrecovered, ['uv failed: locked'], 'onUnrecovered is called so the splash is replaced');
+      }
+
       // Healthy backend → success and the URL is loaded.
       calls.length = 0;
       const m2 = new UvManager(silentLog);
