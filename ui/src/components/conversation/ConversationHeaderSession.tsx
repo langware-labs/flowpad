@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import { Conversation, TypeId, type Task } from '@sdk';
+import { Conversation, type Task } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { buildAssistancePrompt, buildConversationStatusPrompt } from './prompt-building';
+import { buildConversationStatusPrompt } from './prompt-building';
 import { useConversationSession } from './useConversationSession';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
@@ -28,13 +28,8 @@ export function ConversationHeaderSession({
   task?: Task | null;
 }) {
   const { ensureMapped, dialogProps } = useProjectMappingGate(task ?? undefined, conversation ?? undefined);
-  const buildPrompt = useCallback(
-    () =>
-      conversation?.id
-        ? buildConversationStatusPrompt(new TypeId(Conversation.type, conversation.id))
-        : buildAssistancePrompt([], []),
-    [conversation?.id],
-  );
+  // Only called by a launch, which needs a conversation — so it has one here.
+  const buildPrompt = useCallback(() => buildConversationStatusPrompt(conversation!.typeId), [conversation]);
   const { conversationProcess, starting, launch, open } = useConversationSession({
     conversation,
     ensureMapped,
