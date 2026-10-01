@@ -5906,6 +5906,11 @@ msgstr ""
 msgid "Couldn't open the help desk"
 msgstr "تعذر فتح مكتب المساعدة"
 
+#: src/components/task-receive/IncomingDeepLink.tsx
+#: src/components/task-receive/IncomingDeepLink.tsx
+msgid "Couldn't open the project"
+msgstr ""
+
 #: src/lib/publish-state.ts
 msgid "Couldn't publish"
 msgstr "تعذر النشر"
@@ -5917,6 +5922,10 @@ msgstr ""
 #: src/routes/loaders/load-next-process.ts
 msgid "Couldn’t reach backend"
 msgstr "تعذر الوصول إلى الخادم الخلفي"
+
+#: src/components/task-receive/IncomingDeepLink.tsx
+msgid "Couldn't reach FlowPad to load this project. Open the link again to retry."
+msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Couldn't reach that repository. Check the URL and try again."
@@ -21100,6 +21109,7 @@ msgstr ""
 msgid "That project has no local workdir"
 msgstr "هذا المشروع ليس له مجلد عمل محلي"
 
+#: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "That project is no longer available."
 msgstr ""
