@@ -615,7 +615,8 @@ test('cold open of a terminal with a large recording: from its checkpoint, withi
   // The first open ever replays the whole recording (no client has yet), and
   // leaves a checkpoint behind for every open after it. Reported, not budgeted:
   // a checkpoint needs a terminal emulator, so only a client can make one.
-  const first = await coldOpen(await browser.newPage(), a);
+  const firstPage = await browser.newPage();
+  const first = await coldOpen(firstPage, a);
   console.log(`[perf] first-ever open of a large recording: ${first.ms}ms — ${first.line}`);
   expect(first.line, 'the first open was not a cold terminal mount').toContain('mode=cold');
   expect(Number(/history_kb=(\d+)/.exec(first.line)?.[1] ?? 0), 'the replayed recording was not large').toBeGreaterThan(
@@ -633,6 +634,9 @@ test('cold open of a terminal with a large recording: from its checkpoint, withi
       { timeout: 15_000, message: 'the first open stored no checkpoint' },
     )
     .toBe(true);
+  // Steering goes to the active tab: with the first page still open, the reopen's steer can land
+  // there and the fresh page never leaves the desktop.
+  await firstPage.close();
   const again = await coldOpen(await browser.newPage(), a);
   console.log(`[perf] cold open from the checkpoint: ${again.ms}ms — ${again.line}`);
   expect(again.line, 'the reopen was not a cold terminal mount').toContain('mode=cold');
