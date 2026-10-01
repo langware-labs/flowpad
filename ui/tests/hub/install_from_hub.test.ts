@@ -9,7 +9,8 @@
  *        └──installPublished(request)──▶ dev-1 copies from the row's origin,
  *           indexes with the publisher's id, records deps.json.
  *
- * Both projects live on dev-1 (a `LocalOrigin` is same-machine by design).
+ * Both projects live on dev-1. The source is linked to the hub, so its
+ * publish converges on a row whose origin is the project's hub repo.
  * Requires the local hub + `scripts/instance_ctl.sh launch dev-1` (+ dev-2 for
  * the rig contract). Skips otherwise.
  */
@@ -97,15 +98,24 @@ describe('one-click install: hub → desktop → browser SDK → install', () =>
   it('the hub relays the row to the logged-in desktop, which pops it to the client; the client installs it', async () => {
     const typeid = `skill-${skillId}`;
 
-    // The hub has the row (the desk reflects the manifest in the background
-    // right after the publish), with WHERE its bytes are.
-    let row: any;
-    while (!row) {
-      const view = await hubJson(token, `/graph/project/${sourceId}/published`);
-      row = view.rows.find((r: { typeid: string }) => r.typeid === typeid);
-      if (!row) await new Promise((r) => setTimeout(r, 200));
+    // The desk's publish settles in the background: reflect the row (origin =
+    // the folder), push the document into the project's hub repo, then
+    // re-reflect the row pointing at that repo. `hub_body` is recorded only
+    // after that last reflection — wait for it, so every read below sees the
+    // converged row rather than whichever half-way state the hub held.
+    let hubBody: { status: string; code: string | null } | null = null;
+    while (!hubBody) {
+      const desk = await jsonApi(dev1.apiUrl, `/graph/project/${sourceId}/published`);
+      hubBody = desk.data.rows.find((r: { typeid: string }) => r.typeid === typeid)?.hub_body ?? null;
+      if (!hubBody) await new Promise((r) => setTimeout(r, 200));
     }
-    expect(row.origin?.kind).toBe('local');
+    // The source project has a hub row (beforeAll), so it is linked: the
+    // document goes to its hub repo, and that repo is WHERE the row says to
+    // install from — the place every member can reach.
+    expect(hubBody).toEqual({ status: 'published', code: null });
+    const view = await hubJson(token, `/graph/project/${sourceId}/published`);
+    const row = view.rows.find((r: { typeid: string }) => r.typeid === typeid);
+    expect(row?.origin?.kind).toBe('hub_repo');
 
     // The popup trigger: dev-1's client SDK receives the ui_command the desk
     // backend broadcast after the hub pushed install_request over its socket.
@@ -130,7 +140,7 @@ describe('one-click install: hub → desktop → browser SDK → install', () =>
     ]);
     expect(request.request_id).toBe(sent.request_id);
     expect(request.source_project_id).toBe(sourceId);
-    expect(request.origin?.kind).toBe('local');
+    expect(request.origin?.kind).toBe('hub_repo');
 
     // What the Add-asset dialog does on Install: the same desk call.
     const result = await new dev1.sdk.Project({ id: targetId, type: 'project' }).installPublished(request);

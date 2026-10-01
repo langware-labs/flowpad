@@ -4,6 +4,10 @@ import { AgenticProcess, QueryFilter, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { toMs } from '@src/utils/process-recency';
+import { useMultiTypeSearch } from '@src/components/spotlight/useMultiTypeSearch';
+import { terminalProfile } from '@src/components/spotlight/profiles';
+import type { SearchResult } from '@src/hooks/use-record-search';
+import { partsAroundQuery, partsFromFtsSnippet, type MatchPart } from './matchSnippet';
 import { pickHistoryTitle } from '@src/components/entity-execution-panel/history-row';
 import { isAllScope, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 
@@ -27,6 +31,58 @@ export interface ChatHistoryFilters {
   scope: ScopeFilter;
   /** Free-text search over title / last prompt / project. */
   search: string;
+}
+
+/** Session record type (the FTS `record_type`) → the history row's worker. */
+const SESSION_RECORD_WORKER: Record<string, WorkerHistoryEntry['worker_type']> = {
+  claude_session: 'claude',
+  codex_session: 'codex',
+  copilot_session: 'copilot',
+};
+const SESSION_RECORD_TYPES = terminalProfile.allowedEntityTypes ?? [];
+
+/** A multi-word query searches the session CONTENT as a phrase: unquoted, the
+ *  index ORs the words and "one cli" ranks every session mentioning "one". */
+export function contentSearchQuery(search: string): string {
+  const q = search.trim();
+  if (q.length < 2) return '';
+  return /\s/.test(q) && !q.includes('"') ? `"${q}"` : q;
+}
+
+type ProjectRef = Pick<WorkerHistoryEntry, 'project_id' | 'project_name' | 'project_cwd'>;
+
+/** Claude's transcript folder name for a cwd (`/a/b.c` → `-a-b-c`). */
+function encodeCwd(cwd: string): string {
+  return cwd.replace(/[^A-Za-z0-9-]/g, '-');
+}
+
+/** The transcript folder a session record lives in (its `asset_ref` parent). */
+function transcriptDir(assetRef: string | undefined): string | null {
+  const parts = (assetRef ?? '').split('/');
+  return parts.length >= 2 ? parts[parts.length - 2] : null;
+}
+
+/** A content hit whose session is not in the loaded history page (older than
+ *  the cap) still lists, as a minimal row built from the search result. Its
+ *  project comes from the transcript folder, matched against the folders of
+ *  the loaded rows — so the navigator's scope still applies to it. */
+function entryFromHit(hit: SearchResult, projectByDir: Map<string, ProjectRef>): WorkerHistoryEntry | null {
+  const worker_type = SESSION_RECORD_WORKER[hit.record_type];
+  if (!worker_type) return null;
+  const project = projectByDir.get(transcriptDir(hit.asset_ref) ?? '');
+  return {
+    worker_type,
+    worker_id: hit.record_id,
+    project_id: project?.project_id ?? null,
+    project_name: project?.project_name ?? null,
+    project_cwd: project?.project_cwd ?? null,
+    last_active_time: hit.modified_at,
+    name: hit.fts_title || hit.name || null,
+    last_prompt: null,
+    git_branch: null,
+    message_count: hit.message_count ?? null,
+    agentic_process_id: null,
+  };
 }
 
 export interface ChatBucket {
@@ -113,6 +169,20 @@ export function useChatHistory(
     projectIds: projectIds?.length ? projectIds : undefined,
   });
 
+  // Quick search also looks INSIDE sessions (the backend FTS over session
+  // records): the history row only carries the title and the LAST prompt, so a
+  // word from an earlier turn would otherwise never match. Debounced, and
+  // UNSCOPED on the wire: the index files session records under the user, so a
+  // project filter there drops every session — the scope is applied below, per
+  // row, like the local matches.
+  const contentQuery = contentSearchQuery(filters.search);
+  const {
+    results: contentHits,
+    isLoading: contentLoading,
+    answeredQuery,
+  } = useMultiTypeSearch(contentQuery, SESSION_RECORD_TYPES, null);
+  const isSearchingContent = !!contentQuery && (contentLoading || answeredQuery !== contentQuery.trim());
+
   // Live AgenticProcess rows for the LISTED sessions only (`session_id $IN`):
   // an open of a never-materialized session mints its entity (the heal) and
   // every open re-stamps `last_active_at` — the watched query streams both in
@@ -158,14 +228,27 @@ export function useChatHistory(
   // StrictMode/concurrent double-invocation.
   const prevRankRef = useRef<Map<string, number>>(new Map());
 
-  const { buckets, order } = useMemo(() => {
+  const { buckets, order, matches } = useMemo(() => {
     const bySession = new Map<string, AgenticProcess>();
     for (const p of liveProcesses ?? []) {
       if (p.session_id) bySession.set(p.session_id, p);
     }
 
     const q = filters.search.trim().toLowerCase();
-    const filtered = entries
+    // Content hits count only while the query they answer is still typed.
+    const hitIds = new Set(q ? contentHits.map((h) => h.record_id) : []);
+    const known = new Set(entries.map((e) => e.worker_id));
+    const projectByDir = new Map<string, ProjectRef>();
+    for (const e of entries) {
+      if (e.project_cwd && e.project_id) projectByDir.set(encodeCwd(e.project_cwd), e);
+    }
+    const extra = q
+      ? contentHits
+          .filter((h) => !known.has(h.record_id))
+          .map((h) => entryFromHit(h, projectByDir))
+          .filter((e): e is WorkerHistoryEntry => e != null)
+      : [];
+    const filtered = [...entries, ...extra]
       .map((e) => {
         // Reconcile the row with its live entity: a first-time open minted the
         // AgenticProcess AFTER this list was fetched — adopt its id (the
@@ -180,7 +263,7 @@ export function useChatHistory(
       })
       .filter((e) => {
         if (!matchesScope(e, filters.scope)) return false;
-        if (q) {
+        if (q && !hitIds.has(e.worker_id)) {
           const title = pickHistoryTitle(processFor(e), e);
           const hay = `${title} ${e.last_prompt ?? ''} ${e.project_name ?? ''}`.toLowerCase();
           if (!hay.includes(q)) return false;
@@ -205,8 +288,22 @@ export function useChatHistory(
       if (ra != null && rb != null && ra !== rb) return ra - rb;
       return delta;
     });
-    return { buckets: bucketize(sorted, ts), order: sorted.map((e) => e.worker_id) };
-  }, [entries, filters, liveProcesses, sortStabilityMs]);
+    // Where each hit matched (search only): the last prompt, else the content
+    // snippet from the index. A title-only match is already visible in the
+    // title, so its line shows the last prompt as plain context instead.
+    const matches = new Map<string, MatchPart[]>();
+    if (q) {
+      const snippetById = new Map(contentHits.map((h) => [h.record_id, h.snippet]));
+      for (const e of sorted) {
+        const parts =
+          partsAroundQuery(e.last_prompt, q) ??
+          partsFromFtsSnippet(snippetById.get(e.worker_id)) ??
+          (e.last_prompt ? [{ text: e.last_prompt.replace(/\s+/g, ' '), mark: false }] : null);
+        if (parts) matches.set(e.worker_id, parts);
+      }
+    }
+    return { buckets: bucketize(sorted, ts), order: sorted.map((e) => e.worker_id), matches };
+  }, [entries, contentHits, filters, liveProcesses, sortStabilityMs]);
 
   useEffect(() => {
     prevRankRef.current = new Map(order.map((id, i) => [id, i]));
@@ -215,5 +312,5 @@ export function useChatHistory(
   const total = useMemo(() => buckets.reduce((n, b) => n + b.entries.length, 0), [buckets]);
 
   // `total` is what is displayed; `fetchedCount` is pre-filter, for paging.
-  return { buckets, total, fetchedCount, isLoading, refetch };
+  return { buckets, matches, total, fetchedCount, isLoading, isSearchingContent, refetch };
 }

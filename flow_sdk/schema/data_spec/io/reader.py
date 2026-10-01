@@ -69,6 +69,10 @@ def read(spec: type, root: Path) -> Any:
             if path.is_file():
                 fields[name] = path.read_text(encoding="utf-8")
                 files[name] = path
+            elif isinstance(document.get(name), str):
+                # A document written before this field became its own file still carries it inline;
+                # read it rather than lose it. The next write puts it in the file.
+                fields[name] = document[name]
         elif place is Placement.DOCUMENT:
             path = root / names.field_file(name, names.ext_for(annotation))
             if path.is_file():

@@ -18,6 +18,7 @@ from .detection import router as detection_router
 from .directory import router as directory_router
 from .display import router as display_router
 from .snippet import router as snippet_router
+from .shell import router as shell_router
 from .docs_graph import router as docs_graph_router
 from .favorites import router as favorites_router
 from .git import router as git_router
@@ -76,6 +77,7 @@ __all__ = [
     "tags_router",
     "asset_share_router",
     "display_router",
+    "shell_router",
     "snippet_router",
     "navigate_router",
     "agent_records_router",

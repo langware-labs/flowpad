@@ -54,4 +54,15 @@ describe('$IN id-array serialization', () => {
     const json = filter.toJSON() as { filter: { match: { operands: unknown[] } } };
     expect(json.filter.match.operands).toEqual(['id', ids]);
   });
+
+  it('re-checks a live row by the same rule the backend queried with (a data op keeps it in)', () => {
+    // Every update of a row in a live query is re-validated against the query on the client; the
+    // backend's ``[field, [values]]`` form must pass, or the row is spliced out of the results.
+    const filter = new QueryFilter({ match: new ExpressionNode({ op: '$IN', operands: ['id', ids] }) });
+    expect(filter.validate({ id: ids[1], unread_count: 3 })).toBe(true);
+    expect(filter.validate({ id: 'other' })).toBe(false);
+    const not = new QueryFilter({ match: new ExpressionNode({ op: '$NIN', operands: ['id', ids] }) });
+    expect(not.validate({ id: ids[1] })).toBe(false);
+    expect(not.validate({ id: 'other' })).toBe(true);
+  });
 });

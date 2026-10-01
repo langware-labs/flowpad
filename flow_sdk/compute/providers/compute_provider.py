@@ -447,6 +447,11 @@ class ComputeProvider(ABC):
         """Return True if the PTY session process is still running (cross-platform)."""
         return False
 
+    def get_pty_foreground_pgid(self, provider_node_id: str, session_id: str) -> int | None:
+        """The process group in the foreground of this PTY session (what a Ctrl-C reaches), or
+        ``None`` when the provider cannot tell."""
+        return None
+
     def get_pty_cwd(self, provider_node_id: str, session_id: str) -> str | None:
         """Return the live working directory of the PTY session's shell, or None when unknown."""
         return None

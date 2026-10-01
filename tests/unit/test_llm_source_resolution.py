@@ -480,6 +480,37 @@ async def test_the_startup_sweep_resolves_the_device_rungs_login_state(env) -> N
     )
 
 
+async def test_the_sweeps_login_probe_does_not_undo_a_source_picked_while_it_ran(env, monkeypatch) -> None:
+    """The boot sweep's login probe spawns the vendor CLI (seconds). A row it read BEFORE the probe
+    is a stale copy, and saving it wrote back every field -- the ``auth_mode`` a user (or the
+    ``llm-endpoint/select`` route) set meanwhile flipped back to ``device``. Seen in a fresh Docker
+    container: the select answered 200, the harness stayed device-funded."""
+    from flow_sdk.builtin.agentic_process import cli_drivers
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult, WorkerAuthStatus
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.core.capabilities import discovery
+    from flow_sdk.core.capabilities.models import CapabilityValue
+
+    kind = worker_capability_kind("claude")
+    cap = await Capability.get_by_kind(kind)
+    cap.login_state = None
+    await cap.save(notify=False)
+
+    async def probe_while_the_user_picks():
+        picked = await Capability.get_by_kind(kind)
+        picked.auth_mode, picked.api_provider = "api", "openrouter"
+        await picked.save(notify=False)
+        return WorkerAuthResult(status=WorkerAuthStatus.LOGGED_OUT)
+
+    monkeypatch.setattr(cli_drivers, "get_driver", lambda _w: SimpleNamespace(auth_probe=probe_while_the_user_picks))
+    await discovery._resolve_login_states({kind: CapabilityValue(kind=kind, value={"path": "/bin"}, value_type="fs_ref")})
+
+    after = await Capability.get_by_kind(kind)
+    assert after.login_state == DeviceLoginState.IDLE, "the probe's verdict landed"
+    assert (after.auth_mode, after.api_provider) == ("api", "openrouter"), "the sweep undid the source picked while it ran"
+
+
 # ── a binding the hub no longer honours ──────────────────────────────────────────
 
 

@@ -154,7 +154,7 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     await page.waitForTimeout(500);
     await person.pressSequentially(bob.email, { delay: 15 });
     if ((await person.inputValue()) !== bob.email) await person.fill(bob.email);
-    await person.press('Enter');
+    // No Enter — the user moves on to the title; the picker must take the typed email.
 
     await page.getByTestId('vibe-assign-title').fill(TITLE);
     await page.getByTestId('vibe-assign-notes').fill(NOTES);
@@ -163,10 +163,13 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     const transcript = page.locator('input[type="checkbox"]').first();
     await expect.poll(() => transcript.isChecked(), { timeout: 5_000 }).toBe(true);
 
-    await page.getByTestId('vibe-assign-submit').click();
+    // A disabled Assign is the reported bug — fail on it by name, not on a click timeout.
+    const submit = page.getByTestId('vibe-assign-submit');
+    expect(await submit.isEnabled(), 'Assign enabled with the email typed').toBe(true);
+    await submit.click();
     // The dialog closes itself on success; a dialog still showing the form is
     // the failure signal.
-    await page.getByTestId('vibe-assign-submit').waitFor({ state: 'detached', timeout: 25_000 });
+    await submit.waitFor({ state: 'detached', timeout: 25_000 });
   }, 60_000);
 
   it('the task exists on alice, assigned to bob', async () => {
@@ -183,8 +186,9 @@ describe('vibe workspace — one ask-for-help button: task + message to bob', ()
     );
     taskId = task.id;
     expect(task.assignee).toBe(bob.email);
-    // The ask leaves her task a PLAIN task — it is not a one-member group.
-    expect(task.kind ?? 'standard').toBe('standard');
+    // A help request is a `kind=vibe` task (what the raised-hand button lists) —
+    // never a one-member group.
+    expect(task.kind).toBe('vibe');
     expect(task.group_name ?? null).toBeNull();
     expect(task.description, 'the notes become the task body').toContain(token);
   }, 30_000);

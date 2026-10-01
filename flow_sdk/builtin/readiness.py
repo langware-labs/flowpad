@@ -270,7 +270,7 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
     async def item(req: RequirementSpec) -> ReadinessItemSpec:
         if req.kind == REQUIREMENT_CREDENTIAL:
             row = rows.get(req.name)
-            names = req.vars or ([v.env_var for v in row.vars if v.required] if row else [])
+            names = req.vars or ([v.env_var for v in row.vars if v.is_must] if row else [])
             return _values_item(req, names, present, f"flow credentials set {req.name} --stdin", use_mine)
         if req.kind == REQUIREMENT_VARIABLE:
             return _values_item(req, [req.name], present, f"declare a credential with {req.name}", use_mine)

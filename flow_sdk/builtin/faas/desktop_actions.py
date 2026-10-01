@@ -9,7 +9,7 @@ import platform
 import sys
 
 from flow_sdk.builtin.faas.system_profile_types import SystemProfile
-from flow_sdk.config import AGENT_MOUNT_FOLDER
+from flow_sdk import config as flow_config
 from flow_sdk.flowpad_types.machine_status import ExecutionEnvironmentStatus, MachineStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -97,7 +97,7 @@ class DesktopActionsMixin:
             else:
                 relative_path = expanded_path.lstrip("/\\")
                 candidate_paths = [
-                    os.path.join(AGENT_MOUNT_FOLDER, relative_path),
+                    os.path.join(str(flow_config.agent_workspace_root()), relative_path),
                     os.path.join(os.sep, relative_path),
                     os.path.abspath(expanded_path),
                 ]

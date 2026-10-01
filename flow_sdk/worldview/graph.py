@@ -33,9 +33,16 @@ def _artifact_node(artifact: Artifact) -> WorldViewNode:
     )
 
 
+def _placement_kind(deployment: Deployment) -> str | None:
+    """What a placement shows as: an inventoried resource's own kind (``gcp.run.service``, on its
+    origin), else what it places (its parent's type)."""
+    origin_kind = deployment.origin.kind if deployment.origin else ""
+    return origin_kind if "." in origin_kind else deployment.element_type
+
+
 def _deployment_node(deployment: Deployment) -> WorldViewNode:
     properties = {
-        "kind": deployment.kind,
+        "kind": _placement_kind(deployment),
         "parent_type_id": deployment.parent_type_id,
         "artifact_id": deployment.artifact_id,
         "artifact_link_source": deployment.artifact_link_source,

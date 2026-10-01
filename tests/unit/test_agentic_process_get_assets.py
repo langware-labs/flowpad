@@ -31,13 +31,8 @@ def process(root, **kwargs):
     return AgenticProcess(id=mint_uuid(), workdir=str(root), load_flowpad_assistant=False, **kwargs)
 
 
-@pytest.mark.asyncio
-async def test_user_workdir_additional_occurrences_are_index_independent(home, tmp_path):
-    paths = [skill(home), skill(tmp_path / 'work'), skill(tmp_path / 'extra')]
-    value = process(tmp_path / 'work', additional_dirs=[str(tmp_path / 'extra')])
-    rows = await value.get_asset_descriptors()
-    assert {r.posix_path: r.source for r in rows} == dict(zip(map(str, paths), [AssetSource.USER_DIR, AssetSource.WORKDIR, AssetSource.ADDITIONAL_DIR]))
-    assert all(not row.usage and not row.available for row in rows)
+# User / workdir / added-folder attribution straight from disk lives in
+# test_asset_board_scopes.py, with the rest of the source-per-scope world.
 
 
 @pytest.mark.asyncio

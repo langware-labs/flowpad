@@ -173,6 +173,47 @@ export interface ProjectContextFolderResolveResult {
   [key: string]: unknown;
 }
 
+/** One value a setup requirement needs (`SetupVarSpec`). Names only, never a value. */
+export interface ProjectSetupVar {
+  env_var: string;
+  label: string;
+  hint: string;
+  help_url: string;
+  pattern: string;
+  secret: boolean;
+  /** A file's content (a key file) — asked with a file picker. */
+  file: boolean;
+  present: boolean;
+}
+
+/** One thing to set up (`SetupRequirementSpec`): a connection, a credential pack, or a gap. */
+export interface ProjectSetupRequirement {
+  kind: 'oauth' | 'pack' | 'gap';
+  name: string;
+  title: string;
+  vars: ProjectSetupVar[];
+  used_by: string[];
+  note: string;
+}
+
+/** `GET project/<id>/setup-requirements` — is this project ready here? MUST values only. */
+export interface ProjectReadiness {
+  project_id: string;
+  ready: boolean;
+  /** What still needs someone — what the setup wizard walks through. */
+  to_do: ProjectSetupRequirement[];
+  /** What no credential declares: shown, never runnable. */
+  gaps: ProjectSetupRequirement[];
+}
+
+/** `GET project/<id>/setup-run` — the app-run setup: going or not, and its steps so far. */
+export interface ProjectSetupRun {
+  /** The run's address — what its questions name (`Question.run`). */
+  run: string;
+  running: boolean;
+  result: { exit_code?: number; steps?: Record<string, { exit_code?: number; detail?: string }> } | null;
+}
+
 /** `GET project/<id>/home-page` — `Project.open_home_page()`. */
 export interface ProjectHomePage {
   /** The declared asset's TypeId, once it resolves inside this project. */
@@ -329,6 +370,10 @@ export class Project extends APIEntity<Project> {
    *  or from the uname: the portal is recognised by where it LIVES, and
    *  `system` means the narrower "SDK-shipped". See `isHiddenProject`. */
   hidden: boolean = false;
+  /** The folder's own name when it is not the project's name (a rename changes the
+   *  name, never the folder), else null. Mirror of the backend computed
+   *  `Project.folder_name_mismatch`, compared the way project names are; read-only. */
+  folderNameMismatch: string | null = null;
 
   constructor(entity: Partial<IProject> = {}) {
     super(entity);
@@ -347,6 +392,7 @@ export class Project extends APIEntity<Project> {
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};
     this.hidden = (entity.hidden as boolean | undefined) ?? false;
+    this.folderNameMismatch = (entity.folder_name_mismatch as string | null | undefined) ?? null;
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
@@ -706,6 +752,26 @@ export class Project extends APIEntity<Project> {
    *  context folders. Returns the home page as now declared. */
   async setHomePage(typeid: string | null): Promise<{ home_page: string | null }> {
     return this.post<{ home_page: string | null }>('set-home-page', { typeid: typeid ?? '' });
+  }
+
+  /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */
+  static async setupRequirements(projectId: string): Promise<ProjectReadiness | null> {
+    const actionInfo = new ActionInfo('setup-requirements', Project.type, projectId, 'GET');
+    return (await dataManager.callAction<void, ProjectReadiness>(actionInfo)) ?? null;
+  }
+
+  /** Start the setup wizard on the backend (`POST project/<id>/setup`); its questions come to this
+   *  app. Answers at once with the run's address, which a screen claims (`claimAskRun`). */
+  static async startSetup(projectId: string): Promise<string> {
+    const actionInfo = new ActionInfo('setup', Project.type, projectId, 'POST');
+    const data = await dataManager.callAction<void, { run: string }>(actionInfo);
+    return data?.run ?? '';
+  }
+
+  /** The setup run's state (`GET project/<id>/setup-run`). */
+  static async setupRun(projectId: string): Promise<ProjectSetupRun | null> {
+    const actionInfo = new ActionInfo('setup-run', Project.type, projectId, 'GET');
+    return (await dataManager.callAction<void, ProjectSetupRun>(actionInfo)) ?? null;
   }
 
   /** The declared home page resolved to its asset (`GET project/<id>/home-page`),

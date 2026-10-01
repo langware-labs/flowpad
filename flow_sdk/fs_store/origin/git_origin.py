@@ -183,9 +183,9 @@ def has_content(path: Path) -> bool:
 
 
 def _workspace() -> Path:
-    from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
 
-    base = Path(AGENT_MOUNT_FOLDER)
+    base = agent_workspace_root()
     base.mkdir(parents=True, exist_ok=True)
     return base
 

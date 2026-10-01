@@ -33,6 +33,7 @@ from flow_sdk.builtin.message_attachment import MessageAttachment
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.skill import Skill
 from flow_sdk.responses.response import ApiSuccessResponse
+from tests.unit._project_names import unique_project_name
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
@@ -96,7 +97,7 @@ async def _make_project(tmp_path: Path, name: str) -> Project:
     # place its mount in a unique sibling directory.
     root = tmp_path.parent / f"{tmp_path.name}-{name}-project"
     root.mkdir()
-    project = Project(name=name, fs_storage_mount_path=str(root))
+    project = Project(name=unique_project_name(name), fs_storage_mount_path=str(root))
     await project.save(notify=False)
     return project
 

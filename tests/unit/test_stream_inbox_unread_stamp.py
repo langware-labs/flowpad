@@ -51,14 +51,16 @@ async def test_received_mail_reads_unread_until_it_is_read():
     fm_id, conv_id = await _received()
 
     manager = await recompute_unread("test")
-    assert (await Conversation.get_by_id(conv_id)).is_unread is True
+    conv = await Conversation.get_by_id(conv_id)
+    assert (conv.is_unread, conv.unread_count) == (True, 1), "the count is stamped beside the flag"
     assert manager.unread == before + 1
 
     fm = await FlowMessage.get_by_id(fm_id)
     fm.is_read = True
     await fm.save(notify=False)
     manager = await recompute_unread("test")
-    assert (await Conversation.get_by_id(conv_id)).is_unread is False
+    conv = await Conversation.get_by_id(conv_id)
+    assert (conv.is_unread, conv.unread_count) == (False, 0)
     assert manager.unread == before
 
 

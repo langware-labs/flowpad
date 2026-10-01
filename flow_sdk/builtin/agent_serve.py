@@ -484,8 +484,8 @@ async def answers_here(source, deployment, agent=None) -> bool:
         agent = agent if agent is not None else await deployment.agent()
         if agent is not None and agent.email_place:
             return str(agent.email_place) == str(deployment.id)
-    # Several local deployments of one agent answer only what names them; the rest is the default one's.
-    return not str(getattr(deployment, "slot", "") or "")
+    # A source that names no place is answered by the agent's deployment here (one per machine).
+    return True
 
 
 # ── the chat endpoint: an HTTP message channel per deployment ────────────────
@@ -506,7 +506,7 @@ async def _made_chat_source(driver, agent, deployment):
     key = driver.cls.identity_config_key
     source = driver.create_source(
         driver.create_config(**{key: str(deployment.id)}),
-        name=f"{agent.name or agent.id} chat" + (f" {deployment.slot}" if getattr(deployment, "slot", "") else ""),
+        name=f"{agent.name or agent.id} chat",
         owner=agent.typeid,
         answer_place=str(deployment.id),
         account_key=f"deployment:{deployment.id}",
@@ -584,11 +584,10 @@ async def answered_sources(agent, deployment) -> list:
 
 async def running_deployments() -> list:
     """The local agent deployments that run here now: ``serving``, and their process alive."""
-    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment  # noqa: PLC0415
-    from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
 
-    rows = await Deployment.get_all({"match": {"kind": KIND_AGENT}})
-    return [d for d in rows if d.serving and kind_matches(KIND_AGENT, d.kind) and d.is_local and deployment_process.alive(d)]
+    rows = await Deployment.get_all({"match": {"serving": True}})
+    return [d for d in rows if d.serving and d.places_agent and d.is_local and deployment_process.alive(d)]
 
 
 async def polled_by_a_deployment(sources=None) -> set[str]:
@@ -999,13 +998,14 @@ class AgentServer:
         """``(wanted, strays)``: every running local agent deployment whose agent is enabled there,
         and every local one whose process is alive though it should not be (stopped serving, or its
         agent switched off, while this server did not hold it — a restart)."""
-        from flow_sdk.builtin.deployment import KIND_AGENT, Deployment  # noqa: PLC0415
-        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         wanted: dict[str, tuple] = {}
         strays: list = []
-        for deployment in await Deployment.get_all({"match": {"kind": KIND_AGENT}}):
-            if not kind_matches(KIND_AGENT, deployment.kind) or not deployment.is_local:
+        agents = QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["parent_type_id", "agent-%"]))
+        for deployment in await Deployment.get_all(agents):
+            if not deployment.places_agent or not deployment.is_local:
                 continue
             agent = await deployment.agent() if deployment.serving else None
             if agent is not None and agent.enabled_on(deployment.id):

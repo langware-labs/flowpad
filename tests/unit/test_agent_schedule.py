@@ -143,10 +143,10 @@ async def test_a_schedule_belongs_to_its_own_agent_only(tmp_path, scheduler):
 # ── a schedule belongs to one place ─────────────────────────────────────────
 
 async def _cloud_place(agent):
-    from flow_sdk.builtin.deployment import KIND_AGENT, Deployment
+    from flow_sdk.builtin.deployment import Deployment
 
     deployment = Deployment(
-        name=f"{agent.name} (e2b)", kind=KIND_AGENT, parent_type_id=str(agent.typeid),
+        name=f"{agent.name} (e2b)", parent_type_id=str(agent.typeid),
         target={"provider": "e2b", "scope": "machine", "location": "sandbox"},
         origin={"kind": "e2b", "provider": "e2b", "external_id": "compute_node-11111111-2222-4333-8444-555555555555"},
     )

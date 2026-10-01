@@ -145,6 +145,42 @@ export interface AppUpgrade {
   output?: string;
 }
 
+/** A context project to clone onto the box and attach to the main one. */
+export interface ProvisionContextProject {
+  git_origin: Record<string, unknown>;
+  name: string;
+  scope: 'private' | 'shared';
+}
+
+/**
+ * What `ops/provision-project` sets a box up with — the creator's recorded
+ * choice. No `git_origin` mounts an empty project; no `context_projects` means
+ * whatever the cloned repo's own manifest declares.
+ */
+export interface ProvisionSetup {
+  name: string;
+  project_id?: string;
+  git_origin?: Record<string, unknown>;
+  context_projects?: ProvisionContextProject[];
+  install?: Record<string, unknown>;
+}
+
+/** One step of a provisioning run, in the order it ran. */
+export interface ProvisionStep {
+  id: 'validate' | 'clone' | 'init' | 'index' | 'context' | 'default';
+  ok: boolean;
+  detail: string;
+}
+
+/** What `ops/provision-project` answers: the box's project and each step's outcome. */
+export interface ProvisionResult {
+  project?: { id: string; name?: string };
+  path?: string;
+  install_result?: unknown;
+  steps: ProvisionStep[];
+  [key: string]: unknown;
+}
+
 /**
  * Interface for ComputeNode entity data.
  *

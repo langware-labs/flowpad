@@ -41,7 +41,8 @@
         "conversation": "c1",
         "isUnread": true,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 2
       }
     },
     {
@@ -78,7 +79,8 @@
         "conversation": "c1",
         "isUnread": false,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 0
       }
     },
     {
@@ -107,7 +109,8 @@
         "conversation": "c1",
         "isUnread": false,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 0
       }
     },
     {
@@ -160,7 +163,8 @@
         "conversation": "c1",
         "isUnread": false,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 0
       }
     },
     {
@@ -220,7 +224,8 @@
         "conversation": "c1",
         "isUnread": true,
         "isArchived": true,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 1
       }
     },
     {
@@ -257,7 +262,8 @@
         "conversation": "c1",
         "isUnread": true,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 1
       }
     },
     {
@@ -294,7 +300,8 @@
         "conversation": "c1",
         "isUnread": true,
         "isArchived": false,
-        "isInvitation": true
+        "isInvitation": true,
+        "unreadCount": 1
       }
     },
     {
@@ -331,7 +338,8 @@
         "conversation": "c1",
         "isUnread": false,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 0
       }
     },
     {
@@ -376,7 +384,8 @@
         "conversation": "c1",
         "isUnread": true,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 1
       }
     },
     {
@@ -531,7 +540,8 @@
         "conversation": "c1",
         "isUnread": false,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 0
       }
     },
     {
@@ -577,7 +587,8 @@
         "conversation": "c1",
         "isUnread": true,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 1
       }
     },
     {
@@ -607,7 +618,116 @@
         "conversation": "c1",
         "isUnread": true,
         "isArchived": false,
-        "isInvitation": false
+        "isInvitation": false,
+        "unreadCount": 1
+      }
+    },
+    {
+      "name": "three received after my own reply count three (the badge still counts the conversation once)",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [
+            {
+              "fm": "m1",
+              "ts": "2026-07-15T10:00:00+00:00"
+            },
+            {
+              "fm": "m2",
+              "ts": "2026-07-15T11:00:00+00:00"
+            },
+            {
+              "fm": "m3",
+              "ts": "2026-07-15T12:00:00+00:00"
+            },
+            {
+              "fm": "m4",
+              "ts": "2026-07-15T13:00:00+00:00"
+            },
+            {
+              "fm": "m5",
+              "ts": "2026-07-15T14:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "messages": {
+        "m1": {
+          "is_read": false,
+          "sender_id": "alice"
+        },
+        "m2": {
+          "is_read": false,
+          "sender_id": "me-cloud"
+        },
+        "m3": {
+          "is_read": false,
+          "sender_id": "alice"
+        },
+        "m4": {
+          "is_read": false,
+          "sender_id": "alice"
+        },
+        "m5": {
+          "is_read": false,
+          "sender_id": "alice"
+        }
+      },
+      "invitations": [],
+      "expected": 1,
+      "facets": {
+        "conversation": "c1",
+        "isUnread": true,
+        "isArchived": false,
+        "isInvitation": false,
+        "unreadCount": 3
+      }
+    },
+    {
+      "name": "a read message in the middle stops the count",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [
+            {
+              "fm": "m1",
+              "ts": "2026-07-15T10:00:00+00:00"
+            },
+            {
+              "fm": "m2",
+              "ts": "2026-07-15T11:00:00+00:00"
+            },
+            {
+              "fm": "m3",
+              "ts": "2026-07-15T12:00:00+00:00"
+            }
+          ]
+        }
+      ],
+      "messages": {
+        "m1": {
+          "is_read": false,
+          "sender_id": "alice"
+        },
+        "m2": {
+          "is_read": true,
+          "sender_id": "alice"
+        },
+        "m3": {
+          "is_read": false,
+          "sender_id": "alice"
+        }
+      },
+      "invitations": [],
+      "expected": 1,
+      "facets": {
+        "conversation": "c1",
+        "isUnread": true,
+        "isArchived": false,
+        "isInvitation": false,
+        "unreadCount": 1
       }
     }
   ]

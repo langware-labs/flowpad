@@ -77,7 +77,6 @@ def test_canonical_project_cwd_policy_preserves_safe_descendants(
         records_data_dir=records_data,
     )
     monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: patched)
-    monkeypatch.setattr(config, "AGENT_MOUNT_FOLDER", str(workspace))
     monkeypatch.setattr(config, "agent_workspace_root", lambda: workspace)
 
     assert not is_valid_project_cwd(home, include_temp=True)
@@ -122,7 +121,6 @@ def test_protected_path_policy_keeps_windows_semantics_on_posix(
         records_data_dir=r"C:\Users\Alice\.flow\records_data",
     )
     monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: settings)
-    monkeypatch.setattr(config, "AGENT_MOUNT_FOLDER", r"C:\Users\Alice\Flowpad workspace")
     monkeypatch.setattr(
         config,
         "agent_workspace_root",

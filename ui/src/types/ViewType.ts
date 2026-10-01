@@ -342,7 +342,9 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   // hub). Pointer = `<section>[/<key>]`, an in-view selection, so it folds into one chip.
   [ViewType.LLM_SOURCES]: {
     title: msg`LLM sources`,
-    iconName: 'KeyRound',
+    // An LLM is not a key — a source may be a device login or a hub endpoint. Sparkles is
+    // the LLM glyph (LLM_SETUP wears it too).
+    iconName: 'Sparkles',
     tabLocation: 'dedicated',
     canAddAsTab: true,
     foldsPointer: true,

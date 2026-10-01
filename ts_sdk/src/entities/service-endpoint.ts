@@ -53,8 +53,52 @@ export interface ChannelBackend {
 
 export type ServiceBackend = StaticBackend | ProxyBackend | ChannelBackend;
 
+/** What an endpoint is FOR (its kind, `service_endpoint.<subkind>`, is derived). Twin of `EndpointSubkind`. */
+export type EndpointSubkind = 'admin' | 'app' | 'agent' | 'service';
+
+/** What an endpoint speaking `protocolKind` is for, when a row does not say. Twin of `default_subkind`. */
+export function defaultSubkind(protocolKind: string): EndpointSubkind {
+  const kind = normalizeKind(protocolKind);
+  if (kind === PROTOCOL_WORKSPACE) return 'admin';
+  if (kind === PROTOCOL_API_CHAT_OPENAI) return 'agent';
+  return surfaceOf(kind) === 'web' ? 'app' : 'service';
+}
+
+/** How to tell a service is alive. Twin of `HealthCheck` in `flow_sdk/schema/data_spec/health_spec.py`. */
+export type HealthCheck = { type: 'http'; path: string } | { type: 'command'; cmd: string } | { type: 'builtin' };
+
+export type HealthState = 'alive' | 'failing' | 'starting' | 'unknown';
+
+/** What one check of one service found (`health.endpoint`). */
+export interface EndpointHealth {
+  endpoint_id: string;
+  name: string;
+  state: HealthState;
+  observed_at: string;
+  detail: string;
+  latency_ms?: number | null;
+}
+
+/** Every service on one machine, checked together (`health.node`). */
+export interface NodeHealth {
+  node_id: string;
+  observed_at: string;
+  endpoints: EndpointHealth[];
+}
+
+/** Worst first: a node or deployment is as healthy as its least healthy service. */
+const STATE_ORDER: HealthState[] = ['failing', 'unknown', 'starting', 'alive'];
+
+/** The least healthy of `states`; `unknown` when there are none. Twin of `worst` in `health_spec.py`. */
+export function worstHealth(states: Iterable<HealthState>): HealthState {
+  const seen = new Set(states);
+  return STATE_ORDER.find((s) => seen.has(s)) ?? 'unknown';
+}
+
 export interface IServiceEndpoint extends Omit<IEntity, 'status'> {
   name: string;
+  /** What it is for: admin, app, agent or service. */
+  subkind?: EndpointSubkind;
   protocol: ServiceProtocol;
   backend: ServiceBackend;
   supports_direct_access?: boolean;
@@ -64,6 +108,10 @@ export interface IServiceEndpoint extends Omit<IEntity, 'status'> {
   artifact_id?: string | null;
   /** The webapp definition (`micro_app`) it serves, when it serves one. */
   webapp_id?: string | null;
+  /** How to tell it is alive; absent = the default for its backend. */
+  check?: HealthCheck | null;
+  /** What the last health check found. */
+  health?: EndpointHealth | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -83,6 +131,7 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
   static type: string = 'service_endpoint';
 
   name: string;
+  subkind: EndpointSubkind;
   protocol: ServiceProtocol;
   backend: ServiceBackend;
   supports_direct_access: boolean;
@@ -90,6 +139,8 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
   project_id: string | null;
   artifact_id: string | null;
   webapp_id: string | null;
+  check: HealthCheck | null;
+  health: EndpointHealth | null;
 
   constructor(entity: Partial<IServiceEndpoint> | IEntity = {}) {
     super(entity);
@@ -99,6 +150,7 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
       throw new Error('Invalid ServiceEndpoint structure: protocol.spec_kind is required');
     }
     this.protocol = { ...endpoint.protocol, spec_kind: normalizeKind(endpoint.protocol.spec_kind) };
+    this.subkind = endpoint.subkind ?? defaultSubkind(this.protocol.spec_kind);
     this.backend = normalizeBackend(endpoint.backend);
     this.supports_direct_access = endpoint.supports_direct_access ?? false;
     this.status = {
@@ -110,6 +162,8 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
     this.project_id = endpoint.project_id ?? null;
     this.artifact_id = endpoint.artifact_id ?? null;
     this.webapp_id = endpoint.webapp_id ?? null;
+    this.check = endpoint.check ?? null;
+    this.health = endpoint.health ?? null;
     if (!isNonEmptyString(this.name)) throw new Error('Invalid ServiceEndpoint structure: name is required');
   }
 
@@ -131,6 +185,11 @@ export class ServiceEndpoint extends APIEntity<ServiceEndpoint> implements IServ
   /** What is wrong with the service, asked of the machine it runs on. */
   async probe<T = Record<string, unknown>>(): Promise<T> {
     return (await this.post('probe')) as T;
+  }
+
+  /** Check the service now, where it runs; the result is also recorded on the row. */
+  async healthCheck(): Promise<EndpointHealth> {
+    return (await this.get<EndpointHealth>('health')) as EndpointHealth;
   }
 
   /** The service's own address, resolved now (and waking its machine). Never stored. */

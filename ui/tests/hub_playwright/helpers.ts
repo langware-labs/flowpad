@@ -111,8 +111,11 @@ export async function startConversationViaUi(
   alicePage: Page,
   bobEmail: string,
   initialMessage: string,
+  opts: { onHome?: boolean } = {},
 ): Promise<string> {
-  await gotoHome(alicePage);
+  // ``onHome``: the caller already loaded the home landing on this page, so
+  // don't reload the whole dev bundle a second time.
+  if (!opts.onHome) await gotoHome(alicePage);
   await alicePage.getByTestId('new-conversation-footer-button').click();
 
   const dialog = alicePage.getByTestId('new-conversation-dialog');
@@ -151,15 +154,26 @@ export async function sendReplyViaUi(page: Page, text: string): Promise<{ sentAt
 }
 
 /**
- * Poll the DOM until a bubble whose body text equals `expected` appears.
+ * Wait until a visible bubble whose body text equals `expected` is in the DOM.
  * Returns the time of arrival (Date.now()). Fails fast — bubbles that don't
  * land within `timeoutMs` raise instead of stalling the test.
+ *
+ * Checked every animation frame IN the page, not with ``locator.waitFor``:
+ * Playwright's locator polling backs off to 500 ms steps, so a bubble that
+ * rendered at +600 ms read as +815…1100 ms — the stopwatch, not the app, was
+ * eating the realtime SLO (DOM MutationObserver vs waitFor, QC 2026-10-01).
  */
 export async function waitForBubbleText(page: Page, expected: string, timeoutMs = 2_000): Promise<number> {
-  const bubble = page
-    .locator('[data-testid^="message-bubble-"]')
-    .filter({ has: page.locator(`.text-sm:not(.font-semibold):text-is("${expected}")`) });
-  await bubble.first().waitFor({ state: 'visible', timeout: timeoutMs });
+  await page.waitForFunction(
+    (text) =>
+      Array.from(document.querySelectorAll('[data-testid^="message-bubble-"]')).some((bubble) =>
+        Array.from(bubble.querySelectorAll('.text-sm:not(.font-semibold)')).some(
+          (el) => el.textContent?.trim() === text && (el as HTMLElement).getClientRects().length > 0,
+        ),
+      ),
+    expected,
+    { polling: 'raf', timeout: timeoutMs },
+  );
   return Date.now();
 }
 
@@ -193,6 +207,23 @@ export async function waitForReceipt(
  */
 export async function gotoConversation(page: Page, convId: string) {
   await page.goto(`/dock/conversation/${convId}`);
+  await waitForConversationReady(page);
+}
+
+/** The conversation view is usable: composer mounted, feed rendered a bubble. */
+export async function waitForConversationReady(page: Page) {
   await page.locator('textarea[placeholder^="Reply to sender"]').waitFor({ state: 'visible' });
   await page.locator('[data-testid^="message-bubble-"]').first().waitFor({ state: 'visible' });
+}
+
+/**
+ * Open a conversation the way a person does from the home strip: click its
+ * row (``navigation.openDock`` → URL → loader). The app is already booted, so
+ * this is a warm in-app navigation — unlike ``gotoConversation``, which
+ * reloads the whole dev bundle (~1900 modules) in the page.
+ */
+export async function openConversationFromStrip(page: Page, convId: string) {
+  await page.locator(`[data-testid="conversation-row"][data-conversation-id="${convId}"]`).click();
+  await page.waitForURL(new RegExp(`/dock/conversation/${convId}`));
+  await waitForConversationReady(page);
 }

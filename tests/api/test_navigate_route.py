@@ -14,6 +14,7 @@ import uuid
 
 import pytest
 from starlette.testclient import TestClient
+from tests.unit._project_names import unique_project_name
 
 pytestmark = pytest.mark.usefixtures("reset_db_for_testclient")
 
@@ -71,7 +72,7 @@ async def _make_project() -> str:
     project = Project(
         type="project",
         uname=f"navtest-{uuid.uuid4().hex[:8]}",
-        name="NavTest",
+        name=unique_project_name("NavTest"),
         visitor_role="owner",
     )
     await project.save()

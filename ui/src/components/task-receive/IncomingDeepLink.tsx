@@ -1,7 +1,10 @@
 import { isCompleteGitOrigin, isInstallableOrigin, type GitOrigin } from '@sdk';
+import { t } from '@lingui/core/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { notify } from '@src/notifications/notify';
+import { withHomePage } from '@src/project-home-page/home-page-state';
 import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { useEffect } from 'react';
@@ -23,7 +26,9 @@ import { IncomingTaskDialog } from './IncomingTaskDialog';
  * project this box already holds as a file-less row), materialize THAT row in
  * place so both ends keep one id; `git_origin` + `task_id` → the task
  * pull/clone flow; `conversation_id` → open that conversation; `task_id` alone
- * → the tasks dock.
+ * → the tasks dock. From the desktop's `project/<id>/open` (which hydrates
+ * the project first): `project_id` alone → it is installed here, open it;
+ * `project_error=unavailable|unreachable` → say which, open nothing.
  */
 /** The whole inbound payload — read together, scrubbed together, so no key can
  *  be left behind to replay on the next refresh. */
@@ -34,6 +39,7 @@ const DEEP_LINK_PARAMS = [
   'task_id',
   'setup_git',
   'project_id',
+  'project_error',
   'title',
   'sender_name',
   'git_origin',
@@ -52,6 +58,7 @@ export function IncomingDeepLink() {
     const taskId = params.get('task_id') || '';
     const isGitSetup = params.get('setup_git') === '1';
     const projectId = params.get('project_id') || undefined;
+    const projectError = params.get('project_error');
     const title = params.get('title') || 'Shared';
     const senderName = params.get('sender_name') || 'Someone';
     const gitOriginParam = params.get('git_origin');
@@ -75,6 +82,34 @@ export function IncomingDeepLink() {
     // git-setup link also carries a git_origin (but no task_id).
     if (isGitSetup && gitOrigin) {
       setPendingProject({ gitOrigin, projectName: title, senderName, projectId });
+      return;
+    }
+
+    // A shared project the desktop's `project/<id>/open` already resolved: it
+    // either failed on the hub (say which — a refusal is final, an outage is
+    // worth retrying) or is installed here, in which case there is nothing to
+    // set up and the link just opens it. The failure notice is the only answer
+    // to the link the person just clicked, so it shows in every view mode
+    // (`forceToast`) and stays open until they dismiss it.
+    if (projectId && projectError === 'unavailable') {
+      notify.error({
+        title: t`Couldn't open the project`,
+        message: t`That project is no longer available.`,
+        forceToast: true,
+      });
+      return;
+    }
+    if (projectId && projectError) {
+      notify.warning({
+        title: t`Couldn't open the project`,
+        message: t`Couldn't reach FlowPad to load this project. Open the link again to retry.`,
+        forceToast: true,
+        durationMs: null,
+      });
+      return;
+    }
+    if (projectId && !isGitSetup) {
+      navigation.openDock(withHomePage(DockPointer.forProject(projectId)));
       return;
     }
 

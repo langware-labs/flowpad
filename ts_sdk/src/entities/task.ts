@@ -12,6 +12,8 @@ import { createAndSendConversation } from './conversation-send';
 export enum TaskKind {
   STANDARD = 'standard',
   GROUP = 'group',
+  /** Raised from the Vibe workspace's "Ask for help" button — the tasks that button lists. */
+  VIBE = 'vibe',
 }
 
 export interface TaskAssignOptions {
@@ -40,7 +42,8 @@ export interface ITask extends IEntity {
   asset_ref?: string;
   description?: string;
   status?: string;
-  /** TaskKind: 'group' = overview task owning one member task per group member. */
+  /** TaskKind: 'group' = overview task owning one member task per group member;
+   *  'vibe' = raised from the Vibe workspace's "Ask for help" button. */
   kind?: string;
   /** Contacts-group name a group task was assigned to — shown as "Owner: <group_name>". */
   group_name?: string | null;
@@ -340,7 +343,8 @@ export class Task extends APIEntity<Task> implements ITask {
    * without rewriting the ask.
    *
    * Then, unless `notify: false`, a notification conversation goes out carrying
-   * the task chip and any `files` (pass `transcript` to include the session).
+   * the task chip and any `files` (pass `transcript` to include the session), and
+   * the task keeps it as `origin_conversation` — the conversation it lives in.
    *
    * `person` may be a bare email or a picker participant (member / contact /
    * free-form email). Assigning to yourself only stamps `assignee` locally.
@@ -387,6 +391,16 @@ export class Task extends APIEntity<Task> implements ITask {
       },
       opts.ensureCloudLogin ? { ensureCloudLogin: opts.ensureCloudLogin } : undefined,
     );
+    // The task lives in that conversation from now on: whoever opens the task (the Vibe
+    // "Ask for help" button, a board row) opens the conversation it was asked in. A local action,
+    // not a save: the task is on the hub now, and a field save round-trips through it, dropping
+    // what the hub does not model — this link is this machine's own (a PRIVATE field).
+    if (sent.conversation_id) {
+      const link = new ActionInfo('link-conversation', Task.type, this.id, 'POST');
+      link.bodyParameters = { conversation_id: sent.conversation_id };
+      await dataManager.callAction(link);
+      this.origin_conversation = sent.conversation_id;
+    }
     return { conversationId: sent.conversation_id, self };
   }
 
