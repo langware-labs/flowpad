@@ -19,6 +19,7 @@
 
 import { AgenticProcess, Conversation, FlowMessage, Task, TypeId } from '@sdk';
 import { AttachmentType, attachmentDataString, isAttachmentMissing, type Attachment } from '@sdk/entities/flow-message';
+import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Row shapes
@@ -194,7 +195,10 @@ export function buildSharedEntities(
     for (const a of fm.attachment ?? []) {
       if (a.attachment_type !== AttachmentType.TYPE_ID) continue;
       try {
-        pushTypeId(new TypeId(attachmentDataString(a)), fm.id, fm, {
+        const attached = new TypeId(attachmentDataString(a));
+        // A reply marker has no entity behind it on this side — never a shared-context row.
+        if (attached.type === REPLY_MARKER_TYPE) continue;
+        pushTypeId(attached, fm.id, fm, {
           downloaded: fm.body_downloaded ?? false,
           missing: isAttachmentMissing(fm, a),
         });
