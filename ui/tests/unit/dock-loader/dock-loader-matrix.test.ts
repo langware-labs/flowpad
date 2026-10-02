@@ -116,6 +116,14 @@ const projectWiki = (req: RecordedRequest) => {
   return undefined;
 };
 
+/** The project list (`LazyAsset.Projects`) — the world's one project. Production
+ *  loads it at bootstrap; `getProjectByPath` (an Assets file's owning project)
+ *  reads it, so a cold row fetches it once and a warm visit hits the cache. */
+const projectList = (req: RecordedRequest) =>
+  req.method === 'GET' && req.path === '/graph/project'
+    ? [{ type: 'project', id: P, name: 'p', fs_storage_mount_path: '/w/p' }]
+    : undefined;
+
 /** The backend's answer for a project with no auto-launch agent. */
 const noAgentToLaunch = (req: RecordedRequest) =>
   req.method === 'POST' && req.path === '/api/v1/agents/auto-launch'
@@ -145,7 +153,7 @@ describe('dock loader matrix — coverage', () => {
 
 describe.each(ROWS)('dock loader — $name', ({ url }) => {
   it('settles with at most one redirect, and a warm visit asks the backend for nothing', async () => {
-    const log = recordRequests([fakeTabStore(), noAgentToLaunch, indexedDocument, projectWiki]);
+    const log = recordRequests([fakeTabStore(), noAgentToLaunch, indexedDocument, projectWiki, projectList]);
 
     const cold = await runDockLoader(url);
     expect(cold.outcome, `threw instead of settling: ${cold.outcome === 'error' ? String(cold.error) : ''}`).not.toBe(

@@ -20,6 +20,7 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation';
 import { pageRedirectUrl } from '@src/navigation/supported-pages';
 import { setupTabAndAdopt } from '@src/tabs/tab-content-lifecycle';
+import { projectScope } from '@src/lib/scope-filter';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -72,6 +73,33 @@ async function repairUnsatisfiableScope(dock: DockPointer, requestPath: string):
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(dock.withoutScopeFilter().toUrl(requestPath));
   }
+}
+
+/**
+ * Give an unscoped Assets file URL the scope of the project that holds the file,
+ * by redirecting to the SAME pointer scoped to that project.
+ *
+ * Assets is scope-keyed: its tab identity is the scope, and the backend stamps
+ * the tab's project from that scope (`_pointer_scope_project`). An unscoped file
+ * URL — the explorer, a terminal link, search — therefore lands on the global
+ * `assets|all` tab, whose project is null, and the project-filtered strip hides
+ * the very tab on screen ("html opens, yet no tab", 2026-10-02). The file's
+ * project is a fact about the file, so it is resolved here, before the tab is
+ * minted (I2), and carried into the URL where tab identity reads it.
+ *
+ * Resolved by PATH (deepest project mount holding the file, from the cached
+ * project list), not by the file's entity: an unindexed type (`.html`) has no
+ * entity at all, and a path lookup costs the loader no round trip. A file no
+ * project holds stays unscoped — the global tab is right for it.
+ */
+async function scopeAssetFileToItsProject(dock: DockPointer, requestPath: string): Promise<void> {
+  if (dock.viewType !== ViewType.ASSETS || dock.scopeFilter || dock.isActiveDisplay || isHubOnly()) return;
+  const machinePath = dock.vfsPath?.machinePath;
+  if (!machinePath) return;
+  const project = await Project.getProjectByPath(machinePath);
+  if (!project) return;
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  throw replace(dock.withScopeFilter(projectScope(project.id)).toUrl(requestPath));
 }
 
 /**
@@ -257,9 +285,11 @@ async function loadAgentAppBody(args: LoaderArgs) {
     t.time('ensureComputeNode');
     if (dockForSetup) {
       redirectLegacyAssetFsDock(dockForSetup, requestUrl.pathname);
-      // RESOLVE (dock-loading step 3): a shell URL's identity redirects — scope,
-      // a dead process, a shell a process owns — before a tab is minted for a URL
-      // the loader is about to leave (I2).
+      // RESOLVE (dock-loading step 3): identity redirects before a tab is minted
+      // for a URL the loader is about to leave (I2) — an Assets file takes its
+      // project's scope; a shell URL its scope, a dead process's sibling, or the
+      // owning process's scoped URL.
+      await scopeAssetFileToItsProject(dockForSetup, requestUrl.pathname);
       if (dockForSetup.viewType === ViewType.SHELL) {
         await resolveShellRoute(dockForSetup.pointer, requestUrl.pathname, processRouteCarry(dockForSetup));
       }
