@@ -14308,8 +14308,10 @@ msgstr "غير موجود"
 #~ msgid "Not indexed here yet — install it from its origin"
 #~ msgstr ""
 
-#~ msgid "Not installed"
-#~ msgstr "غير مثبّت"
+#: src/components/connections-manager/connection-state-visual.ts
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not installed"
+msgstr "غير مثبّت"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
@@ -14377,7 +14379,6 @@ msgstr ""
 msgid "Not set up for publishing"
 msgstr "غير مُعد للنشر"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not signed in"
 msgstr "غير مسجّل الدخول"
