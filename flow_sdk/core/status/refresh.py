@@ -13,7 +13,11 @@ async def refresh_status(kinds: list[str] | None = None) -> None:
     verdict through the one login writer. A CLI installed or signed into outside Flowpad
     is picked up here.
     """
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
+        prune_dead_binding,
+    )
     from flow_sdk.core.capabilities.discovery import run_discovery  # noqa: PLC0415
 
     await run_discovery(kinds)
+    await prune_dead_binding()
     publish_status_changed()

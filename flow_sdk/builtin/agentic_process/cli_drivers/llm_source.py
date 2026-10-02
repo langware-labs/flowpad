@@ -9,7 +9,7 @@ Two producers, deliberately separate:
 * **inventory** (``_inventory``) — what EXISTS: installed harnesses and their cached
   login state, configured provider keys, the hub endpoints this box may spend. Cheap,
   context-free, and served by the memos that already exist.
-* **overlay** (``list_llm_sources``) — what may fund THIS process: eligibility, rank,
+* **overlay** (``list_llm_candidates``) — what may fund THIS process: eligibility, rank,
   reasons. Pure and per-call.
 
 Keeping them apart is not tidiness. It is what lets the resolver promise the thing that
@@ -73,15 +73,14 @@ from flow_sdk.schema.data_spec.llm_source_spec import (
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
+    from flow_sdk.core.status import InstallState, LoginState
 
 logger = logging.getLogger(__name__)
 
-#: Rank bands. Device sits at the head of the order, and drops to the tail on a bound
-#: box when nobody has proven it -- see the module docstring.
+#: Rank bands: a signed-in device login first, then a stored key, then a hub endpoint.
 _RANK_DEVICE = 0
 _RANK_KEY = 10
 _RANK_ENDPOINT = 20
-_RANK_DEVICE_UNPROVEN = 30
 
 
 def _hub_stub(typeid: str, *, name: str = "", provider: str = "", public: bool = False) -> "LLMEndpoint":
@@ -173,100 +172,60 @@ class LLMSourceError(Exception):
 # ── inventory ────────────────────────────────────────────────────────────────────
 
 
-def _device_source(worker_type: str, login_state, wallet_available: bool, *, installed: bool) -> Candidate:
-    """The vendor device login for *worker_type*, and what we actually know about it.
+def _device_source(worker_type: str, install: "InstallState", login: "LoginState") -> Candidate:
+    """The vendor device login for *worker_type*, judged on the STATUS record's facts.
 
-    ``wallet_available`` is "there is a hub endpoint this box can SPEND", not "a hub
-    endpoint was assigned to it". The distinction is the whole rung: when nobody has
-    probed the login we do not know whether it works, and presuming it does is only safe
-    while there is nothing better to fall back on. If a wallet is there, an unverified
-    login must lose to it -- being wrong costs a spawn that dies on the vendor's own
-    "Could not resolve authentication method" with the budget untouched, which is what a
-    fresh desktop install with a granted budget and no vendor login used to do.
-
-    A device login for a CLI that is not on this machine funds nothing, so an uninstalled
-    harness is ineligible before its login is even read. The boot sweep only probes
-    INSTALLED CLIs, so an uninstalled harness keeps ``login_state=None`` forever -- and
-    reading that as "nobody has asked, presume it works" made every missing vendor CLI the
-    active funding source on a box with nothing installed.
+    Funding never re-derives a status fact: whether the CLI is installed and whether it is
+    signed in come from ``core.status`` and are only TRANSLATED here into "may this pay".
+    Only a login a probe confirmed can fund a turn. A login nobody has checked is not
+    presumed to work -- presuming it is what made every absent vendor CLI the active
+    funding source on a box with nothing installed; the spawn path probes an unchecked
+    harness before it resolves (``resolve_llm_endpoint``), so this costs a check, not a turn.
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
+    from flow_sdk.core.status import InstallState, LoginState  # noqa: PLC0415
 
     name = f"{worker_type} device login"
     endpoint = LLMEndpoint.device_projection(worker_type, name=name)
     typeid = str(endpoint.typeid)
-    # ``.value``, never ``str()``: ``DeviceLoginState`` is a plain ``(str, Enum)``, not a
-    # ``StrEnum``, so ``str(DeviceLoginState.AUTHENTICATED)`` is the REPR
-    # ``"DeviceLoginState.AUTHENTICATED"``. Comparing that to ``"authenticated"`` never
-    # matched, so every verdict fell through to "nobody has asked" -- which silently made a
-    # harness the probe had positively called SIGNED OUT eligible, and picking it hands the
-    # turn to a vendor login picker and hangs it.
-    state = getattr(login_state, "value", login_state) or ""
-    if not installed:
+
+    def verdict(*, reason: str = "", authority: LLMSourceAuthority = LLMSourceAuthority.CACHED) -> Candidate:
+        eligible = not reason
         return Candidate(
             endpoint,
             LLMSource(
                 endpoint_typeid=typeid,
                 name=name,
                 rank=_RANK_DEVICE,
-                eligible=False,
-                reason=f"{worker_type} is not installed",
-                authority=LLMSourceAuthority.PROVEN,
+                eligible=eligible,
+                auto=eligible,
+                authority=authority,
+                detail="signed in" if eligible else "",
+                reason=reason,
             ),
         )
-    if state == "authenticated":
-        return Candidate(
-            endpoint,
-            LLMSource(
-                endpoint_typeid=typeid,
-                name=name,
-                rank=_RANK_DEVICE,
-                eligible=True,
-                auto=True,
-                authority=LLMSourceAuthority.CACHED,
-                detail="signed in",
-            ),
-        )
-    if state in ("idle", "error"):
-        # A probe positively said so. We only assert signed-out when we were told.
-        return Candidate(
-            endpoint,
-            LLMSource(
-                endpoint_typeid=typeid,
-                name=name,
-                rank=_RANK_DEVICE,
-                eligible=False,
-                reason=f"{worker_type} is signed out",
-                authority=LLMSourceAuthority.CACHED,
-            ),
-        )
-    # Nobody has asked (the common case: the field does not survive a restart). Usable, so
-    # no ``reason`` -- the caveat is display, and putting it in ``reason`` made a perfectly
-    # good device login report it as its status message.
-    return Candidate(
-        endpoint,
-        LLMSource(
-            endpoint_typeid=typeid,
-            name=name,
-            rank=_RANK_DEVICE_UNPROVEN if wallet_available else _RANK_DEVICE,
-            eligible=True,
-            auto=not wallet_available,
-            authority=LLMSourceAuthority.PRESUMED,
-            detail=(
-                "sign-in not checked; a hub endpoint can fund this box"
-                if wallet_available
-                else "sign-in state not checked"
-            ),
-        ),
-    )
+
+    if install not in (InstallState.INSTALLED, InstallState.BUILT_IN):
+        return verdict(reason=f"{worker_type} is not installed", authority=LLMSourceAuthority.PROVEN)
+    if login is LoginState.SIGNED_IN:
+        return verdict()
+    reasons = {
+        LoginState.SIGNED_OUT: f"{worker_type} is signed out",
+        LoginState.ERROR: f"{worker_type} sign-in failed",
+        LoginState.SIGNING_IN: f"{worker_type} is still signing in",
+        LoginState.N_A: f"{worker_type} has no login of its own",
+    }
+    if login is LoginState.NOT_CHECKED:
+        return verdict(reason=f"{worker_type} sign-in has not been checked", authority=LLMSourceAuthority.PRESUMED)
+    return verdict(reason=reasons[login])
 
 
 def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
     """One candidate per provider this harness supports, over that provider's endpoint row.
 
     *rows* is the local ``api_key`` endpoints keyed by secret name and *stored* is the set of
-    secret names present in the store — both read ONCE by the caller, because this runs per
-    harness and the answers do not vary between them.
+    PROVIDERS with a stored key (``core.status.stored_key_providers``) — both read ONCE by the
+    caller, because this runs per harness and the answers do not vary between them.
 
     Presence is tested against those NAMES, never by decrypting a value. Reading a secret
     opens, decrypts and re-parses the whole sod blob; asking four harnesses whether a key
@@ -289,7 +248,7 @@ def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
         endpoint = rows.get(secret_name) or LLMEndpoint.key_projection(provider.value)
         # An ``OPENROUTER_API_KEY`` in the environment is a convenience for in-process calls,
         # not a statement about what this box is configured to spend, so it is not consulted.
-        has_key = secret_name in stored
+        has_key = provider.value in stored
         out.append(
             Candidate(
                 endpoint,
@@ -299,7 +258,8 @@ def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
                     rank=_RANK_KEY,
                     eligible=has_key,
                     auto=has_key,
-                    authority=LLMSourceAuthority.PROVEN,
+                    # CACHED, not PROVEN: a key's NAME was listed, its value was never tried.
+                    authority=LLMSourceAuthority.CACHED,
                     reason="" if has_key else f"no {provider.value} key is stored on this machine",
                 ),
             )
@@ -377,13 +337,10 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     endpoint listing is read from the memo (``cached_only``), because this runs in the spawn
     path. Secret NAMES are listed rather than read, so nothing here decrypts the store.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-        worker_capability_kind,
-        worker_executable,
-    )
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
-    from flow_sdk.cli.auth.secrets import get_secrets
+    from flow_sdk.core.status import InstallState, harness_install, login_state, stored_key_providers
     from flow_sdk.instance_settings.llm_endpoint import (
         fetch_hub_llm_endpoints,
         get_hub_llm_endpoint,
@@ -396,90 +353,43 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
 
     cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
     bound = get_hub_llm_endpoint()
-    # NOT ``hub_auth_available()``: that answers "is there a logged-in USER record", while the
-    # question here is "is there a key to sign with" -- a box holding a key without a user
-    # record can still spend its endpoint, and must.
-    hub_logged_in = _hub_logged_in()
     endpoints = await fetch_hub_llm_endpoints(cached_only=True)
     rows = await LLMEndpoint.key_endpoints()
-    # Names only. ``get_secrets`` lists the shadow records and never opens the sod, whereas
-    # reading each value would decrypt and re-parse the whole blob once per provider.
-    stored = {str(rec.get("name", "")) for rec in get_secrets()}
-
-    # Built FIRST, because what the device rung is allowed to presume depends on it.
-    endpoint_candidates = _endpoint_sources(spec, endpoints, bound, hub_logged_in, listing_supersedes_binding())
-    # "Is there a wallet this box can actually spend?" -- NOT "was one formally assigned".
-    # A granted budget the box was never BOUND to is still money the user has, and an
-    # unverified device login that outranks it spends nothing at all: the spawn is handed no
-    # credentials and dies on the vendor's own "Could not resolve authentication method"
-    # with the budget untouched. Keying on the binding made every unbound box presume its
-    # device login, which is the state a fresh desktop install with a hub budget is in.
-    spendable_wallet = any(c.source.eligible for c in endpoint_candidates)
+    # Every status fact comes from the status layer, never re-derived here.
+    install = harness_install(worker_type)
+    stored = set(stored_key_providers())
 
     # A harness with no account of its own has no device rung to rank (``has_device_login``).
     candidates = (
-        [
-            _device_source(
-                worker_type,
-                getattr(cap, "login_state", None),
-                spendable_wallet,
-                installed=worker_executable(worker_type) is not None,
-            )
-        ]
+        [_device_source(worker_type, install, login_state(install, spec.has_device_login, cap))]
         if spec.has_device_login
         else []
     )
     candidates += _key_sources(spec, rows, stored)
-    candidates += endpoint_candidates
+    candidates += _endpoint_sources(spec, endpoints, bound, _hub_signed_in(), listing_supersedes_binding())
+    if install not in (InstallState.INSTALLED, InstallState.BUILT_IN):
+        # Nothing funds a harness that cannot run: a stored key or a hub budget would only be
+        # spent by a CLI that is not on this machine. Every source stays LISTED (the picker
+        # still shows what exists) but none is eligible, so no surface can report it funded.
+        why = f"{worker_type} is not installed"
+        candidates = [
+            c if not c.source.eligible else Candidate(c.endpoint, c.source.ineligible(why)) for c in candidates
+        ]
     return candidates, cap
-
-
-async def device_candidate(worker_type: str, cap=None) -> Candidate | None:
-    """The harness's OWN login verdict, and nothing else.
-
-    What the Connections list needs per harness: it reports the device login
-    regardless of whether a stored key currently outranks it, so the preference
-    overlay does not apply — and the key/endpoint inventory (a second query plus
-    a secret-store walk per harness) is never built only to be thrown away.
-
-    ``cap`` is the harness ``Capability`` when the caller already holds it — the
-    row this reads is the only thing it needs, and a caller that has just read it
-    (to show the account it carries) should not pay for the same read twice.
-    """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-        worker_capability_kind,
-        worker_executable,
-    )
-    from flow_sdk.builtin.capability import Capability
-    from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
-
-    spec = driver_api_auth_spec(worker_type)
-    if spec is None or not spec.has_device_login:
-        return None
-    if cap is None:
-        cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
-    return _device_source(
-        worker_type,
-        getattr(cap, "login_state", None),
-        get_hub_llm_endpoint() is not None,
-        installed=worker_executable(worker_type) is not None,
-    )
 
 
 # ── overlay ──────────────────────────────────────────────────────────────────────
 
 
-def _hub_logged_in() -> bool:
-    """Whether a hub request from this box would carry a key.
+def _hub_signed_in() -> bool:
+    """Whether this box is signed in to FlowPad -- the status layer's answer, never re-derived.
 
-    NOT ``hub_auth_available()``: that answers "is there a logged-in USER record", while the
-    question here is "is there a key to sign with" -- a box holding a key without a user
-    record can still spend its endpoint, and must. Imported per call so a monkeypatch on it
-    applies (a module-scope binding freezes the function at import time).
+    Signed in means the hub NAMED the user (``core.status.hub_status``), not merely that a
+    key is stored. Imported per call so a monkeypatch on it applies.
     """
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+    from flow_sdk.core.status import HubLogin, hub_status  # noqa: PLC0415
 
-    return bool(resolve_hub_api_key())
+    return hub_status().login is HubLogin.SIGNED_IN
 
 
 def _hub_spendable() -> bool:
@@ -491,7 +401,7 @@ def _hub_spendable() -> bool:
     """
     from flow_sdk.instance_settings.llm_endpoint import public_binding  # noqa: PLC0415
 
-    return _hub_logged_in() or public_binding() is not None
+    return _hub_signed_in() or public_binding() is not None
 
 
 async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | None:
@@ -682,7 +592,7 @@ def _overlay(
     same reason: it is not harness-dependent, so a batch resolves it once for all four.
     """
     if constraint is not None:
-        return sorted(_apply_constraint(candidates, *constraint, _hub_logged_in()), key=lambda c: c.source.rank)
+        return sorted(_apply_constraint(candidates, *constraint, _hub_signed_in()), key=lambda c: c.source.rank)
     return sorted(_apply_preference(candidates, cap, worker_type), key=lambda c: c.source.rank)
 
 
@@ -704,20 +614,14 @@ async def list_llm_candidates(worker_type: str, scope: LLMScope = LLMScope()) ->
     return _overlay(candidates, cap, worker_type, await resolve_constraint(scope))
 
 
-async def list_llm_sources(worker_type: str, scope: LLMScope = LLMScope()) -> list[LLMSource]:
-    """The verdicts alone, for callers that render them and never need the row."""
-    return [c.source for c in await list_llm_candidates(worker_type, scope)]
-
-
 # ── resolution ───────────────────────────────────────────────────────────────────
 
 
 def pick_llm_candidate(candidates: list[Candidate]) -> Candidate | None:
     """The winner of a ranked list: *first eligible AND auto*, else *first eligible*.
 
-    The second pass is not a nicety. It is what keeps an unproven device login usable on an
-    unbound box when nothing else is configured -- the state most desktop installs are in,
-    and exactly what happened before this resolver existed.
+    The second pass picks a usable source nobody marked automatic -- an unbound hub endpoint
+    on a box with nothing else -- rather than refusing a spawn something could fund.
 
     One function, so the answer a spawn uses and the answer a picker displays cannot drift
     apart. That drift is precisely what made a stale ``login_state`` tell users their working
@@ -819,11 +723,6 @@ def _ignored_preference_note(worker_type: str, cap, constraint) -> str:
     )
 
 
-async def resolve_llm_source(process) -> LLMSource:
-    """The source that funds this spawn. Raises :class:`LLMSourceError` when none can."""
-    return (await resolve_llm_endpoint(process)).source
-
-
 async def resolve_llm_endpoint(process) -> Candidate:
     """The endpoint that funds this spawn, and the verdict that chose it.
 
@@ -832,8 +731,32 @@ async def resolve_llm_endpoint(process) -> Candidate:
     a second lookup is a second chance to disagree with the answer.
     """
     worker_type = getattr(getattr(process, "driver", None), "name", None) or getattr(process, "worker_type", "")
+    await check_unchecked_login(worker_type)
     candidates = await list_llm_candidates(worker_type, LLMScope.of_process(process))
     chosen = pick_llm_candidate(candidates)
     if chosen is None:
         raise LLMSourceError(worker_type, [c.source for c in candidates])
     return chosen
+
+
+async def check_unchecked_login(worker_type: str) -> None:
+    """Probe an installed harness whose login nobody has checked, before a spawn resolves.
+
+    Funding never presumes a login works, so an unchecked one is ineligible; the boot sweep
+    normally checks every installed CLI, and this covers the window before it (or a probe it
+    could not complete). A spawn is an action, so probing here is allowed -- a status READ
+    never probes.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        worker_capability_kind,
+    )
+    from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
+    from flow_sdk.core.status import LoginState, harness_install, login_state  # noqa: PLC0415
+
+    spec = driver_api_auth_spec(worker_type)
+    if spec is None or not spec.has_device_login:
+        return
+    cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
+    if cap is None or login_state(harness_install(worker_type), True, cap) is not LoginState.NOT_CHECKED:
+        return
+    await cap.refresh_login_state()

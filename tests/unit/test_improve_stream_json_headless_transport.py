@@ -21,6 +21,7 @@ drainable process (before the fix it was born PTY-transport and hung).
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -73,6 +74,13 @@ async def test_stream_json_create_request_yields_headless_drainable_process(monk
     # left real it asserts "a Claude CLI is installed", which is true on a dev
     # machine and false on CI.
     monkeypatch.setattr(AgenticProcess, "is_installed", AsyncMock(return_value=True), raising=True)
+    # Funding is not under test: a launch on a box where something funds claude.
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+
+    monkeypatch.setattr(llm_source, "check_unchecked_login", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        llm_source, "llm_picker_view", AsyncMock(return_value=SimpleNamespace(chosen=object(), blocked=""))
+    )
 
     resp = await node._scan_create_process()
     assert resp.status == "SUCCESS", getattr(resp, "message", resp)

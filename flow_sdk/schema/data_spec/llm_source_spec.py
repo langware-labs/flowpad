@@ -41,7 +41,7 @@ row is the one thing here that is durable and saveable.
 The harness is deliberately NOT a field. Device login is per-harness by definition, a
 key is only usable by harnesses whose spec accepts its provider, and an endpoint only by
 harnesses that have a hub binding — so the harness is a *parameter* of the producer
-(``list_llm_sources(worker, ...)``). As a field it would yield an N x M cross-product
+(``list_llm_candidates(worker, ...)``). As a field it would yield an N x M cross-product
 whose identity is ambiguous.
 
 Stdlib + pydantic only, like the rest of ``data_spec`` — ``spec.py`` must stay
