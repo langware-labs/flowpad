@@ -64,12 +64,35 @@ def _every_cli_installed(monkeypatch):
     monkeypatch.setattr("flow_sdk.core.status.harness_install", lambda worker: InstallState.INSTALLED)
 
 
+async def _fresh_harness_rows() -> None:
+    """No harness signed in and none pinned to a mode. A login verdict is PERSISTED now, so a
+    test elsewhere in the session that signed claude in would otherwise have claude's device
+    login outrank the endpoint this suite binds -- passing alone and failing in batch."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    for worker in HUB_ENDPOINT_HARNESSES:
+        try:
+            cap = await Capability.get_by_kind(worker_capability_kind(worker))
+        except Exception:  # noqa: BLE001 -- no store yet: nothing to leak
+            return
+        if cap is None or (cap.login_state is None and cap.auth_mode in (None, "device") and not cap.api_provider):
+            continue
+        cap.login_state = None
+        cap.login_message = None
+        cap.login_denied = None
+        cap.auth_mode = "device"
+        cap.api_provider = None
+        await cap.save(notify=False)
+
+
 @pytest.fixture(autouse=True)
 async def _clean_binding():
     from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import unbind_hub_llm_endpoint
     from flow_sdk.instance_settings import llm_endpoint
 
     llm_endpoint.reset_cache()
+    await _fresh_harness_rows()
     yield
     await unbind_hub_llm_endpoint()
     llm_endpoint.reset_cache()
