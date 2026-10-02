@@ -4946,10 +4946,6 @@ msgstr "מרחק גרף ההקשר"
 msgid "Context list actions"
 msgstr "פעולות רשימת הקשר"
 
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Context process"
-msgstr "תהליך הקשר"
-
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "context tokens"
 msgstr "אסימוני Context"
@@ -7372,10 +7368,6 @@ msgstr "גילוי..."
 msgid "Discuss"
 msgstr "דיון"
 
-#: src/components/terminal/interactive-terminal/side-windows/AnalysisContextButton.tsx
-msgid "Discuss analysis"
-msgstr "דיון בניתוח"
-
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -8839,10 +8831,6 @@ msgstr "נכשלה בשליחת בקשת עדכון הסטטוס"
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Failed to set project"
 msgstr "ההגדרה של הפרויקט נכשלה"
-
-#: src/hooks/useContextProcess.ts
-msgid "Failed to start context process"
-msgstr "כשל בהפעלת תהליך ההקשר"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Failed to start GitHub connection"
@@ -17851,14 +17839,6 @@ msgstr "שחזור סשן Claude"
 msgid "Resume Claude session…"
 msgstr "שחזור סשן Claude…"
 
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Resume context"
-msgstr "להמשיך בהקשר"
-
-#: src/components/terminal/interactive-terminal/side-windows/AnalysisContextButton.tsx
-msgid "Resume discussion"
-msgstr "חידוש הדיון"
-
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Resume machine"
 msgstr ""
@@ -17871,10 +17851,6 @@ msgstr "שחזור סשן לפי מזהה"
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Resume session in terminal"
 msgstr "חזור לסשן בטרמינל"
-
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Resume the context process"
-msgstr "יש להמשיך את תהליך ההקשר"
 
 #: src/journey/JourneyViewer.tsx
 msgid "Resume this run"
@@ -20462,10 +20438,6 @@ msgstr "התחל {0}"
 msgid "Start a collaboration"
 msgstr "התחל שיתוף פעולה"
 
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Start a context process for this"
-msgstr "יש להתחיל תהליך הקשר עבור זה"
-
 #: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Start a conversation"
 msgstr "התחל שיחה"
@@ -21270,10 +21242,6 @@ msgstr ""
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "That looks like an {0} key. This endpoint calls {1}, whose keys start with {2}."
 msgstr ""
-
-#: src/hooks/useContextProcess.ts
-msgid "That project has no local workdir"
-msgstr "לפרויקט זה אין ספריית עבודה מקומית"
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx

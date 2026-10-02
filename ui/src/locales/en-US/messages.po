@@ -4946,10 +4946,6 @@ msgstr "Context graph distance"
 msgid "Context list actions"
 msgstr "Context list actions"
 
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Context process"
-msgstr "Context process"
-
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "context tokens"
 msgstr "context tokens"
@@ -7372,10 +7368,6 @@ msgstr "Discovering…"
 msgid "Discuss"
 msgstr "Discuss"
 
-#: src/components/terminal/interactive-terminal/side-windows/AnalysisContextButton.tsx
-msgid "Discuss analysis"
-msgstr "Discuss analysis"
-
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -8839,10 +8831,6 @@ msgstr "Failed to send status request"
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Failed to set project"
 msgstr "Failed to set project"
-
-#: src/hooks/useContextProcess.ts
-msgid "Failed to start context process"
-msgstr "Failed to start context process"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Failed to start GitHub connection"
@@ -17851,14 +17839,6 @@ msgstr "Resume Claude session"
 msgid "Resume Claude session…"
 msgstr "Resume Claude session…"
 
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Resume context"
-msgstr "Resume context"
-
-#: src/components/terminal/interactive-terminal/side-windows/AnalysisContextButton.tsx
-msgid "Resume discussion"
-msgstr "Resume discussion"
-
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Resume machine"
 msgstr "Resume machine"
@@ -17871,10 +17851,6 @@ msgstr "Resume session by id"
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Resume session in terminal"
 msgstr "Resume session in terminal"
-
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Resume the context process"
-msgstr "Resume the context process"
 
 #: src/journey/JourneyViewer.tsx
 msgid "Resume this run"
@@ -20462,10 +20438,6 @@ msgstr "Start {0}"
 msgid "Start a collaboration"
 msgstr "Start a collaboration"
 
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Start a context process for this"
-msgstr "Start a context process for this"
-
 #: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Start a conversation"
 msgstr "Start a conversation"
@@ -21270,10 +21242,6 @@ msgstr "That key does not look right"
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "That looks like an {0} key. This endpoint calls {1}, whose keys start with {2}."
 msgstr "That looks like an {0} key. This endpoint calls {1}, whose keys start with {2}."
-
-#: src/hooks/useContextProcess.ts
-msgid "That project has no local workdir"
-msgstr "That project has no local workdir"
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx

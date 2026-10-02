@@ -40,7 +40,6 @@ import {
 import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
-import { MessageContextButton } from './MessageContextButton';
 import { MessageRunStatus } from './MessageRunStatus';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
@@ -719,7 +718,6 @@ export function FlowMessageBubble({
           />
         </span>
       )}
-      <MessageContextButton fm={fm} projectId={attachmentProjectId} />
     </>
   );
 
