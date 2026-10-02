@@ -65,7 +65,8 @@ export function useMarkdownContent(
     previousLoad.current = { identity, reloadTrigger };
     if (!explicit && (draft.current?.dirty || inFlight.current || saveBlocked.current)) return;
     const token = ++epoch.current;
-    draft.current = null;
+    // Nulling the ref renders nothing; redraw so a cleared draft reads as loading at once.
+    if (draft.current) { draft.current = null; redraw(); }
     saveBlocked.current = false;
     inFlight.current = false;
     pendingSave.current = false;
@@ -76,20 +77,18 @@ export function useMarkdownContent(
     setLoadError(null);
     setMissing(false);
     setLastSync(null);
-    redraw();
     const target = ref.current;
     if (!target) return;
     void target.readDocument().then((document) => {
       if (epoch.current !== token) return;
       draft.current = new DocumentDraft(document);
+      redraw();
     }).catch(async (error: unknown) => {
       if (epoch.current !== token) return;
       const missing = target.exists ? !(await target.exists().catch(() => true)) : false;
       if (epoch.current !== token) return;
       setMissing(missing);
       if (!missing) setLoadError(error instanceof Error ? error : new Error(String(error)));
-    }).finally(() => {
-      if (epoch.current === token) redraw();
     });
   }, [identity, reloadTrigger, reloadKey]);
 
