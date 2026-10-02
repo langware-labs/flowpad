@@ -25,7 +25,9 @@ def _installed(monkeypatch, *keys: str) -> None:
     from flow_sdk.flowpad_types.vendors import vendor_for
 
     wanted = {vendor_for(k).key for k in keys}
-    monkeypatch.setattr(base, "worker_bin_folder", lambda worker: "/bin" if vendor_for(worker).key in wanted else None)
+    monkeypatch.setattr(
+        base, "worker_executable", lambda worker: f"/bin/{worker}" if vendor_for(worker).key in wanted else None
+    )
 
 
 def _selected(monkeypatch, worker_type: str | None) -> None:

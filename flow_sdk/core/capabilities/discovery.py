@@ -100,6 +100,11 @@ def resolve_capability_value(kind: str) -> CapabilityValue | None:
     return value
 
 
+def has_discovered() -> bool:
+    """Whether the first full sweep has finished -- before it, an absent value is not an answer."""
+    return _DISCOVERED_ONCE.is_set()
+
+
 async def ensure_discovered() -> bool:
     """Ensure at least one full discovery sweep has completed.
 

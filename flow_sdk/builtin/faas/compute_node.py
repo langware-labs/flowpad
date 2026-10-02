@@ -1757,6 +1757,28 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         rows = await list_connections(project=project, include_unconnected=include_unconnected)
         return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
 
+    @action.all(action_name="status", methods=["get", "post"])
+    async def status_action(self) -> "ApiResponse":
+        """The status record: harnesses (installed, login, account), stored keys, hub login.
+
+        GET is a pure read of the stores that own each fact -- no probe, no network.
+        POST ``status/refresh`` (optional body ``{"kinds": [...]}``) is the one verb that
+        re-discovers CLIs and re-probes their logins; it returns the refreshed record.
+        """
+        from flow_sdk.core.status import build_status, refresh_status  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+        if method == "POST":
+            if sub_path != "refresh":
+                return ApiFailResponse(message=f"unknown status verb {sub_path!r}; POST status/refresh")
+            body = await request_info.get_post_data() or {}
+            kinds = body.get("kinds") if isinstance(body, dict) else None
+            await refresh_status(list(kinds) if kinds else None)
+        status = await build_status()
+        return ApiSuccessResponse(data=status.model_dump(mode="json"))
+
     @action.post(action_name="check-harness-logins")
     async def check_harness_logins_action(self, force: bool = False) -> "ApiResponse":
         """Ask the installed harness CLIs whether they are signed in.
