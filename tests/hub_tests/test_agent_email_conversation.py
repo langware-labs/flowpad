@@ -389,6 +389,10 @@ async def _sync_until_message(
                 return item
 
 
+# Two real internet email deliveries (Gmail → mailbox, reply → Gmail) plus an LLM turn:
+# measured ~40s end to end on SentFromAI. Cap raised 30s → 50s with the user's explicit
+# approval (2026-10-02). Do not increase further without approval.
+@pytest.mark.timeout(50)
 async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
     """The public SDK snippet: Gmail → Agent mailbox → real Agent → Gmail."""
     gmail_address = str(os.environ.get("GMAIL_ADDRESS") or "").strip().lower()
