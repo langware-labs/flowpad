@@ -11,8 +11,8 @@ import { useEffect, type PointerEventHandler } from 'react';
  * the top inline-end corner toward inline-start — so top-right-growing-leftward
  * under LTR, and top-left-growing-rightward under HE/AR.
  *
- * Dismissal is fully owned by hover (`hoverProps`, shared with the rail button
- * that opens it) plus Escape / outside pointer-down / close-on-navigate / window
+ * Dismissal is fully owned by hover (`hoverProps`, shared with the star that
+ * opens it) plus Escape / outside pointer-down / close-on-navigate / window
  * blur — so the idle auto-close is switched OFF (`idleMs={null}`). Those two are
  * genuinely opposed: idle-close listens on the window, so a pointer parked
  * inside the panel to read it emits no movement and would have the panel yanked
@@ -63,10 +63,6 @@ export function BookmarksSlider({
       open={open}
       onOpenChange={onOpenChange}
       title={t`Bookmarks`}
-      // No headerRight: the scope filter that used to live there is gone. The
-      // tree is global and grouped by project, so "which project" is a row you
-      // hover rather than a mode you first have to set — and the header stays a
-      // title and a close button.
       anchorTop={anchorTop}
       anchorEnd={anchorEnd}
       idleMs={null}

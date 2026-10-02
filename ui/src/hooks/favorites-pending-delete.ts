@@ -93,6 +93,7 @@ export function scheduleFavoriteDelete({
   title: string;
   commit: () => Promise<void>;
 }): void {
+  registerUndoCommand();
   void flushPendingFavoriteDelete();
   hide(ids);
   pending = { ids, commit, timer: setTimeout(() => void flushPendingFavoriteDelete(), FAVORITES_UNDO_MS) };
@@ -104,7 +105,15 @@ export function scheduleFavoriteDelete({
   });
 }
 
-registerCommand(UNDO_COMMAND, () => undoPendingFavoriteDelete());
+// Registered on first use, not at import: this module sits inside the app's
+// notify ↔ components import cycle, so an import-time call can run before
+// `commands.ts` has initialised its registry.
+let undoRegistered = false;
+function registerUndoCommand(): void {
+  if (undoRegistered) return;
+  undoRegistered = true;
+  registerCommand(UNDO_COMMAND, () => undoPendingFavoriteDelete());
+}
 
 // A confirmed delete is never lost to a closing window.
 if (typeof window !== 'undefined') {

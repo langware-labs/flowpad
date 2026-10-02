@@ -630,12 +630,14 @@ function BrowseableRow({
 
       {/* The row's LAST flex child, so it sits on the edge OPPOSITE the chevron
           in both orientations (a mirrored row reverses it along with
-          everything else). Hidden at rest; on hover it takes width from the
-          label, never from the chevron — an action must not slide into the
-          spot the pointer was aiming at, and a destructive one least of all. */}
+          everything else). Its slot is always allocated and only its
+          visibility changes on hover: nothing slides into the spot the pointer
+          was aiming at, and a content-sized menu doesn't resize under it. The
+          slot is text-height (`h-4`) and the buttons overflow it, so reserving
+          it never makes the row taller. */}
       {node.toolbar && node.toolbar.length > 0 && (
         <div
-          className="hidden flex-shrink-0 items-center gap-0.5 group-focus-within:flex group-hover:flex"
+          className="invisible flex h-4 flex-shrink-0 items-center gap-0.5 overflow-visible group-focus-within:visible group-hover:visible"
           data-testid={`browseable-row-toolbar-${node.id}`}
         >
           {node.toolbar.map((a) => (
@@ -749,7 +751,7 @@ export function ToolbarButton({ action, compact }: { action: ToolbarAction; comp
       try {
         await result;
       } finally {
-        if (showBusy) setBusy(false);
+        setBusy(false);
       }
     }
   };
@@ -779,7 +781,7 @@ export function ToolbarButton({ action, compact }: { action: ToolbarAction; comp
       data-armed={armed || undefined}
       data-testid={`browseable-toolbar-${action.id}`}
     >
-      {busy && showBusy ? (
+      {busy ? (
         <Loader2 className="h-3 w-3 animate-spin" />
       ) : armed ? (
         <Check className="h-3 w-3" />

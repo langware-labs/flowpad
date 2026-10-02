@@ -145,7 +145,11 @@ export function BrowseableGrid({
       <ContextMenuTrigger asChild>{grid}</ContextMenuTrigger>
       <ContextMenuContent>
         {backgroundActions.map((action) => (
-          <ContextMenuItem key={action.id} onSelect={() => void action.run()}>
+          <ContextMenuItem
+            key={action.id}
+            className={action.destructive ? 'text-destructive focus:text-destructive' : undefined}
+            onSelect={() => void action.run()}
+          >
             {action.label}
           </ContextMenuItem>
         ))}
@@ -371,7 +375,11 @@ function GridTile({
       )}
       {node.onRename && node.toolbar && node.toolbar.length > 0 && <ContextMenuSeparator />}
       {node.toolbar?.map((action) => (
-        <ContextMenuItem key={action.id} onSelect={() => void action.run()}>
+        <ContextMenuItem
+          key={action.id}
+          className={action.destructive ? 'text-destructive focus:text-destructive' : undefined}
+          onSelect={() => void action.run()}
+        >
           {action.label}
         </ContextMenuItem>
       ))}

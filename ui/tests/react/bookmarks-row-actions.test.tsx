@@ -43,7 +43,10 @@ const nextId = () => `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}
 const deletes: string[] = [];
 function folder(id: string, parent = '') {
   const b = new Bookmark({ id, bookmark_type: BookmarkType.FAVORITE_FOLDER, title: `folder-${id.slice(-3)}`, parent_id: parent });
-  b.delete = vi.fn(async () => void deletes.push(id));
+  b.delete = () => {
+    deletes.push(id);
+    return Promise.resolve();
+  };
   return b;
 }
 function leaf(id: string, parent = '', opened = false) {
@@ -56,7 +59,10 @@ function leaf(id: string, parent = '', opened = false) {
     // A resolvable markdown target, so the leaf passes the navigability gate.
     data: { entity_type: 'markdown', entity_id: nextId() },
   });
-  b.delete = vi.fn(async () => void deletes.push(id));
+  b.delete = () => {
+    deletes.push(id);
+    return Promise.resolve();
+  };
   return b;
 }
 const ids = (rows: { id?: string }[]) => rows.map((b) => b.id);
@@ -79,16 +85,16 @@ describe('favorites undo window', () => {
     h.bookmarks = [a, b];
     const { result, rerender } = renderHook(() => useFavorites());
 
-    await act(() => result.current.removeFavorite(a));
+    act(() => result.current.removeFavorite(a));
     rerender();
     expect(ids(result.current.favorites)).toEqual([b.id]);
-    expect(a.delete).not.toHaveBeenCalled();
+    expect(deletes).not.toContain(a.id);
     expect(h.notify.info).toHaveBeenCalledWith(
       expect.objectContaining({ actions: [expect.objectContaining({ command: 'favorites.undo' })] }),
     );
 
-    await act(async () => void vi.advanceTimersByTime(FAVORITES_UNDO_MS));
-    expect(a.delete).toHaveBeenCalledOnce();
+    await act(() => vi.advanceTimersByTimeAsync(FAVORITES_UNDO_MS));
+    expect(deletes).toContain(a.id);
     // The toast pauses its own timer on hover; once the write happens its Undo
     // would be a dead button, so the commit takes it down.
     expect(h.notify.dismiss).toHaveBeenCalledWith('favorites-undo');
@@ -99,22 +105,22 @@ describe('favorites undo window', () => {
     h.bookmarks = [a];
     const { result, rerender } = renderHook(() => useFavorites());
 
-    await act(() => result.current.removeFavorite(a));
+    act(() => result.current.removeFavorite(a));
     act(() => runCommand('favorites.undo', {}, { id: 'favorites-undo' }));
     rerender();
     expect(ids(result.current.favorites)).toEqual([a.id]);
 
-    await act(async () => void vi.advanceTimersByTime(FAVORITES_UNDO_MS * 2));
-    expect(a.delete).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(FAVORITES_UNDO_MS * 2));
+    expect(deletes).not.toContain(a.id);
   });
 
-  it('is shared: a pending row is hidden in every useFavorites() and survives a refetch', async () => {
+  it('is shared: a pending row is hidden in every useFavorites() and survives a refetch', () => {
     const a = leaf(nextId());
     h.bookmarks = [a];
     const menu = renderHook(() => useFavorites());
     const desktop = renderHook(() => useFavorites());
 
-    await act(() => menu.result.current.removeFavorite(a));
+    act(() => menu.result.current.removeFavorite(a));
     // A refetch hands back the same server rows — the row is still there.
     h.bookmarks = [a];
     desktop.rerender();
@@ -132,28 +138,28 @@ describe('favorites undo window', () => {
     h.bookmarks = [top, sub, l1, l2, outside];
     const { result, rerender } = renderHook(() => useFavorites());
 
-    await act(() => result.current.deleteFolder(top));
+    act(() => result.current.deleteFolder(top));
     rerender();
     // Nothing of the subtree surfaces at the root while the delete is pending.
     expect(ids(result.current.rootFavorites)).toEqual([outside.id]);
     expect(ids(result.current.rootFolders)).toEqual([]);
 
-    await act(async () => void vi.advanceTimersByTime(FAVORITES_UNDO_MS));
+    await act(() => vi.advanceTimersByTimeAsync(FAVORITES_UNDO_MS));
     expect(new Set(deletes.slice(0, 2))).toEqual(new Set([l1.id, l2.id]));
     expect(deletes.slice(2)).toEqual([sub.id, top.id]);
-    expect(outside.delete).not.toHaveBeenCalled();
+    expect(deletes).not.toContain(outside.id);
   });
 
-  it('a second delete commits the first right away', async () => {
+  it('a second delete commits the first right away', () => {
     const a = leaf(nextId());
     const b = leaf(nextId());
     h.bookmarks = [a, b];
     const { result } = renderHook(() => useFavorites());
 
-    await act(() => result.current.removeFavorite(a));
-    await act(() => result.current.removeFavorite(b));
-    expect(a.delete).toHaveBeenCalledOnce();
-    expect(b.delete).not.toHaveBeenCalled();
+    act(() => result.current.removeFavorite(a));
+    act(() => result.current.removeFavorite(b));
+    expect(deletes).toContain(a.id);
+    expect(deletes).not.toContain(b.id);
   });
 });
 
@@ -195,7 +201,7 @@ describe('row layout', () => {
     const { result } = renderHook(() => useFavoritesRoots());
     render(
       <TooltipProvider>
-        <BrowseableTree roots={[{ ...result.current.roots[0], kind: 'root', ownsPointer: () => false, pathFor: async () => [] }]} onNavigate={() => {}} mirrored />
+        <BrowseableTree roots={[{ ...result.current.roots[0], kind: 'root', ownsPointer: () => false, pathFor: () => Promise.resolve([]) }]} onNavigate={() => {}} mirrored />
       </TooltipProvider>,
     );
 
@@ -218,10 +224,9 @@ describe('folder counts', () => {
     h.bookmarks = [f, ...[0, 1, 2, 3, 4].map((i) => leaf(nextId(), f.id, i === 0))];
     const { result } = renderHook(() => useFavoritesRoots());
     const node = result.current.roots[0];
-    render(<>{node.tooltip}</>);
-    expect(document.body.textContent).toContain('5 items');
-    expect(document.body.textContent).toContain('4 new');
-    render(<>{node.badge}</>);
-    expect(document.body.textContent).toContain('4');
+    const tooltip = render(<>{node.tooltip}</>);
+    expect(tooltip.container.textContent).toContain('5 items');
+    expect(tooltip.container.textContent).toContain('4 new');
+    expect(render(<>{node.badge}</>).container.textContent).toBe('4');
   });
 });
