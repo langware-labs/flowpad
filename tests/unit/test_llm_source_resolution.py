@@ -172,7 +172,7 @@ def test_the_device_rung_only_asserts_what_it_was_told(state, wallet, eligible, 
     none."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    source = _device_source("claude", state, wallet).source
+    source = _device_source("claude", state, wallet, installed=True).source
     assert (source.eligible, source.auto) == (eligible, auto)
     # a verdict we were GIVEN is cached evidence; no verdict is only a presumption
     assert str(source.authority) == ("presumed" if state is None else "cached")
@@ -182,11 +182,19 @@ def test_the_device_rung_only_asserts_what_it_was_told(state, wallet, eligible, 
         assert not source.reason, "an eligible source must not carry a caveat as its reason"
 
 
-def test_the_device_rung_says_nothing_about_being_installed() -> None:
-    """Presence is ``build_worker_spawn_env``'s question, and it answers it better."""
+@pytest.mark.parametrize("state", [None, _AUTH, "authenticated", _IDLE])
+@pytest.mark.parametrize("wallet", [False, True])
+def test_a_device_login_for_a_cli_that_is_not_installed_funds_nothing(state, wallet) -> None:
+    """The proven bug: the boot sweep only probes INSTALLED CLIs, so a missing one keeps
+    ``login_state=None`` forever, and presuming that login works made every absent vendor
+    CLI the active funding source on a box with nothing installed. Not installed rules the
+    rung out whatever the login field says."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    assert _device_source("claude", None, False).source.eligible
+    source = _device_source("claude", state, wallet, installed=False).source
+    assert not source.eligible
+    assert not source.auto
+    assert source.reason == "claude is not installed"
 
 
 # ── the default order ────────────────────────────────────────────────────────────
@@ -259,7 +267,7 @@ async def test_a_signed_out_device_login_is_ruled_out_with_a_reason(env) -> None
 
     listed = await list_llm_candidates("claude")
     assert _by_kind(listed, "device"), "the device rung is always listed, eligible or not"
-    out = _device_source("claude", "idle", False).source
+    out = _device_source("claude", "idle", False, installed=True).source
     assert not out.eligible and "signed out" in out.reason
 
 

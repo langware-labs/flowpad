@@ -116,13 +116,23 @@ def _installed(monkeypatch, workers):
     )
 
 
-async def test_a_harness_that_is_not_installed_is_not_a_row(monkeypatch):
-    """A sign-in status for a CLI you never installed is a question about
-    nothing — and four such rows, all reading "Not checked", is how the column
-    stopped meaning anything."""
+async def test_only_installed_harnesses_are_probed(monkeypatch):
     _installed(monkeypatch, {"claude"})
 
     assert status_mod._installed_harnesses() == ["claude"]
+
+
+async def test_a_harness_that_is_not_installed_is_a_row_that_says_so(monkeypatch):
+    """Not "Not checked" (a login question about a CLI that is not there) and not absent
+    (which hid why nothing funds it): a NOT_INSTALLED row, in display order."""
+    _installed(monkeypatch, set())
+
+    rows = await status_mod._harness_rows()
+
+    assert [r.provider for r in rows] == status_mod._all_harnesses()
+    assert {r.state for r in rows} == {ConnectionState.NOT_INSTALLED}
+    assert not any(r.connected for r in rows)
+    assert all("not installed" in r.detail for r in rows)
 
 
 # ── checking, which is a WRITE ─────────────────────────────────────────────

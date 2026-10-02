@@ -68,48 +68,70 @@ async def _flowpad_row() -> ConnectionSpec:
 
 
 async def _harness_rows() -> list[ConnectionSpec]:
-    """One row per INSTALLED harness, from the funding resolver's own verdict.
+    """One row per harness: NOT_INSTALLED when its CLI is missing, else its login verdict.
 
     The DEVICE candidate specifically, not whichever source currently wins: this
     row is about the harness's own login, which must still be reported on a box
     where a stored API key outranks it.
 
-    Uninstalled harnesses are not rows. A sign-in status for a CLI that is not on
-    this machine is a question about nothing — the four vendors shipped as
-    "Not checked" whether or not you had ever installed them, which is how the
-    column stopped meaning anything.
+    An uninstalled harness is a row that says so -- not "Not checked" (the four vendors
+    used to ship that whether or not they were installed) and not absent (dropping the
+    row hid exactly the fact that explains why nothing funds it).
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
         device_candidate,
     )
 
-    workers = _installed_harnesses()
+    installed = set(_installed_harnesses())
+    order = _all_harnesses()
+    by_worker: dict[str, ConnectionSpec] = {w: _not_installed_row(w) for w in order if w not in installed}
+    workers = [w for w in order if w in installed]
     # ONE capability read per harness: the verdict is derived from it and the
     # account line is carried on it, and `device_candidate` would otherwise
     # fetch the same row again a line later.
     caps = await asyncio.gather(*(_harness_capability(w) for w in workers))
     devices = await asyncio.gather(*(device_candidate(w, cap) for w, cap in zip(workers, caps)))
-    rows: list[ConnectionSpec] = []
     for worker, cap, device in zip(workers, caps, devices):
         source = device.source if device else None
         state = _harness_state(source)
         vendor = vendor_or_none(worker)
-        rows.append(
-            ConnectionSpec(
-                provider=worker,
-                display_name=vendor.label if vendor else worker.title(),
-                kind=ConnectionKind.HARNESS,
-                state=state,
-                connected=state is ConnectionState.CONNECTED,
-                identity=str(getattr(cap, "login_identity", "") or ""),
-                account=_account_for(worker, cap, state),
-                sign_in=_sign_in_for(worker),
-                # The resolver owns this sentence. Passed through untouched — it is
-                # the only side that knows whether a probe ran and what it saw.
-                detail=(source.reason or source.detail) if source else "",
-            )
+        by_worker[worker] = ConnectionSpec(
+            provider=worker,
+            display_name=vendor.label if vendor else worker.title(),
+            kind=ConnectionKind.HARNESS,
+            state=state,
+            connected=state is ConnectionState.CONNECTED,
+            identity=str(getattr(cap, "login_identity", "") or ""),
+            account=_account_for(worker, cap, state),
+            sign_in=_sign_in_for(worker),
+            # The resolver owns this sentence. Passed through untouched — it is
+            # the only side that knows whether a probe ran and what it saw.
+            detail=(source.reason or source.detail) if source else "",
         )
-    return rows
+    return [by_worker[w] for w in order]
+
+
+def _all_harnesses() -> list[str]:
+    """Every harness a Connections row exists for, in display order."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
+        HUB_ENDPOINT_HARNESSES,
+    )
+
+    return list(HUB_ENDPOINT_HARNESSES)
+
+
+def _not_installed_row(worker: str) -> ConnectionSpec:
+    vendor = vendor_or_none(worker)
+    label = vendor.label if vendor else worker.title()
+    return ConnectionSpec(
+        provider=worker,
+        display_name=label,
+        kind=ConnectionKind.HARNESS,
+        state=ConnectionState.NOT_INSTALLED,
+        connected=False,
+        sign_in=_sign_in_for(worker),
+        detail=f"{label} is not installed on this machine",
+    )
 
 
 def _installed_harnesses() -> list[str]:

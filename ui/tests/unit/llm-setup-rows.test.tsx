@@ -132,15 +132,15 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     expect(screen.getByTestId('harness-row-codex-default').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('never says "Not installed" in the list', async () => {
+  it('says "Not installed" for an assistant whose CLI is missing', async () => {
     h.available = false; // nothing installed at all
     mount();
 
-    await screen.findByTestId('harness-row-claude');
-    // The list answers "what pays for your calls". Whether a vendor's CLI happens to be on
-    // this machine is a different question, and it made four of five rows report a fact about
-    // the filesystem. It still appears INSIDE the row's own panel, where it is actionable.
-    expect(screen.queryByText('Not installed')).toBeNull();
+    const row = await screen.findByTestId('harness-row-claude');
+    // A CLI that is not on this machine funds nothing, so it IS the answer to "what pays for
+    // your calls". Reporting it as "Not signed in" hid why the row could not pay.
+    expect(row.textContent).toContain('Not installed');
+    expect(row.textContent).not.toContain('Not signed in');
   });
 
   it('offers a login only where there is something to log in to', async () => {
