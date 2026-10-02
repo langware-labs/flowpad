@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import shutil
 import tempfile
 import zipfile
@@ -35,6 +34,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Protocol
 
 from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.materialize import extended_length_path
 from flow_sdk.assets.transfer import (
     _attachment_snapshot,
     pack_tree,
@@ -2093,21 +2093,6 @@ def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _extended_length_path(p: Path) -> Path:
-    """Return ``p`` as a Windows extended-length (``\\\\?\\``) path so writes
-    under it bypass the 260-char MAX_PATH limit. No-op off Windows and when the
-    prefix is already present. The prefix requires a fully-qualified,
-    backslash-separated path with no ``.``/``..`` components, so resolve first."""
-    if os.name != "nt":
-        return p
-    resolved = os.path.abspath(str(p))
-    if resolved.startswith("\\\\?\\"):
-        return Path(resolved)
-    if resolved.startswith("\\\\"):  # UNC: \\server\share -> \\?\UNC\server\share
-        return Path("\\\\?\\UNC" + resolved[1:])
-    return Path("\\\\?\\" + resolved)
-
-
 @dataclass
 class _UnpackCtx:
     """The unpack-time state the header-carried entry unpackers read: one
@@ -2348,7 +2333,7 @@ async def unpack_bundle(
         # trip this; this keeps a legitimately-deep asset from breaking a share.
         def _extract() -> None:
             with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(_extended_length_path(tmp_root))
+                zf.extractall(extended_length_path(tmp_root))
 
         # Off-thread: a multi-MB bundle extraction on the sync path must not
         # stall the event loop (same rationale as the indexer's I/O-to-threads).
