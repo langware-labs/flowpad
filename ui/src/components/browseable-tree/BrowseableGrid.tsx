@@ -42,7 +42,7 @@ export interface BrowseableGridProps {
   /** Right-click actions for the surface itself rather than a tile (e.g. "New
    *  folder"). A node's `toolbar` actions minus the icon, since a context menu
    *  renders none. Omit for no menu. */
-  backgroundActions?: Array<Pick<ToolbarAction, 'id' | 'label' | 'run'>>;
+  backgroundActions?: Array<Pick<ToolbarAction, 'id' | 'label' | 'run' | 'destructive'>>;
   /** Manual ordering of THIS grid's tiles: a drop on a tile's left/right edge
    *  splices the dragged item before/after it. Containers own their children's
    *  ordering via `node.reorderChildren` (used by the folder popover grids). */
