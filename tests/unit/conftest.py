@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import shlex
 import subprocess
 import sys
@@ -365,6 +366,12 @@ def worker_session_stores(claude_projects, tmp_path, monkeypatch):
     )
     yield SimpleNamespace(claude_repo=claude_projects, settings=get_instance_settings(), opencode_db=opencode_db)
     reset_instance_settings()
+
+
+@pytest.fixture(autouse=True)
+def _path_is_restored(monkeypatch):
+    """Every test ends with the PATH it started with: a capability sweep adopts the login shell's."""
+    monkeypatch.setenv("PATH", os.environ.get("PATH", ""))
 
 
 @pytest.fixture(autouse=True)

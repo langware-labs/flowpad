@@ -21,8 +21,6 @@ fast unit test; the UI only renders what these functions return.
 
 from __future__ import annotations
 
-import asyncio
-import functools
 import hashlib
 import json
 import logging
@@ -315,15 +313,6 @@ def write_temp_snippet(code: str, ext: str, name: Optional[str] = None) -> Path:
     return target
 
 
-@functools.cache
-def _terminal_path() -> str:
-    """The PATH a terminal would have (nvm's node, ~/.cargo/bin). Captured once:
-    it costs a login shell, ~1s. A toolchain installed later needs a restart."""
-    from flow_sdk.core.capabilities.env_probe import capture_terminal_path  # noqa: PLC0415
-
-    return capture_terminal_path()
-
-
 #: A check's answer by (file, content): the editor re-checks after every save, and an unchanged
 #: file must not re-import its modules each time.
 _CHECKED: dict[tuple[str, str], list[SnippetDiagnostic]] = {}
@@ -346,13 +335,11 @@ async def check_snippet(
     key = (str(path), hashlib.sha256(text).hexdigest())
     if key in _CHECKED:
         return _CHECKED[key]
-    if env_path is None:
-        env_path = await asyncio.to_thread(_terminal_path)
     said = await run_shell(
         f"{shlex.quote(sys.executable)} -m flow_sdk.snippet_launch --check {shlex.quote(str(path))}",
         timeout_seconds=timeout_seconds,
         workdir=path.parent,
-        extra_env={"PATH": env_path},
+        extra_env={"PATH": env_path} if env_path else None,
     )
     try:
         if not said.ok:
@@ -385,11 +372,9 @@ async def run_snippet(
     an unknown language, a compile error, an exception and a hang are all a ``CliResult``. The
     viewer runs a snippet in its terminal instead (``terminal_command``), where output streams.
 
-    ``env_path`` overrides the PATH the language toolchain is looked up on.
+    ``env_path`` overrides the PATH the language toolchain is looked up on; by default it is this
+    process's, which a server already took from the user's login shell at boot.
     """
-    if env_path is None:
-        # Off the event loop: the first capture runs a login shell (~1s).
-        env_path = await asyncio.to_thread(_terminal_path)
     path = Path(path).expanduser().resolve()
     if not path.is_file():
         # Nothing by that name — NOT_FOUND, told apart from a run that failed.
@@ -407,7 +392,7 @@ async def run_snippet(
             command,
             timeout_seconds=timeout_seconds,
             workdir=path.parent,
-            extra_env={"PATH": env_path},
+            extra_env={"PATH": env_path} if env_path else None,
         )
         # Shown to a PERSON, never parsed — so this is a boundary where output is
         # trimmed, like a record written to disk.
