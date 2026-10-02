@@ -46,7 +46,7 @@ def test_stdin_code_lands_in_the_os_temp_dir_and_is_shown(sent_body, tmp_path, m
         assert sent.name == "t-cli-stdin.py"
         assert sent.read_text() == CODE
         assert not any(tmp_path.iterdir()), "nothing may be written into the caller's folder"
-        assert json.loads(result.output)["path"] == str(sent)
+        assert json.loads(result.stdout)["path"] == str(sent)
     finally:
         sent.unlink(missing_ok=True)
 
@@ -118,7 +118,7 @@ def test_show_answers_what_the_viewer_will_mark(sent_body, tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["show", "snippet", "broken.py", _PROC])
     assert result.exit_code == 0, result.output
-    (d,) = json.loads(result.output)["diagnostics"]
+    (d,) = json.loads(result.stdout)["diagnostics"]
     assert (d["line"], d["kind"]) == (2, "import")
 
 
