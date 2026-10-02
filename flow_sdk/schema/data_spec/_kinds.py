@@ -55,6 +55,7 @@ def register_builtin_kinds() -> None:
     from flow_sdk.schema.data_spec.io import native  # noqa: PLC0415 — the file carriers
 
     native.register()  # ``Text`` renders as ``string``; ``binary`` is its own form
+    import flow_sdk.core.status.spec  # noqa: F401  — registers ``status`` / ``status.harness`` / ``status.key`` / ``status.hub`` / ``status.account``
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
     import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from flow_sdk.core.capabilities.discovery import ensure_discovered, get_capability_value
+from flow_sdk.core.capabilities.discovery import ensure_discovered
 from flow_sdk.core.capabilities.models import CapabilityKind
 from flow_sdk.core.capabilities.registry import get_capability_registry
 from flow_sdk.flowpad_types.vendors import HIDDEN_CAPABILITY_KINDS
@@ -22,8 +22,14 @@ logger = logging.getLogger(__name__)
 
 
 def _is_installed(kind: str) -> bool:
-    value = get_capability_value(kind)
-    return value is not None and value.value is not None
+    """The one install predicate (``worker_is_installed``), keyed by capability kind."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        worker_is_installed,
+    )
+    from flow_sdk.flowpad_types.vendors import vendor_by  # noqa: PLC0415
+
+    vendor = vendor_by("capability_kind", kind)
+    return vendor is not None and worker_is_installed(vendor.key)
 
 
 async def compute_harness_state(wait_for_discovery: bool = True) -> dict:

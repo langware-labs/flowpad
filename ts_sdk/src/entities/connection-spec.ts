@@ -36,6 +36,10 @@ export enum ConnectionState {
   Unknown = 'unknown',
   /** A harness whose CLI is not on this machine — reported, not hidden. */
   NotInstalled = 'not_installed',
+  /** A sign-in is in flight (a device login, a hub login). */
+  SigningIn = 'signing_in',
+  /** No login to have: a harness with no account of its own (it spends a key). */
+  NA = 'n_a',
 }
 
 export interface ConnectionSpec {

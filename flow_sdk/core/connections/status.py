@@ -17,13 +17,11 @@ detection logic; it only projects what they answer into one shape.
 
 Costs, since they are not uniform:
 
-* FlowPad — one file read (``login_block``), no keychain, no network.
-* Harness  — one ``Capability`` read per harness, and only for harnesses whose
-  CLI is actually installed. It does NOT probe: ``_device_source`` compares a
-  ``login_state`` it is handed, so a device row costs nothing. That field does
-  not survive a restart, which is why a fresh box reads UNKNOWN until someone
-  runs :func:`check_harness_logins` — a separate verb, because probing writes
-  and this list is read on paths a person is waiting on (``require()``).
+* FlowPad and harnesses — projections of the status record (``core.status``): one
+  ``Capability`` read per harness and the hub socket's own verdict, no probe and no
+  network. A harness nobody has probed reads UNKNOWN until :func:`check_harness_logins`
+  runs -- a separate verb, because probing writes and this list is read on paths a
+  person is waiting on (``require()``).
 * OAuth    — a hub fetch memoised for ten minutes, plus one user read.
 * Credentials — one ``.env.local`` listing and one git probe (three ``git``
   subprocesses) per scope root: the user's home always, the project's when one
@@ -35,6 +33,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Optional
 
+from flow_sdk.core.status.spec import HarnessStatusSpec, HubLogin, HubStatusSpec, InstallState, LoginState
 from flow_sdk.flowpad_types.vendors import vendor_or_none
 from flow_sdk.schema.data_spec.connection_spec import (
     FLOWPAD_ACCOUNT_PROVIDER,
@@ -42,113 +41,75 @@ from flow_sdk.schema.data_spec.connection_spec import (
     ConnectionSpec,
     ConnectionState,
 )
-from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.project import Project
 
 
-async def _flowpad_row() -> ConnectionSpec:
-    """This instance's own hub account."""
-    from flow_sdk.cloud_client.auth_state import login_block  # noqa: PLC0415
+#: The status record's login words, in the Connections vocabulary -- one table per
+#: vocabulary, so a new state is a KeyError here rather than a row that silently picks a word.
+_HARNESS_STATE: dict[LoginState, ConnectionState] = {
+    LoginState.SIGNED_IN: ConnectionState.CONNECTED,
+    LoginState.SIGNED_OUT: ConnectionState.DISCONNECTED,
+    LoginState.ERROR: ConnectionState.NEEDS_REAUTH,
+    LoginState.SIGNING_IN: ConnectionState.SIGNING_IN,
+    LoginState.NOT_CHECKED: ConnectionState.UNKNOWN,
+    LoginState.N_A: ConnectionState.N_A,
+}
 
-    block = login_block() or {}
-    user = block.get("user") or {}
-    logged_in = str(block.get("status") or "") == "logged_in"
+_HUB_STATE: dict[HubLogin, ConnectionState] = {
+    HubLogin.SIGNED_IN: ConnectionState.CONNECTED,
+    HubLogin.SIGNED_OUT: ConnectionState.DISCONNECTED,
+    HubLogin.REJECTED: ConnectionState.NEEDS_REAUTH,
+    HubLogin.SIGNING_IN: ConnectionState.SIGNING_IN,
+    #: A credential is stored but the hub has not confirmed it: not checked, not "out".
+    HubLogin.OFFLINE: ConnectionState.UNKNOWN,
+}
+
+
+def _flowpad_row(hub: HubStatusSpec) -> ConnectionSpec:
+    """This instance's own hub account, as the status record has it."""
+    state = _HUB_STATE[hub.login]
     return ConnectionSpec(
         provider=FLOWPAD_ACCOUNT_PROVIDER,
         display_name="FlowPad",
         kind=ConnectionKind.FLOWPAD,
         sign_in="oauth",
-        state=ConnectionState.CONNECTED if logged_in else ConnectionState.DISCONNECTED,
-        connected=logged_in,
-        identity=str(user.get("email") or "") if isinstance(user, dict) else "",
-        detail=str(block.get("reason") or ""),
+        state=state,
+        connected=state is ConnectionState.CONNECTED,
+        identity=hub.email,
+        detail=hub.error,
     )
 
 
-async def _harness_rows() -> list[ConnectionSpec]:
-    """One row per harness: NOT_INSTALLED when its CLI is missing, else its login verdict.
+def _harness_row(h: HarnessStatusSpec) -> ConnectionSpec:
+    """One harness, projected from its status record -- never from what funds it.
 
-    The DEVICE candidate specifically, not whichever source currently wins: this
-    row is about the harness's own login, which must still be reported on a box
-    where a stored API key outranks it.
-
-    An uninstalled harness is a row that says so -- not "Not checked" (the four vendors
-    used to ship that whether or not they were installed) and not absent (dropping the
-    row hid exactly the fact that explains why nothing funds it).
+    A missing CLI is NOT_INSTALLED, not "Not checked" (a login question about a CLI that is
+    not there) and not absent (which hid why nothing funds it).
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
-        device_candidate,
-    )
-
-    installed = set(_installed_harnesses())
-    order = _all_harnesses()
-    by_worker: dict[str, ConnectionSpec] = {w: _not_installed_row(w) for w in order if w not in installed}
-    workers = [w for w in order if w in installed]
-    # ONE capability read per harness: the verdict is derived from it and the
-    # account line is carried on it, and `device_candidate` would otherwise
-    # fetch the same row again a line later.
-    caps = await asyncio.gather(*(_harness_capability(w) for w in workers))
-    devices = await asyncio.gather(*(device_candidate(w, cap) for w, cap in zip(workers, caps)))
-    for worker, cap, device in zip(workers, caps, devices):
-        source = device.source if device else None
-        state = _harness_state(source)
-        vendor = vendor_or_none(worker)
-        by_worker[worker] = ConnectionSpec(
-            provider=worker,
-            display_name=vendor.label if vendor else worker.title(),
+    if h.install in (InstallState.NOT_INSTALLED, InstallState.UNKNOWN):
+        return ConnectionSpec(
+            provider=h.worker_type,
+            display_name=h.label,
             kind=ConnectionKind.HARNESS,
-            state=state,
-            connected=state is ConnectionState.CONNECTED,
-            identity=str(getattr(cap, "login_identity", "") or ""),
-            account=_account_for(worker, cap, state),
-            sign_in=_sign_in_for(worker),
-            # The resolver owns this sentence. Passed through untouched — it is
-            # the only side that knows whether a probe ran and what it saw.
-            detail=(source.reason or source.detail) if source else "",
+            state=ConnectionState.NOT_INSTALLED,
+            connected=False,
+            sign_in="device" if h.has_device_login else "api_key",
+            detail=f"{h.label} is not installed on this machine",
         )
-    return [by_worker[w] for w in order]
-
-
-def _all_harnesses() -> list[str]:
-    """Every harness a Connections row exists for, in display order."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
-        HUB_ENDPOINT_HARNESSES,
-    )
-
-    return list(HUB_ENDPOINT_HARNESSES)
-
-
-def _not_installed_row(worker: str) -> ConnectionSpec:
-    vendor = vendor_or_none(worker)
-    label = vendor.label if vendor else worker.title()
+    state = _HARNESS_STATE[h.login]
     return ConnectionSpec(
-        provider=worker,
-        display_name=label,
+        provider=h.worker_type,
+        display_name=h.label,
         kind=ConnectionKind.HARNESS,
-        state=ConnectionState.NOT_INSTALLED,
-        connected=False,
-        sign_in=_sign_in_for(worker),
-        detail=f"{label} is not installed on this machine",
+        state=state,
+        connected=state is ConnectionState.CONNECTED,
+        identity=h.account.identity,
+        account=_account_for(h),
+        sign_in="device" if h.has_device_login else "api_key",
+        detail=h.login_message,
     )
-
-
-def _installed_harnesses() -> list[str]:
-    """The harnesses whose CLI is on this machine, in display order.
-
-    Disk-verified through ``worker_executable``, the same resolution a spawn and
-    the auth probe use — not "discovery once saw it", so a CLI uninstalled after
-    discovery stops being a row instead of reporting a login it cannot have.
-    """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
-        worker_executable,
-    )
-    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (  # noqa: PLC0415
-        HUB_ENDPOINT_HARNESSES,
-    )
-
-    return [w for w in HUB_ENDPOINT_HARNESSES if worker_executable(w) is not None]
 
 
 async def check_harness_logins(*, force: bool = False) -> dict[str, str]:
@@ -177,7 +138,13 @@ async def check_harness_logins(*, force: bool = False) -> dict[str, str]:
         await cap.refresh_login_state()
         return worker, str(getattr(cap.login_state, "value", cap.login_state) or "")
 
-    checked = await asyncio.gather(*(one(w) for w in _installed_harnesses()), return_exceptions=True)
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        worker_is_installed,
+    )
+    from flow_sdk.flowpad_types.vendors import VENDORS  # noqa: PLC0415
+
+    installed = [v.key for v in VENDORS if worker_is_installed(v.key)]
+    checked = await asyncio.gather(*(one(w) for w in installed), return_exceptions=True)
     return {result[0]: result[1] for result in checked if isinstance(result, tuple)}
 
 
@@ -191,58 +158,23 @@ async def _harness_capability(worker: str):
     return await Capability.get_by_kind(worker_capability_kind(worker))
 
 
-def _account_for(worker: str, cap, state: ConnectionState) -> str:
-    """WHAT KIND of account is signed in — the vendor's own words where it says.
+def _account_for(h: HarnessStatusSpec) -> str:
+    """WHAT KIND of account is signed in -- the vendor's own words where it says.
 
-    Only claude reports a plan today; the rest answer signed-in/out and nothing
-    more, so they get the vendor's noun and no invented tier. Nothing is claimed
-    for a harness that is not signed in: an account line under "Not checked"
-    would assert the thing the status just declined to.
+    Only claude reports a plan today; the rest get the vendor's noun and no invented tier.
+    Nothing is claimed for a harness that is not signed in.
     """
-    if state is not ConnectionState.CONNECTED:
+    if h.login is not LoginState.SIGNED_IN:
         return ""
-    vendor = vendor_or_none(worker)
+    vendor = vendor_or_none(h.worker_type)
     noun = vendor.account_noun if vendor else ""
-    plan = str(getattr(cap, "login_plan", "") or "").strip()
+    plan = h.account.plan.strip()
     if not plan:
         return noun
     # "max" -> "Max". Capitalised and otherwise untouched: a tier name of our own
     # would be a claim about someone's billing.
     plan = f"{plan[:1].upper()}{plan[1:]}"
     return f"{noun} · {plan}" if noun else plan
-
-
-def _sign_in_for(worker: str) -> str:
-    """A harness's own login is a device login — unless it has no account of its
-    own and is funded only by a key or an endpoint (``has_device_login``)."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (  # noqa: PLC0415
-        driver_api_auth_spec,
-    )
-
-    spec = driver_api_auth_spec(worker)
-    return "device" if spec is None or spec.has_device_login else "api_key"
-
-
-def _harness_state(source) -> ConnectionState:
-    """Only assert a sign-out when a probe actually said so.
-
-    ``login_state`` is not persisted, so its absence means "nobody has asked" —
-    reporting that as DISCONNECTED would tell a signed-in user they are signed
-    out on every restart.
-    """
-    if source is None:
-        return ConnectionState.UNKNOWN
-    if not source.eligible:
-        return ConnectionState.DISCONNECTED
-    # PRESUMED is the only authority that means "nobody asked". CACHED and PROVEN
-    # are both answers -- PROVEN is the STRONGEST one the resolver can issue, and
-    # reading it as unknown is the precise bug the browser ladder had before this
-    # fold moved here. Written as "only presumed is unknown" rather than a list of
-    # the good ones, so a new authority reads as an answer instead of silently
-    # joining the not-checked pile.
-    if str(source.authority) == str(LLMSourceAuthority.PRESUMED):
-        return ConnectionState.UNKNOWN
-    return ConnectionState.CONNECTED
 
 
 async def _credential_rows(project: Optional["Project"]) -> list[ConnectionSpec]:
@@ -293,13 +225,14 @@ async def list_connections(
 
     # The four resolvers share no data, so they run together; the order of the
     # result is the order the screen shows.
-    flowpad, harnesses, oauth, credentials = await asyncio.gather(
-        _flowpad_row(),
-        _harness_rows(),
+    from flow_sdk.core.status import build_status  # noqa: PLC0415
+
+    status, oauth, credentials = await asyncio.gather(
+        build_status(),
         _list_connection_specs_local(),
         _credential_rows(project),
     )
-    rows: list[ConnectionSpec] = [flowpad, *harnesses]
+    rows: list[ConnectionSpec] = [_flowpad_row(status.hub), *(_harness_row(h) for h in status.harnesses)]
     # Held only by default: the table lists what exists, and an unconnected provider
     # belongs in the Add dialog. The catalogue itself stays complete for the connect flow.
     rows.extend(spec for spec in oauth if include_unconnected or spec.connected)

@@ -1108,9 +1108,11 @@ class AgenticProcess(Entity):
         no longer waits on a discovery sweep: resolution falls back to PATH on
         its own, which is why this is immediate.
         """
-        from flow_sdk.builtin.agentic_process.cli_drivers import worker_bin_folder  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+            worker_is_installed,
+        )
 
-        return worker_bin_folder(get_driver(worker_type).name) is not None
+        return worker_is_installed(get_driver(worker_type).name)
 
     @classmethod
     async def is_logged_in(cls, worker_type: "WorkerType | str | None" = None) -> "WorkerAuthResult":

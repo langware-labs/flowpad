@@ -21,6 +21,7 @@ from flow_sdk.core.capabilities import (
     get_capability_registry,
     get_default_capability_specs,
 )
+from flow_sdk.core.capabilities.models import now_iso
 from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -102,6 +103,11 @@ class Capability(Entity):
     # (``discovery._resolve_login_states``), because the spawn resolver reads it
     # back off a freshly-loaded row and would otherwise never see the verdict.
     login_state: DeviceLoginState | None = APIField(default=None, persist=Persist.FALSE)
+    # When a probe established the current ``login_state`` (ISO-8601), or None if none ever has.
+    # ``Persist.FALSE`` is DB-only, NOT in-memory-only, so the verdict and this stamp both
+    # survive a restart; "not checked" therefore means never probed on this database, and
+    # the status layer reports the age of a verdict instead of presuming one.
+    login_checked_at: str | None = APIField(default=None, persist=Persist.FALSE)
     login_url: str | None = APIField(default=None, persist=Persist.FALSE)
     login_code: str | None = APIField(default=None, persist=Persist.FALSE)
     login_accepts_code: bool | None = APIField(default=None, persist=Persist.FALSE)
@@ -383,6 +389,13 @@ class Capability(Entity):
         self.login_accepts_code = accepts_code
         self.login_message = message
 
+    async def notify_updated(self):
+        """Publish the row, and signal that a status fact (install, login, account) changed."""
+        await super().notify_updated()
+        from flow_sdk.core.status.push import publish_status_changed  # noqa: PLC0415
+
+        publish_status_changed()
+
     async def _adopt_completed_login(self) -> None:
         """A finished device login is also a CHOICE to fund this harness with it.
 
@@ -500,6 +513,7 @@ class Capability(Entity):
             await session.acancel()
         self._set_login_fields(state=None)
         await self.notify_updated()
+        await self.save(notify=False)
         return ApiSuccessResponse(data={"cancelled": session is not None})
 
     @action.post(action_name="report-signed-out")
@@ -532,7 +546,13 @@ class Capability(Entity):
         self.login_state = DeviceLoginState.IDLE
         self.login_denied = True
         self.login_message = message.strip() or f"{self.kind} reported that it is not logged in."
+        self.login_identity = ""
+        self.login_plan = ""
+        self.login_checked_at = now_iso()
         await self.notify_updated()
+        # Saved, not just broadcast: the funding resolver reads a FRESH row, so an unsaved
+        # denial never reached it and the harness kept funding turns it had just refused.
+        await self.save(notify=False)
         return ApiSuccessResponse(data={"recorded": True})
 
     async def refresh_login_state(self):
@@ -553,24 +573,8 @@ class Capability(Entity):
         if worker_type is None:
             return None
         result = await get_driver(worker_type).auth_probe()
-        before = self.login_state
+        # The mirror saves whatever it changes -- see its docstring.
         await self._mirror_probe_to_login_state(result)
-        if self.login_state != before:
-            # SAVE, or the verdict dies with this row object. ``Persist.FALSE`` means DB-only
-            # (never mirrored into metadata.json) -- NOT in-memory-only -- and
-            # ``notify_updated`` only publishes a frame. The resolver reads this field through
-            # its own ``Capability.get_by_kind`` in ``llm_source._inventory``, a DIFFERENT
-            # instance, which without this still sees the state we just disproved.
-            #
-            # That is what let a harness the user had signed OUT of outside Flowpad keep
-            # reporting "signed in" on the LLM sources page: arriving there probes, the probe
-            # correctly said logged out, and the answer was thrown away every time. The row
-            # then showed a failed test and "signed in" beneath it, disagreeing with itself.
-            #
-            # ``discovery._resolve_login_states`` carries this same save because it calls the
-            # mirror directly; here it belongs to the one method every ON-DEMAND probe goes
-            # through, so a caller cannot forget it.
-            await self.save(notify=False)
         return result
 
     async def _mirror_probe_to_login_state(self, result) -> None:
@@ -590,6 +594,12 @@ class Capability(Entity):
         it moves the field in neither direction — it does not assert a sign-out
         and does not clear a real one. The caller still receives the full
         result, so the modal can say what actually happened.
+
+        The ONE writer of a probe verdict, and it SAVES what it changes. ``Persist.FALSE``
+        is DB-only, not in-memory-only, and every reader (the funding resolver, the
+        status layer) loads a fresh row: a verdict that was only broadcast died with
+        this object, which is how a harness signed out outside Flowpad kept reading
+        "signed in". Saving here means no caller can forget it.
         """
         import logging
 
@@ -632,17 +642,25 @@ class Capability(Entity):
         plan = result.plan if new_state is DeviceLoginState.AUTHENTICATED else ""
         # Only broadcast when the mirror actually changes (a no-op probe
         # shouldn't emit a WS frame).
-        if (
+        changed = (
             new_state != self.login_state
-            or result.message != self.login_message
+            or (result.message or "") != (self.login_message or "")
             or identity != (self.login_identity or "")
             or plan != (self.login_plan or "")
-        ):
-            self.login_state = new_state
-            self.login_message = result.message
-            self.login_identity = identity
-            self.login_plan = plan
-            await self.notify_updated()
+            or self.login_checked_at is None
+        )
+        if not changed:
+            # A probe that confirms what we already knew is not a reason to write: this runs
+            # on every startup sweep, and a write per harness per boot is no news at all.
+            return
+        self.login_state = new_state
+        self.login_message = result.message
+        self.login_identity = identity
+        self.login_plan = plan
+        # When the CURRENT verdict was established -- not refreshed by a re-confirmation.
+        self.login_checked_at = now_iso()
+        await self.notify_updated()
+        await self.save(notify=False)
 
     @action.get(action_name="auth-status")
     async def auth_status_action(self, force: bool = False) -> ApiSuccessResponse | ApiFailResponse:

@@ -1232,8 +1232,14 @@ def worker_bin_folder(worker_type: str) -> str | None:
 
 
 def worker_is_installed(worker_type: str) -> bool:
-    """Is this worker's harness installed — the sync form of the one install gate."""
-    return worker_bin_folder(worker_type) is not None
+    """THE install predicate: this worker's CLI exists on disk in its discovered folder.
+
+    Disk-verified (``worker_executable``), not "discovery once recorded a folder": a CLI
+    removed after the sweep must read as absent everywhere at once -- the spawn gate, the
+    status record (``core.status.harness_install``) and funding -- instead of the folder
+    check saying yes while the probe says ``NOT_INSTALLED``.
+    """
+    return worker_executable(worker_type) is not None
 
 
 def worker_path_env(worker_type: str) -> dict[str, str] | None:

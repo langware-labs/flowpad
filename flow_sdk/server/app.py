@@ -718,7 +718,12 @@ async def _start_cloud_ws_listener() -> None:
             # Install the bridge before starting the manager so the inbound
             # dispatcher is ready to consume frames the moment the WS connects.
             hub_ws_bridge.install()
-            await hub_ws_manager.start()
+            await hub_ws_manager.start(wait_connected=True)
+            # The hub's own answer to "who am I" is what makes this box signed in to FlowPad
+            # (``core.status.hub_status``): a stored credential is only a claim until the hub
+            # names the same user. Asked once here, at boot, rather than on a UI's request.
+            if hub_ws_manager.is_connected:
+                await hub_ws_manager.verify_current_user()
         except Exception as e:
             logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
 

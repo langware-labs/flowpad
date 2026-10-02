@@ -596,6 +596,10 @@ async def test_compute_harness_state_reports_default_and_installed(monkeypatch):
     )
     monkeypatch.setattr(runner, "_resolve_reference_kind", fake_reference)
     _seed_cli_value(CapabilityKind.CODEX_CLI.value, "/bin")
+    # A swept "looked, absent" -- authoritative, so the PATH fallback never runs for claude.
+    set_capability_value(
+        CapabilityValue(kind=CapabilityKind.CLAUDE_CLI.value, value=None, value_spec=DataSpec.parse("fs_ref"))
+    )
 
     state = await harness_state_mod.compute_harness_state()
 

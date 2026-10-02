@@ -25,6 +25,8 @@ export const STATE_VISUAL: Record<ConnectionState, { text: MessageDescriptor; do
   [ConnectionState.NeedsReauth]: { text: msg`Reconnect needed`, dot: 'bg-red-500' },
   [ConnectionState.Unknown]: { text: msg`Not checked`, dot: 'bg-muted-foreground/40' },
   [ConnectionState.NotInstalled]: { text: msg`Not installed`, dot: 'bg-muted-foreground/40' },
+  [ConnectionState.SigningIn]: { text: msg`Signing in…`, dot: 'bg-sky-400' },
+  [ConnectionState.NA]: { text: msg`Uses a key`, dot: 'bg-muted-foreground/40' },
 };
 
 /**
