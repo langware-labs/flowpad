@@ -78,11 +78,13 @@ export function useChannelAttribution() {
       if (channelSpec && !channelSpec.chip) return null;
       if (!origin?.kind) return null;
       const kind = origin.kind.trim().toLowerCase();
-      // The spec's own title when one is installed ("Help desk", not
-      // "Helpdesk"); `humanizeType` only for a channel nothing names.
-      const label = specFor(kind)?.title || channelLabel(kind);
-
       const source = sourceForOrigin(sources, origin, originLocal);
+      // Source first, like the icon: the driver that delivered the row names it
+      // ("Agent Email" — cloud_email stamps the generic `email` kind, which no
+      // spec names). Then the kind's own spec ("Help desk", not "Helpdesk");
+      // `humanizeType` only for a channel nothing names.
+      const label =
+        (source ? specFor(source.provider)?.title : undefined) || specFor(kind)?.title || channelLabel(kind);
       const name =
         sourceIconName(source ? specFor(source.provider) : undefined, kind) || sourceIconName(specFor(kind), kind);
       return { icon: name ? lucideByName(name) : MessageSquare, label };
