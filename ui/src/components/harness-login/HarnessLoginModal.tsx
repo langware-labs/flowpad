@@ -411,11 +411,9 @@ const STATUS_TEXT: Record<Status, { label: MessageDescriptor; dot: string; tone:
     dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
     tone: 'text-amber-500',
   },
-  // NOT "Not installed". This list answers "what pays for your LLM calls", and whether a
-  // vendor's CLI happens to be on this machine is a different question the user did not ask
-  // here — it made four of five rows report a fact about the filesystem instead of about
-  // funding. Install trouble surfaces in the row's own panel, where it is actionable.
-  unavailable: { label: msg`Not signed in`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
+  // A CLI that is not installed funds nothing, so it IS the funding answer — calling it
+  // "Not signed in" hid the one fact that explains why the row cannot pay.
+  unavailable: { label: msg`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
 };
 
 /** A status's visuals with its label resolved in the ACTIVE locale. */

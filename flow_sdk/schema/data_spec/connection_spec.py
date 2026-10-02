@@ -59,6 +59,9 @@ class ConnectionState(StrEnum):
     DISCONNECTED = "disconnected"
     NEEDS_REAUTH = "needs_reauth"
     UNKNOWN = "unknown"
+    # A harness whose CLI is not on this machine. Reported, not hidden: a missing CLI is
+    # the answer to "why does nothing fund this harness", and dropping the row hid it.
+    NOT_INSTALLED = "not_installed"
 
 
 class ConnectionSpec(DataSpec):

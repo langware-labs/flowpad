@@ -34,6 +34,8 @@ export enum ConnectionState {
   Disconnected = 'disconnected',
   NeedsReauth = 'needs_reauth',
   Unknown = 'unknown',
+  /** A harness whose CLI is not on this machine — reported, not hidden. */
+  NotInstalled = 'not_installed',
 }
 
 export interface ConnectionSpec {

@@ -173,7 +173,7 @@ class LLMSourceError(Exception):
 # ── inventory ────────────────────────────────────────────────────────────────────
 
 
-def _device_source(worker_type: str, login_state, wallet_available: bool) -> Candidate:
+def _device_source(worker_type: str, login_state, wallet_available: bool, *, installed: bool) -> Candidate:
     """The vendor device login for *worker_type*, and what we actually know about it.
 
     ``wallet_available`` is "there is a hub endpoint this box can SPEND", not "a hub
@@ -184,11 +184,11 @@ def _device_source(worker_type: str, login_state, wallet_available: bool) -> Can
     "Could not resolve authentication method" with the budget untouched, which is what a
     fresh desktop install with a granted budget and no vendor login used to do.
 
-    Deliberately says nothing about whether the CLI is INSTALLED. That is a different
-    question with an owner already: ``build_worker_spawn_env`` refuses a missing binary
-    with ``no_worker_message``, which distinguishes "codex is not installed" from
-    "nothing is installed". Answering it here too would only mean an uninstalled harness
-    failed earlier, in a different place, with a worse sentence.
+    A device login for a CLI that is not on this machine funds nothing, so an uninstalled
+    harness is ineligible before its login is even read. The boot sweep only probes
+    INSTALLED CLIs, so an uninstalled harness keeps ``login_state=None`` forever -- and
+    reading that as "nobody has asked, presume it works" made every missing vendor CLI the
+    active funding source on a box with nothing installed.
     """
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint  # noqa: PLC0415
 
@@ -202,6 +202,18 @@ def _device_source(worker_type: str, login_state, wallet_available: bool) -> Can
     # harness the probe had positively called SIGNED OUT eligible, and picking it hands the
     # turn to a vendor login picker and hangs it.
     state = getattr(login_state, "value", login_state) or ""
+    if not installed:
+        return Candidate(
+            endpoint,
+            LLMSource(
+                endpoint_typeid=typeid,
+                name=name,
+                rank=_RANK_DEVICE,
+                eligible=False,
+                reason=f"{worker_type} is not installed",
+                authority=LLMSourceAuthority.PROVEN,
+            ),
+        )
     if state == "authenticated":
         return Candidate(
             endpoint,
@@ -365,7 +377,10 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
     endpoint listing is read from the memo (``cached_only``), because this runs in the spawn
     path. Secret NAMES are listed rather than read, so nothing here decrypts the store.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        worker_capability_kind,
+        worker_executable,
+    )
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint
     from flow_sdk.cli.auth.secrets import get_secrets
@@ -403,7 +418,14 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
 
     # A harness with no account of its own has no device rung to rank (``has_device_login``).
     candidates = (
-        [_device_source(worker_type, getattr(cap, "login_state", None), spendable_wallet)]
+        [
+            _device_source(
+                worker_type,
+                getattr(cap, "login_state", None),
+                spendable_wallet,
+                installed=worker_executable(worker_type) is not None,
+            )
+        ]
         if spec.has_device_login
         else []
     )
@@ -424,7 +446,10 @@ async def device_candidate(worker_type: str, cap=None) -> Candidate | None:
     row this reads is the only thing it needs, and a caller that has just read it
     (to show the account it carries) should not pay for the same read twice.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        worker_capability_kind,
+        worker_executable,
+    )
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.instance_settings.llm_endpoint import get_hub_llm_endpoint
 
@@ -433,7 +458,12 @@ async def device_candidate(worker_type: str, cap=None) -> Candidate | None:
         return None
     if cap is None:
         cap = await Capability.get_by_kind(worker_capability_kind(worker_type))
-    return _device_source(worker_type, getattr(cap, "login_state", None), get_hub_llm_endpoint() is not None)
+    return _device_source(
+        worker_type,
+        getattr(cap, "login_state", None),
+        get_hub_llm_endpoint() is not None,
+        installed=worker_executable(worker_type) is not None,
+    )
 
 
 # ── overlay ──────────────────────────────────────────────────────────────────────
