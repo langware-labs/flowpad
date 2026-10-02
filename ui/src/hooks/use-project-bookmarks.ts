@@ -1,7 +1,7 @@
 import { Bookmark, QueryRequest } from '@sdk';
 import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
 import { isHubOnly } from '@src/navigation/hub-runtime';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
  * Hook to fetch all bookmarks visible to the current user.
@@ -18,9 +18,6 @@ export function useProjectBookmarks() {
   const { project } = useProject();
   const projectTypeId = project?.typeId;
 
-  // Optimistic exclusion: IDs hidden from the returned data until next refetch completes
-  const [excludeIds, setExcludeIds] = useState<Set<string>>(new Set());
-
   const queryRequest = new QueryRequest({
     type: 'bookmark',
     scope: [],
@@ -31,27 +28,12 @@ export function useProjectBookmarks() {
     data: bookmarks = [],
     isLoading,
     error,
-    refetch: rawRefetch,
+    refetch,
   } = useEntitiesQuery<Bookmark>(queryRequest, {
     // Hub mode: the hub backend has no `bookmark` entity (graph/bookmark 422s);
     // skip the fetch and fall back to an empty list.
     enabled: !!projectTypeId && !isHubOnly(),
   });
-
-  // Wrap refetch to clear exclusions after it completes
-  const refetch = useCallback(async () => {
-    await rawRefetch();
-    setExcludeIds(new Set());
-  }, [rawRefetch]);
-
-  // Optimistically hide bookmarks by ID (cleared on next refetch)
-  const excludeBookmarks = useCallback((ids: string[]) => {
-    setExcludeIds((prev) => {
-      const next = new Set(prev);
-      for (const id of ids) next.add(id);
-      return next;
-    });
-  }, []);
 
   // Sort bookmarks by created_date descending (immutable — no in-place mutation)
   const sortedBookmarks = [...bookmarks].sort((a, b) => {
@@ -80,17 +62,11 @@ export function useProjectBookmarks() {
     }
   }, [sortedBookmarks]);
 
-  // Apply optimistic exclusion filter
-  const filteredBookmarks = excludeIds.size > 0
-    ? sortedBookmarks.filter((m) => !m.id || !excludeIds.has(m.id))
-    : sortedBookmarks;
-
   return {
-    data: filteredBookmarks,
+    data: sortedBookmarks,
     isLoading,
     error,
     refetch,
-    excludeBookmarks,
     projectTypeId,
   };
 }

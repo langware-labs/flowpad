@@ -1,4 +1,4 @@
-"""0.2.152 — the new auto-bookmark repair, plus every migration that never ran.
+"""0.2.152 — every migration that never ran (its auto-bookmark repair is retired).
 
 TWO jobs, and the second one is the bigger surprise.
 
@@ -82,9 +82,6 @@ CATCH_UP_ON_START = False
 
 
 def run() -> dict[str, int]:
-    # The auto-bookmark dedupe this version shipped with is gone: the feature was
-    # removed and 0.2.185 deletes every auto row, so there is nothing left to
-    # collapse. Only the (disabled) catch-up switch remains.
     failed = 0
     if CATCH_UP_ON_START:
         failed = _catch_up()

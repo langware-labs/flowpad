@@ -93,4 +93,4 @@ def test_second_run_is_a_no_op(tmp_path):
     mig.migrate(dry_run=False, db=db)
     report = mig.migrate(dry_run=False, db=db)
     assert report.doomed == []
-    assert report.lines() == ["bookmarks: no auto or typeless rows left."]
+    assert report.summary() == "bookmarks: no auto or typeless rows left."
