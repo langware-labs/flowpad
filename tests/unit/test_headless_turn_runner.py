@@ -112,6 +112,45 @@ async def test_the_runner_owns_the_slot_for_the_whole_turn():
         _cleanup(process.id)
 
 
+@pytest.mark.asyncio
+async def test_a_turn_nothing_can_fund_ends_the_process_failed():
+    """A driver's funding refusal runs as the turn's failure: the chat hears it, the process
+    latches FAILED, the worker never starts, and the slot is released like any turn's."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+    calls: list[str] = []
+    emitted: list[dict] = []
+    process = _FakeProcess(calls)
+    process.emit_flow_data = lambda payload: _record(emitted, payload)  # type: ignore[method-assign]
+    started: list[bool] = []
+
+    class _NeverWorker(_FakeWorker):
+        async def execute(self, *, prompt, context):  # noqa: ARG002
+            started.append(True)
+            return
+            yield  # pragma: no cover
+
+    try:
+        await _run(process, _NeverWorker(), setup_error=WorkerSpawnError("fakevendor", "no usable LLM source"))
+        for _ in range(20):
+            if "end_headless_turn" in calls:
+                break
+            await asyncio.sleep(0)
+
+        assert started == []
+        assert process.status == ProcessStatus.FAILED.value
+        assert "no usable LLM source" in (process.start_failure or "")
+        assert any("no usable LLM source" in str(fd.get("flow_value", "")) for fd in emitted)
+        assert ap_mod.prompt_worker_active(process.id) is False
+    finally:
+        _cleanup(process.id)
+
+
+async def _record(into: list[dict], payload: dict) -> None:
+    into.append(payload)
+
+
 @pytest.mark.parametrize("vendor", _VENDORS)
 def test_every_driver_delegates_and_keeps_its_own_logger(vendor):
     source = _headless_prompt_source(vendor)
@@ -121,6 +160,8 @@ def test_every_driver_delegates_and_keeps_its_own_logger(vendor):
     assert "logger=logger" in source, f"{vendor} would emit under the shared module's name"
     # The slot protocol now lives in exactly one place.
     assert "unregister_prompt_worker" not in source, f"{vendor} still owns slot teardown"
+    # A turn nothing can fund still runs as a failure, so the process latches FAILED.
+    assert "setup_error=setup_error" in source, f"{vendor} would raise its funding refusal out of the call"
 
 
 # ── the divergences, pinned ─────────────────────────────────────────────────
