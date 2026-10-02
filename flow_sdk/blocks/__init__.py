@@ -525,6 +525,7 @@ class StreamInbox:
         """
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+        from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
         from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
 
@@ -550,18 +551,24 @@ class StreamInbox:
                     if not rows:
                         break
                     handed: list[Delivered] = []
+                    # A page is a storm when it holds more than the ingest lane would announce in a
+                    # minute — the reconcile sweep's own rule (``reconcile_source``), for the same reason.
+                    storm = len(rows) > STORM_CAP_PER_MINUTE
                     for item in rows:
                         key = key_of(item)
                         last_seen = key
                         redelivered = in_flight_at_start is not None and key <= in_flight_at_start
                         # Place it in its conversation regardless of the filters below — the
                         # stream inbox UI shows everything; the LOOP only acts on what passes.
-                        # Placed silently (an import's storm must not wake a turn per item) — except
-                        # our OWN outgoing copy: nothing answers it, and whoever watches the
-                        # conversation is waiting to see the reply land.
+                        # The placement is ANNOUNCED (once, on first placement): when this drain runs in a
+                        # deployment's own process it is the only thing that places these messages — the
+                        # app polls none of its channels — and the announcement, relayed to the app
+                        # (``tags/relay``), is how anyone watching learns a message arrived. Silent only
+                        # in a storm (an import must not put a frame per item on every client) — except
+                        # our OWN outgoing copy: whoever watches the conversation waits to see the reply.
                         own = item.is_ours(source)
                         try:
-                            await project_source_item(item, source=source, announce=own)
+                            await project_source_item(item, source=source, announce=own or not storm)
                         except Exception:  # noqa: BLE001 — projection trouble must not kill the loop
                             logger.exception("blocks: projection failed for %s", item.id)
                         sender = str(item.author_external_id or "").strip().lower()

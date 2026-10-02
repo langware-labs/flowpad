@@ -163,12 +163,15 @@ async def relay_tag(request: Request):
     A local agent deployment runs in its own process with its own bus; the app is the only
     process with clients. Only tags the app forwards anyway are taken.
     """
-    from flow_sdk.tags.relay import emit_relayed  # noqa: PLC0415
+    from flow_sdk.tags.relay import announce_relayed_writes, emit_relayed  # noqa: PLC0415
 
+    envelope = await request.json()
     try:
-        emit_relayed(await request.json())
+        emit_relayed(envelope)
     except ValueError as exc:
         from fastapi.responses import JSONResponse  # noqa: PLC0415
 
         return JSONResponse(ApiFailResponse(message=str(exc), status_code=400).model_dump(mode="json"), status_code=400)
+    # The rows the other process wrote reach the app's clients too, not only the tag.
+    await announce_relayed_writes(envelope)
     return ApiSuccessResponse(data={"relayed": True})
