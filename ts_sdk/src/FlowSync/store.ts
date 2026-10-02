@@ -804,13 +804,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           .then((results) => this.watchedQueries.updateQueryResults(request, results))
           .catch(() => undefined),
       ),
-      ...typeIds.map((typeId) =>
-        this.refreshByTypeId(typeId)
-          .then((entity) => {
-            if (entity) this._notifyAllAliases(typeId, entity, entity);
-          })
-          .catch(() => undefined),
-      ),
+      // refreshByTypeId notifies the entity's subscribers itself.
+      ...typeIds.map((typeId) => this.refreshByTypeId(typeId).catch(() => undefined)),
     ]);
   }
 
@@ -1355,13 +1350,25 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return ref.entity as U | null;
   }
 
-  public async refreshByTypeId(typeId: TypeId): Promise<T | null> {
+  /**
+   * Re-read an entity from the backend, whatever the cache holds — the cache-first
+   * `getByTypeId` answers a saved entry from memory, so it can never see a write that
+   * reached this client without an entity op (one another process of the instance made:
+   * a local agent deployment saves straight to the database, where no socket of the app
+   * announces it). The cached object is merged in place and its subscribers notified.
+   * `requiredExpansions` joins the expansions the cached entry already carries, so a
+   * refresh never strips what a consumer expanded.
+   */
+  public async refreshByTypeId(typeId: TypeId, requiredExpansions?: ExpansionRequest): Promise<T | null> {
     const ref = this.getRef(typeId);
     if (ref.status === EntityStatus.FETCHING) {
       return await this.waitForTypeId(typeId);
     }
     try {
-      return await this.fetchByTypeId(typeId);
+      const expansions = this.mergeExpansionsWithQuery(ref.entity?.expand?.expansions ?? undefined, requiredExpansions);
+      const entity = await this.fetchByTypeId(typeId, expansions ?? null);
+      if (entity) this._notifyAllAliases(typeId, entity, entity);
+      return entity;
     } catch (error) {
       console.error(`Error refreshing entity by type ID: ${typeId.toString()}`, error);
       ref.status = EntityStatus.ERROR;
