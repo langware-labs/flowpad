@@ -1464,9 +1464,17 @@ export function HarnessLoginModalRoot() {
   // can see it landed before deciding whether they are done here or have more to connect.
   // `null` outside the banner's own moment; string is what it says.
   const [justConnected, setJustConnected] = useState<string | null>(null);
-  const [defaultKind, setDefaultKind] = useState<string | null>(
-    () => capabilityManager.getSnapshot('harness').resolvedKind ?? null,
-  );
+  // Which assistant is the default is a status fact (`default_harness`); `picked` only holds a
+  // choice made here until the backend's push carries it into the record. The capability
+  // snapshot's `resolvedKind` was read before: it is null whenever the default is not installed,
+  // so a bare box showed no tick at all.
+  const { status: record } = useStatusRecord();
+  const [picked, setPicked] = useState<string | null>(null);
+  const defaultKind = picked ?? (record?.default_harness || null);
+  // Once the record says it too, the record is the answer again.
+  useEffect(() => {
+    if (picked && record?.default_harness === picked) setPicked(null);
+  }, [picked, record?.default_harness]);
   // The configured LLM keys — fetched once here and shared by the keys section
   // (base layer) and every harness (consumer), so the whole modal agrees.
   const [keys, setKeys] = useState<LmApiKeySummary[]>([]);
@@ -1481,22 +1489,17 @@ export function HarnessLoginModalRoot() {
 
   /**
    * Make one assistant the default — what the "Default assistant" dropdown used to do, moved
-   * onto the row it describes. Optimistic, and reverted from the manager's own snapshot on
-   * failure: the tick is the only feedback, so it must not claim a change that did not land.
+   * onto the row it describes. Optimistic, and back to the record's default on failure: the
+   * tick is the only feedback, so it must not claim a change that did not land.
    */
-  const makeDefault = useCallback(
-    async (kind: string) => {
-      const previous = defaultKind;
-      setDefaultKind(kind);
-      try {
-        await capabilityManager.setReferenceKind(CapabilityKinds.Harness, kind);
-        setDefaultKind(capabilityManager.getSnapshot(CapabilityKinds.Harness).resolvedKind ?? kind);
-      } catch {
-        setDefaultKind(previous);
-      }
-    },
-    [defaultKind],
-  );
+  const makeDefault = useCallback(async (kind: string) => {
+    setPicked(kind);
+    try {
+      await capabilityManager.setReferenceKind(CapabilityKinds.Harness, kind);
+    } catch {
+      setPicked(null);
+    }
+  }, []);
 
   // Reset + refresh keys on a REAL re-open — the closed→open transition, not every render
   // while open. Reset means "back to the list" UNLESS the opener named a harness (the LLM

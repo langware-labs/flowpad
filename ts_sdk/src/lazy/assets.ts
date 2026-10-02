@@ -22,7 +22,13 @@ async function onStatusChanged(asset: LazyAsset): Promise<() => void> {
     void lazyAssets.invalidate(asset);
   };
   connectionManager.on('on_status_changed_msg', handler);
-  return () => connectionManager.off('on_status_changed_msg', handler);
+  // A reconnect is a missed-push window: the backend may have restarted (a fresh boot sweep, its
+  // own push sent before this socket was back) or changed while the socket was down.
+  connectionManager.on('on_reconnected', handler);
+  return () => {
+    connectionManager.off('on_status_changed_msg', handler);
+    connectionManager.off('on_reconnected', handler);
+  };
 }
 import { LazyAsset } from './LazyAsset';
 

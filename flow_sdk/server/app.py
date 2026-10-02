@@ -184,6 +184,11 @@ async def _on_server_startup():
 
             await ensure_secret_recovery()
             await run_discovery()
+            # The sweep is what fills the status record (installed, login); a page already open
+            # read it before the sweep landed, so say it changed.
+            from flow_sdk.core.status import publish_status_changed
+
+            publish_status_changed()
 
         _asyncio_disc.create_task(_discover_after_recovery(), name="capability-discovery")
         # Mint MCP-server capabilities (<service>.mcp.<worker_type>) from the
