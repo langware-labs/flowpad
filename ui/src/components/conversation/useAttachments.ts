@@ -8,11 +8,13 @@ import {
   type Attachment,
   type AttachmentReference,
 } from '@sdk/entities/flow-message';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { AttachmentChipState } from './AttachmentChip';
 import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-actions/prompt-attachment';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
+import { REPLY_MARKER_TYPE } from './attachment-plumbing';
 
 /** TYPE_ID attachment types the send path injects as structural self-refs —
  *  every message auto-carries ``conversation-<id>`` + ``flow_message-<id>``
@@ -27,8 +29,12 @@ import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
  *  chip at all and ``useAttachedParentTaskIds`` becomes dead code.
  *
  *  Not to be confused with the backend's ``_NON_MATERIALIZING_TYPE_IDS``, which
- *  does list ``task`` — that gates body-download bookkeeping, not rendering. */
-const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message']);
+ *  does list ``task`` — that gates body-download bookkeeping, not rendering.
+ *
+ *  ``prompt_completion`` is the reply marker (see ``REPLY_MARKER_TYPE``): plumbing
+ *  as well, and the one that used to be hidden only BY the missing-attachment
+ *  filter. It is listed here so it stays hidden once nothing reports it missing. */
+const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', REPLY_MARKER_TYPE]);
 
 /** One downloadable attachment, resolved into everything a chip needs to render
  *  — and nothing it could use to fetch a body that isn't there. */
@@ -158,6 +164,17 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
         localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
       };
     });
+}
+
+/** What a message with no text carries, named for a one-line preview: the types it shares
+ *  ("Claude Session"), then its file names. Empty when it carries nothing a person would name. */
+export function attachmentSummary(fm: FlowMessage | null | undefined): string {
+  const types = [...new Set(buildEntities(fm).map((t) => t.type))].map(labelForType);
+  const files = (fm?.attachment ?? [])
+    .filter((a) => a.attachment_type === AttachmentType.FILE)
+    .map((a) => attachmentDataString(a).split('/').pop() ?? '')
+    .filter(Boolean);
+  return [...types, ...files].join(', ');
 }
 
 function typeLabel(type: string): string {

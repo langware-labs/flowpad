@@ -2014,8 +2014,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
     // placeholder, never against a persisted row: matching history too would
     // silently swallow a message the user deliberately sends twice ("hi", then
     // "hi" again), leaving nothing on screen until the next replay.
-    if (this.flowDataStream.ownItems.some((item) => item.isOptimisticEcho && item.content === trimmed)) {
-      return;
+    //
+    // And only within the turn in flight: scan back to the last END. An echo
+    // stays a placeholder after its turn ends (Claude never streams the user
+    // turn back, and only a history load retires it), so an unscoped match let
+    // a FINISHED turn's echo swallow the same text sent again (FLOWPAD-2196).
+    const items = this.flowDataStream.ownItems;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (item.elementType === FlowElementTypes.END) break;
+      if (item.isOptimisticEcho && item.content === trimmed) return;
     }
 
     const timestamp = new Date().toISOString();

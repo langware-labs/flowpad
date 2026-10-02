@@ -40,6 +40,7 @@ _ASSET_TYPEID_TYPES: frozenset[str] = frozenset(
         "markdown",
         "spec",
         "whiteboard",
+        "project",
     }
 )
 
@@ -100,6 +101,21 @@ def _is_session_traffic(payload: dict) -> bool:
     if not _has_session_carrier_attachment(atts) and not payload.get("remote_worker_session_id"):
         return False
     return SESSION_START_MARKER_KEY not in (carrier_marker(atts) or {})
+
+
+def _attachment_only_body(payload: dict) -> str:
+    """The notification line for a message with no text. ``Sent you: <type>`` is a fixed
+    sentence the UI matches and rebuilds in the person's language (``localizedBody``)."""
+    from flow_sdk.builtin.flow_message import BODY_FILENAME  # noqa: PLC0415
+
+    for a in payload.get("attachment") or []:
+        if not isinstance(a, dict) or a.get("attachment_type") != "type_id":
+            continue
+        entity_type = str(a.get("data") or "").split("-", 1)[0]
+        if entity_type and entity_type not in ("conversation", "flow_message"):
+            return f"Sent you: {entity_type}"
+    filename = (payload.get("attachment_filename") or "").strip()
+    return filename if filename and filename != BODY_FILENAME else "Sent you a message"
 
 
 def _has_prompt_attachment(attachments: Any) -> bool:
@@ -659,7 +675,9 @@ class HubWsBridge:
                     # the auto-ack below). Own try/except so a notify hiccup is
                     # never mistaken for a persist failure.
                     if (
-                        local_user and payload.get("sender_id") and payload["sender_id"] != local_user.id
+                        local_user
+                        and payload.get("sender_id")
+                        and payload["sender_id"] != local_user.id
                         and not _is_session_traffic(payload)
                     ):
                         try:
@@ -668,7 +686,7 @@ class HubWsBridge:
                             text = " ".join((payload.get("text") or "").split())
                             preview = text if len(text) <= 80 else text[:77] + "..."
                             if not preview:
-                                preview = (payload.get("attachment_filename") or "").strip() or "Sent you a message"
+                                preview = _attachment_only_body(payload)
                             # Message → generic payload flattening lives HERE
                             # (the Layer-2 consumer); the notification service
                             # renders it blind. The click target is the same

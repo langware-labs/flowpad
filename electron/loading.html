@@ -90,7 +90,7 @@
       border-radius: 0.5rem;
       cursor: pointer;
       transition: all 0.2s ease;
-      z-index: 10;
+      z-index: 110; /* above .error-overlay (100): the logs must stay reachable from the error panel */
     }
 
     .show-logs-btn:hover {
@@ -109,6 +109,7 @@
       border-top: 1px solid hsl(0 0% 14.9%);
       overflow: hidden;
       animation: slide-up 0.3s ease-out;
+      z-index: 105; /* above .error-overlay, below the Show Logs button */
     }
 
     .logs-panel.visible {
@@ -221,8 +222,10 @@
       z-index: 100;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 32px;
+      /* NOT justify-content:center — in a scrolling flex column it puts the top of tall content
+         out of reach. The card's margin:auto below centres it when there is room. */
+      justify-content: flex-start;
+      padding: 32px 32px 72px; /* bottom room for the fixed Show Logs button */
       overflow-y: auto;
     }
 
@@ -234,6 +237,7 @@
       width: 100%;
       max-width: 620px;
       text-align: left;
+      margin: auto;
     }
 
     .error-card h2 {
@@ -247,10 +251,40 @@
       font-size: 0.9rem;
       line-height: 1.5;
       color: hsl(0 0% 63.9%);
-      margin-bottom: 28px;
+      margin-bottom: 20px;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+      max-height: 40vh;
+      overflow-y: auto;
+      user-select: text;
     }
+
+    .error-logpath {
+      font-size: 0.75rem;
+      color: hsl(0 0% 50%);
+      margin-bottom: 20px;
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+
+    .error-tools {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .error-share-note {
+      font-size: 0.75rem;
+      line-height: 1.5;
+      color: hsl(0 0% 50%);
+      margin-bottom: 24px;
+      overflow-wrap: anywhere;
+      user-select: text;
+    }
+
+    .error-share-note.ok { color: hsl(140 40% 60%); }
+    .error-share-note.fail { color: hsl(0 70% 65%); }
 
     .error-step {
       margin-bottom: 24px;
@@ -394,6 +428,16 @@
     <div class="error-card">
       <h2>Flowpad couldn’t start</h2>
       <p class="error-detail" id="error-detail"></p>
+      <p class="error-logpath" id="error-logpath" hidden></p>
+      <div class="error-tools">
+        <button class="quit-btn" id="copy-details">Copy error details</button>
+        <button class="quit-btn" id="open-logs">Open logs folder</button>
+        <button class="quit-btn" id="share-logs">Share with us</button>
+      </div>
+      <p class="error-share-note" id="share-status">
+        “Share with us” opens your email app with a short message to the Flowpad team and shows a zip of
+        your latest logs to attach. Nothing is sent until you press Send in your email app.
+      </p>
 
       <div class="error-step">
         <div class="error-step-label"><span class="step-num">1</span>Upgrade Flowpad. Paste this in your terminal, then reopen the app:</div>

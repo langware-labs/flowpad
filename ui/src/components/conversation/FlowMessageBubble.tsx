@@ -492,9 +492,8 @@ export function FlowMessageBubble({
   const hasBody = bodyStatus !== BodyStatus.NA;
 
   // A transcript-only share renders a fully blank bubble without this note:
-  // the backend synthesizes the "Please run the following prompt:" placeholder
-  // for any empty-text send (MessageBubble suppresses it, assuming a prompt
-  // row takes its place) and the structural TYPE_ID self-refs are filtered too.
+  // an attachment-only send has no text, and the structural TYPE_ID self-refs
+  // are filtered too.
   //
   // A shared session used to need a "see the Context tab" note here, because
   // its transcript rode as a hidden raw file and produced no chip at all. It is
@@ -975,16 +974,16 @@ export function MessageEntityChip({
   const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const { data, notFound, isError } = useEntity<AnyEntity>(typeId);
-  // A project reference (a project invite) is the generic chip too, but
-  // stated from the local Project row's mount path — NOT `chipStateFor`, which
-  // would call a hub-pushed, not-yet-cloned row "installed" (KTD10).
-  if (typeId.type === Project.type) {
+  // A project the message staged (its bundle carried it) is an ordinary
+  // attachment chip below. A project reference with no staged attachment — an
+  // invite sent before projects rode the bundle — keeps the project chip,
+  // stated from the local row's mount path (KTD10).
+  if (typeId.type === Project.type && !attachment) {
     return (
       <ProjectMessageChip
         typeId={typeId}
-        name={attachment?.name}
         entityRow={data as unknown as Project | null | undefined}
         entityUnavailable={notFound || isError}
         conversationId={conversationId}
