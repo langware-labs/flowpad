@@ -12,7 +12,7 @@ replaced, and so silently discarded a user's device or OpenRouter choice -- whil
 ``Capability`` itself documents that seeding must never clobber those very fields. It was
 not a design requirement either: it existed only because ``resolve_worker_api_auth``
 refused to consider any provider unless ``auth_mode == "api"``. With that gate gone,
-``resolve_llm_source`` reaches the endpoint on its own -- and on a bound box an unproven
+``resolve_llm_endpoint`` reaches the endpoint on its own -- and on a bound box an unproven
 device login yields to it -- so the write has no reason to exist.
 
 Which means ``active_for`` now means what it says: the harnesses whose RESOLVED source is
@@ -131,23 +131,10 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope
     # ``_inventory`` is memo-only by design (it runs in the spawn path and must not call
     # out), so computing sources before this ran left every endpoint out of the FIRST
     # answer and put it in the second -- a picker that fills in on its own second poll.
+    # Warming the listing memo is a READ of the hub (the resolver reads only the memo, so a cold
+    # memo would leave every endpoint out of this answer). Dropping a dead binding is a WRITE and
+    # lives in ``prune_dead_binding``, which only the explicit ``status/refresh`` runs.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
-    # A PUBLIC binding is exempt: a public endpoint is spendable by whoever holds its id, which
-    # is precisely NOT a role this caller holds -- so a listing scoped to the caller never
-    # contains it, and its absence there says nothing about whether it still exists.
-    if refresh and bound is not None and not bound.public and listing_supersedes_binding():
-        # Drop a binding the hub has just told us it will not honour. ``_endpoint_sources``
-        # already stops OFFERING it, so routing is correct either way -- but the record itself
-        # is read as "this box was given a budget" (``box_bound`` demotes an unproven device
-        # login), so leaving a dead id in place keeps that claim alive and makes every status
-        # answer name an endpoint that no longer exists.
-        #
-        # Only on an explicit refresh: ``bind`` answers through here too, and it has just been
-        # handed an endpoint the listing may not have heard of yet.
-        if not any(str(e.typeid) == bound.endpoint_typeid for e in available):
-            logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
-            clear_hub_llm_endpoint()
-            bound = None
     sources, resolved, blocked, notes, endpoints = await _sources_by_kind(scope)
     bound_typeid = bound.endpoint_typeid if bound else ""
     return {
@@ -202,6 +189,29 @@ async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope
     }
 
 
+async def prune_dead_binding() -> bool:
+    """Drop a binding the hub no longer lists. Returns whether one was dropped.
+
+    ``_endpoint_sources`` already stops OFFERING a dead binding, so routing is correct either
+    way -- but the record reads as "this box was given a budget", and leaving a dead id in
+    place makes every status answer name an endpoint that no longer exists. A PUBLIC binding is
+    exempt: a listing scoped to the caller never contains it, so its absence says nothing.
+
+    A write, so it runs only on an explicit refresh (``core.status.refresh_status``), never on a
+    status read -- and never from ``bind``, which has just been handed an endpoint the listing
+    may not have heard of yet.
+    """
+    bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
+    if bound is None or bound.public:
+        return False
+    available = await fetch_hub_llm_endpoints(cached_only=False)
+    if not listing_supersedes_binding() or any(str(e.typeid) == bound.endpoint_typeid for e in available):
+        return False
+    logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
+    clear_hub_llm_endpoint()
+    return True
+
+
 async def hub_llm_endpoint_status(project_id: str = "") -> dict:
     """What the box is bound to and which harnesses actually route through it.
 
@@ -227,7 +237,7 @@ async def bind_hub_llm_endpoint(payload: dict) -> dict:
     with no memory of what it replaced -- silently discarding a user's device or
     OpenRouter choice while ``Capability`` itself documents that seeding must never
     clobber that field. That write was a workaround for a resolver gate that no longer
-    exists: ``resolve_llm_source`` reaches the endpoint on its own, and on a bound box an
+    exists: ``resolve_llm_endpoint`` reaches the endpoint on its own, and on a bound box an
     unproven device login yields to it. A binding is now an OFFER, and the box picks.
     """
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
@@ -263,7 +273,7 @@ async def unbind_hub_llm_endpoint() -> dict:
 
 def _hub_key() -> str | None:
     """The hub login key. Imported per call so a monkeypatch on it applies -- a module-scope
-    binding would freeze the function at import time (same reason as ``_hub_logged_in``)."""
+    binding would freeze the function at import time (same reason as ``_hub_signed_in``)."""
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
 
     return resolve_hub_api_key()

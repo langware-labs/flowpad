@@ -44,15 +44,50 @@ async def _reset_harness_auth_mode():
 
     for worker in ("claude", "codex", "copilot", "opencode", "deepagents"):
         cap = await Capability.get_by_kind(worker_capability_kind(worker))
-        if cap is not None and getattr(cap, "auth_mode", "device") != "device":
+        if cap is None:
+            continue
+        if getattr(cap, "auth_mode", "device") != "device" or getattr(cap, "login_state", None) is not None:
+            # ``_signed_in`` persists a login into the shared session DB too; left behind it
+            # turns "nobody has checked" tests into "signed in" ones, only in batch.
             cap.auth_mode = "device"
             cap.api_provider = None
+            cap.login_state = None
             await cap.save(notify=False)
     # And drop any hub LLMEndpoint binding a test left behind.
     from flow_sdk.instance_settings import llm_endpoint
 
     llm_endpoint.clear_hub_llm_endpoint()
     llm_endpoint.reset_cache()
+
+
+@pytest.fixture(autouse=True)
+def _status_facts(monkeypatch):
+    """The STATUS facts funding reads, made deterministic (see test_llm_source_resolution):
+    every CLI installed, the hub signed in exactly when a hub key is stored, no spawn probe."""
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
+    from flow_sdk.core import status
+    from flow_sdk.core.status import InstallState
+
+    monkeypatch.setattr(status, "harness_install", lambda worker: InstallState.INSTALLED)
+    monkeypatch.setattr(llm_source, "_hub_signed_in", lambda: bool(resolve_hub_api_key()))
+
+    async def no_probe(worker_type):
+        return None
+
+    monkeypatch.setattr(llm_source, "check_unchecked_login", no_probe)
+
+
+async def _signed_in(*workers: str) -> None:
+    """A device login a probe CONFIRMED -- the only kind that funds a turn."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    for worker in workers:
+        cap = await Capability.get_by_kind(worker_capability_kind(worker))
+        cap.login_state = DeviceLoginState.AUTHENTICATED
+        await cap.save(notify=False)
 
 
 HUB_INVOKE = "https://hub.test/api/v1/graph/llm_endpoint/ep1/invoke"
@@ -98,7 +133,8 @@ async def _set_harness_api(kind_worker: str, provider: str = "openrouter") -> No
 async def test_device_mode_returns_none(env) -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
 
-    # Default capability auth_mode is "device" → no binding.
+    # Default capability auth_mode is "device" → no binding: the CLI reads its own login.
+    await _signed_in("claude")
     assert await resolve_worker_api_auth(_fake_process("claude")) is None
 
 
@@ -326,6 +362,7 @@ async def test_hub_endpoint_without_login_falls_through(env, monkeypatch) -> Non
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
     from flow_sdk.cli.auth.hub_login import delete_api_key
 
+    await _signed_in("claude")
     _bind_hub(monkeypatch, login=False)
     delete_api_key()
     await _set_harness_api("claude", provider="flowpad")
@@ -444,7 +481,7 @@ async def test_a_bound_box_funds_an_unproven_device_harness_from_its_endpoint(en
 
     ``login_state`` is ``Persist.FALSE``, so "nobody has asked" is the common state, not an
     edge case; the box binding is the deliberate act that breaks the tie. See
-    ``test_an_unbound_box_still_prefers_the_device_login`` for the other half -- the desktop
+    ``test_an_unbound_box_with_an_unchecked_login_is_refused_not_presumed`` for the other half -- the desktop
     default is unchanged.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
@@ -456,16 +493,19 @@ async def test_a_bound_box_funds_an_unproven_device_harness_from_its_endpoint(en
     assert auth.env["ANTHROPIC_AUTH_TOKEN"] == "fp-hub-key"
 
 
-async def test_an_unbound_box_still_prefers_the_device_login(env) -> None:
-    """No binding, no keys, nobody probed: device login, exactly as before.
+async def test_an_unbound_box_with_an_unchecked_login_is_refused_not_presumed(env) -> None:
+    """No binding, no keys, login never probed: refused with a reason.
 
-    The state most desktop installs are in. ``resolve_llm_source`` falls through to its
-    second pass (*first eligible*, not *first eligible AND auto*) precisely so an unproven
-    device login stays usable when nothing else is configured.
+    This used to presume the unproven device login worked -- the same rule that made every
+    absent vendor CLI "the active funding source" on a box with nothing installed. A spawn
+    probes an unchecked login before resolving (``check_unchecked_login``, off in this
+    suite), so a real box pays one probe, not a failed turn.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
 
-    assert await resolve_worker_api_auth(_process_on("claude", None)) is None
+    with pytest.raises(WorkerSpawnError, match="sign-in has not been checked"):
+        await resolve_worker_api_auth(_process_on("claude", None))
 
 
 async def test_opencode_reaches_the_endpoint_through_its_config_not_its_env(env, monkeypatch) -> None:
@@ -621,9 +661,12 @@ async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
     credentials at all — it must be a loud spawn error instead."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import device_candidate
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
 
-    assert await device_candidate("deepagents") is None
-    assert await device_candidate("claude") is not None
+    def device_rungs(candidates):
+        return [c for c in candidates if str(c.endpoint.kind) == "device"]
+
+    assert device_rungs(await list_llm_candidates("deepagents")) == []
+    assert device_rungs(await list_llm_candidates("claude"))
     with pytest.raises(WorkerSpawnError):
         await resolve_worker_api_auth(_fake_process("deepagents"))

@@ -148,6 +148,8 @@ async def test_override_scoped_flowpad_provider(env, monkeypatch) -> None:
 
     monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.test")
     set_api_key("fp-hub-key")
+    # The hub's own "signed in" verdict is the status layer's; this test is about the model map.
+    monkeypatch.setattr("flow_sdk.builtin.agentic_process.cli_drivers.llm_source._hub_signed_in", lambda: True)
     llm_endpoint.reset_cache()
     llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke")
     try:

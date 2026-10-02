@@ -1026,7 +1026,7 @@ def test_a_lost_socket_is_a_connection_error_not_a_missing_source(monkeypatch):
     one and gives up on the other."""
     monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {"resolved": {}})
     monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
-    monkeypatch.setattr(llm_cmd, "_probe_unproven_device_logins", lambda status: status)
+    monkeypatch.setattr(llm_cmd, "_probe_unproven_device_logins", lambda status, *_: status)
     monkeypatch.setattr(llm_cmd, "_backend_port", lambda: 6060)
     monkeypatch.setattr(llm_cmd, "_await_funding", lambda port, url: None)
     monkeypatch.setattr("asyncio.run", lambda coro: None)
@@ -1056,7 +1056,7 @@ def test_a_skipped_choice_is_no_source_not_a_connection_error(monkeypatch):
     re-check reads as "not funded", after which it carries on with the installs."""
     monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {"resolved": {}})
     monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
-    monkeypatch.setattr(llm_cmd, "_probe_unproven_device_logins", lambda status: status)
+    monkeypatch.setattr(llm_cmd, "_probe_unproven_device_logins", lambda status, *_: status)
     monkeypatch.setattr(llm_cmd, "_backend_port", lambda: 6060)
     monkeypatch.setattr(llm_cmd, "_await_funding", lambda port, url: None)
     monkeypatch.setattr("asyncio.run", lambda coro: llm_cmd._SKIPPED)
