@@ -32,6 +32,7 @@ from flow_sdk.builtin.user import User
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.parent_share import collect_parent_share_typeids
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -40,6 +41,7 @@ from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES
 from flow_sdk.utils.git import (
     find_project_root,
     git_pull,
@@ -47,8 +49,6 @@ from flow_sdk.utils.git import (
 from flow_sdk.utils.hub import hub_get
 
 logger = logging.getLogger(__name__)
-
-PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT = "Please run the following prompt:"
 
 
 def _prompt_file_is_image_or_binary(filename: str, raw: bytes) -> bool:
@@ -487,6 +487,10 @@ async def _link_message_into_context_entities(
 
     fm_tid = TypeId(f"{BuiltinEntityType.FLOW_MESSAGE.value}-{reply_fm.id}")
     for tid in typeids:
+        if tid.type in MEMBERSHIP_CONTAINER_TYPES:
+            # An org / team / project's shared context is hub-mirrored — what
+            # its members see — so a message it rides in is never written into it.
+            continue
         try:
             cls = SchemaRegistry.get_entity_cls(tid.type)
             if cls is None:
@@ -882,6 +886,46 @@ def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> N
         pass
 
 
+def _unshippable_payload(gaps) -> list[dict]:
+    """The wire shape of the refs a send would ship nothing for — shared by the send refusal and the preflight."""
+    return [{"type_id": str(tid), "reason": why} for tid, why in gaps]
+
+
+async def find_unshippable_references(asset_references: list) -> list[tuple[TypeId, str]]:
+    """Which of these asset references would the packer silently ship nothing for?
+
+    Does what a send does first — a session being shared may have no index row yet, so it is
+    indexed from its transcript if one can be found — and then asks the packer's own question.
+    Writes nothing else, so a caller can ask BEFORE it creates a conversation or invites anyone.
+    """
+    from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
+
+    typeids: list[TypeId] = []
+    for raw in dict.fromkeys(asset_references):
+        try:
+            typeids.append(TypeId(raw))
+        except Exception:  # noqa: BLE001 — a malformed ref is the send's problem to report, not the preflight's
+            continue
+    await _ensure_claude_session_rows(typeids)
+    return await attachments_that_would_ship_nothing(typeids)
+
+
+@action.post(action_name="check-attachments", types=None)
+async def check_attachments() -> ApiResponse:
+    """Preflight for a share: which of ``asset_references`` would arrive empty? Read-only.
+
+    The share dialog asks this BEFORE it creates a conversation and invites the recipient — a
+    refusal after the invite would leave them holding an invitation to an empty conversation.
+    ``handle_add_message`` still refuses on its own; this is what lets the UI offer
+    "send without it" instead of failing after the fact.
+    """
+    request_info = get_current_request_info()
+    body = (await request_info.get_post_data() if request_info else None) or {}
+    refs = _parse_asset_references(body.get("asset_references") if isinstance(body, dict) else None)
+    gaps = await find_unshippable_references(refs)
+    return ApiSuccessResponse(data={"unshippable": _unshippable_payload(gaps)})
+
+
 async def handle_add_message(
     body: dict,
     someone_typeid: str,
@@ -973,11 +1017,7 @@ async def handle_add_message(
         and not asset_references
     ):
         return ApiFailResponse(message="message, prompt, files, or asset_references required")
-    if not message:
-        # Synthesize a placeholder so the rest of the pipeline (which assumes a
-        # non-empty text body) keeps working for prompt-only / files-only sends.
-        # The frontend suppresses the body when it matches this exact constant.
-        message = PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT
+    # An attachment-only send keeps an empty text: each surface names what it carries.
 
     conv = await Conversation.get_one({"id": conversation_id})
     if not conv:
@@ -1004,6 +1044,22 @@ async def handle_add_message(
     # Shared ClaudeTranscripts may not be indexed yet — materialize their rows
     # first so the merge/backlink below (and the chip's name lookup) resolve.
     await _ensure_claude_session_rows(context_typeids)
+    # Refuse BEFORE anything is written: an attachment the packer would ship nothing for
+    # leaves the sender told "sent" and the recipient holding a bundle that cannot be complete.
+    from flow_sdk.builtin.flow_message_bundle import attachments_that_would_ship_nothing  # noqa: PLC0415
+
+    gaps = await attachments_that_would_ship_nothing(_parse_context_typeids(conv, asset_references, []))
+    if gaps:
+        names = "; ".join(f"{tid} — {why}" for tid, why in gaps)
+        return ApiFailResponse(
+            message=(
+                f"Cannot send: {names}. The recipient would receive nothing for it "
+                "(the file may have been removed, or it was never created — a session with no "
+                "conversation yet has no transcript). Nothing was sent."
+            ),
+            status_code=400,
+            data={"unshippable": _unshippable_payload(gaps)},
+        )
     await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     sender_participant = await User.current_sender_participant(body.get("sender_name"))
@@ -1469,22 +1525,17 @@ def _is_prompt_attachment(a: Any) -> bool:
     return False
 
 
-@action.get(action_name="open", types=["notification"])
-async def open_notification() -> ApiResponse:
-    """Deep-link handler: fetch notification from hub, redirect to UI dialog."""
-    from flow_sdk.server.routes.notify import handle_notification_deep_link
+async def open_notification_params(notification_id: str) -> "OpenLinkSpec":
+    """Deep-link resolver for a notification (``Notification.resolve_open``):
+    fetch it from the hub and return the ``action=open`` params for its task."""
+    from flow_sdk.server.routes.notify import message_deep_link_params
 
-    request_info = get_current_request_info()
-    if not request_info or not request_info.target_entity_typeid:
-        return ApiFailResponse(message="No request info found", status_code=400)
-
-    notification_id = str(request_info.target_entity_typeid.id)
     data = await hub_get(BuiltinEntityType.NOTIFICATION, notification_id)
 
     meta = data.get("metadata") or {} if data else {}
     # Notification.id is the same as the hub FlowMessage id (set in
     # _save_local_notification), so we use notification_id as fm_id.
-    return await handle_notification_deep_link(
+    return message_deep_link_params(
         fm_id=notification_id,
         task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
         git_origin=(meta.get("git_origin") or (data or {}).get("git_origin")),

@@ -5,6 +5,7 @@ import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useLocalUser } from './useLocalUser';
+import { attachmentSummary } from './useAttachments';
 import { buildSharedAndPrivateContextSection } from './prompt-building';
 
 interface UseMyProcessOptions {
@@ -49,7 +50,7 @@ export async function buildReceiverContextPrompt(
     if (!fm) return null;
     const isSender = fm.sender_id && task.shared_by_id && fm.sender_id === task.shared_by_id;
     const label = isSender ? fm.sender_name || senderName || 'Sender' : fm.sender_name || 'You';
-    return `[${label}]: ${fm.text ?? ''}`;
+    return `[${label}]: ${fm.text || attachmentSummary(fm)}`;
   };
 
   const allFiles = messages

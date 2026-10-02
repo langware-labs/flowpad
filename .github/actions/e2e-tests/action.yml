@@ -299,7 +299,8 @@ runs:
       env:
         VITE_PORT: '5098'
         FLOWPAD_PERF_GATE: '1'
-      run: npx playwright test --config tests/manual_regression/navigation/playwright.config.ts --max-failures=1 ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '' }}
+      # @long specs stay out of the PR run; an explicit grep still reaches them.
+      run: npx playwright test --config tests/manual_regression/navigation/playwright.config.ts --max-failures=1 ${{ inputs.grep && format('--grep "{0}"', inputs.grep) || '--grep-invert @long' }}
       shell: bash
       working-directory: ui
 

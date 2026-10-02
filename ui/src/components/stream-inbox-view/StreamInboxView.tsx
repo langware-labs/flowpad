@@ -49,7 +49,12 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { updateMessage, bulkUpdateMessages, searchStreamInbox } from './stream-inbox-api';
-import { type ChannelAttribution, SourceChip, sourceForOrigin, useChannelAttribution } from '@src/components/conversation/channel-attribution';
+import {
+  type ChannelAttribution,
+  SourceChip,
+  sourceForOrigin,
+  useChannelAttribution,
+} from '@src/components/conversation/channel-attribution';
 import { AttachedChannelsBar, channelKeyOf, useAttachedChannels } from './AttachedChannelsBar';
 import { channelsOwnerFor, streamInboxConversationsRequest } from './channel-owner';
 import { useContext } from '@src/hooks/useContext';
@@ -61,7 +66,7 @@ import {
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
 import { RowActions } from '@src/components/conversation/RowActions';
-import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from '@src/components/conversation/constants';
+import { attachmentSummary } from '@src/components/conversation/useAttachments';
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -135,7 +140,10 @@ interface ConversationListRowProps {
   /** Set while the list is narrowed to some channels: does this message's source pass? */
   channelMatch?: (message: FlowMessage) => boolean;
   /** The list resolves attribution once and hands each row its answer. */
-  attributionFor: (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) => ChannelAttribution | null;
+  attributionFor: (
+    origin: FlowMessage['origin'],
+    channelSpec?: Conversation['channel_spec'],
+  ) => ChannelAttribution | null;
   refSetter: (el: HTMLDivElement | null) => void;
   agentId?: string;
 }
@@ -299,9 +307,9 @@ export function ConversationListRow({
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
-  const rawText = isInvitationRow ? firstMessage?.text : latestMessage?.text;
-  const snippetSource = rawText === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT ? '' : rawText;
-  const snippet = String(snippetSource ?? '')
+  const snippetMessage = isInvitationRow ? firstMessage : latestMessage;
+  // A message with no text is named by what it carries.
+  const snippet = String(snippetMessage?.text || attachmentSummary(snippetMessage) || '')
     .replace(/\s+/g, ' ')
     .trim();
   const time = formatGmailTime(conv.updated_date);
@@ -467,7 +475,8 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
   const { rows: ownerChannels, specFor } = useAttachedChannels(channelsOwner);
   const { attributionFor: attributionForOrigin } = useChannelAttribution();
   const attributionFor = useCallback(
-    (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) => attributionForOrigin(origin, null, channelSpec),
+    (origin: FlowMessage['origin'], channelSpec?: Conversation['channel_spec']) =>
+      attributionForOrigin(origin, null, channelSpec),
     [attributionForOrigin],
   );
   const [channelFilter, setChannelFilter] = useState<Set<string>>(() => new Set());
@@ -507,10 +516,12 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
     [ownerKey],
   );
   const idleRequest = useMemo(() => new QueryRequest({ type: Conversation.type, name: 'stream-inbox:idle' }), []);
-  const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(
-    request ?? idleRequest,
-    { enabled: request !== null },
-  );
+  const {
+    data: conversations = [],
+    refetch,
+    isLoading,
+    isSuccess,
+  } = useEntitiesQuery<Conversation>(request ?? idleRequest, { enabled: request !== null });
 
   // Only the FIRST load gets the full-screen "Loading…" state. Every
   // ``refetch()`` (manual hub-pull, mark-read, archive, …) flips ``isLoading``
@@ -764,7 +775,11 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
         } else if (!c.remote) {
           await deleteConversation({ conversation_id: c.id, mode: 'local', ...(agentId ? { agent_id: agentId } : {}) });
         } else if (cloudUserId && c.created_by === cloudUserId) {
-          await deleteConversation({ conversation_id: c.id, mode: 'delete_for_all', ...(agentId ? { agent_id: agentId } : {}) });
+          await deleteConversation({
+            conversation_id: c.id,
+            mode: 'delete_for_all',
+            ...(agentId ? { agent_id: agentId } : {}),
+          });
         } else {
           await leaveConversation({ conversation_id: c.id, ...(agentId ? { agent_id: agentId } : {}) });
         }
@@ -852,7 +867,10 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
         });
         notify.success({ title: t`Conversation deleted` });
       } else if (rowDelete.kind === 'leave') {
-        await leaveConversation({ conversation_id: rowDelete.conversationId, ...(agentId ? { agent_id: agentId } : {}) });
+        await leaveConversation({
+          conversation_id: rowDelete.conversationId,
+          ...(agentId ? { agent_id: agentId } : {}),
+        });
         notify.success({ title: t`Left conversation` });
       } else {
         await deleteConversation({
@@ -876,7 +894,10 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
     async (action: RowDeleteAction) => {
       if (action.kind !== 'invitation') return;
       try {
-        await dismissConversation({ conversation_id: action.conversationId, ...(agentId ? { agent_id: agentId } : {}) });
+        await dismissConversation({
+          conversation_id: action.conversationId,
+          ...(agentId ? { agent_id: agentId } : {}),
+        });
         notify.success({ title: t`Invitation dismissed` });
       } catch (e) {
         notify.error({
@@ -1020,54 +1041,56 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
               {/* Text search — filters the list below to conversations whose
                   messages contain the query, spanning archived rows. */}
               <div className="relative ms-2 flex items-center">
-                  <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t`Search messages`}
-                    className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                    data-testid="stream-inbox-search-input"
-                    aria-label={t`Search messages`}
-                  />
-                  {searchActive && (
-                    <button
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
-                      aria-label={t`Clear search`}
-                      data-testid="stream-inbox-search-clear"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </div>
+                <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t`Search messages`}
+                  className="h-7 w-44 rounded-md border border-border/60 bg-background pe-6 ps-7 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  data-testid="stream-inbox-search-input"
+                  aria-label={t`Search messages`}
+                />
+                {searchActive && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                    aria-label={t`Clear search`}
+                    data-testid="stream-inbox-search-clear"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
             </div>
             {/* CENTER — new conversation / new contacts group */}
-            {!agentId && <div className="flex shrink-0 items-center">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setShowNewConversation(true)}
-                data-testid="stream-inbox-new-conversation-button"
-                title={t`Start a new conversation`}
-              >
-                <SquarePen className="me-1 h-3.5 w-3.5" />
-                <Trans>New</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs"
-                onClick={() => setShowNewContactsGroup(true)}
-                data-testid="stream-inbox-new-contacts-group-button"
-                title={t`Create a contacts group — add its members to any conversation in one click`}
-              >
-                <UsersRound className="me-1 h-3.5 w-3.5" />
-                <Trans>New group</Trans>
-              </Button>
-            </div>}
+            {!agentId && (
+              <div className="flex shrink-0 items-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setShowNewConversation(true)}
+                  data-testid="stream-inbox-new-conversation-button"
+                  title={t`Start a new conversation`}
+                >
+                  <SquarePen className="me-1 h-3.5 w-3.5" />
+                  <Trans>New</Trans>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => setShowNewContactsGroup(true)}
+                  data-testid="stream-inbox-new-contacts-group-button"
+                  title={t`Create a contacts group — add its members to any conversation in one click`}
+                >
+                  <UsersRound className="me-1 h-3.5 w-3.5" />
+                  <Trans>New group</Trans>
+                </Button>
+              </div>
+            )}
             {/* RIGHT — actions for the current view */}
             <div className="flex flex-1 items-center justify-end gap-1" data-testid="stream-inbox-action-bar">
               <>
@@ -1194,8 +1217,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
         {/* Start the row batches in the layout phase so the rows' own reads wait
             for them instead of each firing a GET (see EntityBatchHydrator). */}
         <EntityBatchHydrator type={Invitation.type} ids={invitationIds} />
-        {
-          !initialLoading &&
+        {!initialLoading &&
           sorted.map((conv) => (
             <ConversationListRow
               key={conv.id ?? ''}

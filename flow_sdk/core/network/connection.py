@@ -1,6 +1,6 @@
 """WebSocket connection management."""
 
-from typing import Any, ClassVar, Dict, Optional
+from typing import TYPE_CHECKING, Any, ClassVar, Dict, Optional
 
 from starlette.websockets import WebSocket
 
@@ -14,6 +14,10 @@ from flow_sdk.flowpad_types.enums.entity_enums import (
     NotificationType,
 )
 from flow_sdk.fs_store.type_id import TypeId
+
+if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
+
 
 class Notification(Entity):
     type: str = APIField(default="notification")
@@ -36,6 +40,13 @@ class Notification(Entity):
 
     # Extra context (git_origin, spec_id, sender_name, etc.)
     metadata: Optional[Dict[str, Any]] = APIField(None)
+
+    @classmethod
+    async def resolve_open(cls, entity_id: str, someone_typeid: Optional[str] = None) -> "OpenLinkSpec":
+        """A notification's link: land on the task / message it is about."""
+        from flow_sdk.app.actions.notification_action import open_notification_params  # noqa: PLC0415
+
+        return await open_notification_params(entity_id)
 
     def after_create(self, create_data: dict):
         pass

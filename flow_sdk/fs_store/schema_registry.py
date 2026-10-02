@@ -102,6 +102,10 @@ def _filesystem_contract(type_name: str, spec: type | None, authored_shape: Any,
     return shape or authored_shape or _DEFAULT_SHAPE, layout or authored_layout
 
 
+#: ``TypeInfo.receive_transfer`` value: the entry travels as a git reference.
+RECEIVE_TRANSFER_GIT_REFERENCE = "git_reference"
+
+
 @dataclass
 class TypeInfo:
     """Metadata for a single record/entity type."""
@@ -384,6 +388,12 @@ class TypeInfo:
     # materializes (backend-only; never serialized).
     receive_policy: str | None = field(default=None, metadata=_MERGE)
     receive_row_overrides: dict | None = field(default=None, metadata=_MERGE)
+    # ``receive_transfer``: how a shared entry of this type travels when it is
+    # not a file-backed asset. ``RECEIVE_TRANSFER_GIT_REFERENCE`` ⇒ its row and
+    # GitOrigin ride, never repository bytes; the entity class's
+    # ``pack_reference`` / ``restore_reference`` hooks own what is particular
+    # to the type (not the hub's ``cloud_file_transport``).
+    receive_transfer: str | None = field(default=None, metadata=_MERGE)
 
     @property
     def git_publishable(self) -> bool:

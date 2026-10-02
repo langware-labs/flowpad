@@ -7,10 +7,7 @@ from contextvars import ContextVar
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Awaitable, Callable, ClassVar, Optional
-
-# An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
-ProgressCallback = Callable[[int, int], Awaitable[None]]
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, ClassVar, Optional
 
 from pydantic import (
     AwareDatetime,
@@ -30,6 +27,12 @@ from flow_sdk.schema.data_spec.message_sender_spec import MessageSender, SenderK
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.sources.values.items import UserProfile
 from flow_sdk.tags.envelope import parse_target
+
+# An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
+ProgressCallback = Callable[[int, int], Awaitable[None]]
+
+if TYPE_CHECKING:
+    from flow_sdk.schema.data_spec.open_link_spec import OpenLinkSpec
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +217,13 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     # and cloned from its Git origin. Treating it as materializable pinned
     # every project share at body_downloaded=false with a permanent
     # ``body_missing_attachments: [project-<id>]``.
-    {"conversation", "flow_message", "task", "remote_worker_session", "project"}
+    #
+    # A ``prompt_completion`` is the same kind of thing: a typed reply marker
+    # whose full text rides in the attachment's header ``prompt_preview``. The
+    # entity itself stays on the host (it declares no ``main_subdir``, so the
+    # packer never ships it), and the receiver never gets a row or folder for it.
+    # Probing for one reported EVERY reply as missing, forever.
+    {"conversation", "flow_message", "task", "remote_worker_session", "project", "prompt_completion"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -407,7 +416,6 @@ class Attachment(BaseModel):
     prompt_preview: Optional[str] = None
 
 
-
 class MessageEnvelope(DataSpec):
     """A cached message's header, as the projection read it from the item's payload."""
 
@@ -417,6 +425,7 @@ class MessageEnvelope(DataSpec):
     sender: Optional[UserProfile] = None
     recipients: tuple[UserProfile, ...] = ()
     sent_at: Optional[AwareDatetime] = None
+
 
 class FlowMessage(Entity):
     # A FlowMessage owns its body/download and read state locally — see the
@@ -730,6 +739,26 @@ class FlowMessage(Entity):
             "body_missing_attachments": missing,
         }
 
+    def _local_body_state(self) -> dict[str, Any]:
+        """The serializer's own body probe, off throwaway attachment copies.
+
+        Copies because ``_body_download_state`` stamps ``local_path`` onto the
+        dicts it walks — that belongs to serialization, not to a predicate.
+        """
+        return self._body_download_state([att.model_dump() for att in self.attachment or []])
+
+    def is_body_complete(self) -> bool:
+        """True when the bundle is unpacked AND every attachment it carries is
+        locally present — i.e. re-pulling the same bundle cannot add anything.
+
+        STRICTER than ``is_body_downloaded``, deliberately: that one reports an
+        unpacked bundle as downloaded even when the sender shipped it short, so
+        gating a re-pull on it would strand a genuinely incomplete message. Use
+        this one to decide "is another pull pointless", and that one to decide
+        "does the user still owe a click".
+        """
+        return self.is_body_unpacked() and not self._local_body_state()["body_missing_attachments"]
+
     def is_body_unpacked(self) -> bool:
         """True when the bundle's extracted tree persists under this message's
         record-data ``unpacked/`` dir (the staging area install reads from)."""
@@ -761,7 +790,7 @@ class FlowMessage(Entity):
 
     def is_body_downloaded(self) -> bool:
         """Same download state as the API, without serializing the full entity."""
-        return self._body_download_state([att.model_dump() for att in self.attachment or []])["body_downloaded"]
+        return self._local_body_state()["body_downloaded"]
 
     async def to_file(
         self,
@@ -816,6 +845,13 @@ class FlowMessage(Entity):
         if not self.has_body():
             return False
         return not (self.remote and self.body_status == BodyStatus.NA)
+
+    @classmethod
+    async def resolve_open(cls, entity_id: str, someone_typeid: Optional[str] = None) -> "OpenLinkSpec":
+        """A message's link: pull it (bundle, conversation) and land in its conversation."""
+        from flow_sdk.app.actions.flow_message_action import open_flow_message_params  # noqa: PLC0415
+
+        return await open_flow_message_params(entity_id, someone_typeid)
 
     @property
     def occurred_at(self) -> Optional[datetime]:
