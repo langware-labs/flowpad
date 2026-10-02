@@ -1,7 +1,7 @@
 /**
  * The status record — WHAT is on this box, before anyone asks what pays.
  *
- * Hand-maintained mirror of `flow_sdk/core/status/spec.py` (`StatusSpec` and friends), pinned
+ * Hand-maintained mirror of `flow_sdk/schema/data_spec/status_spec.py` (`StatusSpec` and friends), pinned
  * by `tests/unit/test_status_ts_parity.py`. The UI renders these facts and derives none of
  * them: installed, signed in, which keys are stored and whether FlowPad is signed in each have
  * exactly one writer, in Python. Funding (`LLMFundingStatus`) is a layer on top.
@@ -82,4 +82,9 @@ export interface StatusRecord {
   hub: HubStatus;
   /** Capability kind of the user's default harness, or `''`. */
   default_harness: string;
+}
+
+/** One harness's status by capability kind (`harness.claude.cli`). */
+export function harnessStatus(record: StatusRecord | null | undefined, kind: string): HarnessStatus | undefined {
+  return record?.harnesses.find((h) => h.kind === kind);
 }

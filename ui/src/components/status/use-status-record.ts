@@ -1,8 +1,9 @@
+import { HARNESS_CAPABILITY_KINDS, statusService, type StatusRecord } from '@sdk';
 import { LazyAsset } from '@sdk/lazy';
-import { statusService } from '@sdk';
-import { useEffect } from 'react';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
-import type { HarnessStatus, StatusRecord } from '@sdk';
+import { useEffect } from 'react';
+
+export { harnessStatus } from '@sdk';
 
 /**
  * The status record — installed, login, account per harness; stored keys; the FlowPad login.
@@ -15,23 +16,21 @@ export function useStatusRecord(): { status: StatusRecord | null; isLoading: boo
   return { status: data ?? null, isLoading };
 }
 
-/** One harness's status by capability kind (`harness.claude.cli`) or driver name (`claude`). */
-export function harnessStatus(status: StatusRecord | null | undefined, key: string): HarnessStatus | undefined {
-  return status?.harnesses.find((h) => h.kind === key || h.worker_type === key);
+/**
+ * Re-discover the harness CLIs and re-probe their logins — the status layer's one refresh verb,
+ * narrowed to harnesses (not every capability). Local vendor probes, no network, no money; the
+ * backend pushes `status_changed_msg` only if something changed, and every reader follows. A
+ * failure leaves the record as it was, which is what is true.
+ */
+export function refreshHarnessStatus(): void {
+  void statusService.refresh([...HARNESS_CAPABILITY_KINDS]).catch(() => undefined);
 }
 
 /**
- * Re-check every harness on arrival: re-discover the CLIs and re-probe their logins.
- *
- * A screen that answers "am I signed in" must be right about a login the user ended somewhere
- * else (signed out of the CLI in a terminal, then came here). That is the status layer's one
- * refresh verb — local vendor probes, no network, no money — and the backend's
- * `status_changed_msg` then re-reads status, funding and connections everywhere, so nothing
- * here invalidates a cache by hand.
+ * Re-check every harness on arrival. A screen that answers "am I signed in" must be right about
+ * a login the user ended somewhere else (signed out of the CLI in a terminal, then came here).
  */
 export function useRefreshStatusOnArrival(): void {
-  useEffect(() => {
-    void statusService.refresh().catch(() => undefined);
-    // Mount only: an arrival check, not a poll.
-  }, []);
+  // Mount only: an arrival check, not a poll.
+  useEffect(refreshHarnessStatus, []);
 }

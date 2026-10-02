@@ -235,6 +235,26 @@ class FundingBindingSpec(DataSpec):
     public: bool = False
 
 
+class DefaultFundingSpec(DataSpec):
+    """Is the box SET UP: what funds the harness a person is about to run (the user's default).
+
+    The one place that rule is decided, so the CLI's `auto`, the chooser, the startup gate, the
+    warnings and readiness cannot answer it differently. An INSTALLED default is set up only when
+    it is funded. A default that is not installed can be funded by nothing, so then any funded
+    harness answers -- first-run setup settles funding before it installs the default.
+    """
+
+    spec_kind: ClassVar[str] = "funding.default"
+
+    #: Capability kind of the default harness (``""`` when none is recorded).
+    kind: str = ""
+    installed: bool = False
+    #: The source that answers, ``None`` when nothing does.
+    source: LLMSource | None = None
+    #: Why nothing answers, when ``source`` is None.
+    reason: str = ""
+
+
 class FundingStatusSpec(DataSpec):
     """What funds each harness, layered ON TOP of the status record (``core.status``).
 
@@ -260,3 +280,4 @@ class FundingStatusSpec(DataSpec):
     #: Harness kinds whose resolved source IS the bound endpoint.
     active_for: list[str]
     binding: FundingBindingSpec | None = None
+    default: DefaultFundingSpec = DefaultFundingSpec()

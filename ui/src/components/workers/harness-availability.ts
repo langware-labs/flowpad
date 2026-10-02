@@ -32,6 +32,8 @@ export function workerInstallWarning(record: StatusRecord | null | undefined, wo
 export interface HarnessAvailability {
   /** Per-worker install warning, or null when the harness is installed or not yet known. */
   warnings: Record<WorkerType, string | null>;
+  /** The status record the warnings were read from (`null` until it is read). */
+  record: StatusRecord | null;
 }
 
 export function useHarnessAvailability(): HarnessAvailability {
@@ -41,5 +43,5 @@ export function useHarnessAvailability(): HarnessAvailability {
     for (const worker of LAUNCHABLE_WORKERS) byWorker[worker] = workerInstallWarning(record, worker);
     return byWorker;
   }, [record]);
-  return { warnings };
+  return { warnings, record };
 }

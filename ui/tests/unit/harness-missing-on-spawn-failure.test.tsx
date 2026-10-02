@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   openTab: vi.fn(),
   openNewChat: vi.fn(),
-  record: vi.fn(),
+  record: null as unknown,
   test: vi.fn(),
   // The re-probe resolves the kind first, so a launch that failed for the
   // DEFAULT assistant is not answered by a sibling that happens to be present.
@@ -39,7 +39,6 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/navigation/open-new-chat', () => ({ openNewChat: h.openNewChat }));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sdk')>()),
-  statusService: { record: h.record },
   capabilityManager: {
     test: h.test,
     getSnapshot: h.getSnapshot,
@@ -59,7 +58,9 @@ vi.mock('@sdk/react/hooks', () => ({
 vi.mock('@src/contexts/view-mode-context', () => ({ useIsAdvanced: () => true, ViewMode: { Advanced: 'advanced' } }));
 // No status record read yet: install warnings fail open on that, so no opener carries a
 // warning badge and nothing here pre-empts the path under test.
-vi.mock('@src/components/workers/harness-availability', () => ({ useHarnessAvailability: () => ({ warnings: {} }) }));
+vi.mock('@src/components/workers/harness-availability', () => ({
+  useHarnessAvailability: () => ({ warnings: {}, record: h.record }),
+}));
 vi.mock('@src/hooks/use-resume-in-terminal', () => ({ useResumeInTerminal: () => ({ resumeInTerminal: vi.fn() }) }));
 vi.mock('@src/components/graph-view/icons/iconRegistry', () => ({ iconForType: () => () => null }));
 
@@ -87,7 +88,7 @@ describe('a spawn failure asks whether the harness is really gone', () => {
     vi.clearAllMocks();
     // The stale record that lets the pre-flight through: it says "installed", so
     // no dialog is shown up front and the spawn is what discovers the truth.
-    h.record.mockResolvedValue({
+    h.record = ({
       default_harness: 'harness.claude.cli',
       harnesses: [{ kind: 'harness.claude.cli', worker_type: 'claude', install: 'installed' }],
     });
@@ -111,7 +112,7 @@ describe('a spawn failure asks whether the harness is really gone', () => {
   it('asks to install before spawning when the record already says the harness is gone', async () => {
     // The pre-flight's own refusal: a harness the status record reports `not_installed` is never
     // spawned at all — the install dialog comes first, with no failed launch on the way.
-    h.record.mockResolvedValue({
+    h.record = ({
       default_harness: 'harness.claude.cli',
       harnesses: [{ kind: 'harness.claude.cli', worker_type: 'claude', install: 'not_installed' }],
     });

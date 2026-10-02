@@ -34,7 +34,13 @@ from flow_sdk.instance_settings.llm_endpoint import (
     listing_supersedes_binding,
     set_hub_llm_endpoint,
 )
-from flow_sdk.schema.data_spec.llm_source_spec import FundingBindingSpec, FundingStatusSpec, LLMScope, LLMSource
+from flow_sdk.schema.data_spec.llm_source_spec import (
+    DefaultFundingSpec,
+    FundingBindingSpec,
+    FundingStatusSpec,
+    LLMScope,
+    LLMSource,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -102,8 +108,25 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
     return sources, resolved, blocked, notes, endpoints
 
 
-async def _status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> dict:
-    """The funding record (``FundingStatusSpec``), as the wire carries it.
+async def _default_funding(resolved: dict[str, LLMSource | None], blocked: dict[str, str]) -> DefaultFundingSpec:
+    """The set-up verdict (``DefaultFundingSpec``): the installed default's own source, else -- the
+    default being absent -- any funded harness, the default vendor first."""
+    from flow_sdk.core.status import default_harness_kind, is_installed  # noqa: PLC0415
+    from flow_sdk.flowpad_types.vendors import default_vendor, vendor_by  # noqa: PLC0415
+
+    kind = await default_harness_kind()
+    vendor = vendor_by("capability_kind", kind) if kind else None
+    if vendor is not None and is_installed(vendor.key):
+        return DefaultFundingSpec(kind=kind, installed=True, source=resolved.get(kind), reason=blocked.get(kind, ""))
+    funded = {k: pick for k, pick in resolved.items() if pick}
+    preferred = default_vendor().capability_kind
+    source = funded.get(preferred) or next(iter(funded.values()), None)
+    reason = "" if source else (f"{vendor.key} is not installed" if vendor else "no harness is funded")
+    return DefaultFundingSpec(kind=kind, installed=False, source=source, reason=reason)
+
+
+async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> FundingStatusSpec:
+    """The funding record.
 
     Funding facts only: whether FlowPad is signed in, which keys are stored, and who the hub
     user is are STATUS facts (``core.status``) and are read there, not repeated here.
@@ -119,6 +142,7 @@ async def _status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> dic
         sources=sources,
         resolved=resolved,
         blocked=blocked,
+        default=await _default_funding(resolved, blocked),
         notes=notes,
         endpoints=endpoints,
         available=[endpoint.to_wire() for endpoint in available],
@@ -139,7 +163,12 @@ async def _status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> dic
             else None
         ),
     )
-    return record.model_dump(mode="json")
+    return record
+
+
+async def _status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> dict:
+    """The funding record, as the wire carries it."""
+    return (await funding_status(refresh=refresh, scope=scope)).model_dump(mode="json")
 
 
 async def prune_dead_binding() -> bool:

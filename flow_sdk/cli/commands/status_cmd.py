@@ -90,21 +90,17 @@ def _check_target(spec: str) -> str:
 
 def _kind_for(name: str, status: dict | None = None) -> str:
     """A ``--check`` name as a capability kind, ``""`` when it names no harness."""
-    from flow_sdk.flowpad_types.vendors import VENDORS  # noqa: PLC0415
+    from flow_sdk.flowpad_types.vendors import vendor_by, vendor_or_none  # noqa: PLC0415
 
     if name == "default":
         return str((status or {}).get("default_harness") or "")
-    return next((v.capability_kind for v in VENDORS if name in (v.key, v.capability_kind)), "")
+    vendor = vendor_or_none(name) or vendor_by("capability_kind", name)
+    return vendor.capability_kind if vendor is not None else ""
 
 
-def _check(status: dict, name: str) -> bool:
+def _check(status: dict, kind: str) -> bool:
     """Is that harness's CLI here (installed or built in)."""
-    kind = _kind_for(name, status)
-    for h in status["harnesses"]:
-        if h["kind"] == kind:
-            return h["install"] in ("installed", "built_in")
-    fail(EXIT_INVALID_ARG, "INVALID_ARG", f"no harness named {name!r}")
-    return False
+    return any(h["kind"] == kind and h["install"] in ("installed", "built_in") for h in status["harnesses"])
 
 
 @status_app.callback()
@@ -120,7 +116,8 @@ def status(
         # fact that can have changed, without re-probing every other vendor's login.
         name = _check_target(check)
         kind = _kind_for(name, _fetch(False) if name == "default" else None)
-        record = _fetch(refresh, [kind] if kind else None)
-        raise typer.Exit(0 if _check(record, name) else EXIT_CHECK_FAILED)
+        if not kind:
+            fail(EXIT_INVALID_ARG, "INVALID_ARG", f"no harness named {name!r}")
+        raise typer.Exit(0 if _check(_fetch(refresh, [kind]), kind) else EXIT_CHECK_FAILED)
     record = _fetch(refresh)
     typer.echo(json.dumps(record, indent=2) if json_output else _render(record))

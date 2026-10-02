@@ -25,7 +25,6 @@ import {
   InstallState,
   dataContext,
   GraphContext,
-  statusService,
   ViewType,
   type ComputeNode,
 } from '@sdk';
@@ -118,7 +117,7 @@ export function useTerminalStripController({
   >(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
-  const { warnings } = useHarnessAvailability();
+  const { warnings, record } = useHarnessAvailability();
   // Shared with the vibe chat's first prompt — the other route that discovers a
   // missing harness (see use-harness-install-prompt).
   const { promptToInstall, confirmMissingThen, dialog: installDialog } = useHarnessInstallPrompt();
@@ -142,15 +141,11 @@ export function useTerminalStripController({
       // used to strand it set, which left a permanent spinner on the opener and
       // made every later click a silent no-op until the page reloaded.
       try {
-        try {
-          const record = await statusService.record();
-          const kind = workerType ? requiredKind : record?.default_harness;
-          if (kind && harnessStatus(record, kind)?.install === InstallState.NotInstalled) {
-            promptToInstall();
-            return;
-          }
-        } catch {
-          // Status unavailable — don't block tab creation.
+        // Status not read yet (no record) fails open — it never blocks tab creation.
+        const kind = workerType ? requiredKind : record?.default_harness;
+        if (kind && harnessStatus(record, kind)?.install === InstallState.NotInstalled) {
+          promptToInstall();
+          return;
         }
         // openNewChat creates AND navigates — it owns the chat-mode propagation,
         // so a second openShellProcess here would re-navigate the same dock
@@ -179,7 +174,7 @@ export function useTerminalStripController({
         clearPending();
       }
     },
-    [confirmMissingThen, promptToInstall, clearPending, navigation, spawnProjectId],
+    [confirmMissingThen, promptToInstall, clearPending, navigation, spawnProjectId, record],
   );
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
@@ -260,10 +255,6 @@ export function useTerminalStripController({
   const isOpenCodeCreationPending = pendingTabCreation === 'opencode';
   const isTerminalCreationPending = pendingTabCreation === 'terminal';
   const sandboxAvailable = !!sandboxComputeNode;
-  const claudeWarning = warnings.claude_code;
-  const codexWarning = warnings.codex;
-  const copilotWarning = warnings.copilot;
-  const opencodeWarning = warnings.opencode;
 
   const openers = useMemo<OpenerDescriptor[]>(
     () => [
@@ -274,7 +265,7 @@ export function useTerminalStripController({
         iconClassName: PROVIDER_META.claude.iconClassName,
         onActivate: () => void handleStartClaude(),
         available: true,
-        warning: claudeWarning,
+        warning: warnings.claude_code,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.claude_code,
         pendingInline: isClaudeCreationPending,
         disabled: isTabCreationPending,
@@ -286,7 +277,7 @@ export function useTerminalStripController({
         iconClassName: PROVIDER_META.codex.iconClassName,
         onActivate: () => void handleStartCodex(),
         available: true,
-        warning: codexWarning,
+        warning: warnings.codex,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.codex,
         pendingInline: isCodexCreationPending,
         disabled: isTabCreationPending,
@@ -298,7 +289,7 @@ export function useTerminalStripController({
         iconClassName: PROVIDER_META.copilot.iconClassName,
         onActivate: () => void handleStartCopilot(),
         available: true,
-        warning: copilotWarning,
+        warning: warnings.copilot,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.copilot,
         pendingInline: isCopilotCreationPending,
         disabled: isTabCreationPending,
@@ -310,7 +301,7 @@ export function useTerminalStripController({
         iconClassName: PROVIDER_META.opencode.iconClassName,
         onActivate: () => void handleStartOpenCode(),
         available: true,
-        warning: opencodeWarning,
+        warning: warnings.opencode,
         capabilityKind: HARNESS_CAPABILITY_BY_WORKER.opencode,
         pendingInline: isOpenCodeCreationPending,
         disabled: isTabCreationPending,
@@ -371,10 +362,7 @@ export function useTerminalStripController({
       isAdvanced,
       ContextIcon,
       sandboxAvailable,
-      claudeWarning,
-      codexWarning,
-      copilotWarning,
-      opencodeWarning,
+      warnings,
       isClaudeCreationPending,
       isCodexCreationPending,
       isCopilotCreationPending,

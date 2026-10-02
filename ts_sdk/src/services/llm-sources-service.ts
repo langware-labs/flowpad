@@ -107,6 +107,21 @@ export interface LLMFundingStatus {
   endpoints: Record<string, LLMEndpointOffer>;
   /** Capability kinds whose resolved source IS the bound endpoint. */
   active_for: string[];
+  /** Is the box SET UP — decided once, in Python (`DefaultFundingSpec`). */
+  default: DefaultFunding;
+}
+
+/**
+ * What funds the harness a person is about to run (the user's default). An installed default is
+ * set up only when it is funded; one not yet installed accepts any funded harness. Every surface
+ * that asks "is this box set up" reads this, so none can answer it differently.
+ */
+export interface DefaultFunding {
+  kind: string;
+  installed: boolean;
+  source: LLMSource | null;
+  /** Why nothing answers, when `source` is null. */
+  reason: string;
 }
 
 export class LlmSourcesService {

@@ -8,18 +8,20 @@ import type { GitProvider } from '../services/git-providers';
 import { isHubOnly } from '../utils/hub-runtime';
 import { scopeFilterKey, scopeToQueryString, type ScopeFilter } from '../utils/scope-filter';
 import { defineAsset, type LoadContext } from './definition';
+import { LazyAsset } from './LazyAsset';
 
 /**
  * Re-read `asset` whenever the backend says a STATUS fact changed (`status_changed_msg`): a CLI
  * installed, a login probed, a key stored, the hub signed in or out. One signal for every reader
  * of status and of funding layered on it, so no screen wires its own cross-cache invalidation.
  */
-async function onStatusChanged(asset: LazyAsset): Promise<() => void> {
+async function onStatusChanged(asset: LazyAsset, params: unknown): Promise<() => void> {
   if (isHubOnly()) return () => {};
   const { connectionManager } = await import('../websocket');
   const { lazyAssets } = await import('./registry');
   const handler = () => {
-    void lazyAssets.invalidate(asset);
+    // This subscription's own key: each cached key holds its own listener.
+    void lazyAssets.invalidate(asset, params as never);
   };
   connectionManager.on('on_status_changed_msg', handler);
   // A reconnect is a missed-push window: the backend may have restarted (a fresh boot sweep, its
@@ -30,7 +32,6 @@ async function onStatusChanged(asset: LazyAsset): Promise<() => void> {
     connectionManager.off('on_reconnected', handler);
   };
 }
-import { LazyAsset } from './LazyAsset';
 
 export interface AssetTypeVault {
   typeid: string; relPath: string; absPath: string; label: string; scope: string;
@@ -187,7 +188,7 @@ export const assetDefinitions = {
       const { ConnectionsService } = await import('../services/connections-service');
       return new ConnectionsService(p?.nodeTypeId ?? localNode).fetchList(p?.projectId);
     },
-    subscribe: async () => onStatusChanged(LazyAsset.Connections),
+    subscribe: async (p) => onStatusChanged(LazyAsset.Connections, p),
   }),
   [LazyAsset.Status]: defineAsset({
     // WHAT is on this box (installed, login, account, keys, hub). Python owns every fact; the
@@ -199,7 +200,7 @@ export const assetDefinitions = {
       const { StatusService } = await import('../services/status-service');
       return new StatusService(p?.nodeTypeId ?? localNode).fetch();
     },
-    subscribe: async () => onStatusChanged(LazyAsset.Status),
+    subscribe: async (p) => onStatusChanged(LazyAsset.Status, p),
   }),
   [LazyAsset.LlmFunding]: defineAsset({
     staleTime: 10_000,
@@ -211,7 +212,7 @@ export const assetDefinitions = {
       return new LlmSourcesService(p?.nodeTypeId ?? localNode).fetchStatus(p?.projectId);
     },
     // Funding is layered on status: when a status fact changes, the verdicts may too.
-    subscribe: async () => onStatusChanged(LazyAsset.LlmFunding),
+    subscribe: async (p) => onStatusChanged(LazyAsset.LlmFunding, p),
   }),
   [LazyAsset.GitRepos]: defineAsset({
     load: async (p: { provider: GitProvider }) => (await import('../services/git-providers')).fetchRepos(p.provider),

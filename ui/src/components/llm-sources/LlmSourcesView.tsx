@@ -18,7 +18,7 @@ import {
   selectKindFor,
   type LLMEndpointOffer,
   type LLMSource,
-  LLMSourceRefusal,
+  remedyFor,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Waypoints } from 'lucide-react';
@@ -83,16 +83,15 @@ function SourceRow({
   // Read off the backend's refusal CODE, never inferred from the endpoint's kind: an
   // uninstalled CLI and a preference that ruled a good login out are both ineligible device
   // rows, and neither is fixed by signing in.
-  const needsSignIn = [LLMSourceRefusal.SignedOut, LLMSourceRefusal.LoginNotChecked, LLMSourceRefusal.LoginFailed].includes(
-    source.reason_code as LLMSourceRefusal,
-  );
+  const remedy = remedyFor(source.reason_code);
+  const needsSignIn = remedy === 'sign_in';
   // The same escape hatch, one kind over. An unkeyed provider used to render the
   // problem ("no openrouter key is stored on this machine") beside a disabled
   // button and nothing else — a row that states a fix it will not let you make.
   // Adding the key belongs to Connections, which owns declaring a credential and
   // storing its value, so this sends you there rather than growing a second
   // place to type one.
-  const needsKey = source.reason_code === LLMSourceRefusal.NoKey;
+  const needsKey = remedy === 'add_key';
   return (
     <li
       className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2"

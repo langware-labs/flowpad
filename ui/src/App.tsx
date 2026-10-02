@@ -52,11 +52,9 @@ import { WizardPopupRoot } from '@src/components/assets/editor/wizard/WizardPopu
 // service-unavailable / network / config errors before any React tree mounts,
 // so a parallel inline error UI here is no longer needed.
 
-// The harness capability set (default reference + Claude/Codex/Copilot) is owned by
-// `HarnessCapabilitiesProvider` below: it subscribes once, loads persisted
-// snapshots without executing external harness probes, and every consumer
-// reads them via `useHarnessCapabilities`. Launch/setup actions perform the
-// definitive on-demand check.
+// The default-harness capability is owned by `HarnessCapabilitiesProvider` below: it
+// subscribes once and every consumer reads it from there. What is installed and signed in
+// is the status record (`useStatusRecord`), pushed by the backend.
 
 /**
  * The app's global listener mount: WS commands, presence, `flow show`, the OS

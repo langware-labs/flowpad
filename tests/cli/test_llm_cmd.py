@@ -47,15 +47,10 @@ STATUS = {
         EP: {"kind": "hub", "provider": "openrouter"},
         DEVICE: {"kind": "device", "provider": ""},
     },
+    # The backend's set-up verdict (`DefaultFundingSpec`): claude, the default, runs on the pool.
+    "default": {"kind": "harness.claude.cli", "installed": True, "source": {"endpoint_typeid": EP}, "reason": ""},
 }
 
-
-
-@pytest.fixture(autouse=True)
-def _no_default_harness(monkeypatch):
-    """No status record unless a test names one: `_default_harness_kind` would otherwise ask a
-    real backend (or build the record in-process) for the user's default harness."""
-    monkeypatch.setattr(llm_cmd, "_default_harness_kind", lambda: "")
 
 
 # ------------------------------------------------------------------ the list
@@ -613,28 +608,10 @@ def test_auto_reports_the_resolvers_winner_not_an_auto_eligible_row():
     assert (row.name, row.typeid) == ("team pool", EP)
 
 
-def test_auto_prefers_the_default_vendors_source():
-    """Any funded row is a truthful answer to "is this box funded", but a person at a prompt is
-    usually about to run THEIR harness, and naming a source that funds a different one reads as
-    a wrong answer."""
-    status = {
-        **STATUS,
-        "resolved": {
-            # Rank order would put the shared pool first; only claude's own row funds claude.
-            # Both verified — this test is about WHICH funded row is named, not about whether
-            # either is usable.
-            "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user"},
-            "harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "user"},
-        },
-    }
-
-    assert llm_cmd._auto_source(status).typeid == DEVICE
-
-
 def test_auto_finds_nothing_when_nothing_resolves():
     """The whole trigger for opening the chooser. ``sources`` is still full here — offers are
     not funding, and answering from them would leave the box unable to issue a call."""
-    assert llm_cmd._auto_source({**STATUS, "resolved": {}}) is None
+    assert llm_cmd._auto_source({**STATUS, "resolved": {}, "default": {"source": None}}) is None
     assert llm_cmd._auto_source({}) is None
 
 
@@ -679,7 +656,7 @@ def test_auto_never_opens_a_browser_when_the_box_is_already_funded(monkeypatch):
 def test_auto_with_no_browser_refuses_and_hands_back_the_chooser_url(monkeypatch):
     """An agent that cannot open a window can still hand the URL to the person who can, so the
     refusal carries it rather than only saying no."""
-    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}})
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}, "default": {"source": None}})
     monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
     monkeypatch.setattr(llm_cmd, "_backend_port", lambda: None)
 
@@ -719,7 +696,7 @@ def test_a_machine_with_no_browser_is_told_the_url_not_that_one_opened(monkeypat
         async def __anext__(self):
             raise StopAsyncIteration
 
-    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}})
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}, "default": {"source": None}})
     monkeypatch.setattr("webbrowser.open", lambda _url: False)
     monkeypatch.setattr("websockets.connect", lambda *a, **k: _Socket())
     monkeypatch.setattr(typer, "echo", lambda msg="", **k: sent.append(str(msg)))
@@ -741,6 +718,7 @@ def test_a_resolved_source_is_evidence():
         "sources": {"harness.codex.cli": [{"endpoint_typeid": DEVICE, "name": "codex device login", "rank": 0}]},
         "resolved": {"harness.codex.cli": {"endpoint_typeid": DEVICE, "origin": "default"}},
         "endpoints": {DEVICE: {"kind": "device", "provider": ""}},
+        "default": {"kind": "harness.codex.cli", "installed": True, "source": {"endpoint_typeid": DEVICE}},
     }
 
     assert llm_cmd._auto_source(status).name == "codex device login"
@@ -764,18 +742,21 @@ def test_auto_checks_unchecked_logins_before_sending_anyone_to_a_browser(monkeyp
         "resolved": {"harness.claude.cli": None},
         "endpoints": {DEVICE: {"kind": "device", "provider": ""}},
     }
-    checked = {**unchecked, "resolved": {"harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "default"}}}
-    refreshed: list[str] = []
+    pick = {"endpoint_typeid": DEVICE, "origin": "default"}
+    checked = {**unchecked, "resolved": {"harness.claude.cli": pick}, "default": {"source": pick}}
+    refreshed: list = []
+
+    from flow_sdk.cli.commands import status_cmd
 
     monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
     monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: checked if refreshed else unchecked)
-    monkeypatch.setattr(llm_cmd, "_backend_port", lambda: 6060)
-    monkeypatch.setattr(llm_cmd, "_call", lambda method, url, **kw: refreshed.append(url) or {})
+    monkeypatch.setattr(status_cmd, "_fetch", lambda refresh, kinds=None: refreshed.append((refresh, kinds)) or {})
     monkeypatch.setattr(llm_cmd, "_serve_chooser_here", lambda: pytest.fail("a checked box must not open a browser"))
 
     row = llm_cmd._resolve_or_choose()
 
-    assert refreshed and refreshed[0].endswith("/compute_node/@local/status/refresh"), "the login was never checked"
+    # Only the harness nobody had asked about is re-probed.
+    assert refreshed == [(True, ["harness.claude.cli"])], "the login was never checked"
     assert row.name == "claude device login"
 
 
@@ -845,6 +826,7 @@ def _one(kind: str, *, typeid: str = DEVICE, harness: str = "claude") -> dict:
         "sources": {f"harness.{harness}.cli": [{"endpoint_typeid": typeid, "name": "the source", "rank": 0}]},
         "resolved": {f"harness.{harness}.cli": pick},
         "endpoints": {typeid: {"kind": kind, "provider": "openrouter" if kind == "api_key" else ""}},
+        "default": {"kind": f"harness.{harness}.cli", "installed": True, "source": pick},
     }
 
 
@@ -864,63 +846,10 @@ def test_auto_ignores_a_verdict_naming_a_source_the_listing_never_sent():
         "sources": {},
         "resolved": {"harness.claude.cli": {"endpoint_typeid": "llm_endpoint:ghost"}},
         "endpoints": {},
+        "default": {"source": {"endpoint_typeid": "llm_endpoint:ghost"}},
     }
 
     assert llm_cmd._auto_source(status) is None
-
-
-def test_auto_falls_back_when_the_default_vendor_is_not_the_funded_one():
-    """The default vendor is a PREFERENCE among funded rows, never a filter. Treating it as a
-    filter would report "nothing" on a box that is demonstrably funded — for another harness."""
-    status = {
-        "sources": {"harness.opencode.cli": [{"endpoint_typeid": KEY, "name": "openrouter key", "rank": 0}]},
-        "resolved": {"harness.opencode.cli": {"endpoint_typeid": KEY, "origin": "user"}},
-        "endpoints": {KEY: {"kind": "api_key", "provider": "openrouter"}},
-    }
-
-    row = llm_cmd._auto_source(status)
-
-    assert row is not None and row.active_for == ["opencode"]
-
-
-def _two_harnesses(*, claude_installed: bool, claude_funded: bool) -> dict:
-    """Codex funded by a key; Claude -- the default -- installed or not, funded or not."""
-    claude_reason = "" if claude_funded else ("signed_out" if claude_installed else "not_installed")
-    status = {
-        "sources": {
-            "harness.claude.cli": [
-                {"endpoint_typeid": DEVICE, "name": "claude device login", "rank": 0, "reason_code": claude_reason}
-            ],
-            "harness.codex.cli": [{"endpoint_typeid": KEY, "name": "openrouter key", "rank": 0}],
-        },
-        "resolved": {"harness.codex.cli": {"endpoint_typeid": KEY, "origin": "user"}},
-        "endpoints": {KEY: {"kind": "api_key", "provider": "openrouter"}, DEVICE: {"kind": "device", "provider": ""}},
-    }
-    if claude_funded:
-        status["resolved"]["harness.claude.cli"] = {"endpoint_typeid": DEVICE, "origin": "user"}
-    return status
-
-
-def test_auto_is_not_set_up_while_the_installed_default_is_unfunded():
-    """The person is about to run THEIR harness. Codex being funded does not make a box whose
-    installed, signed-out Claude is the default "set up" -- answering so would skip the sign-in."""
-    status = _two_harnesses(claude_installed=True, claude_funded=False)
-
-    assert llm_cmd._auto_source(status, "harness.claude.cli") is None
-
-
-def test_auto_names_the_source_funding_the_default():
-    row = llm_cmd._auto_source(_two_harnesses(claude_installed=True, claude_funded=True), "harness.claude.cli")
-
-    assert row is not None and row.typeid == DEVICE
-
-
-def test_auto_accepts_any_funded_harness_while_the_default_is_not_installed():
-    """Nothing can fund a CLI that is not on the box, so insisting on it would hold first-run
-    setup in the chooser forever -- it settles funding BEFORE installing the default."""
-    row = llm_cmd._auto_source(_two_harnesses(claude_installed=False, claude_funded=False), "harness.claude.cli")
-
-    assert row is not None and row.active_for == ["codex"]
 
 
 def test_auto_answers_nothing_on_an_empty_box():

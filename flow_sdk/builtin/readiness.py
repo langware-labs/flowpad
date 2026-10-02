@@ -236,25 +236,27 @@ async def _local_funding_item(agent: "Agent", project: Any) -> Optional[Readines
     """Can THIS computer pay for the agent's turns? The funding layer's own answer for the harness the
     agent runs on (the user's default harness when it names none) -- the source a spawn would get,
     or the reason nothing would, as the resolver states it. ``None`` when it cannot say."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import _status  # noqa: PLC0415
-    from flow_sdk.core.status import default_harness_kind  # noqa: PLC0415
-    from flow_sdk.flowpad_types.vendors import vendor_by  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        worker_capability_kind,
+    )
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import funding_status  # noqa: PLC0415
     from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
 
     try:
-        worker = agent.worker_type or ""
-        vendor = vendor_by("key", worker) or vendor_by("worker_type", worker) if worker else None
-        kind = vendor.capability_kind if vendor is not None else await default_harness_kind()
-        funding = await _status(scope=LLMScope.of_project(str(getattr(project, "id", "") or "")))
+        funding = await funding_status(scope=LLMScope.of_project(str(getattr(project, "id", "") or "")))
     except Exception:  # noqa: BLE001 — an unanswerable question does not block a run
         return None
+    if agent.worker_type:
+        kind = worker_capability_kind(agent.worker_type)
+        pick, reason = funding.resolved.get(kind), funding.blocked.get(kind, "")
+    else:  # the user's default harness: the funding record's own set-up verdict
+        kind, pick, reason = funding.default.kind, funding.default.source, funding.default.reason
     if not kind:
         return None
     req = RequirementSpec(kind=REQUIREMENT_FUNDING, name="model funding", derived=True)
-    pick = (funding.get("resolved") or {}).get(kind)
-    if pick:
-        return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=str(pick.get("name") or kind))
-    reason = (funding.get("blocked") or {}).get(kind) or f"nothing funds {kind} on this computer"
+    if pick is not None:
+        return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=pick.name or kind)
+    reason = reason or f"nothing funds {kind} on this computer"
     return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=kind, fix=f"{reason}: run `flow llm set auto`")
 
 
