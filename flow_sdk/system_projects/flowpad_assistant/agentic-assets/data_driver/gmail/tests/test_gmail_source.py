@@ -324,6 +324,35 @@ async def test_reply_wait_reuses_the_targeted_lookup(monkeypatch):
     assert opens == [(ADDRESS, "password"), (ADDRESS, "password")] and len(closes) == 2
 
 
+async def test_an_expected_reply_is_stored_under_the_origin_it_returns(monkeypatch):
+    """``expect_reply`` ingests the reply it found, and the returned envelope names the row.
+
+    Gmail scopes every origin under its mailbox (``<account>/INBOX``), so the identity is the one
+    the source stamped — ``reply.origin`` — not one re-derived from the row's account alone
+    (``legacy_lift.origin_of`` gives ``<account>``, which no Gmail row is stored under)."""
+    import uuid
+
+    from flow_sdk.builtin.data_source import DataSource
+    from flow_sdk.builtin.source_item import SourceItem
+    from flow_sdk.ingest.driver_runtime import SendOutcome
+
+    monkeypatch.setenv("GMAIL_APP_PASSWORD", "password")
+    monkeypatch.setattr(gmail_source, "open_inbox", lambda account, mailbox="INBOX": (object(), "44"))
+    monkeypatch.setattr(gmail_source, "close_inbox", lambda active: None)
+    monkeypatch.setattr(gmail_source, "_find_reply_messages", lambda active, external_id: (gmail_source.FetchedMessage(8, "22", _raw()),))
+    driver = await DataDriver.get("gmail")
+    address = ADDRESS.lower()
+    source = driver.create_source(driver.create_config(address=address), name=f"gmail-{uuid.uuid4().hex[:8]}",
+                                  account_key=address, account_identities=[address])
+    await source.save()
+
+    reply = await source.expect_reply(SendOutcome(external_id="<question@gmail.test>"))
+
+    assert reply.origin is not None and reply.origin.namespace == f"{address}/INBOX"
+    stored = await SourceItem.find_existing(str(source.id), reply.origin)
+    assert stored is not None and stored.external_id == "<incoming@gmail.test>"
+
+
 async def test_the_double_delivers_after_the_source_exists_and_records_the_reply(monkeypatch):
     Double = load_module(Path(__file__).parent, "matrix").Double  # as the matrix runner loads it
     driver = DataDriver.loaded("gmail")
