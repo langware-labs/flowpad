@@ -1,5 +1,6 @@
 import { Bookmark, BookmarkType } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
+import { sortContainer } from '@src/lib/container-sort';
 import { useCallback, useMemo } from 'react';
 import { scheduleFavoriteDelete, useHiddenFavoriteIds } from './favorites-pending-delete';
 import { useProjectBookmarks } from './use-project-bookmarks';
@@ -32,10 +33,6 @@ function isFolderBookmark(b: Bookmark): boolean {
 // Stable reference for "no children" so childrenOf() doesn't churn memo deps.
 const EMPTY_CHILDREN: Bookmark[] = [];
 
-import { sortContainer } from '@src/lib/container-sort';
-
-export { sortContainer };
-
 function matchesRef(b: Bookmark, entityType: string, entityId: string): boolean {
   return (
     b.data?.entity_type === entityType && b.data?.entity_id === entityId
@@ -64,8 +61,8 @@ export function useFavorites() {
     () => (hidden.size ? allBookmarks.filter((b) => !b.id || !hidden.has(b.id)) : allBookmarks),
     [allBookmarks, hidden],
   );
-  // Stamp the current project onto favorites/folders at creation so the
-  // bookmarks slider can filter them by scope. The record still saves unscoped
+  // Stamp the current project onto favorites/folders at creation: project_id
+  // picks the menu bucket a row lands in. The record still saves unscoped
   // (below) — @local visibility is unchanged; project_id is just a field.
   const { project } = useProject();
   const currentProjectId = project?.id ?? null;
@@ -183,12 +180,14 @@ export function useFavorites() {
     [isFavorited, refetch, appendOrder, currentProjectId],
   );
 
+  // `label` is the name the caller shows for the row, so the undo toast names
+  // what the user just clicked; the entity's own displayName otherwise.
   const removeFavorite = useCallback(
-    async (bookmark: Bookmark) => {
+    (bookmark: Bookmark, label = bookmark.displayName): void => {
       if (!bookmark.id) return;
       scheduleFavoriteDelete({
         ids: [bookmark.id],
-        title: bookmark.name || bookmark.title || bookmark.displayName,
+        title: label,
         commit: async () => {
           await bookmark.delete();
           await refetch();
@@ -231,7 +230,7 @@ export function useFavorites() {
 
   const moveToFolder = useCallback(
     async (bookmark: Bookmark, folderId: string | null) => {
-      // One nesting level: folders are never filed under folders.
+      // Folders don't move into folders; nesting is built by createFolder only.
       if (isFolderBookmark(bookmark)) return;
       // Root is '' (never null/undefined) — see parent_id's SDK doc.
       const next = folderId ?? '';
@@ -246,7 +245,7 @@ export function useFavorites() {
   );
 
   const deleteFolder = useCallback(
-    async (folder: Bookmark) => {
+    (folder: Bookmark, label = folder.displayName): void => {
       if (!folder.id) return;
       // The whole subtree, folders deepest-first after every leaf: each folder is
       // empty by the time it is deleted, so the server's child promotion (kept
@@ -255,7 +254,7 @@ export function useFavorites() {
       const subfolders = [...nested, folder];
       scheduleFavoriteDelete({
         ids: [...leaves, ...subfolders].map((b) => b.id),
-        title: folder.name || folder.title || folder.displayName,
+        title: label,
         commit: async () => {
           await Promise.all(leaves.map((b) => b.delete()));
           for (const f of subfolders) await f.delete();
@@ -284,7 +283,7 @@ export function useFavorites() {
     async (ref: FavoriteRef, parentId = ''): Promise<Bookmark | null> => {
       const existing = isFavorited(ref.entityType, ref.entityId);
       if (existing) {
-        await removeFavorite(existing);
+        removeFavorite(existing);
         return null;
       }
       return addFavorite(ref, parentId);

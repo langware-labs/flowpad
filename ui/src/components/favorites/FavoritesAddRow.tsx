@@ -11,8 +11,8 @@ import { FolderPlus, PackagePlus, Plus, Star } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
 /**
- * The "add here" row rendered as the last child of every level of the bookmarks
- * tree menu — so you build the tree while browsing it. Everything it creates
+ * The "add here" row that leads each level of the bookmarks tree menu that can
+ * take a row — so you build the tree while browsing it. Everything it creates
  * files into `parentId` ('' = root), the level it sits under.
  *
  * Leads with a green "+" marker (not a button) so the row reads as a create

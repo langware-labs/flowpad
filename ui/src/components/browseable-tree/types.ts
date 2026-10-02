@@ -222,14 +222,13 @@ export interface ToolbarAction {
    *  want to navigate, use the row's `pointer` instead. */
   run: () => void | Promise<void>;
 
-  /** When to show the button. Default: `'hover'`. */
-  visibleWhen?: 'hover' | 'always' | 'selected';
-
   /** Optional busy indicator while `run()` is pending. Defaults to true. */
   showBusyIndicator?: boolean;
 
-  /** Removes something. The first click only ARMS the button (it turns into a
-   *  confirm check); the second click runs it. Leaving the button disarms. */
+  /** Removes something. As a button, the first click only ARMS it (it turns
+   *  into a confirm check) and the second runs it; leaving disarms. As a
+   *  context-menu item it is styled destructive and runs on select — opening
+   *  the menu was already the deliberate first step. */
   destructive?: boolean;
 }
 

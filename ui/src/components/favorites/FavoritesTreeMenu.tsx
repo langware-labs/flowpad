@@ -64,8 +64,6 @@ export function FavoritesTreeMenu({
         // open — exactly the state a hover menu exists to avoid. It would also
         // outlive `defaultExpandedIds`, pinning the menu to whatever project was
         // open the first time it was used.
-        // The tree still renders the root add row above this (`addParentFor('')`
-        // offers it whenever the current project has no rows).
         emptyState={
           <p className="text-xs text-muted-foreground">
             <Trans>No bookmarks yet</Trans>
