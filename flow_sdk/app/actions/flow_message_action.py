@@ -3307,14 +3307,10 @@ async def _drain_conversation_message_fetches(pending: dict[str, Optional[dateti
 
 
 def _newest_first(pending: dict[str, Optional[datetime]]) -> list[str]:
-    """Conversation ids by hub ``updated_date``, newest first; unknown clocks last.
-
-    A bare iterable of ids (no clocks) keeps its order.
-    """
-    clocks = pending if isinstance(pending, dict) else {}
+    """Conversation ids by hub ``updated_date``, newest first; unknown clocks last."""
 
     def _key(cid: str) -> float:
-        ts = clocks.get(cid)
+        ts = pending.get(cid)
         if ts is None:
             return float("-inf")
         if ts.tzinfo is None:

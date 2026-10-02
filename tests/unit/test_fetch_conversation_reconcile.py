@@ -120,11 +120,11 @@ async def test_overlapping_drains_claim_each_conversation_once():
         new=fake_fetch,
     ):
         first = asyncio.create_task(
-            _drain_conversation_message_fetches([conv_id], "user-x"),
+            _drain_conversation_message_fetches({conv_id: None}, "user-x"),
         )
         await started.wait()
         second = asyncio.create_task(
-            _drain_conversation_message_fetches([conv_id], "user-x"),
+            _drain_conversation_message_fetches({conv_id: None}, "user-x"),
         )
         try:
             # The overlapping drain observes the existing atomic claim and

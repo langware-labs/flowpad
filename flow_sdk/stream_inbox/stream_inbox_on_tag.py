@@ -19,6 +19,8 @@ handler, so it reads no thread and drops the message with a warning nobody sees.
 """
 from __future__ import annotations
 
+import asyncio
+
 
 def emit_projected_tag(item) -> None:
     """Announce one message's placement in a conversation.
@@ -57,22 +59,20 @@ async def announce_placed_rows(source_item_id: str) -> None:
     from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
     from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import _thread_of  # noqa: PLC0415
 
     if not source_item_id:
         return
     message = await FlowMessage.get_one({"source_item_id": source_item_id})
     if message is None:
         return
+
+    async def _conversation_of():
+        return await Conversation.get_one({"id": message.conversation_id}) if message.conversation_id else None
+
+    conversation, thread = await asyncio.gather(_conversation_of(), _thread_of(message))
     rows: list[tuple[object, OperationType]] = [(message, OperationType.CREATE)]
-    if message.conversation_id:
-        conversation = await Conversation.get_one({"id": message.conversation_id})
-        if conversation is not None:
-            rows.append((conversation, OperationType.UPDATE))
-    if getattr(message, "thread_id", None):
-        thread = await MessageThread.get_one({"id": message.thread_id})
-        if thread is not None:
-            rows.append((thread, OperationType.UPDATE))
+    rows += [(row, OperationType.UPDATE) for row in (conversation, thread) if row is not None]
     for row, op in rows:
         await handle_entity_op(DataOpMessage(data=row, op=op, to_entity=row.typeid))

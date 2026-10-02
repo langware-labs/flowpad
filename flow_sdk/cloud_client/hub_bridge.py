@@ -899,16 +899,16 @@ class HubWsBridge:
                     is_self_send = True
             except Exception:
                 pass
-            if new_body_status == "ready" and prev_body_status != "ready" and not is_self_send:
-                asyncio.create_task(
-                    _maybe_eager_pull_bundle(
-                        fm_id,
-                        (getattr(existing, "attachment_filename", "") or "").strip(),
-                        getattr(existing, "attachment", None) or [],
-                        body_status=new_body_status,
-                    )
-                )
             if new_body_status == "ready" and not is_self_send:
+                if prev_body_status != "ready":
+                    asyncio.create_task(
+                        _maybe_eager_pull_bundle(
+                            fm_id,
+                            (getattr(existing, "attachment_filename", "") or "").strip(),
+                            getattr(existing, "attachment", None) or [],
+                            body_status=new_body_status,
+                        )
+                    )
                 # A body-bearing prompt whose auto-run was deferred at CREATE (the
                 # body was still UPLOADING) runs now that body_status=READY —
                 # build_merged_prompt can download the body and resolve every
@@ -922,8 +922,16 @@ class HubWsBridge:
                 # it can do that between the deferral and this frame. The frame
                 # then sees prev=READY, nothing fires, and the prompt was stranded
                 # — the session's last prompt had no later arrival to drain it.
+                #
+                # A row already consumed is skipped up front: no save clears
+                # ``prompt_auto_handled`` (``FlowMessage.preserved_fields_on_save``),
+                # so a True here is final and the task would only no-op.
                 conv_id = parent_conv_id or getattr(existing, "conversation_id", None)
-                if conv_id and _has_prompt_attachment(getattr(existing, "attachment", None)):
+                if (
+                    conv_id
+                    and not getattr(existing, "prompt_auto_handled", False)
+                    and _has_prompt_attachment(getattr(existing, "attachment", None))
+                ):
                     from flow_sdk.app.actions.execute_prompt import process_inbound_prompt
 
                     asyncio.create_task(process_inbound_prompt(fm_id, conv_id))

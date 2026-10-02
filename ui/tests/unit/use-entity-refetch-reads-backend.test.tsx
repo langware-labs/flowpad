@@ -64,4 +64,29 @@ describe('useEntity refetch', () => {
       expect(header.result.current.data?.conversationMessageIds.map((p) => p.id)).toEqual([QUESTION_ID, REPLY_ID]),
     );
   });
+
+  it('answers null — not a throw — when the entity was deleted since it was cached', async () => {
+    const typeId = new TypeId(Conversation.type, CONVERSATION_ID);
+    dataManager.invalidateCacheByTypeId(typeId);
+
+    let deleted = false;
+    vi.spyOn(apiClient, 'get').mockImplementation(async () => {
+      if (deleted) throw Object.assign(new Error('Not Found'), { response: { status: 404 } });
+      return structuredClone(conversationJson([QUESTION_ID])) as never;
+    });
+    const consoleError = vi.spyOn(console, 'error');
+
+    const view = renderHook(() => useEntity<Conversation>(typeId));
+    await waitFor(() => expect(view.result.current.data?.conversationMessageIds.map((p) => p.id)).toEqual([QUESTION_ID]));
+
+    deleted = true;
+    await act(async () => {
+      await view.result.current.refetch();
+    });
+
+    expect(view.result.current.isError).toBe(false);
+    expect(view.result.current.data).toBeNull();
+    expect(view.result.current.notFound).toBe(true);
+    expect(consoleError).not.toHaveBeenCalled();
+  });
 });

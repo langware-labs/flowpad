@@ -40,30 +40,33 @@ logger = logging.getLogger(__name__)
 # cert-bundle loads). Reusing ONE client builds the TLS context once and pools
 # connections; httpx clients are safe for concurrent use, and per-request auth
 # is injected by the client's event hooks, so the shared instance needs no
-# per-call credential refresh. Rebuilt only when the hub base URL changes (read
-# back off the client itself, so there's no second bookkeeping global to sync).
+# per-call credential refresh. Rebuilt when the hub base URL changes (read back
+# off the client itself) or when the running loop is not the one it was built on.
 _shared_client: "FlowpadClient | None" = None
+_shared_client_loop: "asyncio.AbstractEventLoop | None" = None
 
 
 @_contextlib.asynccontextmanager
 async def _hub_client():
     """Yield the process-shared hub client. Does NOT close it on exit (the whole
     point is to keep the TLS context + connection pool alive across calls)."""
-    global _shared_client
+    global _shared_client, _shared_client_loop
     cfg = ApiConfig.from_env()
     loop = asyncio.get_running_loop()
-    if _shared_client is not None and getattr(_shared_client, "_bound_loop", None) is not loop:
-        # Built on another event loop (each ``asyncio.run``, each pytest test):
-        # its pool is bound to that loop, and every call would fail with "bound
-        # to a different event loop" — which ``hub_get`` swallows as "hub
-        # unreachable". It cannot be closed from here (its loop may be gone);
-        # drop it. A detached task that outlives a ``close_hub_client()`` on a
-        # dying loop rebuilds the client THERE, so a close alone never covers this.
-        _shared_client = None
-    if _shared_client is None or _shared_client.config.api_base_url != cfg.api_base_url:
-        await close_hub_client()  # close any stale (URL-changed) client first
+    other_loop = _shared_client_loop is not loop
+    if _shared_client is None or other_loop or _shared_client.config.api_base_url != cfg.api_base_url:
+        if other_loop:
+            # Built on another event loop (each ``asyncio.run``, each pytest test):
+            # its pool is bound to that loop, and every call would fail with "bound
+            # to a different event loop" — which ``hub_get`` swallows as "hub
+            # unreachable". It cannot be closed from here (its loop may be gone);
+            # drop it. A detached task that outlives a ``close_hub_client()`` on a
+            # dying loop rebuilds the client THERE, so a close alone never covers this.
+            _shared_client = None
+        else:
+            await close_hub_client()  # close any stale (URL-changed) client first
         _shared_client = FlowpadClient(cfg)
-        _shared_client._bound_loop = loop
+        _shared_client_loop = loop
     yield _shared_client
 
 
