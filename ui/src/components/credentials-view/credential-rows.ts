@@ -6,10 +6,13 @@
  */
 import {
   CredentialRequirement,
+  credentialEnvFileName,
+  type CredentialScopeFile,
   type CredentialScopeName,
   type CredentialStatusRow,
   type CredentialsStatus,
   type CredentialValueStore,
+  type DetectedEnvKey,
 } from '@sdk';
 
 const { MUST } = CredentialRequirement;
@@ -50,19 +53,48 @@ export interface DetectedGroup {
   scope: CredentialScopeName;
   projectId: string | null;
   path: string | null;
-  /** The project-relative path of a file the project declared; null for the scope's own `.env.local`. */
-  extraPath: string | null;
+  /** The file's name — see `EnvFileEntry.name`. */
+  name: string;
   keys: { key: string; line: number }[];
+}
+
+/** One env file a scope reads: its own `.env.local`, or a file it falls back to. */
+export interface EnvFileEntry {
+  scope: CredentialScopeName;
+  projectId: string | null;
+  path: string | null;
+  exists: boolean;
+  /** As the project manifest declares it; null for the scope's own file. */
+  extraPath: string | null;
+  /** `.env.local` (`.env.<env>.local` for a named environment), or the declared path. */
+  name: string;
+  detected: DetectedEnvKey[];
+}
+
+/** A scope's env files in the order its store reads them: its own, then its fallbacks. */
+export function envFilesOf(file: CredentialScopeFile): EnvFileEntry[] {
+  const scope = { scope: file.scope, projectId: file.project_id };
+  return [
+    { ...scope, path: file.path, exists: file.exists, extraPath: null, name: credentialEnvFileName(file.environment), detected: file.detected },
+    ...(file.fallbacks ?? []).map((f) => ({
+      ...scope,
+      path: f.path,
+      exists: f.exists,
+      extraPath: f.extra_path,
+      name: f.extra_path,
+      detected: f.detected,
+    })),
+  ];
 }
 
 /** One row per declared credential: project first, then the user's; by title within. */
 export function buildCredentialRows(status: CredentialsStatus): CredentialRow[] {
-  // The scope's own `.env.local` first — the one values are written to — else the first
-  // declared env file that exists (the server lists the scope's own file first).
-  const envFile = (row: CredentialStatusRow) =>
-    row.value_store === 'env'
-      ? status.files.find((f) => f.scope === row.scope && f.project_id === row.project_id && f.exists)?.path ?? undefined
-      : undefined;
+  // The first of the scope's env files that exists — its own `.env.local` before its fallbacks.
+  const envFile = (row: CredentialStatusRow) => {
+    if (row.value_store !== 'env') return undefined;
+    const file = status.files.find((f) => f.scope === row.scope && f.project_id === row.project_id);
+    return (file && envFilesOf(file).find((e) => e.exists)?.path) ?? undefined;
+  };
   return status.credentials
     .map(
       (row): CredentialRow => ({
@@ -106,22 +138,15 @@ export function takenInScope(
  * file whose keys are all taken is left out.
  */
 export function buildDetectedGroups(status: CredentialsStatus): DetectedGroup[] {
-  const seen = new Map<string, Set<string>>();
   return status.files
-    .map((file) => {
+    .flatMap((file) => {
       const taken = takenInScope(status, file.scope);
-      const scopeKey = `${file.scope}:${file.project_id ?? ''}`;
-      const earlier = seen.get(scopeKey) ?? new Set<string>();
-      seen.set(scopeKey, new Set([...earlier, ...file.detected.map((k) => k.key)]));
-      return {
-        scope: file.scope,
-        projectId: file.project_id,
-        path: file.path,
-        extraPath: file.extra_path ?? null,
-        keys: file.detected
-          .filter((k) => !taken.has(k.key) && !earlier.has(k.key))
-          .map((k) => ({ key: k.key, line: k.line })),
-      };
+      const earlier = new Set<string>();
+      return envFilesOf(file).map((entry) => {
+        const keys = entry.detected.filter((k) => !taken.has(k.key) && !earlier.has(k.key));
+        entry.detected.forEach((k) => earlier.add(k.key));
+        return { scope: entry.scope, projectId: entry.projectId, path: entry.path, name: entry.name, keys };
+      });
     })
     .filter((group) => group.keys.length > 0)
     .sort((a, b) => Number(a.scope === 'user') - Number(b.scope === 'user'));

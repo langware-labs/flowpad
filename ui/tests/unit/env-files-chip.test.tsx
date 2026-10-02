@@ -8,18 +8,19 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CredentialScopeFile, CredentialsStatus, Project } from '@sdk';
 
-const h = vi.hoisted(() => ({ openMachinePath: vi.fn() }));
+const h = vi.hoisted(() => ({ openMachinePath: vi.fn(), refresh: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openMachinePath: h.openMachinePath } }),
 }));
+vi.mock('@src/components/credentials/use-credentials', () => ({ useRefreshCredentials: () => h.refresh }));
 
-import { EnvFileChips, envFileLabel, envFileList } from '@src/components/credentials-view/EnvFileChips';
+import { EnvFilesChip, envFileLabel, envFileList } from '@src/components/credentials-view/EnvFilesChip';
+import { envFilesOf } from '@src/components/credentials-view/credential-rows';
 
 const file = (over: Partial<CredentialScopeFile> & Pick<CredentialScopeFile, 'scope' | 'path'>): CredentialScopeFile => ({
   project_id: over.scope === 'project' ? 'p1' : null,
   environment: 'development',
   exists: true,
-  extra_path: null,
   blocked: false,
   block_code: null,
   block_reason: null,
@@ -32,35 +33,39 @@ const status = (files: CredentialScopeFile[], environment = 'development'): Cred
 
 const HOME = file({ scope: 'user', path: '/h/.env.local' });
 const ROOT = file({ scope: 'project', path: '/p/.env.local' });
-const BACKEND = file({ scope: 'project', path: '/p/backend/.env', extra_path: 'backend/.env', exists: false });
+const BACKEND = { path: '/p/backend/.env', extra_path: 'backend/.env', exists: false, detected: [] };
+const ROOT_WITH_BACKEND = { ...ROOT, fallbacks: [BACKEND] };
 
 beforeEach(() => vi.clearAllMocks());
 afterEach(() => cleanup());
 
 describe('envFileList', () => {
   it('puts the project files first, the home folder last, and keeps a missing declared file removable', () => {
-    const list = envFileList(status([HOME, ROOT, BACKEND, file({ scope: 'project', path: '/p/gone', exists: false })]));
+    const list = envFileList(status([HOME, ROOT_WITH_BACKEND]));
 
     expect(list.map(envFileLabel)).toEqual(['.env.local', 'backend/.env', '~/.env.local']);
   });
 
+  it('leaves out a scope file that does not exist', () => {
+    expect(envFileList(status([file({ scope: 'project', path: '/p/.env.local', exists: false })]))).toEqual([]);
+  });
+
   it('names a named environment by its own file', () => {
-    expect(envFileLabel(file({ scope: 'project', path: '/p/.env.staging.local', environment: 'staging' }))).toBe(
-      '.env.staging.local',
-    );
+    const [entry] = envFilesOf(file({ scope: 'project', path: '/p/.env.staging.local', environment: 'staging' }));
+    expect(envFileLabel(entry)).toBe('.env.staging.local');
   });
 });
 
 describe('EnvFileChips', () => {
   it('is one chip: the first file and a count of the rest', () => {
-    render(<EnvFileChips status={status([HOME, ROOT, BACKEND])} project={undefined} onChanged={() => {}} />);
+    render(<EnvFilesChip status={status([HOME, ROOT_WITH_BACKEND])} project={undefined} />);
 
     expect(screen.getAllByTestId('credentials-env-files')).toHaveLength(1);
     expect(screen.getByTestId('credentials-env-files').textContent).toBe('.env.local3');
   });
 
   it('a lone file with nothing to manage opens on click, no list', async () => {
-    render(<EnvFileChips status={status([HOME])} project={undefined} onChanged={() => {}} />);
+    render(<EnvFilesChip status={status([HOME])} project={undefined} />);
 
     expect(screen.queryByTestId('credentials-env-files-count')).toBeNull();
     await userEvent.click(screen.getByTestId('credentials-env-files'));
@@ -70,7 +75,7 @@ describe('EnvFileChips', () => {
   });
 
   it('lists each file by name, full path and scope, and opens the one clicked', async () => {
-    render(<EnvFileChips status={status([HOME, ROOT])} project={undefined} onChanged={() => {}} />);
+    render(<EnvFilesChip status={status([HOME, ROOT])} project={undefined} />);
 
     await userEvent.click(screen.getByTestId('credentials-env-files'));
     const user = screen.getByTestId('credentials-env-file-user');
@@ -85,9 +90,8 @@ describe('EnvFileChips', () => {
 
   it('adds and removes a project-declared file through the project', async () => {
     const setEnvFiles = vi.fn().mockResolvedValue({ env_files: [] });
-    const onChanged = vi.fn();
     const project = { setEnvFiles } as unknown as Project;
-    render(<EnvFileChips status={status([ROOT, BACKEND])} project={project} onChanged={onChanged} />);
+    render(<EnvFilesChip status={status([ROOT_WITH_BACKEND])} project={project} />);
 
     await userEvent.click(screen.getByTestId('credentials-env-files'));
     expect(screen.getByTestId('credentials-env-file-backend/.env').textContent).toContain('Project · added');
@@ -96,11 +100,11 @@ describe('EnvFileChips', () => {
 
     await userEvent.click(screen.getByTestId('credentials-env-file-remove-backend/.env'));
     expect(setEnvFiles).toHaveBeenLastCalledWith([]);
-    expect(onChanged).toHaveBeenCalledTimes(2);
+    expect(h.refresh).toHaveBeenCalledTimes(2);
   });
 
   it('offers no adding for a named environment — it never reads declared files', async () => {
-    render(<EnvFileChips status={status([ROOT, HOME], 'staging')} project={{} as Project} onChanged={() => {}} />);
+    render(<EnvFilesChip status={status([ROOT, HOME], 'staging')} project={{} as Project} />);
 
     await userEvent.click(screen.getByTestId('credentials-env-files'));
     expect(screen.queryByTestId('credentials-env-file-add-input')).toBeNull();

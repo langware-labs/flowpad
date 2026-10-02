@@ -1,6 +1,4 @@
-import { CredentialsSubview, PageId, ViewType } from '@sdk';
-
-import type { NavigationActions } from '@src/navigation/NavigationActions';
+import { CredentialsSubview } from '@sdk';
 
 /**
  * The credentials view's pointer: `<subview>[/<projectId>]`.
@@ -45,20 +43,4 @@ export function parseCredentialsPointer(
   // persisted tabs; a second table here would be a second place to forget.
   const tab = rawTab === CredentialsSubview.CONNECTIONS ? CredentialsSubview.CONNECTIONS : fallback;
   return { tab, projectId: projectId || undefined };
-}
-
-/**
- * Navigate to the credentials screen (page=desk), optionally scoped to a project.
- *
- * The one way in from another screen. It exists so a caller that wants to send
- * someone here to ADD something — the LLM sources page, when a provider has no
- * key — states that intent once instead of assembling `openPage(...)` with a
- * pointer it built by hand. No React here, same leaf rule as the parser above.
- */
-export function openCredentials(navigation: NavigationActions, projectId?: string): void {
-  navigation.openPage(
-    PageId.DESK,
-    ViewType.CREDENTIALS,
-    credentialsPointer(CredentialsSubview.CONNECTIONS, projectId),
-  );
 }

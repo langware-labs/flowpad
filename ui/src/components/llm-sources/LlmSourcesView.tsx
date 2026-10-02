@@ -23,7 +23,6 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
-import { openCredentials } from '@src/components/credentials-view/credentials-pointer';
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { dotFor } from './llm-source-visuals';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
@@ -190,7 +189,7 @@ function SourceRow({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => openCredentials(navigation)}
+          onClick={() => navigation.openCredentials()}
           title={t`Add this key under Connections`}
           data-testid={`llm-source-addkey-${worker}-${endpoint?.provider ?? 'unknown'}`}
         >

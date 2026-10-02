@@ -13,11 +13,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  openPage: vi.fn(),
-  openDock: vi.fn(),
-  openTab: vi.fn(),
   pointer: 'environment' as string | undefined,
-  page: 'hub' as string,
   user: { id: 'u1' } as { id: string } | null,
   contextProject: null as { id: string } | null,
   projects: [
@@ -28,8 +24,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
-    navigation: { openPage: h.openPage, openDock: h.openDock, openTab: h.openTab },
-    currentDock: { page: h.page, pointer: h.pointer },
+    navigation: {},
+    currentDock: { pointer: h.pointer },
   }),
 }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({
@@ -62,7 +58,6 @@ describe('CredentialsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     h.pointer = 'environment';
-    h.page = 'hub';
     h.user = { id: 'u1' };
     h.contextProject = null;
   });
