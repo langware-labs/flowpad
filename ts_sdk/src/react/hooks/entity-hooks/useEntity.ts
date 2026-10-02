@@ -207,7 +207,12 @@ export function useEntity<T extends APIEntity<T>>(
     }
 
     try {
-      const entity = await dataManager.getByTypeId<T>(typeId, query);
+      // A refetch reads the backend, never the cache: the caller asks because it learned
+      // the entity changed (a `projected` tag, a reload button) — and a change that reached
+      // it without an entity op left the cached entry stale, which the cache-first
+      // `getByTypeId` would hand straight back.
+      const entity = (await dataManager.refreshByTypeId(typeId, query)) as T | null;
+      if (entity && query?.load) await entity.load();
       const notFound = entity === null && dataManager.isNotFound(typeId);
       stateRef.current = {
         data: entity,
