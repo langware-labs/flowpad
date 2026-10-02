@@ -27,21 +27,22 @@ status_app = typer.Typer(
 )
 
 
-def _fetch(refresh: bool) -> dict:
+def _fetch(refresh: bool, kinds: list[str] | None = None) -> dict:
+    """The record; ``refresh`` re-discovers ``kinds`` (every harness when ``None``) first."""
     port = discover_port(required=False)
     if port is None:
         from flow_sdk.core.status import build_status, refresh_status  # noqa: PLC0415
 
         async def run() -> dict:
             if refresh:
-                await refresh_status()
+                await refresh_status(kinds)
             return (await build_status()).model_dump(mode="json")
 
         return asyncio.run(run())
     url = f"http://127.0.0.1:{port}/api/v1/graph/compute_node/@local/status"
     try:
         resp = (
-            local_request("POST", f"{url}/refresh", json={}, timeout=120)
+            local_request("POST", f"{url}/refresh", json={"kinds": kinds} if kinds else {}, timeout=120)
             if refresh
             else local_request("GET", url, timeout=30)
         )
@@ -78,13 +79,29 @@ def _render(status: dict) -> str:
     return "\n\n".join([hub_line, _table(harness_rows), _table(key_rows), "* default harness"])
 
 
-def _check(status: dict, spec: str) -> bool:
-    """``install:<harness>`` — is that harness's CLI here (installed or built in)."""
+def _check_target(spec: str) -> str:
+    """The harness a ``--check`` names: ``install:<harness>``, where ``<harness>`` is a driver name
+    (``claude``), a capability kind, or ``default`` (the user's default harness)."""
     fact, _, name = spec.partition(":")
     if fact != "install" or not name:
         fail(EXIT_INVALID_ARG, "INVALID_ARG", f"unknown check {spec!r}; use install:<harness>")
+    return name
+
+
+def _kind_for(name: str, status: dict | None = None) -> str:
+    """A ``--check`` name as a capability kind, ``""`` when it names no harness."""
+    from flow_sdk.flowpad_types.vendors import VENDORS  # noqa: PLC0415
+
+    if name == "default":
+        return str((status or {}).get("default_harness") or "")
+    return next((v.capability_kind for v in VENDORS if name in (v.key, v.capability_kind)), "")
+
+
+def _check(status: dict, name: str) -> bool:
+    """Is that harness's CLI here (installed or built in)."""
+    kind = _kind_for(name, status)
     for h in status["harnesses"]:
-        if name in (h["worker_type"], h["kind"]):
+        if h["kind"] == kind:
             return h["install"] in ("installed", "built_in")
     fail(EXIT_INVALID_ARG, "INVALID_ARG", f"no harness named {name!r}")
     return False
@@ -98,7 +115,12 @@ def status(
         str, typer.Option("--check", help="Exit 0 if the fact holds, 1 if not. Supports install:<harness>.")
     ] = "",
 ) -> None:
-    record = _fetch(refresh)
     if check:
-        raise typer.Exit(0 if _check(record, check) else EXIT_CHECK_FAILED)
+        # A check right after an install re-discovers only the harness it asks about: the one
+        # fact that can have changed, without re-probing every other vendor's login.
+        name = _check_target(check)
+        kind = _kind_for(name, _fetch(False) if name == "default" else None)
+        record = _fetch(refresh, [kind] if kind else None)
+        raise typer.Exit(0 if _check(record, name) else EXIT_CHECK_FAILED)
+    record = _fetch(refresh)
     typer.echo(json.dumps(record, indent=2) if json_output else _render(record))

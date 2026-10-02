@@ -161,4 +161,36 @@ async def _start_wizard(
         source = await _resolve_llm_source()
         _log.info("llm setup: LLM source — %s", source.detail or ("ok" if source.ok else "not done"))
         await navigate_to_wizard(wizard)
-    return source, await wizard.run(unattended=unattended)
+    result = await wizard.run(unattended=unattended)
+    if spec is not None and spec.requires_llm_source:
+        source = await _settle_after_install(source)
+    return source, result
+
+
+async def _settle_after_install(before: "Optional[CliResult]") -> "Optional[CliResult]":
+    """Settle the LLM source again, now that the steps may have installed the default harness.
+
+    The first settle ran before anything was installed, when an absent default could be funded by
+    nothing, so it accepted any funded harness. Once the default is on the box, "set up" means IT
+    is funded: the status refresh records the new CLI and probes its login, and the settle then
+    opens the chooser if that login is signed out — the sign-in step, asked only when needed.
+    """
+    from flow_sdk.core.status import default_harness_kind, harness_install, refresh_status  # noqa: PLC0415
+    from flow_sdk.flowpad_types.vendors import vendor_by  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.status_spec import InstallState  # noqa: PLC0415
+
+    try:
+        kind = await default_harness_kind()
+        await refresh_status([kind] if kind else None)
+        vendor = vendor_by("capability_kind", kind) if kind else None
+        installed = vendor is not None and harness_install(vendor.key) is InstallState.INSTALLED
+    except Exception:  # noqa: BLE001 — a failed refresh leaves the record as it was
+        _log.warning("llm setup: refreshing status after the install failed", exc_info=True)
+        installed = False
+    if not installed:
+        # Nothing new to fund: the first settle already answered for a box without the default
+        # (and a person who skipped it is not asked twice).
+        return before
+    after = await _resolve_llm_source()
+    _log.info("llm setup: LLM source after install — %s", after.detail or ("ok" if after.ok else "not done"))
+    return after

@@ -50,6 +50,14 @@ STATUS = {
 }
 
 
+
+@pytest.fixture(autouse=True)
+def _no_default_harness(monkeypatch):
+    """No status record unless a test names one: `_default_harness_kind` would otherwise ask a
+    real backend (or build the record in-process) for the user's default harness."""
+    monkeypatch.setattr(llm_cmd, "_default_harness_kind", lambda: "")
+
+
 # ------------------------------------------------------------------ the list
 
 
@@ -873,6 +881,46 @@ def test_auto_falls_back_when_the_default_vendor_is_not_the_funded_one():
     row = llm_cmd._auto_source(status)
 
     assert row is not None and row.active_for == ["opencode"]
+
+
+def _two_harnesses(*, claude_installed: bool, claude_funded: bool) -> dict:
+    """Codex funded by a key; Claude -- the default -- installed or not, funded or not."""
+    claude_reason = "" if claude_funded else ("signed_out" if claude_installed else "not_installed")
+    status = {
+        "sources": {
+            "harness.claude.cli": [
+                {"endpoint_typeid": DEVICE, "name": "claude device login", "rank": 0, "reason_code": claude_reason}
+            ],
+            "harness.codex.cli": [{"endpoint_typeid": KEY, "name": "openrouter key", "rank": 0}],
+        },
+        "resolved": {"harness.codex.cli": {"endpoint_typeid": KEY, "origin": "user"}},
+        "endpoints": {KEY: {"kind": "api_key", "provider": "openrouter"}, DEVICE: {"kind": "device", "provider": ""}},
+    }
+    if claude_funded:
+        status["resolved"]["harness.claude.cli"] = {"endpoint_typeid": DEVICE, "origin": "user"}
+    return status
+
+
+def test_auto_is_not_set_up_while_the_installed_default_is_unfunded():
+    """The person is about to run THEIR harness. Codex being funded does not make a box whose
+    installed, signed-out Claude is the default "set up" -- answering so would skip the sign-in."""
+    status = _two_harnesses(claude_installed=True, claude_funded=False)
+
+    assert llm_cmd._auto_source(status, "harness.claude.cli") is None
+
+
+def test_auto_names_the_source_funding_the_default():
+    row = llm_cmd._auto_source(_two_harnesses(claude_installed=True, claude_funded=True), "harness.claude.cli")
+
+    assert row is not None and row.typeid == DEVICE
+
+
+def test_auto_accepts_any_funded_harness_while_the_default_is_not_installed():
+    """Nothing can fund a CLI that is not on the box, so insisting on it would hold first-run
+    setup in the chooser forever -- it settles funding BEFORE installing the default."""
+    row = llm_cmd._auto_source(_two_harnesses(claude_installed=False, claude_funded=False), "harness.claude.cli")
+
+    assert row is not None and row.active_for == ["codex"]
 
 
 def test_auto_answers_nothing_on_an_empty_box():

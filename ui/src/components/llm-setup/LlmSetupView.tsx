@@ -22,13 +22,13 @@
  * a source.
  */
 import { Trans } from '@lingui/react/macro';
-import { llmSourcesService } from '@sdk';
+import { InstallState, llmSourcesService } from '@sdk';
 import { Check, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { openHarnessLoginModal, useHarnessLoginStore } from '@src/components/harness-login/harness-login-store';
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
-import { useStatusRecord } from '@src/components/status/use-status-record';
+import { harnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
@@ -45,12 +45,14 @@ export function LlmSetupView() {
    *
    * "Set up" means that harness is funded, not that some harness is: a funded codex does not
    * make a Claude-default box ready. Every resolved source is evidence (the resolver never
-   * presumes a login), so there is no separate "verified" check. With no default recorded yet,
-   * any funded harness answers.
+   * presumes a login), so there is no separate "verified" check. A default that is not installed
+   * cannot be funded by anything, so then any funded harness answers — the same rule as
+   * `flow llm set auto`; first-run setup asks again once it has installed the default.
    */
   const funded = useMemo(() => {
     const kind = record?.default_harness;
-    if (kind) return status?.resolved?.[kind] ?? null;
+    const harness = kind ? harnessStatus(record, kind) : undefined;
+    if (kind && harness?.install === InstallState.Installed) return status?.resolved?.[kind] ?? null;
     return Object.values(status?.resolved ?? {}).find(Boolean) ?? null;
   }, [status, record]);
 

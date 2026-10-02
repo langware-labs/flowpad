@@ -472,6 +472,12 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
     env["FLOWPAD_PYTHON"] = sys.executable
+    # `$FLOWPAD_FLOW` (this install's `flow`) and `FLOW_INSTANCE`, the pair a step's completion
+    # check runs with (`flow_env`): an agent handed that check as its bar must be able to run the
+    # same command, or it is told "done when this exits 0" about a command it cannot execute.
+    from flow_sdk.core.compute.exec import flow_env  # noqa: PLC0415
+
+    env.update(flow_env())
     from flow_sdk.config import default_service_config  # noqa: PLC0415
 
     deploy_project = default_service_config.gcp_deployment_project_id
