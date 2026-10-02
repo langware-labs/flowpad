@@ -9,7 +9,25 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { capabilityManager, dataContext } from '@sdk';
+import { dataContext } from '@sdk';
+
+const h = vi.hoisted(() => ({ install: 'not_installed' }));
+// The status record, as the backend serves it once the boot sweep has looked: every CLI
+// `h.install`. Funding is not read here (null), so only the install warning can fire.
+vi.mock('@sdk/react/hooks/useLazyAsset', () => ({
+  useLazyAsset: (asset: string) => ({
+    data:
+      asset === 'status'
+        ? {
+            harnesses: ['claude', 'codex', 'copilot', 'opencode'].map((w) => ({
+              kind: `harness.${w}.cli`,
+              install: h.install,
+            })),
+          }
+        : null,
+    isLoading: false,
+  }),
+}));
 
 vi.mock('sonner', () => ({
   toast: { custom: vi.fn(), dismiss: vi.fn() },
@@ -84,13 +102,9 @@ describe('WarningsPopover — diagnose is offered on warnings too', () => {
 
   it('offers it on a derived warning, which carries no notification at all', async () => {
     const user = userEvent.setup();
-    // Desktop bootstrap + every harness capability checked-and-unavailable is
-    // the real "No harness found" derived warning, straight through useWarnings.
+    // Desktop bootstrap + every CLI not installed on the status record is the real
+    // "No harness found" derived warning, straight through useWarnings.
     dataContext.bootstrapInfo = { env: { env_name: 'desktop' } };
-    vi.spyOn(capabilityManager, 'getSnapshot').mockReturnValue({
-      checked: true,
-      available: false,
-    } as ReturnType<typeof capabilityManager.getSnapshot>);
 
     render(<WarningsPopover />);
     await user.click(await screen.findByTestId('warnings-popover-trigger'));

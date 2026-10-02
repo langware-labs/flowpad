@@ -20,18 +20,19 @@ import { useRuntimeInfo } from '@sdk/react/hooks/useRuntimeInfo';
  */
 import {
   AgenticProcess,
-  capabilityManager,
   CapabilityKinds,
   ContextEntitiesEnum,
+  InstallState,
   dataContext,
   GraphContext,
+  statusService,
   ViewType,
   type ComputeNode,
 } from '@sdk';
-import { harnessWarning } from '@src/components/workers/harness-availability';
+import { useHarnessAvailability } from '@src/components/workers/harness-availability';
+import { harnessStatus } from '@src/components/status/use-status-record';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { type TabStripContextMenuItem } from '@src/components/tabs/TabStrip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -117,12 +118,7 @@ export function useTerminalStripController({
   >(null);
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
-  const {
-    claude: claudeCapability,
-    codex: codexCapability,
-    copilot: copilotCapability,
-    opencode: opencodeCapability,
-  } = useHarnessCapabilities();
+  const { warnings } = useHarnessAvailability();
   // Shared with the vibe chat's first prompt — the other route that discovers a
   // missing harness (see use-harness-install-prompt).
   const { promptToInstall, confirmMissingThen, dialog: installDialog } = useHarnessInstallPrompt();
@@ -139,24 +135,22 @@ export function useTerminalStripController({
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation(kind);
-      // Gate on the vendor's OWN capability where one exists, so a missing
-      // binary is reported against the vendor the user actually clicked
-      // rather than against whatever the generic `harness` default resolves to.
-      const requiredKind = workerType
-        ? (HARNESS_CAPABILITY_BY_WORKER[workerType] ?? CapabilityKinds.Harness)
-        : CapabilityKinds.Harness;
+      // Gate on the vendor the user actually clicked, else the default harness — read off the
+      // status record, so a missing binary is reported against the right one.
+      const requiredKind = workerType ? HARNESS_CAPABILITY_BY_WORKER[workerType] : CapabilityKinds.Harness;
       // The lock is released in `finally` and NOWHERE else: an unhandled throw
       // used to strand it set, which left a permanent spinner on the opener and
       // made every later click a silent no-op until the page reloaded.
       try {
         try {
-          const harness = await capabilityManager.ensureChecked(requiredKind);
-          if (harness.checked && !harness.available) {
+          const record = await statusService.record();
+          const kind = workerType ? requiredKind : record?.default_harness;
+          if (kind && harnessStatus(record, kind)?.install === InstallState.NotInstalled) {
             promptToInstall();
             return;
           }
         } catch {
-          // Capability API unavailable (older backend) — don't block tab creation.
+          // Status unavailable — don't block tab creation.
         }
         // openNewChat creates AND navigates — it owns the chat-mode propagation,
         // so a second openShellProcess here would re-navigate the same dock
@@ -266,10 +260,10 @@ export function useTerminalStripController({
   const isOpenCodeCreationPending = pendingTabCreation === 'opencode';
   const isTerminalCreationPending = pendingTabCreation === 'terminal';
   const sandboxAvailable = !!sandboxComputeNode;
-  const claudeWarning = harnessWarning(claudeCapability);
-  const codexWarning = harnessWarning(codexCapability);
-  const copilotWarning = harnessWarning(copilotCapability);
-  const opencodeWarning = harnessWarning(opencodeCapability);
+  const claudeWarning = warnings.claude_code;
+  const codexWarning = warnings.codex;
+  const copilotWarning = warnings.copilot;
+  const opencodeWarning = warnings.opencode;
 
   const openers = useMemo<OpenerDescriptor[]>(
     () => [

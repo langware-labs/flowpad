@@ -86,19 +86,6 @@ export interface ScanInfo {
   stale: boolean;
 }
 
-export interface HarnessBootstrapItem {
-  kind: string;
-  name: string;
-  installed: boolean;
-  homepage_url?: string | null;
-  is_default: boolean;
-}
-
-export interface HarnessBootstrapState {
-  show_harness_select: boolean;
-  harnesses: HarnessBootstrapItem[];
-}
-
 /**
  * One-time, UI-facing notice produced during bootstrap (e.g. the per-instance
  * secrets file was reset after its keychain encryption key was lost). Surfaced
@@ -158,7 +145,6 @@ export interface BootstrapInfo {
    */
   runtime?: RuntimeInfo;
   desktop_info?: LmInfo;
-  harness_state?: HarnessBootstrapState;
   /** All capabilities + how to access each, grouped by intent (see CapabilityManager). */
   capabilities_summary?: CapabilitiesSummary;
   sniffer_hook?: IAgentHook;
@@ -202,7 +188,6 @@ export interface DeferredInfo {
     cloud_login_available?: boolean | null;
   } | null;
   scan_info?: ScanInfo | null;
-  harness_state?: HarnessBootstrapState | null;
   capabilities_summary?: CapabilitiesSummary | null;
   sandbox_available?: boolean | null;
   sandbox_compute_node?: IComputeNode | null;

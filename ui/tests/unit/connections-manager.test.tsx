@@ -74,7 +74,9 @@ vi.mock('@sdk', async (importOriginal) => ({
 // the component takes the same path it takes off-desk.
 vi.mock('@src/hooks/use-connections', () => ({
   useConnections: () => ({ connections: h.connections, isLoading: false, refetch: vi.fn() }),
-  useCheckHarnessLogins: () => h.checkHarnessLogins(),
+}));
+vi.mock('@src/components/status/use-status-record', () => ({
+  useRefreshStatusOnArrival: () => h.checkHarnessLogins(),
 }));
 // `useDockNavigation` reaches `useNavigate()`, which needs a Router this file does
 // not render. The host owns navigation so the harness rows can stay presenters.
@@ -231,11 +233,11 @@ describe('ConnectionsManager', () => {
     });
   });
 
-  it('asks the box to check the harness logins', () => {
+  it('asks the box to re-check the harness logins', () => {
     // This screen is where a person comes to find out whether they are signed
     // in, and the harness rows read "Not checked" until someone asks the vendor
-    // CLIs. Asking is a separate verb because it WRITES — the same list read
-    // resolves `require()` and must not spawn subprocesses.
+    // CLIs. Asking is the status refresh, a separate verb because it WRITES —
+    // the same list read resolves `require()` and must not spawn subprocesses.
     render(<ConnectionsManager projectTypeId={PROJECT} />);
 
     expect(h.checkHarnessLogins).toHaveBeenCalled();
