@@ -23,6 +23,11 @@ from tests.utils.harness_installed import harness_installed  # noqa: F401 — a 
 # CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
 pytestmark = pytest.mark.usefixtures("harness_installed")
 
+# Bound before any fixture patches it, for the one test that runs the real sweep.
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: E402
+    worker_executable as _REAL_WORKER_EXECUTABLE,
+)
+
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -511,7 +516,7 @@ def test_every_harness_declares_all_three_tiers() -> None:
 
 
 @pytest.mark.long  # 2.14s -- runs the real sweep, which spawns the env-probe subprocess
-async def test_the_startup_sweep_resolves_the_device_rungs_login_state(env) -> None:
+async def test_the_startup_sweep_resolves_the_device_rungs_login_state(env, monkeypatch) -> None:
     """The startup sweep must leave ``login_state`` holding a VERDICT, not ``None``.
 
     ``None`` is the whole ladder's blind spot. ``_device_source`` reads it as "nobody has
@@ -531,12 +536,16 @@ async def test_the_startup_sweep_resolves_the_device_rungs_login_state(env) -> N
     Either verdict passes this test. LOGGED_IN and LOGGED_OUT are both answers; only silence
     is the bug.
     """
+    # The REAL sweep, so the real executable: this file's `harness_installed` fakes every CLI at
+    # /usr/local/bin/<worker>, and a probe of a binary that is not there answers "unknown".
+    import flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver as base
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.core.capabilities import discovery
     from flow_sdk.core.capabilities.discovery import ensure_discovered, get_capability_value
     from flow_sdk.core.capabilities.models import CapabilityKind
 
+    monkeypatch.setattr(base, "worker_executable", _REAL_WORKER_EXECUTABLE)
     discovery._DISCOVERED_ONCE.clear()  # a sweep may already have run in this session
     assert await ensure_discovered(), "the startup sweep did not complete"
 
