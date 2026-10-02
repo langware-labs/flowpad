@@ -2,17 +2,16 @@
  * A spawn that fails because the harness is GONE must offer to install it —
  * not silently redirect to the Capabilities view and call the matter closed.
  *
- * The pre-flight in `startAgenticTab` reads the capability ROW, and the row
+ * The pre-flight in `startAgenticTab` reads the status record, and the record
  * goes stale: a harness uninstalled since the last discovery sweep still reads
- * `available`, so the check passes and the spawn is the first thing to notice.
+ * `installed`, so the check passes and the spawn is the first thing to notice.
  * The old catch block ASSUMED that was the cause ("overwhelmingly...") and
  * navigated to Capabilities for every failure alike — so the one dialog that
  * offers "Try auto install" could never appear on the path that needs it most,
  * and an unrelated failure was mislabelled as an uninstalled harness.
  *
- * The lever is `capabilityManager.test`: unlike the pre-flight's
- * `ensureChecked` (which returns early the moment ANY verdict exists, stale or
- * not) it re-runs discovery, so it can both answer the question and correct the
+ * The lever is `capabilityManager.test`: unlike the pre-flight's cached record
+ * it re-runs discovery, so it can both answer the question and correct the
  * row. These pin that the answer — not an assumption — picks the destination.
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
@@ -21,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const h = vi.hoisted(() => ({
   openTab: vi.fn(),
   openNewChat: vi.fn(),
-  ensureChecked: vi.fn(),
+  record: vi.fn(),
   test: vi.fn(),
   // The re-probe resolves the kind first, so a launch that failed for the
   // DEFAULT assistant is not answered by a sibling that happens to be present.
@@ -40,8 +39,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 vi.mock('@src/navigation/open-new-chat', () => ({ openNewChat: h.openNewChat }));
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sdk')>()),
+  statusService: { record: h.record },
   capabilityManager: {
-    ensureChecked: h.ensureChecked,
     test: h.test,
     getSnapshot: h.getSnapshot,
     // The dialog reads its install command from the summary, not the row.
@@ -58,17 +57,9 @@ vi.mock('@sdk/react/hooks', () => ({
   useCapability: () => ({ capability: null, available: false, result: null, isLoading: false, test: vi.fn() }),
 }));
 vi.mock('@src/contexts/view-mode-context', () => ({ useIsAdvanced: () => true, ViewMode: { Advanced: 'advanced' } }));
-// Unchecked capabilities: `harnessWarning` fails open on those, so no opener
-// carries a warning badge and nothing here pre-empts the path under test.
-const UNCHECKED = { checked: false, available: false, result: null };
-vi.mock('@src/contexts/HarnessCapabilitiesContext', () => ({
-  useHarnessCapabilities: () => ({
-    claude: UNCHECKED,
-    codex: UNCHECKED,
-    copilot: UNCHECKED,
-    opencode: UNCHECKED,
-  }),
-}));
+// No status record read yet: install warnings fail open on that, so no opener carries a
+// warning badge and nothing here pre-empts the path under test.
+vi.mock('@src/components/workers/harness-availability', () => ({ useHarnessAvailability: () => ({ warnings: {} }) }));
 vi.mock('@src/hooks/use-resume-in-terminal', () => ({ useResumeInTerminal: () => ({ resumeInTerminal: vi.fn() }) }));
 vi.mock('@src/components/graph-view/icons/iconRegistry', () => ({ iconForType: () => () => null }));
 
@@ -94,9 +85,12 @@ describe('a spawn failure asks whether the harness is really gone', () => {
     // outlives its container and `screen` would find THAT one.
     cleanup();
     vi.clearAllMocks();
-    // The stale row that lets the pre-flight through: it says "available", so
+    // The stale record that lets the pre-flight through: it says "installed", so
     // no dialog is shown up front and the spawn is what discovers the truth.
-    h.ensureChecked.mockResolvedValue({ checked: true, available: true });
+    h.record.mockResolvedValue({
+      default_harness: 'harness.claude.cli',
+      harnesses: [{ kind: 'harness.claude.cli', worker_type: 'claude', install: 'installed' }],
+    });
     h.openNewChat.mockRejectedValue(new Error('worker binary not found'));
   });
 
@@ -112,6 +106,20 @@ describe('a spawn failure asks whether the harness is really gone', () => {
     await waitFor(() => expect(screen.getByTestId('install-one-of-dialog')).toBeTruthy());
     // And NOT the redirect that used to swallow this case.
     expect(h.openTab).not.toHaveBeenCalled();
+  });
+
+  it('asks to install before spawning when the record already says the harness is gone', async () => {
+    // The pre-flight's own refusal: a harness the status record reports `not_installed` is never
+    // spawned at all — the install dialog comes first, with no failed launch on the way.
+    h.record.mockResolvedValue({
+      default_harness: 'harness.claude.cli',
+      harnesses: [{ kind: 'harness.claude.cli', worker_type: 'claude', install: 'not_installed' }],
+    });
+
+    await mountController()();
+
+    expect(await screen.findByTestId('install-one-of-dialog')).toBeTruthy();
+    expect(h.openNewChat).not.toHaveBeenCalled();
   });
 
   it('keeps the Capabilities view when the harness is present and something else failed', async () => {

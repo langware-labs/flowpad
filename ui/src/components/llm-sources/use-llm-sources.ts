@@ -14,7 +14,6 @@ import {
   HARNESS_CAPABILITY_KINDS,
   llmSourceRef,
   llmSourcesService,
-  statusService,
   type LLMEndpointOffer,
   type LLMEndpointTestResult,
   type LLMFundingKind,
@@ -25,7 +24,7 @@ import {
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { notify } from '@src/notifications';
 
@@ -138,21 +137,6 @@ export function workerOf(kind: string): string {
  */
 export function labelForWorker(worker: string): string {
   return WORKER_LABELS[worker as WorkerType] ?? worker;
-}
-
-/**
- * Re-check every harness on arrival: re-discover the CLIs and re-probe their logins.
- *
- * The page must be right about a login the user ended somewhere else (signed out of the CLI in
- * a terminal, then came here). That is the status layer's one refresh verb — local vendor
- * probes, no network, no money — and the backend's `status_changed_msg` then re-reads status
- * and funding everywhere, so nothing here invalidates a cache by hand.
- */
-export function useRefreshStatusOnArrival(): void {
-  useEffect(() => {
-    void statusService.refresh().catch(() => undefined);
-    // Mount only: an arrival check, not a poll.
-  }, []);
 }
 
 /**

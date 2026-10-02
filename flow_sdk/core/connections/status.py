@@ -19,9 +19,9 @@ Costs, since they are not uniform:
 
 * FlowPad and harnesses — projections of the status record (``core.status``): one
   ``Capability`` read per harness and the hub socket's own verdict, no probe and no
-  network. A harness nobody has probed reads UNKNOWN until :func:`check_harness_logins`
-  runs -- a separate verb, because probing writes and this list is read on paths a
-  person is waiting on (``require()``).
+  network. A harness nobody has probed reads "not checked" until the status refresh
+  (``core.status.refresh_status``) runs -- a separate verb, because probing writes and
+  this list is read on paths a person is waiting on (``require()``).
 * OAuth    — a hub fetch memoised for ten minutes, plus one user read.
 * Credentials — one ``.env.local`` listing and one git probe (three ``git``
   subprocesses) per scope root: the user's home always, the project's when one
@@ -112,52 +112,6 @@ def _harness_row(h: HarnessStatusSpec) -> ConnectionSpec:
     )
 
 
-async def check_harness_logins(*, force: bool = False) -> dict[str, str]:
-    """Ask the installed vendor CLIs whether they are signed in.
-
-    A WRITE, and a separate verb for that reason: it mirrors each verdict onto
-    ``Capability.login_state``, which is what makes every surface — this list,
-    the LLM sources screen, the login modal — stop saying "not checked" at once.
-    Folding it into :func:`list_connections` would have made a GET spawn
-    subprocesses on the same path ``require()`` resolves through.
-
-    Only the harnesses nobody has asked about, unless ``force``. ``login_state``
-    is ``Persist.FALSE``, so ``None`` means exactly "nobody has asked" — probing
-    the rest would re-shell a vendor CLI on every visit to answer a question
-    already answered. ``force`` is the user saying "look again", the same words
-    the Test button uses.
-
-    Returns ``{worker: login_state}`` for the harnesses it asked. Never raises:
-    a vendor that cannot be reached costs a verdict, not the screen.
-    """
-
-    async def one(worker: str) -> tuple[str, str] | None:
-        cap = await _harness_capability(worker)
-        if cap is None or (cap.login_state is not None and not force):
-            return None
-        await cap.refresh_login_state()
-        return worker, str(getattr(cap.login_state, "value", cap.login_state) or "")
-
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
-        worker_is_installed,
-    )
-    from flow_sdk.flowpad_types.vendors import VENDORS  # noqa: PLC0415
-
-    installed = [v.key for v in VENDORS if worker_is_installed(v.key)]
-    checked = await asyncio.gather(*(one(w) for w in installed), return_exceptions=True)
-    return {result[0]: result[1] for result in checked if isinstance(result, tuple)}
-
-
-async def _harness_capability(worker: str):
-    """The harness's ``Capability`` row, or ``None`` on a box that has none."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
-        worker_capability_kind,
-    )
-    from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
-
-    return await Capability.get_by_kind(worker_capability_kind(worker))
-
-
 def _account_for(h: HarnessStatusSpec) -> str:
     """WHAT KIND of account is signed in -- the vendor's own words where it says.
 
@@ -212,7 +166,7 @@ async def list_connections(
     credentials only when a project is named — there is no server-side notion of
     "the selected project", that lives in the client.
 
-    A pure read: nothing here probes, and :func:`check_harness_logins` is the
+    A pure read: nothing here probes, and ``core.status.refresh_status`` is the
     verb that does. ``flow_sdk.connections.require`` resolves through here on
     paths a person is waiting on.
 

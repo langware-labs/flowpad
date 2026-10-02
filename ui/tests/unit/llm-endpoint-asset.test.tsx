@@ -25,11 +25,10 @@ import type { ReactElement } from 'react';
 const h = vi.hoisted(() => ({
   test: vi.fn(),
   chain: vi.fn(),
-  probeHarnesses: vi.fn(),
   endpoint: null as unknown,
   isLoading: false,
   status: null as unknown,
-  // Per-worker capability warning: a string means the check ran and the harness is NOT on
+  // Per-worker install warning off the status record: a string means the harness is NOT on
   // this machine. All null = nothing known = nothing hidden (the shared fail-open rule).
   warnings: {} as Record<string, string | null>,
 }));
@@ -44,7 +43,7 @@ vi.mock('@sdk', async (importOriginal) => ({
   llmSourcesService: { test: h.test, chain: h.chain, status: vi.fn() },
 }));
 vi.mock('@src/components/workers/harness-availability', () => ({
-  useHarnessAvailability: () => ({ warnings: h.warnings, probeHarnesses: h.probeHarnesses }),
+  useHarnessAvailability: () => ({ warnings: h.warnings }),
 }));
 
 import { LlmEndpointAssetView } from '@src/components/assets/editor/llm-endpoint/LlmEndpointAssetView';
@@ -285,9 +284,6 @@ describe('FundingProvenance — what the tick actually proves', () => {
     expect(screen.getByTestId('llm-funding-harness.codex.cli')).toBeTruthy();
     expect(screen.queryByTestId('llm-funding-harness.copilot.cli')).toBeNull();
     expect(screen.queryByTestId('llm-funding-harness.opencode.cli')).toBeNull();
-    // Asking is the point: the app subscribes with autoCheck:false, so an unprobed harness
-    // would read "unknown" forever and nothing would ever be filtered.
-    expect(h.probeHarnesses).toHaveBeenCalled();
   });
 
   it('separately says what the local harnesses are on — the thing a passing test does NOT prove', async () => {

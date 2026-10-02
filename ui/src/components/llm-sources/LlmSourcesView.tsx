@@ -25,7 +25,7 @@ import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Waypoints } from '
 import { useCallback, useMemo } from 'react';
 
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
-import { useStatusRecord } from '@src/components/status/use-status-record';
+import { useRefreshStatusOnArrival, useStatusRecord } from '@src/components/status/use-status-record';
 import { dotFor } from './llm-source-visuals';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { TONE } from '@src/components/llm-endpoints/tone';
@@ -44,7 +44,6 @@ import {
   useTestSource,
   useSelectSource,
   workerOf,
-  useRefreshStatusOnArrival,
 } from './use-llm-sources';
 import { visibleSources } from './visible-sources';
 

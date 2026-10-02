@@ -662,9 +662,13 @@ class Capability(Entity):
         await self.notify_updated()
         await self.save(notify=False)
 
-    @action.get(action_name="auth-status")
+    @action.post(action_name="auth-status")
     async def auth_status_action(self, force: bool = False) -> ApiSuccessResponse | ApiFailResponse:
-        """Cheap login-state probe (no version run) — the startup gate's check.
+        """Cheap login-state probe (no version run) — the user's explicit Test.
+
+        A POST because it writes: reading this harness's login is the status record's job
+        (``compute_node`` ``status``), and the silent re-check every screen runs on arrival is
+        ``status/refresh``. This is the one probe that may clear a recorded refusal.
 
         Mirrors a DECIDED result onto ``login_state`` and broadcasts, so every
         surface agrees without waiting for a full test. A probe that could not
@@ -676,8 +680,8 @@ class Capability(Entity):
         validity), which would otherwise leave a harness the user re-authorised
         OUTSIDE FlowPad — ``claude /login`` in their own terminal — reading as
         signed out with no way back. An explicit "Test" is the user saying they
-        fixed it and asking us to look again; the silent re-probe the login modal
-        runs on open is not, and passes nothing.
+        fixed it and asking us to look again; the status refresh a screen runs on
+        arrival is not, and never forces.
         """
         if force:
             self.login_denied = False

@@ -11,13 +11,17 @@ import {
   HARNESS_CAPABILITY_KINDS,
   LMApiProvider,
   LOGIN_CANCELLED,
+  HubLogin,
+  InstallState,
+  LoginState,
   LOGIN_SUPERSEDED,
+  llmSourcesService,
   lmKeysService,
+  statusService,
   TypeId,
   WorkerModelTier,
   type LmApiKeySummary,
   type LmApiKeyValidation,
-  type WorkerAuthStatus,
 } from '@sdk';
 import { useCloudStatus, useEntity } from '@sdk/react/hooks';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
@@ -28,8 +32,8 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
-import { WORKER_LABELS } from '@src/hooks/useWorkerHistory';
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
+import { harnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import {
@@ -57,45 +61,16 @@ import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-sto
 
 const INSTALL_WIKI_PAGE = 'Install a harness';
 
-type Worker = 'claude' | 'codex' | 'copilot' | 'opencode';
-type Status = 'unavailable' | 'signedin' | 'awaiting' | 'busy' | 'signedout' | 'unverified';
+const workerOf = (kind: string) => kind.split('.')[1];
+
 type AuthMode = 'device' | 'api';
 
-const workerOf = (kind: string) => kind.split('.')[1] as Worker;
-
-/** Providers each harness can authenticate against — the frontend mirror of the
- *  backend `ApiAuthSpec.supported_providers` (the backend also serves the same
- *  list via auth-status `details.supported_providers`). Keep in sync with the
- *  Python specs; the Select renders only these, so the modal offers only
- *  possible outcomes. */
-const HARNESS_SUPPORTED_PROVIDERS: Record<Worker, LMApiProvider[]> = {
-  // OpenRouter directly, or the FlowPad hub's LLMEndpoint (a hub-side passthrough
-  // to it, bound by the hub after login). Keep in sync with the Python specs.
-  claude: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
-  codex: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
-  copilot: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
-  // OpenCode reaches the hub endpoint differently from the others: its OpenRouter
-  // provider is built in and honours no base-URL env var, so the redirect rides
-  // its generated opencode.json provider block instead. The key still comes from
-  // a bare OPENROUTER_API_KEY either way, and to a user it is the same choice.
-  opencode: [LMApiProvider.OpenRouter, LMApiProvider.FlowPad],
-};
-
 /**
- * Which harnesses have a device login at all.
- *
- * OpenCode has none: it is not a vendor account you sign into, it is a client that spends a
- * provider key. Offering "Device login" there gave it a mode it cannot enter — the toggle
- * moved, nothing happened, and the row went on reporting "Not signed in" about a sign-in that
- * does not exist. A harness listed false here is key-only: no toggle, no sign-in button, and
- * its auth mode is `api` regardless of what the capability row happens to say.
+ * What a harness row says, read straight off the status record: not installed, or its login.
+ * `signing_in` also covers a sign-in this screen just started and the backend has not yet
+ * reported — the one state the row knows before the record does.
  */
-const SUPPORTS_DEVICE_LOGIN: Record<Worker, boolean> = {
-  claude: true,
-  codex: true,
-  copilot: true,
-  opencode: false,
-};
+type RowState = LoginState | InstallState.NotInstalled;
 
 const PROVIDER_LABEL: Record<string, string> = {
   [LMApiProvider.OpenRouter]: 'OpenRouter',
@@ -104,115 +79,42 @@ const PROVIDER_LABEL: Record<string, string> = {
   [LMApiProvider.FlowPad]: 'FlowPad Hub endpoint',
 };
 
-/** Providers with no key to paste: configured (or not) by something other than
- *  the user — today only the FlowPad hub endpoint, which the hub binds and the
- *  box's hub login authenticates. */
-const MANAGED_PROVIDERS: ReadonlySet<string> = new Set([LMApiProvider.FlowPad]);
-
 /** Display name for a provider value, falling back to the raw value. */
 const providerLabel = (provider: string) => PROVIDER_LABEL[provider] ?? provider;
 
-/** Friendly, non-expert-facing extras that do NOT exist on the Capability
- *  entity. Name and icon are resolved registry-first in `useHarness`. */
-// Names come from the ONE vendor label table (`WORKER_LABELS`); only the
-// account noun is this screen's own vocabulary. Adding a harness should not
-// mean re-typing its display name in a fourth place.
-const FRIENDLY: Record<Worker, { name: string; account: string }> = {
-  claude: { name: WORKER_LABELS.claude, account: 'Anthropic account' },
-  codex: { name: WORKER_LABELS.codex, account: 'ChatGPT account' },
-  copilot: { name: WORKER_LABELS.copilot, account: 'GitHub account' },
-  opencode: { name: WORKER_LABELS.opencode, account: 'provider account' },
-};
-
-/** Shared per-harness state hook: resolves the live Capability entity, its
- *  simple status and presentation (name/icon/status text), plus the actions. */
-function useHarness(kind: string, keys: LmApiKeySummary[]) {
+/** Shared per-harness state hook: the harness's status record (installed, login, account,
+ *  what it can authenticate with), what funds it, its live Capability row for the sign-in
+ *  flow's own data (code, URL), and the actions. Nothing here decides a fact. */
+function useHarness(kind: string) {
   const { t } = useLingui();
+  const { status: record } = useStatusRecord();
+  const { status: funding } = useLlmSources();
+  const h = harnessStatus(record, kind);
   const snapshot = capabilityManager.getSnapshot(kind);
   const capabilityId = snapshot.capability?.id ?? null;
   const typeId = useMemo(() => (capabilityId ? new TypeId(Capability.type, capabilityId) : null), [capabilityId]);
   const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
-  // The badge below reads ``login_state``, written by the last device login or
-  // auth test — and nothing invalidates it when the user signs out of the CLI in
-  // a terminal. So the modal would open claiming "Signed in" over a harness that
-  // is demonstrably logged out, which is worse than saying nothing: it
-  // contradicts the very error that opened it.
-  //
-  // ``authStatus()`` re-runs the vendor's own probe and the backend mirrors the
-  // fresh result onto ``login_state`` and broadcasts it, so the watched row
-  // self-corrects. Silent by design — this is a refresh, not a user-invoked
-  // check, and the visible ``testAuth`` below keeps its toasts.
-  //
-  // The verdict is KEPT rather than discarded, because the probe has a third
-  // answer and it is not "signed in". ``not_installed``/``unknown`` mean the
-  // probe never reached a verdict (a 5s timeout, output it could not parse) and
-  // the backend then deliberately leaves ``login_state`` untouched — correct,
-  // since an undetermined probe is evidence about the probe, not about login.
-  // But rendering the untouched value as a green "Signed in" turns that silence
-  // into a positive claim. ``unverified`` says what actually happened.
-  const modalOpen = useHarnessLoginStore((s) => s.open);
-  const [probe, setProbe] = useState<WorkerAuthStatus | null>(null);
-  useEffect(() => {
-    if (!modalOpen || !capability) {
-      setProbe(null);
-      return;
-    }
-    let live = true;
-    void capability
-      .authStatus()
-      .then((r) => live && setProbe(r))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-    // Re-probe per open, per capability — not on every unrelated row update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modalOpen, capabilityId]);
-
-  // What the harness itself said while refusing a turn ("Not logged in · Please
-  // run /login"). The vendor's own denial is the best evidence available about
-  // THIS box — better than a cached ``login_state``, better than a probe that
-  // timed out — so it wins over both.
-  //
-  // Read STRAIGHT off the entity, never copied into a store here. The backend
-  // owns this fact end to end (``flow_sdk/builtin/capability.py``): it records
-  // the refusal, refuses to record one over a login in flight, and retracts it
-  // the moment newer evidence lands — a completed device login, a verified
-  // probe, an explicit Test — broadcasting each change. A second copy on this
-  // side could only ever go stale against that, and did: it outlived the login
-  // that disproved it and pinned the modal to a red "Not signed in" over a
-  // harness that had just authenticated, which is the same lie the denial
-  // exists to prevent, pointing the other way.
-  const denied = capability?.login_denied === true;
-  const deniedBy = denied ? capability?.login_message?.trim() || null : null;
 
   const [busy, setBusy] = useState(false);
-  // Separate from `busy` so re-testing auth doesn't compute status to 'busy'.
+  // Separate from `busy` so re-testing auth doesn't read as a sign-in in flight.
   const [testing, setTesting] = useState(false);
   const [pasted, setPasted] = useState('');
 
-  const worker = workerOf(kind);
-  const supportedProviders = HARNESS_SUPPORTED_PROVIDERS[worker] ?? [];
-  const defaultProvider = supportedProviders[0] ?? LMApiProvider.OpenRouter;
-  // Providers this harness supports AND that have a configured key (from the
-  // central keys section) — the only ones it can consume. api mode is unavailable
-  // until at least one exists.
-  const configuredProviders = supportedProviders.filter((p) =>
-    keys.some((k) => k.configured && k.provider === (p as string)),
-  );
+  // What this harness can authenticate with, as the backend serves it, and which of those this
+  // box actually has: a stored key for the provider, or a FlowPad login for the hub endpoint.
+  const supportsDevice = h?.has_device_login ?? true;
+  const stored = new Set((record?.keys ?? []).filter((k) => k.stored).map((k) => k.provider));
+  const configuredProviders = [
+    ...(h?.key_providers ?? []).filter((p) => stored.has(p)),
+    ...(record?.hub.login === HubLogin.SignedIn ? [LMApiProvider.FlowPad as string] : []),
+  ];
   const apiAvailable = configuredProviders.length > 0;
 
   // A key-only harness is in `api` mode by definition -- reading `auth_mode` there would let a
   // stale 'device' (the column default) put the row into a mode it can never satisfy.
-  const supportsDevice = SUPPORTS_DEVICE_LOGIN[worker] ?? true;
   const authMode: AuthMode = supportsDevice ? ((capability?.auth_mode as AuthMode) ?? 'device') : 'api';
-  // The active provider must be one that actually has a key. Only read where
-  // apiAvailable (so configuredProviders is non-empty); the raw fallback just
-  // keeps the badge label sensible when it isn't.
-  const rawProvider = capability?.api_provider ?? defaultProvider;
-  const activeProvider = configuredProviders.includes(rawProvider as LMApiProvider)
-    ? rawProvider
-    : (configuredProviders[0] ?? rawProvider);
+  const rawProvider = capability?.api_provider ?? configuredProviders[0] ?? LMApiProvider.OpenRouter;
+  const activeProvider = configuredProviders.includes(rawProvider) ? rawProvider : (configuredProviders[0] ?? rawProvider);
 
   const setAuthMode = useCallback(
     async (mode: AuthMode, provider?: string) => {
@@ -225,27 +127,12 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
     [kind, activeProvider, t],
   );
 
-  const installed = snapshot.checked && snapshot.available;
-  const loginState = capability?.login_state ?? null;
-  const undetermined = probe != null && (probe.status === 'unknown' || probe.status === 'not_installed');
-  // Only the `authenticated` arm changes: a positive claim now has to survive
-  // the harness's own denial and an inconclusive probe. Everything else keeps
-  // its old precedence — in particular a login in flight still reads as
-  // awaiting/busy, since a denial from a turn that ran BEFORE the user started
-  // signing in says nothing about the sign-in they are doing right now.
-  const status: Status = !installed
-    ? 'unavailable'
-    : loginState === 'authenticated'
-      ? denied
-        ? 'signedout'
-        : undetermined
-          ? 'unverified'
-          : 'signedin'
-      : loginState === 'awaiting_user'
-        ? 'awaiting'
-        : busy || loginState === 'starting'
-          ? 'busy'
-          : 'signedout';
+  const state: RowState =
+    h?.install === InstallState.NotInstalled
+      ? InstallState.NotInstalled
+      : busy
+        ? LoginState.SigningIn
+        : (h?.login ?? LoginState.NotChecked);
 
   const signIn = useCallback(async () => {
     if (!capability) return;
@@ -259,9 +146,8 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
     }
   }, [capability, t]);
 
-  // Re-run the vendor's own auth check. The backend mirrors the result onto
-  // login_state and broadcasts it, so the watched capability self-corrects (a
-  // dead token flips the row to signed-out); the toast confirms the outcome.
+  // Re-run the vendor's own auth check. The backend writes the verdict onto the status record
+  // and pushes it, so the row follows; the toast confirms the outcome.
   const testAuth = useCallback(async () => {
     if (!capability) return;
     setTesting(true);
@@ -303,34 +189,29 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
     setPasted('');
   }, [capability, pasted]);
 
-  // Presentation resolves registry-first: the Capability entity's own
-  // name/icon win, so a newly registered harness renders sensibly without a
-  // frontend-table edit; PROVIDER_META/FRIENDLY only refine the known three.
-  const meta = PROVIDER_META[worker];
-  const name = FRIENDLY[worker]?.name || capability?.name || worker;
-  const Icon = meta?.Icon ?? (capability?.icon ? lucideByName(capability.icon) : undefined);
+  const worker = h?.worker_type ?? workerOf(kind);
+  // Brand tints for the vendors that have one; any other harness falls back to its registry icon.
+  const meta = (PROVIDER_META as Partial<Record<string, (typeof PROVIDER_META)['claude']>>)[worker];
+  const name = h?.label || capability?.name || worker;
+  const Icon = meta?.Icon ?? (h?.icon ? lucideByName(h.icon) : undefined);
 
-  const authBadge =
-    authMode === 'api'
-      ? apiAvailable
-        ? MANAGED_PROVIDERS.has(activeProvider)
-          ? { label: t`Hub endpoint`, tone: 'emerald' as const }
-          : { label: t`LLM key`, tone: 'emerald' as const }
-        : MANAGED_PROVIDERS.has(activeProvider)
-          ? { label: t`Hub endpoint unavailable`, tone: 'amber' as const }
-          : { label: t`Key not set`, tone: 'amber' as const }
-      : { label: t`Device login`, tone: 'sky' as const };
+  // What pays for this harness, from the funding layer — never re-derived from the mode toggle.
+  const picked = funding?.resolved?.[kind] ?? null;
+  const fundingBadge = picked
+    ? { label: t`Funded by ${picked.name}`, tone: 'emerald' as const, title: undefined }
+    : { label: t`Not funded`, tone: 'amber' as const, title: funding?.blocked?.[kind] || undefined };
 
   return {
     capability,
-    status,
-    // Why this row is not simply "signed in", in the most authoritative words
-    // available: the harness's own refusal first, else what the probe said when
-    // it could not decide.
-    statusReason: deniedBy || (undetermined ? probe?.message?.trim() || null : null),
-    statusText: statusTextFor(status),
+    state,
+    // The login's own sentence — the harness's refusal, or the probe's error — when it is not
+    // signed in. Empty otherwise.
+    statusReason:
+      state === LoginState.SignedOut || state === LoginState.Error ? h?.login_message?.trim() || null : null,
+    statusText: statusTextFor(state),
     name,
-    account: FRIENDLY[worker]?.account,
+    account: h?.account.identity || null,
+    installCommand: h?.install_command || null,
     Icon,
     iconClassName: meta?.iconClassName ?? '',
     pasted,
@@ -340,9 +221,8 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
     submitCode,
     testing,
     testAuth,
-    // API-key auth (consumer view — keys are managed centrally)
     authMode,
-    authBadge,
+    fundingBadge,
     supportsDevice,
     configuredProviders,
     activeProvider,
@@ -358,18 +238,16 @@ const AUTH_BADGE_TONE: Record<'emerald' | 'amber' | 'sky' | 'rose', string> = {
   rose: 'border-destructive/30 bg-destructive/10 text-destructive',
 };
 
-/** The device-vs-LLM-key indicator shown on rows and detail. */
-function AuthBadge({
+/** What funds this harness, as the funding layer answers it. */
+function FundingBadge({
   badge,
-  className,
   testId,
 }: {
-  badge: { label: string; tone: 'emerald' | 'amber' | 'sky' };
-  className?: string;
+  badge: { label: string; tone: 'emerald' | 'amber'; title?: string };
   testId?: string;
 }) {
   return (
-    <Badge variant="outline" data-testid={testId} className={`gap-1 ${AUTH_BADGE_TONE[badge.tone]} ${className ?? ''}`}>
+    <Badge variant="outline" data-testid={testId} title={badge.title} className={`gap-1 ${AUTH_BADGE_TONE[badge.tone]}`}>
       <KeyRound className="h-3 w-3" />
       {badge.label}
     </Badge>
@@ -380,45 +258,34 @@ function AuthBadge({
  * `label` is a lazy {@link MessageDescriptor}, not a `t` string. This table is
  * module-level, so a `t` macro here runs ONCE at import — before any catalog is
  * activated — and freezes the boot locale's English into the badge for the rest
- * of the session. That is why "Signed in" / "Not installed" stayed English on a
- * Hebrew screen while every in-component string next to them translated fine.
- * {@link statusTextFor} resolves the descriptor at render instead, which is also
- * what re-reads it after a locale switch.
+ * of the session. {@link statusTextFor} resolves the descriptor at render instead,
+ * which is also what re-reads it after a locale switch.
+ *
+ * One word per status-record state: the row says what the record says, nothing softer.
  */
-const STATUS_TEXT: Record<Status, { label: MessageDescriptor; dot: string; tone: string }> = {
-  signedin: {
+const AMBER = { dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60', tone: 'text-amber-500' };
+const SKY = { dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse', tone: 'text-sky-500' };
+const MUTED = { dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' };
+const STATUS_TEXT: Record<RowState, { label: MessageDescriptor; dot: string; tone: string }> = {
+  [LoginState.SignedIn]: {
     label: msg`Signed in`,
     dot: 'bg-emerald-400 shadow-[0_0_7px] shadow-emerald-400/60',
     tone: 'text-emerald-500',
   },
-  awaiting: {
-    label: msg`Waiting for you…`,
-    dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
-    tone: 'text-sky-500',
-  },
-  busy: {
-    label: msg`Starting…`,
-    dot: 'bg-sky-400 shadow-[0_0_7px] shadow-sky-400/60 animate-pulse',
-    tone: 'text-sky-500',
-  },
-  unverified: {
-    label: msg`Sign-in not confirmed`,
-    dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
-    tone: 'text-amber-500',
-  },
-  signedout: {
-    label: msg`Not signed in`,
-    dot: 'bg-amber-400 shadow-[0_0_7px] shadow-amber-400/60',
-    tone: 'text-amber-500',
-  },
+  [LoginState.SigningIn]: { label: msg`Signing in…`, ...SKY },
+  [LoginState.SignedOut]: { label: msg`Not signed in`, ...AMBER },
+  [LoginState.Error]: { label: msg`Sign-in failed`, ...AMBER },
+  // Installed, never probed: an unknown login is not a signed-in one.
+  [LoginState.NotChecked]: { label: msg`Not checked yet`, ...MUTED },
+  [LoginState.NA]: { label: msg`Uses a key`, ...MUTED },
   // A CLI that is not installed funds nothing, so it IS the funding answer — calling it
   // "Not signed in" hid the one fact that explains why the row cannot pay.
-  unavailable: { label: msg`Not installed`, dot: 'bg-muted-foreground/40', tone: 'text-muted-foreground' },
+  [InstallState.NotInstalled]: { label: msg`Not installed`, ...MUTED },
 };
 
-/** A status's visuals with its label resolved in the ACTIVE locale. */
-function statusTextFor(status: Status): { label: string; dot: string; tone: string } {
-  const entry = STATUS_TEXT[status];
+/** A state's visuals with its label resolved in the ACTIVE locale. */
+function statusTextFor(state: RowState): { label: string; dot: string; tone: string } {
+  const entry = STATUS_TEXT[state];
   return { ...entry, label: i18n._(entry.label) };
 }
 
@@ -559,15 +426,13 @@ function HarnessListRow({
   onOpen,
   isDefault,
   onMakeDefault,
-  keys,
 }: {
   kind: string;
   onOpen: () => void;
   isDefault?: boolean;
   onMakeDefault: () => void;
-  keys: LmApiKeySummary[];
 }) {
-  const { statusText, name, Icon, iconClassName, supportsDevice, apiAvailable } = useHarness(kind, keys);
+  const { statusText, name, Icon, iconClassName, supportsDevice, apiAvailable } = useHarness(kind);
   const worker = workerOf(kind);
   // A key-only harness has no login, so "Not signed in" would name a state it cannot leave.
   // What it actually lacks is a key, and that is what the row should say.
@@ -612,26 +477,19 @@ function HarnessListRow({
  */
 function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
   const { t } = useLingui();
-  const { login, cloudUrl } = useCloudStatus();
+  const { cloudUrl } = useCloudStatus();
+  const { status: record } = useStatusRecord();
   const { status: funding } = useLlmSources();
   const [busy, setBusy] = useState(false);
-  const loggedIn = login.status === 'logged_in';
-  const signingIn = busy || login.status === 'logging_in';
+  const hub = record?.hub;
+  const loggedIn = hub?.login === HubLogin.SignedIn;
+  const signingIn = busy || hub?.login === HubLogin.SigningIn;
   // Signed in ≠ funding something: a hub account with no bound endpoint is signed in but has
-  // nothing to give out. Both are real, honest states this row's click has to tell apart.
-  //
-  // `active_for` alone under-reports this: it only counts a harness whose resolved source IS
-  // the endpoint the hub explicitly PUSHED to this box (`bind`) — it says nothing about a
-  // harness resolved via the user's own personal default allocation off the global root, which
-  // every signed-in account gets WITHOUT ever being explicitly bound to anything. A box that
-  // has no CLI harness installed at all is exactly the case that only has this: deepagents'
-  // own resolved source is real and spendable, `active_for` is empty (nothing was ever bound),
-  // and the row read "not funding anything" for a person who, in fact, was.
-  const isFunding =
-    (funding?.active_for.length ?? 0) > 0 ||
-    Object.values(funding?.resolved ?? {}).some(
-      (pick) => !!pick && funding?.endpoints[pick.endpoint_typeid]?.kind === 'hub',
-    );
+  // nothing to give out. The funding layer says which: a harness whose resolved source is a hub
+  // endpoint is being paid for by this account.
+  const isFunding = Object.values(funding?.resolved ?? {}).some(
+    (pick) => !!pick && funding?.endpoints[pick.endpoint_typeid]?.kind === 'hub',
+  );
 
   // The OAuth-style flow this awaits can settle `login.status` a moment after its own promise
   // resolves, not necessarily within it — watching the FLIP here (never on mount, when a
@@ -711,7 +569,7 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
     </div>
   ) : null;
 
-  const account = [cloudUrl, typeof login.user?.email === 'string' ? login.user.email : null]
+  const account = [cloudUrl, hub?.email || null]
     .filter(Boolean)
     .join(' · ');
 
@@ -722,7 +580,7 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
       busy={signingIn}
       mark={<img src={flowpadIcon} alt="" className="h-5 w-5 rounded-sm" title={account || undefined} />}
       name="FlowPad"
-      status={statusTextFor(signingIn ? 'busy' : loggedIn ? 'signedin' : 'signedout')}
+      status={statusTextFor(signingIn ? LoginState.SigningIn : loggedIn ? LoginState.SignedIn : LoginState.SignedOut)}
       action={loggedIn ? <Trans>Signed in</Trans> : <Trans>Sign in</Trans>}
       onOpen={() => void connect()}
       rowOpens={false}
@@ -742,8 +600,9 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
  * "Key not set" rather than "Not signed in", because a key is not a login: there is nothing to
  * sign in to, and naming a state it can never reach would be a false instruction.
  */
-function KeysListRow({ keys, onOpen }: { keys: LmApiKeySummary[]; onOpen: () => void }) {
-  const configured = keys.filter((k) => k.configured).length;
+function KeysListRow({ onOpen }: { onOpen: () => void }) {
+  const { status: record } = useStatusRecord();
+  const configured = (record?.keys ?? []).filter((k) => k.stored).length;
   return (
     <SetupRow
       testId="row-llm-keys"
@@ -778,7 +637,7 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
   };
   // Only providers a user can key by hand go in the paste-a-key select; managed
   // ones (the FlowPad hub endpoint) appear in the configured list when bound.
-  const allProviders = Object.values(LMApiProvider).filter((p) => !MANAGED_PROVIDERS.has(p));
+  const allProviders = Object.values(LMApiProvider).filter((p) => p !== LMApiProvider.FlowPad);
   const [provider, setProvider] = useState<string>(allProviders[0]);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
@@ -956,7 +815,6 @@ export function HarnessDetail({
   onBack,
   onDone,
   onManageKeys,
-  keys,
 }: {
   kind: string;
   onBack: () => void;
@@ -967,17 +825,17 @@ export function HarnessDetail({
    *  goes back to what they were doing — NOT one level up into the assistants
    *  list, which just reads as a second popup opening by itself. */
   onDone: () => void;
-  keys: LmApiKeySummary[];
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const {
     capability,
-    status,
+    state,
     statusReason,
     statusText: stRaw,
     name,
     account,
+    installCommand,
     Icon,
     iconClassName,
     pasted,
@@ -988,13 +846,13 @@ export function HarnessDetail({
     testing,
     testAuth,
     authMode,
-    authBadge,
+    fundingBadge,
     supportsDevice,
     configuredProviders,
     activeProvider,
     apiAvailable,
     setAuthMode,
-  } = useHarness(kind, keys);
+  } = useHarness(kind);
 
   // The SAME status the row shows. A key-only harness reads "Key not set", never "Not signed
   // in": the panel is reached by clicking that row, and the two disagreeing about what is
@@ -1005,11 +863,9 @@ export function HarnessDetail({
       ? { label: i18n._(msg`Key set`), dot: 'bg-emerald-400', tone: 'text-emerald-500' }
       : { label: i18n._(msg`Key not set`), dot: 'bg-amber-400', tone: 'text-amber-500' };
 
-  // The install one-liner for THIS machine, or null when the vendor publishes
-  // no unattended route here (see `CapabilitySpec.install_commands`). Read off
-  // the capability row, so the modal offers exactly what the Capabilities page
-  // and the "harness is required" dialog offer — one source, three surfaces.
-  const installCommand = capability?.install_command ?? null;
+  // The install one-liner for THIS machine, or empty when the vendor publishes no unattended
+  // route here — served on the status record, so the modal offers exactly what the
+  // Capabilities page and the "harness is required" dialog offer.
 
   // Types the command at a prompt and submits it. Dismisses
   // the modal on the way out so the terminal it just opened is what they see —
@@ -1040,7 +896,7 @@ export function HarnessDetail({
         <div className="mt-1.5 flex items-center gap-2">
           <span className={`h-2 w-2 rounded-full ${st.dot}`} />
           <span className={`text-sm ${st.tone}`}>{st.label}</span>
-          <AuthBadge badge={authBadge} testId="harness-detail-authmode" />
+          <FundingBadge badge={fundingBadge} testId="harness-detail-authmode" />
         </div>
       </div>
 
@@ -1099,7 +955,7 @@ export function HarnessDetail({
               </Select>
               <span className="flex items-center gap-1.5 text-sm text-emerald-500">
                 <Check className="h-4 w-4" />
-                {MANAGED_PROVIDERS.has(activeProvider) ? (
+                {activeProvider === (LMApiProvider.FlowPad as string) ? (
                   <Trans>Using {providerLabel(activeProvider)}</Trans>
                 ) : (
                   <Trans>Using {providerLabel(activeProvider)} key</Trans>
@@ -1116,12 +972,17 @@ export function HarnessDetail({
           harness's panel exists to show. Its "Add an API key" button rendered and was
           invisible: present in the DOM, unclickable, and the panel looked like a dead end. */}
       <div className={`mt-6 ${authMode === 'api' && supportsDevice ? 'hidden' : ''}`}>
-        {status === 'signedin' ? (
+        {state === LoginState.SignedIn ? (
           <div className="flex flex-col items-center gap-4 text-center">
             <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-4 py-2.5 text-sm text-emerald-500">
               <Check className="h-4 w-4" />
               <Trans>You're signed in and ready to go.</Trans>
             </div>
+            {account && (
+              <span className="text-xs text-muted-foreground" data-testid="harness-account">
+                {account}
+              </span>
+            )}
             <div className="flex w-full gap-2">
               <Button
                 variant="outline"
@@ -1138,7 +999,7 @@ export function HarnessDetail({
               </Button>
             </div>
           </div>
-        ) : status === 'awaiting' ? (
+        ) : state === LoginState.SigningIn && (capability?.login_url || capability?.login_code) ? (
           <div className="flex flex-col gap-4">
             <DialogDescription className="text-center text-sm text-muted-foreground">
               <Trans>Two quick steps in your browser:</Trans>
@@ -1230,8 +1091,8 @@ export function HarnessDetail({
           <div className="flex flex-col gap-4">
             <DialogDescription className="text-center text-sm text-muted-foreground">
               <Trans>
-                Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in
-                — FlowPad never sees your password.
+                Sign in to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never
+                sees your password.
               </Trans>
             </DialogDescription>
             {statusReason && (
@@ -1240,25 +1101,24 @@ export function HarnessDetail({
                 // The harness's own sentence, kept as evidence but off the
                 // face of the panel: it instructs a terminal user to run
                 // /login, which contradicts the button directly below.
-                title={status === 'unverified' ? undefined : statusReason}
+                title={statusReason}
                 className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-500"
               >
-                {status === 'unverified' ? (
+                {state === LoginState.Error ? (
                   <Trans>We couldn't confirm this sign-in: {statusReason}</Trans>
                 ) : (
-                  <Trans>A request just failed because {name} isn't signed in on this machine.</Trans>
+                  <Trans>{name} isn't signed in on this machine.</Trans>
                 )}
               </div>
             )}
-            <Button className="w-full gap-1.5" disabled={status === 'busy'} onClick={() => void signIn()}>
-              {status === 'busy' && <Loader2 className="h-4 w-4 animate-spin" />}
-              <Trans>Sign in with {account}</Trans>
+            <Button
+              className="w-full gap-1.5"
+              disabled={state === LoginState.SigningIn}
+              onClick={() => void signIn()}
+            >
+              {state === LoginState.SigningIn && <Loader2 className="h-4 w-4 animate-spin" />}
+              <Trans>Sign in to {name}</Trans>
             </Button>
-            {capability?.login_state === 'error' && capability?.login_message && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-center text-xs text-destructive">
-                {capability.login_message}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -1268,7 +1128,7 @@ export function HarnessDetail({
           "install a CLI" look like the thing the user had come to do. They are a fallback for
           when the sign-in above cannot proceed yet, so they read as one quiet line: small,
           ghosted, side by side, under the thing that IS the offer. */}
-      {status === 'unavailable' && (
+      {state === InstallState.NotInstalled && (
         <div className="mt-4 flex flex-col items-center gap-2 border-t border-border/40 pt-3">
           <span className="text-xs text-muted-foreground">
             <Trans>{name} isn't installed on this computer yet.</Trans>
@@ -1326,36 +1186,26 @@ export function markHarnessGateSeen(): void {
 }
 
 /**
- * Startup gate: probe every assistant's sign-in state (cheap, no version run)
- * and auto-open only when NONE is signed in AND the user hasn't already
- * dismissed the gate. Partial states are covered by the footer warning, which
- * opens this modal on click.
+ * Startup gate: auto-open only when the DEFAULT assistant has nothing to pay for its runs, and
+ * the user hasn't already dismissed the gate. The answer is the funding layer's — after one
+ * status refresh, so a login the boot sweep has not probed yet is decided rather than guessed.
+ * Other assistants' gaps are the footer warning's job, which opens this modal on click.
  */
 function useHarnessLoginGate() {
   const primaryReady = usePrimaryContentReady();
-  const probed = useRef(false);
+  const decided = useRef(false);
   useEffect(() => {
-    if (!primaryReady || probed.current || harnessGateDismissed()) return;
+    if (!primaryReady || decided.current || harnessGateDismissed()) return;
     let cancelled = false;
     void (async () => {
       try {
-        const results = await Promise.all(
-          HARNESS_CAPABILITY_KINDS.map(async (kind) => {
-            const snapshot = await capabilityManager.ensureChecked(kind);
-            const capability = snapshot.capability;
-            if (!capability) return null;
-            try {
-              return await capability.authStatus();
-            } catch {
-              return null;
-            }
-          }),
-        );
-        probed.current = true;
-        const anySignedIn = results.some((r) => r?.status === 'logged_in');
-        if (!cancelled && !anySignedIn) openHarnessLoginModal();
+        const record = await statusService.refresh();
+        const funding = await llmSourcesService.status();
+        decided.current = true;
+        const kind = record.default_harness;
+        if (!cancelled && funding && !(kind && funding.resolved?.[kind])) openHarnessLoginModal();
       } catch {
-        /* capabilities unavailable — never block startup */
+        /* status unavailable — never block startup */
       }
     })();
     return () => {
@@ -1406,12 +1256,16 @@ function MappingModelInput({
 function MappingView({ onBack }: { onBack: () => void }) {
   const { t } = useLingui();
   const [kind, setKind] = useState<string>(HARNESS_CAPABILITY_KINDS[0]);
-  const worker = workerOf(kind);
-  const providers = useMemo(() => HARNESS_SUPPORTED_PROVIDERS[worker] ?? [LMApiProvider.OpenRouter], [worker]);
+  const { status: record } = useStatusRecord();
+  const h = harnessStatus(record, kind);
+  const providers = useMemo(
+    () => [...(h?.key_providers.length ? h.key_providers : [LMApiProvider.OpenRouter]), LMApiProvider.FlowPad as string],
+    [h],
+  );
   const [provider, setProvider] = useState<string>(providers[0]);
   // Keep provider valid when the harness changes.
   useEffect(() => {
-    if (!providers.includes(provider as LMApiProvider)) setProvider(providers[0]);
+    if (!providers.includes(provider)) setProvider(providers[0]);
   }, [providers, provider]);
 
   // Live capability for the selected harness (for its model_map).
@@ -1487,7 +1341,7 @@ function MappingView({ onBack }: { onBack: () => void }) {
           <SelectContent>
             {HARNESS_CAPABILITY_KINDS.map((k) => (
               <SelectItem key={k} value={k}>
-                {FRIENDLY[workerOf(k)]?.name ?? workerOf(k)}
+                {harnessStatus(record, k)?.label || workerOf(k)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -1666,6 +1520,9 @@ export function HarnessLoginModalRoot() {
     setSelected(payload?.kind ?? null);
     setJustConnected(null);
     void refreshKeys();
+    // Re-check every harness on open (local probes, no money): the dialog that opened because a
+    // login failed must not greet the user with the "Signed in" it last recorded.
+    void statusService.refresh().catch(() => undefined);
   }, [open, payload, refreshKeys]);
 
   if (!open) return null;
@@ -1712,7 +1569,6 @@ export function HarnessLoginModalRoot() {
               markHarnessGateSeen();
               setOpen(false);
             }}
-            keys={keys}
           />
         ) : (
           <div className="flex flex-col">
@@ -1781,12 +1637,11 @@ export function HarnessLoginModalRoot() {
                   isDefault={kind === defaultKind}
                   onMakeDefault={() => void makeDefault(kind)}
                   onOpen={() => setSelected(kind)}
-                  keys={keys}
                 />
               ))}
 
               <div className="mt-3" />
-              <KeysListRow keys={keys} onOpen={() => setSelected('keys')} />
+              <KeysListRow onOpen={() => setSelected('keys')} />
             </div>
 
             {/* Mapping stays a link, not a row: it configures which MODEL a funded harness

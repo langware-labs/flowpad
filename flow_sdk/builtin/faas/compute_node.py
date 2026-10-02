@@ -1742,7 +1742,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         server has no notion of "the selected project", which lives in the
         client. See ``core/connections/status.py`` for what each kind costs.
 
-        A pure read. ``check-harness-logins`` is the verb that asks the vendor
+        A pure read. ``status/refresh`` is the verb that asks the vendor
         CLIs; keeping it out of here is what stops a GET from spawning
         subprocesses on the path ``require()`` resolves through.
 
@@ -1778,22 +1778,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             await refresh_status(list(kinds) if kinds else None)
         status = await build_status()
         return ApiSuccessResponse(data=status.model_dump(mode="json"))
-
-    @action.post(action_name="check-harness-logins")
-    async def check_harness_logins_action(self, force: bool = False) -> "ApiResponse":
-        """Ask the installed harness CLIs whether they are signed in.
-
-        A POST because it writes: each verdict is mirrored onto the harness
-        ``Capability``, which is what makes the connections table, the LLM
-        sources screen and the login modal agree at once.
-
-        Only the harnesses nobody has asked about, unless ``force`` — the field
-        it writes means exactly "nobody has asked", so re-probing an answered
-        harness would re-shell a vendor CLI to learn what is already known.
-        """
-        from flow_sdk.core.connections.status import check_harness_logins  # noqa: PLC0415
-
-        return ApiSuccessResponse(data={"checked": await check_harness_logins(force=force)})
 
     @action.all(action_name="get-machine-status")
     async def get_machine_status_action(self):

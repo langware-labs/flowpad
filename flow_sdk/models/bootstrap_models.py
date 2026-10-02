@@ -157,7 +157,6 @@ class BootstrapInfo(BaseModel):
     # omits it still parses.
     runtime: Optional[RuntimeInfo] = None
     desktop_info: Optional[LmInfo] = None
-    harness_state: Optional[Dict[str, Any]] = None
     # All capabilities + how to access each, grouped by intent (see
     # core/capabilities/summary.py). Seeds the FE CapabilityManager so the
     # Capabilities view paints without a second round-trip.

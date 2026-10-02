@@ -1,81 +1,45 @@
 /**
- * "Is this harness actually on this machine" — the one rule, shared by every
+ * "Is this harness actually on this machine" — read off the status record, shared by every
  * surface that offers a choice of worker.
  *
- * The vocabulary is `OpenerDescriptor.warning` (see `tab_opener_types.ts`): a
- * non-null string means the harness failed its backend capability check, the
- * surface renders an `OpenerWarningBadge` on its icon, and activating it routes
- * to the Capabilities view instead of doing the thing.
- */
-import { capabilityManager, HARNESS_CAPABILITY_KINDS } from '@sdk';
-import { type UseCapabilityResult } from '@sdk/react/hooks';
-import { useCallback, useMemo } from 'react';
-
-import { useOptionalHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
-import { LAUNCHABLE_WORKERS, type WorkerType } from './worker-types';
-
-/**
- * Worker → the field carrying its harness capability on the context.
+ * The vocabulary is `OpenerDescriptor.warning` (see `tab_opener_types.ts`): a non-null string
+ * means the harness is not installed, the surface renders an `OpenerWarningBadge` on its icon,
+ * and activating it routes to the Capabilities view instead of doing the thing.
  *
- * A ternary ladder used to stand here, and it only knew three vendors: every
- * worker that was not claude_code or codex fell through to `copilot`, so an
- * OpenCode launch reported Copilot's harness and a missing `opencode` binary
- * was never flagged. One row per vendor, like HARNESS_CAPABILITY_BY_WORKER.
+ * Installed is Python's fact (`flow_sdk/core/status`, swept at boot and after every install,
+ * pushed on change); nothing here probes. `unknown` — the sweep has not finished — is not
+ * missing: it fails open, so a harness nobody has looked at yet stays usable.
  */
-const HARNESS_FIELD_BY_WORKER: Record<WorkerType, 'claude' | 'codex' | 'copilot' | 'opencode'> = {
-  claude_code: 'claude',
-  codex: 'codex',
-  copilot: 'copilot',
-  opencode: 'opencode',
-};
+import { type HarnessStatus, InstallState, type StatusRecord } from '@sdk';
+import { i18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { useMemo } from 'react';
 
-/**
- * Opener warning for a harness: set when its backend capability check ran and
- * failed. An UNCHECKED capability is not a missing one — it fails open, so a
- * harness nobody has probed yet stays fully usable.
- */
-export function harnessWarning(capability: UseCapabilityResult): string | null {
-  if (!capability.checked || capability.available) return null;
-  return capability.result?.message ?? 'This harness is not available on this machine.';
+import { harnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
+import { HARNESS_CAPABILITY_BY_WORKER, LAUNCHABLE_WORKERS, type WorkerType } from './worker-types';
+
+/** The opener warning for one harness: set only when the record says it is not installed. */
+export function installWarning(harness: HarnessStatus | undefined): string | null {
+  if (harness?.install !== InstallState.NotInstalled) return null;
+  return i18n._(msg`${harness.label} is not installed on this machine.`);
+}
+
+/** The warning for a worker, looked up by its capability kind in `record`. */
+export function workerInstallWarning(record: StatusRecord | null | undefined, worker: WorkerType): string | null {
+  return installWarning(harnessStatus(record, HARNESS_CAPABILITY_BY_WORKER[worker]));
 }
 
 export interface HarnessAvailability {
-  /** Per-worker capability warning, or null when the harness is fine/unknown. */
+  /** Per-worker install warning, or null when the harness is installed or not yet known. */
   warnings: Record<WorkerType, string | null>;
-  /**
-   * Resolve every harness capability, at a seam where the user has shown
-   * intent (opening the picker). Necessary because the app subscribes with
-   * `autoCheck: false`: the startup discovery sweep writes `last_check`, which
-   * `CapabilityManager.getResult()` does not read, so without this every
-   * harness reads `checked: false` and nothing is ever flagged.
-   *
-   * Cheap and idempotent — `ensureChecked` dedupes in-flight calls and returns
-   * immediately once a result exists, so this costs at most one probe per
-   * harness per session.
-   */
-  probeHarnesses: () => void;
 }
 
 export function useHarnessAvailability(): HarnessAvailability {
-  const harnesses = useOptionalHarnessCapabilities();
-
+  const { status: record } = useStatusRecord();
   const warnings = useMemo(() => {
     const byWorker = {} as Record<WorkerType, string | null>;
-    for (const worker of LAUNCHABLE_WORKERS) {
-      // No provider (isolated render) ⇒ nothing known ⇒ nothing flagged.
-      const capability = harnesses?.[HARNESS_FIELD_BY_WORKER[worker]];
-      byWorker[worker] = capability ? harnessWarning(capability) : null;
-    }
+    for (const worker of LAUNCHABLE_WORKERS) byWorker[worker] = workerInstallWarning(record, worker);
     return byWorker;
-  }, [harnesses]);
-
-  const probeHarnesses = useCallback(() => {
-    for (const kind of HARNESS_CAPABILITY_KINDS) {
-      // Swallowed: an older backend without the capability API must not break
-      // the picker — the same allowance `startAgenticTab` makes before a spawn.
-      void capabilityManager.ensureChecked(kind).catch(() => undefined);
-    }
-  }, []);
-
-  return { warnings, probeHarnesses };
+  }, [record]);
+  return { warnings };
 }

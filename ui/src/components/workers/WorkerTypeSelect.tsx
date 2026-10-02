@@ -38,7 +38,7 @@ export function WorkerTypeSelect({
 }: WorkerTypeSelectProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const { warnings, probeHarnesses } = useHarnessAvailability();
+  const { warnings } = useHarnessAvailability();
   const selected = normalizeWorkerType(value);
   const { Icon: SelectedIcon, iconClassName: selectedTint } = providerMetaFor(selected);
 
@@ -59,9 +59,6 @@ export function WorkerTypeSelect({
     <Select
       value={selected}
       onValueChange={handleValueChange}
-      onOpenChange={(open) => {
-        if (open) probeHarnesses();
-      }}
       disabled={disabled}
     >
       <SelectTrigger
