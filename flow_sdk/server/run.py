@@ -47,6 +47,8 @@ import uvicorn
 from dotenv import load_dotenv
 from filelock import FileLock
 
+from flow_sdk.core.capabilities.env_probe import adopt_terminal_path, start_terminal_path_capture
+
 # A named logger, never the module-level `logging.info(...)` helpers: those
 # install a root handler in the DEFAULT format on first use, and that first
 # use (raising RLIMIT_NOFILE) happens before app.py's basicConfig — which then
@@ -178,6 +180,8 @@ def main():
     """Start the minihub server."""
     startup_start = time.time()
     _raise_nofile_soft_limit()
+    # The login shell costs ~1s; it runs while the app imports and lands before anything spawns.
+    terminal_path = start_terminal_path_capture()
 
     if not _acquire_singleton_lock():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")
@@ -211,6 +215,7 @@ def main():
             os.path.join(repo_root, "flow_sdk"),
             os.path.join(repo_root, "server"),
         ]
+        print(f"[startup] PATH from the login shell added {adopt_terminal_path(terminal_path)}")
         uvicorn.run("flow_sdk.server.app:app", **uvicorn_kwargs)
         _release_singleton_lock()
     else:
@@ -224,6 +229,7 @@ def main():
         total_startup = time.time() - startup_start
         print(f"Total startup time (until Uvicorn starts): {total_startup * 1000:.2f} ms\n")
 
+        print(f"[startup] PATH from the login shell added {adopt_terminal_path(terminal_path)}")
         boot_progress.set_phase("uvicorn")
         uvicorn.run(app, **uvicorn_kwargs)
 
