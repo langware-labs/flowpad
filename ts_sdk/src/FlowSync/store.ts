@@ -1364,21 +1364,10 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (ref.status === EntityStatus.FETCHING) {
       return await this.waitForTypeId(typeId);
     }
-    try {
-      const expansions = this.mergeExpansionsWithQuery(ref.entity?.expand?.expansions ?? undefined, requiredExpansions);
-      const entity = await this.fetchByTypeId(typeId, expansions ?? null);
-      if (entity) this._notifyAllAliases(typeId, entity, entity);
-      return entity;
-    } catch (error) {
-      console.error(`Error refreshing entity by type ID: ${typeId.toString()}`, error);
-      ref.status = EntityStatus.ERROR;
-      if (isApiError(error)) {
-        ref.error = error;
-      }
-      throw error;
-    } finally {
-      this.resolvePendingRequests(ref);
-    }
+    const expansions = this.mergeExpansionsWithQuery(ref.entity?.expand?.expansions ?? undefined, requiredExpansions);
+    const entity = await this.fetchOrNotFound(typeId, expansions ?? null);
+    if (entity) this._notifyAllAliases(typeId, entity, entity);
+    return entity;
   }
 
   public async getByTypeId<U extends T>(typeId: TypeId, requiredExpansions?: ExpansionRequest): Promise<U | null> {
@@ -1416,16 +1405,20 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         return entity as U;
       }
     }
+    requiredExpansions = this.mergeExpansionsWithQuery(ref.entity?.expand?.expansions ?? undefined, requiredExpansions);
+    // `fetchByTypeId` already loads when the expansions ask for it.
+    return this.fetchOrNotFound<U>(typeId, requiredExpansions);
+  }
+
+  /**
+   * `fetchByTypeId` with the store's one not-found rule, shared by `getByTypeId` and
+   * `refreshByTypeId`: a 404 negative-caches and answers null; any other failure is
+   * recorded on the ref and rethrown. Parked waiters are released either way.
+   */
+  private async fetchOrNotFound<U extends T>(typeId: TypeId, expansions: ExpansionRequest | null): Promise<U | null> {
+    const ref = this.getRef(typeId);
     try {
-      requiredExpansions = this.mergeExpansionsWithQuery(
-        ref.entity?.expand?.expansions ?? undefined,
-        requiredExpansions,
-      );
-      const entity = await this.fetchByTypeId<U>(typeId, requiredExpansions);
-      if (entity && requiredExpansions?.load) {
-        await entity.load();
-      }
-      return entity;
+      return await this.fetchByTypeId<U>(typeId, expansions);
     } catch (error) {
       // A 404 means the referenced entity no longer exists — e.g. a stale
       // project_id carried by an old shell/agentic_process record whose

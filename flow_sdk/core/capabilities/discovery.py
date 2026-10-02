@@ -330,9 +330,6 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
     registry = get_capability_registry()
     for kind, value in discovered.items():
         try:
-            row = await Capability.get_by_kind(kind)
-            if row is None:
-                continue
             # A passive sweep refreshes badges; it does not run work. A
             # capability whose test() spawns a vendor CLI or drives an agent
             # (``sweepable_test=False``) keeps whatever ``last_check`` an
@@ -343,12 +340,15 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
             # test_capabilities_summary_groups_by_intent blew its 30s cap once
             # the caller actually waited for the worker it had started.
             if not registry.get(kind).spec.sweepable_test:
+                row = await Capability.get_by_kind(kind)
+                if row is None:
+                    continue
                 last_check = row.last_check
                 state = row.state
             else:
                 check = await registry.test(kind)
                 last_check = check.result.model_dump(mode="json")
-                # Re-read after the test: a row read before it is stale, and its save below
+                # Read after the test: a row read before it is stale, and its save below
                 # would write back fields a user changed meanwhile (an LLM-source pick).
                 row = await Capability.get_by_kind(kind)
                 if row is None:

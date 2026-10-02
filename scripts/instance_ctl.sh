@@ -63,10 +63,11 @@ port_reserved() { in_list "$1" "$RESERVED_PORTS"; }
 # listening yet, so the listener check alone hands its port out twice — and a
 # later `kill` of either one then takes down both.
 port_claimed_by_other() {
-  local port="$1" self="$2" reg
+  local port="$1" self="$2" reg own
+  own="$(registry "$self")"
   for reg in "$FLOW_HOME"/instances/*/launcher.json; do
     [ -f "$reg" ] || continue
-    [ "$reg" = "$(registry "$self")" ] && continue
+    [ "$reg" = "$own" ] && continue
     grep -qE "\"(backend|frontend)_port\": *$port[^0-9]" "$reg" && return 0
   done
   return 1

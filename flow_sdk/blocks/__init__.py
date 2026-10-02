@@ -525,7 +525,7 @@ class StreamInbox:
         """
         from flow_sdk.builtin.consumer_position import ConsumerPosition, key_of  # noqa: PLC0415
         from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
-        from flow_sdk.ingest.models import STORM_CAP_PER_MINUTE  # noqa: PLC0415
+        from flow_sdk.ingest.models import IngestMode  # noqa: PLC0415
         from flow_sdk.ingest.poller import poll_source  # noqa: PLC0415
         from flow_sdk.stream_inbox.projection import project_source_item  # noqa: PLC0415
 
@@ -551,9 +551,9 @@ class StreamInbox:
                     if not rows:
                         break
                     handed: list[Delivered] = []
-                    # A page is a storm when it holds more than the ingest lane would announce in a
-                    # minute — the reconcile sweep's own rule (``reconcile_source``), for the same reason.
-                    storm = len(rows) > STORM_CAP_PER_MINUTE
+                    # A page is a storm when the ingest lane would call it a backfill — more than it
+                    # announces in a minute (``reconcile_source``'s own rule, for the same reason).
+                    storm = IngestMode.for_run(item_count=len(rows)) is IngestMode.BACKFILL
                     for item in rows:
                         key = key_of(item)
                         last_seen = key

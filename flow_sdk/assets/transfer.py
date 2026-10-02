@@ -5,7 +5,9 @@ import logging
 import shutil
 from pathlib import Path, PurePosixPath
 
+from flow_sdk.assets.layout import LayoutKind
 from flow_sdk.assets.materialize import materialize_asset_sync
+from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -164,8 +166,6 @@ def portable_rel_path(src_root: Path, info) -> PurePosixPath:
     portable path plus that tail, recursively, so the receiver restores it where
     it lived instead of minting a flattened second copy at its type's top level.
     """
-    from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
-
     canonical = PurePosixPath(info.main_subdir) / src_root.name
     enclosing = _enclosing_repo_asset(src_root, info)
     if enclosing is None:
@@ -178,8 +178,6 @@ def portable_rel_path(src_root: Path, info) -> PurePosixPath:
 def _enclosing_repo_asset(root: Path, info) -> "tuple[Path, object] | None":
     """``(folder, TypeInfo)`` of the repo asset whose ``agentic-assets/`` holds
     ``root``, or None when ``root`` sits in a plain scope (a project, a home)."""
-    from flow_sdk.assets.layout import LayoutKind  # noqa: PLC0415
-    from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     family_dir = root if getattr(info, "singleton", False) else root.parent

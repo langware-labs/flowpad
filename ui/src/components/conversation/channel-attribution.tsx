@@ -83,10 +83,10 @@ export function useChannelAttribution() {
       // ("Agent Email" — cloud_email stamps the generic `email` kind, which no
       // spec names). Then the kind's own spec ("Help desk", not "Helpdesk");
       // `humanizeType` only for a channel nothing names.
-      const label =
-        (source ? specFor(source.provider)?.title : undefined) || specFor(kind)?.title || channelLabel(kind);
-      const name =
-        sourceIconName(source ? specFor(source.provider) : undefined, kind) || sourceIconName(specFor(kind), kind);
+      const sourceSpec = source ? specFor(source.provider) : undefined;
+      const kindSpec = specFor(kind);
+      const label = sourceSpec?.title || kindSpec?.title || channelLabel(kind);
+      const name = sourceIconName(sourceSpec, kind) || sourceIconName(kindSpec, kind);
       return { icon: name ? lucideByName(name) : MessageSquare, label };
     },
     [sources, specFor],
