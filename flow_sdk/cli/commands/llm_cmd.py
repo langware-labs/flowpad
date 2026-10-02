@@ -796,8 +796,25 @@ def _check_unchecked_logins(status: dict, project_id: str | None = None) -> dict
     return _status(_project_for_cwd(required=False) if project_id is None else project_id)
 
 
-def _auto_source(status: dict) -> Row | None:
-    """The source that would fund a call right now, or ``None`` when nothing would.
+def _default_harness_kind() -> str:
+    """The user's default harness kind, off the status record -- ``""`` when it cannot be read."""
+    from flow_sdk.cli.commands import status_cmd  # noqa: PLC0415
+
+    try:
+        return str(status_cmd._fetch(False).get("default_harness") or "")
+    except Exception:  # noqa: BLE001 -- an unreadable record leaves the rule its fallback
+        return ""
+
+
+def _is_installed_per_funding(status: dict, kind: str) -> bool:
+    """Whether the funding layer saw ``kind``'s CLI: it lists a harness that is not installed with
+    every source refused ``not_installed``, so any other answer means the CLI is there."""
+    sources = (status.get("sources") or {}).get(kind) or []
+    return any(s.get("reason_code") != "not_installed" for s in sources)
+
+
+def _auto_source(status: dict, default_kind: str = "") -> Row | None:
+    """The source that funds the DEFAULT harness right now, or ``None`` when nothing does.
 
     Read off the resolver's ``resolved`` -- the overlay's winner. NOT from ``source.auto``:
     that means "would win if nothing were chosen", which is true of several rows at once and
@@ -807,14 +824,20 @@ def _auto_source(status: dict) -> Row | None:
     A winner IS evidence now: the resolver funds only a login a probe confirmed, never a
     presumed one, so "resolved" and "set up" are the same answer.
 
-    The default vendor wins ties. Any funded row is a truthful answer to "is this box funded",
-    but a person at a prompt is usually about to run THEIR harness, and naming a source that
-    funds a different one reads as a wrong answer even though it is a correct one.
+    "Set up" means the harness a person is about to run is funded, so an INSTALLED default
+    harness is the only one asked: a box whose Codex is funded while its default Claude is signed
+    out is not set up, and saying so is what sends the person to sign in. A default that is not
+    installed cannot be funded by anything, so then any funded harness answers (preferring the
+    default vendor) -- first-run setup settles funding before it installs the default, and
+    settles it again after.
     """
     from flow_sdk.flowpad_types.vendors import default_vendor
 
     trusted = {str(pick.get("endpoint_typeid") or "") for pick in (status.get("resolved") or {}).values() if pick}
     funded = [row for row in _rows(status) if row.active_for and row.typeid in trusted]
+    if default_kind and _is_installed_per_funding(status, default_kind):
+        worker = default_kind.split(".")[1] if default_kind.count(".") >= 2 else default_kind
+        return next((row for row in funded if worker in row.active_for), None)
     if not funded:
         return None
     preferred = default_vendor().key
@@ -969,10 +992,11 @@ async def _await_funding(port: int, url: str) -> "Row | str | None":
             )
         typer.echo("Waiting for you to choose a source… (Ctrl-C to cancel)", err=True)
 
+    default_kind = await asyncio.to_thread(_default_harness_kind)
     async for frame in _backend_frames(port, _FUNDING_FRAMES, on_connected=_open_browser):
         # A credential changed. Whether the BOX can now fund a call is the resolver's question,
         # not this frame's -- a failed login broadcasts too.
-        row = _auto_source(await asyncio.to_thread(_status))
+        row = _auto_source(await asyncio.to_thread(_status), default_kind)
         if row is not None:
             return row
         if (frame.get("auth_data") or {}).get("skipped"):
@@ -1023,11 +1047,12 @@ def _resolve_or_choose(*, no_browser: bool = False, project_id: str | None = Non
     if project_id is None:
         project_id = _project_for_cwd(required=False)
     status = _status(project_id)
-    row = _auto_source(status)
+    default_kind = _default_harness_kind()
+    row = _auto_source(status, default_kind)
     if row is None:
         # Nothing has EVIDENCE yet -- but on a box with no backend nothing has ever been asked,
         # so ask before sending the user to a browser.
-        row = _auto_source(_check_unchecked_logins(status, project_id))
+        row = _auto_source(_check_unchecked_logins(status, project_id), default_kind)
     if row is not None:
         return row
 

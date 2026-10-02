@@ -11,7 +11,7 @@ import pytest
 from flow_sdk.builtin.agent import Agent
 from flow_sdk.builtin.credential_service import save_credential
 from flow_sdk.builtin.data_driver import DataDriver
-from flow_sdk.builtin.readiness import readiness, refresh_requirements, requirements
+from flow_sdk.builtin.readiness import _local_funding_item, readiness, refresh_requirements, requirements
 from flow_sdk.ingest.driver_runtime import DRIVERS
 from flow_sdk.ingest.testing import make_data_source
 from flow_sdk.schema.data_spec.connection_spec import ConnectionSpec
@@ -23,6 +23,18 @@ from tests.utils.connection_rows import fake_connections
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 DRIVE = "https://www.googleapis.com/auth/drive.readonly"
+
+
+@pytest.fixture(autouse=True)
+def _no_local_funding(monkeypatch):
+    """These pin the agent's OWN requirements. Whether this computer can pay for a turn is the
+    funding layer's question, pinned below (`test_local_funding_*`)."""
+    import flow_sdk.builtin.readiness as readiness_mod
+
+    async def _unknown(_agent, _project):
+        return None
+
+    monkeypatch.setattr(readiness_mod, "_local_funding_item", _unknown)
 
 
 class _Keyed(RecordSource):
@@ -126,3 +138,37 @@ async def test_authored_requirements_are_kept_and_refresh_writes_them_to_the_age
     names = [(r.kind, r.name, r.derived) for r in (await Agent.get_by_id(agent.id)).requirements]
     assert ("variable", "SENTRY_DSN", False) in names and ("credential", "stripe", True) in names
     assert not await refresh_requirements(agent), "nothing changed, nothing written"
+
+
+# ── this computer's funding ──────────────────────────────────────────────────
+
+
+def _funding(monkeypatch, *, resolved: dict, blocked: dict, default: str = "harness.claude.cli"):
+    import flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding as binding
+    import flow_sdk.core.status as status_mod
+
+    async def _status(*, refresh=False, scope=None):
+        return {"resolved": resolved, "blocked": blocked}
+
+    async def _default():
+        return default
+
+    monkeypatch.setattr(binding, "_status", _status)
+    monkeypatch.setattr(status_mod, "default_harness_kind", _default)
+
+
+async def test_local_funding_names_the_source_that_pays_for_the_agents_harness(monkeypatch):
+    _funding(monkeypatch, resolved={"harness.codex.cli": {"name": "openrouter key"}}, blocked={})
+
+    item = await _local_funding_item(Agent(name="a", worker_type="codex"), None)
+
+    assert (item.status, item.where) == ("verified", "openrouter key")
+
+
+async def test_local_funding_is_missing_with_the_resolvers_reason_for_the_default_harness(monkeypatch):
+    """An agent that names no harness runs on the user's default; the reason is the resolver's."""
+    _funding(monkeypatch, resolved={}, blocked={"harness.claude.cli": "claude is signed out"})
+
+    item = await _local_funding_item(Agent(name="a"), None)
+
+    assert item.status == "missing" and "claude is signed out" in item.fix

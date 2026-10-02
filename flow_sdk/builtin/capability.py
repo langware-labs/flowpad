@@ -309,8 +309,8 @@ class Capability(Entity):
         # capability window's Check/Refresh button). ``run_discovery`` already
         # mirrors value + last_check onto the row and broadcasts the update, so
         # we just read the fresh result for the response — no second save/notify.
-        from flow_sdk.core.capabilities.discovery import run_discovery
         from flow_sdk.core.capabilities.models import is_mcp_capability_kind
+        from flow_sdk.core.status import refresh_status
 
         # MCP capabilities are dynamic — re-derive from indexed records first so
         # a newly-configured server appears (and a removed one is pruned) on
@@ -319,7 +319,8 @@ class Capability(Entity):
             from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities
 
             await reconcile_mcp_capabilities()
-        await run_discovery([self.kind])
+        # Through the status layer's refresh, so every status reader follows the Check.
+        await refresh_status([self.kind])
         result = await get_capability_registry().test(self.kind)
         # An explicit Check is user engagement: it may promote NONE →
         # NOT_AVAILABLE (unlike the passive discovery mirror above).
@@ -370,9 +371,9 @@ class Capability(Entity):
         availability + state flip and broadcast."""
         await self._apply_login_session(session)
         if session.state is DeviceLoginState.AUTHENTICATED:
-            from flow_sdk.core.capabilities.discovery import run_discovery
+            from flow_sdk.core.status import refresh_status
 
-            await run_discovery([self.kind])
+            await refresh_status([self.kind])
 
     def _set_login_fields(
         self,
