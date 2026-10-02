@@ -414,7 +414,7 @@ export class Task extends APIEntity<Task> implements ITask {
    * a new task is not on the hub yet, so a plain save keeps them), which is how the bubble finds it.
    */
   static async fromMessage(
-    message: { id?: string | null; text?: string | null; conversation_id?: string | null; sender_name?: string | null },
+    message: TaskableMessage,
     opts: { me?: string | null; project?: { typeId?: import('../models/TypeId').TypeId } | null } = {},
   ): Promise<Task> {
     const text = (message.text ?? '').trim();
@@ -454,6 +454,14 @@ export class Task extends APIEntity<Task> implements ITask {
   }
 }
 
+/** What "Task it" reads off a conversation message — a FlowMessage, or the one a send just made. */
+export type TaskableMessage = {
+  id?: string | null;
+  text?: string | null;
+  conversation_id?: string | null;
+  sender_name?: string | null;
+};
+
 /** How many numbered titles "Task it" tries before giving up on a name. */
 const TASK_TITLE_TRIES = 20;
 
@@ -464,7 +472,7 @@ function isNameTaken(err: unknown): boolean {
 }
 
 /** The longest title "Task it" derives from a message. */
-export const TASK_TITLE_MAX = 80;
+const TASK_TITLE_MAX = 80;
 
 /** A task title from a message: its first non-empty line, cut at a word to {@link TASK_TITLE_MAX}. */
 export function taskTitleFromText(text: string): string {

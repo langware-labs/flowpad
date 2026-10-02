@@ -771,14 +771,13 @@ export function FlowMessageBubble({
           onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
         }
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
-        onTaskIt={
+        taskIt={
           messageTask
-            ? () => navigation.openDock(messageTask.dockPointer)
+            ? { onClick: () => navigation.openDock(messageTask.dockPointer), open: true }
             : onTaskIt && !fm.is_draft
-              ? () => onTaskIt(fm)
+              ? { onClick: () => onTaskIt(fm), open: false }
               : undefined
         }
-        hasTask={!!messageTask}
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
         onOpenPlanSession={onOpenPlanSession}
         onViewPlan={onViewPlan}

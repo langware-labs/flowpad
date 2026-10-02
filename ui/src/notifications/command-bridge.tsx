@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { dataManager, Task, TypeId } from '@sdk';
 import { useNavigate } from 'react-router';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -25,13 +24,6 @@ export function NotificationCommandBridge() {
     // does (live terminal for visible workers, transcript lens for headless).
     registerCommand('process.open', (args) => {
       if (args.processId) void openAgenticProcess(String(args.processId), navigation);
-    });
-    // Open a task (e.g. the "Task it" toast's Open) — URL-first, its own dock pointer.
-    registerCommand('task.open', (args) => {
-      if (!args.typeId) return;
-      void dataManager.getByTypeId<Task>(new TypeId(String(args.typeId))).then((task) => {
-        if (task) navigation.openDock(task.dockPointer);
-      });
     });
   }, [navigate, resumeInTerminal, navigation]);
 

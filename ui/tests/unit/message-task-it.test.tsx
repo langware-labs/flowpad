@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConversationMessage } from '@sdk/entities/conversation';
-import { taskTitleFromText, TASK_TITLE_MAX } from '@sdk/entities/task';
+import { taskTitleFromText } from '@sdk/entities/task';
 import { MessageBubble } from '@src/components/conversation/MessageBubble';
 
 /**
@@ -19,7 +19,7 @@ describe('Task it', () => {
 
   it('creates when the message has no task', () => {
     const onTaskIt = vi.fn();
-    render(<MessageBubble message={message} senderName="Ron" onTaskIt={onTaskIt} />);
+    render(<MessageBubble message={message} senderName="Ron" taskIt={{ onClick: onTaskIt, open: false }} />);
     const control = screen.getByTestId('message-task-it');
     expect(control.getAttribute('aria-label')).toBe('Task it');
     fireEvent.click(control);
@@ -27,7 +27,7 @@ describe('Task it', () => {
   });
 
   it('reads "Open task" once the message is a task', () => {
-    render(<MessageBubble message={message} senderName="Ron" onTaskIt={() => {}} hasTask />);
+    render(<MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, open: true }} />);
     expect(screen.getByTestId('message-task-it').getAttribute('aria-label')).toBe('Open task');
   });
 
@@ -41,7 +41,7 @@ describe('Task it', () => {
     expect(taskTitleFromText('')).toBe('');
     const long = 'word '.repeat(40).trim();
     const title = taskTitleFromText(long);
-    expect(title.length).toBeLessThanOrEqual(TASK_TITLE_MAX);
+    expect(title.length).toBeLessThanOrEqual(80);
     expect(title.endsWith('…')).toBe(true);
     expect(title).not.toMatch(/ …$/);
   });
