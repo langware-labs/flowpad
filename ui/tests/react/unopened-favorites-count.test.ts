@@ -23,10 +23,13 @@ const { useUnopenedFavoritesCount } = await import('@src/hooks/use-unopened-favo
 let n = 0;
 function favorite(opts: { project_id?: string | null; counter?: number }): Bookmark {
   n += 1;
+  const id = `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
   return new Bookmark({
-    id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`,
+    id,
     bookmark_type: BookmarkType.FAVORITE,
     title: `fav-${n}`,
+    // A target the menu can open: the badge counts only what the menu shows (canNavigateFavorite).
+    data: { entity_type: 'markdown', entity_id: id },
     ...opts,
   });
 }
