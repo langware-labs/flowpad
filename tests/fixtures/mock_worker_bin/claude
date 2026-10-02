@@ -8,6 +8,7 @@ program on the other end (docs/navigation/dock-loading.md, browser tier).
 
 Behaviour:
   --version / -v            print a version and exit (capability probes)
+  auth status               print the signed-in JSON the real CLI prints
   otherwise                 print a banner with MOCK_WORKER_MARKER, then echo
                             every line typed as "mock> <line>"; a line
                             "flood <n>" prints n numbered lines (large
@@ -22,6 +23,12 @@ import sys
 args = sys.argv[1:]
 if any(a in ("--version", "-v", "version") for a in args):
     print("2.0.0 (Mock Code)")
+    sys.exit(0)
+if args[:2] == ["auth", "status"]:
+    # What the real CLI prints when signed in. Funding never presumes a login: a spawn probes an
+    # unchecked one first, and a stand-in that answered this with its banner left every open
+    # refused with "sign-in has not been checked".
+    print('{"loggedIn": true, "authMethod": "claude.ai", "email": "mock@local.test"}')
     sys.exit(0)
 if "-p" in args or "--print" in args:
     # Print mode is not what this mock is for; answer and leave.
