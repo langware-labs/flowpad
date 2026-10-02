@@ -59,6 +59,9 @@ export async function flushPendingFavoriteDelete(): Promise<void> {
   if (!p) return;
   pending = null;
   clearTimeout(p.timer);
+  // The toast's own timer pauses on hover and in a hidden tab, so it can
+  // outlive this window — take it down now, or its Undo would be a dead button.
+  notify.dismiss(TOAST_ID);
   try {
     await p.commit();
   } catch (e) {

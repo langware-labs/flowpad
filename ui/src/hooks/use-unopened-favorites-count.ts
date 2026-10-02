@@ -4,6 +4,8 @@ import { isHubOnly } from '@src/navigation/hub-runtime';
 import { defaultScopeFilter } from '@src/lib/scope-filter';
 import { bookmarkInScope } from '@src/lib/bookmark-scope';
 import { useContext } from './useContext';
+import { canNavigateFavorite } from '@src/navigation/favorite-nav';
+import { useHiddenFavoriteIds } from './favorites-pending-delete';
 import { isFavoriteBookmark, isUnopened } from './use-favorites';
 import { useMemo } from 'react';
 
@@ -46,12 +48,20 @@ export function useUnopenedFavoritesCount(): number {
   const { project } = useContext();
   const currentProjectId = project?.id ?? null;
   const scope = useMemo(() => defaultScopeFilter(currentProjectId), [currentProjectId]);
+  // Count only what the menu can show: not a row inside an undo window, not a
+  // favorite whose target no longer resolves (the menu hides those).
+  const hidden = useHiddenFavoriteIds();
 
   return useMemo(
     () =>
       bookmarks.filter(
-        (b) => isFavoriteBookmark(b) && isUnopened(b) && bookmarkInScope(b, scope, currentProjectId),
+        (b) =>
+          isFavoriteBookmark(b) &&
+          isUnopened(b) &&
+          !(b.id && hidden.has(b.id)) &&
+          canNavigateFavorite(b) &&
+          bookmarkInScope(b, scope, currentProjectId),
       ).length,
-    [bookmarks, scope, currentProjectId],
+    [bookmarks, hidden, scope, currentProjectId],
   );
 }
