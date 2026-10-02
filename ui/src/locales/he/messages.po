@@ -425,6 +425,11 @@ msgstr "{0} מנפיק את קריאות ה-LLM שלך. אפשר לסגור את
 #~ msgid "{0} is issuing your LLM calls. You can close this tab."
 #~ msgstr ""
 
+#. placeholder {0}: harness.label
+#: src/components/workers/harness-availability.ts
+msgid "{0} is not installed on this machine."
+msgstr ""
+
 #. placeholder {0}: source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "{0} is not signed in"
@@ -839,6 +844,10 @@ msgstr ""
 #~ msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
 #~ msgstr "{name} עדיין לא מותקן במחשב הזה. התקן אותו למטה, ואז חזור לכאן כדי להתחבר."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't signed in on this machine."
+msgstr ""
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
 msgstr ""
@@ -1236,8 +1245,8 @@ msgid "A public desk needs no connection. Connect GitHub to browse your own repo
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "A request just failed because {name} isn't signed in on this machine."
-msgstr "בקשה נכשלה כרגע מכיוון ש-{name} לא מחובר במחשב הזה."
+#~ msgid "A request just failed because {name} isn't signed in on this machine."
+#~ msgstr "בקשה נכשלה כרגע מכיוון ש-{name} לא מחובר במחשב הזה."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "A restart of the worker is required."
@@ -5361,6 +5370,10 @@ msgstr ""
 msgid "Could not create the MCP server"
 msgstr ""
 
+#: src/components/conversation/task-it.tsx
+msgid "Could not create the task"
+msgstr ""
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Could not delete"
 msgstr "לא היה ניתן למחוק"
@@ -5628,6 +5641,10 @@ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Could not remove the row"
+msgstr ""
+
+#: src/components/conversation/task-it.tsx
+msgid "Could not remove the task"
 msgstr ""
 
 #: src/components/account/settings-section.tsx
@@ -7119,7 +7136,6 @@ msgstr ""
 #~ msgstr "קוד התקן"
 
 #: src/components/connections-manager/sign-in-method.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Device login"
 msgstr "התחברות דרך מכשיר"
@@ -8827,7 +8843,6 @@ msgstr "שליחת הדוח נכשלה"
 msgid "Failed to send status request"
 msgstr "נכשלה בשליחת בקשת עדכון הסטטוס"
 
-#: src/components/context-process/ContextProcessButton.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Failed to set project"
 msgstr "ההגדרה של הפרויקט נכשלה"
@@ -9563,6 +9578,11 @@ msgstr "אמון מלא"
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Fullscreen"
 msgstr "מסך מלא"
+
+#. placeholder {0}: picked.name
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Funded by {0}"
+msgstr ""
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a hub endpoint"
@@ -10369,12 +10389,12 @@ msgid "Hub"
 msgstr "Hub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Hub endpoint"
-msgstr "נקודת קצה ב-Hub"
+#~ msgid "Hub endpoint"
+#~ msgstr "נקודת קצה ב-Hub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Hub endpoint unavailable"
-msgstr "נקודת הקצה ב-Hub אינה זמינה"
+#~ msgid "Hub endpoint unavailable"
+#~ msgstr "נקודת הקצה ב-Hub אינה זמינה"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Hub endpoints"
@@ -11162,7 +11182,6 @@ msgstr ""
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Key not set"
 msgstr "המפתח לא הוגדר"
 
@@ -11684,7 +11703,6 @@ msgstr "אינדקס LLM"
 msgid "LLM Indexers"
 msgstr "מנהלי אינדקס LLM"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "LLM key"
 msgstr "מפתח LLM"
@@ -14264,6 +14282,10 @@ msgstr ""
 msgid "Not checked"
 msgstr "לא בדוק"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not checked yet"
+msgstr ""
+
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
 msgid "Not connected"
@@ -14289,6 +14311,10 @@ msgstr "עדיין לא הופעל"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "לא נמצא"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not funded"
+msgstr ""
 
 #~ msgid "Not in a git repository — can't be published"
 #~ msgstr ""
@@ -14735,6 +14761,7 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
@@ -15158,6 +15185,11 @@ msgstr "פתיחת סשן המפרט"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Open tabs"
+msgstr ""
+
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
+msgid "Open task"
 msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
@@ -19304,7 +19336,6 @@ msgstr ""
 msgid "Set conversation project"
 msgstr "הגדר פרויקט שיחה"
 
-#: src/components/context-process/ContextProcessButton.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
@@ -19888,6 +19919,10 @@ msgstr ""
 msgid "Sign in first, then this source can fund a run."
 msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצה."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign in to {name}"
+msgstr ""
+
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "יש להתחבר כדי לגשת לזרימה שלך ולפתוח את סוכן ה-AI של Flowpad."
@@ -19914,6 +19949,10 @@ msgstr ""
 
 #~ msgid "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
 #~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign in to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
+msgstr ""
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -19944,8 +19983,8 @@ msgid "Sign in to your Flowpad Cloud account to view your stream inbox and conve
 msgstr "היכנס לחשבון Flowpad Cloud שלך כדי להציג את תיבת הזרם הנכנס ואת השיחות שלך."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign in with {account}"
-msgstr "התחברו עם {account}"
+#~ msgid "Sign in with {account}"
+#~ msgstr "התחברו עם {account}"
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Sign in with a provider"
@@ -19956,8 +19995,8 @@ msgid "Sign in with another account"
 msgstr "התחברות עם חשבון אחר"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
-msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} לכתוב ולהריץ קוד בשבילך. חלון דפדפן נפתח להזדהות — FlowPad אף פעם לא רואה את הסיסמה שלך."
+#~ msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
+#~ msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} לכתוב ולהריץ קוד בשבילך. חלון דפדפן נפתח להזדהות — FlowPad אף פעם לא רואה את הסיסמה שלך."
 
 #: src/pages/hub-home/AutoLoginField.tsx
 msgid "Sign me in automatically — this sandbox belongs to one person."
@@ -19979,8 +20018,12 @@ msgid "Sign-in"
 msgstr "התחברות"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign-in not confirmed"
-msgstr "ההתחברות לא אושרה"
+msgid "Sign-in failed"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Sign-in not confirmed"
+#~ msgstr "ההתחברות לא אושרה"
 
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -20039,8 +20082,10 @@ msgid "Signing in opens a window on top of this page — you stay right here —
 msgstr ""
 
 #: src/components/account/user-info.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Signing in…"
 msgstr "מתחבר…"
 
@@ -20569,7 +20614,6 @@ msgstr "מפעילים את האפליקציה שלך…"
 msgid "Starting your sandbox…"
 msgstr "ה-Sandbox שלך מופעל…"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
@@ -21074,6 +21118,8 @@ msgstr "יעד, לדוגמה usage_report:abc"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
 msgid "Task"
@@ -21088,6 +21134,14 @@ msgstr "המשימה הוקצתה"
 msgid "Task created"
 msgstr "משימה נוצרה"
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Task it"
+msgstr ""
+
+#: src/components/conversation/task-it.tsx
+msgid "Task it — make this message a task"
+msgstr ""
+
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 #: src/routes/loaders/load-tasks.ts
 msgid "Task not found"
@@ -21100,6 +21154,11 @@ msgstr "משימה לא זמינה"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Tasked"
 msgstr "בעל משימה"
+
+#. placeholder {0}: task.title
+#: src/components/conversation/task-it.tsx
+msgid "Tasked: {0}"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/types/ViewType.ts
@@ -21977,6 +22036,10 @@ msgstr ""
 
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "This message carries no assets."
+msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "This message will also become a task"
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -22873,6 +22936,7 @@ msgstr "פריט הזנה לא זמין"
 msgid "Under eval"
 msgstr "בהערכה"
 
+#: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/hooks/favorites-pending-delete.ts
 msgid "Undo"
@@ -23339,6 +23403,11 @@ msgstr "שליחת פרומפט ממשתמש"
 msgid "uses"
 msgstr "שימושים"
 
+#: src/components/connections-manager/connection-state-visual.ts
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Uses a key"
+msgstr ""
+
 #~ msgid "Uses the definition's config."
 #~ msgstr ""
 
@@ -23691,8 +23760,8 @@ msgid "waiting for you to choose an LLM source"
 msgstr "ממתין שתבחר מקור LLM"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Waiting for you…"
-msgstr "ממתין לך…"
+#~ msgid "Waiting for you…"
+#~ msgstr "ממתין לך…"
 
 #: src/journey/JourneyTray.tsx
 msgid "Waiting…"
