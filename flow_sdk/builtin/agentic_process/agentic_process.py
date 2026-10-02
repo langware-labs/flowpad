@@ -3401,8 +3401,23 @@ class AgenticProcess(Entity):
 
         # Wait until the driver can locate a transcript (worker has been
         # spawned and produced — or pre-touched — a session JSONL).
+        # The headless turn this stream follows (``None`` for a PTY turn). Read from
+        # the process-global registry, so it holds on a hydrated copy too. Once it
+        # has finished, nothing more is written: a worker that failed to spawn or
+        # crashed mid-turn leaves no terminal marker, and waiting for one would only
+        # delay the failure to the deadline — minutes, for nothing.
+        turn_task = _PROMPT_TASKS.get(str(self.id))
+
+        def _turn_ended() -> bool:
+            return turn_task is not None and turn_task.done() and not prompt_worker_active(self.id)
+
+        def _unfinished_turn() -> RuntimeError:
+            return RuntimeError(getattr(self, "start_failure", None) or "the worker exited without finishing its turn")
+
         transcript_path: Path | None = None
         while transcript_path is None:
+            if _turn_ended():
+                raise _unfinished_turn()
             if time.monotonic() > deadline:
                 raise TimeoutError("stream_transcript: transcript file did not appear within timeout")
             transcript_path = self.driver.transcript_path(self)
@@ -3445,6 +3460,7 @@ class AgenticProcess(Entity):
         _terminal_size: int | None = None
         _post_tool_since: float | None = None
         _post_tool_size: int | None = None
+        _ended_since: float | None = None
 
         offset = 0
         while True:
@@ -3567,6 +3583,13 @@ class AgenticProcess(Entity):
                 _terminal_size = None
                 _post_tool_since = None
                 _post_tool_size = None
+                # The settle window still applies: a late flush may yet land the marker.
+                if not _turn_ended():
+                    _ended_since = None
+                elif _ended_since is None:
+                    _ended_since = now
+                elif now - _ended_since >= _settle_seconds:
+                    raise _unfinished_turn()
 
             if time.monotonic() > deadline:
                 raise TimeoutError(f"stream_transcript: process did not reach idle within {timeout}s")

@@ -664,9 +664,10 @@ async def run_session_turn(
     """Run ONE prompt as a turn of ``session`` and post the reply.
 
     Consent is the caller's business (the gate); this only runs. Never raises
-    — a failed run marks the session ERROR and returns ``ApiFailResponse`` so
-    it can't crash the receive pipeline. ``_locked`` is for the queue drain,
-    which already holds the per-conversation lock.
+    — every failure goes through :func:`_fail_turn` (session ERROR + a system
+    line to the guest) and returns ``ApiFailResponse`` so it can't crash the
+    receive pipeline. ``_locked`` is for the queue drain, which already holds
+    the per-conversation lock.
     """
     import contextlib  # noqa: PLC0415
 
@@ -683,11 +684,11 @@ async def run_session_turn(
 
             project_id = getattr(conversation, "project_id", None)
             if not project_id:
-                return ApiFailResponse(message="conversation has no mapped project")
+                raise _TurnFailed("this conversation is not linked to a project on the host")
             project = await Project.get_one({"id": project_id})
             workdir = getattr(project, "fs_storage_mount_path", None) if project else None
             if not workdir:
-                return ApiFailResponse(message="project has no workdir")
+                raise _TurnFailed("the host's project has no folder to run in")
 
             # RUNNING has to be durable BEFORE the consume, not after it. The
             # marker below means "this prompt is spoken for"; if the host dies
@@ -704,7 +705,7 @@ async def run_session_turn(
 
             prompt_text = await build_merged_prompt(fm)
             if not prompt_text:
-                return ApiFailResponse(message="prompt is empty — nothing to execute")
+                raise _TurnFailed("the prompt is empty — nothing to run")
             prompt_text += _session_context_block(
                 conversation.id,
                 session.id,
@@ -725,18 +726,12 @@ async def run_session_turn(
             session.mark_activity(RemoteWorkerSessionStatus.RUNNING)
             await session.save()
 
-            try:
-                taken = await ap.send_turn(prompt_text)
-                if not taken.ok:
-                    # A turn that was not taken has no reply of its own: capturing
-                    # now would hand back the PREVIOUS turn's text as this one's.
-                    raise RuntimeError(taken.detail)
-                reply = await _capture_assistant_reply(ap)
-            except Exception as run_err:  # noqa: BLE001
-                session.mark_activity(RemoteWorkerSessionStatus.ERROR)
-                await session.save()
-                logger.warning("[session] turn failed session=%s: %s", session.id, run_err, exc_info=True)
-                return ApiFailResponse(message=f"session turn failed: {run_err}")
+            taken = await ap.send_turn(prompt_text)
+            if not taken.ok:
+                # A turn that was not taken has no reply of its own: capturing
+                # now would hand back the PREVIOUS turn's text as this one's.
+                raise _TurnFailed(taken.detail)
+            reply = await _capture_assistant_reply(ap)
 
             if not reply:
                 # A worker that RAN and produced no readable text is a defect, not a
@@ -747,16 +742,10 @@ async def run_session_turn(
                 # worker's own verdict, so the next unreadable vendor surfaces here
                 # instead of as "that model does not work with that harness".
                 status = ap.fetch_worker_status()
-                session.mark_activity(RemoteWorkerSessionStatus.ERROR)
-                await session.save()
-                logger.warning(
-                    "[session] worker produced no readable reply session=%s worker=%s status=%s — "
-                    "the turn ran but its transcript yielded no assistant text",
-                    session.id,
-                    getattr(ap.driver, "name", "?"),
-                    status,
+                raise _TurnFailed(
+                    f"the {getattr(ap.driver, 'name', 'worker')} worker finished ({status}) "
+                    "but produced no readable reply"
                 )
-                return ApiFailResponse(message=f"the worker finished ({status}) but produced no readable reply")
 
             # A turn is long, and the host owns session settings while it runs:
             # the ``settings`` action writes ``reply_policy`` straight to the row.
@@ -811,8 +800,34 @@ async def run_session_turn(
                 }
             )
         except Exception as e:  # noqa: BLE001
-            logger.warning("[session] run_session_turn failed: %s", e, exc_info=True)
-            return ApiFailResponse(message=f"run_session_turn failed: {e}")
+            return await _fail_turn(session, e, someone_typeid)
+
+
+class _TurnFailed(Exception):
+    """A turn that cannot produce a reply; its message is what the guest is told."""
+
+
+async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typeid: str) -> ApiFailResponse:
+    """Mark the session ERROR and tell the guest why, with a system line.
+
+    The guest has no clock: a turn that fails only on the host leaves the guest's
+    mirror on ``running`` with a reply that is never coming. The event carries the
+    session snapshot, so the guest's mirror flips to ``error`` with it. ERROR is
+    runnable — the guest's next prompt is the retry.
+    """
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus  # noqa: PLC0415
+
+    reason = str(err) or type(err).__name__
+    logger.warning(
+        "[session] turn failed session=%s: %s", session.id, reason, exc_info=not isinstance(err, _TurnFailed)
+    )
+    try:
+        session.mark_activity(RemoteWorkerSessionStatus.ERROR)
+        await session.save()
+    except Exception:  # noqa: BLE001 — reporting a failure must not raise out of the receive pipeline
+        logger.warning("[session] could not save the failed turn session=%s", session.id, exc_info=True)
+    await session._emit_event("failed", text=f"The host could not run this prompt: {reason}", someone_typeid=someone_typeid)
+    return ApiFailResponse(message=f"session turn failed: {reason}")
 
 
 async def _queued_turns(session: "RemoteWorkerSession", local_id: Optional[str]) -> list["FlowMessage"]:
