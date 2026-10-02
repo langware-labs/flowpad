@@ -206,7 +206,7 @@ export interface BrowseableRoot extends Browseable {
 }
 
 /**
- * Inline hover action rendered to the right of a row.
+ * Inline hover action, rendered on the row's edge opposite the chevron.
  */
 export interface ToolbarAction {
   /** Stable id (React key). */
@@ -227,6 +227,10 @@ export interface ToolbarAction {
 
   /** Optional busy indicator while `run()` is pending. Defaults to true. */
   showBusyIndicator?: boolean;
+
+  /** Removes something. The first click only ARMS the button (it turns into a
+   *  confirm check); the second click runs it. Leaving the button disarms. */
+  destructive?: boolean;
 }
 
 /**
