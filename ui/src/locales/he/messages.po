@@ -428,7 +428,7 @@ msgstr "{0} מנפיק את קריאות ה-LLM שלך. אפשר לסגור את
 #. placeholder {0}: harness.label
 #: src/components/workers/harness-availability.ts
 msgid "{0} is not installed on this machine."
-msgstr ""
+msgstr "{0} לא מותקן במחשב הזה."
 
 #. placeholder {0}: source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -846,7 +846,7 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't signed in on this machine."
-msgstr ""
+msgstr "{name} לא מחובר במחשב הזה."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
@@ -9582,7 +9582,7 @@ msgstr "מסך מלא"
 #. placeholder {0}: picked.name
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Funded by {0}"
-msgstr ""
+msgstr "ממומן על ידי {0}"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a hub endpoint"
@@ -14284,7 +14284,7 @@ msgstr "לא בדוק"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not checked yet"
-msgstr ""
+msgstr "טרם נבדק"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
@@ -14314,7 +14314,7 @@ msgstr "לא נמצא"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not funded"
-msgstr ""
+msgstr "ללא מימון"
 
 #~ msgid "Not in a git repository — can't be published"
 #~ msgstr ""
@@ -19921,7 +19921,7 @@ msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצ
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in to {name}"
-msgstr ""
+msgstr "התחברות ל-{name}"
 
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
@@ -19952,7 +19952,7 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
-msgstr ""
+msgstr "התחברו כדי לאפשר ל-{name} לכתוב ולהריץ קוד עבורכם. חלון דפדפן ייפתח לכניסה — FlowPad לעולם לא רואה את הסיסמה שלכם."
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -20019,7 +20019,7 @@ msgstr "התחברות"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign-in failed"
-msgstr ""
+msgstr "ההתחברות נכשלה"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Sign-in not confirmed"
@@ -23406,7 +23406,7 @@ msgstr "שימושים"
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Uses a key"
-msgstr ""
+msgstr "משתמש במפתח"
 
 #~ msgid "Uses the definition's config."
 #~ msgstr ""
