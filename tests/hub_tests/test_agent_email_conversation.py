@@ -419,10 +419,12 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
         # the same shape docs/snippets/agent-email.md advertises.
         with mailbox_capability_required():
             mailbox = await pirate.allocate_mailbox(allowed_senders=[gmail.account_key])
-        if mailbox.provider != "agentmail":
+        # Any real provider (agentmail, sentfrom) gives a public address Gmail can
+        # reach; only the in-process `local` mailbox cannot receive real mail.
+        if mailbox.provider == "local":
             pytest.skip(
-                "Gmail delivery requires the local Hub to run with "
-                "AGENT_MAILBOX_PROVIDER=agentmail"
+                "Gmail delivery needs a real mailbox provider on the local Hub "
+                "(AGENT_MAILBOX_PROVIDER=agentmail or sentfrom), not `local`"
             )
 
         agent_source = await DataSource.find_for_account("cloud_email", "agent_id", pirate.id)
