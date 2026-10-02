@@ -1,4 +1,4 @@
-"""0.2.152 — every migration that never ran (its auto-bookmark repair is retired).
+"""0.2.152 — the new auto-bookmark repair, plus every migration that never ran.
 
 TWO jobs, and the second one is the bigger surprise.
 
@@ -14,9 +14,8 @@ for months. They are re-driven from here, in version order, so the debt finally
 clears. See ``tests/unit/test_migration_recipes_ship_with_their_version.py``,
 which fails if a future recipe repeats the mistake.
 
-**The new one** (since removed). It collapsed duplicated ``flow show``
-auto-bookmark trees; the auto-bookmark feature is gone and 0.2.185 deletes every
-auto row, so ``run()`` no longer carries it.
+**The new one.** Collapse duplicated ``flow show`` auto-bookmark trees, so each
+project has a single "Auto" favorites folder.
 
 Catch-up steps are BEST-EFFORT and can never block a launch: a failure in
 ``_start_service_guarded`` refuses to start the server, and a five-releases-old
@@ -82,6 +81,8 @@ CATCH_UP_ON_START = False
 
 
 def run() -> dict[str, int]:
+    from flow_sdk.migrations.migration_2026_09_auto_favorite_duplicate_roots import dedupe
+
     failed = 0
     if CATCH_UP_ON_START:
         failed = _catch_up()
@@ -90,4 +91,22 @@ def run() -> dict[str, int]:
                 f"{failed} catch-up migration(s) failed; they will be retried on the next "
                 "upgrade that carries them. Startup continues."
             )
-    return {"catch_up_failed": failed}
+
+    report = dedupe(dry_run=False)
+    summary = {
+        "rows_deleted": report.rows_deleted,
+        "rows_reparented": report.rows_reparented,
+        "catch_up_failed": failed,
+    }
+    if not report.groups:
+        print("auto bookmarks: one Auto tree per project already.")  # noqa: T201
+    else:
+        print(  # noqa: T201
+            f"auto bookmarks: removed {report.rows_deleted} duplicate row(s), "
+            f"re-filed {report.rows_reparented} — each project has one 'Auto' folder."
+        )
+        for line in report.groups:
+            print(f"  {line}")  # noqa: T201
+    for line in report.unscoped_trees:
+        print(f"  legacy unscoped tree: {line}")  # noqa: T201
+    return summary
