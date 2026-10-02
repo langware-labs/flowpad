@@ -1280,15 +1280,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
   }
 
   /**
-   * Bind a captured `GraphContext` (by id) to this process BEFORE launch — the
-   * backend `set-graph-context` action. Folds the context summary into the
-   * worker's system prompt at launch (see contextProcess.md). Pre-launch only.
-   */
-  async setGraphContext(graphContextId: string): Promise<void> {
-    await this.post('set-graph-context', { graph_context_id: graphContextId });
-  }
-
-  /**
    * Declare a display-focus target for this process's watchers — the backend
    * `show` action (same channel as the worker-side `flow show` CLI). The
    * resolved payload comes back to subscribers via {@link onShow}.

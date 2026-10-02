@@ -207,7 +207,6 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_skill_chip_live_stream",
         "test_skill_transcript_analysis",
         "test_docs_browse_skill",
-        "test_context_process",
         "test_system_prompt",
         "test_settings_instruction",
         "test_asset_cleanup_agent",
