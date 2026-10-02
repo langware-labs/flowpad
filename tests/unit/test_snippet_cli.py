@@ -8,7 +8,6 @@ same `run_snippet` (tests/unit/test_snippet.py).
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -17,7 +16,6 @@ from typer.testing import CliRunner
 
 from flow_sdk.cli.commands import show_cmd
 from flow_sdk.cli.flow_cli import app
-from flow_sdk.core import snippet as snippet_mod
 
 runner = CliRunner()
 _PROC = "--process=3f2a1b4c-0000-4000-8000-0000000000aa"
@@ -36,10 +34,6 @@ def sent_body(monkeypatch):
     monkeypatch.setattr(show_cmd, "_post_graph_json", _fake_post)
     return captured
 
-
-@pytest.fixture(autouse=True)
-def _toolchain_path(monkeypatch):
-    monkeypatch.setattr(snippet_mod, "_terminal_path", lambda: os.environ["PATH"])
 
 
 def test_stdin_code_lands_in_the_os_temp_dir_and_is_shown(sent_body, tmp_path, monkeypatch):
