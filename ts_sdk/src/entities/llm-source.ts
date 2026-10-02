@@ -64,6 +64,22 @@ export enum LLMSourceOrigin {
   Default = 'default',
 }
 
+/** WHY a source cannot fund a harness — mirrors `LLMSourceRefusal` in
+ *  `flow_sdk/schema/data_spec/llm_source_spec.py`. */
+export enum LLMSourceRefusal {
+  NotInstalled = 'not_installed',
+  SignedOut = 'signed_out',
+  LoginNotChecked = 'login_not_checked',
+  LoginFailed = 'login_failed',
+  SigningIn = 'signing_in',
+  NoLogin = 'no_login',
+  NoKey = 'no_key',
+  HubSignedOut = 'hub_signed_out',
+  EndpointDisabled = 'endpoint_disabled',
+  /** Another source is required (a process or project pin) or chosen (a stated preference). */
+  PinnedElsewhere = 'pinned_elsewhere',
+}
+
 export interface LLMSource {
   /** The endpoint this verdict is about — `llm_endpoint-<uuid>`, always set. Everything else
    *  about the source (kind, provider, models) lives on the endpoint; look it up in
@@ -77,25 +93,15 @@ export interface LLMSource {
    *  sentence so the picker and the spawn error cannot disagree, and a second author would
    *  drift from the resolver. */
   reason: string;
+  /** The same refusal as a code (`LLMSourceRefusal`) — `''` when eligible. Branch on THIS to
+   *  offer a fix ("Install", "Sign in", "Add key"); never parse `reason`. */
+  reason_code: LLMSourceRefusal | '';
   /** Eligible ≠ auto-selectable. Five endpoints are all eligible; one is auto. */
   auto: boolean;
   authority: LLMSourceAuthority;
   /** Position in the preference order; lower is preferred. */
   rank: number;
   origin: LLMSourceOrigin;
-  /** This verdict rests on a device login NOBODY HAS PROBED — so it is not evidence the box
-   *  can issue a call. Computed by the backend (`Candidate.unverified` in
-   *  `cli_drivers/llm_source.py`) because it needs the endpoint's KIND, which no consumer has
-   *  from the source alone; published so `flow llm set auto` and the setup popup read one
-   *  verdict instead of each re-deriving the rule and drifting.
-   *
-   *  Deliberately NOT the inverse of `eligible`: `eligible` says the row itself is usable,
-   *  this says whether there is any evidence for that claim. An un-probed device login is
-   *  `eligible: true, unverified: true` — right to TRY when there is nothing better, wrong to
-   *  count as "you are set up".
-   *
-   *  Optional: absent from an older backend means verified, the answer it always gave. */
-  unverified?: boolean;
 }
 
 /** Identity is the endpoint it names. Compare sources with this rather than by whole value:

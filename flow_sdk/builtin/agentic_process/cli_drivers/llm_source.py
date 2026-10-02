@@ -69,6 +69,7 @@ from flow_sdk.schema.data_spec.llm_source_spec import (
     LLMSource,
     LLMSourceAuthority,
     LLMSourceOrigin,
+    LLMSourceRefusal,
 )
 
 if TYPE_CHECKING:
@@ -111,46 +112,9 @@ class Candidate(NamedTuple):
     endpoint: "LLMEndpoint"
     source: LLMSource
 
-    @property
-    def unverified(self) -> bool:
-        """Whether this verdict rests on a device login NOBODY HAS PROBED.
-
-        The one fact a consumer cannot derive from ``source`` alone, because it needs the
-        endpoint's KIND as well -- which is why it lives here, on the pair, rather than on
-        either half. Published on the wire so the CLI and the frontend read ONE verdict instead
-        of each re-deriving the rule and drifting apart on it.
-
-        Deliberately NOT spelled as a positive next to ``eligible``: the two are subtly
-        different and two positive booleans would invite exactly the confusion this exists to
-        end. ``eligible`` says the row itself is usable; this says whether we have any evidence
-        for that claim. An un-probed device login is ``eligible=True, unverified=True`` -- the
-        resolver is right to try it when there is nothing better, and a caller asking "is this
-        box set up" is right to refuse to count it.
-
-        ``PRESUMED`` means two unrelated things depending on kind, and conflating them is the
-        bug this closes:
-
-        * on a **device login** it means nobody asked -- and the probe leaves ``login_state``
-          unset when it cannot reach a verdict, INCLUDING when the CLI is not installed at all,
-          so a presumed device login is routinely one that cannot exist. Observed: a box with
-          claude signed out and copilot/opencode absent reported "codex device login funds
-          codex" and offered no way to fix it.
-        * on a **hub endpoint** it is the honest local ceiling: the chain's credentials live on
-          the hub and only the hub finds out, at invoke time. Treating those as unverified
-          would reject the very source a fresh FlowPad login exists to produce.
-
-        A probed device login is ``CACHED`` either way (signed in or signed out), so this flags
-        only the un-asked.
-        """
-        from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
-
-        if str(getattr(self.endpoint, "kind", "") or "") != LLMEndpointKind.DEVICE:
-            return False
-        return self.source.authority == LLMSourceAuthority.PRESUMED
-
     def to_wire(self) -> dict:
-        """The verdict as a client reads it: the source, plus the verdict-about-the-verdict."""
-        return {**self.source.model_dump(mode="json"), "unverified": self.unverified}
+        """The verdict as a client reads it."""
+        return self.source.model_dump(mode="json")
 
 
 class LLMSourceError(Exception):
@@ -189,7 +153,12 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
     endpoint = LLMEndpoint.device_projection(worker_type, name=name)
     typeid = str(endpoint.typeid)
 
-    def verdict(*, reason: str = "", authority: LLMSourceAuthority = LLMSourceAuthority.CACHED) -> Candidate:
+    def verdict(
+        *,
+        reason: str = "",
+        code: LLMSourceRefusal | None = None,
+        authority: LLMSourceAuthority = LLMSourceAuthority.CACHED,
+    ) -> Candidate:
         eligible = not reason
         return Candidate(
             endpoint,
@@ -202,22 +171,32 @@ def _device_source(worker_type: str, install: "InstallState", login: "LoginState
                 authority=authority,
                 detail="signed in" if eligible else "",
                 reason=reason,
+                reason_code=code.value if code else "",
             ),
         )
 
     if install not in (InstallState.INSTALLED, InstallState.BUILT_IN):
-        return verdict(reason=f"{worker_type} is not installed", authority=LLMSourceAuthority.PROVEN)
+        return verdict(
+            reason=f"{worker_type} is not installed",
+            code=LLMSourceRefusal.NOT_INSTALLED,
+            authority=LLMSourceAuthority.PROVEN,
+        )
     if login is LoginState.SIGNED_IN:
         return verdict()
-    reasons = {
-        LoginState.SIGNED_OUT: f"{worker_type} is signed out",
-        LoginState.ERROR: f"{worker_type} sign-in failed",
-        LoginState.SIGNING_IN: f"{worker_type} is still signing in",
-        LoginState.N_A: f"{worker_type} has no login of its own",
+    refusals = {
+        LoginState.SIGNED_OUT: (f"{worker_type} is signed out", LLMSourceRefusal.SIGNED_OUT),
+        LoginState.ERROR: (f"{worker_type} sign-in failed", LLMSourceRefusal.LOGIN_FAILED),
+        LoginState.SIGNING_IN: (f"{worker_type} is still signing in", LLMSourceRefusal.SIGNING_IN),
+        LoginState.N_A: (f"{worker_type} has no login of its own", LLMSourceRefusal.NO_LOGIN),
     }
     if login is LoginState.NOT_CHECKED:
-        return verdict(reason=f"{worker_type} sign-in has not been checked", authority=LLMSourceAuthority.PRESUMED)
-    return verdict(reason=reasons[login])
+        return verdict(
+            reason=f"{worker_type} sign-in has not been checked",
+            code=LLMSourceRefusal.LOGIN_NOT_CHECKED,
+            authority=LLMSourceAuthority.PRESUMED,
+        )
+    reason, code = refusals[login]
+    return verdict(reason=reason, code=code)
 
 
 def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
@@ -261,6 +240,7 @@ def _key_sources(spec, rows: dict, stored: set[str]) -> list[Candidate]:
                     # CACHED, not PROVEN: a key's NAME was listed, its value was never tried.
                     authority=LLMSourceAuthority.CACHED,
                     reason="" if has_key else f"no {provider.value} key is stored on this machine",
+                    reason_code="" if has_key else LLMSourceRefusal.NO_KEY.value,
                 ),
             )
         )
@@ -300,13 +280,13 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
     out: list[Candidate] = []
     for typeid, endpoint in rows.items():
         name = endpoint.name or "hub endpoint"
-        reason = ""
+        reason, code = "", ""
         # A PUBLIC endpoint is the one hub budget a box can spend without signing for it: the
         # hub admits whoever holds the id (see ``LLMEndpoint.resolve_api_key``).
         if not hub_logged_in and not endpoint.public:
-            reason = "this box is not logged in to the hub"
+            reason, code = "this box is not logged in to the hub", LLMSourceRefusal.HUB_SIGNED_OUT.value
         elif not endpoint.enabled:
-            reason = f"endpoint {name} is disabled"
+            reason, code = f"endpoint {name} is disabled", LLMSourceRefusal.ENDPOINT_DISABLED.value
         out.append(
             Candidate(
                 endpoint,
@@ -319,6 +299,7 @@ def _endpoint_sources(spec, endpoints, bound, hub_logged_in: bool, listing_autho
                     auto=(not reason) and typeid == bound_typeid,
                     authority=LLMSourceAuthority.PRESUMED,
                     reason=reason,
+                    reason_code=code,
                 ),
             )
         )
@@ -373,7 +354,10 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
         # still shows what exists) but none is eligible, so no surface can report it funded.
         why = f"{worker_type} is not installed"
         candidates = [
-            c if not c.source.eligible else Candidate(c.endpoint, c.source.ineligible(why)) for c in candidates
+            c
+            if not c.source.eligible
+            else Candidate(c.endpoint, c.source.ineligible(why, LLMSourceRefusal.NOT_INSTALLED))
+            for c in candidates
         ]
     return candidates, cap
 
@@ -461,7 +445,7 @@ def _apply_constraint(
                 Candidate(endpoint, source.model_copy(update={"rank": -1, "auto": source.eligible, "origin": origin}))
             )
         else:
-            out.append(Candidate(endpoint, source.ineligible(why)))
+            out.append(Candidate(endpoint, source.ineligible(why, LLMSourceRefusal.PINNED_ELSEWHERE)))
     if not named:
         # Not in the inventory is not a refusal: the hub authorizes every invoke against
         # the endpoint in the URL, so a typeid we have not heard of can only earn a
@@ -473,6 +457,7 @@ def _apply_constraint(
 
         public = public_binding(typeid) is not None
         unusable = "" if hub_logged_in or public else "this box is not logged in to the hub"
+        unusable_code = "" if not unusable else LLMSourceRefusal.HUB_SIGNED_OUT.value
         stub = _hub_stub(typeid, name=typeid, public=public)
         out.append(
             Candidate(
@@ -486,6 +471,7 @@ def _apply_constraint(
                     authority=LLMSourceAuthority.PRESUMED,
                     origin=origin,
                     reason=unusable,
+                    reason_code=unusable_code,
                 ),
             )
         )
@@ -571,7 +557,7 @@ def _apply_preference(candidates: list[Candidate], cap, worker_type: str) -> lis
     return [
         Candidate(endpoint, source.model_copy(update={"rank": -1, "origin": LLMSourceOrigin.USER}))
         if _matches_preference(endpoint, source, preferred)
-        else Candidate(endpoint, source.ineligible(why))
+        else Candidate(endpoint, source.ineligible(why, LLMSourceRefusal.PINNED_ELSEWHERE))
         for endpoint, source in candidates
     ]
 

@@ -8,7 +8,7 @@
  * showed a language menu nobody there could use.
  */
 import { render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { LanguageSelector } from '@src/components/footer/LanguageSelector';
 import { applySupportedLocales } from '@src/contexts/locale-context';
@@ -24,6 +24,13 @@ const original = Object.getOwnPropertyDescriptor(Navigator.prototype, 'languages
 function setNavigatorLanguages(langs: string[]) {
   Object.defineProperty(navigator, 'languages', { value: langs, configurable: true });
 }
+
+beforeEach(() => {
+  // Pin the UI to English: with Hebrew first in `navigator.languages` the first-run pick would
+  // switch the catalog, and the button's accessible name with it. The rule under test is WHEN
+  // the button shows, not which language it speaks.
+  localStorage.setItem('locale', 'en-US');
+});
 
 afterEach(() => {
   delete (navigator as unknown as Record<string, unknown>).languages;

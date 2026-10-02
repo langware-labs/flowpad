@@ -50,7 +50,7 @@ importable from ``flow_sdk/builtin/*`` with no cycle.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import model_validator
 
@@ -95,6 +95,27 @@ class LLMSourceOrigin(StrEnum):
     DEFAULT = "default"
 
 
+class LLMSourceRefusal(StrEnum):
+    """WHY a source cannot fund this harness, as a code a surface can branch on.
+
+    ``reason`` is the sentence, rendered verbatim; this is the same answer for code. A
+    surface that needs to offer a fix ("Sign in", "Add key", "Install") reads the code and
+    never parses the sentence -- parsing it is how a reworded message silently broke a button.
+    """
+
+    NOT_INSTALLED = "not_installed"
+    SIGNED_OUT = "signed_out"
+    LOGIN_NOT_CHECKED = "login_not_checked"
+    LOGIN_FAILED = "login_failed"
+    SIGNING_IN = "signing_in"
+    NO_LOGIN = "no_login"
+    NO_KEY = "no_key"
+    HUB_SIGNED_OUT = "hub_signed_out"
+    ENDPOINT_DISABLED = "endpoint_disabled"
+    #: Another source is required (a process or project pin) or chosen (a stated preference).
+    PINNED_ELSEWHERE = "pinned_elsewhere"
+
+
 class LLMSource(DataSpec):
     """One way this harness could be funded, and whether it can be. Frozen: a value."""
 
@@ -114,6 +135,8 @@ class LLMSource(DataSpec):
     #: verbatim by every consumer, so a caveat carried here on a usable source surfaces as
     #: that source's status message. Caveats belong in ``detail``. Enforced below.
     reason: str = ""
+    #: The same refusal as a code (``LLMSourceRefusal``); empty when eligible.
+    reason_code: str = ""
     auto: bool = False
     authority: LLMSourceAuthority = LLMSourceAuthority.PRESUMED
     #: Position in the preference order; lower is preferred. Meaningless across kinds
@@ -126,8 +149,7 @@ class LLMSource(DataSpec):
         """``reason`` explains a refusal, so an eligible source must not carry one."""
         if self.eligible and self.reason:
             raise ValueError(
-                f"{self.name or self.endpoint_typeid}: an eligible source must not carry a "
-                f"reason ({self.reason!r})"
+                f"{self.name or self.endpoint_typeid}: an eligible source must not carry a reason ({self.reason!r})"
             )
         if not self.endpoint_typeid:
             raise ValueError("an LLMSource must name the endpoint it is a verdict about")
@@ -142,13 +164,13 @@ class LLMSource(DataSpec):
         """
         return self.endpoint_typeid
 
-    def ineligible(self, reason: str) -> "LLMSource":
+    def ineligible(self, reason: str, code: "LLMSourceRefusal") -> "LLMSource":
         """This source, ruled out, carrying the sentence that says why.
 
         The overlay builds a rejected list by mapping this over the inventory, so a
         constraint is expressed ON the list rather than beside it -- which is what makes
         the list self-explaining and lets a spawn error be a rendering of it."""
-        return self.model_copy(update={"eligible": False, "auto": False, "reason": reason})
+        return self.model_copy(update={"eligible": False, "auto": False, "reason": reason, "reason_code": code.value})
 
 
 class LLMScope(DataSpec):
@@ -197,3 +219,44 @@ class LLMScope(DataSpec):
     def of_project(cls, project_id: str | None) -> "LLMScope":
         """The scope a project-aware picker asks in: rung 2 only."""
         return cls(project_id=str(project_id or ""))
+
+
+class FundingBindingSpec(DataSpec):
+    """The hub endpoint this box was bound to -- one object, not six top-level fields."""
+
+    spec_kind: ClassVar[str] = "funding.binding"
+
+    endpoint_typeid: str
+    invoke_path: str = ""
+    invoke_url: str = ""
+    provider: str = ""
+    name: str = ""
+    #: A PUBLIC endpoint: spendable with no hub login (the id is the bearer).
+    public: bool = False
+
+
+class FundingStatusSpec(DataSpec):
+    """What funds each harness, layered ON TOP of the status record (``core.status``).
+
+    Funding facts only. Whether a CLI is installed or signed in, which keys are stored and
+    whether FlowPad is signed in are STATUS facts and live in ``StatusSpec``; this record
+    answers, per harness, which source pays and -- when none can -- why.
+    """
+
+    spec_kind: ClassVar[str] = "funding.status"
+
+    #: Per harness (capability kind): every source it HAS, each judged on its own credential.
+    sources: dict[str, list[LLMSource]]
+    #: Per harness: the source a spawn would actually spend, or None.
+    resolved: dict[str, LLMSource | None]
+    #: Per harness: when ``resolved`` is None, the top-ranked refusal, verbatim.
+    blocked: dict[str, str]
+    #: Per harness: a stated preference that is not in force, and why.
+    notes: dict[str, str]
+    #: The endpoint rows the verdicts name (wire form), keyed by endpoint typeid.
+    endpoints: dict[str, dict[str, Any]]
+    #: Every hub endpoint this user could be pointed at (wire form, with admin flags).
+    available: list[dict[str, Any]]
+    #: Harness kinds whose resolved source IS the bound endpoint.
+    active_for: list[str]
+    binding: FundingBindingSpec | None = None

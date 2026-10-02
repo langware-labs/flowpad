@@ -101,6 +101,11 @@ def _status_facts(monkeypatch):
     monkeypatch.setattr(llm_source, "check_unchecked_login", no_probe)
 
 
+def _bound(status: dict) -> str | None:
+    """The bound endpoint's typeid, read from the funding record's ``binding`` object."""
+    return (status.get("binding") or {}).get("endpoint_typeid")
+
+
 def _login() -> None:
     """Both halves of a real hub login, because the box asks about both.
 
@@ -281,9 +286,8 @@ async def test_bind_offers_the_endpoint_without_rewriting_the_users_choice(env) 
     status = await bind_hub_llm_endpoint(
         {"endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH, "provider": "openrouter", "name": "OR"}
     )
-    assert status["endpoint_typeid"] == "llm_endpoint:ep1"
-    assert status["invoke_url"] == "https://hub.test" + INVOKE_PATH
-    assert status["hub_logged_in"] is True
+    assert _bound(status) == "llm_endpoint:ep1"
+    assert status["binding"]["invoke_url"] == "https://hub.test" + INVOKE_PATH
     assert len(status["active_for"]) == len(HUB_ENDPOINT_HARNESSES)
 
     assert all(state == ("device", None) for state in (await _harness_states()).values()), (
@@ -359,7 +363,7 @@ async def test_unbind_withdraws_the_offer(env) -> None:
     result = await unbind_hub_llm_endpoint()
     assert result["was_bound"] is True
     assert "reverted" not in result, "nothing is reverted: binding never wrote to Capability"
-    assert result["endpoint_typeid"] is None and result["active_for"] == []
+    assert _bound(result) is None and result["active_for"] == []
     assert llm_endpoint.get_hub_llm_endpoint() is None
     assert get_lm_api(LMApiProvider.FLOWPAD) is None
     assert all(state == ("device", None) for state in (await _harness_states()).values())
@@ -442,7 +446,7 @@ async def test_status_carries_what_the_user_may_spend(env) -> None:
 
     status = await hub_llm_endpoint_status()
     assert status["available"] == [], "logged out: nothing to choose from, and no error"
-    assert status["endpoint_typeid"] is None and status["hub_logged_in"] is False
+    assert _bound(status) is None
 
 
 async def test_the_hub_initiated_paths_answer_from_the_memo(env, monkeypatch) -> None:
@@ -601,7 +605,7 @@ async def test_a_refresh_drops_a_binding_the_hub_no_longer_lists(env, monkeypatc
     # The explicit refresh (``status/refresh`` runs this) is what drops it.
     assert await prune_dead_binding() is True
     status = await hub_llm_endpoint_status()
-    assert status["endpoint_typeid"] is None and status["invoke_url"] is None
+    assert status["binding"] is None
     assert llm_endpoint.get_hub_llm_endpoint() is None, "the dead binding survived a refresh"
 
 
@@ -616,7 +620,7 @@ async def test_a_refresh_keeps_a_binding_when_the_hub_could_not_be_reached(env, 
     llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, provider="openrouter", name="OR")
 
     status = await hub_llm_endpoint_status()
-    assert status["endpoint_typeid"] == "llm_endpoint:ep1"
+    assert _bound(status) == "llm_endpoint:ep1"
     assert llm_endpoint.get_hub_llm_endpoint() is not None, "a binding was dropped on no evidence"
 
 
@@ -650,7 +654,7 @@ async def test_binding_an_endpoint_the_listing_has_not_heard_of_survives_the_bin
             "name": "New",
         }
     )
-    assert status["endpoint_typeid"] == "llm_endpoint:brand-new", "the bind erased its own binding"
+    assert _bound(status) == "llm_endpoint:brand-new", "the bind erased its own binding"
     assert llm_endpoint.get_hub_llm_endpoint() is not None
 
 
@@ -866,5 +870,5 @@ async def test_a_refresh_never_drops_a_public_binding(env, monkeypatch) -> None:
     llm_endpoint._list_cache[llm_endpoint.get_instance_settings().instance_name] = (time.monotonic() + 1, [])
 
     status = await hub_llm_endpoint_status()
-    assert (status["endpoint_typeid"], status["public"]) == ("llm_endpoint:open", True)
+    assert (_bound(status), status["binding"]["public"]) == ("llm_endpoint:open", True)
     assert llm_endpoint.get_hub_llm_endpoint() is not None

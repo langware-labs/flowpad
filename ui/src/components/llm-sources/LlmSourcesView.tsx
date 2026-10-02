@@ -18,12 +18,14 @@ import {
   selectKindFor,
   type LLMEndpointOffer,
   type LLMSource,
+  LLMSourceRefusal,
 } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { AlertCircle, ArrowUpRight, Check, KeyRound, Loader2, Waypoints } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
 import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
+import { useStatusRecord } from '@src/components/status/use-status-record';
 import { dotFor } from './llm-source-visuals';
 import { openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { TONE } from '@src/components/llm-endpoints/tone';
@@ -39,11 +41,10 @@ import {
   harnessKinds,
   labelForWorker,
   useLlmSources,
-  useFundingFollowsLogin,
-  useProbeDeviceLogins,
   useTestSource,
   useSelectSource,
   workerOf,
+  useRefreshStatusOnArrival,
 } from './use-llm-sources';
 import { visibleSources } from './visible-sources';
 
@@ -80,18 +81,19 @@ function SourceRow({
   // the vendor's paste-back flow. Without this the harness-status button would lead to a screen
   // that can only tell you it is signed out.
   //
-  // Correct only because `source` is an OFFER: judged on the login itself, so ineligible means
-  // signed out and nothing else. Fed the resolver's overlaid list this fired on a perfectly good
-  // login that a preference had ruled out, and offered a Sign in button that could not help —
-  // the one screen that could clear the preference refusing to.
-  const needsSignIn = endpoint?.kind === LLMFundingKind.Device && !source.eligible;
+  // Read off the backend's refusal CODE, never inferred from the endpoint's kind: an
+  // uninstalled CLI and a preference that ruled a good login out are both ineligible device
+  // rows, and neither is fixed by signing in.
+  const needsSignIn = [LLMSourceRefusal.SignedOut, LLMSourceRefusal.LoginNotChecked, LLMSourceRefusal.LoginFailed].includes(
+    source.reason_code as LLMSourceRefusal,
+  );
   // The same escape hatch, one kind over. An unkeyed provider used to render the
   // problem ("no openrouter key is stored on this machine") beside a disabled
   // button and nothing else — a row that states a fix it will not let you make.
   // Adding the key belongs to Connections, which owns declaring a credential and
   // storing its value, so this sends you there rather than growing a second
   // place to type one.
-  const needsKey = endpoint?.kind === LLMFundingKind.ApiKey && !source.eligible;
+  const needsKey = source.reason_code === LLMSourceRefusal.NoKey;
   return (
     <li
       className="flex items-center gap-3 rounded-lg border border-border/60 px-3 py-2"
@@ -214,14 +216,11 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const { status, isLoading } = useLlmSources();
-  // Ask every device login whether it is really signed in, now. Free (a local subprocess
-  // against an existing subscription), so it runs unasked on every arrival — the only way
-  // this page can be right about a login the user ended in their own terminal. Device only:
-  // the key and hub checks spend money and stay behind a click.
-  useProbeDeviceLogins();
-  // ...and keep following: a sign-in made from the modal THIS page opens must flip the row
-  // from "Sign in" to "Use", which the mount-only probe above cannot do on its own.
-  useFundingFollowsLogin();
+  const { status: record } = useStatusRecord();
+  // Re-check every harness now (local probes, no money): the only way this page can be right
+  // about a login the user ended in their own terminal. A sign-in made from the modal this page
+  // opens then flips the row through the backend's status push — nothing here follows it.
+  useRefreshStatusOnArrival();
   const select = useSelectSource();
   // One runner for the whole page: it carries which row is mid-test, so a shared `isPending`
   // cannot grey out every other row's Test button while one real network call is in flight.
@@ -373,7 +372,7 @@ export function LlmSourcesView({ pointer }: { pointer?: string }) {
             // Not `status.sources` directly: the hub group is narrowed to the budgets allocated
             // to this person, so an owner does not have to read past their org's and their teams'
             // pools to find their own. See `visible-sources.ts` for what it refuses to hide.
-            const rows = visibleSources(status, focused, kind);
+            const rows = visibleSources(status, focused, kind, record?.hub.user_typeid);
             if (!rows.length) return null;
             return (
               <div key={kind}>

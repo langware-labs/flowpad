@@ -1,6 +1,6 @@
 import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { useLazyAsset } from '@sdk/react/hooks/useLazyAsset';
-import { useCloudStatus, useContext } from '@sdk/react/hooks';
+import { useContext } from '@sdk/react/hooks';
 /**
  * The box's funding picture, as one cached read.
  *
@@ -14,6 +14,7 @@ import {
   HARNESS_CAPABILITY_KINDS,
   llmSourceRef,
   llmSourcesService,
+  statusService,
   type LLMEndpointOffer,
   type LLMEndpointTestResult,
   type LLMFundingKind,
@@ -140,106 +141,18 @@ export function labelForWorker(worker: string): string {
 }
 
 /**
- * Ask every harness's DEVICE LOGIN whether it is really signed in, on arrival.
+ * Re-check every harness on arrival: re-discover the CLIs and re-probe their logins.
  *
- * Free and local: a vendor `auth-status` is a subprocess against credentials the user
- * already pays a subscription for, and it makes no network call. So it runs unasked, every
- * time this page opens — which is the only way the page can be right about a login the user
- * ended somewhere else. Reported exactly that way: signed out of the CLI in a terminal, came
- * here, and the row still claimed to be signed in until Test was pressed by hand.
- *
- * DEVICE ONLY, and that is the whole rule. The key and hub checks spend real money on every
- * press, so they stay behind a deliberate click; nothing here may trigger them.
- *
- * Server-side (`testSource`) rather than `capabilityManager.getSnapshot(kind).capability`:
- * that read returns `undefined` until the manager has loaded, and the hook it replaced ran
- * exactly once on mount, so on a cold arrival it probed NOTHING and silently left the page
- * showing whatever it had. The backend needs no warm client cache to find its own rows.
- *
- * Never forced. `force` drops a refusal the harness made mid-turn, and doing that
- * automatically would overturn the strongest evidence there is with a probe that only proves
- * a credential exists. The Test button carries that power because a person is asserting it.
+ * The page must be right about a login the user ended somewhere else (signed out of the CLI in
+ * a terminal, then came here). That is the status layer's one refresh verb — local vendor
+ * probes, no network, no money — and the backend's `status_changed_msg` then re-reads status
+ * and funding everywhere, so nothing here invalidates a cache by hand.
  */
-export function useProbeDeviceLogins(): void {
-  const qc = useQueryClient();
-  const params = useFundingParams();
+export function useRefreshStatusOnArrival(): void {
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      // Per-harness catch, not one around the batch: three of four harnesses are usually not
-      // installed, and one missing binary must not stop the others reporting.
-      await Promise.all(
-        HARNESS_CAPABILITY_KINDS.map((kind) =>
-          llmSourcesService.testSource({ kind: 'device', harness: kind }).catch(() => undefined),
-        ),
-      );
-      // ONE refresh after all of them — the funding picture is a single read covering every
-      // harness, so four invalidations would be three wasted round-trips.
-      if (!cancelled) await qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // Mount only: an arrival probe. Re-running it whenever the active project moved would
-    // spawn four vendor CLIs for a change that cannot affect a device login.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    void statusService.refresh().catch(() => undefined);
+    // Mount only: an arrival check, not a poll.
   }, []);
-}
-
-/**
- * Re-read the funding picture whenever a harness's login state moves.
- *
- * The reported symptom, and the one that made the page look broken: sign in from the modal
- * this page opens, succeed, and the device row still offers **Test** and **Sign in** — never
- * **Use**. The row's affordance is chosen by `source.eligible`, which the backend derives from
- * `login_state`; the login writes that field and broadcasts it, but the broadcast lands on
- * `capabilityManager` while this page renders from a SEPARATE react-query cache that nothing
- * told. `useRefreshLoginStates` is mount-only by design, so the page kept the snapshot it
- * arrived with for as long as it stayed open.
- *
- * Subscribing to the manager closes that gap at the seam where the news actually arrives,
- * rather than polling or re-probing: one invalidation per capability broadcast, and the row
- * re-renders from the same backend read every other answer on this page comes from.
- */
-export function useFundingFollowsLogin(): void {
-  const qc = useQueryClient();
-  const params = useFundingParams();
-  useEffect(
-    () =>
-      capabilityManager.subscribe(() => {
-        void qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, params) });
-      }),
-    [qc, params],
-  );
-}
-
-/**
- * Re-read funding when the HUB login changes.
- *
- * Sibling to {@link useFundingFollowsLogin}, which follows `capabilityManager` and therefore
- * only hears about DEVICE logins and key changes. Signing in to FlowPad changes neither: the
- * endpoint arrives from the hub, the funding read's params never move, and nothing invalidates
- * the query — so the screen went on reporting "no source" over a box that had just been given
- * one. That is the gap `flow llm set auto` sits in: the CLI hears the change on the socket and
- * returns, while the page that produced it does not notice.
- */
-export function useFundingFollowsHubLogin(): void {
-  const qc = useQueryClient();
-  // PRIMITIVES in the dependency list, never the params OBJECT.
-  //
-  // `useFundingParams` builds a fresh `{projectId}` on every render, so an effect that depends
-  // on it re-runs every render — and this effect's body INVALIDATES, so each run caused a
-  // refetch, a re-render, and another invalidation, several times a second. The list re-mounted
-  // under the user's cursor: clicking a row selected it and the very next render threw the
-  // selection away, so the detail panel could never appear and nothing was logged.
-  //
-  // `useFundingFollowsLogin` above shares the unstable dependency and is fine, which is what
-  // makes this easy to copy wrong: its body only SUBSCRIBES, so re-running is idempotent.
-  const { projectId } = useFundingParams();
-  const state = useCloudStatus().login.status;
-  useEffect(() => {
-    void qc.invalidateQueries({ queryKey: lazyAssets.key(LazyAsset.LlmFunding, { projectId }) });
-  }, [qc, projectId, state]);
 }
 
 /**
