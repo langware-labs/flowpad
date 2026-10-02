@@ -79,6 +79,15 @@ export interface DetectedEnvKey {
   line: number;
 }
 
+/** A file a scope's env store falls back to: read, never written. */
+export interface CredentialEnvFallback {
+  path: string;
+  /** As the project manifest declares it (`backend/.env`). */
+  extra_path: string;
+  exists: boolean;
+  detected: DetectedEnvKey[];
+}
+
 export interface CredentialScopeFile {
   scope: CredentialScopeName;
   project_id: string | null;
@@ -86,14 +95,13 @@ export interface CredentialScopeFile {
   environment: string;
   path: string | null;
   exists: boolean;
-  /** Set on an env file the project declared (`project_manifest.json` `env_files`): its
-   *  project-relative path. Read, never written. Null on the scope's own `.env.local`. */
-  extra_path?: string | null;
   /** A value cannot be written here (a committable `.env.local`, no folder). */
   blocked: boolean;
   block_code: string | null;
   block_reason: string | null;
   detected: DetectedEnvKey[];
+  /** The files read after this one, in order — a project's declared `env_files` (development only). */
+  fallbacks?: CredentialEnvFallback[];
 }
 
 /** A deployment the Credentials screen can show values for. */

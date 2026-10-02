@@ -87,8 +87,7 @@ export function CredentialDialog({
   const envFileName = credentialEnvFileName(status.environment);
   const deployment = (status.deployments ?? []).find((row) => row.id === status.deployment_id);
   const isThisComputer = deployment?.this_computer ?? true;
-  // The file a value is written to: the scope's own `.env.local`, never a declared one.
-  const file = status.files.find((f) => f.scope === d.scope && !f.extra_path);
+  const file = status.files.find((f) => f.scope === d.scope);
   const writesToFile = d.store === 'env' && asksValues(d) && Object.keys(draftValues(d)).length > 0;
   const fileBlocked = writesToFile && !!file?.blocked;
   const vaultDisabled = d.store === 'vault' && !status.vault_enabled;

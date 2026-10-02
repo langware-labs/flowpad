@@ -43,12 +43,17 @@ DEPS_MAIN = "deps.json"
 PUBLISHABLE_TYPES: tuple[str, ...] = ("skill", "subagent", "markdown", "mcp")
 
 
+def _clean_rel_path(value: object) -> str:
+    """A project-relative path as the manifest spells it: trimmed, forward slashes, no trailing ``/``."""
+    return str(value or "").strip().replace("\\", "/").rstrip("/")
+
+
 def normalize_env_file_path(value: object) -> Optional[str]:
-    """A declared env file as the manifest stores it — a forward-slash path inside the
-    project — or None for one that is not (absolute, ``..``, empty, the root ``.env.local``)."""
+    """A declared env file as the manifest stores it — a path inside the project — or None
+    for one that is not (absolute, ``..``, empty, the root ``.env.local``)."""
     if not isinstance(value, str):
         return None
-    path = value.strip().replace("\\", "/").removeprefix("./").rstrip("/")
+    path = _clean_rel_path(value).removeprefix("./")
     if not path or path == ENV_LOCAL_FILENAME or not is_safe_rel_path(path):
         return None
     return path
@@ -99,7 +104,7 @@ class PublishedAssetSpec(DataSpec):
     def _inside_the_project(cls, value: str) -> str:
         """Sender-controlled and joined onto a reader's root: refuse anything
         that could escape (absolute, ``..``, a drive letter, empty)."""
-        value = str(value or "").strip().replace("\\", "/").rstrip("/")
+        value = _clean_rel_path(value)
         if not is_safe_rel_path(value):
             raise ValueError(f"rel_path {value!r} must be a relative path inside the project")
         return value
@@ -147,20 +152,17 @@ class ProjectManifestSpec(DataSpec):
     #: here, beside ``ns``, because it is a declaration about the whole project
     #: that must travel with a clone — which is exactly what this file is for.
     home_page: Optional[str] = None
-    #: More env files this project's credentials read, besides ``.env.local`` at
-    #: the project root (which is always read, and is the only file ever WRITTEN).
-    #: Project-relative paths (``backend/.env``), consulted in order for a variable
-    #: the root file does not hold — this computer's ``development`` values only.
-    #: Here for the same reason as ``home_page``: a clone of the project needs it.
+    #: THE rule for declared env files: project-relative paths (``backend/.env``) the
+    #: project's credentials read, in order, after the root ``.env.local`` — read-only
+    #: (values are written to the root file only), ``development`` values only. Here
+    #: beside ``home_page`` because a clone of the project needs it too.
     env_files: list[str] = Field(default_factory=list)
 
     @field_validator("env_files", mode="before")
     @classmethod
     def _env_files_inside_the_project(cls, value: object) -> list[str]:
-        """Lenient like ``home_page``: a path that could escape the project (absolute,
-        ``..``) or repeats one already listed declares nothing, and the rest stand.
-        Read on every credential status and spawn — one hand-edited bad line must
-        not take the published ledger (or every credential) down with it."""
+        """Lenient like ``home_page``: a bad or repeated path declares nothing and the
+        rest stand — one hand-edited line must not take the whole ledger down."""
         if not isinstance(value, list):
             return []
         out: list[str] = []

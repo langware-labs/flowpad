@@ -1,13 +1,8 @@
 import { Trans } from '@lingui/react/macro';
 import { EMPTY_CREDENTIALS_STATUS } from '@sdk';
-import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@sdk/react/hooks';
 import { ConnectionsManager } from '@src/components/connections-manager';
-import {
-  CREDENTIALS_STATUS_KEY,
-  credentialDeploymentId,
-  useCredentialsStatus,
-} from '@src/components/credentials/use-credentials';
+import { credentialDeploymentId, useCredentialsStatus } from '@src/components/credentials/use-credentials';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isHubOnly } from '@src/navigation/hub-runtime';
@@ -15,7 +10,7 @@ import { KeyRound } from 'lucide-react';
 import React, { useMemo } from 'react';
 
 import { credentialsTabs, parseCredentialsPointer } from './credentials-pointer';
-import { EnvFileChips } from './EnvFileChips';
+import { EnvFilesChip } from './EnvFilesChip';
 import { LoginRequiredPanel } from './LoginRequiredPanel';
 
 /**
@@ -25,7 +20,7 @@ import { LoginRequiredPanel } from './LoginRequiredPanel';
  *
  * The project lives in the pointer, never in local state — a reload lands where
  * you were. There is no picker here: the project is the one already selected in
- * the app, which the way in (the rail's Connections) puts in the URL.
+ * the app, which `navigation.openCredentials` — every way in — puts in the URL.
  */
 export const CredentialsView: React.FC = () => {
   const { user } = useAuth();
@@ -42,20 +37,18 @@ export const CredentialsView: React.FC = () => {
 
   // An unscoped URL manages the person's credentials. Falling back to a
   // recent/context project silently turns Test into a project permission check
-  // and grants new connections to a project the user never selected here.
+  // and grants new connections to a project the URL does not name.
   const selected = useMemo(
     () => (projects ?? []).find((p) => p.id === projectId),
     [projects, projectId],
   );
 
-  // The env files the table reads, as chips. The table's own status entry, so
-  // this is the cached status, not a second fetch.
+  // The env files the table reads, for the chip. The table's own status entry,
+  // so this is the cached status, not a second fetch.
   const { data: status = EMPTY_CREDENTIALS_STATUS } = useCredentialsStatus(
     selected?.id ?? null,
     credentialDeploymentId(currentDock),
   );
-  const qc = useQueryClient();
-  const refreshStatus = () => qc.invalidateQueries({ queryKey: CREDENTIALS_STATUS_KEY });
 
   if (!user?.id) {
     // One guard for the whole view rather than three near-identical ones.
@@ -64,16 +57,15 @@ export const CredentialsView: React.FC = () => {
 
   return (
     <div className="flex h-full flex-col" data-testid="credentials-view">
-      {/* Fixed height: the chips are taller than the title, so an auto-height
-          header would jump when they render. */}
+      {/* Fixed height: the chip is taller than the title, so an auto-height
+          header would jump when it renders. */}
       <div className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
         <KeyRound className="h-4 w-4" />
         <h2 className="text-sm font-semibold">
           <Trans>Credentials</Trans>
         </h2>
 
-        <EnvFileChips status={status} project={selected} onChanged={refreshStatus} />
-
+        <EnvFilesChip status={status} project={selected} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">

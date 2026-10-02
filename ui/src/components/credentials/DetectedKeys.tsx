@@ -37,9 +37,7 @@ function DetectedGroupCard({
   onPack: (group: DetectedGroup, keys: string[]) => void;
 }) {
   const { t } = useLingui();
-  // `.env.local` (`.env.<env>.local` when a named environment is shown), or a file the
-  // project declared, by its project path (`backend/.env`).
-  const fileName = group.extraPath || group.path?.split(/[\\/]/).pop() || '.env.local';
+  const fileName = group.name;
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
   const allKeys = group.keys.map((k) => k.key);
   // Derived, so a key that was packed or left the file drops out on its own.

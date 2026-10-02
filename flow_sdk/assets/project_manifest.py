@@ -269,76 +269,67 @@ def unpublish(root: Path, typeid: str) -> ProjectManifestSpec:
     return _drop(manifest_path(root), ProjectManifestSpec, typeid)
 
 
-def read_home_page(root: Path) -> Optional[str]:
-    """The home-page TypeId the manifest declares, or None. Never raises.
-
-    Read on every serialization of the Project (``customization``) and every
-    Home click, so an unreadable ledger means "no home page", not an error —
-    the ledger's own readers still report it where it matters.
-    """
+def _read_lenient(root: Path) -> Optional[ProjectManifestSpec]:
+    """The manifest, or None when there is none OR it cannot be read. For the
+    per-field readers below, read on hot paths: an unreadable ledger means "not
+    declared", not an error — the ledger's own readers still report it."""
     try:
-        spec = read_manifest(root)
+        return read_manifest(root)
     except ManifestError:
         return None
+
+
+def _set_field(root: Path, field: str, value: object, *, clears: bool) -> ProjectManifestSpec:
+    """Set one manifest field; returns the manifest. ``clears``: the value removes
+    the declaration, and clearing never CREATES a manifest — the rule
+    ``unpublish`` follows. An identical write is skipped."""
+    path = manifest_path(root)
+    with capsule_lock(path):
+        current = _read(path, ProjectManifestSpec)
+        if current is None and clears:
+            return ProjectManifestSpec.empty()
+        base = current or ProjectManifestSpec.empty()
+        spec = ProjectManifestSpec.model_validate({**base.to_document(), field: value})
+        if current is None or _render(spec) != _render(current):
+            _write(path, spec)
+        return spec
+
+
+def read_home_page(root: Path) -> Optional[str]:
+    """The home-page TypeId the manifest declares, or None. Never raises —
+    read on every serialization of the Project and every Home click."""
+    spec = _read_lenient(root)
     return spec.home_page if spec is not None else None
 
 
 def set_home_page(root: Path, typeid: Optional[str]) -> ProjectManifestSpec:
     """Set (or, with None, clear) the project's home page; returns the manifest.
 
-    Clearing never CREATES a manifest — the same rule as ``unpublish``. The
-    value goes through the spec's own validator, so a malformed id writes
+    The value goes through the spec's own validator, so a malformed id writes
     nothing rather than a pointer every reader would discard.
     """
-    path = manifest_path(root)
-    with capsule_lock(path):
-        current = _read(path, ProjectManifestSpec)
-        if current is None and typeid is None:
-            return ProjectManifestSpec.empty()
-        base = current or ProjectManifestSpec.empty()
-        spec = ProjectManifestSpec.model_validate({**base.to_document(), "home_page": typeid})
-        if typeid is not None and spec.home_page is None:
-            raise ManifestError(f"home page {typeid!r} is not an asset TypeId (<type>-<uuid>)")
-        if current is None or _render(spec) != _render(current):
-            _write(path, spec)
-        return spec
+    if typeid is not None and ProjectManifestSpec.model_validate({"home_page": typeid}).home_page is None:
+        raise ManifestError(f"home page {typeid!r} is not an asset TypeId (<type>-<uuid>)")
+    return _set_field(root, "home_page", typeid, clears=typeid is None)
 
 
 def read_env_files(root: Path) -> list[str]:
-    """The extra env files the manifest declares (project-relative). Never raises.
-
-    Read on every credential status and spawn, so an unreadable ledger means
-    "no extra env files" — the same rule as ``read_home_page``.
-    """
-    try:
-        spec = read_manifest(root)
-    except ManifestError:
-        return []
+    """The env files the manifest declares (project-relative). Never raises —
+    read on every credential status and spawn."""
+    spec = _read_lenient(root)
     return list(spec.env_files) if spec is not None else []
 
 
 def set_env_files(root: Path, paths: list[str]) -> ProjectManifestSpec:
-    """Replace the project's extra env files; returns the manifest.
-
-    Every path must be inside the project — a path the spec would drop is refused
-    here instead, so the caller hears why. Clearing never CREATES a manifest.
-    """
+    """Replace the project's declared env files; returns the manifest. A path the
+    spec would silently drop is refused here instead, so the caller hears why."""
     bad = [p for p in paths if normalize_env_file_path(p) is None]
     if bad:
         raise ManifestError(
             f"{', '.join(repr(p) for p in bad)}: an env file must be a path inside the project, "
             "and not the root .env.local (always read)"
         )
-    path = manifest_path(root)
-    with capsule_lock(path):
-        current = _read(path, ProjectManifestSpec)
-        if current is None and not paths:
-            return ProjectManifestSpec.empty()
-        base = current or ProjectManifestSpec.empty()
-        spec = ProjectManifestSpec.model_validate({**base.to_document(), "env_files": list(paths)})
-        if current is None or _render(spec) != _render(current):
-            _write(path, spec)
-        return spec
+    return _set_field(root, "env_files", list(paths), clears=not paths)
 
 
 def state_in_tree(root: Path, entry: PublishedAssetSpec) -> str:

@@ -223,10 +223,8 @@ export function CollapsedSidebar() {
         handleClick(ViewType.SHELL);
         return;
       case 'credentials':
-        // The project you are in, in the URL: its `.env.local` (at the project root) is the
-        // file this screen reads and writes. An unscoped screen would show only the home
-        // folder's — and the screen never guesses a project the URL does not name.
-        navigation.openCredentials(undefined, dataContext.project?.id ?? undefined);
+        // Not `openTab`: `openCredentials` puts the active project in the URL.
+        navigation.openCredentials();
         return;
       default:
         handleClick(navMeta[id]?.viewType ?? null);

@@ -26,6 +26,11 @@ def _manifest(name: str, *env_vars: str) -> dict:
     return {"name": name, "vars": {v: {"label": v} for v in env_vars}, "setup": f"`flow credentials set {name} --stdin`."}
 
 
+def _fallback(status, extra_path):
+    project_file = next(f for f in status.files if f.scope == "project")
+    return next(f for f in project_file.fallbacks if f.extra_path == extra_path)
+
+
 def _row(status, typeid):
     return next(r for r in status.credentials if r.typeid == typeid)
 
@@ -45,7 +50,7 @@ async def test_the_root_env_local_is_the_default_and_the_only_file_without_a_dec
     status = await credentials_status(project)
 
     files = [f for f in status.files if f.scope == "project"]
-    assert [(f.path, f.extra_path) for f in files] == [(str(mount / ".env.local"), None)]
+    assert [(f.path, f.fallbacks) for f in files] == [(str(mount / ".env.local"), [])]
 
 
 async def test_declared_files_travel_in_the_project_manifest(home, project, mount):
@@ -99,8 +104,8 @@ async def test_a_value_in_a_declared_file_connects_and_injects(home, project, mo
     status = await credentials_status(project)
     row = _row(status, str(spec.typeid))
     assert row.state == "connected" and row.vars[0].found_in == "env"
-    extra = next(f for f in status.files if f.extra_path == "backend/.env")
-    assert extra.exists and not extra.blocked and [k.key for k in extra.detected] == ["QA_BACK"]
+    extra = _fallback(status, "backend/.env")
+    assert extra.exists and [k.key for k in extra.detected] == ["QA_BACK"]
 
     resolved = await resolve_project_secrets(project)
     assert resolved["QA_BACK"].get_secret_value() == "from-backend"
@@ -123,7 +128,7 @@ async def test_a_missing_declared_file_is_listed_and_holds_nothing(home, project
 
     status = await credentials_status(project)
 
-    extra = next(f for f in status.files if f.extra_path == "backend/.env")
+    extra = _fallback(status, "backend/.env")
     assert (extra.path, extra.exists, extra.detected) == (str(mount / "backend" / ".env"), False, [])
 
 
@@ -179,3 +184,14 @@ async def test_deleting_a_credential_leaves_a_declared_file_alone(home, project,
     await delete_credential(str(spec.typeid))
 
     assert (mount / "backend" / ".env").read_bytes() == before
+
+
+async def test_a_declared_file_a_symlink_takes_out_of_the_project_is_not_read(home, project, mount, tmp_path):
+    outside = tmp_path / "outside.env"
+    outside.write_text('QA_OUT="leak"\n')
+    (mount / "backend" / ".env").symlink_to(outside)
+    set_env_files(mount, ["backend/.env"])
+
+    status = await credentials_status(project)
+
+    assert next(f for f in status.files if f.scope == "project").fallbacks == []

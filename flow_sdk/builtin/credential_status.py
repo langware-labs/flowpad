@@ -31,6 +31,7 @@ from flow_sdk.schema.data_spec.credential_status_spec import (
     CredentialVarStatusSpec,
     DeploymentChoiceSpec,
     DetectedKeySpec,
+    EnvFallbackStatusSpec,
     ScopeFileStatusSpec,
 )
 from flow_sdk.schema.data_spec.deployment_secrets_spec import LOCAL_STORE_TYPES, store_word
@@ -53,29 +54,38 @@ def _vault_names() -> tuple[bool, set[str]]:
     return enabled, names
 
 
-def _file_status(scope: CredentialScope, environment: str) -> list[tuple[dict, list[dict]]]:
-    """``(head, keys)`` per env file the scope reads: the written one first, then its declared extras.
+def _file_status(scope: CredentialScope, environment: str) -> tuple[ScopeFileStatusSpec, set[str]]:
+    """The scope's written env file — with the files it falls back to, as ``fallbacks`` — and every
+    key any of them holds: the store reads them all, so a variable in any one is present."""
+    from flow_sdk.builtin.env_local_store import env_local_block, gitignore_status, list_env_file  # noqa: PLC0415
 
-    Only the written file can be blocked — an extra is read, never written, so git has no say."""
-    from flow_sdk.builtin.env_local_store import (  # noqa: PLC0415
-        env_local_block,
-        gitignore_status,
-        list_env_file,
+    def detected(rows: list[dict]) -> list[DetectedKeySpec]:
+        return [DetectedKeySpec(key=row["key"], line=row["line"]) for row in rows]
+
+    (path, _), *declared = scope.env_files(environment)
+    rows = list_env_file(path)
+    keys = {row["key"] for row in rows}
+    fallbacks = []
+    for extra, rel in declared:
+        extra_rows = list_env_file(extra)
+        keys.update(row["key"] for row in extra_rows)
+        fallbacks.append(
+            EnvFallbackStatusSpec(path=str(extra), extra_path=rel, exists=extra.is_file(), detected=detected(extra_rows))
+        )
+    block = env_local_block(gitignore_status(scope.root, environment))
+    head = ScopeFileStatusSpec(
+        scope=scope.scope,
+        project_id=scope.project_id,
+        environment=environment,
+        path=str(path) if path is not None else None,
+        exists=bool(path is not None and path.is_file()),
+        blocked=block is not None,
+        block_code=block["code"] if block else None,
+        block_reason=block["reason"] if block else None,
+        detected=detected(rows),
+        fallbacks=fallbacks,
     )
-
-    out: list[tuple[dict, list[dict]]] = []
-    for path, declared in scope.env_files(environment):
-        block = env_local_block(gitignore_status(scope.root, environment)) if declared is None else None
-        head = {
-            "path": str(path) if path is not None else None,
-            "exists": bool(path is not None and path.is_file()),
-            "extra_path": declared,
-            "blocked": block is not None,
-            "block_code": block["code"] if block else None,
-            "block_reason": block["reason"] if block else None,
-        }
-        out.append((head, list_env_file(path)))
-    return out
+    return head, keys
 
 
 def _in_vault(spec, scope: CredentialScope, env_var: str, environment: str, names: set[str]) -> bool:
@@ -110,10 +120,11 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
     declared = declare(pairs)
     (vault_enabled, vault_names), deployments = await asyncio.gather(asyncio.to_thread(_vault_names), known_deployments())
 
-    scopes = [user_scope()] + ([project_scope(project)] if project is not None else [])
+    # The pairs' own project scope when it declares anything: its declared env files are then read once.
+    own = next((s for _, s in pairs if s.project_id), None) or (project_scope(project) if project is not None else None)
+    scopes = [user_scope()] + ([own] if own is not None else [])
     files = await asyncio.gather(*(asyncio.to_thread(_file_status, s, environment) for s in scopes))
-    # A variable is in a scope's env store when ANY file it reads holds it — the store reads them all.
-    env_keys = {s.key: {row["key"] for _, rows in per_scope for row in rows} for s, per_scope in zip(scopes, files)}
+    env_keys = {s.key: keys for s, (_, keys) in zip(scopes, files)}
 
     refs = {(str(spec.id), name): secret_store_ref(spec, scope, name, placement) for spec, scope in pairs for name in spec.var_names()}
     remote = await _remote_names([ref for ref in refs.values() if ref.type not in LOCAL_STORE_TYPES])
@@ -191,18 +202,6 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
             )
         )
 
-    file_rows = [
-        ScopeFileStatusSpec(
-            scope=scope.scope,
-            project_id=scope.project_id,
-            environment=environment,
-            **head,
-            detected=[DetectedKeySpec(key=row["key"], line=row["line"]) for row in keys],
-        )
-        for scope, per_scope in zip(scopes, files)
-        for head, keys in per_scope
-    ]
-
     return CredentialsStatusSpec(
         project_id=str(project.id) if project is not None else None,
         deployment_id=placement.deployment_id,
@@ -216,6 +215,6 @@ async def credentials_status(project: Optional["Project"], deployment_id: str = 
         ],
         vault_enabled=vault_enabled,
         credentials=rows,
-        files=file_rows,
+        files=[head for head, _ in files],
     )
 

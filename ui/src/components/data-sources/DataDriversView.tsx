@@ -16,7 +16,6 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
-import { openCredentials } from '@src/components/credentials-view/credentials-pointer';
 import { WikiButton } from '@src/components/wiki-tip';
 import { SimpleDirTree } from '@src/components/terminal/interactive-terminal/side-windows/SimpleDirTree';
 import { cn } from '@src/lib/utils';
@@ -137,7 +136,7 @@ export function DataDriverPage({ name, sources }: { name: string; sources: DataS
     {
       label: t`Credential`,
       value: credential || connector || t`none`,
-      onClick: credential || connector ? () => openCredentials(navigation) : undefined,
+      onClick: credential || connector ? () => navigation.openCredentials() : undefined,
     },
     { label: t`Folder`, value: folder || '—', onClick: folder ? () => navigation.openFolder(folder) : undefined },
   ];
