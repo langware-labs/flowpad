@@ -44,7 +44,6 @@ export function useMarkdownContent(
   const [currentDocument, setCurrentDocument] = useState<AssetDocument | null>(null);
   const [conflict, setConflict] = useState(false);
   const [isMissing, setMissing] = useState(false);
-  const [loading, setLoading] = useState(!!fsRef);
   const [saving, setSaving] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const draft = useRef<DocumentDraft | null>(null);
@@ -77,8 +76,8 @@ export function useMarkdownContent(
     setLoadError(null);
     setMissing(false);
     setLastSync(null);
+    redraw();
     const target = ref.current;
-    setLoading(!!target);
     if (!target) return;
     void target.readDocument().then((document) => {
       if (epoch.current !== token) return;
@@ -90,7 +89,7 @@ export function useMarkdownContent(
       setMissing(missing);
       if (!missing) setLoadError(error instanceof Error ? error : new Error(String(error)));
     }).finally(() => {
-      if (epoch.current === token) { setLoading(false); redraw(); }
+      if (epoch.current === token) redraw();
     });
   }, [identity, reloadTrigger, reloadKey]);
 
@@ -168,10 +167,9 @@ export function useMarkdownContent(
     return () => clearTimeout(timer);
   }, [autoSave, autoSaveMs, dirty, generation]);
   const current = draft.current;
-  // A reload nulls the draft (a ref) a render before `loading` (state) lands; any render
-  // in between must read as loading, never as an empty loaded file — an editor fed that
-  // empty body would show it, and its change event would autosave it over the file.
-  const isLoading = loading || (!!fsRef && !current && !loadError && !isMissing);
+  // Derived, never state: a state flag lags the draft ref by a render, and that render
+  // read as an empty loaded file — an editor showed it and autosaved it over the file.
+  const isLoading = !!fsRef && !current && !loadError && !isMissing;
   usePrimaryContentPending(isLoading);
 
   // Text inputs only expose scalars; structured metadata survives in the typed draft.
