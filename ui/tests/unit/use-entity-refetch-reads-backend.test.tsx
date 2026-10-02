@@ -47,8 +47,12 @@ describe('useEntity refetch', () => {
 
     const view = renderHook(() => useEntity<Conversation>(typeId));
     const header = renderHook(() => useEntity<Conversation>(typeId));
-    await waitFor(() => expect(view.result.current.data?.conversationMessageIds.map((p) => p.id)).toEqual([QUESTION_ID]));
-    await waitFor(() => expect(header.result.current.data?.conversationMessageIds.map((p) => p.id)).toEqual([QUESTION_ID]));
+    await waitFor(() =>
+      expect(view.result.current.data?.conversationMessageIds.map((p) => p.id)).toEqual([QUESTION_ID]),
+    );
+    await waitFor(() =>
+      expect(header.result.current.data?.conversationMessageIds.map((p) => p.id)).toEqual([QUESTION_ID]),
+    );
     const readsBefore = getSpy.mock.calls.length;
 
     // The reply lands in another process: no entity op reaches this client.
@@ -77,7 +81,9 @@ describe('useEntity refetch', () => {
     const consoleError = vi.spyOn(console, 'error');
 
     const view = renderHook(() => useEntity<Conversation>(typeId));
-    await waitFor(() => expect(view.result.current.data?.conversationMessageIds.map((p) => p.id)).toEqual([QUESTION_ID]));
+    await waitFor(() =>
+      expect(view.result.current.data?.conversationMessageIds.map((p) => p.id)).toEqual([QUESTION_ID]),
+    );
 
     deleted = true;
     await act(async () => {
@@ -87,6 +93,9 @@ describe('useEntity refetch', () => {
     expect(view.result.current.isError).toBe(false);
     expect(view.result.current.data).toBeNull();
     expect(view.result.current.notFound).toBe(true);
-    expect(consoleError).not.toHaveBeenCalled();
+    // Only the fetch path's own logs: the unit tier has no backend, so the WebSocket's reconnect
+    // noise lands on console.error whenever its timer fires inside this test.
+    const fetchErrors = consoleError.mock.calls.filter((args) => String(args[0]).includes('Error fetching entity'));
+    expect(fetchErrors).toEqual([]);
   });
 });
