@@ -234,6 +234,48 @@ def probe_codex_auth(
     )
 
 
+#: ``└  2 credentials`` -- the count line under OpenCode's ``Credentials`` heading.
+_OPENCODE_CREDENTIALS_RE = re.compile(r"(\d+)\s+credentials?\b")
+#: ``●  Anthropic  oauth`` -- one stored provider per bullet, until the next heading.
+_OPENCODE_PROVIDER_RE = re.compile(r"^[^\w]*●\s+(\S.*?)\s{2,}", re.MULTILINE)
+
+
+def probe_opencode_auth(
+    executable: str,
+    env: Mapping[str, str],
+    timeout: float = PROBE_TIMEOUT_SECONDS,
+) -> WorkerAuthResult:
+    """``opencode providers list`` -- signed in iff OpenCode itself holds a provider credential.
+
+    OpenCode has no account of its own; its login IS the provider credentials it stores
+    (``opencode providers login`` -> ``auth.json``: an API key or a provider OAuth). Keys
+    that only reach it through the environment are listed separately and are not counted:
+    that is a stored LLM key funding the spawn, not OpenCode's login.
+    """
+    proc = _run_cli([executable, "providers", "list"], env, timeout)
+    out = clean_pty_output((proc.stdout or "") + (proc.stderr or ""))
+    stored, _, _ = out.partition("Environment")
+    match = _OPENCODE_CREDENTIALS_RE.search(stored)
+    if proc.returncode != 0 or match is None:
+        return WorkerAuthResult(
+            status=WorkerAuthStatus.UNKNOWN,
+            message=out.strip()[:500] or f"opencode providers list exited {proc.returncode}",
+        )
+    providers = [p.strip() for p in _OPENCODE_PROVIDER_RE.findall(stored)]
+    if int(match.group(1)) > 0:
+        return WorkerAuthResult(
+            status=WorkerAuthStatus.LOGGED_IN,
+            verified=False,
+            message=f"opencode holds credentials for {', '.join(providers) or match.group(1) + ' provider(s)'}.",
+            identity=", ".join(providers),
+        )
+    return WorkerAuthResult(
+        status=WorkerAuthStatus.LOGGED_OUT,
+        verified=True,
+        message="opencode holds no provider credentials.",
+    )
+
+
 def probe_copilot_auth(
     env: Mapping[str, str],
     home: Path,
@@ -315,6 +357,8 @@ def probe_worker_auth(
             return probe_codex_auth(executable_path, env)
         if worker_type == "copilot":
             return probe_copilot_auth(env, home, copilot_home)
+        if worker_type == "opencode":
+            return probe_opencode_auth(executable_path, env)
         return WorkerAuthResult(
             status=WorkerAuthStatus.UNKNOWN,
             message=f"No auth probe defined for worker type {worker_type!r}.",

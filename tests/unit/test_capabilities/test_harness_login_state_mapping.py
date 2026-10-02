@@ -28,6 +28,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
 )
 from flow_sdk.builtin.capability import Capability
 from flow_sdk.core.capabilities.discovery import run_discovery
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
 
 CLAUDE_KIND = "harness.claude.cli"
 
@@ -38,6 +39,20 @@ BARE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 
 # The states the footer reads as "installed but not signed in".
 SIGNED_OUT_STATES = {DeviceLoginState.IDLE.value, DeviceLoginState.ERROR.value}
+
+
+@pytest.fixture(autouse=True)
+async def _restore_claude_login():
+    """These tests write claude's login verdict into the session DB; put it back, or a signed-in
+    claude left behind decides the funding ladder in whichever test file runs next."""
+    before = await Capability.get_by_kind(CLAUDE_KIND)
+    saved = (before.login_state, before.login_denied, before.login_message) if before else None
+    yield
+    after = await Capability.get_by_kind(CLAUDE_KIND)
+    if after is None:
+        return
+    after.login_state, after.login_denied, after.login_message = saved if saved else (None, None, None)
+    await after.save(notify=False)
 
 
 # flowpad:capsule tag
@@ -268,6 +283,7 @@ async def test_an_explicit_test_clears_a_recorded_refusal(monkeypatch) -> None:
 # flowpad:endcapsule tag
 @pytest.mark.parametrize("endpoint_eligible", [True, False])
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("harness_installed")
 async def test_a_hub_funded_harness_still_reports_its_own_device_login(monkeypatch, endpoint_eligible: bool) -> None:
     """A budget funding the where harness must not answer for the vendor's OAuth session.
 

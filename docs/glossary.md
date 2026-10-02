@@ -210,8 +210,8 @@ worker boot, so attaching to a running process flips `restart_required` rather t
   NOT `MessageSource` (a `DataSource` that can also reply), NOT `SourceItem` (a record one produces), and — the collision that actually bites — NOT the hub's
   `partof` (endpoint → endpoint) relationship, which is the fallback chain an `LLMEndpoint` allocation draws
   *from*, one layer down and unrelated. An `LLMSource` names a way to pay; a `partof` (endpoint → endpoint)
-  names a budget upstream of another budget. `resolve_llm_source` picks one per spawn, and its
-  `reason` field is what both the picker and the spawn error render.
+  names a budget upstream of another budget. `resolve_llm_endpoint` picks one per spawn, and its
+  `reason` / `reason_code` (`LLMSourceRefusal`) are what both the picker and the spawn error render.
 * **public endpoint** — ours. A hub `LLMEndpoint` its admin opened (the `public` action) to
   **whoever holds its id**: spendable with no login, so a foreign machine binds it with
   `flow llm user use <endpoint-id>`. The id is the bearer and the endpoint's cost limit is the

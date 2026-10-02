@@ -160,7 +160,7 @@ class DataContext extends EventEmitter {
   applyInfo(info: DeferredInfo): void {
     runInAction(() => {
       const next = { ...this.bootstrapInfo };
-      for (const key of ['harness_state', 'sandbox_available', 'sandbox_compute_node', 'notice'] as const) {
+      for (const key of ['sandbox_available', 'sandbox_compute_node', 'notice'] as const) {
         if (info[key] != null) next[key] = info[key];
       }
       if (info.desktop_info) {

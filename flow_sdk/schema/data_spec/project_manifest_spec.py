@@ -30,6 +30,7 @@ from pydantic import ConfigDict, Field, field_validator
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.fs_store.origin.field import OriginField
 from flow_sdk.fs_store.origin.fs_origin import is_safe_rel_path
+from flow_sdk.schema.data_spec.credential_contract import ENV_LOCAL_FILENAME
 from flow_sdk.schema.data_spec.spec import DataSpec
 from flow_sdk.tags.envelope import parse_target
 
@@ -40,6 +41,22 @@ DEPS_MAIN = "deps.json"
 #: The types a row may name in phase 1: every file-backed type whose carrier can
 #: hold an id. ``spec`` is row-only (no carrier, no rel_path) and stays out.
 PUBLISHABLE_TYPES: tuple[str, ...] = ("skill", "subagent", "markdown", "mcp")
+
+
+def _clean_rel_path(value: object) -> str:
+    """A project-relative path as the manifest spells it: trimmed, forward slashes, no trailing ``/``."""
+    return str(value or "").strip().replace("\\", "/").rstrip("/")
+
+
+def normalize_env_file_path(value: object) -> Optional[str]:
+    """A declared env file as the manifest stores it — a path inside the project — or None
+    for one that is not (absolute, ``..``, empty, the root ``.env.local``)."""
+    if not isinstance(value, str):
+        return None
+    path = _clean_rel_path(value).removeprefix("./")
+    if not path or path == ENV_LOCAL_FILENAME or not is_safe_rel_path(path):
+        return None
+    return path
 
 
 def split_typeid(typeid: str) -> tuple[str, str]:
@@ -87,7 +104,7 @@ class PublishedAssetSpec(DataSpec):
     def _inside_the_project(cls, value: str) -> str:
         """Sender-controlled and joined onto a reader's root: refuse anything
         that could escape (absolute, ``..``, a drive letter, empty)."""
-        value = str(value or "").strip().replace("\\", "/").rstrip("/")
+        value = _clean_rel_path(value)
         if not is_safe_rel_path(value):
             raise ValueError(f"rel_path {value!r} must be a relative path inside the project")
         return value
@@ -135,6 +152,25 @@ class ProjectManifestSpec(DataSpec):
     #: here, beside ``ns``, because it is a declaration about the whole project
     #: that must travel with a clone — which is exactly what this file is for.
     home_page: Optional[str] = None
+    #: THE rule for declared env files: project-relative paths (``backend/.env``) the
+    #: project's credentials read, in order, after the root ``.env.local`` — read-only
+    #: (values are written to the root file only), ``development`` values only. Here
+    #: beside ``home_page`` because a clone of the project needs it too.
+    env_files: list[str] = Field(default_factory=list)
+
+    @field_validator("env_files", mode="before")
+    @classmethod
+    def _env_files_inside_the_project(cls, value: object) -> list[str]:
+        """Lenient like ``home_page``: a bad or repeated path declares nothing and the
+        rest stand — one hand-edited line must not take the whole ledger down."""
+        if not isinstance(value, list):
+            return []
+        out: list[str] = []
+        for raw in value:
+            path = normalize_env_file_path(raw)
+            if path and path not in out:
+                out.append(path)
+        return out
 
     @field_validator("home_page", mode="before")
     @classmethod
@@ -224,6 +260,9 @@ class ProjectManifestSpec(DataSpec):
             # that actually names a home page does. (Also keeps ``deps.json``,
             # which shares this shape, free of a field it has no use for.)
             document.pop("home_page", None)
+        if not document.get("env_files"):
+            # Silent for ``home_page``'s second reason: an older desk would refuse the key.
+            document.pop("env_files", None)
         return document
 
 

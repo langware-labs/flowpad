@@ -29,7 +29,7 @@ export async function loadRoot(args: LoaderArgs) {
   // Install the list + re-resolve the active locale now that it's available
   // (initLocale ran pre-bootstrap against the en-US fallback). Awaited so the
   // catalog/direction are settled before the app tree mounts.
-  await applySupportedLocales(dataContext.bootstrapInfo?.supported_locales);
+  await applySupportedLocales(dataContext.bootstrapInfo?.supported_locales, dataContext.bootstrapInfo?.user_languages);
 
   // Bootstrap may still set a service-unavailable / network / config error
   // on dataContext (initSdk swallows those and signals via navigator.error).

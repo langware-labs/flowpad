@@ -66,7 +66,7 @@ export function FavoritesTreeMenu({
         // open the first time it was used.
         emptyState={
           <p className="text-xs text-muted-foreground">
-            <Trans>No bookmarks</Trans>
+            <Trans>No bookmarks yet</Trans>
           </p>
         }
       />

@@ -1139,13 +1139,14 @@ export class NavigationActions {
   }
 
   /**
-   * Open the Credentials screen (Environment / Connections / API Keys)
+   * Open the Credentials screen — the one way in from every surface.
    * @param tab - Which tab is active; defaults to Connections
-   * @param projectId - Project whose environment is shown
+   * @param projectId - Project whose credentials and env files are shown; defaults to the
+   *   active project. Decided HERE, at navigation time, and written into the URL: the view
+   *   itself never guesses a project the URL does not name.
    */
-  openCredentials(tab?: CredentialsSubview, projectId?: string): void {
-    const pointer = DockPointer.forCredentials(tab, projectId);
-    this.openDock(pointer);
+  openCredentials(tab?: CredentialsSubview, projectId: string | undefined = dataContext.project?.id): void {
+    this.openDock(DockPointer.forCredentials(tab, projectId));
   }
 
   // ========== History Navigation ==========

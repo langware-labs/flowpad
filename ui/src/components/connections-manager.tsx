@@ -40,7 +40,8 @@ import { FlowpadConnectionRow } from './connections-manager/flowpad-connection-r
 import { HarnessConnectionRows } from './connections-manager/harness-connection-rows';
 import { methodForOAuthFlow, SignInMethodIcon } from './connections-manager/sign-in-method';
 import { STATE_VISUAL } from './connections-manager/connection-state-visual';
-import { useCheckHarnessLogins, useConnections } from '@src/hooks/use-connections';
+import { useConnections } from '@src/hooks/use-connections';
+import { useRefreshStatusOnArrival } from '@src/components/status/use-status-record';
 import { openLlmSources } from './llm-sources/llm-sources-pointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
@@ -328,7 +329,7 @@ export const ConnectionsManager: React.FC<ConnectionsManagerProps> = ({
   // This screen is where a person comes to find out whether they are signed in,
   // so it is the screen that asks. The rows read "Not checked" until something
   // does.
-  useCheckHarnessLogins();
+  useRefreshStatusOnArrival();
   const harnessRows = React.useMemo(
     () => (consolidated ?? []).filter((row) => row.kind === ConnectionKind.Harness),
     [consolidated],

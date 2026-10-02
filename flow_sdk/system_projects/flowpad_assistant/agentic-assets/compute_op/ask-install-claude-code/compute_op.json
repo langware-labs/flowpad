@@ -14,9 +14,9 @@
   },
   "completion_check": {
     "commands": {
-      "darwin": "PATH=\"$HOME/.local/bin:$PATH\" claude --version >/dev/null 2>&1 && echo '{}'",
-      "linux": "PATH=\"$HOME/.local/bin:$PATH\" claude --version >/dev/null 2>&1 && echo '{}'",
-      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:USERPROFILE + '\\.local\\bin'; claude --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
+      "darwin": "\"$FLOWPAD_FLOW\" status --refresh --check install:claude && echo '{}'",
+      "linux": "\"$FLOWPAD_FLOW\" status --refresh --check install:claude && echo '{}'",
+      "win32": "& $env:FLOWPAD_FLOW status --refresh --check install:claude; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
     },
     "timeout_seconds": 30
   },

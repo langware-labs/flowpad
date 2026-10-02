@@ -141,7 +141,9 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     return dataManager.callAction<{ message: string }, { recorded: boolean; reason?: string }>(action);
   }
 
-  /** Cheap login-state probe (no version run) — used by the startup gate.
+  /** Cheap login-state probe (no version run) — the user's explicit Test. A write: it records
+   *  the verdict. Reading a login is the status record's job; the silent re-check is
+   *  `statusService.refresh`.
    *
    *  `force` drops a recorded refusal before probing. Pass it only for a probe
    *  the USER asked for (the "Test" button): a refusal the harness itself made
@@ -149,8 +151,8 @@ export class Capability extends APIEntity<Capability> implements ICapability {
    *  an explicit re-check a harness re-authorised outside FlowPad would stay
    *  stuck reading as signed out. */
   async authStatus(force = false): Promise<WorkerAuthStatus> {
-    const action = new ActionInfo('auth-status', Capability.type, this.id, 'GET' as HttpMethod);
-    if (force) action.queryParameters = { force: 'true' };
-    return dataManager.callAction<undefined, WorkerAuthStatus>(action);
+    const action = new ActionInfo('auth-status', Capability.type, this.id, 'POST' as HttpMethod);
+    action.bodyParameters = { force };
+    return dataManager.callAction<{ force: boolean }, WorkerAuthStatus>(action);
   }
 }

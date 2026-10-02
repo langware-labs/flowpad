@@ -132,10 +132,14 @@ discovery value — the same source actual spawns use) and
 (`device` / `api`) describing how the harness authenticates.
 
 A worker is funded one of three ways, and which one is decided per spawn by
-`resolve_llm_source` (`cli_drivers/llm_source.py`) rather than read off a field.
+`resolve_llm_endpoint` (`cli_drivers/llm_source.py`) rather than read off a field.
 It returns an `LLMSource` — the one value type covering all three — carrying
-`eligible`/`reason`, `auto`, `authority` and `origin`, so the same list the picker
-renders is the list a spawn chooses from, and a spawn failure is a rendering of it.
+`eligible`/`reason`/`reason_code`, `auto`, `authority` and `origin`, so the same list
+the picker renders is the list a spawn chooses from, and a spawn failure is a rendering
+of it. Funding is layered on the status record (`flow_sdk/core/status`): a harness whose
+CLI is not installed is funded by nothing (`reason_code=not_installed`), and a device
+login funds a turn only once a probe has confirmed it — never presumed. A spawn (an
+action) probes a never-checked login first (`check_unchecked_login`); a GET never does.
 
 The ladder, most specific first: `AgenticProcess.llm_endpoint_typeid`, then
 `Project.llm_endpoint_typeid`, then the user's explicit `Capability.auth_mode` /
@@ -148,7 +152,8 @@ row's `auth_mode` field:
 
 * **Device login** (`auth_mode = "device"`, the default) — the vendor's
   link(+code) sign-in flow, driven through the `Capability` entity's
-  `device_login_spec` trait and `device-login`/`auth-status` actions.
+  `device_login_spec` trait and `device-login`/`auth-status` actions; its verdict is
+  the status record's `login`.
 * **API key** (`auth_mode = "api"`) — the harness spawns against a stored
   LLM-provider key instead of vendor credentials. The chosen provider lives in
   `Capability.api_provider`; the key is stored via `flow_sdk.lm_api`

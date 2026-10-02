@@ -16,7 +16,6 @@ class DeferredInfo(DataSpec):
 
     desktop_info: DeferredDesktopInfo | None = None
     scan_info: dict[str, Any] | None = None
-    harness_state: dict[str, Any] | None = None
     capabilities_summary: dict[str, Any] | None = None
     sandbox_available: bool | None = None
     sandbox_compute_node: dict[str, Any] | None = None

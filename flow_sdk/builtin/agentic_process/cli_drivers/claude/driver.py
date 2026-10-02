@@ -32,6 +32,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     ProcessHookRuntime,
     ProcessMcpRuntime,
     WorkerAuthResult,
+    WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
     restart_payload_from_cli_options,
@@ -411,7 +412,11 @@ class ClaudeDriver:
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow record``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
-        await apply_worker_secret_env(env_vars, process)
+        try:
+            await apply_worker_secret_env(env_vars, process)
+            setup_error = None
+        except WorkerSpawnError as e:
+            setup_error = e  # fails inside the turn: FAILED + start_failure, not a raise from here
 
         context = AgenticContext(
             workdir=process.workdir,
@@ -484,6 +489,7 @@ class ClaudeDriver:
             save_running_status=False,
             emit_failure_level=logging.ERROR,
             on_turn_finally=_after_turn,
+            setup_error=setup_error,
         )
 
     def stream_worker(self, process: "AgenticProcess") -> ClaudeCLIStreamWorker:

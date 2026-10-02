@@ -29,11 +29,15 @@ vi.mock('@src/hooks/use-my-vibe-tasks', async (orig) => {
 });
 vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => () => Promise.resolve({ ok: true }) }));
 vi.mock('@src/services/privacy-guard', () => ({ guardCloudAction: () => true }));
+// The annotator is a popup; markup is its own concern — here it hands the image back as-is.
+vi.mock('@src/components/image-annotator/annotate-files', () => ({
+  annotateImageFiles: (files: File[]) => Promise.resolve(files),
+}));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: h.openDock }, currentDock: null }),
 }));
 
-import { Task, TaskKind } from '@sdk';
+import { fsManager, Task, TaskKind } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { VibeAssignTaskButton } from '@src/pages/flow-page/VibeAssignTaskButton';
 import { VibeAssignTaskDialog } from '@src/pages/flow-page/VibeAssignTaskDialog';
@@ -214,5 +218,65 @@ describe('VibeAssignTaskDialog — asking again', () => {
 
     await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
     expect(saved[0].kind).toBe(TaskKind.VIBE);
+  });
+
+  /** Fill the required fields, run `attach`, submit; returns the spies. */
+  async function submitWithFiles(attach: () => void | Promise<void>) {
+    const artifactsAtSave: unknown[] = [];
+    vi.spyOn(Task.prototype, 'save').mockImplementation(function (this: Task) {
+      artifactsAtSave.push(this.artifacts);
+      return Promise.resolve(this);
+    });
+    const assign = vi.spyOn(Task.prototype, 'assign').mockResolvedValue({ conversationId: 'conv-9', self: false });
+    const upload = vi.spyOn(fsManager, 'uploadFile').mockResolvedValue({} as never);
+    render(<VibeAssignTaskDialog open onOpenChange={() => {}} projectId={P1} sessionTypeId={null} />);
+    const person = screen.getByTestId('vibe-assign-person');
+    fireEvent.change(person, { target: { value: 'bob@x.com' } });
+    fireEvent.blur(person);
+    fireEvent.change(screen.getByTestId('vibe-assign-title'), { target: { value: 'Popout button is disabled' } });
+    await attach();
+    act(() => {
+      fireEvent.click(screen.getByTestId('vibe-assign-submit'));
+    });
+    await waitFor(() => expect(assign).toHaveBeenCalledTimes(1));
+    return { artifactsAtSave, assign, upload };
+  }
+
+  it('a file picked with "+" is stored in the task folder before the task is assigned', async () => {
+    const shot = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
+    const { artifactsAtSave, assign, upload } = await submitWithFiles(() => {
+      fireEvent.change(screen.getByTestId('vibe-assign-attach-input'), { target: { files: [shot] } });
+    });
+
+    expect(upload).toHaveBeenCalledWith(expect.anything(), '/attachments', shot);
+    // Second save records the file on the task; the assign (which packs the folder) comes after.
+    expect(artifactsAtSave.at(-1)).toEqual([{ vfs: 'attachments/shot.png', label: 'shot.png' }]);
+    expect(upload.mock.invocationCallOrder[0]).toBeLessThan(assign.mock.invocationCallOrder[0]);
+  });
+
+  it('a pasted screenshot goes through the annotator and onto the task', async () => {
+    const { artifactsAtSave, upload } = await submitWithFiles(async () => {
+      const image = new File([new Uint8Array([9])], 'image.png', { type: 'image/png' });
+      fireEvent.paste(screen.getByTestId('vibe-assign-notes'), {
+        clipboardData: {
+          items: [{ kind: 'file', type: 'image/png', getAsFile: () => image }],
+          files: [image],
+          types: ['Files'],
+          getData: () => '',
+        },
+      });
+      await waitFor(() => expect(screen.getByText(/screenshot/i)).toBeInTheDocument());
+    });
+
+    expect(upload).toHaveBeenCalledTimes(1);
+    const entries = artifactsAtSave.at(-1) as { vfs: string }[];
+    expect(entries).toHaveLength(1);
+    expect(entries[0].vfs).toMatch(/^attachments\/screenshot.*\.png$/);
+  });
+
+  it('no files: one save, nothing uploaded', async () => {
+    const { artifactsAtSave, upload } = await submitWithFiles(() => {});
+    expect(upload).not.toHaveBeenCalled();
+    expect(artifactsAtSave).toHaveLength(1);
   });
 });

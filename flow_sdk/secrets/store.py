@@ -203,15 +203,17 @@ def _as_dict(config: Union[Mapping[str, Any], DataSpec, None]) -> dict[str, Any]
 
 async def _default_store() -> SecretStore:
     from flow_sdk import context  # noqa: PLC0415
+    from flow_sdk.builtin.credential_store import project_scope  # noqa: PLC0415
 
     project = await context.current_project()
-    path = project.env_file_path() if project is not None else None
-    if path is None:
+    scope = project_scope(project) if project is not None else None
+    if scope is None or scope.root is None or not scope.root.is_dir():
         raise NoCurrentProject(
             "no current project to take a default store from; run inside a project folder, or name one: "
             'SecretStore.get("env_file", {"env_file_path": ...})'
         )
-    return SecretStore.from_ref(SecretStoreRef(type="env_file", config={"env_file_path": str(path)}))
+    # The project's credential env store: its .env.local, then the env files it declares.
+    return SecretStore.from_ref(scope.env_file_ref())
 
 
 __all__ = ["SecretStore", "SecretStoreRef", "load_all", "plain_values", "register_store"]

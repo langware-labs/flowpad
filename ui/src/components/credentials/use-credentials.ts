@@ -46,6 +46,17 @@ export function useCredentialsStatus(projectId: string | null, deploymentId: str
 }
 
 /**
+ * Refetch every credentials status after a write. A value set, a credential changed
+ * or an env file declared may be what the project was waiting on: re-check it too.
+ */
+export function useRefreshCredentials(): () => Promise<void> {
+  const qc = useQueryClient();
+  return useCallback(async () => {
+    await Promise.all([qc.invalidateQueries({ queryKey: CREDENTIALS_STATUS_KEY }), recheckProjectReadiness()]);
+  }, [qc]);
+}
+
+/**
  * The credentials the user and (optionally) a project declare, and the shipped
  * templates that can be added.
  *
@@ -59,15 +70,7 @@ export function useCredentials(projectId: string | null, deploymentId: string | 
   const templates = useMemo(() => specs.filter((spec) => spec.isTemplate), [specs]);
 
   const { data, isPending } = useCredentialsStatus(projectId, deploymentId);
-
-  const qc = useQueryClient();
-  // A value set or a credential changed may be what the project was waiting on: re-check it too.
-  const refresh = useCallback(
-    async () => {
-      await Promise.all([qc.invalidateQueries({ queryKey: CREDENTIALS_STATUS_KEY }), recheckProjectReadiness()]);
-    },
-    [qc],
-  );
+  const refresh = useRefreshCredentials();
 
   return { status: data ?? EMPTY_CREDENTIALS_STATUS, templates, ready: !isPending, refresh } as const;
 }

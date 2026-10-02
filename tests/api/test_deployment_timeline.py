@@ -72,19 +72,32 @@ async def _chat_answered(client, chat, text: str) -> dict:
     pass sees the turn but not the reply — which is what a loaded CI runner did. The
     wait is on the landing itself, not on a clock; the file's timeout bounds it.
     """
-    landed = asyncio.Event()
-
-    async def on(event):
-        if event.data.get("source_id") == chat.backend.data_source_id:
-            landed.set()
-
-    unsubscribe = event_bus.on("stream_inbox.*.message.projected", on)
+    landed, unsubscribe = _reply_copy_landed(chat)
     try:
         answer = await _chat(client, chat, text)
         await landed.wait()
         return answer
     finally:
         unsubscribe()
+
+
+def _reply_copy_landed(chat):
+    """An event set when the loop's OWN reply copy is placed on *chat*'s channel.
+
+    Every first placement is announced — the person's message too, which the loop places
+    before it answers — so the wait keys on the copy being ours, not on any placement."""
+    from flow_sdk.builtin.source_item import SourceItem
+
+    landed = asyncio.Event()
+
+    async def on(event):
+        if event.data.get("source_id") != chat.backend.data_source_id:
+            return
+        item = await SourceItem.get_one({"id": event.data.get("entity_id")})
+        if item is not None and item.sent_by_us:
+            landed.set()
+
+    return landed, event_bus.on("stream_inbox.*.message.projected", on)
 
 
 async def _timeline(client, deployment, **params) -> dict:
@@ -111,16 +124,10 @@ async def test_a_message_answered_on_the_deployment_is_its_timeline(deployed, bo
 
 
 async def test_the_reply_is_announced_when_it_lands_on_the_channel(deployed, bootstrapped_client):
-    """The loop places channel items silently — but its own reply's copy is announced, the moment the
-    reply's row exists, so a watcher reading the timeline then sees it."""
+    """The loop's own reply copy is announced the moment the reply's row exists, so a watcher
+    reading the timeline then sees it."""
     _agent, _deployment, chat = deployed
-    landed = asyncio.Event()
-
-    async def on(event):
-        if event.data.get("source_id") == chat.backend.data_source_id:
-            landed.set()
-
-    unsubscribe = event_bus.on("stream_inbox.*.message.projected", on)
+    landed, unsubscribe = _reply_copy_landed(chat)
     try:
         await _chat(bootstrapped_client, chat, "hello there")
         await landed.wait()  # the copy is placed on the loop's next pass; the file's timeout bounds it
@@ -174,7 +181,9 @@ async def test_each_conversation_is_one_thread_with_its_own_events(deployed, boo
     assert resp.status_code == 200, resp.text
     threads = resp.json()["data"]["threads"]
     assert len(threads) == 2, "two chats, two threads"
-    assert all(t["status"] == "idle" and t["messages"] == 2 and t["turns"] == 1 for t in threads), threads
+    # The shape of each thread, short enough that a failure prints all of it (a whole thread is truncated).
+    shapes = [(t["title"][:20], t["status"], t["messages"], t["turns"]) for t in threads]
+    assert all(t["status"] == "idle" and t["messages"] == 2 and t["turns"] == 1 for t in threads), shapes
     assert [t["last_text"].startswith("Mock reply") for t in threads] == [True, True]
     assert all(t["channel"] == "http_chat" and t["process_id"] for t in threads)
 

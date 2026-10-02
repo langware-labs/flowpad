@@ -196,4 +196,32 @@ describe('buildDetectedGroups', () => {
 
     expect(groups).toEqual([]);
   });
+
+  it('groups a project-declared env file on its own, by its project path, without what an earlier file lists', () => {
+    const keys = (...names: string[]) => names.map((key, i) => ({ key, line: i + 1 }));
+    const groups = buildDetectedGroups(
+      status({
+        files: [
+          {
+            scope: 'project',
+            project_id: 'p1',
+            environment: 'development',
+            path: '/p/.env.local',
+            exists: true,
+            blocked: false,
+            block_code: null,
+            block_reason: null,
+            detected: keys('ROOT', 'BOTH'),
+            fallbacks: [{ path: '/p/backend/.env', extra_path: 'backend/.env', exists: true, detected: keys('BOTH', 'BACK') }],
+          },
+        ],
+      }),
+    );
+
+    expect(groups.map((g) => [g.path, g.name, g.keys.map((k) => k.key)])).toEqual([
+      ['/p/.env.local', '.env.local', ['ROOT', 'BOTH']],
+      // BOTH is read from the root file; offering it again would pack one key twice.
+      ['/p/backend/.env', 'backend/.env', ['BACK']],
+    ]);
+  });
 });

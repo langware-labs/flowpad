@@ -1,7 +1,8 @@
 import { Bookmark, BookmarkType } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
-import { canNavigateFavorite } from '@src/navigation/favorite-nav';
-import { useCallback, useMemo, useRef } from 'react';
+import { sortContainer } from '@src/lib/container-sort';
+import { useCallback, useMemo } from 'react';
+import { scheduleFavoriteDelete, useHiddenFavoriteIds } from './favorites-pending-delete';
 import { useProjectBookmarks } from './use-project-bookmarks';
 
 export interface FavoriteRef {
@@ -32,10 +33,6 @@ function isFolderBookmark(b: Bookmark): boolean {
 // Stable reference for "no children" so childrenOf() doesn't churn memo deps.
 const EMPTY_CHILDREN: Bookmark[] = [];
 
-import { sortContainer } from '@src/lib/container-sort';
-
-export { sortContainer };
-
 function matchesRef(b: Bookmark, entityType: string, entityId: string): boolean {
   return (
     b.data?.entity_type === entityType && b.data?.entity_id === entityId
@@ -44,19 +41,28 @@ function matchesRef(b: Bookmark, entityType: string, entityId: string): boolean 
 
 /**
  * Favorites are Bookmark records with bookmark_type='favorite'. Unfavoriting is
- * a hard delete (bookmark.delete()) — favorites do not use status/remind_at.
+ * a hard delete (bookmark.delete()) — favorites do not use status/remind_at —
+ * written only after the undo window (`favorites-pending-delete.ts`); until
+ * then the rows are just hidden.
  *
  * Folders are Bookmark records with bookmark_type='favorite_folder'; a favorite
  * is filed under one via its parent_id. Grouping is CLIENT-side over the one
  * bookmark query (never a `{parent_id: null}` server match — axios drops null
- * operands). Deleting a folder promotes its children to root server-side.
+ * operands). Deleting a folder deletes what it holds: removing a grouping the
+ * user can see is removing its contents, not scattering them over the root.
  *
  * Backed by useProjectBookmarks, so WebSocket refetch keeps the list live.
  */
 export function useFavorites() {
-  const { data: bookmarks, refetch, excludeBookmarks } = useProjectBookmarks();
-  // Stamp the current project onto favorites/folders at creation so the
-  // bookmarks slider can filter them by scope. The record still saves unscoped
+  const { data: allBookmarks, refetch } = useProjectBookmarks();
+  // Rows inside an undo window are already gone as far as every surface knows.
+  const hidden = useHiddenFavoriteIds();
+  const bookmarks = useMemo(
+    () => (hidden.size ? allBookmarks.filter((b) => !b.id || !hidden.has(b.id)) : allBookmarks),
+    [allBookmarks, hidden],
+  );
+  // Stamp the current project onto favorites/folders at creation: project_id
+  // picks the menu bucket a row lands in. The record still saves unscoped
   // (below) — @local visibility is unchanged; project_id is just a field.
   const { project } = useProject();
   const currentProjectId = project?.id ?? null;
@@ -75,9 +81,8 @@ export function useFavorites() {
   );
 
   // Folders that sit at the top level — no parent, or a dangling one. Nested
-  // subfolders (parent_id → an existing folder, e.g. the auto-bookmark
-  // `Auto / <type>` tree) are rendered inside their parent via `childrenOf`,
-  // not at root. Mirror of `rootFavorites`.
+  // subfolders (parent_id → an existing folder) are rendered inside their
+  // parent via `childrenOf`, not at root. Mirror of `rootFavorites`.
   const rootFolders = useMemo(
     () => sortContainer(folders.filter((f) => !f.parent_id || !folderIds.has(f.parent_id))),
     [folders, folderIds],
@@ -99,9 +104,34 @@ export function useFavorites() {
   }, [folders, favorites]);
 
   // Direct children of a folder — BOTH nested subfolders and leaf favorites, so a
-  // folder tree of arbitrary depth (the machine-built auto tree) renders and drills down.
+  // folder tree of arbitrary depth renders and drills down.
   const childrenOf = useCallback(
     (folderId: string): Bookmark[] => childrenByParent.get(folderId) ?? EMPTY_CHILDREN,
+    [childrenByParent],
+  );
+
+  // Everything filed beneath a folder: its leaves, and its folders (itself
+  // included) deepest-first — the order a delete has to go in. The one walk
+  // behind both a folder's counts and its delete, so they can't disagree about
+  // what it holds. Cycle-guarded (a malformed parent_id loop can't hang render).
+  const subtreeOf = useCallback(
+    (folderId: string): { leaves: Bookmark[]; folders: Bookmark[] } => {
+      const leaves: Bookmark[] = [];
+      const folders: Bookmark[] = [];
+      const seen = new Set<string>();
+      const walk = (id: string) => {
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        for (const child of childrenByParent.get(id) ?? EMPTY_CHILDREN) {
+          if (isFolderBookmark(child)) {
+            walk(child.id);
+            folders.push(child);
+          } else leaves.push(child);
+        }
+      };
+      walk(folderId);
+      return { leaves, folders };
+    },
     [childrenByParent],
   );
 
@@ -150,36 +180,22 @@ export function useFavorites() {
     [isFavorited, refetch, appendOrder, currentProjectId],
   );
 
+  // `label` is the name the caller shows for the row, so the undo toast names
+  // what the user just clicked; the entity's own displayName otherwise.
   const removeFavorite = useCallback(
-    async (bookmark: Bookmark) => {
-      if (bookmark.id) excludeBookmarks([bookmark.id]);
-      await bookmark.delete();
-      await refetch();
+    (bookmark: Bookmark, label = bookmark.displayName): void => {
+      if (!bookmark.id) return;
+      scheduleFavoriteDelete({
+        ids: [bookmark.id],
+        title: label,
+        commit: async () => {
+          await bookmark.delete();
+          await refetch();
+        },
+      });
     },
-    [excludeBookmarks, refetch],
+    [refetch],
   );
-
-  // A favorite whose stored pointer resolves to no route is permanently dead:
-  // `canNavigateFavorite` is a pure function of the bookmark's own `data` blob
-  // and the static nav table (never a load-time race), so a non-navigable
-  // favorite can never become reachable. Reap them — a hard delete, matching
-  // unfavorite — so the menu shows no broken "ghost" rows. Only leaf favorites
-  // are candidates: folders carry no target ref and would always read as
-  // non-navigable.
-  //
-  // Read `favorites` through a ref so this callback's identity stays stable:
-  // its one caller runs it from an effect keyed on menu-open, and a `favorites`
-  // dep would rebuild it on every refetch (including reap's own), re-firing that
-  // effect for no reason.
-  const favoritesRef = useRef(favorites);
-  favoritesRef.current = favorites;
-  const reapDead = useCallback(async () => {
-    const dead = favoritesRef.current.filter((b) => b.id && !canNavigateFavorite(b));
-    if (dead.length === 0) return;
-    excludeBookmarks(dead.map((b) => b.id));
-    await Promise.all(dead.map((b) => b.delete()));
-    await refetch();
-  }, [excludeBookmarks, refetch]);
 
   const renameFavorite = useCallback(
     async (bookmark: Bookmark, newName: string) => {
@@ -214,7 +230,7 @@ export function useFavorites() {
 
   const moveToFolder = useCallback(
     async (bookmark: Bookmark, folderId: string | null) => {
-      // One nesting level: folders are never filed under folders.
+      // Folders don't move into folders; nesting is built by createFolder only.
       if (isFolderBookmark(bookmark)) return;
       // Root is '' (never null/undefined) — see parent_id's SDK doc.
       const next = folderId ?? '';
@@ -229,14 +245,24 @@ export function useFavorites() {
   );
 
   const deleteFolder = useCallback(
-    async (folder: Bookmark) => {
-      // Children are promoted to root server-side (Bookmark.delete override) —
-      // exclude only the folder itself so its members re-render at root.
-      if (folder.id) excludeBookmarks([folder.id]);
-      await folder.delete();
-      await refetch();
+    (folder: Bookmark, label = folder.displayName): void => {
+      if (!folder.id) return;
+      // The whole subtree, folders deepest-first after every leaf: each folder is
+      // empty by the time it is deleted, so the server's child promotion (kept
+      // for the raw API) has nothing to scatter over the root.
+      const { leaves, folders: nested } = subtreeOf(folder.id);
+      const subfolders = [...nested, folder];
+      scheduleFavoriteDelete({
+        ids: [...leaves, ...subfolders].map((b) => b.id),
+        title: label,
+        commit: async () => {
+          await Promise.all(leaves.map((b) => b.delete()));
+          for (const f of subfolders) await f.delete();
+          await refetch();
+        },
+      });
     },
-    [excludeBookmarks, refetch],
+    [subtreeOf, refetch],
   );
 
   const reorder = useCallback(
@@ -257,7 +283,7 @@ export function useFavorites() {
     async (ref: FavoriteRef, parentId = ''): Promise<Bookmark | null> => {
       const existing = isFavorited(ref.entityType, ref.entityId);
       if (existing) {
-        await removeFavorite(existing);
+        removeFavorite(existing);
         return null;
       }
       return addFavorite(ref, parentId);
@@ -271,11 +297,11 @@ export function useFavorites() {
     rootFolders,
     rootFavorites,
     childrenOf,
+    subtreeOf,
     refetch,
     isFavorited,
     addFavorite,
     removeFavorite,
-    reapDead,
     renameFavorite,
     toggleFavorite,
     createFolder,

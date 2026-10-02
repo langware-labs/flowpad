@@ -12,7 +12,7 @@ replaced, and so silently discarded a user's device or OpenRouter choice -- whil
 ``Capability`` itself documents that seeding must never clobber those very fields. It was
 not a design requirement either: it existed only because ``resolve_worker_api_auth``
 refused to consider any provider unless ``auth_mode == "api"``. With that gate gone,
-``resolve_llm_source`` reaches the endpoint on its own -- and on a bound box an unproven
+``resolve_llm_endpoint`` reaches the endpoint on its own -- and on a bound box an unproven
 device login yields to it -- so the write has no reason to exist.
 
 Which means ``active_for`` now means what it says: the harnesses whose RESOLVED source is
@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 
-from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS, managed_env_vars
+from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import _SPECS
 from flow_sdk.instance_settings.llm_endpoint import (
     HubLLMEndpoint,
     clear_hub_llm_endpoint,
@@ -34,7 +34,13 @@ from flow_sdk.instance_settings.llm_endpoint import (
     listing_supersedes_binding,
     set_hub_llm_endpoint,
 )
-from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
+from flow_sdk.schema.data_spec.llm_source_spec import (
+    DefaultFundingSpec,
+    FundingBindingSpec,
+    FundingStatusSpec,
+    LLMScope,
+    LLMSource,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +86,8 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import picker_view_for, resolve_constraint
 
-    sources: dict[str, list] = {}
-    resolved: dict[str, dict | None] = {}
+    sources: dict[str, list[LLMSource]] = {}
+    resolved: dict[str, LLMSource | None] = {}
     blocked: dict[str, str] = {}
     # A stated preference that is not in force, and why — see PickerView.note.
     notes: dict[str, str] = {}
@@ -93,12 +99,8 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
     for worker in HUB_ENDPOINT_HARNESSES:
         kind = worker_capability_kind(worker)
         view = await picker_view_for(worker, constraint)
-        # ``to_wire`` rather than a bare ``model_dump``: it carries ``unverified`` alongside the
-        # source, which is the one thing a client cannot derive from the source on its own (it
-        # needs the endpoint's kind). Both the CLI and the setup screen read that flag instead
-        # of each re-implementing the rule -- see ``Candidate.unverified``.
-        sources[kind] = [c.to_wire() for c in view.offers]
-        resolved[kind] = view.chosen.to_wire() if view.chosen else None
+        sources[kind] = [c.source for c in view.offers]
+        resolved[kind] = view.chosen.source if view.chosen else None
         blocked[kind] = view.blocked
         notes[kind] = view.note
         for candidate in view.offers:
@@ -106,100 +108,90 @@ async def _sources_by_kind(scope: LLMScope = LLMScope()) -> tuple[dict, dict, di
     return sources, resolved, blocked, notes, endpoints
 
 
-def _hub_user_typeid() -> str | None:
-    """The hub identity this box is signed in as, in the same spelling an endpoint's
-    ``holder_typeid`` uses (``user-<uuid>``), or ``None`` when signed out.
+async def _default_funding(resolved: dict[str, LLMSource | None], blocked: dict[str, str]) -> DefaultFundingSpec:
+    """The set-up verdict (``DefaultFundingSpec``): the installed default's own source, else -- the
+    default being absent -- any funded harness, the default vendor first."""
+    from flow_sdk.core.status import default_harness_kind, is_installed  # noqa: PLC0415
+    from flow_sdk.flowpad_types.vendors import default_vendor, vendor_by  # noqa: PLC0415
 
-    The box's LOCAL user is a different person as far as ids go -- the bootstrap ``user`` is
-    ``uname: local`` with a v5 id minted here -- so a screen cannot ask "is this budget mine"
-    without being told which hub user the box is. Reported rather than filtered on: the picker
-    and the resolver legitimately spend a pool that belongs to an org, and taking those rows
-    out of the listing would break a spawn to tidy up a screen.
+    kind = await default_harness_kind()
+    vendor = vendor_by("capability_kind", kind) if kind else None
+    if vendor is not None and is_installed(vendor.key):
+        return DefaultFundingSpec(kind=kind, installed=True, source=resolved.get(kind), reason=blocked.get(kind, ""))
+    funded = {k: pick for k, pick in resolved.items() if pick}
+    preferred = default_vendor().capability_kind
+    source = funded.get(preferred) or next(iter(funded.values()), None)
+    reason = "" if source else (f"{vendor.key} is not installed" if vendor else "no harness is funded")
+    return DefaultFundingSpec(kind=kind, installed=False, source=source, reason=reason)
+
+
+async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> FundingStatusSpec:
+    """The funding record.
+
+    Funding facts only: whether FlowPad is signed in, which keys are stored, and who the hub
+    user is are STATUS facts (``core.status``) and are read there, not repeated here.
     """
-    try:
-        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
-
-        user_id = str((get_user() or {}).get("id") or "")
-    except Exception:  # noqa: BLE001
-        return None
-    return f"user-{user_id}" if user_id else None
-
-
-async def _status(hub_logged_in: bool, *, refresh: bool = False, scope: LLMScope = LLMScope()) -> dict:
     bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
-    # Read the endpoint listing FIRST, then build the sources from the now-warm memo.
-    # ``_inventory`` is memo-only by design (it runs in the spawn path and must not call
-    # out), so computing sources before this ran left every endpoint out of the FIRST
-    # answer and put it in the second -- a picker that fills in on its own second poll.
+    # Warming the listing memo is a READ of the hub (the resolver reads only the memo, so a cold
+    # memo would leave every endpoint out of this answer). Dropping a dead binding is a WRITE and
+    # lives in ``prune_dead_binding``, which only the explicit ``status/refresh`` runs.
     available = await fetch_hub_llm_endpoints(cached_only=not refresh)
-    # A PUBLIC binding is exempt: a public endpoint is spendable by whoever holds its id, which
-    # is precisely NOT a role this caller holds -- so a listing scoped to the caller never
-    # contains it, and its absence there says nothing about whether it still exists.
-    if refresh and bound is not None and not bound.public and listing_supersedes_binding():
-        # Drop a binding the hub has just told us it will not honour. ``_endpoint_sources``
-        # already stops OFFERING it, so routing is correct either way -- but the record itself
-        # is read as "this box was given a budget" (``box_bound`` demotes an unproven device
-        # login), so leaving a dead id in place keeps that claim alive and makes every status
-        # answer name an endpoint that no longer exists.
-        #
-        # Only on an explicit refresh: ``bind`` answers through here too, and it has just been
-        # handed an endpoint the listing may not have heard of yet.
-        if not any(str(e.typeid) == bound.endpoint_typeid for e in available):
-            logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
-            clear_hub_llm_endpoint()
-            bound = None
     sources, resolved, blocked, notes, endpoints = await _sources_by_kind(scope)
     bound_typeid = bound.endpoint_typeid if bound else ""
-    return {
-        # Every endpoint this user could be pointed at, not just the one the hub pushed -- the
-        # picker needs the alternatives, and a process may name any of them. Empty when logged out
-        # or when the hub is unreachable; never an error, because this rides the status the harness
-        # modal polls. Only the READ path refreshes: bind/unbind are called BY the hub, and calling
-        # back into it mid-request would make its call wait on its own second call.
-        "available": [endpoint.to_wire() for endpoint in available],
-        "endpoint_typeid": bound.endpoint_typeid if bound else None,
-        "invoke_path": bound.invoke_path if bound else None,
-        "invoke_url": hub_llm_endpoint_invoke_url(),
-        "provider": bound.provider if bound else None,
-        "name": bound.name if bound else None,
-        # The bound endpoint is a PUBLIC one: spendable with no hub login (the id is the bearer).
-        "public": bool(bound and bound.public),
-        "hub_logged_in": hub_logged_in,
-        # Every variable a shell binding can set. Static and secret-free; it rides the status so
-        # a client that already has one need not ask again, but ``flow llm clear`` calls
-        # ``managed_env_vars`` directly rather than buying a hub refresh for a constant.
-        "managed_vars": list(managed_env_vars()),
-        # Who the hub thinks this box is. Lets a caller tell a budget allocated TO this person
-        # from one they merely administer -- both are listed, and only this says which is which.
-        "hub_user_typeid": _hub_user_typeid(),
-        # Every source each harness could be funded by, and which one actually wins. One
-        # producer for the resolver and the picker, so what a spawn does and what the UI
-        # claims cannot disagree.
-        "sources": sources,
-        "resolved": resolved,
-        # Why a harness has no funded source, when it has none -- the top-ranked refusal from
-        # the OVERLAID list. ``sources`` is now the un-overlaid offer list, so a pin that
-        # nothing can satisfy no longer shows up on the rows; without this the screen could
-        # only say "nothing eligible" and never why.
-        "blocked": blocked,
-        # A stated preference that is not in force, and why (PickerView.note).
-        "notes": notes,
-        # The rows the verdicts above name, deduplicated across harnesses. The verdict
-        # carries only an ``endpoint_typeid``; everything renderable (provider, kind, model
-        # slugs) lives here.
-        "endpoints": endpoints,
-        # Harnesses whose resolved source IS the bound endpoint. This used to mean "whose
-        # Capability was flipped to (api, flowpad)" -- a proxy for the answer rather than the
-        # answer. Now that binding no longer rewrites the user's preference, the honest
-        # reading is the resolver's own.
-        "active_for": [
-            kind
-            for kind, pick in resolved.items()
-            # A typeid match is the whole test now: only a hub endpoint can carry the bound
-            # typeid, so the kind check this used to make was already implied.
-            if pick and bound_typeid and pick.get("endpoint_typeid") == bound_typeid
+    record = FundingStatusSpec(
+        sources=sources,
+        resolved=resolved,
+        blocked=blocked,
+        default=await _default_funding(resolved, blocked),
+        notes=notes,
+        endpoints=endpoints,
+        available=[endpoint.to_wire() for endpoint in available],
+        # Harnesses whose resolved source IS the bound endpoint -- the resolver's own reading.
+        active_for=[
+            kind for kind, pick in resolved.items() if pick and bound_typeid and pick.endpoint_typeid == bound_typeid
         ],
-    }
+        binding=(
+            FundingBindingSpec(
+                endpoint_typeid=bound.endpoint_typeid,
+                invoke_path=bound.invoke_path or "",
+                invoke_url=hub_llm_endpoint_invoke_url() or "",
+                provider=bound.provider or "",
+                name=bound.name or "",
+                public=bool(bound.public),
+            )
+            if bound
+            else None
+        ),
+    )
+    return record
+
+
+async def _status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> dict:
+    """The funding record, as the wire carries it."""
+    return (await funding_status(refresh=refresh, scope=scope)).model_dump(mode="json")
+
+
+async def prune_dead_binding() -> bool:
+    """Drop a binding the hub no longer lists. Returns whether one was dropped.
+
+    ``_endpoint_sources`` already stops OFFERING a dead binding, so routing is correct either
+    way -- but the record reads as "this box was given a budget", and leaving a dead id in
+    place makes every status answer name an endpoint that no longer exists. A PUBLIC binding is
+    exempt: a listing scoped to the caller never contains it, so its absence says nothing.
+
+    A write, so it runs only on an explicit refresh (``core.status.refresh_status``), never on a
+    status read -- and never from ``bind``, which has just been handed an endpoint the listing
+    may not have heard of yet.
+    """
+    bound: HubLLMEndpoint | None = get_hub_llm_endpoint()
+    if bound is None or bound.public:
+        return False
+    available = await fetch_hub_llm_endpoints(cached_only=False)
+    if not listing_supersedes_binding() or any(str(e.typeid) == bound.endpoint_typeid for e in available):
+        return False
+    logger.info(f"[llm-endpoint] dropping binding {bound.endpoint_typeid}: the hub no longer lists it")
+    clear_hub_llm_endpoint()
+    return True
 
 
 async def hub_llm_endpoint_status(project_id: str = "") -> dict:
@@ -210,9 +202,7 @@ async def hub_llm_endpoint_status(project_id: str = "") -> dict:
     a caller with no project in hand (the box status screen, a CLI) asks the box-wide
     question and gets exactly the previous behaviour.
     """
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
-
-    return await _status(bool(resolve_hub_api_key()), refresh=True, scope=LLMScope.of_project(project_id))
+    return await _status(refresh=True, scope=LLMScope.of_project(project_id))
 
 
 async def bind_hub_llm_endpoint(payload: dict) -> dict:
@@ -227,7 +217,7 @@ async def bind_hub_llm_endpoint(payload: dict) -> dict:
     with no memory of what it replaced -- silently discarding a user's device or
     OpenRouter choice while ``Capability`` itself documents that seeding must never
     clobber that field. That write was a workaround for a resolver gate that no longer
-    exists: ``resolve_llm_source`` reaches the endpoint on its own, and on a bound box an
+    exists: ``resolve_llm_endpoint`` reaches the endpoint on its own, and on a bound box an
     unproven device login yields to it. A binding is now an OFFER, and the box picks.
     """
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
@@ -245,7 +235,7 @@ async def bind_hub_llm_endpoint(payload: dict) -> dict:
         raise HubEndpointBindError(str(exc), 400) from exc
 
     logger.info(f"[llm-endpoint] box bound to hub endpoint {bound.endpoint_typeid}")
-    return await _status(hub_logged_in=True)
+    return await _status()
 
 
 async def unbind_hub_llm_endpoint() -> dict:
@@ -254,16 +244,14 @@ async def unbind_hub_llm_endpoint() -> dict:
     Nothing to revert any more: binding stopped writing to ``Capability``, so unbinding
     simply removes the offer and the resolver falls back down the ladder on its own.
     """
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
-
     was_bound = clear_hub_llm_endpoint()
-    status = await _status(bool(resolve_hub_api_key()))
+    status = await _status()
     return {**status, "was_bound": was_bound}
 
 
 def _hub_key() -> str | None:
     """The hub login key. Imported per call so a monkeypatch on it applies -- a module-scope
-    binding would freeze the function at import time (same reason as ``_hub_logged_in``)."""
+    binding would freeze the function at import time (same reason as ``_hub_signed_in``)."""
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
 
     return resolve_hub_api_key()
@@ -312,7 +300,7 @@ async def _pin_project_endpoint(payload: dict) -> dict:
     project.llm_endpoint_typeid = typeid or None
     await project.save()
     logger.info(f"[llm-endpoint] project {project_id}: pinned to {typeid or '(none)'}")
-    return await _status(bool(_hub_key()), scope=LLMScope.of_project(project_id))
+    return await _status(scope=LLMScope.of_project(project_id))
 
 
 async def skip_llm_setup() -> dict:
@@ -442,7 +430,7 @@ async def select_llm_source(payload: dict) -> dict:
             "provider": cap.api_provider or "",
         },
     )
-    return await _status(hub_key)
+    return await _status()
 
 
 def _endpoint_id(raw: str) -> str:

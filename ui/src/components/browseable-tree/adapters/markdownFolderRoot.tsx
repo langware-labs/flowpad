@@ -2,6 +2,7 @@ import { t } from '@lingui/core/macro';
 import React from 'react';
 import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { isMarkdownDocumentPath } from '@src/lib/markdown-path';
 import apiClient from '@sdk/client';
 import { RagFolderIcon } from '@src/components/browseable-tree/RagFolderIcon';
 import { RagToggleGlyph } from '@src/components/rag/RagToggleGlyph';
@@ -408,6 +409,18 @@ function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
   return false;
 }
 
+/**
+ * The resource path this root can show, or null. A vault lists folders and
+ * markdown files only, so any other file under a vault (an `.html` beside the
+ * docs) is not this root's to claim: claiming it built a leaf the listing can
+ * never contain, and the tree's deep-link freshness check then re-fetched the
+ * vault — flashing it to "Loading…" — on every re-render (2026-10-02).
+ */
+function markdownResourcePath(p: DockPointer): string | null {
+  const resourcePath = p.resourceVfsPath?.machinePath ?? null;
+  return isMarkdownDocumentPath(resourcePath) ? resourcePath : null;
+}
+
 function findVaultForAbsPath(vaults: AssetTypeVault[], absPath: string): AssetTypeVault | null {
   // Pick the most specific (longest absPath) vault that is a prefix of `absPath`.
   let best: AssetTypeVault | null = null;
@@ -490,8 +503,8 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
     ownsPointer: (p) => {
       // A canonical VFS resource is owned independently of the route used to
       // present it (editor, Assets Files, Explorer).
-      const resourcePath = p.resourceVfsPath?.machinePath;
-      if (resourcePath && !!findVaultForAbsPath(visibleVaults, resourcePath)) return true;
+      const resourcePath = markdownResourcePath(p);
+      if (resourcePath && findVaultForAbsPath(visibleVaults, resourcePath)) return true;
       if (p.viewType !== ViewType.ASSETS) return false;
       // Non-resource routes retain their semantic ownership.
       const flat = parseAssetPointer(p.pointer ?? null);
@@ -531,9 +544,8 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
 
       // VFS resource → walk vault + intermediate folders + leaf file,
       // regardless of whether the active route is editor, fs, or Explorer.
-      const resourcePath = p.resourceVfsPath?.machinePath;
-      if (resourcePath) {
-        const absPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+      const absPath = markdownResourcePath(p);
+      if (absPath) {
         const vault = findVaultForAbsPath(vaults, absPath);
         if (!vault) return Promise.resolve([root]);
         const chain: Browseable[] = [root, buildVaultNode(vault)];

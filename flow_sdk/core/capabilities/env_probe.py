@@ -16,9 +16,11 @@ isolation and slow every sweep down.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 
@@ -101,48 +103,129 @@ def _windows_registry_path() -> str:
 
 
 def capture_terminal_path() -> str:
-    """The PATH a standard terminal would have.
+    """The PATH a standard terminal would have (``read_terminal_path``), then this process's own.
 
-    Unix: spawn the user's default shell as login+interactive (dotfiles run,
-    so version managers like nvm/pyenv build the real PATH) over plain pipes
-    — no PTY, ``stdin=DEVNULL`` — which sidesteps TTY-gated prompts that hang
-    dotfiles under a PTY. The last stdout line skips dotfile chatter.
-    Windows: read the registry values a new terminal is built from (see
-    ``_windows_registry_path``) rather than this process's launch-time copy.
-
-    Both branches answer the SAME question — what would a terminal opened right
+    Both platforms answer the SAME question — what would a terminal opened right
     now resolve? — which is the only reading under which a freshly installed
-    harness is discoverable without a restart.
-
-    Unix: this process's own PATH entries are appended after the terminal's
-    (terminal wins a tie) — the same union the Windows branch makes. A login
-    zsh never reads ``~/.profile``, which is where rustup puts ``~/.cargo/bin``,
-    so a terminal PATH alone can miss a toolchain the backend was launched with.
-
-    Falls back to this process's PATH on any failure — degraded, never empty.
+    harness is discoverable without a restart. A login zsh never reads ``~/.profile``,
+    where rustup puts ``~/.cargo/bin``, so this process's own entries stay, after the
+    terminal's. Falls back to this process's PATH on any failure — degraded, never empty.
     """
-    fallback = os.environ.get("PATH", "")
+    return _union(read_terminal_path()[0], os.environ.get("PATH", ""))
+
+
+#: Brackets the PATH in the login shell's output: a dotfile that prints a banner before the command
+#: or a logout hook / EXIT trap after it would otherwise corrupt "the last line".
+_MARK = "__FLOWPAD_TERMINAL_PATH__"
+
+#: How long a login shell may take; a dotfile waiting on input, a network mount or a lock is cut off.
+_SHELL_SECONDS = 4
+
+
+def login_shell() -> str:
+    """The user's shell: ``$SHELL``, else their login shell from the user database, else ``/bin/sh``.
+
+    A service manager (systemd, a container entrypoint) may start the backend with no ``$SHELL`` at
+    all, and ``/bin/sh`` reads none of the user's zsh or bash setup.
+    """
+    shell = os.environ.get("SHELL")
+    if shell:
+        return shell
+    try:
+        import pwd
+
+        return pwd.getpwuid(os.getuid()).pw_shell or "/bin/sh"
+    except (ImportError, KeyError):
+        return "/bin/sh"
+
+
+def read_terminal_path() -> tuple[str, str]:
+    """``(PATH, "")`` as a terminal opened now would have it, or ``("", why not)``.
+
+    Windows reads the registry (see ``_windows_registry_path``). Unix runs the user's shell as
+    login+interactive -- dotfiles run, so version managers like nvm/pyenv build the real PATH -- over
+    plain pipes, no PTY, ``stdin=DEVNULL``, which sidesteps TTY-gated prompts that hang dotfiles
+    under a PTY. The shell gets its own process group so a timeout kills what a dotfile started too;
+    otherwise a backgrounded child keeps the pipe open and the read never returns.
+    """
     if sys.platform == "win32":
         try:
-            return _windows_registry_path() or fallback
-        except Exception:
-            return fallback
-    shell = os.environ.get("SHELL") or "/bin/sh"
+            return _windows_registry_path(), ""
+        except Exception as exc:
+            return "", f"registry read failed ({type(exc).__name__}: {exc})"
+    shell = login_shell()
     try:
-        out = subprocess.run(
-            [shell, "-ilc", 'printf "%s" "$PATH"'],
-            capture_output=True,
-            text=True,
+        proc = subprocess.Popen(
+            [shell, "-ilc", f'printf "\\n{_MARK}%s{_MARK}\\n" "$PATH"'],
             stdin=subprocess.DEVNULL,
-            timeout=4,  # parent caps the whole probe at 5s; leave headroom
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            start_new_session=True,
         )
-        if out.returncode == 0 and out.stdout.strip():
-            terminal = out.stdout.strip().splitlines()[-1]
-            entries = dict.fromkeys(e for e in (terminal + os.pathsep + fallback).split(os.pathsep) if e)
-            return os.pathsep.join(entries)
-    except Exception:
-        pass
-    return fallback
+    except OSError as exc:
+        return "", f"{shell} did not start ({exc})"
+    try:
+        out, err = proc.communicate(timeout=_SHELL_SECONDS)
+    except subprocess.TimeoutExpired:
+        # flow_sdk.utils.process_tree.kill_process_tree, inlined: this module stays stdlib-only.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except OSError:
+            proc.kill()
+        proc.communicate()
+        return "", f"{shell} -ilc did not finish in {_SHELL_SECONDS}s (a dotfile is waiting on something)"
+    parts = out.split(_MARK)
+    if len(parts) >= 3 and parts[-2].strip():
+        return parts[-2].strip(), ""
+    said = (err.strip().splitlines() or [""])[-1][:200]
+    return "", f"{shell} -ilc exited {proc.returncode} without printing PATH{f': {said}' if said else ''}"
+
+
+def _union(*paths: str) -> str:
+    """The entries of *paths*, in order, each once."""
+    return os.pathsep.join(dict.fromkeys(e for p in paths for e in p.split(os.pathsep) if e))
+
+
+def adopt_path(terminal: str) -> list[str]:
+    """Run this process with *terminal*'s PATH; returns the entries that were missing.
+
+    A backend launched from the Dock starts with launchd's bare PATH, never the one the user's
+    dotfiles build, so nvm's node was "not installed" for every check, worker and MCP spawn while
+    the user's terminal ran it fine -- and every child inherits ``os.environ``. Order: this
+    interpreter's folder (``flow`` stays THIS build), the terminal's entries, then the ones this
+    process already had.
+
+    PATH only, on purpose. A dotfile also exports Flowpad's own wiring (``FLOWPAD_BACKEND_URL``)
+    and funding (``COPILOT_PROVIDER_API_KEY``); adopting those would let a stale shell line override
+    what Flowpad chose. PATH decides which tools exist, and that is the whole job.
+    """
+    before = os.environ.get("PATH", "")
+    os.environ["PATH"] = _union(os.path.dirname(sys.executable), terminal, before)
+    had = set(before.split(os.pathsep))
+    return [e for e in os.environ["PATH"].split(os.pathsep) if e not in had]
+
+
+def start_terminal_path_capture() -> "concurrent.futures.Future[tuple[str, str]]":
+    """Start reading the terminal's PATH in the background; ``adopt_terminal_path`` waits for it.
+
+    The login shell costs about a second, so a server starts it first and overlaps it with its own
+    imports.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="terminal-path")
+    future = pool.submit(read_terminal_path)
+    pool.shutdown(wait=False)
+    return future
+
+
+def adopt_terminal_path(captured: "concurrent.futures.Future[tuple[str, str]]") -> tuple[list[str], str]:
+    """``adopt_path`` the captured PATH: ``(entries added, why it could not be read)``, ``""`` when
+    it was. The reason is the caller's to log: a silent fallback reads exactly like "that tool is not
+    installed".
+    """
+    terminal, why = captured.result()
+    return adopt_path(terminal), why
 
 
 def probe(executables: list[str]) -> dict:

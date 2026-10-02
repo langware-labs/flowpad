@@ -43,4 +43,7 @@ TASK = TypeInfo(
     # The plan stays home: ``spec.md`` is authored beside ``task.md`` and the
     # bundle packer copies folders verbatim, so it is excluded here.
     pack_exclude=("spec.md",),
+    # A task's attachments (screenshots, files) live in its folder, under
+    # ``attachments/`` — so a shared task carries them in the .flowmsg.
+    files_in_asset_folder=True,
 )

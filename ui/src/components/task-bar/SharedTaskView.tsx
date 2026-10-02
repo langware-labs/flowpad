@@ -14,7 +14,12 @@ import { ConversationPanel } from '@src/components/conversation/ConversationPane
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useTaskSpecText } from '@src/hooks/use-task-spec-text';
+import { TaskAttachments } from '@src/components/assets/editor/task/TaskAttachments';
+import { normalizeAttachments } from '@src/components/assets/editor/task/task-attachments-utils';
 import { Trans, useLingui } from '@lingui/react/macro';
+
+/** Read-only attachments never persist. */
+const NOOP_SAVE = async () => {};
 
 const STATUS_REQUEST_PROMPT_TEXT = 'Summarize the task and plan status in 5 lines';
 
@@ -39,6 +44,7 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
   // Spec is now a plain `spec.md` file inside the task folder (with a legacy
   // Spec-entity fallback) — resolved by the shared hook.
   const specText = useTaskSpecText(task);
+  const hasAttachments = normalizeAttachments(task.artifacts).length > 0;
   const taskDerivedConvTypeId = task.firstContextOfType?.('conversation') ?? null;
   const resolvedConversationId = conversationId ?? taskDerivedConvTypeId?.id ?? null;
   const conversationTypeId = resolvedConversationId ? new TypeId(Conversation.type, resolvedConversationId) : null;
@@ -129,6 +135,13 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
                 </div>
               </div>
             )}
+          </section>
+        )}
+
+        {/* What the sender attached (screenshots, files) — read-only here. */}
+        {hasAttachments && (
+          <section className="flex-shrink-0 border-b border-border" data-testid="shared-task-attachments">
+            <TaskAttachments task={task} save={NOOP_SAVE} readOnly />
           </section>
         )}
 

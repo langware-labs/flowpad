@@ -479,7 +479,7 @@ async def test_no_claude_binary_yields_error_flowdata_then_raises(tmp_path: Path
     # dev machine (codex/copilot on PATH) and failed on CI (bare image), which
     # is exactly how it broke. Seed one other vendor to make the branch the
     # test is asserting the one that actually runs, on any host.
-    seed_harness_capability(monkeypatch, "codex", make_fake_cli_bin(tmp_path, "codex"))
+    seed_harness_capability(monkeypatch, "codex", make_fake_cli_bin(tmp_path, "codex")[0])
     ctx = AgenticContext(workdir=str(tmp_path))
 
     out = []
