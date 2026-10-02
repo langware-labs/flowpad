@@ -40,6 +40,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     WorkerSpawnError,
     latch_spawn_failure,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.replay_envelope import error_frame
 from flow_sdk.responses.response import ApiSuccessResponse
 
 if TYPE_CHECKING:
@@ -59,6 +60,7 @@ async def run_headless_turn(
     save_running_status: bool = True,
     emit_failure_level: int = logging.DEBUG,
     on_turn_finally: Callable[[], Awaitable[None]] | None = None,
+    setup_error: WorkerSpawnError | None = None,
 ) -> "ApiResponse":
     """Register ``worker``, schedule its turn, and guarantee slot release.
 
@@ -83,6 +85,11 @@ async def run_headless_turn(
     where the other three use DEBUG. Preserved rather than normalised because
     changing a production vendor's log level is a behaviour change, not a
     refactor; nothing here endorses the divergence.
+
+    ``setup_error`` — the driver could not fund the turn (``apply_worker_secret_env`` refused:
+    no usable LLM source). The turn still runs, as a failure: the chat hears why and the process
+    ends FAILED with the start_failure latch, the same path a missing binary takes. Raised out of
+    ``headless_prompt`` instead, it left the process untouched and the caller holding an exception.
 
     ``on_turn_finally`` — extra teardown, awaited inside the turn's ``finally``
     AFTER ``unregister_prompt_worker`` and BEFORE ``end_headless_turn``. Claude
@@ -138,6 +145,12 @@ async def run_headless_turn(
 
         async def _run_turn() -> None:
             try:
+                if setup_error is not None:
+                    try:
+                        await process.emit_flow_data(error_frame(str(setup_error)).model_dump())
+                    except Exception:
+                        logger.log(emit_failure_level, "%s: emit_flow_data failed", log_prefix, exc_info=True)
+                    raise setup_error
                 async for fd in worker.execute(prompt=prompt, context=context):
                     await adopt_session(worker.get_session_id())
                     try:
