@@ -9,6 +9,7 @@ import {
   CapabilityKinds,
   copyToClipboard,
   HARNESS_CAPABILITY_KINDS,
+  LLMFundingKind,
   LMApiProvider,
   LOGIN_CANCELLED,
   HubLogin,
@@ -32,8 +33,8 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
-import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
-import { harnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
+import { endpointOf, useLlmSources, workerOf } from '@src/components/llm-sources/use-llm-sources';
+import { harnessStatus, refreshHarnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import {
@@ -61,7 +62,6 @@ import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-sto
 
 const INSTALL_WIKI_PAGE = 'Install a harness';
 
-const workerOf = (kind: string) => kind.split('.')[1];
 
 type AuthMode = 'device' | 'api';
 
@@ -488,7 +488,7 @@ function FlowpadListRow({ onConnected }: { onConnected: () => void }) {
   // nothing to give out. The funding layer says which: a harness whose resolved source is a hub
   // endpoint is being paid for by this account.
   const isFunding = Object.values(funding?.resolved ?? {}).some(
-    (pick) => !!pick && funding?.endpoints[pick.endpoint_typeid]?.kind === 'hub',
+    (pick) => !!pick && endpointOf(funding, pick)?.kind === LLMFundingKind.Hub,
   );
 
   // The OAuth-style flow this awaits can settle `login.status` a moment after its own promise
@@ -1199,11 +1199,11 @@ function useHarnessLoginGate() {
     let cancelled = false;
     void (async () => {
       try {
-        const record = await statusService.refresh();
+        await statusService.refresh([...HARNESS_CAPABILITY_KINDS]);
         const funding = await llmSourcesService.status();
         decided.current = true;
-        const kind = record.default_harness;
-        if (!cancelled && funding && !(kind && funding.resolved?.[kind])) openHarnessLoginModal();
+        // The backend's own set-up verdict — the same answer `flow llm set auto` reads.
+        if (!cancelled && funding && !funding.default.source) openHarnessLoginModal({ fresh: true });
       } catch {
         /* status unavailable — never block startup */
       }
@@ -1524,8 +1524,9 @@ export function HarnessLoginModalRoot() {
     setJustConnected(null);
     void refreshKeys();
     // Re-check every harness on open (local probes, no money): the dialog that opened because a
-    // login failed must not greet the user with the "Signed in" it last recorded.
-    void statusService.refresh().catch(() => undefined);
+    // login failed must not greet the user with the "Signed in" it last recorded. Not when the
+    // startup gate opened it straight after its own refresh.
+    if (!payload?.fresh) refreshHarnessStatus();
   }, [open, payload, refreshKeys]);
 
   if (!open) return null;

@@ -112,10 +112,6 @@ class Candidate(NamedTuple):
     endpoint: "LLMEndpoint"
     source: LLMSource
 
-    def to_wire(self) -> dict:
-        """The verdict as a client reads it."""
-        return self.source.model_dump(mode="json")
-
 
 class LLMSourceError(Exception):
     """No source can fund this spawn. Carries every candidate's reason.

@@ -25,21 +25,19 @@ describe('isNoHarnessFound', () => {
 });
 
 describe('defaultHarnessUnfunded', () => {
-  const rec = (install: string) =>
-    ({ default_harness: 'harness.claude.cli', harnesses: [{ kind: 'harness.claude.cli', install }] }) as never;
+  const funding = (installed: boolean, source: unknown, reason = '') =>
+    ({ default: { kind: 'harness.claude.cli', installed, source, reason } }) as never;
 
   it("gives the funding layer's reason when the installed default has no source", () => {
-    const funding = { resolved: {}, blocked: { 'harness.claude.cli': 'claude is signed out' } } as never;
-    expect(defaultHarnessUnfunded(rec('installed'), funding)).toBe('claude is signed out');
+    expect(defaultHarnessUnfunded(funding(true, null, 'claude is signed out'))).toBe('claude is signed out');
   });
 
   it('is quiet once something funds the default', () => {
-    const funding = { resolved: { 'harness.claude.cli': { endpoint_typeid: 'x', name: 'x' } }, blocked: {} } as never;
-    expect(defaultHarnessUnfunded(rec('installed'), funding)).toBeNull();
+    expect(defaultHarnessUnfunded(funding(true, { endpoint_typeid: 'x', name: 'x' }))).toBeNull();
   });
 
   it('leaves an uninstalled default to the install warning', () => {
-    expect(defaultHarnessUnfunded(rec('not_installed'), { resolved: {}, blocked: {} } as never)).toBeNull();
+    expect(defaultHarnessUnfunded(funding(false, null, 'claude is not installed'))).toBeNull();
   });
 });
 

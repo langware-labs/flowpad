@@ -37,19 +37,13 @@ export function isNoHarnessFound(record: StatusRecord | null | undefined): boole
 
 /**
  * Why the default harness has nothing to run on, or `null` when it is funded — the funding
- * layer's own answer, read for the harness the user picked. Only an installed default is
- * asked: an uninstalled one is `isNoHarnessFound`'s warning (or the default is simply wrong).
+ * layer's own set-up verdict. Only an installed default is asked: an uninstalled one is
+ * `isNoHarnessFound`'s warning (or the default is simply wrong).
  */
-export function defaultHarnessUnfunded(
-  record: StatusRecord | null | undefined,
-  funding: LLMFundingStatus | null | undefined,
-): string | null {
-  const kind = record?.default_harness;
-  if (!kind || !funding) return null;
-  const harness = record.harnesses.find((h) => h.kind === kind);
-  if (harness?.install !== InstallState.Installed) return null;
-  if (funding.resolved?.[kind]) return null;
-  return funding.blocked?.[kind] || 'Nothing funds the default assistant.';
+export function defaultHarnessUnfunded(funding: LLMFundingStatus | null | undefined): string | null {
+  const verdict = funding?.default;
+  if (!verdict?.installed || verdict.source) return null;
+  return verdict.reason || 'Nothing funds the default assistant.';
 }
 
 /**
@@ -102,7 +96,7 @@ export function useWarnings() {
     { enabled: isDesktop },
   );
   const noHarnessFound = isNoHarnessFound(statusRecord);
-  const unfundedReason = defaultHarnessUnfunded(statusRecord, funding);
+  const unfundedReason = defaultHarnessUnfunded(funding);
 
   // Compute warnings based on current state
   const computedWarnings = useMemo(() => {

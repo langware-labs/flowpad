@@ -145,16 +145,19 @@ async def test_authored_requirements_are_kept_and_refresh_writes_them_to_the_age
 
 def _funding(monkeypatch, *, resolved: dict, blocked: dict, default: str = "harness.claude.cli"):
     import flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding as binding
-    import flow_sdk.core.status as status_mod
+    from flow_sdk.schema.data_spec.llm_source_spec import DefaultFundingSpec, FundingStatusSpec, LLMSource
 
-    async def _status(*, refresh=False, scope=None):
-        return {"resolved": resolved, "blocked": blocked}
+    picks = {k: LLMSource(endpoint_typeid=v["name"], name=v["name"]) for k, v in resolved.items()}
 
-    async def _default():
-        return default
+    async def _funding_status(*, refresh=False, scope=None):
+        return FundingStatusSpec(
+            sources={}, resolved=picks, blocked=blocked, notes={}, endpoints={}, available=[], active_for=[],
+            default=DefaultFundingSpec(
+                kind=default, installed=True, source=picks.get(default), reason=blocked.get(default, "")
+            ),
+        )
 
-    monkeypatch.setattr(binding, "_status", _status)
-    monkeypatch.setattr(status_mod, "default_harness_kind", _default)
+    monkeypatch.setattr(binding, "funding_status", _funding_status)
 
 
 async def test_local_funding_names_the_source_that_pays_for_the_agents_harness(monkeypatch):

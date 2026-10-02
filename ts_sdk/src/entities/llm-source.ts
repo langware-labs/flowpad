@@ -80,6 +80,23 @@ export enum LLMSourceRefusal {
   PinnedElsewhere = 'pinned_elsewhere',
 }
 
+/** What a person can DO about a refusal — one table, so every surface offers the same fix. */
+export type LLMSourceRemedy = 'sign_in' | 'add_key' | null;
+
+export function remedyFor(code: string | null | undefined): LLMSourceRemedy {
+  switch (code) {
+    case LLMSourceRefusal.SignedOut:
+    case LLMSourceRefusal.LoginNotChecked:
+    case LLMSourceRefusal.LoginFailed:
+      return 'sign_in';
+    case LLMSourceRefusal.NoKey:
+      return 'add_key';
+    default:
+      // Not installed, a pin elsewhere, a disabled endpoint: none is fixed by signing in.
+      return null;
+  }
+}
+
 export interface LLMSource {
   /** The endpoint this verdict is about — `llm_endpoint-<uuid>`, always set. Everything else
    *  about the source (kind, provider, models) lives on the endpoint; look it up in

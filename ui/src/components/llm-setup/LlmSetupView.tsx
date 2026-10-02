@@ -22,13 +22,12 @@
  * a source.
  */
 import { Trans } from '@lingui/react/macro';
-import { InstallState, llmSourcesService } from '@sdk';
+import { llmSourcesService } from '@sdk';
 import { Check, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { openHarnessLoginModal, useHarnessLoginStore } from '@src/components/harness-login/harness-login-store';
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
-import { harnessStatus, useStatusRecord } from '@src/components/status/use-status-record';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
@@ -38,23 +37,13 @@ export function LlmSetupView() {
   const open = useHarnessLoginStore((s) => s.open);
   const setOpen = useHarnessLoginStore((s) => s.setOpen);
   const { status } = useLlmSources();
-  const { status: record } = useStatusRecord();
 
   /**
-   * The source that funds the DEFAULT harness — the one a person is about to run.
-   *
-   * "Set up" means that harness is funded, not that some harness is: a funded codex does not
-   * make a Claude-default box ready. Every resolved source is evidence (the resolver never
-   * presumes a login), so there is no separate "verified" check. A default that is not installed
-   * cannot be funded by anything, so then any funded harness answers — the same rule as
-   * `flow llm set auto`; first-run setup asks again once it has installed the default.
+   * The source that funds the DEFAULT harness — the one a person is about to run. The backend's
+   * set-up verdict (`DefaultFundingSpec`), the same answer `flow llm set auto` reads; never
+   * re-derived here.
    */
-  const funded = useMemo(() => {
-    const kind = record?.default_harness;
-    const harness = kind ? harnessStatus(record, kind) : undefined;
-    if (kind && harness?.install === InstallState.Installed) return status?.resolved?.[kind] ?? null;
-    return Object.values(status?.resolved ?? {}).find(Boolean) ?? null;
-  }, [status, record]);
+  const funded = status?.default?.source ?? null;
 
   const { navigation, windowMode } = useDockNavigation();
   // `ask` is the small two-button popup; `keys` is the "Assistants & keys" dialog it opened.

@@ -1168,7 +1168,7 @@ def test_a_refusal_rides_the_wire_as_a_code(install, login, code):
     offering a fix ("Install", "Sign in") never parses English."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    wire = _device_source("claude", install, login).to_wire()
+    wire = _device_source("claude", install, login).source.model_dump(mode="json")
     assert wire["reason_code"] == code
     assert bool(wire["reason"]) == bool(code)
     assert "unverified" not in wire, "nothing is presumed any more, so there is nothing to flag"

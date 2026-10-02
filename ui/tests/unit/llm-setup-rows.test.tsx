@@ -62,7 +62,8 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 }));
 vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal: vi.fn() }));
 vi.mock('@src/components/llm-endpoints/llm-endpoints-pointer', () => ({ openLlmEndpoint: vi.fn() }));
-vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
+vi.mock('@src/components/llm-sources/use-llm-sources', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   useLlmSources: () => ({
     status: {
       resolved: Object.fromEntries(h.hubFunds.map((k) => [k, { endpoint_typeid: 'llm_endpoint-hub', name: 'Hub' }])),

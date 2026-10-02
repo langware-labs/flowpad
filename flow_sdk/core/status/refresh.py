@@ -17,7 +17,12 @@ async def refresh_status(kinds: list[str] | None = None) -> None:
         prune_dead_binding,
     )
     from flow_sdk.core.capabilities.discovery import run_discovery  # noqa: PLC0415
+    from flow_sdk.core.status.build import build_status  # noqa: PLC0415
 
+    # Every client re-reads status, funding and connections on a push, and screens refresh on
+    # arrival -- so a sweep that found what was already known says nothing.
+    before = await build_status()
     await run_discovery(kinds)
-    await prune_dead_binding()
-    publish_status_changed()
+    pruned = await prune_dead_binding()
+    if pruned or await build_status() != before:
+        publish_status_changed()
