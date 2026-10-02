@@ -1436,6 +1436,7 @@ msgstr "Activity"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/credentials-view/EnvFileChips.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -5732,6 +5733,10 @@ msgstr "Could not save the budget"
 msgid "Could not save the endpoint"
 msgstr "Could not save the endpoint"
 
+#: src/components/credentials-view/EnvFileChips.tsx
+msgid "Could not save the env files"
+msgstr "Could not save the env files"
+
 #: src/components/llm-endpoints/CredentialField.tsx
 msgid "Could not save the key"
 msgstr "Could not save the key"
@@ -8104,6 +8109,10 @@ msgstr "Env"
 
 #~ msgid "Env file"
 #~ msgstr "Env file"
+
+#: src/components/credentials-view/EnvFileChips.tsx
+msgid "Env files"
+msgstr "Env files"
 
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Env:"
@@ -13828,8 +13837,8 @@ msgid "No projects to choose from — use GitHub or a git URL."
 msgstr "No projects to choose from — use GitHub or a git URL."
 
 #: src/components/credentials-view/CredentialsView.tsx
-msgid "No projects yet"
-msgstr "No projects yet"
+#~ msgid "No projects yet"
+#~ msgstr "No projects yet"
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "No projects yet — the connection is saved to your account; attach it when you create one."
@@ -14272,6 +14281,7 @@ msgstr "Not deployed yet — it runs nowhere until you launch it."
 msgid "not fired yet"
 msgstr "not fired yet"
 
+#: src/components/credentials-view/EnvFileChips.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
@@ -16264,6 +16274,7 @@ msgstr "project"
 #: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/credentials-view/EnvFileChips.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -16278,6 +16289,10 @@ msgstr "project"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
 msgstr "Project"
+
+#: src/components/credentials-view/EnvFileChips.tsx
+msgid "Project · added"
+msgstr "Project · added"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project actions"
@@ -16838,6 +16853,10 @@ msgstr "React"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Read"
 msgstr "Read"
+
+#: src/components/credentials-view/EnvFileChips.tsx
+msgid "Read another env file — a path inside this project. The project's .env.local stays the only file values are written to."
+msgstr "Read another env file — a path inside this project. The project's .env.local stays the only file values are written to."
 
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "read only"
@@ -18872,7 +18891,6 @@ msgstr "Select a document"
 #~ msgid "Select a file to preview."
 #~ msgstr "Select a file to preview."
 
-#: src/components/credentials-view/CredentialsView.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Select a project"
@@ -20670,6 +20688,11 @@ msgstr "Stop generating"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "stop hooks"
 msgstr "stop hooks"
+
+#. placeholder {0}: file.extra_path
+#: src/components/credentials-view/EnvFileChips.tsx
+msgid "Stop reading {0}"
+msgstr "Stop reading {0}"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
@@ -23281,6 +23304,7 @@ msgid "user"
 msgstr "user"
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
+#: src/components/credentials-view/EnvFileChips.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
