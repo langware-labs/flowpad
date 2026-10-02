@@ -9,7 +9,7 @@
  * (`dockPointerForFile` over the `<compute_node>/<abs path>` address
  * `SimpleFileManager.buildVfsPath` produces) and the real route loader the
  * router mounts on `/dock/:viewType/*` (`loadAgentApp`), following its redirect
- * the way react-router does.
+ * once, the way react-router does.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -18,29 +18,8 @@ import { ComputeNode, Project, tabForDockKey, tabManager, tabsForProject } from 
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
-import { loadAgentApp } from '@src/routes/loaders/main-loader';
+import { runDockLoader } from '../utils/dock-loader-harness';
 import { apiTestSetup, getTestSignupInfo, trackCreatedRows } from '../utils/test-utils';
-
-/** Load a `/dock/...` URL through the router's loader, following one redirect. Returns the URL it settled on. */
-async function loadDockUrl(url: string): Promise<string> {
-  for (let hop = 0; hop < 2; hop++) {
-    const { pathname } = new URL(url, 'http://localhost');
-    const [, , viewType, ...rest] = pathname.split('/');
-    try {
-      await loadAgentApp({
-        request: new Request(new URL(url, 'http://localhost')),
-        params: { viewType: decodeURIComponent(viewType), '*': rest.map(decodeURIComponent).join('/') },
-        context: undefined,
-      } as never);
-      return url;
-    } catch (thrown) {
-      const location = thrown instanceof Response ? thrown.headers.get('Location') : null;
-      if (!location) throw thrown;
-      url = location;
-    }
-  }
-  throw new Error(`loader did not settle: ${url}`);
-}
 
 describe('a never-indexed project file opens on a tab of its project', () => {
   const signupInfo = getTestSignupInfo();
@@ -65,7 +44,11 @@ describe('a never-indexed project file opens on a tab of its project', () => {
     expect(node).toBeTruthy();
     const opened = dockPointerForFile(`${node!.typeId.toString()}${filePath}`);
 
-    const settled = await loadDockUrl(opened.toUrl());
+    // The explorer's URL is unscoped; the loader may redirect it once (I2).
+    const first = await runDockLoader(opened.toUrl());
+    if (first.outcome === 'error') throw first.error;
+    const settled = first.outcome === 'redirect' ? first.location : opened.toUrl();
+    if (first.outcome === 'redirect') expect(await runDockLoader(settled)).toEqual({ outcome: 'ok' });
     const tab = tabForDockKey(tabManager.getSnapshot(), DockPointer.fromUrl(settled).tabHash);
     expect(tab, `no tab for ${settled}`).toBeTruthy();
 
