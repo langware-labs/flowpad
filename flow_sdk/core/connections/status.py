@@ -33,7 +33,6 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, Optional
 
-from flow_sdk.core.status.spec import HarnessStatusSpec, HubLogin, HubStatusSpec, InstallState, LoginState
 from flow_sdk.flowpad_types.vendors import vendor_or_none
 from flow_sdk.schema.data_spec.connection_spec import (
     FLOWPAD_ACCOUNT_PROVIDER,
@@ -41,6 +40,7 @@ from flow_sdk.schema.data_spec.connection_spec import (
     ConnectionSpec,
     ConnectionState,
 )
+from flow_sdk.schema.data_spec.status_spec import HarnessStatusSpec, HubLogin, HubStatusSpec, InstallState, LoginState
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.project import Project
