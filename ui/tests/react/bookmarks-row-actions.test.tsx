@@ -89,6 +89,9 @@ describe('favorites undo window', () => {
 
     await act(async () => void vi.advanceTimersByTime(FAVORITES_UNDO_MS));
     expect(a.delete).toHaveBeenCalledOnce();
+    // The toast pauses its own timer on hover; once the write happens its Undo
+    // would be a dead button, so the commit takes it down.
+    expect(h.notify.dismiss).toHaveBeenCalledWith('favorites-undo');
   });
 
   it('Undo brings the row back and writes nothing', async () => {
