@@ -3,7 +3,8 @@ import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react'
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
-import type { ITask } from '@sdk/entities/task';
+import { Task, type ITask } from '@sdk/entities/task';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { MessageChips } from './chips/MessageChips';
 import { MarkdownView } from '@src/components/markdown-view';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
@@ -35,6 +36,10 @@ interface MessageBubbleProps {
    *  parent's share dialog to pick the target conversation; the backend then
    *  clones the message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
+  /** "Task it": make this message a task (or, once it is one, open it). `hasTask` flips the
+   *  control's label; the parent owns both the create and the open. */
+  onTaskIt?: () => void;
+  hasTask?: boolean;
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -177,6 +182,8 @@ export function MessageBubble({
   onEditName,
   onDeleteMessage,
   onForwardMessage,
+  onTaskIt,
+  hasTask = false,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -194,6 +201,7 @@ export function MessageBubble({
   const [editValue, setEditValue] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const { localUser } = useLocalUser();
+  const TaskGlyph = iconForType(Task.type);
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
@@ -318,6 +326,17 @@ export function MessageBubble({
               data-testid="message-forward"
             >
               <Forward className="h-2.5 w-2.5" />
+            </button>
+          )}
+          {onTaskIt && !editing && (
+            <button
+              onClick={onTaskIt}
+              className={`transition-colors hover:text-foreground ${hasTask ? 'text-violet-500' : 'text-muted-foreground/50'}`}
+              title={hasTask ? t`Open task` : t`Task it — make this message a task`}
+              aria-label={hasTask ? t`Open task` : t`Task it`}
+              data-testid="message-task-it"
+            >
+              <TaskGlyph className="h-2.5 w-2.5" />
             </button>
           )}
           {/* Channel mark — nothing at all when the message is ours

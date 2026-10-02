@@ -52,6 +52,7 @@ import { useProcessesForTarget } from '@src/components/entity-execution-panel/ho
 import { ConversationLiveActivity } from './ConversationLiveActivity';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
+import { taskIt, useMessageTasks, useMyEmail } from './task-it';
 
 // Cap the initial messages window so long conversations don't fetch + watch
 // every FlowMessage they've ever held. Newest-first so the visible window is
@@ -455,6 +456,8 @@ export function ConversationView({
           channelTraits={channelTraits}
           quoted={quotedFor(fm)}
           onReply={channel ? setReplyTo : undefined}
+          messageTask={messageTasks.get(id) ?? null}
+          onTaskIt={handleTaskIt}
         />
       );
     }
@@ -563,6 +566,17 @@ export function ConversationView({
   const isHelpdeskConversation = isHelpdeskKind(conversation?.kind);
   const { project: currentProject } = useProject();
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
+  // "Task it": the tasks made from this conversation's messages (one query), and the one-click create.
+  const messageTasks = useMessageTasks(conversationId);
+  const myEmail = useMyEmail();
+  const handleTaskIt = useCallback(
+    (fm: { id?: string | null; text?: string | null; conversation_id?: string | null; sender_name?: string | null }) =>
+      void taskIt(
+        { ...fm, conversation_id: fm.conversation_id || conversationId },
+        { me: myEmail, projectId: attachmentProjectId },
+      ),
+    [conversationId, myEmail, attachmentProjectId],
+  );
   // Staged bundle attachments (one query for the whole panel). Drives the
   // dashed staged chips + review modal in each bubble.
   const { byMessage: attachmentsByMessage } = useConversationMessageAttachments(conversationId);
@@ -824,6 +838,7 @@ export function ConversationView({
         channelAcceptsFiles={!!channelSpec?.accepts_attachments}
         replyTo={replyTo ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes } : null}
         onClearReply={() => setReplyTo(null)}
+        onTaskIt={handleTaskIt}
       />
     </div>
   );
