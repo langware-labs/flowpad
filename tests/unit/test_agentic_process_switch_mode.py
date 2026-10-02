@@ -26,6 +26,10 @@ from flow_sdk.fs_store.record_paths import (
     set_default_records_root,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
+
+# CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("harness_installed")
 
 
 @pytest.fixture(autouse=True)

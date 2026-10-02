@@ -13,8 +13,9 @@ import pytest
 from cryptography.fernet import Fernet
 
 from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("harness_installed")]  # do not increase timeout without approval
 
 INVOKE_PATH = "/api/v1/graph/llm_endpoint/ep1/invoke"
 

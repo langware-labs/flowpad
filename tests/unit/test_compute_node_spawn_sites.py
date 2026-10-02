@@ -17,6 +17,10 @@ import pytest
 
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.responses.response import ApiSuccessResponse
+from tests.utils.harness_installed import funding_not_under_test  # noqa: F401 — a fixture
+
+# Spawn mechanics, not funding: CI has no vendor CLI signed in (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("funding_not_under_test")
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
