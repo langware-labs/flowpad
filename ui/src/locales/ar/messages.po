@@ -428,7 +428,7 @@ msgstr "{0} يُصدر طلبات LLM الخاصة بك. أغلق هذه الن�
 #. placeholder {0}: harness.label
 #: src/components/workers/harness-availability.ts
 msgid "{0} is not installed on this machine."
-msgstr ""
+msgstr "{0} غير مثبت على هذا الجهاز."
 
 #. placeholder {0}: source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -846,7 +846,7 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't signed in on this machine."
-msgstr ""
+msgstr "{name} غير مسجل الدخول على هذا الجهاز."
 
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
@@ -9582,7 +9582,7 @@ msgstr "ملء الشاشة"
 #. placeholder {0}: picked.name
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Funded by {0}"
-msgstr ""
+msgstr "بتمويل من {0}"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a hub endpoint"
@@ -14284,7 +14284,7 @@ msgstr "لم يتم الفحص"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not checked yet"
-msgstr ""
+msgstr "لم يتم الفحص بعد"
 
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
@@ -14314,7 +14314,7 @@ msgstr "غير موجود"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not funded"
-msgstr ""
+msgstr "بدون تمويل"
 
 #~ msgid "Not in a git repository — can't be published"
 #~ msgstr ""
@@ -19921,7 +19921,7 @@ msgstr "سجّل الدخول أولًا، عندها يمكن لهذا المص
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in to {name}"
-msgstr ""
+msgstr "تسجيل الدخول إلى {name}"
 
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
@@ -19952,7 +19952,7 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign in to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
-msgstr ""
+msgstr "يلزم تسجيل الدخول لكي يتمكن {name} من كتابة الأكواد وتشغيلها نيابةً عنك. تُفتح نافذة متصفح لتسجيل الدخول — ولا يطّلع FlowPad على كلمة مرورك أبدًا."
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -20019,7 +20019,7 @@ msgstr "طريقة الدخول"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Sign-in failed"
-msgstr ""
+msgstr "فشل تسجيل الدخول"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Sign-in not confirmed"
@@ -23406,7 +23406,7 @@ msgstr "الاستخدامات"
 #: src/components/connections-manager/connection-state-visual.ts
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Uses a key"
-msgstr ""
+msgstr "يعتمد على مفتاح"
 
 #~ msgid "Uses the definition's config."
 #~ msgstr ""
