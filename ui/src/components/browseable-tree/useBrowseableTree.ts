@@ -302,12 +302,15 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
         }
 
         // Deep-link freshness: leaf missing from parent's listing → just-created
-        // file the cached listing pre-dates. Force-refresh past both caches.
+        // file the cached listing pre-dates. Force-refresh past both caches,
+        // keeping the rows already on screen (as `invalidate` does): this walk
+        // re-runs on every roots change, so a reset to "Loading…" here blinks
+        // the folder each time.
         if (parent && parent.listChildren && parentChildren) {
           const leafPresent = parentChildren.some((c) => c.id === leaf.id);
           if (!leafPresent) {
             inflight.current.delete(parent.id);
-            setLoadState(parent.id, { status: 'loading' });
+            setLoadState(parent.id, { status: 'ready', children: parentChildren, refreshing: true });
             try {
               const refreshed = await parent.listChildren({ refresh: true });
               setLoadState(parent.id, { status: 'ready', children: refreshed });

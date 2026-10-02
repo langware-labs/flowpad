@@ -417,8 +417,8 @@ function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
  * vault — flashing it to "Loading…" — on every re-render (2026-10-02).
  */
 function markdownResourcePath(p: DockPointer): string | null {
-  const resourcePath = p.resourceVfsPath?.machinePath;
-  return resourcePath && isMarkdownDocumentPath(resourcePath) ? resourcePath : null;
+  const resourcePath = p.resourceVfsPath?.machinePath ?? null;
+  return isMarkdownDocumentPath(resourcePath) ? resourcePath : null;
 }
 
 function findVaultForAbsPath(vaults: AssetTypeVault[], absPath: string): AssetTypeVault | null {
@@ -504,7 +504,7 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
       // A canonical VFS resource is owned independently of the route used to
       // present it (editor, Assets Files, Explorer).
       const resourcePath = markdownResourcePath(p);
-      if (resourcePath && !!findVaultForAbsPath(visibleVaults, resourcePath)) return true;
+      if (resourcePath && findVaultForAbsPath(visibleVaults, resourcePath)) return true;
       if (p.viewType !== ViewType.ASSETS) return false;
       // Non-resource routes retain their semantic ownership.
       const flat = parseAssetPointer(p.pointer ?? null);
@@ -544,9 +544,8 @@ export function markdownFolderRoot(type: AssetTypeInfo, deps: MarkdownFolderRoot
 
       // VFS resource → walk vault + intermediate folders + leaf file,
       // regardless of whether the active route is editor, fs, or Explorer.
-      const resourcePath = markdownResourcePath(p);
-      if (resourcePath) {
-        const absPath = resourcePath.startsWith('/') ? resourcePath : `/${resourcePath}`;
+      const absPath = markdownResourcePath(p);
+      if (absPath) {
         const vault = findVaultForAbsPath(vaults, absPath);
         if (!vault) return Promise.resolve([root]);
         const chain: Browseable[] = [root, buildVaultNode(vault)];
