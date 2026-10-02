@@ -12,6 +12,11 @@ from types import SimpleNamespace
 import pytest
 from cryptography.fernet import Fernet
 
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
+
+# CI has no vendor CLI on PATH; a key funds nothing for a CLI that is not installed.
+pytestmark = pytest.mark.usefixtures("harness_installed")
+
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

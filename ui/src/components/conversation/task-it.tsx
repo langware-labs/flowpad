@@ -60,6 +60,7 @@ export async function taskIt(
     const project = opts.projectId ? { typeId: new TypeId(Project.type, opts.projectId) } : null;
     const task = await Task.fromMessage(message, { me: opts.me, project });
     const typeId = task.typeId.toString();
+    registerUndoCommand();
     notify.success({
       id: `task-it-${message.id ?? typeId}`,
       title: t`Tasked: ${task.title}`,
@@ -90,11 +91,18 @@ async function undoTaskIt(typeId: string): Promise<void> {
   if (folder) await fsManager.delete(LOCAL_COMPUTE_NODE, folder.replace(/^\/+/, ''));
 }
 
-registerCommand(UNDO_COMMAND, (args, ctx) => {
-  if (!args.typeId) return;
-  notify.dismiss(ctx.id);
-  void undoTaskIt(String(args.typeId)).catch((err) => {
-    console.error('[task-it] undo failed', err);
-    notify.error({ title: t`Could not remove the task` });
+/**
+ * Registered when a toast first offers Undo, not on import: this module is imported by the message
+ * bubble, which sits on an import cycle with the command registry, and a top-level registration ran
+ * before the registry existed ("Cannot access 'registry' before initialization").
+ */
+function registerUndoCommand(): void {
+  registerCommand(UNDO_COMMAND, (args, ctx) => {
+    if (!args.typeId) return;
+    notify.dismiss(ctx.id);
+    void undoTaskIt(String(args.typeId)).catch((err) => {
+      console.error('[task-it] undo failed', err);
+      notify.error({ title: t`Could not remove the task` });
+    });
   });
-});
+}
