@@ -874,14 +874,6 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
   // Track the last markdown we emitted via onChange so we can tell user edits
   // apart from external content changes (e.g. file rewritten on disk).
   const lastEmittedRef = useRef(displayContent);
-  // Milkdown's markdownUpdated is debounced, so it can fire after this instance
-  // unmounted (a reload swaps editors). That late emit carries the dying editor's
-  // doc and must never reach the next draft — it would autosave over the file.
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
   // Live mirror of isReadOnly so ProseMirror's `editable` closure reads current value.
   const isReadOnlyRef = useRef(isReadOnly);
   isReadOnlyRef.current = isReadOnly;
@@ -944,7 +936,6 @@ function MilkdownEditorInner({ content, onChange, onUserEdit, editorMode, plugin
               // Track Milkdown's emit verbatim for change detection vs
               // displayContent (also markdown-link form). Reverse the
               // transform only on the way out to onChange.
-              if (!mountedRef.current) return;
               lastEmittedRef.current = markdown;
               onChange(mdLinksToWikilinks(markdown));
             });

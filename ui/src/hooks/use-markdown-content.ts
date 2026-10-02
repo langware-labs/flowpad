@@ -167,9 +167,13 @@ export function useMarkdownContent(
     const timer = setTimeout(() => { void saveRef.current(); }, autoSaveMs);
     return () => clearTimeout(timer);
   }, [autoSave, autoSaveMs, dirty, generation]);
-  usePrimaryContentPending(loading);
-
   const current = draft.current;
+  // A reload nulls the draft (a ref) a render before `loading` (state) lands; any render
+  // in between must read as loading, never as an empty loaded file — an editor fed that
+  // empty body would show it, and its change event would autosave it over the file.
+  const isLoading = loading || (!!fsRef && !current && !loadError && !isMissing);
+  usePrimaryContentPending(isLoading);
+
   // Text inputs only expose scalars; structured metadata survives in the typed draft.
   const fields = Object.fromEntries(Object.entries(current?.fields ?? {}).filter(([, value]) =>
     value === null || typeof value !== 'object',
@@ -177,7 +181,7 @@ export function useMarkdownContent(
   return {
     fields, typedFields: current?.fields ?? {}, hasFields: Object.keys(current?.fields ?? {}).length > 0,
     body: current?.body ?? '', bodyStartLine: current?.document.body_start_line ?? 1,
-    setBody, setField, dropField, dirty, saving, lastSync, isLoading: loading, loadError,
+    setBody, setField, dropField, dirty, saving, lastSync, isLoading, loadError,
     saveError, conflict, currentDocument, inspectCurrent, metadataError: current?.document.metadata_error ?? null,
     isMissing, recreate, save, reload,
   };
