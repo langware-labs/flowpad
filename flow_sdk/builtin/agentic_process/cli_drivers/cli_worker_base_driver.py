@@ -1383,6 +1383,10 @@ async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
         copilot_home = get_instance_settings().copilot_home
+    if worker_type == "opencode" and ctx is not None:
+        # OpenCode reads its credentials from ``$XDG_DATA_HOME/opencode/auth.json``, and a spawn
+        # redirects that per instance -- probe the store the WORKER will read, not the user's own.
+        env = {**env, **get_driver(worker_type).session_store_env}
     return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home(), copilot_home)
 
 

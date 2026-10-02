@@ -11,7 +11,7 @@ import pytest
 
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
 from flow_sdk.core.status import build as build_mod
-from flow_sdk.core.status.spec import HubLogin, InstallState, LoginState
+from flow_sdk.schema.data_spec.status_spec import HubLogin, InstallState, LoginState
 
 pytestmark = pytest.mark.asyncio
 
