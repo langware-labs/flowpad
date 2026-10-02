@@ -1407,7 +1407,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     requiredExpansions = this.mergeExpansionsWithQuery(ref.entity?.expand?.expansions ?? undefined, requiredExpansions);
     // `fetchByTypeId` already loads when the expansions ask for it.
-    return this.fetchOrNotFound<U>(typeId, requiredExpansions);
+    return this.fetchOrNotFound<U>(typeId, requiredExpansions ?? null);
   }
 
   /**
