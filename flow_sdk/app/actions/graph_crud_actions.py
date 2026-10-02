@@ -484,13 +484,14 @@ async def _dispatch_create_save(
     """The three create arms (standalone / visitor / parented), extracted so
     handle_create_entity can wrap them under one ValueError→400 mapping.
 
-    ``find_existing``: a standalone create answers with the row that already
-    holds its natural key (``Entity.find_existing_for_create``) instead of a twin."""
+    ``find_existing``: a create answers with the row that already holds its natural
+    key (``Entity.find_existing_for_create``) instead of a twin."""
+    # A natural key names one row wherever the create is addressed — standalone or under a parent.
+    if find_existing and (existing := await entity.find_existing_for_create()) is not None:
+        return existing
     target_typeid = (request_info.target_entity_typeid if destination_parent is _DEFAULT_CREATE_PARENT
                      else destination_parent.typeid if destination_parent is not None else None)
     if not target_typeid or target_typeid.type == User.get_type():
-        if find_existing and (existing := await entity.find_existing_for_create()) is not None:
-            return existing
         entity = await entity.save(someone_typeid)
     elif target_typeid.type == Visitor.get_type():
         entity = await entity.save()

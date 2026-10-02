@@ -1,9 +1,10 @@
 import { useMemo } from 'react';
 import { Conversation, normalizeEmail, QueryRequest, Task, TaskKind } from '@sdk';
-import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
+import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
 import { isTaskArchived } from '@src/components/task-bar/constants';
 import { statusFamily, TaskStatus } from '@src/components/task-bar/task-utils';
+import { useMyEmail } from '@src/hooks/use-my-email';
 
 export interface VibeTaskRow {
   task: Task;
@@ -60,8 +61,7 @@ export function useMyVibeTasks(projectId: string | null): { rows: VibeTaskRow[];
     [projectId],
   );
   const { data: tasks = [] } = useEntitiesQuery<Task>(taskRequest, { enabled: !!projectId });
-  const { cloudUser, currentUser } = useAuth();
-  const myEmail = normalizeEmail(cloudUser?.email || currentUser?.email);
+  const myEmail = useMyEmail();
 
   const open = useMemo(() => openHelpTasks(tasks, myEmail), [tasks, myEmail]);
   const conversationIds = useMemo(

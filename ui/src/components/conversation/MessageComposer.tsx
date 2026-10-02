@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Boxes, ChevronDown, File as FileIcon, Paperclip, Play, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
-import { SessionReplyPolicy, Task } from '@sdk';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { SessionReplyPolicy } from '@sdk';
+import type { TaskableMessage } from '@sdk/entities/task';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
@@ -14,6 +14,7 @@ import { EmojiPicker } from './EmojiPicker';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { buildSessionStartExtras, type SessionHost } from './session-start';
 import { useLocalUser } from './useLocalUser';
+import { TaskItIcon, taskItHint } from './task-it';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
@@ -61,7 +62,7 @@ interface MessageComposerProps {
   onClearReply?: () => void;
   /** "Task it" on send: when set, the composer offers a toggle; a send with it on hands the sent
    *  message here (the same call the bubble's Task it makes). Plain conversation sends only. */
-  onTaskIt?: (sent: { id: string; text: string; conversation_id: string; sender_name?: string | null }) => void;
+  onTaskIt?: (sent: TaskableMessage) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -348,8 +349,8 @@ export function MessageComposer({
             outgoingFiles,
             Object.keys(extras).length > 0 ? extras : undefined,
           );
-          if (taskItOn && onTaskIt && sent.id && !isPromptSend) {
-            onTaskIt({
+          if (taskItOn && sent.id && !isPromptSend) {
+            onTaskIt?.({
               id: sent.id,
               text: messageBody,
               conversation_id: effectiveConversationId,
@@ -586,14 +587,13 @@ export function MessageComposer({
 
   // Offered on the plain reply box only: a channel send returns no message id, a prompt is a run.
   const canTaskIt = !!onTaskIt && !channel && !isDraftMode && !liveSessionId && !startsSession;
-  const TaskGlyph = iconForType(Task.type);
   const taskItToggle = canTaskIt ? (
     <button
       type="button"
       onClick={() => setTaskItOn((on) => !on)}
       disabled={isDisabled}
       aria-pressed={taskItOn}
-      title={taskItOn ? t`This message will also become a task` : t`Task it — make this message a task`}
+      title={taskItOn ? t`This message will also become a task` : taskItHint()}
       data-testid="composer-task-it"
       className={cn(
         'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:opacity-40',
@@ -602,7 +602,7 @@ export function MessageComposer({
           : 'text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
-      <TaskGlyph className="h-3.5 w-3.5" />
+      <TaskItIcon className="h-3.5 w-3.5" />
       {taskItOn && <Trans>Task</Trans>}
     </button>
   ) : null;

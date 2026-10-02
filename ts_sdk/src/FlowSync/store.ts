@@ -1764,15 +1764,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return connectionManager.sendRestApiMessage<unknown>(message, options);
   }
 
-  /** What REST would answer for a WS reply: the server ships the whole `ApiResponse` envelope over
-   *  the socket, while `apiClient` unwraps it to `data` (and throws on FAIL). */
-  private static restShape<Res>(content: unknown): Res {
-    const envelope = content as { status?: unknown; message?: unknown; data?: unknown } | null;
-    if (!envelope || typeof envelope !== 'object' || typeof envelope.status !== 'string') return content as Res;
-    if (envelope.status === 'FAIL') throw new Error(String(envelope.message ?? 'Request failed'));
-    return envelope.data as Res;
-  }
-
   /**
    * Call an action over the WebSocket when the socket is OPEN, otherwise fall
    * back to the REST path. The branch is decided up front from the connection
@@ -1789,8 +1780,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     options?: import('../websocket').IWSRestOptions,
   ): Promise<Res> {
     if (ConnectionManager.getInstance().connected) {
-      // Same answer on either transport: unwrap the envelope before any cast, as REST does.
-      const data = DataManager.restShape<Res>(await this.sendOverWS(actionInfo, options));
+      // Same answer on either transport. The socket carries the whole `ApiResponse` envelope;
+      // `apiClient` unwraps it to `data` and throws on FAIL — do the same before any cast.
+      let data = (await this.sendOverWS(actionInfo, options)) as Res;
+      const envelope = data as { status?: unknown; message?: unknown; data?: unknown } | null;
+      if (envelope?.status === 'FAIL') throw new Error(String(envelope.message ?? 'Request failed'));
+      if (envelope?.status === 'SUCCESS') data = envelope.data as Res;
       return actionInfo.castResponse ? (this.castAndDeepAssign(data as never) as unknown as Res) : data;
     }
     return this.callAction<_Req, Res>(actionInfo);

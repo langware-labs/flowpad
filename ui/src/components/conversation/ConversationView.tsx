@@ -20,7 +20,7 @@ import {
 } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
-import type { ITask } from '@sdk/entities/task';
+import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
@@ -52,7 +52,8 @@ import { useProcessesForTarget } from '@src/components/entity-execution-panel/ho
 import { ConversationLiveActivity } from './ConversationLiveActivity';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
-import { taskIt, useMessageTasks, useMyEmail } from './task-it';
+import { useMyEmail } from '@src/hooks/use-my-email';
+import { taskIt, useMessageTasks } from './task-it';
 
 // Cap the initial messages window so long conversations don't fetch + watch
 // every FlowMessage they've ever held. Newest-first so the visible window is
@@ -570,12 +571,8 @@ export function ConversationView({
   const messageTasks = useMessageTasks(conversationId);
   const myEmail = useMyEmail();
   const handleTaskIt = useCallback(
-    (fm: { id?: string | null; text?: string | null; conversation_id?: string | null; sender_name?: string | null }) =>
-      void taskIt(
-        { ...fm, conversation_id: fm.conversation_id || conversationId },
-        { me: myEmail, projectId: attachmentProjectId },
-      ),
-    [conversationId, myEmail, attachmentProjectId],
+    (message: TaskableMessage) => void taskIt(message, { me: myEmail, projectId: attachmentProjectId }),
+    [myEmail, attachmentProjectId],
   );
   // Staged bundle attachments (one query for the whole panel). Drives the
   // dashed staged chips + review modal in each bubble.

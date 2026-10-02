@@ -94,6 +94,13 @@ class Task(Entity):
     def is_file_backed(self) -> bool:
         return bool(self.asset_ref) or self.placement != "instance"
 
+    async def find_existing_for_create(self) -> "Task | None":
+        """One message, at most one task: a create for a message already made a task ("Task it")
+        answers with that task — a double click, a second tab, or Send racing the bubble."""
+        if not self.origin_message:
+            return None
+        return next(iter(await Task.get_all({"origin_message": self.origin_message})), None)
+
     # ── a delegated task: the task ledger (``flow_sdk/tasks/ledger.py`` is the one writer) ──
     #: Who asked for it, as a typed ref: ``agent:<id>`` / ``user:<id>``.
     creator: Optional[str] = APIField(None)
