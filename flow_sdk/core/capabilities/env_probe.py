@@ -16,6 +16,7 @@ isolation and slow every sweep down.
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import os
 import shutil
@@ -143,6 +144,46 @@ def capture_terminal_path() -> str:
     except Exception:
         pass
     return fallback
+
+
+def runtime_path(terminal: str) -> str:
+    """The PATH this process should run with: its own interpreter's folder, then *terminal*.
+
+    A backend launched from the Dock starts with launchd's bare PATH, never the one the user's
+    dotfiles build, so nvm's node was "not installed" for every check, worker and MCP spawn it
+    made while the user's terminal ran it fine. *terminal* (``capture_terminal_path``) already
+    carries this process's own entries after the terminal's; the interpreter's folder goes first
+    so ``flow`` keeps resolving to THIS build, not whichever install the terminal finds first.
+
+    PATH only, on purpose. A dotfile also exports Flowpad's own wiring (``FLOWPAD_BACKEND_URL``)
+    and funding (``COPILOT_PROVIDER_API_KEY``); adopting those would let a stale shell line
+    override what Flowpad chose. PATH decides which tools exist, and that is the whole job.
+    """
+    own = os.path.dirname(sys.executable)
+    return os.pathsep.join(dict.fromkeys(e for e in (own + os.pathsep + terminal).split(os.pathsep) if e))
+
+
+def start_terminal_path_capture() -> "concurrent.futures.Future[str]":
+    """Start reading the terminal's PATH in the background; ``adopt_terminal_path`` waits for it.
+
+    The login shell costs about a second, so a server starts it first and overlaps it with its own
+    imports.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="terminal-path")
+    future = pool.submit(capture_terminal_path)
+    pool.shutdown(wait=False)
+    return future
+
+
+def adopt_terminal_path(captured: "concurrent.futures.Future[str]") -> list[str]:
+    """Make this process run with the terminal's PATH; returns the entries that were missing.
+
+    Every child inherits ``os.environ`` -- a wizard check, a worker, an MCP server -- so setting it
+    once, before anything spawns, gives all of them the tools the user's shell finds.
+    """
+    before = set((os.environ.get("PATH") or "").split(os.pathsep))
+    os.environ["PATH"] = runtime_path(captured.result())
+    return [e for e in os.environ["PATH"].split(os.pathsep) if e not in before]
 
 
 def probe(executables: list[str]) -> dict:
