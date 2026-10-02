@@ -212,7 +212,9 @@ msgstr "{0, plural, one {تم نسخ # عنصر} other {تم نسخ # عناصر
 msgid "{0, plural, one {# item cut} other {# items cut}}"
 msgstr "{0, plural, one {تم قص # عنصر} other {تم قص # عناصر}}"
 
+#. placeholder {0}: leaves.length
 #. placeholder {0}: sortedFiles.length
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# عنصر} other {# عناصر}}"
@@ -929,10 +931,9 @@ msgstr ""
 msgid "{teamName} now has access, but the invite message wasn't sent."
 msgstr ""
 
-#. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
-msgid "{title} — {0} items"
-msgstr "{title} — {0} عنصر"
+#~ msgid "{title} — {0} items"
+#~ msgstr "{title} — {0} عنصر"
 
 #. placeholder {0}: totalOrphans === 1 ? '' : 's'
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -957,6 +958,10 @@ msgstr ""
 
 #: src/components/organization/use-create-child-team.ts
 msgid "{trimmed} was added to {parentLabel}."
+msgstr ""
+
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "{unopened} new"
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -1436,7 +1441,7 @@ msgstr "النشاط"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
-#: src/components/credentials-view/EnvFileChips.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -4740,6 +4745,11 @@ msgstr "إعداد حسابك وتفضيلات التطبيق والإشعارا
 msgid "Confirm"
 msgstr "تأكيد"
 
+#. placeholder {0}: action.label
+#: src/components/browseable-tree/BrowseableTree.tsx
+msgid "Confirm: {0}"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
@@ -5733,7 +5743,7 @@ msgstr ""
 msgid "Could not save the endpoint"
 msgstr ""
 
-#: src/components/credentials-view/EnvFileChips.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 msgid "Could not save the env files"
 msgstr ""
 
@@ -6005,6 +6015,10 @@ msgstr "تعذر قراءة حالة Git لهذا المجلد."
 
 #~ msgid "Couldn't read this team's people."
 #~ msgstr ""
+
+#: src/hooks/favorites-pending-delete.ts
+msgid "Couldn't remove — restored"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Couldn't remove this member."
@@ -8110,7 +8124,7 @@ msgstr ""
 #~ msgid "Env file"
 #~ msgstr ""
 
-#: src/components/credentials-view/EnvFileChips.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 msgid "Env files"
 msgstr ""
 
@@ -13260,9 +13274,10 @@ msgid "No backlinks yet."
 msgstr "لا توجد روابط خلفية بعد."
 
 #: src/components/favorites/FavoritesTreeMenu.tsx
-msgid "No bookmarks"
-msgstr "لا توجد إشارات مرجعية"
+#~ msgid "No bookmarks"
+#~ msgstr "لا توجد إشارات مرجعية"
 
+#: src/components/favorites/FavoritesTreeMenu.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "No bookmarks yet"
 msgstr "لا توجد علامات مرجعية بعد"
@@ -14281,7 +14296,7 @@ msgstr ""
 msgid "not fired yet"
 msgstr "لم يعمل بعد"
 
-#: src/components/credentials-view/EnvFileChips.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
@@ -16274,7 +16289,7 @@ msgstr "مشروع"
 #: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
-#: src/components/credentials-view/EnvFileChips.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -16290,7 +16305,7 @@ msgstr "مشروع"
 msgid "Project"
 msgstr "مشروع"
 
-#: src/components/credentials-view/EnvFileChips.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 msgid "Project · added"
 msgstr ""
 
@@ -16854,7 +16869,7 @@ msgstr ""
 msgid "Read"
 msgstr "تم قراءتها"
 
-#: src/components/credentials-view/EnvFileChips.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 msgid "Read another env file — a path inside this project. The project's .env.local stays the only file values are written to."
 msgstr ""
 
@@ -17365,6 +17380,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Removed"
 msgstr "محذوف"
+
+#: src/hooks/favorites-pending-delete.ts
+msgid "Removed “{title}”"
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
@@ -20689,8 +20708,8 @@ msgstr "إيقاف التوليد"
 msgid "stop hooks"
 msgstr "خطافات التوقف"
 
-#. placeholder {0}: file.extra_path
-#: src/components/credentials-view/EnvFileChips.tsx
+#. placeholder {0}: entry.extraPath
+#: src/components/credentials-view/EnvFilesChip.tsx
 msgid "Stop reading {0}"
 msgstr ""
 
@@ -22886,6 +22905,7 @@ msgid "Under eval"
 msgstr "قيد التقييم"
 
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/hooks/favorites-pending-delete.ts
 msgid "Undo"
 msgstr "تراجع"
 
@@ -23304,7 +23324,7 @@ msgid "user"
 msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
-#: src/components/credentials-view/EnvFileChips.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx

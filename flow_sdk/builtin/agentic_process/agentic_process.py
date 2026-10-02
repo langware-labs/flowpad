@@ -2960,28 +2960,6 @@ class AgenticProcess(Entity):
         except Exception:
             logger.warning("on_show: display persist failed", exc_info=True)
         await self.emit_entity_event("on_show", payload)
-        # Auto-file the shown target into the Auto/<type>/item favorites tree.
-        # Best-effort: a bookmark failure must never break `flow show`.
-        try:
-            await self._auto_bookmark_show(payload)
-        except Exception:
-            logger.warning("on_show: auto-bookmark failed", exc_info=True)
-
-    async def _auto_bookmark_show(self, payload: dict) -> None:
-        """Drop the shown target into the nested ``Auto / <type> / item`` favorites
-        tree (idempotent). Owned by the local user and scoped to this process's
-        project. Every leaf create broadcasts, so the folder counters tick live."""
-        from flow_sdk.builtin.bookmark import mint_auto_favorite  # noqa: PLC0415
-        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
-
-        owner = await get_or_create_local_user()
-        if owner is None:
-            return
-        # `effective_project_id`, not the raw field: a child process (received
-        # session, sub-run) inherits its parent's project rather than filing the
-        # show unscoped. It tests self before walking, so a project-bound process
-        # costs no extra lookup. `on_show` already wraps this call best-effort.
-        await mint_auto_favorite(owner=owner, payload=payload, project_id=await self.effective_project_id())
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:

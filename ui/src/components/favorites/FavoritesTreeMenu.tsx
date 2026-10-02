@@ -64,10 +64,15 @@ export function FavoritesTreeMenu({
         // open — exactly the state a hover menu exists to avoid. It would also
         // outlive `defaultExpandedIds`, pinning the menu to whatever project was
         // open the first time it was used.
+        // Nothing bookmarked anywhere yet: the tree renders only this, so it
+        // carries the add row itself — the first bookmark has to start somewhere.
         emptyState={
-          <p className="text-xs text-muted-foreground">
-            <Trans>No bookmarks</Trans>
-          </p>
+          <div className="space-y-2">
+            <FavoritesAddRow parentId="" mirrored={mirrored} />
+            <p className="text-xs text-muted-foreground">
+              <Trans>No bookmarks yet</Trans>
+            </p>
+          </div>
         }
       />
     </TooltipProvider>

@@ -2,7 +2,6 @@ import { useLingui } from '@lingui/react/macro';
 import { FavoritesTreeMenu } from '@src/components/favorites/FavoritesTreeMenu';
 import { AnchoredMenu } from '@src/components/ui/anchored-menu';
 import { useCloseOnNavigate } from '@src/hooks/use-close-on-navigate';
-import { useFavorites } from '@src/hooks/use-favorites';
 import { useEffect, type PointerEventHandler } from 'react';
 
 /**
@@ -44,14 +43,7 @@ export function BookmarksSlider({
   hoverProps: { onPointerEnter: PointerEventHandler; onPointerLeave: PointerEventHandler };
 }) {
   const { t } = useLingui();
-  const { reapDead } = useFavorites();
   useCloseOnNavigate(open, () => onOpenChange(false));
-  // Opening the bookmarks menu is when we clean house: hard-delete any dead
-  // ("ghost") favorites whose target no longer resolves, so they neither linger
-  // in the store nor flash on screen. Idempotent — a no-op once none are left.
-  useEffect(() => {
-    if (open) void reapDead();
-  }, [open, reapDead]);
   useEffect(() => {
     if (!open) return;
     const close = () => onOpenChange(false);

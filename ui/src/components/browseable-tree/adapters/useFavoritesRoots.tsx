@@ -15,11 +15,10 @@ import { useContext as useDataContext } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { Plural, Trans, useLingui } from '@lingui/react/macro';
 import {
   Bookmark as BookmarkIcon,
   Folder,
-  FolderOpen,
   Star,
   Trash2,
   X,
@@ -145,9 +144,9 @@ export function useFavoritesRoots(opts?: {
       if (folderId) refreshNode(folderId);
     };
     // A leaf favorite whose pointer resolves nowhere is a dead "ghost" — never
-    // render it (useFavorites.reapDead also hard-deletes these when the slider
-    // opens; this keeps them off-screen immediately, without waiting on the
-    // reap's refetch). Folders carry no target ref, so they bypass the check.
+    // render it, and never count it. It is NOT deleted: opening a menu must not
+    // destroy data, and a type this build can't open may be one the next build
+    // can. Folders carry no target ref, so they bypass the check.
     //
     // `canNavigateFavorite` parses the stored pointer (JSON + Date allocs), and
     // the overlapping filter/leaf paths would otherwise re-run it several times
@@ -209,6 +208,7 @@ export function useFavoritesRoots(opts?: {
             id: 'remove-favorite',
             icon: navigable ? <Star className="h-3 w-3 fill-current text-amber-500" /> : <X className="h-3 w-3" />,
             label: t`Remove favorite`,
+            destructive: true,
             run: async () => {
               await removeFavorite(b);
               refreshFolder(b.parent_id);
@@ -247,8 +247,8 @@ export function useFavoritesRoots(opts?: {
     };
 
     // The visible LEAF favorites under a folder, descending through nested
-    // subfolders — so `Auto` sees everything filed beneath it while each
-    // `Auto/<type>` sees only its own. Cycle-guarded (a malformed parent_id
+    // subfolders — so a folder sees everything filed beneath it while each
+    // subfolder sees only its own. Cycle-guarded (a malformed parent_id
     // loop can't hang render). Callers count what they need off the result.
     const leavesUnder = (folderId: string, seen: Set<string> = new Set()): Bookmark[] => {
       if (!folderId || seen.has(folderId)) return [];
@@ -308,17 +308,25 @@ export function useFavoritesRoots(opts?: {
             id: 'delete-folder',
             icon: <Trash2 className="h-3 w-3" />,
             label: t`Delete folder`,
+            destructive: true,
             run: async () => {
               await deleteFolder(folder);
               refreshFolder(folder.parent_id);
             },
           },
         ],
+        // The SAME two numbers the menu shows, from the same visible leaves: the
+        // badge is the unopened count, and the tooltip names both, so neither
+        // can read as a different set of rows from the other.
         tooltip: (
           <div className="text-xs font-medium">
-            <Trans>
-              {title} — {leaves.length} items
-            </Trans>
+            {title} — <Plural value={leaves.length} one="# item" other="# items" />
+            {unopened > 0 && (
+              <>
+                {' · '}
+                <Trans>{unopened} new</Trans>
+              </>
+            )}
           </div>
         ),
       };
@@ -419,7 +427,8 @@ export function useFavoritesProjectRoots(): {
    * A bucket's level IS the real root parent (''), and a new row is stamped
    * with the CURRENT project, so only the current bucket can take one; another
    * project's desk would quietly file into this one, out of view. The tree root
-   * is the project LIST and owns no bookmarks at all. Ordinary folders file
+   * is the project LIST and owns no bookmarks — unless the current project has
+   * no bucket yet, when it is where that project's first row is added. Ordinary folders file
    * into themselves by id, in every bucket — bucketing follows a row's
    * TOP-LEVEL ancestor, so a favorite added inside another project's folder
    * stays exactly where it was added.
@@ -444,7 +453,7 @@ export function useFavoritesProjectRoots(): {
     for (const b of [...folders, ...favorites]) if (b.id) byId.set(b.id, b);
 
     // Which bucket a row belongs to: its TOP-MOST ancestor's project_id, so a
-    // leaf filed under `Auto / Documents` buckets with `Auto`. Cycle-guarded,
+    // leaf filed under `Work / Docs` buckets with `Work`. Cycle-guarded,
     // and memoized across the walk — siblings share an ancestor chain, so
     // resolving it per leaf would re-walk the same parents once per row.
     const bucketCache = new Map<string, string>();
@@ -506,19 +515,18 @@ export function useFavoritesProjectRoots(): {
         ? t`Personal`
         : names.get(key.slice(FAVORITES_BUCKET_PREFIX.length)) ?? t`Other project`;
 
+    // Resolved at render time from the backend type registry (type-icons rule).
+    const ProjectIcon = iconForType(Project.type);
     const asBucket = (key: string, children: Browseable[]): BrowseableRoot => {
       return {
         kind: 'root',
         id: key,
         label: labelFor(key),
-        icon:
-          key === FAVORITES_PERSONAL_BUCKET ? (
-            <Star className="h-4 w-4" />
-          ) : (
-            <FolderOpen className="h-4 w-4" />
-          ),
-        // The current project can receive its first bookmark even when empty.
-        hasChildren: children.length > 0 || key === currentBucket,
+        // A project, not a folder: its own registry icon and a header weight,
+        // so a bucket never reads as a (possibly empty) folder.
+        icon: key === FAVORITES_PERSONAL_BUCKET ? <Star className="h-4 w-4" /> : <ProjectIcon className="h-4 w-4" />,
+        rowClassName: 'font-medium text-muted-foreground',
+        hasChildren: true,
         listChildren: () => Promise.resolve(children),
         pointer: null,
         selectionKey: key,
@@ -538,23 +546,32 @@ export function useFavoritesProjectRoots(): {
     // Current project first — it is the one that opens — then the rest by name,
     // and the unscoped desk last.
     const rank = (k: string) => (k === currentBucket ? 0 : k === FAVORITES_PERSONAL_BUCKET ? 2 : 1);
-    if (!buckets.has(currentBucket)) buckets.set(currentBucket, []);
     const keys = [...buckets.keys()].sort(
       (a, b) => rank(a) - rank(b) || labelFor(a).localeCompare(labelFor(b)),
     );
 
-    // Always the current project's bucket, even before the bookmark query has
-    // landed and the bucket exists: `useBrowseableTree` seeds its expanded set
-    // ONCE, on the first render, and the first render has no rows yet.
-    // Narrowing this to buckets that already exist made the seed empty every
-    // time, and the menu opened fully collapsed. Expanding an id that is not
-    // on screen yet is harmless — it takes effect when the row arrives.
+    // Only buckets that HOLD something are rows — an empty project desk read
+    // as an empty folder. A project with nothing in it yet takes its first row
+    // from the tree-root add row instead (`addParentFor('')` below).
+    //
+    // `currentBucketId` is still always the current project's, even before the
+    // bookmark query has landed and the bucket exists: `useBrowseableTree`
+    // seeds its expanded set ONCE, on the first render, and the first render
+    // has no rows yet. Narrowing it to buckets that already exist made the seed
+    // empty every time, and the menu opened fully collapsed. Expanding an id
+    // that is not on screen yet is harmless — it takes effect when the row
+    // arrives.
+    const currentHasRows = buckets.has(currentBucket);
     return {
       roots: keys.map((k) => asBucket(k, buckets.get(k) ?? [])),
       currentBucketId: currentBucket,
       addParentFor: (levelId: string): string | null => {
         if (levelId === currentBucket) return '';
-        if (levelId === '' || levelId.startsWith(FAVORITES_BUCKET_PREFIX)) return null;
+        // The tree root is the project LIST and owns no bookmarks — except while
+        // the current project has none, when it is the only place to add the
+        // first one (stamped with the current project, so it opens its bucket).
+        if (levelId === '') return currentHasRows ? null : '';
+        if (levelId.startsWith(FAVORITES_BUCKET_PREFIX)) return null;
         return levelId;
       },
       // Child-id signature per bucket — the input to the reload below. Kept
