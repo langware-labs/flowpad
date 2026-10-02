@@ -65,6 +65,9 @@ def set_lm_api(key: str, provider: LMApiProvider | str) -> None:
     if provider is LMApiProvider.FLOWPAD:
         raise ValueError("flowpad is bound by the hub login; there is no key to store")
     write_secret(_sod_name(provider), key)
+    from flow_sdk.core.status.push import publish_status_changed  # noqa: PLC0415
+
+    publish_status_changed()  # a stored key is a status fact
 
 
 def get_lm_api(provider: LMApiProvider | str) -> str | None:
@@ -125,6 +128,9 @@ async def delete_lm_api(provider: LMApiProvider | str) -> None:
     if provider is LMApiProvider.FLOWPAD:
         return
     await delete_secret(_sod_name(provider))
+    from flow_sdk.core.status.push import publish_status_changed  # noqa: PLC0415
+
+    publish_status_changed()
 
 
 # Cheap "is this key accepted" probes: a single authenticated GET that returns

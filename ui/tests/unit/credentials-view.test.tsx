@@ -3,22 +3,17 @@
  *
  * There is no tab bar any more: Connections is the only pane, and the retired
  * `environment` / `api-keys` subviews forward to it so old saved tabs and
- * bookmarks still land somewhere real. These are about WIRING, so the pane and
- * the project selector are stubbed: what matters is that navigation preserves
- * the page (openTab would silently drop it back to desk), that the selected
- * project reaches the pane, and that a logged-out user meets one guard.
+ * bookmarks still land somewhere real. These are about WIRING, so the pane is
+ * stubbed: what matters is that the project in the URL reaches the pane, that
+ * there is no project picker (the app already selected one), and that a
+ * logged-out user meets one guard.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const h = vi.hoisted(() => ({
-  openPage: vi.fn(),
-  openDock: vi.fn(),
-  openTab: vi.fn(),
   pointer: 'environment' as string | undefined,
-  page: 'hub' as string,
   user: { id: 'u1' } as { id: string } | null,
   contextProject: null as { id: string } | null,
   projects: [
@@ -29,8 +24,8 @@ const h = vi.hoisted(() => ({
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
-    navigation: { openPage: h.openPage, openDock: h.openDock, openTab: h.openTab },
-    currentDock: { page: h.page, pointer: h.pointer },
+    navigation: {},
+    currentDock: { pointer: h.pointer },
   }),
 }));
 vi.mock('@sdk/react/hooks', async (importOriginal) => ({
@@ -44,13 +39,6 @@ vi.mock('@src/hooks/use-projects', () => ({
 vi.mock('@src/components/connections-manager', () => ({
   ConnectionsManager: ({ projectTypeId }: { projectTypeId: unknown }) => (
     <div data-testid="pane-connections">{String(projectTypeId)}</div>
-  ),
-}));
-vi.mock('@src/components/project-selector', () => ({
-  ProjectSelector: ({ onSelect }: { onSelect: (id: string) => void }) => (
-    <button data-testid="pick-proj-b" onClick={() => onSelect('proj-b')}>
-      Beta
-    </button>
   ),
 }));
 
@@ -70,7 +58,6 @@ describe('CredentialsView', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     h.pointer = 'environment';
-    h.page = 'hub';
     h.user = { id: 'u1' };
     h.contextProject = null;
   });
@@ -106,26 +93,12 @@ describe('CredentialsView', () => {
     expect(screen.getByTestId('pane-connections').textContent).toBe('project-b');
   });
 
-  it('navigates on project pick, preserving the page', async () => {
+  it('has no project picker — the project is the one the app already selected, carried in the URL', () => {
+    h.pointer = 'connections/proj-b';
     renderView();
 
-    await userEvent.click(screen.getByTestId('credentials-project-picker'));
-    await userEvent.click(screen.getByTestId('pick-proj-b'));
-
-    // openTab / openDock are desk-only and would silently drop page=hub.
-    expect(h.openTab).not.toHaveBeenCalled();
-    expect(h.openDock).not.toHaveBeenCalled();
-    expect(h.openPage).toHaveBeenCalledWith('hub', 'credentials', 'connections/proj-b');
-  });
-
-  it('carries the page through even on desk', async () => {
-    h.page = 'desk';
-    renderView();
-
-    await userEvent.click(screen.getByTestId('credentials-project-picker'));
-    await userEvent.click(screen.getByTestId('pick-proj-b'));
-
-    expect(h.openPage).toHaveBeenCalledWith('desk', 'credentials', 'connections/proj-b');
+    expect(screen.queryByTestId('credentials-project-picker')).toBeNull();
+    expect(screen.getByTestId('pane-connections').textContent).toBe('project-b');
   });
 
   it('reads the selected project from the pointer', () => {

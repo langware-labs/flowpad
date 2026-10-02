@@ -64,7 +64,7 @@ Everything below hangs off ONE table row and ONE package. Do these first; most o
   `session_entity_type` (`None` when sessions live in a store, not per-session files),
   `model_prefixes` (empty = priced by the claude table), and four declared FACTS that
   generic machinery asks instead of branching on a key:
-  - `hidden` — never offered by a picker (`compute_harness_state`, `no_worker_message`,
+  - `hidden` — never offered by a picker (`no_worker_message`,
     `flow llm`); still spawnable by `worker_type`. The TS picker lists
     (`LAUNCHABLE_WORKERS`, `HARNESS_CAPABILITY_KINDS`, `VALID_OPENER_IDS`) are hand-written —
     a hidden vendor is simply never added to them.

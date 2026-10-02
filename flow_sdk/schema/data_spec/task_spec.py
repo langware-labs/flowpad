@@ -117,6 +117,8 @@ class TaskSpec(FrontMatter):
     creator: Optional[str] = None
     owner: Optional[str] = None
     origin_conversation: Optional[str] = None
+    #: "Task it": the conversation message the task was made from (with ``origin_conversation``).
+    origin_message: Optional[str] = None
     origin_session: Optional[str] = None
     budget_usd: Optional[float] = None
     budget_turns: Optional[int] = None

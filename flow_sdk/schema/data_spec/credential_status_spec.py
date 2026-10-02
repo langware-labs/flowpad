@@ -82,6 +82,19 @@ class DetectedKeySpec(DataSpec):
     line: int
 
 
+class EnvFallbackStatusSpec(DataSpec):
+    """A file the scope's env store falls back to — a project's declared ``env_files`` entry.
+    Read, never written, so it has no ``blocked``."""
+
+    model_config = ConfigDict(frozen=True)
+
+    path: str
+    #: As the project manifest declares it (``backend/.env``).
+    extra_path: str
+    exists: bool = False
+    detected: list[DetectedKeySpec] = []
+
+
 class ScopeFileStatusSpec(DataSpec):
     model_config = ConfigDict(frozen=True)
 
@@ -95,6 +108,8 @@ class ScopeFileStatusSpec(DataSpec):
     block_code: Optional[str] = None
     block_reason: Optional[str] = None
     detected: list[DetectedKeySpec] = []
+    #: The files read after this one, in order (``development`` only).
+    fallbacks: list[EnvFallbackStatusSpec] = []
 
 
 class DeploymentChoiceSpec(DataSpec):

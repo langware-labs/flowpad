@@ -4,6 +4,7 @@ lines carrying the snapshot; approve re-drives queued turns in order."""
 from __future__ import annotations
 
 import asyncio
+import uuid
 
 import pytest
 
@@ -121,14 +122,16 @@ async def test_approve_redrives_queued_turns_in_order(bootstrapped_client, user,
     client = bootstrapped_client
     conv_id = await make_conversation(client)
     rws = await make_session(conv_id, S.PENDING.value)
-    q1 = inbound_prompt_fm(conv_id, rws.id, fm_id="b2b2b2b2-0000-4000-8000-0000000000f1")
+    # Fresh ids: ``test_session_gate`` consumes fixed ids in the same DB, and a
+    # consumed marker now survives a later save of that id (it is never un-consumed).
+    q1 = inbound_prompt_fm(conv_id, rws.id, fm_id=str(uuid.uuid4()))
     await q1.save(notify=False)
-    q2 = inbound_prompt_fm(conv_id, rws.id, fm_id="b2b2b2b2-0000-4000-8000-0000000000f2")
+    q2 = inbound_prompt_fm(conv_id, rws.id, fm_id=str(uuid.uuid4()))
     await q2.save(notify=False)
-    consumed = inbound_prompt_fm(conv_id, rws.id, fm_id="b2b2b2b2-0000-4000-8000-0000000000f3")
+    consumed = inbound_prompt_fm(conv_id, rws.id, fm_id=str(uuid.uuid4()))
     consumed.prompt_auto_handled = True
     await consumed.save(notify=False)
-    other = inbound_prompt_fm(conv_id, "b2b2b2b2-0000-4000-8000-0000000000f9", fm_id="b2b2b2b2-0000-4000-8000-0000000000f4")
+    other = inbound_prompt_fm(conv_id, str(uuid.uuid4()), fm_id=str(uuid.uuid4()))
     await other.save(notify=False)
 
     ran: list[str] = []

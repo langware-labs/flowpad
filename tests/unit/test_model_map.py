@@ -12,6 +12,11 @@ from types import SimpleNamespace
 import pytest
 from cryptography.fernet import Fernet
 
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
+
+# CI has no vendor CLI on PATH; a key funds nothing for a CLI that is not installed.
+pytestmark = pytest.mark.usefixtures("harness_installed")
+
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
@@ -148,6 +153,8 @@ async def test_override_scoped_flowpad_provider(env, monkeypatch) -> None:
 
     monkeypatch.setattr(default_service_config, "flowpad_hub_url", "https://hub.test")
     set_api_key("fp-hub-key")
+    # The hub's own "signed in" verdict is the status layer's; this test is about the model map.
+    monkeypatch.setattr("flow_sdk.builtin.agentic_process.cli_drivers.llm_source._hub_signed_in", lambda: True)
     llm_endpoint.reset_cache()
     llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", "/api/v1/graph/llm_endpoint/ep1/invoke")
     try:

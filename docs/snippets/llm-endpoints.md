@@ -99,8 +99,7 @@ for endpoint, verdict in await list_llm_candidates("claude"):
 
 A candidate is a pair: the endpoint, and this harness's verdict on it. They travel together
 because a verdict names an endpoint and mirrors none of its fields, so rendering a row or
-funding a spawn needs both. `list_llm_sources` returns the verdicts alone when that is all
-you want.
+funding a spawn needs both; take `verdict` alone when that is all you want.
 
 ## 5. Completions
 

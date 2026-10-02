@@ -238,7 +238,16 @@ def test_the_two_egress_seams_now_agree():
             # `placement`: where THIS machine keeps the row (repo folder vs instance-only) — a receiver decides its own.
             # `origin_conversation`: a local conversation row id — the hub's task has no such field, and a
             # shared task's save round-trips through the hub (the Vibe help button lost its link that way).
-            ["origin", "my_process_id", "project_name", "project_root", "placement", "origin_conversation"],
+            # `origin_message`: the message "Task it" made it from — a local row id, same reason.
+            [
+                "origin",
+                "my_process_id",
+                "project_name",
+                "project_root",
+                "placement",
+                "origin_conversation",
+                "origin_message",
+            ],
             BASE_LOCAL_ONLY,
             [
                 "artifacts",

@@ -230,6 +230,53 @@ async def test_idempotent_reinstall(env):
 
 
 # --------------------------------------------------------------------------- #
+# a task's attachment (a screenshot) rides inside its folder and lands as-is
+# --------------------------------------------------------------------------- #
+async def test_task_attachment_travels_in_its_folder(env):
+    from io import BytesIO
+
+    from flow_sdk.api.fs.fs_api import VFSPath
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.responses.response import ApiSuccessResponse
+    from flow_sdk.storage import get_entity_storage
+
+    png = b"\x89PNG\r\n\x1a\n" + bytes(range(64))
+    home = env / "home"
+    task = Task(title="Help With Screenshot", status="to_do")
+    await task.save(notify=False)
+    # Stored the way the UI stores it: the task's own file storage (its folder).
+    storage = get_entity_storage(task.typeid, entity=task)
+    await storage.upload(BytesIO(png), VFSPath.from_entity_path(task.typeid, "attachments/shot.png").abs_vfspath)
+    sender_folder = Path(task.asset_ref)
+    assert (sender_folder / "attachments" / "shot.png").read_bytes() == png
+    task.artifacts = [{"vfs": "attachments/shot.png", "label": "shot.png"}]
+    await task.save(notify=False)
+
+    await _reindex_home(home)
+    fm, zip_path = await _pack(task.id, env / "out")
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+    assert any(n.endswith(f"/{sender_folder.name}/attachments/shot.png") for n in names), names
+
+    # Fresh receiver: no shared DB row, no shared filesystem.
+    await (await Task.get_one({"id": task.id})).destroy()
+    shutil.rmtree(home / AGENTIC_ASSETS_DIR)
+
+    receiver, _, res, _ = await _install_fresh(env, fm, zip_path, task.id, scope="project")
+    assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
+
+    got = await Task.get_one({"id": task.id})
+    assert got is not None and got.asset_ref, "receiver never indexed the task"
+    folder = Path(got.asset_ref)
+    assert str(receiver) in str(folder), "task not placed in the receiver project"
+    assert (folder / "attachments" / "shot.png").read_bytes() == png, "screenshot not restored as-is"
+    assert got.artifacts == [{"vfs": "attachments/shot.png", "label": "shot.png"}]
+    # …and the receiver's own task storage resolves it (what the UI opens).
+    rstorage = get_entity_storage(got.typeid, entity=got)
+    assert await rstorage.exists(VFSPath.from_entity_path(got.typeid, "attachments/shot.png").abs_vfspath)
+
+
+# --------------------------------------------------------------------------- #
 # corner: file-backed (markdown) shape — a non-folder asset's metadata travels
 # --------------------------------------------------------------------------- #
 async def test_file_backed_markdown_shape(env):

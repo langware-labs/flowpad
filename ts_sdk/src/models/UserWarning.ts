@@ -249,17 +249,18 @@ export function createProjectSetupRequiredWarning(projectName: string, count: nu
 }
 
 /**
- * Create a warning shown when harness CLIs are installed but none is logged
- * in. The warnings popover routes clicks on this id to the harness-login
- * modal (device-login flow).
+ * Create a warning shown when the default assistant is installed and nothing
+ * funds it — no login, no key, no hub endpoint. The warnings popover routes
+ * clicks on this id to the Assistants & keys modal.
  */
-export function createHarnessLoginWarning(): UserWarning {
+export function createHarnessLoginWarning(reason: string): UserWarning {
   return {
     id: WARNING_IDS.HARNESS_LOGIN,
     icon: 'KeyRound',
     color: 'orange',
-    message: 'Harness login required',
-    description: 'A coding agent CLI is installed but not signed in. Click to sign in.',
+    message: 'Default assistant not funded',
+    // The funding layer's own sentence for why — it is the only author of that fact.
+    description: `${reason} Click to sign in or add a key.`,
     targetView: ViewType.CAPABILITIES,
   };
 }

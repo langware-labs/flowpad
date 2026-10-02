@@ -212,7 +212,9 @@ msgstr "{0, plural, one {# פריט הועתק} other {# פריטים הועתק
 msgid "{0, plural, one {# item cut} other {# items cut}}"
 msgstr "{0, plural, one {# פריט נחתך} other {# פריטים נחתכו}}"
 
+#. placeholder {0}: leaves.length
 #. placeholder {0}: sortedFiles.length
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# פריט} other {# פריטים}}"
@@ -422,6 +424,11 @@ msgstr "{0} מנפיק את קריאות ה-LLM שלך. אפשר לסגור את
 
 #~ msgid "{0} is issuing your LLM calls. You can close this tab."
 #~ msgstr ""
+
+#. placeholder {0}: harness.label
+#: src/components/workers/harness-availability.ts
+msgid "{0} is not installed on this machine."
+msgstr "{0} לא מותקן במחשב הזה."
 
 #. placeholder {0}: source.name
 #: src/components/llm-sources/LlmSourcesView.tsx
@@ -837,6 +844,10 @@ msgstr ""
 #~ msgid "{name} isn't installed on this computer yet. Install it below, then come back here to sign in."
 #~ msgstr "{name} עדיין לא מותקן במחשב הזה. התקן אותו למטה, ואז חזור לכאן כדי להתחבר."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't signed in on this machine."
+msgstr "{name} לא מחובר במחשב הזה."
+
 #: src/components/helpdesk/AddHelpdeskDialog.tsx
 msgid "{name} names no support queue"
 msgstr ""
@@ -929,10 +940,9 @@ msgstr ""
 msgid "{teamName} now has access, but the invite message wasn't sent."
 msgstr ""
 
-#. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
-msgid "{title} — {0} items"
-msgstr "{title} — {0} פריטים"
+#~ msgid "{title} — {0} items"
+#~ msgstr "{title} — {0} פריטים"
 
 #. placeholder {0}: totalOrphans === 1 ? '' : 's'
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -957,6 +967,10 @@ msgstr ""
 
 #: src/components/organization/use-create-child-team.ts
 msgid "{trimmed} was added to {parentLabel}."
+msgstr ""
+
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "{unopened} new"
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -1231,8 +1245,8 @@ msgid "A public desk needs no connection. Connect GitHub to browse your own repo
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "A request just failed because {name} isn't signed in on this machine."
-msgstr "בקשה נכשלה כרגע מכיוון ש-{name} לא מחובר במחשב הזה."
+#~ msgid "A request just failed because {name} isn't signed in on this machine."
+#~ msgstr "בקשה נכשלה כרגע מכיוון ש-{name} לא מחובר במחשב הזה."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "A restart of the worker is required."
@@ -1436,6 +1450,7 @@ msgstr "פעילות"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/credentials/CredentialDialog.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -2653,6 +2668,10 @@ msgstr "לבקש עזרה ממישהו"
 msgid "Ask the agent to connect one"
 msgstr ""
 
+#: src/components/top-nav-bar/AddressAskField.tsx
+msgid "Ask the Flowpad Assistant"
+msgstr ""
+
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "Ask the Flowpad Assistant anything about this page."
 msgstr ""
@@ -2815,6 +2834,10 @@ msgstr "צרף asset (skill, agent, doc, spec)"
 #: src/components/session-input/session-input.tsx
 msgid "Attach files"
 msgstr "צרף קבצים"
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Attach files or a screenshot (or paste one into the details)"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Attach session transcript"
@@ -4281,6 +4304,7 @@ msgstr "משבוט…"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 #: src/components/terminal/interactive-terminal/PaneBar.tsx
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
+#: src/components/top-nav-bar/AddressAskField.tsx
 #: src/components/ui/dialog.tsx
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -4730,6 +4754,11 @@ msgstr "הגדר את החשבון שלך, העדפות היישום והודע�
 msgid "Confirm"
 msgstr "אישור"
 
+#. placeholder {0}: action.label
+#: src/components/browseable-tree/BrowseableTree.tsx
+msgid "Confirm: {0}"
+msgstr ""
+
 #: src/components/connections-manager.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/git/GitRemoteField.tsx
@@ -4925,10 +4954,6 @@ msgstr "מרחק גרף ההקשר"
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Context list actions"
 msgstr "פעולות רשימת הקשר"
-
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Context process"
-msgstr "תהליך הקשר"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "context tokens"
@@ -5255,14 +5280,18 @@ msgstr "לא ניתן להוסיף הערות לתצוגה"
 msgid "Could not assign"
 msgstr "לא ניתן להקצות"
 
-#. placeholder {0}: file.name
 #: src/components/assets/editor/task/TaskAttachments.tsx
-msgid "Could not attach {0}"
-msgstr "לא ניתן היה לצרף את {0}"
+#~ msgid "Could not attach {0}"
+#~ msgstr "לא ניתן היה לצרף את {0}"
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 msgid "Could not attach {name}"
 msgstr "לא ניתן היה לצרף את {name}"
+
+#. placeholder {0}: failed.join(', ')
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Could not attach: {0}"
+msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentPlaceSecrets.tsx
 msgid "Could not change {key}"
@@ -5339,6 +5368,10 @@ msgstr ""
 
 #: src/components/quick-create/McpCreateDialog.tsx
 msgid "Could not create the MCP server"
+msgstr ""
+
+#: src/components/conversation/task-it.tsx
+msgid "Could not create the task"
 msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
@@ -5610,6 +5643,10 @@ msgstr ""
 msgid "Could not remove the row"
 msgstr ""
 
+#: src/components/conversation/task-it.tsx
+msgid "Could not remove the task"
+msgstr ""
+
 #: src/components/account/settings-section.tsx
 msgid "Could not remove tools"
 msgstr "לא ניתן להסיר את הכלים"
@@ -5717,6 +5754,10 @@ msgstr ""
 
 #: src/components/llm-endpoints/LlmEndpointDialog.tsx
 msgid "Could not save the endpoint"
+msgstr ""
+
+#: src/components/credentials-view/EnvFilesChip.tsx
+msgid "Could not save the env files"
 msgstr ""
 
 #: src/components/llm-endpoints/CredentialField.tsx
@@ -5987,6 +6028,10 @@ msgstr "לא ניתן לקרוא את סטטוס ה-Git של תיקייה זו"
 
 #~ msgid "Couldn't read this team's people."
 #~ msgstr ""
+
+#: src/hooks/favorites-pending-delete.ts
+msgid "Couldn't remove — restored"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Couldn't remove this member."
@@ -7092,7 +7137,6 @@ msgstr ""
 
 #: src/components/connections-manager/sign-in-method.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Device login"
 msgstr "התחברות דרך מכשיר"
 
@@ -7339,10 +7383,6 @@ msgstr "גילוי..."
 #: src/components/assets/editor/AssetDiscussButton.tsx
 msgid "Discuss"
 msgstr "דיון"
-
-#: src/components/terminal/interactive-terminal/side-windows/AnalysisContextButton.tsx
-msgid "Discuss analysis"
-msgstr "דיון בניתוח"
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -8092,6 +8132,10 @@ msgstr ""
 #~ msgid "Env file"
 #~ msgstr ""
 
+#: src/components/credentials-view/EnvFilesChip.tsx
+msgid "Env files"
+msgstr ""
+
 #: src/components/top-nav-bar/RuntimeChip.tsx
 msgid "Env:"
 msgstr "סביבה:"
@@ -8799,14 +8843,9 @@ msgstr "שליחת הדוח נכשלה"
 msgid "Failed to send status request"
 msgstr "נכשלה בשליחת בקשת עדכון הסטטוס"
 
-#: src/components/context-process/ContextProcessButton.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Failed to set project"
 msgstr "ההגדרה של הפרויקט נכשלה"
-
-#: src/hooks/useContextProcess.ts
-msgid "Failed to start context process"
-msgstr "כשל בהפעלת תהליך ההקשר"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Failed to start GitHub connection"
@@ -9539,6 +9578,11 @@ msgstr "אמון מלא"
 #: src/components/assets/editor/deck/DeckViewer.tsx
 msgid "Fullscreen"
 msgstr "מסך מלא"
+
+#. placeholder {0}: picked.name
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Funded by {0}"
+msgstr "ממומן על ידי {0}"
 
 #: src/components/llm-sources/llm-source-visuals.ts
 msgid "Funded by a hub endpoint"
@@ -10345,12 +10389,12 @@ msgid "Hub"
 msgstr "Hub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Hub endpoint"
-msgstr "נקודת קצה ב-Hub"
+#~ msgid "Hub endpoint"
+#~ msgstr "נקודת קצה ב-Hub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Hub endpoint unavailable"
-msgstr "נקודת הקצה ב-Hub אינה זמינה"
+#~ msgid "Hub endpoint unavailable"
+#~ msgstr "נקודת הקצה ב-Hub אינה זמינה"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Hub endpoints"
@@ -11138,7 +11182,6 @@ msgstr ""
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Key not set"
 msgstr "המפתח לא הוגדר"
 
@@ -11660,7 +11703,6 @@ msgstr "אינדקס LLM"
 msgid "LLM Indexers"
 msgstr "מנהלי אינדקס LLM"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "LLM key"
 msgstr "מפתח LLM"
@@ -13238,9 +13280,10 @@ msgid "No backlinks yet."
 msgstr "אין קישורים חוזרים עדיין."
 
 #: src/components/favorites/FavoritesTreeMenu.tsx
-msgid "No bookmarks"
-msgstr "אין סימניות שמורות"
+#~ msgid "No bookmarks"
+#~ msgstr "אין סימניות שמורות"
 
+#: src/components/favorites/FavoritesTreeMenu.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "No bookmarks yet"
 msgstr "עדיין אין סימניות"
@@ -13815,8 +13858,8 @@ msgid "No projects to choose from — use GitHub or a git URL."
 msgstr "אין פרויקטים לבחירה — יש להשתמש ב-GitHub או בכתובת Git."
 
 #: src/components/credentials-view/CredentialsView.tsx
-msgid "No projects yet"
-msgstr "אין פרויקטים עדיין"
+#~ msgid "No projects yet"
+#~ msgstr "אין פרויקטים עדיין"
 
 #: src/components/connections-manager/usage-cell.tsx
 msgid "No projects yet — the connection is saved to your account; attach it when you create one."
@@ -14239,6 +14282,10 @@ msgstr ""
 msgid "Not checked"
 msgstr "לא בדוק"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not checked yet"
+msgstr "טרם נבדק"
+
 #: src/components/account/hub-status-visuals.ts
 #: src/components/connections-manager/connection-state-visual.ts
 msgid "Not connected"
@@ -14259,10 +14306,15 @@ msgstr ""
 msgid "not fired yet"
 msgstr "עדיין לא הופעל"
 
+#: src/components/credentials-view/EnvFilesChip.tsx
 #: src/pages/entry/entry-shell.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Not found"
 msgstr "לא נמצא"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not funded"
+msgstr "ללא מימון"
 
 #~ msgid "Not in a git repository — can't be published"
 #~ msgstr ""
@@ -14270,8 +14322,10 @@ msgstr "לא נמצא"
 #~ msgid "Not indexed here yet — install it from its origin"
 #~ msgstr ""
 
-#~ msgid "Not installed"
-#~ msgstr "לא מותקן"
+#: src/components/connections-manager/connection-state-visual.ts
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not installed"
+msgstr "לא מותקן"
 
 #: src/components/assets/editor/agent-profile/AgentProfileEditor.tsx
 msgid "Not launched yet in this project"
@@ -14339,7 +14393,6 @@ msgstr ""
 msgid "Not set up for publishing"
 msgstr "לא מוגדר לפרסום"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Not signed in"
 msgstr "לא מחובר"
@@ -14708,6 +14761,7 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/SessionCard.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
@@ -15131,6 +15185,11 @@ msgstr "פתיחת סשן המפרט"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Open tabs"
+msgstr ""
+
+#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
+msgid "Open task"
 msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
@@ -16251,6 +16310,7 @@ msgstr "פרויקט"
 #: src/components/conversation/asset-review/ProjectPreview.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -16265,6 +16325,10 @@ msgstr "פרויקט"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
 msgstr "פרויקט"
+
+#: src/components/credentials-view/EnvFilesChip.tsx
+msgid "Project · added"
+msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Project actions"
@@ -16826,6 +16890,10 @@ msgstr ""
 msgid "Read"
 msgstr "נקרא"
 
+#: src/components/credentials-view/EnvFilesChip.tsx
+msgid "Read another env file — a path inside this project. The project's .env.local stays the only file values are written to."
+msgstr ""
+
 #: src/components/assets/editor/llm-endpoint/LlmEndpointAssetView.tsx
 msgid "read only"
 msgstr ""
@@ -17334,6 +17402,10 @@ msgstr ""
 msgid "Removed"
 msgstr "הוסר"
 
+#: src/hooks/favorites-pending-delete.ts
+msgid "Removed “{title}”"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for all participants"
@@ -17799,14 +17871,6 @@ msgstr "שחזור סשן Claude"
 msgid "Resume Claude session…"
 msgstr "שחזור סשן Claude…"
 
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Resume context"
-msgstr "להמשיך בהקשר"
-
-#: src/components/terminal/interactive-terminal/side-windows/AnalysisContextButton.tsx
-msgid "Resume discussion"
-msgstr "חידוש הדיון"
-
 #: src/components/assets/editor/agent-profile/AgentPlaceCard.tsx
 msgid "Resume machine"
 msgstr ""
@@ -17819,10 +17883,6 @@ msgstr "שחזור סשן לפי מזהה"
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Resume session in terminal"
 msgstr "חזור לסשן בטרמינל"
-
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Resume the context process"
-msgstr "יש להמשיך את תהליך ההקשר"
 
 #: src/journey/JourneyViewer.tsx
 msgid "Resume this run"
@@ -18859,7 +18919,6 @@ msgstr "בחר מסמך"
 #~ msgid "Select a file to preview."
 #~ msgstr "יש לבחור קובץ לתצוגה מקדימה"
 
-#: src/components/credentials-view/CredentialsView.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Select a project"
@@ -19277,7 +19336,6 @@ msgstr ""
 msgid "Set conversation project"
 msgstr "הגדר פרויקט שיחה"
 
-#: src/components/context-process/ContextProcessButton.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Set project"
@@ -19861,6 +19919,10 @@ msgstr ""
 msgid "Sign in first, then this source can fund a run."
 msgstr "התחבר תחילה, ואז המקור הזה יוכל לממן הרצה."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign in to {name}"
+msgstr "התחברות ל-{name}"
+
 #: src/components/login-required-dialog.tsx
 msgid "Sign in to access your flow and unlock Flowpad AI agent."
 msgstr "יש להתחבר כדי לגשת לזרימה שלך ולפתוח את סוכן ה-AI של Flowpad."
@@ -19887,6 +19949,10 @@ msgstr ""
 
 #~ msgid "Sign in to launch a sandbox for this repository. A sign-in window opens on top of this page — you stay right here."
 #~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign in to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
+msgstr "התחברו כדי לאפשר ל-{name} לכתוב ולהריץ קוד עבורכם. חלון דפדפן ייפתח לכניסה — FlowPad לעולם לא רואה את הסיסמה שלכם."
 
 #: src/components/organization/org-node-management.tsx
 msgid "Sign in to manage members."
@@ -19917,8 +19983,8 @@ msgid "Sign in to your Flowpad Cloud account to view your stream inbox and conve
 msgstr "היכנס לחשבון Flowpad Cloud שלך כדי להציג את תיבת הזרם הנכנס ואת השיחות שלך."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign in with {account}"
-msgstr "התחברו עם {account}"
+#~ msgid "Sign in with {account}"
+#~ msgstr "התחברו עם {account}"
 
 #: src/components/connections-manager/add-connection-dialog.tsx
 msgid "Sign in with a provider"
@@ -19929,8 +19995,8 @@ msgid "Sign in with another account"
 msgstr "התחברות עם חשבון אחר"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
-msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} לכתוב ולהריץ קוד בשבילך. חלון דפדפן נפתח להזדהות — FlowPad אף פעם לא רואה את הסיסמה שלך."
+#~ msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
+#~ msgstr "יש להתחבר דרך {account} שלך כדי לאפשר ל{name} לכתוב ולהריץ קוד בשבילך. חלון דפדפן נפתח להזדהות — FlowPad אף פעם לא רואה את הסיסמה שלך."
 
 #: src/pages/hub-home/AutoLoginField.tsx
 msgid "Sign me in automatically — this sandbox belongs to one person."
@@ -19952,8 +20018,12 @@ msgid "Sign-in"
 msgstr "התחברות"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign-in not confirmed"
-msgstr "ההתחברות לא אושרה"
+msgid "Sign-in failed"
+msgstr "ההתחברות נכשלה"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Sign-in not confirmed"
+#~ msgstr "ההתחברות לא אושרה"
 
 #: src/components/account/user-info.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -20012,8 +20082,10 @@ msgid "Signing in opens a window on top of this page — you stay right here —
 msgstr ""
 
 #: src/components/account/user-info.tsx
+#: src/components/connections-manager/connection-state-visual.ts
 #: src/components/connections-manager/flowpad-connection-row.tsx
 #: src/components/connections-manager/flowpad-connection-row.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Signing in…"
 msgstr "מתחבר…"
 
@@ -20411,10 +20483,6 @@ msgstr "התחל {0}"
 msgid "Start a collaboration"
 msgstr "התחל שיתוף פעולה"
 
-#: src/components/context-process/ContextProcessButton.tsx
-msgid "Start a context process for this"
-msgstr "יש להתחיל תהליך הקשר עבור זה"
-
 #: src/components/terminal/interactive-terminal/SimpleChatPane.tsx
 msgid "Start a conversation"
 msgstr "התחל שיחה"
@@ -20546,7 +20614,6 @@ msgstr "מפעילים את האפליקציה שלך…"
 msgid "Starting your sandbox…"
 msgstr "ה-Sandbox שלך מופעל…"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Starting…"
@@ -20657,6 +20724,11 @@ msgstr "עצור ייצור"
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "stop hooks"
 msgstr "עצירת חוקים"
+
+#. placeholder {0}: entry.extraPath
+#: src/components/credentials-view/EnvFilesChip.tsx
+msgid "Stop reading {0}"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
@@ -21046,6 +21118,8 @@ msgstr "יעד, לדוגמה usage_report:abc"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
 msgid "Task"
@@ -21060,6 +21134,14 @@ msgstr "המשימה הוקצתה"
 msgid "Task created"
 msgstr "משימה נוצרה"
 
+#: src/components/conversation/MessageBubble.tsx
+msgid "Task it"
+msgstr ""
+
+#: src/components/conversation/task-it.tsx
+msgid "Task it — make this message a task"
+msgstr ""
+
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 #: src/routes/loaders/load-tasks.ts
 msgid "Task not found"
@@ -21072,6 +21154,11 @@ msgstr "משימה לא זמינה"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Tasked"
 msgstr "בעל משימה"
+
+#. placeholder {0}: task.title
+#: src/components/conversation/task-it.tsx
+msgid "Tasked: {0}"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/types/ViewType.ts
@@ -21214,10 +21301,6 @@ msgstr ""
 #: src/components/llm-endpoints/endpoint-catalog.ts
 msgid "That looks like an {0} key. This endpoint calls {1}, whose keys start with {2}."
 msgstr ""
-
-#: src/hooks/useContextProcess.ts
-msgid "That project has no local workdir"
-msgstr "לפרויקט זה אין ספריית עבודה מקומית"
 
 #: src/components/task-receive/IncomingDeepLink.tsx
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -21953,6 +22036,10 @@ msgstr ""
 
 #: src/components/project-home/ProjectUploadMessageButton.tsx
 msgid "This message carries no assets."
+msgstr ""
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "This message will also become a task"
 msgstr ""
 
 #: src/components/token-plan/token-plan-math.ts
@@ -22849,7 +22936,9 @@ msgstr "פריט הזנה לא זמין"
 msgid "Under eval"
 msgstr "בהערכה"
 
+#: src/components/conversation/task-it.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/hooks/favorites-pending-delete.ts
 msgid "Undo"
 msgstr "בטל"
 
@@ -23268,6 +23357,7 @@ msgid "user"
 msgstr ""
 
 #: src/components/asset-manager/AssetScopeToggles.tsx
+#: src/components/credentials-view/EnvFilesChip.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -23312,6 +23402,11 @@ msgstr "שליחת פרומפט ממשתמש"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "uses"
 msgstr "שימושים"
+
+#: src/components/connections-manager/connection-state-visual.ts
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Uses a key"
+msgstr "משתמש במפתח"
 
 #~ msgid "Uses the definition's config."
 #~ msgstr ""
@@ -23665,8 +23760,8 @@ msgid "waiting for you to choose an LLM source"
 msgstr "ממתין שתבחר מקור LLM"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Waiting for you…"
-msgstr "ממתין לך…"
+#~ msgid "Waiting for you…"
+#~ msgstr "ממתין לך…"
 
 #: src/journey/JourneyTray.tsx
 msgid "Waiting…"
@@ -23756,6 +23851,10 @@ msgstr "מה השתנה? ההודעה תישלח לנמענים שלהלן…"
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "What do you need help with?"
 msgstr "עם מה אתה צריך עזרה?"
+
+#: src/components/top-nav-bar/AddressAskField.tsx
+msgid "What do you want to do?"
+msgstr ""
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "What do you want to work on"

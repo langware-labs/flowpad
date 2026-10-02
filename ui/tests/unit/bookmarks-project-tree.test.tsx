@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AUTO_BOOKMARK_SOURCE, Bookmark, BookmarkType } from '@sdk';
+import { Bookmark, BookmarkType } from '@sdk';
 
 /**
  * The bookmarks menu is ONE GLOBAL tree grouped by project — no scope filter.
@@ -10,8 +10,8 @@ import { AUTO_BOOKMARK_SOURCE, Bookmark, BookmarkType } from '@sdk';
  * favorites is a sibling row you hover into.
  *
  * The shape below is the real one read out of the `prod` instance
- * (2026-09-09, project 2a1e40da): `Auto → Documents → {agent-deployment,
- * README}`. That tree is also what produced the bug this file pins: with the
+ * (2026-09-09, project 2a1e40da), folders renamed: `Work → Docs →
+ * {agent-deployment, README}`. That tree is also what produced the bug this file pins: with the
  * level footer rendered LAST, three open levels stacked three identical
  * unlabelled "add" rows at the bottom of the panel, which read as three empty
  * bookmarks.
@@ -21,11 +21,11 @@ const PROJ = {
   other: '3d7e0743-0aab-40bf-9c41-962d3798eb07',
 };
 const ID = {
-  auto: '00000000-0000-4000-8000-000000000001',
+  work: '00000000-0000-4000-8000-000000000001',
   documents: '00000000-0000-4000-8000-000000000002',
   agentDeployment: '00000000-0000-4000-8000-000000000003',
   readme: '00000000-0000-4000-8000-000000000004',
-  otherAuto: '00000000-0000-4000-8000-000000000011',
+  otherWork: '00000000-0000-4000-8000-000000000011',
   otherDoc: '00000000-0000-4000-8000-000000000012',
   personalDoc: '00000000-0000-4000-8000-000000000021',
 };
@@ -35,7 +35,6 @@ const markdownLeaf = (id: string, title: string, parent: string, project?: strin
     id,
     bookmark_type: BookmarkType.FAVORITE,
     title,
-    source: AUTO_BOOKMARK_SOURCE,
     parent_id: parent,
     project_id: project,
     data: {
@@ -50,39 +49,33 @@ const h = vi.hoisted(() => ({ bookmarks: [] as unknown[], currentProjectId: '' }
 
 h.bookmarks = [
   new Bookmark({
-    id: ID.auto,
+    id: ID.work,
     bookmark_type: BookmarkType.FAVORITE_FOLDER,
-    title: 'Auto',
-    source: AUTO_BOOKMARK_SOURCE,
+    title: 'Work',
     project_id: PROJ.current,
-    data: { auto_root: true },
   }),
   new Bookmark({
     id: ID.documents,
     bookmark_type: BookmarkType.FAVORITE_FOLDER,
-    title: 'Documents',
-    source: AUTO_BOOKMARK_SOURCE,
-    parent_id: ID.auto,
+    title: 'Docs',
+    parent_id: ID.work,
     project_id: PROJ.current,
-    data: { auto_type: 'markdown' },
   }),
   markdownLeaf(ID.agentDeployment, 'agent-deployment', ID.documents, PROJ.current),
   markdownLeaf(ID.readme, 'README', ID.documents, PROJ.current),
   new Bookmark({
-    id: ID.otherAuto,
+    id: ID.otherWork,
     bookmark_type: BookmarkType.FAVORITE_FOLDER,
-    title: 'Auto',
-    source: AUTO_BOOKMARK_SOURCE,
+    title: 'Work',
     project_id: PROJ.other,
-    data: { auto_root: true },
   }),
-  markdownLeaf(ID.otherDoc, 'sources-and-sinks', ID.otherAuto, PROJ.other),
+  markdownLeaf(ID.otherDoc, 'sources-and-sinks', ID.otherWork, PROJ.other),
   // No project_id at all — every favorite written before project stamping.
   markdownLeaf(ID.personalDoc, 'old-note', '', undefined),
 ];
 
 vi.mock('@src/hooks/use-project-bookmarks', () => ({
-  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: vi.fn(), excludeBookmarks: vi.fn() }),
+  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: vi.fn() }),
 }));
 vi.mock('@sdk/react/hooks', () => ({
   // The adapter reads dataContext (synchronous, seeds defaultExpandedIds on the
@@ -141,10 +134,10 @@ describe('bookmarks tree — global, grouped by project', () => {
   it('opens on the current project and offers the others as siblings', async () => {
     render(<FavoritesTreeMenu mirrored />);
 
-    // The current project is expanded already: its Auto folder is on screen
+    // The current project is expanded already: its Work folder is on screen
     // without a single click.
     await waitFor(() => expect(screen.getByText('flowpad-oss')).toBeTruthy());
-    await waitFor(() => expect(screen.getByText('Auto')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Work')).toBeTruthy());
 
     // The other project and the unscoped desk are rows, not a filter mode.
     expect(screen.getByText('test_flowpad')).toBeTruthy();
@@ -160,34 +153,34 @@ describe('bookmarks tree — global, grouped by project', () => {
     // same tree beneath it, all the way down to its leaves.
     const user = userEvent.setup();
     await user.click(screen.getByTestId(`browseable-chevron-${bucket(PROJ.other)}`));
-    await waitFor(() => expect(screen.getByTestId(`browseable-chevron-${ID.otherAuto}`)).toBeTruthy());
-    await user.click(screen.getByTestId(`browseable-chevron-${ID.otherAuto}`));
+    await waitFor(() => expect(screen.getByTestId(`browseable-chevron-${ID.otherWork}`)).toBeTruthy());
+    await user.click(screen.getByTestId(`browseable-chevron-${ID.otherWork}`));
     await waitFor(() => expect(screen.getByText('sources-and-sinks')).toBeTruthy());
   });
 
   it('never stacks add rows: one per level, leading the level it files into', async () => {
     const user = userEvent.setup();
     render(<FavoritesTreeMenu mirrored />);
-    await waitFor(() => expect(screen.getByText('Auto')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Work')).toBeTruthy());
 
     // Current project open: exactly ONE add row, directly under its bucket.
     expect(addRows()).toHaveLength(1);
-    expect(panelOrder().slice(0, 3)).toEqual(['flowpad-oss', 'ADD', 'Auto']);
+    expect(panelOrder().slice(0, 3)).toEqual(['flowpad-oss', 'ADD', 'Work']);
 
     // Open both nested folders — the exact prod state that produced the three
     // anonymous rows. Each new level adds its own footer, and each sits at the
     // HEAD of its level, so no two are ever adjacent.
-    await user.click(screen.getByTestId(`browseable-chevron-${ID.auto}`));
-    await waitFor(() => expect(screen.getByText('Documents')).toBeTruthy());
+    await user.click(screen.getByTestId(`browseable-chevron-${ID.work}`));
+    await waitFor(() => expect(screen.getByText('Docs')).toBeTruthy());
     await user.click(screen.getByTestId(`browseable-chevron-${ID.documents}`));
     await waitFor(() => expect(screen.getByText('README')).toBeTruthy());
 
     expect(panelOrder()).toEqual([
       'flowpad-oss',
       'ADD',
-      'Auto',
+      'Work',
       'ADD',
-      'Documents',
+      'Docs',
       'ADD',
       'agent-deployment',
       'README',
@@ -209,42 +202,62 @@ describe('bookmarks tree — global, grouped by project', () => {
     // stamped with the CURRENT project — so an add row hanging directly off
     // someone else's desk would file into this one and disappear from view.
     await user.click(screen.getByTestId(`browseable-chevron-${bucket(PROJ.other)}`));
-    await waitFor(() => expect(screen.getByTestId(`browseable-chevron-${ID.otherAuto}`)).toBeTruthy());
-    expect(panelOrder()).toEqual(['flowpad-oss', 'ADD', 'Auto', 'test_flowpad', 'Auto', 'Personal']);
+    await waitFor(() => expect(screen.getByTestId(`browseable-chevron-${ID.otherWork}`)).toBeTruthy());
+    expect(panelOrder()).toEqual(['flowpad-oss', 'ADD', 'Work', 'test_flowpad', 'Work', 'Personal']);
 
     // A FOLDER inside it does offer one: it files into that folder by id, and
     // bucketing follows the top-level ancestor, so the new row lands exactly
     // where it was added.
-    await user.click(screen.getByTestId(`browseable-chevron-${ID.otherAuto}`));
+    await user.click(screen.getByTestId(`browseable-chevron-${ID.otherWork}`));
     await waitFor(() => expect(screen.getByText('sources-and-sinks')).toBeTruthy());
     expect(panelOrder()).toEqual([
       'flowpad-oss',
       'ADD',
-      'Auto',
+      'Work',
       'test_flowpad',
-      'Auto',
+      'Work',
       'ADD',
       'sources-and-sinks',
       'Personal',
     ]);
   });
 
-  it('gives a project with no favorites yet a desk to add its first one into', async () => {
+  it('shows no empty desk for a project with no favorites — the add row leads the tree instead', async () => {
     h.currentProjectId = 'a-project-with-nothing-in-it';
     render(<FavoritesTreeMenu mirrored />);
 
-    // The bucket exists even though no bookmark carries that project_id, it is
-    // expandable, and its level carries the add row — otherwise the only way to
-    // bookmark into a fresh project would be from somewhere else.
+    // No synthesized bucket: an empty project desk read as an empty folder. The
+    // first bookmark files from the tree-root add row (stamped with the current
+    // project, so it opens that project's bucket once it exists).
     await waitFor(() => expect(addRows()).toHaveLength(1));
-    expect(panelOrder().slice(0, 2)).toEqual(['Other project', 'ADD']);
-    // Everyone else's desks are still listed beside it.
-    expect(screen.getByText('flowpad-oss')).toBeTruthy();
+    expect(panelOrder().slice(0, 2)).toEqual(['ADD', 'flowpad-oss']);
+    expect(screen.queryByText('Other project')).toBeNull();
+    expect(screen.getByText('test_flowpad')).toBeTruthy();
+  });
+
+  it('with nothing bookmarked anywhere, the empty tree still offers the add row', async () => {
+    const all = h.bookmarks;
+    h.bookmarks = [];
+    try {
+      render(<FavoritesTreeMenu mirrored />);
+      await waitFor(() => expect(screen.getByText('No bookmarks yet')).toBeTruthy());
+      expect(addRows()).toHaveLength(1);
+    } finally {
+      h.bookmarks = all;
+    }
+  });
+
+  it('a project bucket is a section, not a folder', async () => {
+    render(<FavoritesTreeMenu mirrored />);
+    await waitFor(() => expect(screen.getByText('flowpad-oss')).toBeTruthy());
+    const row = document.querySelector(`[data-browseable-id="${bucket(PROJ.current)}"] [role="treeitem"]`)!;
+    expect(row.className).toContain('font-medium');
+    expect(row.className).toContain('text-muted-foreground');
   });
 
   it('lays the add row out on the tree axis so its level indent is visible', async () => {
     render(<FavoritesTreeMenu mirrored />);
-    await waitFor(() => expect(screen.getByText('Auto')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Work')).toBeTruthy());
     const [row] = addRows();
     // Mirrored: the row reverses with the tree, otherwise BrowseableTree's
     // trailing-edge indent lands on a leading-first row and every level draws

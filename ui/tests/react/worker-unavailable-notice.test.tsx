@@ -7,6 +7,14 @@ import { FlowData, FlowElementTypes, PrefKey, instancePreferences } from '@sdk';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
 
+// Availability now comes from the backend's status record, and the react tier's backend has
+// no codex installed: picking it would route to Capabilities. This test is about routing a
+// pick to the host, so every worker reads as available.
+vi.mock('@src/components/workers/harness-availability', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@src/components/workers/harness-availability')>()),
+  useHarnessAvailability: () => ({ warnings: {}, record: null }),
+}));
+
 function unavailableEntry(): FlowData {
   return new FlowData(
     FlowElementTypes.WORKER_UNAVAILABLE,
@@ -35,8 +43,8 @@ describe('WorkerUnavailableNotice', () => {
     instancePreferences.set(PrefKey.CHAT_SHOW_TOOLS, false);
 
     // The worker select routes a capability-warned pick to Capabilities, so it
-    // needs a router. No HarnessCapabilitiesProvider here means no warnings —
-    // every worker stays selectable, which is what this test asserts.
+    // needs a router. Availability is mocked above to no warnings — every worker
+    // stays selectable, which is what this test asserts.
     render(
       <MemoryRouter initialEntries={['/dock/shell']}>
         <TurnGroupsList

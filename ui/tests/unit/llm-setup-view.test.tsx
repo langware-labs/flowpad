@@ -32,7 +32,11 @@ vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
 import { useHarnessLoginStore } from '@src/components/harness-login/harness-login-store';
 import { LlmSetupView } from '@src/components/llm-setup/LlmSetupView';
 
-const FUNDED = { resolved: { claude: { name: 'FlowPad', unverified: false } } };
+// The backend's set-up verdict (`default`) is what the chooser reads.
+const FUNDED = {
+  resolved: { 'harness.claude.cli': { name: 'FlowPad' } },
+  default: { kind: 'harness.claude.cli', installed: true, source: { name: 'FlowPad' }, reason: '' },
+};
 
 beforeEach(() => {
   vi.clearAllMocks();

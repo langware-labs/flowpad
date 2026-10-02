@@ -18,13 +18,18 @@ import logging
 from typing import Optional
 
 from flow_sdk.tags.bus import FlowEvent, event_bus
+from flow_sdk.tags.grammar import tag_matches
+
+#: A message placed — the one relayed tag that names rows the other process WROTE
+#: (``announce_relayed_writes``).
+MESSAGE_PROJECTED_PATTERN = "stream_inbox.*.message.projected"
 
 #: What such a process emits that the app's clients watch: a deployment's timeline, a message placed
 #: (its reply landing), a task's news, a live call. Not its channels' per-poll ``ingest.*.sync.*``
 #: pair — a polled channel runs that every second, and nothing watching a deployment reads it.
 RELAYED_TAG_PATTERNS: list[str] = [
     "deployment.timeline",
-    "stream_inbox.*.message.projected",
+    MESSAGE_PROJECTED_PATTERN,
     "task.*",
     "voice.call.*",
 ]
@@ -79,8 +84,6 @@ def start_relay_to_app() -> None:
 
 def emit_relayed(envelope: dict) -> None:
     """The app's half: emit a relayed envelope on this bus, keeping its target, data and context."""
-    from flow_sdk.tags.grammar import tag_matches  # noqa: PLC0415
-
     tag = str(envelope.get("tag") or "")
     if not tag or not any(tag_matches(pattern, tag) for pattern in RELAYED_TAG_PATTERNS):
         # Only what is relayed — the relay is not a way to inject any tag into the app.
@@ -88,3 +91,21 @@ def emit_relayed(envelope: dict) -> None:
     ctx = dict(envelope.get("ctx") or {})
     event_bus.emit(tag, str(envelope.get("target") or ""), envelope.get("data") or {}, ctx=ctx or None)
 
+
+async def announce_relayed_writes(envelope: dict) -> None:
+    """The app's other half for a relayed tag that names rows the other process WROTE.
+
+    A tag says "look again now", but the app's clients render from entity ops, and the other
+    process's writes made none they could hear (its bus has no clients). A placement is such a
+    write: the app re-reads the rows it names and announces them (``announce_placed_rows``).
+    Best-effort like the relay — the rows are durable; a missed announcement costs a refresh.
+    """
+    tag = str(envelope.get("tag") or "")
+    if not tag_matches(MESSAGE_PROJECTED_PATTERN, tag):
+        return
+    from flow_sdk.stream_inbox.stream_inbox_on_tag import announce_placed_rows  # noqa: PLC0415
+
+    try:
+        await announce_placed_rows(str((envelope.get("data") or {}).get("entity_id") or ""))
+    except Exception:  # noqa: BLE001 — the tag itself was relayed; this only speeds the screen up
+        logger.warning("tags: announcing the rows of relayed %s failed", tag, exc_info=True)

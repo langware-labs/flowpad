@@ -719,10 +719,11 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
             raise RuntimeError(f"Install process {process_id} was not found.")
         await process.wait()
         # Re-discover before checking: a fresh install may live in a PATH dir
-        # (or new version-manager dir) the previous sweep didn't know about.
-        from flow_sdk.core.capabilities.discovery import run_discovery
+        # (or new version-manager dir) the previous sweep didn't know about. The
+        # status layer's refresh, so the install reaches every status reader.
+        from flow_sdk.core.status import refresh_status
 
-        await run_discovery([kind])
+        await refresh_status([kind])
         check = await get_capability_registry().test(kind)
         capability.last_check = check.result.model_dump(mode="json")
         started, started_details = _last_setup_parts(capability)

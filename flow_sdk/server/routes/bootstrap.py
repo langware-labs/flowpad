@@ -2113,7 +2113,7 @@ async def initialize_bootstrap() -> BootstrapInfo:
             _local_entities = None
             await _ensure_local_entities()
         user, project, workspace, compute_node = _local_entities
-        from flow_sdk.i18n import get_supported_locales, get_translation_targets
+        from flow_sdk.i18n import get_os_languages, get_supported_locales, get_translation_targets
         from flow_sdk.icons import icons as icon_registry
         from flow_sdk.instance_settings import get_instance_settings
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode
@@ -2138,6 +2138,8 @@ async def initialize_bootstrap() -> BootstrapInfo:
             desktop_info=get_desktop_bootstrap_info(),
             records_root=str(settings.records_root),
             supported_locales=get_supported_locales(),
+            # Off the loop: the Linux probe shells out to gsettings (cached after).
+            user_languages=await asyncio.to_thread(get_os_languages),
             translation_targets=get_translation_targets(),
             supported_pages=_resolve_supported_pages(),
             privacy_mode=get_privacy_mode(),
@@ -2232,16 +2234,14 @@ async def _sniffer_status(user: User) -> tuple[Entity | None, bool]:
 async def _build_info() -> DeferredInfo:
     global _info_cache, _info_cache_ts
     user, project, _, _ = await _ensure_local_entities()
-    from flow_sdk.core.capabilities.harness_state import compute_harness_state
     from flow_sdk.core.capabilities.summary import compute_capabilities_summary
     from flow_sdk.stream_inbox import recompute_unread
     from flow_sdk.system_tools import get_scan_info
 
-    notice, desktop, scan, harness, capabilities, sandbox, sniffer, _ = await asyncio.gather(
+    notice, desktop, scan, capabilities, sandbox, sniffer, _ = await asyncio.gather(
         _optional_info("secret recovery", ensure_secret_recovery()),
         _optional_info("desktop status", _desktop_status()),
         _optional_info("index status", get_scan_info()),
-        _optional_info("harness state", compute_harness_state(wait_for_discovery=False)),
         _optional_info("capability summary", compute_capabilities_summary(wait_for_discovery=False)),
         _optional_info("sandbox", _sandbox_status(user, project)),
         _optional_info("sniffer", _sniffer_status(user)),
@@ -2250,7 +2250,6 @@ async def _build_info() -> DeferredInfo:
     fields = dict(
         desktop_info=desktop,
         scan_info=scan,
-        harness_state=harness,
         capabilities_summary=capabilities.model_dump(mode="json") if capabilities is not None else None,
         notice=notice,
     )

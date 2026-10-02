@@ -24,7 +24,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import shutil
 import tempfile
 import zipfile
@@ -35,9 +34,11 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Protocol
 
 from flow_sdk.assets.layout import Folder
+from flow_sdk.assets.materialize import extended_length_path
 from flow_sdk.assets.transfer import (
     _attachment_snapshot,
     pack_tree,
+    portable_rel_path,
 )
 from flow_sdk.builtin.flow_message import (
     _NON_MATERIALIZING_TYPE_IDS,
@@ -741,7 +742,7 @@ async def _pack_file_backed_attachment(
     """Copy a file-backed asset's on-disk subtree into the bundle.
 
     ``mirror_repo_layout=False`` (an offline export) ignores the sender's repo
-    entirely: no origin, always ``<main_subdir>/<leaf>``. A file handed to a
+    entirely: no origin, always the portable path (``portable_rel_path``). A file handed to a
     stranger has no shared checkout to mirror, and keying by the sender's
     repo-relative path would nest the asset under that repo's folders on the
     receiver (a shipped asset landed at ``flow_sdk/system_projects/…``).
@@ -749,7 +750,8 @@ async def _pack_file_backed_attachment(
     Bundle layout: ``attachment/<type>-@<id>/<in_bundle_rel>/…`` where
     ``in_bundle_rel`` is the asset's repo-relative ``rel_path`` when the asset
     lives inside a git repo (a ``GitOrigin`` is then recorded in ``origins``),
-    else the canonical ``<main_subdir>/<leaf>``. Keying by ``rel_path`` lets the
+    else the portable ``portable_rel_path`` — ``<main_subdir>/<leaf>``, kept nested
+    under its enclosing repo asset when it lives inside one. Keying by ``rel_path`` lets the
     receiver mirror the sender's repo layout via the anchor-free restore. The
     leaf name and every capsule byte are preserved from an existing source.
 
@@ -825,8 +827,6 @@ async def _pack_file_backed_attachment(
     # portable <main_subdir>/<leaf> — kept nested under its enclosing asset when
     # it lives inside one. The restore is anchor-free, so the in-bundle relpath
     # IS the receiver's placement relpath under the project root.
-    from flow_sdk.assets.transfer import portable_rel_path  # noqa: PLC0415
-
     dest = entry_root / PurePosixPath(origin.rel_path if origin is not None else portable_rel_path(src_root, info))
     dest.parent.mkdir(parents=True, exist_ok=True)
     pack_tree(src_root, dest, type_name=entry_type)
@@ -2093,21 +2093,6 @@ def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _extended_length_path(p: Path) -> Path:
-    """Return ``p`` as a Windows extended-length (``\\\\?\\``) path so writes
-    under it bypass the 260-char MAX_PATH limit. No-op off Windows and when the
-    prefix is already present. The prefix requires a fully-qualified,
-    backslash-separated path with no ``.``/``..`` components, so resolve first."""
-    if os.name != "nt":
-        return p
-    resolved = os.path.abspath(str(p))
-    if resolved.startswith("\\\\?\\"):
-        return Path(resolved)
-    if resolved.startswith("\\\\"):  # UNC: \\server\share -> \\?\UNC\server\share
-        return Path("\\\\?\\UNC" + resolved[1:])
-    return Path("\\\\?\\" + resolved)
-
-
 @dataclass
 class _UnpackCtx:
     """The unpack-time state the header-carried entry unpackers read: one
@@ -2348,7 +2333,7 @@ async def unpack_bundle(
         # trip this; this keeps a legitimately-deep asset from breaking a share.
         def _extract() -> None:
             with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(_extended_length_path(tmp_root))
+                zf.extractall(extended_length_path(tmp_root))
 
         # Off-thread: a multi-MB bundle extraction on the sync path must not
         # stall the event loop (same rationale as the indexer's I/O-to-threads).

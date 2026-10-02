@@ -105,15 +105,20 @@ already-authenticated CLI short-circuits without minting a fresh code.
 POST /api/v1/graph/capability/<id>/device-login        # start / restart the flow
 POST /api/v1/graph/capability/<id>/device-login-code    # {code} — paste-back vendors (claude)
 POST /api/v1/graph/capability/<id>/device-login-cancel
-GET  /api/v1/graph/capability/<id>/auth-status          # cheap login probe (no version run)
+POST /api/v1/graph/capability/<id>/auth-status          # the user's explicit Test (may clear a refusal)
 ```
 
-Live progress rides the entity's runtime-only `login_state` / `login_url` /
-`login_code` / `login_accepts_code` / `login_message` fields (`Persist.FALSE`,
-broadcast over WebSocket, never persisted). The frontend watches the entity and
-renders them — it never polls. `auth-status` is the startup gate's cheap check,
-scheduled after primary content readiness; an explicitly opened login flow
-can probe immediately.
+Live progress rides the entity's `login_url` / `login_code` /
+`login_accepts_code` fields, broadcast over WebSocket; the frontend watches the
+entity and renders them — it never polls. The login VERDICT (`login_state`,
+`login_message`, `login_checked_at`) is persisted, and is read through the status
+record rather than off the entity: `GET /api/v1/graph/compute_node/@local/status`
+(`flow status`) answers installed / login / account per harness, stored keys and
+the FlowPad login, and `POST …/status/refresh` (optional `{"kinds": [...]}`) is the
+one verb that re-discovers CLIs and re-probes their logins. Every writer pushes
+`status_changed_msg`, which re-reads status, funding and connections in the UI.
+`auth-status` is a POST because it writes: it is the Test button, the one probe
+allowed to clear a refusal the harness recorded.
 `worker_type_for_kind(kind)` on the registry resolves a harness kind to its
 driver.
 

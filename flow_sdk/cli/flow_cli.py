@@ -1315,6 +1315,10 @@ from flow_sdk.cli.commands.connections_cmd import connections_app
 
 app.add_typer(connections_app, name="connections")
 
+from flow_sdk.cli.commands.status_cmd import status_app
+
+app.add_typer(status_app, name="status")
+
 from flow_sdk.cli.commands.credentials_cmd import credentials_app
 
 app.add_typer(credentials_app, name="credentials")

@@ -28,6 +28,31 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     reset_instance_settings()
 
 
+@pytest.fixture
+async def openrouter_funded(env):
+    """deepagents in api mode on a stored OpenRouter key -- and both undone afterwards.
+
+    The key's shadow record and the capability row live in the session-wide records root and
+    DB, not in this test's FLOW_HOME: left behind, every later test sees an OpenRouter key
+    "stored" that its own secret store cannot open, and deepagents picks it and blocks.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+    from flow_sdk.lm_api import LMApiProvider, delete_lm_api, set_lm_api
+
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    cap = await Capability.get_by_kind(worker_capability_kind("deepagents"))
+    assert cap is not None
+    before = (cap.auth_mode, cap.api_provider)
+    cap.auth_mode = "api"
+    cap.api_provider = "openrouter"
+    await cap.save(notify=False)
+    yield
+    cap.auth_mode, cap.api_provider = before
+    await cap.save(notify=False)
+    await delete_lm_api(LMApiProvider.OPENROUTER)
+
+
 def _write_transcript(process_id: str, events: list[dict]) -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.session_history import (
         deepagents_transcript_path_for_process,
@@ -126,7 +151,7 @@ async def test_resolved_model_slug_matches_the_pre_spawn_stamp_when_no_retry_hap
     assert process.resolved_model_slug == "z-ai/glm-5.3-flash"
 
 
-async def test_headless_prompt_syncs_only_after_the_turn_actually_finishes(monkeypatch, env) -> None:
+async def test_headless_prompt_syncs_only_after_the_turn_actually_finishes(monkeypatch, openrouter_funded) -> None:
     """``run_headless_turn`` SCHEDULES the turn and returns almost immediately ("started", not
     "finished") — syncing right after that ``await`` would read the transcript before the
     subprocess has even launched. This pins the fix: the sync must ride ``on_turn_finally``,
@@ -137,18 +162,7 @@ async def test_headless_prompt_syncs_only_after_the_turn_actually_finishes(monke
     from flow_sdk.builtin.agentic_process.cli_drivers import api_auth as api_auth_module
     from flow_sdk.builtin.agentic_process.cli_drivers.deepagents import driver as driver_module
     from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
-    from flow_sdk.lm_api import LMApiProvider, set_lm_api
     from flow_sdk.responses.response import ApiSuccessResponse
-
-    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
-    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.capability import Capability
-
-    cap = await Capability.get_by_kind(worker_capability_kind("deepagents"))
-    assert cap is not None
-    cap.auth_mode = "api"
-    cap.api_provider = "openrouter"
-    await cap.save(notify=False)
 
     process = AgenticProcess(
         id=mint_uuid(),

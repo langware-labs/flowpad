@@ -4,10 +4,11 @@ import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_open
 import { cn } from '@src/lib/utils';
 import { useIsDev } from '@src/components/view-mode';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { LAUNCHABLE_WORKERS, type WorkerType } from '@src/components/workers/worker-types';
 import { useLastWorkerType } from '@src/components/terminal/openers/useLastWorkerType';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
+import { providerMetaFor } from '@src/tabs/provider-meta';
 
 export type WorkerToolbarMode = 'lastOpened' | 'all';
 export type WorkerToolbarVariant = 'icon-row' | 'menu-list';
@@ -161,7 +162,7 @@ export function WorkerToolbar({
     return (
       <div className="flex flex-col" data-testid={`${testIdPrefix}-launch-menu`}>
         {visibleWorkers.map((worker) => {
-          const Icon = workerIcon(worker);
+          const { Icon, iconClassName } = providerMetaFor(worker);
           return (
             <button
               key={worker}
@@ -171,7 +172,7 @@ export function WorkerToolbar({
               data-testid={`${testIdPrefix}-launch-${worker}`}
               className={cn(MENU_ITEM_CLASS, 'text-foreground', starting && 'opacity-50')}
             >
-              <Icon className="h-3 w-3" />
+              <Icon className={cn('h-3 w-3', iconClassName)} />
               <Trans>Session — {workerLabel(worker)}</Trans>
             </button>
           );
@@ -196,7 +197,7 @@ export function WorkerToolbar({
   return (
     <div className="inline-flex items-center gap-1" data-testid={`${testIdPrefix}-launch-toolbar`}>
       {visibleWorkers.map((worker) => {
-        const Icon = workerIcon(worker);
+        const { Icon, iconClassName } = providerMetaFor(worker);
         return (
           <button
             key={worker}
@@ -207,7 +208,7 @@ export function WorkerToolbar({
             title={t`Start ${workerLabel(worker)}`}
             className={WORKER_ICON_BUTTON_CLASS}
           >
-            <Icon className="h-3.5 w-3.5" />
+            <Icon className={cn('h-3.5 w-3.5', iconClassName)} />
           </button>
         );
       })}

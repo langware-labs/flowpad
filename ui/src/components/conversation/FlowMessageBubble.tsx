@@ -40,7 +40,6 @@ import {
 import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { attachmentFileName } from './ChannelMessageExtras';
-import { MessageContextButton } from './MessageContextButton';
 import { MessageRunStatus } from './MessageRunStatus';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
@@ -213,6 +212,10 @@ interface FlowMessageBubbleProps {
   quoted?: { sender: string; text: string; onJump?: () => void } | null;
   /** Answer this message from the composer (a channel conversation). */
   onReply?: (fm: FlowMessage) => void;
+  /** The task made from this message ("Task it"), resolved by the parent's one per-conversation query. */
+  messageTask?: Task | null;
+  /** "Task it": make this message a task. Omitted → no control (drafts, system rows). */
+  onTaskIt?: (fm: FlowMessage) => void;
 }
 
 export function FlowMessageBubble({
@@ -238,6 +241,8 @@ export function FlowMessageBubble({
   viewerCloudUserId = null,
   attachmentProjectId,
   messageAttachments,
+  messageTask = null,
+  onTaskIt,
   showEmailHeaders = false,
   channelTraits = null,
   quoted = null,
@@ -705,7 +710,14 @@ export function FlowMessageBubble({
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
-      <MessageContextButton fm={fm} projectId={attachmentProjectId} />
+      {messageTask && (
+        <span className="mt-1.5 inline-flex" data-testid="message-task-chip">
+          <EntityChip
+            entity={{ typeId: messageTask.typeId, name: messageTask.title || t`Task` }}
+            projectId={attachmentProjectId}
+          />
+        </span>
+      )}
     </>
   );
 
@@ -757,6 +769,13 @@ export function FlowMessageBubble({
           onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
         }
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
+        taskIt={
+          messageTask
+            ? { onClick: () => navigation.openDock(messageTask.dockPointer), open: true }
+            : onTaskIt && !fm.is_draft
+              ? { onClick: () => onTaskIt(fm), open: false }
+              : undefined
+        }
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
         onOpenPlanSession={onOpenPlanSession}
         onViewPlan={onViewPlan}

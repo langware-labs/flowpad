@@ -28,6 +28,7 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
+  | 'status_changed_msg'
   | 'tag_msg'
   | 'ui_command'
   | 'recovered_msg'
@@ -635,6 +636,12 @@ export class ConnectionManager extends EventEmitter {
     }
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
+    }
+    if (data.message_type === 'status_changed_msg') {
+      // A status fact changed (harness install/login, a stored key, the hub login): a signal to
+      // re-read `status` and `funding`, not a payload.
+      this.emit('on_status_changed_msg');
+      return;
     }
     if (data.message_type === 'tag_msg') {
       return this.onTagMessage(data as TagMsg);

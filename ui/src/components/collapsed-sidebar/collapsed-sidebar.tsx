@@ -222,6 +222,10 @@ export function CollapsedSidebar() {
         }
         handleClick(ViewType.SHELL);
         return;
+      case 'credentials':
+        // Not `openTab`: `openCredentials` puts the active project in the URL.
+        navigation.openCredentials();
+        return;
       default:
         handleClick(navMeta[id]?.viewType ?? null);
     }

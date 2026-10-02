@@ -16,7 +16,17 @@ import pytest
 from cryptography.fernet import Fernet
 
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+from flow_sdk.core.status import InstallState, LoginState
 from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
+
+# CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("harness_installed")
+
+# Bound before any fixture patches it, for the one test that runs the real sweep.
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: E402
+    worker_executable as _REAL_WORKER_EXECUTABLE,
+)
 
 
 @pytest.fixture
@@ -64,6 +74,56 @@ async def _clean(env):
             await cap.save(notify=False)
     llm_endpoint.clear_hub_llm_endpoint()
     llm_endpoint.reset_cache()
+
+
+@pytest.fixture(autouse=True)
+def _status_facts(monkeypatch):
+    """The STATUS facts funding reads, made deterministic for a funding suite.
+
+    Funding no longer derives these itself -- it asks ``core.status`` -- and this file tests
+    the ladder, not the facts: every CLI reads installed (not "whatever this machine has"),
+    the hub reads signed in exactly when a hub key is stored (the hub's own verification is
+    pinned in ``test_status_layer.py``), and the spawn-time probe of an unchecked login is
+    off so a test's ``login_state`` is the verdict it gets. A test that is ABOUT one of these
+    overrides it.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
+    from flow_sdk.core import status
+    from flow_sdk.core.status import InstallState
+
+    monkeypatch.setattr(status, "harness_install", lambda worker: InstallState.INSTALLED)
+    monkeypatch.setattr(llm_source, "_hub_signed_in", lambda: bool(resolve_hub_api_key()))
+
+    async def no_probe(worker_type):
+        return None
+
+    monkeypatch.setattr(llm_source, "check_unchecked_login", no_probe)
+
+
+async def _resolve_source(process):
+    """The verdict that funds *process* (the endpoint's half dropped)."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+
+    return (await resolve_llm_endpoint(process)).source
+
+
+async def _list_sources(worker_type, scope=None):
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
+
+    return [c.source for c in await list_llm_candidates(worker_type, scope or LLMScope())]
+
+
+async def _signed_in(*workers: str) -> None:
+    """A device login a probe CONFIRMED -- the only kind that funds a turn."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+    from flow_sdk.builtin.capability import Capability
+
+    for worker in workers:
+        cap = await Capability.get_by_kind(worker_capability_kind(worker))
+        cap.login_state = DeviceLoginState.AUTHENTICATED
+        await cap.save(notify=False)
 
 
 EP1 = "llm_endpoint-11111111-2222-4333-8444-555555555555"
@@ -151,60 +211,78 @@ _ERROR = DeviceLoginState.ERROR
 
 
 @pytest.mark.parametrize(
-    ("state", "wallet", "eligible", "auto"),
+    ("login", "eligible", "authority"),
     [
-        (_AUTH, False, True, True),
-        (_AUTH, True, True, True),  # proven beats a mere offer
-        (_IDLE, False, False, False),  # a probe SAID so
-        (_IDLE, True, False, False),
-        (_ERROR, True, False, False),
-        (None, False, True, True),  # nobody asked: today's desktop default
-        (None, True, True, False),  # nobody asked, but a wallet is there to lose to
-        # the string forms too -- the field is ``(str, Enum)``, so both reach this code
-        ("authenticated", False, True, True),
-        ("idle", False, False, False),
+        (LoginState.SIGNED_IN, True, "cached"),
+        (LoginState.SIGNED_OUT, False, "cached"),
+        (LoginState.ERROR, False, "cached"),
+        (LoginState.SIGNING_IN, False, "cached"),
+        # Nobody has checked: NOT presumed to work. The spawn probes it before resolving.
+        (LoginState.NOT_CHECKED, False, "presumed"),
     ],
 )
-def test_the_device_rung_only_asserts_what_it_was_told(state, wallet, eligible, auto) -> None:
-    """``login_state`` is ``Persist.FALSE``, so ``None`` means "nobody has asked" -- the
-    COMMON state after any restart, not an edge case. We rule a device login out only on a
-    verdict we were actually given, and let a spendable wallet break the tie when we have
-    none."""
+def test_the_device_rung_funds_only_a_login_a_probe_confirmed(login, eligible, authority) -> None:
+    """Funding translates the STATUS record's login; it never presumes one works."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    source = _device_source("claude", state, wallet).source
-    assert (source.eligible, source.auto) == (eligible, auto)
-    # a verdict we were GIVEN is cached evidence; no verdict is only a presumption
-    assert str(source.authority) == ("presumed" if state is None else "cached")
+    source = _device_source("claude", InstallState.INSTALLED, login).source
+    assert (source.eligible, source.auto) == (eligible, eligible)
+    assert str(source.authority) == authority
     if not source.eligible:
         assert source.reason, "an ineligible source must always say why"
     else:
         assert not source.reason, "an eligible source must not carry a caveat as its reason"
 
 
-def test_the_device_rung_says_nothing_about_being_installed() -> None:
-    """Presence is ``build_worker_spawn_env``'s question, and it answers it better."""
+@pytest.mark.parametrize("install", [InstallState.NOT_INSTALLED, InstallState.UNKNOWN])
+@pytest.mark.parametrize("login", [LoginState.N_A, LoginState.SIGNED_IN, LoginState.NOT_CHECKED])
+def test_a_device_login_for_a_cli_that_is_not_installed_funds_nothing(install, login) -> None:
+    """The proven bug: the boot sweep only probes INSTALLED CLIs, so a missing one kept
+    ``login_state=None`` forever, and presuming that login worked made every absent vendor
+    CLI the active funding source on a box with nothing installed."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    assert _device_source("claude", None, False).source.eligible
+    source = _device_source("claude", install, login).source
+    assert not source.eligible
+    assert not source.auto
+    assert source.reason == "claude is not installed"
 
 
 # ── the default order ────────────────────────────────────────────────────────────
 
 
-async def test_nothing_configured_falls_back_to_the_device_login(env) -> None:
+async def test_a_signed_in_device_login_funds_a_box_with_nothing_else(env) -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
 
+    await _signed_in("claude")
     assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "device"
 
 
-async def test_a_stored_key_does_not_outrank_an_unprobed_device_login(env) -> None:
+async def test_a_login_nobody_checked_funds_nothing_and_says_why(env) -> None:
+    """The Windows box: nothing configured, the login never probed. Refused with a reason --
+    not spawned on a login that may not exist."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError, resolve_llm_endpoint
+
+    with pytest.raises(LLMSourceError, match="claude sign-in has not been checked"):
+        await resolve_llm_endpoint(_process())
+
+
+async def test_a_stored_key_does_not_outrank_a_signed_in_device_login(env) -> None:
     """Ascending marginal cost: a subscription already paid for beats spending money."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
     from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
+    await _signed_in("claude")
     set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
     assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "device"
+
+
+async def test_a_stored_key_funds_a_harness_whose_login_nobody_checked(env) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+    from flow_sdk.lm_api import LMApiProvider, set_lm_api
+
+    set_lm_api("sk-or-test", LMApiProvider.OPENROUTER)
+    assert str((await resolve_llm_endpoint(_process())).endpoint.kind) == "api_key"
 
 
 async def test_a_bound_box_funds_an_unprobed_harness_from_its_endpoint(env, monkeypatch) -> None:
@@ -259,7 +337,7 @@ async def test_a_signed_out_device_login_is_ruled_out_with_a_reason(env) -> None
 
     listed = await list_llm_candidates("claude")
     assert _by_kind(listed, "device"), "the device rung is always listed, eligible or not"
-    out = _device_source("claude", "idle", False).source
+    out = _device_source("claude", InstallState.INSTALLED, LoginState.SIGNED_OUT).source
     assert not out.eligible and "signed out" in out.reason
 
 
@@ -269,7 +347,7 @@ async def test_a_signed_out_device_login_is_ruled_out_with_a_reason(env) -> None
 async def test_a_process_endpoint_rules_every_other_source_out_with_a_reason(env, monkeypatch) -> None:
     """A constraint is rendered ONTO the list, so the picker's greyed rows and the spawn
     error are the same data and cannot disagree."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources, resolve_llm_endpoint
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
     from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     _bind(monkeypatch)
@@ -280,7 +358,7 @@ async def test_a_process_endpoint_rules_every_other_source_out_with_a_reason(env
     assert str(endpoint.kind) == "hub" and chosen.endpoint_typeid == EP2
     assert str(chosen.origin) == "process"
 
-    listed = await list_llm_sources("claude", LLMScope.of_process(process))
+    listed = await _list_sources("claude", LLMScope.of_process(process))
     others = [s for s in listed if s.endpoint_typeid != EP2]
     assert others, "the alternatives are still listed -- ruled out, not hidden"
     assert all(not s.eligible for s in others)
@@ -313,13 +391,13 @@ async def test_a_project_endpoint_constrains_every_process_in_it(env, monkeypatc
     """The project rung. A process that names its own endpoint still wins over it -- most
     specific first -- which is what keeps the override per-process rather than a way to
     change what every other process on the box spends."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
     from flow_sdk.builtin.project import Project
 
     _bind(monkeypatch)
     project = await Project(name="constrained", llm_endpoint_typeid=EP2).save()
 
-    chosen = await resolve_llm_source(_process(project_id=project.id))
+    chosen = await _resolve_source(_process(project_id=project.id))
     assert chosen.endpoint_typeid == EP2 and str(chosen.origin) == "project"
 
     device = _by_kind(
@@ -328,7 +406,7 @@ async def test_a_project_endpoint_constrains_every_process_in_it(env, monkeypatc
     assert not device.eligible and "this project requires" in device.reason
 
     # a process naming its own endpoint outranks the project's
-    own = await resolve_llm_source(_process(endpoint=EP1, project_id=project.id))
+    own = await _resolve_source(_process(endpoint=EP1, project_id=project.id))
     assert own.endpoint_typeid == EP1 and str(own.origin) == "process"
 
 
@@ -337,6 +415,7 @@ async def test_a_process_without_a_project_is_not_constrained(env) -> None:
     project contributes no constraint rather than failing closed."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
 
+    await _signed_in("claude")
     assert str((await resolve_llm_endpoint(_process(project_id=None))).endpoint.kind) == "device"
 
 
@@ -344,10 +423,9 @@ async def test_an_endpoint_nobody_has_heard_of_still_resolves(env, monkeypatch) 
     """Not in the local list is not a refusal: the hub authorizes every invoke against the
     endpoint in the URL, so a typeid we do not know can only earn a 401/403 -- and a
     freshly shared endpoint must work before any cache has heard of it."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_source
 
     _bind(monkeypatch)
-    chosen = await resolve_llm_source(_process(endpoint=EP2))
+    chosen = await _resolve_source(_process(endpoint=EP2))
     assert chosen.endpoint_typeid == EP2
 
 
@@ -377,7 +455,7 @@ async def test_an_unavailable_preference_fails_loudly_rather_than_spending_somet
     """Never a silent fall-through: substituting another source would spend a subscription
     or a budget the caller did not choose."""
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError
     from flow_sdk.builtin.capability import Capability
 
     cap = await Capability.get_by_kind(worker_capability_kind("claude"))
@@ -385,7 +463,7 @@ async def test_an_unavailable_preference_fails_loudly_rather_than_spending_somet
     await cap.save(notify=False)
 
     with pytest.raises(LLMSourceError) as excinfo:
-        await resolve_llm_source(_process())
+        await _resolve_source(_process())
     assert "no openrouter key" in str(excinfo.value), "the failure is a rendering of the list"
 
 
@@ -395,7 +473,6 @@ async def test_an_unavailable_preference_fails_loudly_rather_than_spending_somet
 async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
     """A spawn must never wait on the hub to find out what may fund it."""
     import flow_sdk.cloud_client.transport.hub_http as hub_http
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_source
 
     _bind(monkeypatch)
     calls: list[str] = []
@@ -405,7 +482,7 @@ async def test_resolution_makes_no_network_call(env, monkeypatch) -> None:
         return None
 
     monkeypatch.setattr(hub_http, "hub_get", _no_network)
-    await resolve_llm_source(_process())
+    await _resolve_source(_process())
     assert calls == [], "resolution reached for the hub"
 
 
@@ -439,7 +516,7 @@ def test_every_harness_declares_all_three_tiers() -> None:
 
 
 @pytest.mark.long  # 2.14s -- runs the real sweep, which spawns the env-probe subprocess
-async def test_the_startup_sweep_resolves_the_device_rungs_login_state(env) -> None:
+async def test_the_startup_sweep_resolves_the_device_rungs_login_state(env, monkeypatch) -> None:
     """The startup sweep must leave ``login_state`` holding a VERDICT, not ``None``.
 
     ``None`` is the whole ladder's blind spot. ``_device_source`` reads it as "nobody has
@@ -459,12 +536,16 @@ async def test_the_startup_sweep_resolves_the_device_rungs_login_state(env) -> N
     Either verdict passes this test. LOGGED_IN and LOGGED_OUT are both answers; only silence
     is the bug.
     """
+    # The REAL sweep, so the real executable: this file's `harness_installed` fakes every CLI at
+    # /usr/local/bin/<worker>, and a probe of a binary that is not there answers "unknown".
+    import flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver as base
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.core.capabilities import discovery
     from flow_sdk.core.capabilities.discovery import ensure_discovered, get_capability_value
     from flow_sdk.core.capabilities.models import CapabilityKind
 
+    monkeypatch.setattr(base, "worker_executable", _REAL_WORKER_EXECUTABLE)
     discovery._DISCOVERED_ONCE.clear()  # a sweep may already have run in this session
     assert await ensure_discovered(), "the startup sweep did not complete"
 
@@ -532,6 +613,7 @@ async def test_a_bound_endpoint_a_successful_listing_denies_is_not_offered(env, 
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_endpoint
     from flow_sdk.instance_settings import llm_endpoint as settings
 
+    await _signed_in("claude")
     _bind(monkeypatch)  # box bound to EP1
     # A listing that SUCCEEDED and does not mention EP1 -- what the hub answers once EP1 is gone.
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
@@ -596,14 +678,14 @@ async def test_a_process_constraint_on_a_vanished_endpoint_still_fails_loudly(en
     """
     import time
 
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_candidates
     from flow_sdk.instance_settings import llm_endpoint as settings
 
     _bind(monkeypatch)
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
     assert settings.listing_supersedes_binding()
 
-    chosen = await resolve_llm_source(_process(endpoint=EP2))
+    chosen = await _resolve_source(_process(endpoint=EP2))
     assert chosen.endpoint_typeid == EP2, "a named endpoint was substituted after the listing dropped it"
     device = _by_kind(await list_llm_candidates("claude", LLMScope.of_process(_process(endpoint=EP2))), "device")[0]
     assert not device.eligible and "this process requires" in device.reason
@@ -619,7 +701,7 @@ async def test_an_explicit_hub_preference_fails_rather_than_spending_the_subscri
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.instance_settings import llm_endpoint as settings
 
@@ -630,7 +712,7 @@ async def test_an_explicit_hub_preference_fails_rather_than_spending_the_subscri
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
 
     with pytest.raises(LLMSourceError):
-        await resolve_llm_source(_process())
+        await _resolve_source(_process())
 
 
 # ── what the auth-status action REPORTS about a key-funded harness ────────────────
@@ -682,7 +764,6 @@ async def test_the_picker_still_offers_a_login_the_preference_ruled_out(env, mon
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (
         LLMSourceError,
         llm_picker_view,
-        resolve_llm_source,
     )
     from flow_sdk.builtin.capability import Capability
 
@@ -699,7 +780,7 @@ async def test_the_picker_still_offers_a_login_the_preference_ruled_out(env, mon
     # The spawn still fails loudly: a preference is a constraint, and substituting the
     # personal subscription for the budget the user chose is the thing we must never do.
     with pytest.raises(LLMSourceError):
-        await resolve_llm_source(_process())
+        await _resolve_source(_process())
 
     view = await llm_picker_view("claude")
     device = _by_kind(view.offers, "device")[0]
@@ -829,7 +910,7 @@ async def test_deleting_the_wallet_hands_a_signed_out_box_back_nothing(env, monk
     import time
 
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import LLMSourceError
     from flow_sdk.builtin.capability import Capability
     from flow_sdk.instance_settings import llm_endpoint as settings
 
@@ -841,7 +922,7 @@ async def test_deleting_the_wallet_hands_a_signed_out_box_back_nothing(env, monk
     settings._list_cache[settings.get_instance_settings().instance_name] = (time.monotonic(), [])
 
     with pytest.raises(LLMSourceError) as excinfo:
-        await resolve_llm_source(_process())
+        await _resolve_source(_process())
     assert "signed out" in str(excinfo.value)
 
 
@@ -856,9 +937,10 @@ async def test_the_picker_sees_a_project_pin_when_it_is_given_the_project(env, m
     box-wide winner while every process in that project actually spent the project's
     endpoint. Handed the project, the two answers are the same answer.
     """
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view, resolve_llm_source
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view
     from flow_sdk.builtin.project import Project
 
+    await _signed_in("claude")
     _bind(monkeypatch)
     project = await Project(name="pinned", llm_endpoint_typeid=EP2).save()
 
@@ -867,7 +949,7 @@ async def test_the_picker_sees_a_project_pin_when_it_is_given_the_project(env, m
     assert box_wide.chosen.source.endpoint_typeid != EP2, "no scope, no constraint -- unchanged"
 
     scoped = await llm_picker_view("claude", LLMScope.of_project(project.id))
-    spawn = await resolve_llm_source(_process(project_id=project.id))
+    spawn = await _resolve_source(_process(project_id=project.id))
     assert scoped.chosen is not None
     assert scoped.chosen.source.endpoint_typeid == spawn.endpoint_typeid == EP2
     assert str(scoped.chosen.source.origin) == "project"
@@ -900,10 +982,9 @@ async def test_a_scoped_status_reports_what_that_project_spends(env, monkeypatch
 async def test_an_empty_scope_is_the_box_wide_question(env, monkeypatch) -> None:
     """``LLMScope()`` must be indistinguishable from passing nothing, because that is what
     every caller with no project in hand sends."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import list_llm_sources
 
     _bind(monkeypatch)
-    assert await list_llm_sources("claude", LLMScope()) == await list_llm_sources("claude")
+    assert await _list_sources("claude", LLMScope()) == await _list_sources("claude")
 
 
 async def test_a_process_scope_still_beats_its_project(env, monkeypatch) -> None:
@@ -1082,46 +1163,24 @@ def _candidate(kind: str, authority):
     return Candidate(endpoint, LLMSource(endpoint_typeid=f"llm_endpoint:{kind}-1", authority=authority))
 
 
-def test_an_unprobed_device_login_is_unverified():
-    """``PRESUMED`` on a device login means nobody asked — and the probe leaves ``login_state``
-    unset when it cannot reach a verdict, INCLUDING when the CLI is not installed at all. So a
-    presumed device login is routinely one that cannot exist. Observed before this flag: a box
-    with claude signed out and copilot/opencode absent reported "codex device login funds
-    codex" and offered no way to fix it."""
-    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
+@pytest.mark.parametrize(
+    ("install", "login", "code"),
+    [
+        (InstallState.NOT_INSTALLED, LoginState.N_A, "not_installed"),
+        (InstallState.INSTALLED, LoginState.NOT_CHECKED, "login_not_checked"),
+        (InstallState.INSTALLED, LoginState.SIGNED_OUT, "signed_out"),
+        (InstallState.INSTALLED, LoginState.SIGNED_IN, ""),
+    ],
+)
+def test_a_refusal_rides_the_wire_as_a_code(install, login, code):
+    """``reason`` is the sentence; ``reason_code`` is the same answer for code, so a surface
+    offering a fix ("Install", "Sign in") never parses English."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _device_source
 
-    assert _candidate("device", LLMSourceAuthority.PRESUMED).unverified is True
-
-
-def test_a_probed_device_login_is_verified_either_way():
-    """A probe that reached ANY verdict writes ``CACHED`` — signed in or signed out — so this
-    flags only the un-asked, never a login we have actually looked at."""
-    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
-
-    assert _candidate("device", LLMSourceAuthority.CACHED).unverified is False
-    assert _candidate("device", LLMSourceAuthority.PROVEN).unverified is False
-
-
-def test_a_presumed_hub_endpoint_is_NOT_unverified():
-    """``PRESUMED`` means something else entirely one kind over: the chain's credentials live
-    on the hub and only the hub finds out, at invoke time. That is the honest local ceiling,
-    not a gap in our diligence — and flagging it would reject the very source a fresh FlowPad
-    login exists to produce."""
-    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
-
-    assert _candidate("hub", LLMSourceAuthority.PRESUMED).unverified is False
-    assert _candidate("api_key", LLMSourceAuthority.PRESUMED).unverified is False
-
-
-def test_the_flag_rides_the_wire():
-    """Published, because the CLI and the setup screen both need it and neither can derive it
-    from the source alone — it takes the endpoint's kind. One producer, two readers."""
-    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceAuthority
-
-    wire = _candidate("device", LLMSourceAuthority.PRESUMED).to_wire()
-
-    assert wire["unverified"] is True
-    assert wire["endpoint_typeid"] == "llm_endpoint:device-1", "the source's own fields survive"
+    wire = _device_source("claude", install, login).source.model_dump(mode="json")
+    assert wire["reason_code"] == code
+    assert bool(wire["reason"]) == bool(code)
+    assert "unverified" not in wire, "nothing is presumed any more, so there is nothing to flag"
 
 
 # ── public endpoints: a hub budget spendable with NO hub login ────────────────────
@@ -1300,3 +1359,24 @@ async def test_call_returns_10_a_model_no_tools_runs_as_written(monkeypatch, tmp
     ns = await run_fence(setup, {}, filename="call-returns.md setup")
     ns = await run_fence(tenth, ns, filename="call-returns.md §10")
     assert type(ns["answer"]).__name__ == "PromptResult" and "pong" in ns["answer"].text.lower()
+
+
+async def test_a_harness_that_is_not_installed_is_funded_by_nothing(env, monkeypatch) -> None:
+    """A hub budget the box can spend does not fund a CLI that is not on the machine.
+
+    Found on a rig with no vendor CLI installed and FlowPad signed in: every harness resolved
+    to the hub endpoint, so the footer said "Claude · funded by a hub endpoint" for a CLI that
+    cannot run. Every source stays listed; none is eligible, and the reason names the fix.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view
+    from flow_sdk.core import status
+
+    monkeypatch.setattr(status, "harness_install", lambda worker: InstallState.NOT_INSTALLED)
+    _bind(monkeypatch)
+
+    view = await llm_picker_view("claude")
+
+    assert view.chosen is None
+    assert view.blocked == "claude is not installed"
+    assert _by_kind(view.offers, "hub"), "the budget is still listed -- only not spendable here"
+    assert not any(c.source.eligible for c in view.offers)

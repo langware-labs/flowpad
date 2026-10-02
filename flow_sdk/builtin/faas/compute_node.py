@@ -1742,7 +1742,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         server has no notion of "the selected project", which lives in the
         client. See ``core/connections/status.py`` for what each kind costs.
 
-        A pure read. ``check-harness-logins`` is the verb that asks the vendor
+        A pure read. ``status/refresh`` is the verb that asks the vendor
         CLIs; keeping it out of here is what stops a GET from spawning
         subprocesses on the path ``require()`` resolves through.
 
@@ -1757,21 +1757,27 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         rows = await list_connections(project=project, include_unconnected=include_unconnected)
         return ApiSuccessResponse(data={"connections": [r.model_dump(mode="json") for r in rows]})
 
-    @action.post(action_name="check-harness-logins")
-    async def check_harness_logins_action(self, force: bool = False) -> "ApiResponse":
-        """Ask the installed harness CLIs whether they are signed in.
+    @action.all(action_name="status", methods=["get", "post"])
+    async def status_action(self) -> "ApiResponse":
+        """The status record: harnesses (installed, login, account), stored keys, hub login.
 
-        A POST because it writes: each verdict is mirrored onto the harness
-        ``Capability``, which is what makes the connections table, the LLM
-        sources screen and the login modal agree at once.
-
-        Only the harnesses nobody has asked about, unless ``force`` — the field
-        it writes means exactly "nobody has asked", so re-probing an answered
-        harness would re-shell a vendor CLI to learn what is already known.
+        GET is a pure read of the stores that own each fact -- no probe, no network.
+        POST ``status/refresh`` (optional body ``{"kinds": [...]}``) is the one verb that
+        re-discovers CLIs and re-probes their logins; it returns the refreshed record.
         """
-        from flow_sdk.core.connections.status import check_harness_logins  # noqa: PLC0415
+        from flow_sdk.core.status import build_status, refresh_status  # noqa: PLC0415
 
-        return ApiSuccessResponse(data={"checked": await check_harness_logins(force=force)})
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        sub_path = (request_info.sub_path or "").strip("/") if request_info else ""
+        if method == "POST":
+            if sub_path != "refresh":
+                return ApiFailResponse(message=f"unknown status verb {sub_path!r}; POST status/refresh")
+            body = await request_info.get_post_data() or {}
+            kinds = body.get("kinds") if isinstance(body, dict) else None
+            await refresh_status(list(kinds) if kinds else None)
+        status = await build_status()
+        return ApiSuccessResponse(data=status.model_dump(mode="json"))
 
     @action.all(action_name="get-machine-status")
     async def get_machine_status_action(self):

@@ -6,21 +6,13 @@ one ``/snippet/terminal`` names, typed into through the shell's ``run-command``.
 """
 
 import asyncio
-import os
 
 import pytest
-
-from flow_sdk.core import snippet as snippet_mod
 
 pytestmark = pytest.mark.asyncio
 
 SNIPPET = "import sys\n# %% flowpad:hidden\nimport json\n# %% flowpad:init\nd = {'a': 1}\n# %% flowpad:snippet\nprint(json.dumps(d))\n"
 
-
-@pytest.fixture(autouse=True)
-def _toolchain_path(monkeypatch):
-    """The route looks toolchains up on a login shell's PATH; python3 is on ours."""
-    monkeypatch.setattr(snippet_mod, "_terminal_path", lambda: os.environ["PATH"])
 
 
 async def _post(client, verb: str, body: dict) -> dict:

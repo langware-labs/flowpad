@@ -1597,17 +1597,33 @@ class SQLiteDBDriver(DBDriver):
         Read under the SAME writer transaction as the following UPDATE. A
         pre-save entity hook cannot provide this guarantee: another writer can
         commit between its read and the actual database update.
+
+        The hook is asked on the INSTANCE being saved (a classmethod hook binds
+        the same way), so a policy may depend on what this copy itself set —
+        ``ProjectedFields`` keeps every projection the save did not write. A key
+        absent from ``data`` was dumped as None (``exclude_none``), so it reads
+        back as the field default. The write-back holds a projection guard open
+        when the entity has one (``_projection_write``).
         """
-        field_policy = getattr(entity.__class__, "preserved_fields_on_save", None)
+        field_policy = getattr(entity, "preserved_fields_on_save", None)
         if field_policy is None:
             return
         result = await session.execute(select(EntitySchema.data).where(EntitySchema.id == entity.id))
         raw = result.scalar_one_or_none()
         current_data = json.loads(raw) if isinstance(raw, str) else (raw or {})
-        for field_name in field_policy(current_data):
-            field = entity.__class__.model_fields[field_name]
-            value = TypeAdapter(field.annotation).validate_python(current_data.get(field_name))
-            setattr(entity, field_name, value)
+        preserved = field_policy(current_data)
+        if not preserved:
+            return
+        write_through = getattr(entity, "_projection_write", nullcontext)
+        with write_through():
+            for field_name in preserved:
+                field = entity.__class__.model_fields[field_name]
+                stored = (
+                    current_data[field_name]
+                    if field_name in current_data
+                    else field.get_default(call_default_factory=True)
+                )
+                setattr(entity, field_name, TypeAdapter(field.annotation).validate_python(stored))
 
     async def _create_entity(self, entity: DBBaseRecord, owner: TypeId | None, session: AsyncSession) -> DBBaseRecord:
         """Create a new entity.

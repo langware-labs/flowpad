@@ -206,7 +206,7 @@ export interface BrowseableRoot extends Browseable {
 }
 
 /**
- * Inline hover action rendered to the right of a row.
+ * Inline hover action, rendered on the row's edge opposite the chevron.
  */
 export interface ToolbarAction {
   /** Stable id (React key). */
@@ -222,11 +222,14 @@ export interface ToolbarAction {
    *  want to navigate, use the row's `pointer` instead. */
   run: () => void | Promise<void>;
 
-  /** When to show the button. Default: `'hover'`. */
-  visibleWhen?: 'hover' | 'always' | 'selected';
-
   /** Optional busy indicator while `run()` is pending. Defaults to true. */
   showBusyIndicator?: boolean;
+
+  /** Removes something. As a button, the first click only ARMS it (it turns
+   *  into a confirm check) and the second runs it; leaving disarms. As a
+   *  context-menu item it is styled destructive and runs on select — opening
+   *  the menu was already the deliberate first step. */
+  destructive?: boolean;
 }
 
 /**

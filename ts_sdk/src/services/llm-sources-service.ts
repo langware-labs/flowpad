@@ -64,20 +64,26 @@ export interface LLMEndpointOffer {
   can_administer: boolean | null;
 }
 
+/** The hub endpoint this box is bound to — mirrors `FundingBindingSpec`. */
+export interface FundingBinding {
+  endpoint_typeid: string;
+  invoke_path: string;
+  invoke_url: string;
+  provider: string;
+  name: string;
+  /** A PUBLIC endpoint: spendable with no hub login (the id is the bearer). */
+  public: boolean;
+}
+
+/** What funds each harness — mirrors `FundingStatusSpec`. Funding facts only: whether a CLI is
+ *  installed or signed in, which keys are stored and who the hub user is are STATUS facts
+ *  (`StatusRecord`), never repeated here. */
 export interface LLMFundingStatus {
   /** Every endpoint this user may spend — their allocations AND the catalog-visible global
    *  root, which the access-scoped listing alone would miss. */
   available: LLMEndpointOffer[];
-  endpoint_typeid: string | null;
-  invoke_url: string | null;
-  name: string | null;
-  provider: string | null;
-  hub_logged_in: boolean;
-  /** Who the hub thinks this box is (`user-<uuid>`), in the spelling an endpoint's
-   *  `holder_typeid` uses — null when signed out. The box's LOCAL user is a different
-   *  id entirely, so this is the only way a screen can tell a budget allocated TO this
-   *  person from one they merely administer. */
-  hub_user_typeid: string | null;
+  /** The bound hub endpoint, or null. */
+  binding: FundingBinding | null;
   /** Per capability kind (`harness.claude.cli`), every source the harness HAS — each judged on
    *  its own credential alone. This is the list to choose FROM, so a row is ineligible here only
    *  when the row itself is unusable (signed out, no key stored), never because another source is
@@ -101,6 +107,21 @@ export interface LLMFundingStatus {
   endpoints: Record<string, LLMEndpointOffer>;
   /** Capability kinds whose resolved source IS the bound endpoint. */
   active_for: string[];
+  /** Is the box SET UP — decided once, in Python (`DefaultFundingSpec`). */
+  default: DefaultFunding;
+}
+
+/**
+ * What funds the harness a person is about to run (the user's default). An installed default is
+ * set up only when it is funded; one not yet installed accepts any funded harness. Every surface
+ * that asks "is this box set up" reads this, so none can answer it differently.
+ */
+export interface DefaultFunding {
+  kind: string;
+  installed: boolean;
+  source: LLMSource | null;
+  /** Why nothing answers, when `source` is null. */
+  reason: string;
 }
 
 export class LlmSourcesService {

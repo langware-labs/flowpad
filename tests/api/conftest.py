@@ -28,6 +28,7 @@ from httpx import ASGITransport, AsyncClient
 from flow_sdk.builtin.user import User
 from flow_sdk.responses.response import ApiResponse
 from flow_sdk.server.app import app
+from tests.utils.harness_installed import declare_harnesses_installed
 
 
 async def _seed_usable_worker_source(worker_type: str):
@@ -46,14 +47,16 @@ async def _seed_usable_worker_source(worker_type: str):
 
 
 @pytest_asyncio.fixture
-async def usable_claude_source():
-    """Give Claude lifecycle tests a usable cached device source."""
+async def usable_claude_source(monkeypatch):
+    """Give Claude lifecycle tests a usable cached device source: installed and signed in."""
+    declare_harnesses_installed(monkeypatch)
     await _seed_usable_worker_source("claude")
 
 
 @pytest_asyncio.fixture
-async def usable_codex_source():
-    """Give Codex lifecycle tests a usable source, restoring it afterward."""
+async def usable_codex_source(monkeypatch):
+    """Give Codex lifecycle tests a usable source (installed and signed in), restoring it afterward."""
+    declare_harnesses_installed(monkeypatch)
     capability, previous_login = await _seed_usable_worker_source("codex")
     try:
         yield

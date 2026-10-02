@@ -754,6 +754,14 @@ export class Project extends APIEntity<Project> {
     return this.post<{ home_page: string | null }>('set-home-page', { typeid: typeid ?? '' });
   }
 
+  /** Replace the env files this project's credentials read besides the root `.env.local`
+   *  (project-relative paths, read in order, never written). Written into the project
+   *  manifest, so it travels with the repo. The backend refuses a path outside the project.
+   *  Returns the list as now declared. */
+  async setEnvFiles(paths: string[]): Promise<{ env_files: string[] }> {
+    return this.post<{ env_files: string[] }>('set-env-files', { paths });
+  }
+
   /** Is this project ready here (`GET project/<id>/setup-requirements`)? Static: callers hold an id. */
   static async setupRequirements(projectId: string): Promise<ProjectReadiness | null> {
     const actionInfo = new ActionInfo('setup-requirements', Project.type, projectId, 'GET');

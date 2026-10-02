@@ -27,6 +27,7 @@ import os
 import shutil
 import sys
 
+from flow_sdk.core.capabilities.env_probe import adopt_path
 from flow_sdk.core.capabilities.models import CapabilityValue
 
 logger = logging.getLogger(__name__)
@@ -98,6 +99,11 @@ def resolve_capability_value(kind: str) -> CapabilityValue | None:
     value = runner.value_from_executable_path(resolved, source="this process's PATH")
     set_capability_value(value)
     return value
+
+
+def has_discovered() -> bool:
+    """Whether the first full sweep has finished -- before it, an absent value is not an answer."""
+    return _DISCOVERED_ONCE.is_set()
 
 
 async def ensure_discovered() -> bool:
@@ -205,6 +211,10 @@ async def _run_discovery_inner(kinds: list[str] | None) -> dict[str, CapabilityV
                 if isinstance(candidate, CliCapabilityRunner):
                     cli_executables.add(candidate.executable)
     probe = await _run_env_probe(sorted(cli_executables))
+    if not probe.get("fallback") and probe.get("path"):
+        # A sweep runs at boot, on a capability refresh and after an install finishes: the PATH it
+        # just read is the freshest there is, so everything spawned next gets it.
+        adopt_path(probe["path"])
 
     discovered: dict[str, CapabilityValue] = {}
     concrete = [r for r in runners if not isinstance(r, CapabilityReferenceRunner)]
@@ -325,9 +335,6 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
     registry = get_capability_registry()
     for kind, value in discovered.items():
         try:
-            row = await Capability.get_by_kind(kind)
-            if row is None:
-                continue
             # A passive sweep refreshes badges; it does not run work. A
             # capability whose test() spawns a vendor CLI or drives an agent
             # (``sweepable_test=False``) keeps whatever ``last_check`` an
@@ -338,12 +345,15 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
             # test_capabilities_summary_groups_by_intent blew its 30s cap once
             # the caller actually waited for the worker it had started.
             if not registry.get(kind).spec.sweepable_test:
+                row = await Capability.get_by_kind(kind)
+                if row is None:
+                    continue
                 last_check = row.last_check
                 state = row.state
             else:
                 check = await registry.test(kind)
                 last_check = check.result.model_dump(mode="json")
-                # Re-read after the test: a row read before it is stale, and its save below
+                # Read after the test: a row read before it is stale, and its save below
                 # would write back fields a user changed meanwhile (an LLM-source pick).
                 row = await Capability.get_by_kind(kind)
                 if row is None:

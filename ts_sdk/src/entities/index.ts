@@ -34,6 +34,7 @@ export * from './dataset';
 export * from './llm-endpoint';
 export * from './connection-spec';
 export * from './llm-source';
+export * from './status-record';
 export * from './message-thread';
 export * from './mention';
 export * from './page';

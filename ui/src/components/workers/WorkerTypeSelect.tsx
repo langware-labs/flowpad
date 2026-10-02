@@ -5,7 +5,8 @@ import { useHarnessAvailability } from './harness-availability';
 import { OpenerWarningBadge } from '@src/components/terminal/openers/OpenerWarningBadge';
 import { openCapabilitiesForWorker } from '@src/navigation/open-capabilities';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { providerMetaFor } from '@src/tabs/provider-meta';
 import { useLingui } from '@lingui/react/macro';
 
 export interface WorkerTypeSelectProps {
@@ -37,9 +38,9 @@ export function WorkerTypeSelect({
 }: WorkerTypeSelectProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const { warnings, probeHarnesses } = useHarnessAvailability();
+  const { warnings } = useHarnessAvailability();
   const selected = normalizeWorkerType(value);
-  const SelectedIcon = workerIcon(selected);
+  const { Icon: SelectedIcon, iconClassName: selectedTint } = providerMetaFor(selected);
 
   // Same enforcement point as `TerminalOpenerToolbar.activate`: a warned choice
   // can't be honored, so send the user where they can fix it. The kind rides
@@ -58,9 +59,6 @@ export function WorkerTypeSelect({
     <Select
       value={selected}
       onValueChange={handleValueChange}
-      onOpenChange={(open) => {
-        if (open) probeHarnesses();
-      }}
       disabled={disabled}
     >
       <SelectTrigger
@@ -75,13 +73,13 @@ export function WorkerTypeSelect({
       >
         <div className="flex min-w-0 items-center gap-1.5">
           <span className="text-muted-foreground">{t`Worker`}:</span>
-          <SelectedIcon className="h-3.5 w-3.5 shrink-0" />
+          <SelectedIcon className={cn('h-3.5 w-3.5 shrink-0', selectedTint)} />
           <span className="truncate">{workerLabel(selected)}</span>
         </div>
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[7.75rem]">
         {LAUNCHABLE_WORKERS.map((worker) => {
-          const Icon = workerIcon(worker);
+          const { Icon, iconClassName } = providerMetaFor(worker);
           const warning = warnings[worker];
           return (
             <SelectItem
@@ -94,7 +92,7 @@ export function WorkerTypeSelect({
             >
               <span className="flex items-center gap-1.5">
                 <span className="relative inline-flex">
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <Icon className={cn('h-3.5 w-3.5 shrink-0', iconClassName)} />
                   {warning && <OpenerWarningBadge id={worker} />}
                 </span>
                 {workerLabel(worker)}

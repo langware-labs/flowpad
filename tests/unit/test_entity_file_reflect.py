@@ -484,3 +484,39 @@ async def test_create_child_pushes_existing_record_bytes_after_hub_create(monkey
     assert child.remote is True
     assert len(posted) == 1
     assert pushed == [child]
+
+
+@pytest.mark.asyncio
+async def test_share_push_sends_task_attachments_from_its_folder(monkeypatch, tmp_path):
+    """A task keeps its files in its folder (``files_in_asset_folder``): the
+    share-time push sends ``attachments/**`` with their paths, never the task's
+    own documents (``task.md`` is fields; ``spec.md`` stays home)."""
+    import flow_sdk.actions.fs.fs_actions as fsa
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    folder = tmp_path / "agentic-assets" / "task" / "help"
+    (folder / "attachments").mkdir(parents=True)
+    (folder / "task.md").write_bytes(b"---\ntitle: help\n---\n")
+    (folder / "spec.md").write_bytes(b"plan")
+    (folder / "attachments" / "shot.png").write_bytes(b"png")
+
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append((filename, content, sub_path))
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+    class _EmptyEmbedded:  # nothing left in the old embedded store
+        async def list_dir(self, _root):
+            return []
+
+    monkeypatch.setattr(fsa, "get_entity_storage", lambda _tid: _EmptyEmbedded())
+
+    entity = SimpleNamespace(
+        id=str(uuid.uuid4()), remote=True, asset_ref=str(folder), get_type=lambda: "task"
+    )
+    entity.typeid = f"task-{entity.id}"
+
+    assert await push_entity_files_to_hub(entity) == 1
+    assert sent == [("shot.png", b"png", "upload/attachments")]

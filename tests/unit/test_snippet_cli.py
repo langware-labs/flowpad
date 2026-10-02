@@ -8,7 +8,6 @@ same `run_snippet` (tests/unit/test_snippet.py).
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 from pathlib import Path
 
@@ -17,7 +16,6 @@ from typer.testing import CliRunner
 
 from flow_sdk.cli.commands import show_cmd
 from flow_sdk.cli.flow_cli import app
-from flow_sdk.core import snippet as snippet_mod
 
 runner = CliRunner()
 _PROC = "--process=3f2a1b4c-0000-4000-8000-0000000000aa"
@@ -37,10 +35,6 @@ def sent_body(monkeypatch):
     return captured
 
 
-@pytest.fixture(autouse=True)
-def _toolchain_path(monkeypatch):
-    monkeypatch.setattr(snippet_mod, "_terminal_path", lambda: os.environ["PATH"])
-
 
 def test_stdin_code_lands_in_the_os_temp_dir_and_is_shown(sent_body, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
@@ -52,7 +46,7 @@ def test_stdin_code_lands_in_the_os_temp_dir_and_is_shown(sent_body, tmp_path, m
         assert sent.name == "t-cli-stdin.py"
         assert sent.read_text() == CODE
         assert not any(tmp_path.iterdir()), "nothing may be written into the caller's folder"
-        assert json.loads(result.output)["path"] == str(sent)
+        assert json.loads(result.stdout)["path"] == str(sent)
     finally:
         sent.unlink(missing_ok=True)
 
@@ -124,7 +118,7 @@ def test_show_answers_what_the_viewer_will_mark(sent_body, tmp_path, monkeypatch
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["show", "snippet", "broken.py", _PROC])
     assert result.exit_code == 0, result.output
-    (d,) = json.loads(result.output)["diagnostics"]
+    (d,) = json.loads(result.stdout)["diagnostics"]
     assert (d["line"], d["kind"]) == (2, "import")
 
 

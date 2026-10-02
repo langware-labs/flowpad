@@ -804,13 +804,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           .then((results) => this.watchedQueries.updateQueryResults(request, results))
           .catch(() => undefined),
       ),
-      ...typeIds.map((typeId) =>
-        this.refreshByTypeId(typeId)
-          .then((entity) => {
-            if (entity) this._notifyAllAliases(typeId, entity, entity);
-          })
-          .catch(() => undefined),
-      ),
+      // refreshByTypeId notifies the entity's subscribers itself.
+      ...typeIds.map((typeId) => this.refreshByTypeId(typeId).catch(() => undefined)),
     ]);
   }
 
@@ -1355,23 +1350,24 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return ref.entity as U | null;
   }
 
-  public async refreshByTypeId(typeId: TypeId): Promise<T | null> {
+  /**
+   * Re-read an entity from the backend, whatever the cache holds — the cache-first
+   * `getByTypeId` answers a saved entry from memory, so it can never see a write that
+   * reached this client without an entity op (one another process of the instance made:
+   * a local agent deployment saves straight to the database, where no socket of the app
+   * announces it). The cached object is merged in place and its subscribers notified.
+   * `requiredExpansions` joins the expansions the cached entry already carries, so a
+   * refresh never strips what a consumer expanded.
+   */
+  public async refreshByTypeId(typeId: TypeId, requiredExpansions?: ExpansionRequest): Promise<T | null> {
     const ref = this.getRef(typeId);
     if (ref.status === EntityStatus.FETCHING) {
       return await this.waitForTypeId(typeId);
     }
-    try {
-      return await this.fetchByTypeId(typeId);
-    } catch (error) {
-      console.error(`Error refreshing entity by type ID: ${typeId.toString()}`, error);
-      ref.status = EntityStatus.ERROR;
-      if (isApiError(error)) {
-        ref.error = error;
-      }
-      throw error;
-    } finally {
-      this.resolvePendingRequests(ref);
-    }
+    const expansions = this.mergeExpansionsWithQuery(ref.entity?.expand?.expansions ?? undefined, requiredExpansions);
+    const entity = await this.fetchOrNotFound(typeId, expansions ?? null);
+    if (entity) this._notifyAllAliases(typeId, entity, entity);
+    return entity;
   }
 
   public async getByTypeId<U extends T>(typeId: TypeId, requiredExpansions?: ExpansionRequest): Promise<U | null> {
@@ -1409,16 +1405,20 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         return entity as U;
       }
     }
+    requiredExpansions = this.mergeExpansionsWithQuery(ref.entity?.expand?.expansions ?? undefined, requiredExpansions);
+    // `fetchByTypeId` already loads when the expansions ask for it.
+    return this.fetchOrNotFound<U>(typeId, requiredExpansions ?? null);
+  }
+
+  /**
+   * `fetchByTypeId` with the store's one not-found rule, shared by `getByTypeId` and
+   * `refreshByTypeId`: a 404 negative-caches and answers null; any other failure is
+   * recorded on the ref and rethrown. Parked waiters are released either way.
+   */
+  private async fetchOrNotFound<U extends T>(typeId: TypeId, expansions: ExpansionRequest | null): Promise<U | null> {
+    const ref = this.getRef(typeId);
     try {
-      requiredExpansions = this.mergeExpansionsWithQuery(
-        ref.entity?.expand?.expansions ?? undefined,
-        requiredExpansions,
-      );
-      const entity = await this.fetchByTypeId<U>(typeId, requiredExpansions);
-      if (entity && requiredExpansions?.load) {
-        await entity.load();
-      }
-      return entity;
+      return await this.fetchByTypeId<U>(typeId, expansions);
     } catch (error) {
       // A 404 means the referenced entity no longer exists — e.g. a stale
       // project_id carried by an old shell/agentic_process record whose
@@ -1732,6 +1732,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     actionInfo: ActionInfo,
     options?: import('../websocket').IWSRestOptions,
   ): Promise<Res> {
+    const response = (await this.sendOverWS(actionInfo, options)) as Res;
+    return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
+  }
+
+  /** One action over the socket; answers the server's reply content (the whole envelope). */
+  private async sendOverWS(actionInfo: ActionInfo, options?: import('../websocket').IWSRestOptions): Promise<unknown> {
     const connectionManager = ConnectionManager.getInstance();
 
     if (!connectionManager.connected) {
@@ -1755,8 +1761,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       carries_initiator: actionInfo.carriesInitiator,
     };
 
-    const response = await connectionManager.sendRestApiMessage<Res>(message, options);
-    return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
+    return connectionManager.sendRestApiMessage<unknown>(message, options);
   }
 
   /**
@@ -1775,7 +1780,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     options?: import('../websocket').IWSRestOptions,
   ): Promise<Res> {
     if (ConnectionManager.getInstance().connected) {
-      return this.callActionOverWS<_Req, Res>(actionInfo, options);
+      // Same answer on either transport. The socket carries the whole `ApiResponse` envelope;
+      // `apiClient` unwraps it to `data` and throws on FAIL — do the same before any cast.
+      let data = (await this.sendOverWS(actionInfo, options)) as Res;
+      const envelope = data as { status?: unknown; message?: unknown; data?: unknown } | null;
+      if (envelope?.status === 'FAIL') throw new Error(String(envelope.message ?? 'Request failed'));
+      if (envelope?.status === 'SUCCESS') data = envelope.data as Res;
+      return actionInfo.castResponse ? (this.castAndDeepAssign(data as never) as unknown as Res) : data;
     }
     return this.callAction<_Req, Res>(actionInfo);
   }

@@ -5,7 +5,7 @@
  * assistant" — it lists each harness as Signed in / Not signed in / Not
  * installed. The "Not installed" arm knew the answer and offered only a wiki
  * page: read this guide, install it yourself, come back. The vendor's own
- * one-liner was on the capability row the whole time.
+ * one-liner was on the status record the whole time.
  *
  * So the install affordance now lives on the status surface the user already
  * consults, not only on the two dialogs they reach by failing at something.
@@ -22,6 +22,7 @@ const h = vi.hoisted(() => ({
   openNewShell: vi.fn(),
   openWikiModal: vi.fn(),
   capability: null as unknown,
+  installCommand: '' as string,
 }));
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
@@ -37,29 +38,54 @@ vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {
     ...actual,
-    // `checked && available` is what the modal turns into "Not installed".
     capabilityManager: {
-      getSnapshot: () => ({ capability: h.capability, checked: true, available: false }),
-      ensureChecked: () => Promise.resolve({ capability: h.capability, checked: true, available: false }),
+      getSnapshot: () => ({ capability: h.capability }),
       subscribe: () => () => {},
     },
   };
 });
+vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
+  useLlmSources: () => ({ status: null, isLoading: false }),
+}));
+// The status record says the CLI is not on this machine, and how to install it here.
+vi.mock('@src/components/status/use-status-record', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useStatusRecord: () => ({
+    status: {
+      harnesses: [
+        {
+          kind: 'harness.claude.cli',
+          worker_type: 'claude',
+          label: 'Claude Code',
+          icon: '',
+          install: 'not_installed',
+          login: 'n_a',
+          login_message: '',
+          account: { identity: '', plan: '' },
+          has_device_login: true,
+          key_providers: ['openrouter'],
+          install_command: h.installCommand,
+        },
+      ],
+      keys: [],
+      hub: { login: 'signed_out' },
+      default_harness: 'harness.claude.cli',
+    },
+    isLoading: false,
+  }),
+}));
 
 import { HarnessDetail } from '@src/components/harness-login/HarnessLoginModal';
 import { Dialog, DialogContent } from '@src/components/ui/dialog';
 
 const INSTALL = 'curl -fsSL https://claude.ai/install.sh | bash && export PATH="$HOME/.local/bin:$PATH"';
 
-function capabilityWith(installCommand: string | null) {
+function capabilityWith() {
   return {
     id: '6ba7b810-9dad-41d1-80b4-00c04fd430c8',
     kind: 'harness.claude.cli',
     name: 'Claude CLI',
-    install_command: installCommand,
-    login_state: null,
     auth_mode: 'device',
-    authStatus: () => Promise.resolve(null),
   };
 }
 
@@ -68,11 +94,12 @@ const onDone = vi.fn();
 /** The panel uses DialogTitle/DialogDescription, so it needs a Dialog ancestor
  *  — the same one the real modal root provides. */
 function mount(installCommand: string | null) {
-  h.capability = capabilityWith(installCommand);
+  h.capability = capabilityWith();
+  h.installCommand = installCommand ?? '';
   render(
     <Dialog open>
       <DialogContent>
-        <HarnessDetail kind="harness.claude.cli" onBack={vi.fn()} onDone={onDone} keys={[]} />
+        <HarnessDetail kind="harness.claude.cli" onBack={vi.fn()} onManageKeys={vi.fn()} onDone={onDone} />
       </DialogContent>
     </Dialog>,
   );

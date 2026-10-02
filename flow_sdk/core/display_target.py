@@ -242,7 +242,7 @@ def entity_target(type_name: str, entity_id: str, *, name: str | None = None) ->
 
     The single builder of the entity-target shape; ``_entity_payload`` is the
     entity-in-hand convenience over it. ``name`` rides along so downstream
-    consumers (e.g. auto-bookmark titles) get a human label without a re-fetch."""
+    consumers (e.g. the display stack) get a human label without a re-fetch."""
     return {
         "kind": DisplayTargetKind.ENTITY,
         "typeid": f"{type_name}-{entity_id}",

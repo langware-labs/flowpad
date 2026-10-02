@@ -472,6 +472,12 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
     env["FLOWPAD_PYTHON"] = sys.executable
+    # `$FLOWPAD_FLOW` (this install's `flow`) and `FLOW_INSTANCE`, the pair a step's completion
+    # check runs with (`flow_env`): an agent handed that check as its bar must be able to run the
+    # same command, or it is told "done when this exits 0" about a command it cannot execute.
+    from flow_sdk.core.compute.exec import flow_env  # noqa: PLC0415
+
+    env.update(flow_env())
     from flow_sdk.config import default_service_config  # noqa: PLC0415
 
     deploy_project = default_service_config.gcp_deployment_project_id
@@ -1232,8 +1238,14 @@ def worker_bin_folder(worker_type: str) -> str | None:
 
 
 def worker_is_installed(worker_type: str) -> bool:
-    """Is this worker's harness installed — the sync form of the one install gate."""
-    return worker_bin_folder(worker_type) is not None
+    """THE install predicate: this worker's CLI exists on disk in its discovered folder.
+
+    Disk-verified (``worker_executable``), not "discovery once recorded a folder": a CLI
+    removed after the sweep must read as absent everywhere at once -- the spawn gate, the
+    status record (``core.status.harness_install``) and funding -- instead of the folder
+    check saying yes while the probe says ``NOT_INSTALLED``.
+    """
+    return worker_executable(worker_type) is not None
 
 
 def worker_path_env(worker_type: str) -> dict[str, str] | None:
@@ -1377,6 +1389,10 @@ async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
         copilot_home = get_instance_settings().copilot_home
+    if worker_type == "opencode" and ctx is not None:
+        # OpenCode reads its credentials from ``$XDG_DATA_HOME/opencode/auth.json``, and a spawn
+        # redirects that per instance -- probe the store the WORKER will read, not the user's own.
+        env = {**env, **get_driver(worker_type).session_store_env}
     return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home(), copilot_home)
 
 

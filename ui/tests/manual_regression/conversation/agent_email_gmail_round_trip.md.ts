@@ -26,12 +26,11 @@ import sys
 import uuid
 
 import flow_sdk
-import flow_sdk.ingest.drivers  # noqa: F401
 from flow_sdk.builtin.agent import Agent
+from flow_sdk.builtin.data_driver import DataDriver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.agent_mailbox import AgentMailbox, email_source_for_agent
 from flow_sdk.builtin.source_item import EmailMessageSpec
-from flow_sdk.ingest.drivers.gmail import GmailDriver
 
 def emit(kind, **data):
     print(json.dumps({"kind": kind, **data}), flush=True)
@@ -43,13 +42,14 @@ async def main():
     address = os.environ["GMAIL_ADDRESS"]
     await flow_sdk.auth.login()
 
-    gmail = await DataSource.find_for_account("gmail", GmailDriver.identity_config_key, address)
+    driver = await DataDriver.get("gmail")
+    gmail = await DataSource.find_for_account("gmail", driver.identity_config_key, address)
     gmail_created = gmail is None
     if gmail is None:
-        gmail = DataSource(
+        # docs/snippets/gmail-source.md: the app password stays in the env, never in the row.
+        gmail = driver.create_source(
+            driver.create_config(address=address),
             name="gmail",
-            provider="gmail",
-            config={"address": address},
             account_key=address,
             account_identities=[address],
             poll_interval_seconds=60,
@@ -73,6 +73,12 @@ async def main():
     verb, mailbox_address = send_command.split(" ", 1)
     if verb != "SEND" or not mailbox_address:
         raise RuntimeError("expected SEND <address>")
+    # Owning a channel places the agent nowhere (docs/snippets/agents-on-channels.md §2): run it
+    # on this machine. After the browser allocated the mailbox, so the deployment answers it, and
+    # before the mail goes out, so its held position makes the mail an arrival, not history.
+    current = await Agent.get_one({"id": agent.id}) or agent
+    deployment = await current.run_locally()
+    emit("deployed", deployment_id=deployment.id)
     sent = await gmail.send(
         EmailMessageSpec(
             to=[mailbox_address],
@@ -87,6 +93,12 @@ async def main():
     if await command() != "CLEANUP":
         raise RuntimeError("expected CLEANUP")
     current = await Agent.get_one({"id": agent.id}) or agent
+    for placed in await current.deployments():
+        # run_locally() made the deployment a chat channel; deleting the deployment leaves it.
+        chat = await DataSource.find_for_account("http_chat", "", f"deployment:{placed.id}")
+        if chat is not None:
+            await chat.delete()
+        await placed.delete()
     try:
         mailbox = await AgentMailbox.for_agent(current)
         if mailbox is not None:
@@ -156,6 +168,11 @@ async def main():
     await flow_sdk.auth.login()
     agent = await Agent.get_one({"id": sys.argv[1]})
     if agent is not None:
+        for placed in await agent.deployments():
+            chat = await DataSource.find_for_account("http_chat", "", f"deployment:{placed.id}")
+            if chat is not None:
+                await chat.delete()
+            await placed.delete()
         try:
             mailbox = await AgentMailbox.for_agent(agent)
             if mailbox is not None:
@@ -246,6 +263,7 @@ test('enable email, receive Gmail, and show the pirate reply in UI and Gmail', a
     await expect(page.getByText('Mailbox settings saved')).toBeVisible();
 
     harness.send(`SEND ${mailboxAddress}`);
+    expect((await harness.next()).kind).toBe('deployed');
     expect((await harness.next()).kind).toBe('sent');
 
     const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: `Pirate UI ${ready.nonce}` });
