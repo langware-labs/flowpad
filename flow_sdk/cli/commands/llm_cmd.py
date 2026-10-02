@@ -638,7 +638,7 @@ def _use_box(
 def _clear_box() -> None:
     # Read what we wrote BEFORE dropping the binding — the specs are derived from the bound
     # endpoint, so afterwards there is nothing left to say which leaves were ours.
-    bound = str(_status().get("endpoint_typeid") or "")
+    bound = str((_status().get("binding") or {}).get("endpoint_typeid") or "")
     specs = (_op("binding", {"endpoint_typeid": bound}).get("harnesses") or {}) if bound else {}
 
     data = _op("unbind")
@@ -760,70 +760,38 @@ _FUNDING_FRAMES = frozenset({"llm_config_msg", "cloud_login_status_msg"})
 _CHOOSER_PATH = "/dock/llm-setup"
 
 
-def _is_evidence(pick: dict) -> bool:
-    """Whether a resolver verdict is EVIDENCE the box can actually issue a call.
+def _check_unchecked_logins(status: dict, project_id: str | None = None) -> dict:
+    """Ask the status layer to probe every installed harness whose login nobody has checked,
+    and re-read the funding.
 
-    One line, because the rule is not ours: the backend publishes ``unverified`` on every
-    verdict (``Candidate.unverified``), which is where it belongs -- it needs the endpoint's
-    kind, and a rule re-derived here would drift from the copy the setup screen makes. This
-    used to be that second copy.
+    Funding never presumes a login works, so a login nobody has probed funds nothing -- and on
+    a box with NO backend running (the pure-CLI install this command is largely for), nothing
+    has ever probed anything. Rather than send a well-configured box to the chooser every
+    time, ask: the explicit ``status/refresh`` re-discovers the CLIs and probes their logins
+    (local subprocesses against credentials the user already pays for, no network).
 
-    **Absent means UNVERIFIED.** The flag is missing when the backend answering is older than
-    this CLI -- and that is not a rare, historical box. A server loads its code once at start
-    and keeps it: upgrade the package without restarting the desktop app (or an instance that
-    has been up for days) and the new CLI talks to the old server until something restarts it.
-    That window is normal, and it is the moment right after every update.
-
-    Reading the silence as "verified" is the expensive way to be wrong. Observed: a box with
-    codex NOT INSTALLED AT ALL was told `codex device login funds codex`, because the backend
-    predated the flag by 23 minutes and the absence read as a yes. The user learns the truth
-    when a call fails. Reading it as "unverified" is the cheap way to be wrong: the chooser
-    opens when it did not strictly need to, and every source on it still works.
-
-    So this fails safe, and deliberately does NOT keep a compatibility path for the older
-    shape -- the repo does not carry back-compat shims, and a shim whose failure mode is a
-    confident false claim is the worst kind to carry.
+    Only reached when the box already looks unfunded, so the common path pays nothing.
     """
-    return pick.get("unverified") is False
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSourceRefusal  # noqa: PLC0415
 
+    unchecked = any(
+        source.get("reason_code") == LLMSourceRefusal.LOGIN_NOT_CHECKED.value
+        for sources in (status.get("sources") or {}).values()
+        for source in sources or []
+    )
+    if not unchecked:
+        return status
+    port = _backend_port()
+    try:
+        if port is None:
+            import asyncio  # noqa: PLC0415
 
-def _probe_unproven_device_logins(status: dict, project_id: str | None = None) -> dict:
-    """Ask every un-probed device login whether it is REALLY signed in, and re-read.
+            from flow_sdk.core.status import refresh_status  # noqa: PLC0415
 
-    Without this, requiring evidence (:func:`_is_evidence`) is too strict on the transport that
-    needs it most. A device login only becomes ``CACHED`` once something has probed it, and the
-    thing that normally does is the running backend -- so with **no backend at all**, which is
-    the pure-CLI install this command is largely for, nothing has ever asked and every device
-    login is ``PRESUMED`` forever. `auto` would then send a perfectly well-configured box to
-    the chooser every single time.
-
-    So rather than assume in either direction, ask. A vendor ``auth-status`` is a subprocess
-    against credentials the user already pays for and makes no network call -- the same reason
-    `useProbeDeviceLogins` runs it unasked whenever the LLM Sources page opens.
-
-    Only reached when the box already looks unfunded, so the common path pays nothing: a box
-    with evidence never gets here, and a box without it is about to open a BROWSER, next to
-    which a few local subprocesses are free.
-
-    A probe that refuses is not fatal -- "this CLI is not installed" is a perfectly good answer
-    and the most likely one here. ``_op`` reports refusals by exiting, which is right for a
-    user-invoked action and wrong for a question we asked on our own initiative.
-    """
-    from flow_sdk.builtin.llm_endpoint import LLMEndpointKind  # noqa: PLC0415
-
-    asked = False
-    for capability_kind, sources in (status.get("sources") or {}).items():
-        # ``unverified`` is exactly "an un-probed device login" -- the backend's own verdict,
-        # the same one `_is_evidence` reads. Re-deriving it from kind + authority here was the
-        # third copy of one rule.
-        if not any(source.get("unverified") for source in sources or []):
-            continue
-        try:
-            _op("test_source", {"kind": LLMEndpointKind.DEVICE, "harness": _worker_of(capability_kind)})
-        except Exception:  # noqa: BLE001 -- an unanswerable probe IS an answer ("not installed")
-            pass
-        asked = True
-    if not asked:
+            asyncio.run(refresh_status())
+        else:
+            _call("POST", f"http://127.0.0.1:{port}/api/v1/graph/compute_node/@local/status/refresh", json={})
+    except Exception:  # noqa: BLE001 -- an unanswerable probe IS an answer: the login stays unchecked
         return status
     return _status(_project_for_cwd(required=False) if project_id is None else project_id)
 
@@ -836,10 +804,8 @@ def _auto_source(status: dict) -> Row | None:
     false of the one actually in force whenever a preference or a project pin has spoken.
     `auto` promises the source a spawn would really get, so it reads what a spawn reads.
 
-    ...but a winner is not automatically EVIDENCE -- see :func:`_is_evidence`. The resolver is
-    right to fall back on an unproven device login (something must be tried, and there is
-    nothing better), and this command is right to refuse to call that "you are set up": one
-    picks the best of what exists, the other decides whether anything exists at all.
+    A winner IS evidence now: the resolver funds only a login a probe confirmed, never a
+    presumed one, so "resolved" and "set up" are the same answer.
 
     The default vendor wins ties. Any funded row is a truthful answer to "is this box funded",
     but a person at a prompt is usually about to run THEIR harness, and naming a source that
@@ -847,11 +813,7 @@ def _auto_source(status: dict) -> Row | None:
     """
     from flow_sdk.flowpad_types.vendors import default_vendor
 
-    trusted = {
-        str(pick.get("endpoint_typeid") or "")
-        for pick in (status.get("resolved") or {}).values()
-        if pick and _is_evidence(pick)
-    }
+    trusted = {str(pick.get("endpoint_typeid") or "") for pick in (status.get("resolved") or {}).values() if pick}
     funded = [row for row in _rows(status) if row.active_for and row.typeid in trusted]
     if not funded:
         return None
@@ -1065,7 +1027,7 @@ def _resolve_or_choose(*, no_browser: bool = False, project_id: str | None = Non
     if row is None:
         # Nothing has EVIDENCE yet -- but on a box with no backend nothing has ever been asked,
         # so ask before sending the user to a browser.
-        row = _auto_source(_probe_unproven_device_logins(status, project_id))
+        row = _auto_source(_check_unchecked_logins(status, project_id))
     if row is not None:
         return row
 

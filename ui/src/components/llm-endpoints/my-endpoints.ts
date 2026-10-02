@@ -22,9 +22,17 @@
  * A group's pot is excluded by the first rule — it is `partof` the org or the team, not a
  * person — and the shared catalog root by the second, since nobody holds a role on it.
  */
-import { TypeId, dataContext, llmSourcesService, type LLMEndpointOffer, type LLMFundingStatus } from '@sdk';
+import {
+  TypeId,
+  dataContext,
+  llmSourcesService,
+  statusService,
+  type LLMEndpointOffer,
+  type LLMFundingStatus,
+} from '@sdk';
 
 import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
+import { useStatusRecord } from '@src/components/status/use-status-record';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 import { ENDPOINT_TYPE, endpointIdFromTypeId } from './llm-endpoints-pointer';
@@ -56,9 +64,12 @@ export function isAllocatedToUser(offer: LLMEndpointOffer, hubUserTypeid: string
 }
 
 /** The endpoints allocated to the signed-in person, by name. Pure — the unit of test. */
-export function myEndpoints(status: LLMFundingStatus | null | undefined): LLMEndpointOffer[] {
+export function myEndpoints(
+  status: LLMFundingStatus | null | undefined,
+  hubUserTypeid: string | null | undefined,
+): LLMEndpointOffer[] {
   return (status?.available ?? [])
-    .filter((offer) => isAllocatedToUser(offer, status?.hub_user_typeid))
+    .filter((offer) => isAllocatedToUser(offer, hubUserTypeid))
     .slice()
     .sort((a, b) => (a.name || a.id).localeCompare(b.name || b.id));
 }
@@ -70,7 +81,11 @@ export async function fetchMyEndpoints(): Promise<LLMEndpointOffer[]> {
     // entry and a second backend round-trip for the same `available` list the screen and the
     // footer chip already hold — undoing the sharing this function's own comment promises.
     // `available` itself is project-independent; the key just has to match.
-    return myEndpoints(await llmSourcesService.status(dataContext.project?.id));
+    const [funding, record] = await Promise.all([
+      llmSourcesService.status(dataContext.project?.id),
+      statusService.record(),
+    ]);
+    return myEndpoints(funding, record?.hub.user_typeid);
   } catch {
     // A box that cannot answer has no endpoints to show; the row simply stays empty
     // rather than erroring the whole Assets tree.
@@ -82,7 +97,8 @@ export async function fetchMyEndpoints(): Promise<LLMEndpointOffer[]> {
  *  list and the detail cost one request between them — and can never disagree. */
 export function useMyEndpoints(): { endpoints: LLMEndpointOffer[]; isLoading: boolean } {
   const { status, isLoading } = useLlmSources();
-  return { endpoints: myEndpoints(status), isLoading };
+  const { status: record } = useStatusRecord();
+  return { endpoints: myEndpoints(status, record?.hub.user_typeid), isLoading };
 }
 
 /** One endpoint by bare uuid or typeid — the URL carries the typeid, the row's own id is

@@ -27,11 +27,8 @@ import { Check, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { openHarnessLoginModal, useHarnessLoginStore } from '@src/components/harness-login/harness-login-store';
-import {
-  useFundingFollowsHubLogin,
-  useFundingFollowsLogin,
-  useLlmSources,
-} from '@src/components/llm-sources/use-llm-sources';
+import { useLlmSources } from '@src/components/llm-sources/use-llm-sources';
+import { useStatusRecord } from '@src/components/status/use-status-record';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@src/components/ui/dialog';
 import { getHistoryPosition } from '@src/navigation/history-position-store';
@@ -41,27 +38,21 @@ export function LlmSetupView() {
   const open = useHarnessLoginStore((s) => s.open);
   const setOpen = useHarnessLoginStore((s) => s.setOpen);
   const { status } = useLlmSources();
-  // Both seams, because a source can arrive either way: a device login or a stored key comes
-  // through `capabilityManager`, a FlowPad endpoint through the hub login. Watching one only
-  // would leave the popup open over exactly half the ways of answering it.
-  useFundingFollowsLogin();
-  useFundingFollowsHubLogin();
+  const { status: record } = useStatusRecord();
 
   /**
-   * The source that would fund a call.
+   * The source that funds the DEFAULT harness — the one a person is about to run.
    *
-   * `unverified` is the BACKEND's verdict (`Candidate.unverified`), read here rather than
-   * re-derived — the CLI reads the same field, so the popup and the command that opened it
-   * cannot disagree about whether you are set up. This was previously a second copy of the
-   * rule living in this file, which is exactly the drift the published flag removes.
+   * "Set up" means that harness is funded, not that some harness is: a funded codex does not
+   * make a Claude-default box ready. Every resolved source is evidence (the resolver never
+   * presumes a login), so there is no separate "verified" check. With no default recorded yet,
+   * any funded harness answers.
    */
   const funded = useMemo(() => {
-    for (const pick of Object.values(status?.resolved ?? {})) {
-      if (!pick || pick.unverified) continue;
-      return pick;
-    }
-    return null;
-  }, [status]);
+    const kind = record?.default_harness;
+    if (kind) return status?.resolved?.[kind] ?? null;
+    return Object.values(status?.resolved ?? {}).find(Boolean) ?? null;
+  }, [status, record]);
 
   const { navigation, windowMode } = useDockNavigation();
   // `ask` is the small two-button popup; `keys` is the "Assistants & keys" dialog it opened.

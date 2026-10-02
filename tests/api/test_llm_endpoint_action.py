@@ -32,6 +32,12 @@ def _patch_hub_key(monkeypatch, key: str | None) -> None:
         "flow_sdk.cli.auth.hub_login.resolve_hub_api_key",
         lambda *, require_live=False: key,
     )
+    # The status layer's "signed in to FlowPad" is the hub VERIFYING the user over its socket;
+    # this suite has no hub, so the fact is stated alongside the key it would have verified.
+    from flow_sdk.core.status import HubLogin, HubStatusSpec
+
+    signed = HubLogin.SIGNED_IN if key else HubLogin.SIGNED_OUT
+    monkeypatch.setattr("flow_sdk.core.status.hub_status", lambda: HubStatusSpec(login=signed))
 
 
 @pytest.fixture
@@ -46,6 +52,16 @@ def hub_logged_out(monkeypatch):
     """A box with no hub login -- the precondition every ``*_without_login_is_409`` test states."""
     _patch_hub_key(monkeypatch, None)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _every_cli_installed(monkeypatch):
+    """This suite tests the funding ROUTE and the binding recipes, not what the test machine
+    happens to have installed: a harness that is not installed is funded by nothing, so the
+    install fact is stated rather than inherited."""
+    from flow_sdk.core.status import InstallState
+
+    monkeypatch.setattr("flow_sdk.core.status.harness_install", lambda worker: InstallState.INSTALLED)
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +81,7 @@ async def test_get_unbound(bootstrapped_client):
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["status"] == "SUCCESS"
-    assert body["data"]["endpoint_typeid"] is None
+    assert body["data"]["binding"] is None
     assert body["data"]["active_for"] == []
 
 
@@ -75,14 +91,13 @@ async def test_bind_then_get_then_unbind(bootstrapped_client, hub_login):
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert r.json()["status"] == "SUCCESS"
-    assert data["endpoint_typeid"] == "llm_endpoint:ep1"
-    assert data["invoke_path"] == INVOKE_PATH
-    assert data["invoke_url"].endswith(INVOKE_PATH)
-    assert data["hub_logged_in"] is True
+    assert data["binding"]["endpoint_typeid"] == "llm_endpoint:ep1"
+    assert data["binding"]["invoke_path"] == INVOKE_PATH
+    assert data["binding"]["invoke_url"].endswith(INVOKE_PATH)
     assert len(data["active_for"]) == len(HUB_ENDPOINT_HARNESSES)
 
     r = await bootstrapped_client.get(PATH)
-    assert r.json()["data"]["endpoint_typeid"] == "llm_endpoint:ep1"
+    assert r.json()["data"]["binding"]["endpoint_typeid"] == "llm_endpoint:ep1"
 
     # The keys list the modal renders shows the managed row as configured.
     r = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/lm_keys")
@@ -95,7 +110,7 @@ async def test_bind_then_get_then_unbind(bootstrapped_client, hub_login):
     data = r.json()["data"]
     assert data["was_bound"] is True
     assert "reverted" not in data, "binding no longer writes to Capability, so nothing is reverted"
-    assert data["endpoint_typeid"] is None
+    assert data["binding"] is None
 
     r = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/lm_keys")
     assert [k for k in r.json()["data"] if k["provider"] == "flowpad"] == []
@@ -109,7 +124,7 @@ async def test_bind_without_login_is_409(bootstrapped_client, hub_logged_out):
     assert body.get("status_code") == 409 or r.status_code == 409
 
     r = await bootstrapped_client.get(PATH)
-    assert r.json()["data"]["endpoint_typeid"] is None
+    assert r.json()["data"]["binding"] is None
 
 
 @pytest.mark.asyncio
@@ -159,8 +174,8 @@ async def test_select_binds_a_public_endpoint_without_login(bootstrapped_client,
     ).json()
     assert body["status"] == "SUCCESS", body
     data = body["data"]
-    assert (data["endpoint_typeid"], data["public"]) == (typeid, True)
-    assert data["invoke_url"].startswith("https://open.hub/")
+    assert (data["binding"]["endpoint_typeid"], data["binding"]["public"]) == (typeid, True)
+    assert data["binding"]["invoke_url"].startswith("https://open.hub/")
     assert worker_capability_kind("claude") in data["active_for"], "bound and unfunded is not the point"
 
     cap = await Capability.get_by_kind(worker_capability_kind("claude"))
@@ -288,21 +303,21 @@ async def test_the_bare_get_is_still_the_status(bootstrapped_client, hub_login, 
     """The sub-path is what selects the chain; without one this stays the funding status."""
     body = (await bootstrapped_client.get(PATH)).json()
     assert body["status"] == "SUCCESS"
-    assert "available" in body["data"] and "hub_user_typeid" in body["data"]
+    assert "available" in body["data"] and "resolved" in body["data"]
 
 
 # ── binding: one source rendered for a shell (``flow llm use``) ──────────────
 
 
 @pytest.mark.asyncio
-async def test_the_status_names_the_variables_a_shell_binding_can_set(bootstrapped_client):
+async def test_the_variables_a_shell_binding_can_set_come_from_the_recipes():
     """``flow llm clear`` has no source and no credential, and still has to know which variables
-    to unset. It rides the STATUS, not the credential route: the names are static and
-    secret-free, and a list kept in the CLI would go stale the first time a harness gained one."""
-    r = await bootstrapped_client.get(PATH)
+    to unset. They come from the ``ProviderBinding`` recipes themselves (``managed_env_vars``), so
+    a list kept in the CLI cannot go stale -- and a static constant does not belong on the
+    funding status, which carries funding facts only."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import managed_env_vars
 
-    assert r.status_code == 200, r.text
-    assert {"ANTHROPIC_BASE_URL", "CODEX_HOME", "OPENCODE_CONFIG"} <= set(r.json()["data"]["managed_vars"])
+    assert {"ANTHROPIC_BASE_URL", "CODEX_HOME", "OPENCODE_CONFIG"} <= set(managed_env_vars())
 
 
 @pytest.mark.asyncio
@@ -451,8 +466,9 @@ async def test_every_harness_gets_its_model_in_shell_scope(bootstrapped_client, 
     assert harnesses["codex"]["files"]["config.toml"].startswith("model = ")
     assert harnesses["opencode"]["model"] in harnesses["opencode"]["files"]["opencode.json"]
     # ...and `clear` must know about every one of them, or a stale model outlives the source.
-    status = await bootstrapped_client.get(PATH)
-    assert "ANTHROPIC_MODEL" in status.json()["data"]["managed_vars"]
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import managed_env_vars
+
+    assert "ANTHROPIC_MODEL" in managed_env_vars()
 
 
 @pytest.mark.asyncio
