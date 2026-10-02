@@ -59,8 +59,9 @@ export function useUnopenedFavoritesCount(): number {
           isFavoriteBookmark(b) &&
           isUnopened(b) &&
           !(b.id && hidden.has(b.id)) &&
-          canNavigateFavorite(b) &&
-          bookmarkInScope(b, scope, currentProjectId),
+          bookmarkInScope(b, scope, currentProjectId) &&
+          // Last: it parses the stored pointer, so only for rows still counted.
+          canNavigateFavorite(b),
       ).length,
     [bookmarks, hidden, scope, currentProjectId],
   );

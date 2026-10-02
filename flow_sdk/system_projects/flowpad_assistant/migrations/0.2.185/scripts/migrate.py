@@ -20,6 +20,5 @@ def run() -> dict[str, int]:
     from flow_sdk.migrations import migration_2026_10_remove_auto_bookmarks
 
     report = migration_2026_10_remove_auto_bookmarks.migrate(dry_run=False)
-    for line in report.lines():
-        print(line)  # noqa: T201 — migration output is user-facing
+    print(report.summary())  # noqa: T201 — migration output is user-facing
     return {"auto_removed": len(report.auto), "typeless_removed": len(report.typeless)}

@@ -173,6 +173,9 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   if (roots.length === 0) {
     return (
       <div className={`p-4 text-center ${className}`}>
+        {/* The root level can still take a first row — an empty tree is
+            exactly when its "add here" matters most. */}
+        {levelFooter?.('', mirrored)}
         {emptyState ?? (
           <p className="text-xs text-muted-foreground">
             <Trans>No items</Trans>
@@ -733,26 +736,23 @@ export function ToolbarButton({ action, compact }: { action: ToolbarAction; comp
   const [armed, setArmed] = useState(false);
   const showBusy = action.showBusyIndicator ?? true;
 
-  const handleClick = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (action.destructive && !armed) {
-        setArmed(true);
-        return;
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (action.destructive && !armed) {
+      setArmed(true);
+      return;
+    }
+    setArmed(false);
+    const result = action.run();
+    if (result instanceof Promise) {
+      if (showBusy) setBusy(true);
+      try {
+        await result;
+      } finally {
+        if (showBusy) setBusy(false);
       }
-      setArmed(false);
-      const result = action.run();
-      if (result instanceof Promise) {
-        if (showBusy) setBusy(true);
-        try {
-          await result;
-        } finally {
-          if (showBusy) setBusy(false);
-        }
-      }
-    },
-    [action, armed, showBusy],
-  );
+    }
+  };
 
   const label = armed ? t`Confirm: ${action.label}` : action.label;
 

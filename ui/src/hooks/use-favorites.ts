@@ -113,6 +113,31 @@ export function useFavorites() {
     [childrenByParent],
   );
 
+  // Everything filed beneath a folder: its leaves, and its folders (itself
+  // included) deepest-first — the order a delete has to go in. The one walk
+  // behind both a folder's counts and its delete, so they can't disagree about
+  // what it holds. Cycle-guarded (a malformed parent_id loop can't hang render).
+  const subtreeOf = useCallback(
+    (folderId: string): { leaves: Bookmark[]; folders: Bookmark[] } => {
+      const leaves: Bookmark[] = [];
+      const folders: Bookmark[] = [];
+      const seen = new Set<string>();
+      const walk = (id: string) => {
+        if (!id || seen.has(id)) return;
+        seen.add(id);
+        for (const child of childrenByParent.get(id) ?? EMPTY_CHILDREN) {
+          if (isFolderBookmark(child)) {
+            walk(child.id);
+            folders.push(child);
+          } else leaves.push(child);
+        }
+      };
+      walk(folderId);
+      return { leaves, folders };
+    },
+    [childrenByParent],
+  );
+
   // Stamp value that lands a new/incoming member at the END of a container
   // that already has manual ordering (OS behavior); 0 keeps it unstamped in a
   // never-ordered container (newest-first fallback).
@@ -226,19 +251,8 @@ export function useFavorites() {
       // The whole subtree, folders deepest-first after every leaf: each folder is
       // empty by the time it is deleted, so the server's child promotion (kept
       // for the raw API) has nothing to scatter over the root.
-      const leaves: Bookmark[] = [];
-      const subfolders: Bookmark[] = [];
-      const seen = new Set<string>();
-      const walk = (f: Bookmark) => {
-        if (!f.id || seen.has(f.id)) return;
-        seen.add(f.id);
-        for (const child of childrenByParent.get(f.id) ?? EMPTY_CHILDREN) {
-          if (isFolderBookmark(child)) walk(child);
-          else leaves.push(child);
-        }
-        subfolders.push(f);
-      };
-      walk(folder);
+      const { leaves, folders: nested } = subtreeOf(folder.id);
+      const subfolders = [...nested, folder];
       scheduleFavoriteDelete({
         ids: [...leaves, ...subfolders].map((b) => b.id),
         title: folder.name || folder.title || folder.displayName,
@@ -249,7 +263,7 @@ export function useFavorites() {
         },
       });
     },
-    [childrenByParent, refetch],
+    [subtreeOf, refetch],
   );
 
   const reorder = useCallback(
@@ -284,6 +298,7 @@ export function useFavorites() {
     rootFolders,
     rootFavorites,
     childrenOf,
+    subtreeOf,
     refetch,
     isFavorited,
     addFavorite,

@@ -46,9 +46,6 @@ _MAX_VARS = 999
 
 @dataclass
 class Report:
-    """The plan AND its summary — one object, so a count can never drift from
-    the collection it counts."""
-
     auto: list[str] = field(default_factory=list)
     typeless: list[str] = field(default_factory=list)
 
@@ -56,14 +53,14 @@ class Report:
     def doomed(self) -> list[str]:
         return [*self.auto, *self.typeless]
 
-    def lines(self, dry_run: bool = False) -> list[str]:
+    def summary(self, dry_run: bool = False) -> str:
         if not self.doomed:
-            return ["bookmarks: no auto or typeless rows left."]
+            return "bookmarks: no auto or typeless rows left."
         verb = "would remove" if dry_run else "removed"
-        return [
+        return (
             f"bookmarks: {verb} {len(self.auto)} auto-bookmark row(s) "
             f"and {len(self.typeless)} typeless row(s)."
-        ]
+        )
 
 
 def _db_path() -> Path:
@@ -85,25 +82,20 @@ def _has_table(conn, name: str) -> bool:
 
 
 def plan(conn) -> Report:
+    report = Report()
     if not _has_table(conn, "entities"):
-        return Report()
-    auto = [
-        r[0]
-        for r in conn.execute(
-            "SELECT id FROM entities WHERE type = ? AND json_extract(data, '$.source') = ? ORDER BY id",
-            (BOOKMARK_TYPE, AUTO_SOURCE),
-        )
-    ]
-    typeless = [
-        r[0]
-        for r in conn.execute(
-            "SELECT id FROM entities WHERE type = ?"
-            " AND coalesce(json_extract(data, '$.bookmark_type'), '') = ''"
-            " AND coalesce(json_extract(data, '$.source'), '') != ? ORDER BY id",
-            (BOOKMARK_TYPE, AUTO_SOURCE),
-        )
-    ]
-    return Report(auto=auto, typeless=typeless)
+        return report
+    rows = conn.execute(
+        "SELECT id, json_extract(data, '$.source'), coalesce(json_extract(data, '$.bookmark_type'), '')"
+        " FROM entities WHERE type = ? ORDER BY id",
+        (BOOKMARK_TYPE,),
+    )
+    for rid, source, bookmark_type in rows:
+        if source == AUTO_SOURCE:
+            report.auto.append(rid)
+        elif not bookmark_type:
+            report.typeless.append(rid)
+    return report
 
 
 def _apply(conn, doomed: list[str]) -> None:
@@ -147,8 +139,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as e:  # noqa: BLE001
         logger.exception("Auto-bookmark cleanup failed: %s", e)
         return 1
-    for line in report.lines(dry_run=dry_run):
-        logger.info("%s", line)
+    logger.info("%s", report.summary(dry_run=dry_run))
     return 0
 
 

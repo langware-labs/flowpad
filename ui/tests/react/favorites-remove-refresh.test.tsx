@@ -16,7 +16,7 @@ const ROOT_LEAF_ENTITY = '00000000-0000-4000-8000-0000000000bb';
 const h = vi.hoisted(() => ({ bookmarks: [] as Bookmark[], refreshNode: vi.fn(), refetch: vi.fn() }));
 
 vi.mock('@src/hooks/use-project-bookmarks', () => ({
-  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: h.refetch, excludeBookmarks: vi.fn() }),
+  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: h.refetch }),
 }));
 vi.mock('@sdk/react/hooks', () => ({ useProject: () => ({ project: { id: 'p1' } }) }));
 // The mechanism under test: the tree caches an expanded folder's children, so a

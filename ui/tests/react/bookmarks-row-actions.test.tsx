@@ -16,7 +16,7 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@src/hooks/use-project-bookmarks', () => ({
-  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: h.refetch, excludeBookmarks: vi.fn() }),
+  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: h.refetch }),
 }));
 vi.mock('@sdk/react/hooks', () => ({ useProject: () => ({ project: { id: 'p1' } }) }));
 vi.mock('@src/notifications/notify', () => ({ notify: h.notify }));

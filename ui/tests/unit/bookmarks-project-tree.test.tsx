@@ -75,7 +75,7 @@ h.bookmarks = [
 ];
 
 vi.mock('@src/hooks/use-project-bookmarks', () => ({
-  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: vi.fn(), excludeBookmarks: vi.fn() }),
+  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: vi.fn() }),
 }));
 vi.mock('@sdk/react/hooks', () => ({
   // The adapter reads dataContext (synchronous, seeds defaultExpandedIds on the
@@ -233,6 +233,18 @@ describe('bookmarks tree — global, grouped by project', () => {
     expect(panelOrder().slice(0, 2)).toEqual(['ADD', 'flowpad-oss']);
     expect(screen.queryByText('Other project')).toBeNull();
     expect(screen.getByText('test_flowpad')).toBeTruthy();
+  });
+
+  it('with nothing bookmarked anywhere, the empty tree still offers the add row', async () => {
+    const all = h.bookmarks;
+    h.bookmarks = [];
+    try {
+      render(<FavoritesTreeMenu mirrored />);
+      await waitFor(() => expect(screen.getByText('No bookmarks yet')).toBeTruthy());
+      expect(addRows()).toHaveLength(1);
+    } finally {
+      h.bookmarks = all;
+    }
   });
 
   it('a project bucket is a section, not a folder', async () => {

@@ -12,15 +12,14 @@ import { useSyncExternalStore } from 'react';
  *
  * Module state, not hook state, on purpose: the bookmarks menu closes on the
  * very navigation that follows a remove, and every surface (menu, desktop grid,
- * star) opens its own `useFavorites()`. A per-hook hide would die with the menu
- * and differ between surfaces; `useProjectBookmarks.excludeBookmarks` is also
- * cleared by any refetch, so a WS echo would resurrect a row mid-window.
+ * star) opens its own `useFavorites()`. A per-hook hide would die with the menu,
+ * differ between surfaces, and could be cleared by a WS refetch mid-window.
  *
  * ONE pending delete at a time: a second delete commits the first and takes the
  * toast over, so the single Undo always means "the thing you just removed".
  *
- * Committed ids stay hidden. Ids are v4 and never reused, and the rows are gone
- * from the server — the set only spares a flash before the delete's refetch.
+ * A committed delete un-hides only after its own refetch, when the rows are
+ * already gone — so the hidden set is empty again whenever nothing is pending.
  */
 
 /** How long a removal can be undone. A UX window, not a wait on anything. */
@@ -65,13 +64,14 @@ export async function flushPendingFavoriteDelete(): Promise<void> {
   try {
     await p.commit();
   } catch (e) {
-    unhide(p.ids);
     notify.info({ id: TOAST_ID, title: t`Couldn't remove — restored`, message: String(e) });
+  } finally {
+    unhide(p.ids);
   }
 }
 
 /** Cancel the pending delete and bring its rows back. */
-export function undoPendingFavoriteDelete(): void {
+function undoPendingFavoriteDelete(): void {
   const p = pending;
   if (!p) return;
   pending = null;
