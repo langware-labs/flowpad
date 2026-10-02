@@ -260,7 +260,7 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | `external_session_dirs` probe | `~/.claude/projects/` entries containing `flow-records-agentic` | `~/.codex/sessions/**/rollout-*.jsonl` names | `~/.copilot/session-state/` dir names |
 | API-key auth (`ApiAuthSpec`) | OpenRouter or the FlowPad hub endpoint (NOT a direct Anthropic key: `base_env` is pinned to OpenRouter's URL, so selecting one would post that key to OpenRouter); env `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN` + blank `ANTHROPIC_API_KEY` + thinking-off, slug via `--model` | OpenRouter; `OPENROUTER_API_KEY` + `-c model_providers.openrouter.*` (`wire_api=responses`), slug via `-m` | OpenRouter; `COPILOT_ENABLE_ALT_PROVIDERS=1` + `COPILOT_PROVIDER_*`, slug in `COPILOT_*MODEL*` env (no GitHub token needed) |
 
-WHICH source funds a spawn is `resolve_llm_source`'s decision (`llm_source.py`);
+WHICH source funds a spawn is `resolve_llm_endpoint`'s decision (`llm_source.py`);
 `api_auth.py` owns the other half — turning that decision into env, a model slug
 and config overrides. `resolve_worker_api_auth(process)` resolves the source and
 hands it to `binding_for_candidate(worker_type, candidate, tier=…)`, which is the
