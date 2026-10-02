@@ -11,7 +11,9 @@ import asyncio
 import re
 
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
-from flow_sdk.core.status.spec import (
+from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
+from flow_sdk.flowpad_types.vendors import VENDORS, Vendor
+from flow_sdk.schema.data_spec.status_spec import (
     AccountSpec,
     HarnessStatusSpec,
     HubLogin,
@@ -21,8 +23,6 @@ from flow_sdk.core.status.spec import (
     LoginState,
     StatusSpec,
 )
-from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
-from flow_sdk.flowpad_types.vendors import VENDORS, Vendor
 
 #: ``1.0.88``, ``2.1.288``, ``0.154.0-beta.1`` -- never a trailing dot from the sentence around it.
 _VERSION = re.compile(r"\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?")
