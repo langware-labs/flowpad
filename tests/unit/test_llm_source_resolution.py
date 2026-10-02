@@ -18,6 +18,10 @@ from cryptography.fernet import Fernet
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
 from flow_sdk.core.status import InstallState, LoginState
 from flow_sdk.schema.data_spec.llm_source_spec import LLMScope
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
+
+# CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("harness_installed")
 
 
 @pytest.fixture

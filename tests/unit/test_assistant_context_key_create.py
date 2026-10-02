@@ -14,6 +14,10 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.faas.compute_node import ComputeNode
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
+
+# CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("harness_installed")
 
 
 @pytest.mark.asyncio

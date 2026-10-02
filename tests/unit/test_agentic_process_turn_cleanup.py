@@ -25,6 +25,10 @@ from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
 from flow_sdk.builtin.agentic_process.turn_abort import turn_events_path
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.responses.response import ApiSuccessResponse
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
+
+# CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("harness_installed")
 
 _DRIVERS = [
     ("flow_sdk.builtin.agentic_process.cli_drivers.claude.driver", "ClaudeDriver"),
