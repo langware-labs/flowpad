@@ -105,6 +105,9 @@ class Task(Entity):
     #: PRIVATE: a local row id — a shared task's hub copy has no such field, and a save round-tripped
     #: through the hub would otherwise come back without it.
     origin_conversation: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    #: The message it was made from ("Task it" on a conversation message) — PRIVATE for the same
+    #: reason as ``origin_conversation``: a local row id. One message, at most one task.
+    origin_message: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     #: The creator's session (its process's target — a conversation, or its chat) — where task news
     #: wakes it, so it answers with the memory of the request.
     origin_session: Optional[str] = APIField(None)

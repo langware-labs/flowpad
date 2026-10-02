@@ -104,6 +104,7 @@ export interface ITask extends IEntity {
   creator?: string | null;
   owner?: string | null;
   origin_conversation?: string | null;
+  origin_message?: string | null;
   origin_session?: string | null;
   budget_usd?: number | null;
   budget_turns?: number | null;
@@ -178,6 +179,7 @@ export class Task extends APIEntity<Task> implements ITask {
   creator?: string | null;
   owner?: string | null;
   origin_conversation?: string | null;
+  origin_message?: string | null;
   origin_session?: string | null;
   budget_usd?: number | null;
   budget_turns?: number | null;
@@ -246,6 +248,7 @@ export class Task extends APIEntity<Task> implements ITask {
     this.creator = entity.creator;
     this.owner = entity.owner;
     this.origin_conversation = entity.origin_conversation;
+    this.origin_message = entity.origin_message;
     this.origin_session = entity.origin_session;
     this.budget_usd = entity.budget_usd;
     this.budget_turns = entity.budget_turns;
@@ -405,6 +408,39 @@ export class Task extends APIEntity<Task> implements ITask {
   }
 
   /**
+   * "Task it": the task a conversation message asks for — the one-click follow-up on a message,
+   * received or sent. Assigned to `me`; the message text is the description, its first line the
+   * title. `origin_conversation` / `origin_message` point back at the message (PRIVATE local ids —
+   * a new task is not on the hub yet, so a plain save keeps them), which is how the bubble finds it.
+   */
+  static async fromMessage(
+    message: { id?: string | null; text?: string | null; conversation_id?: string | null; sender_name?: string | null },
+    opts: { me?: string | null; project?: { typeId?: import('../models/TypeId').TypeId } | null } = {},
+  ): Promise<Task> {
+    const text = (message.text ?? '').trim();
+    const base = taskTitleFromText(text) || (message.sender_name ? `Message from ${message.sender_name}` : 'Message');
+    const scope = opts.project?.typeId ? [opts.project.typeId] : [];
+    // A task is a folder named by its title, unique in its scope, and two messages can open with
+    // the same line. The title here is ours to pick, so the next free one ("… (2)") is the answer.
+    for (let n = 1; ; n++) {
+      const task = new Task({
+        title: n === 1 ? base : `${base} (${n})`,
+        description: text || undefined,
+        assignee: opts.me || undefined,
+        reporter: opts.me || undefined,
+        sender_name: message.sender_name ?? null,
+        origin_conversation: message.conversation_id ?? null,
+        origin_message: message.id ?? null,
+      });
+      try {
+        return await task.save(scope);
+      } catch (err) {
+        if (n >= TASK_TITLE_TRIES || !isNameTaken(err)) throw err;
+      }
+    }
+  }
+
+  /**
    * Create a task with the given title. The `project` argument is accepted for
    * Create a file-backed task in the selected scope and optional exact destination.
    */
@@ -416,4 +452,25 @@ export class Task extends APIEntity<Task> implements ITask {
     const task = new Task({ title: name.trim() });
     return task.save(project?.typeId ? [project.typeId] : [], destination);
   }
+}
+
+/** How many numbered titles "Task it" tries before giving up on a name. */
+const TASK_TITLE_TRIES = 20;
+
+/** The create was refused because a task with that name already exists in the scope (409). */
+function isNameTaken(err: unknown): boolean {
+  const response = (err as { response?: { status?: number } } | null)?.response;
+  return response?.status === 409;
+}
+
+/** The longest title "Task it" derives from a message. */
+export const TASK_TITLE_MAX = 80;
+
+/** A task title from a message: its first non-empty line, cut at a word to {@link TASK_TITLE_MAX}. */
+export function taskTitleFromText(text: string): string {
+  const line = (text.split('\n').find((l) => l.trim()) ?? '').trim().replace(/\s+/g, ' ');
+  if (line.length <= TASK_TITLE_MAX) return line;
+  const cut = line.slice(0, TASK_TITLE_MAX - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > TASK_TITLE_MAX / 2 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }

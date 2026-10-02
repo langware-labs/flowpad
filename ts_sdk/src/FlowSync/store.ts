@@ -1739,6 +1739,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     actionInfo: ActionInfo,
     options?: import('../websocket').IWSRestOptions,
   ): Promise<Res> {
+    const response = (await this.sendOverWS(actionInfo, options)) as Res;
+    return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
+  }
+
+  /** One action over the socket; answers the server's reply content (the whole envelope). */
+  private async sendOverWS(actionInfo: ActionInfo, options?: import('../websocket').IWSRestOptions): Promise<unknown> {
     const connectionManager = ConnectionManager.getInstance();
 
     if (!connectionManager.connected) {
@@ -1762,8 +1768,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       carries_initiator: actionInfo.carriesInitiator,
     };
 
-    const response = await connectionManager.sendRestApiMessage<Res>(message, options);
-    return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
+    return connectionManager.sendRestApiMessage<unknown>(message, options);
+  }
+
+  /** What REST would answer for a WS reply: the server ships the whole `ApiResponse` envelope over
+   *  the socket, while `apiClient` unwraps it to `data` (and throws on FAIL). */
+  private static restShape<Res>(content: unknown): Res {
+    const envelope = content as { status?: unknown; message?: unknown; data?: unknown } | null;
+    if (!envelope || typeof envelope !== 'object' || typeof envelope.status !== 'string') return content as Res;
+    if (envelope.status === 'FAIL') throw new Error(String(envelope.message ?? 'Request failed'));
+    return envelope.data as Res;
   }
 
   /**
@@ -1782,7 +1796,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     options?: import('../websocket').IWSRestOptions,
   ): Promise<Res> {
     if (ConnectionManager.getInstance().connected) {
-      return this.callActionOverWS<_Req, Res>(actionInfo, options);
+      // Same answer on either transport: unwrap the envelope before any cast, as REST does.
+      const data = DataManager.restShape<Res>(await this.sendOverWS(actionInfo, options));
+      return actionInfo.castResponse ? (this.castAndDeepAssign(data as never) as unknown as Res) : data;
     }
     return this.callAction<_Req, Res>(actionInfo);
   }
