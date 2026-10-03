@@ -542,6 +542,22 @@ def _openrouter_key() -> str:
     return key
 
 
+@pytest.fixture(autouse=True)
+async def _fund_opencode_rows(request):
+    """Every row parametrized with ``opencode`` runs funded by key.
+
+    opencode's device login is always signed out under the test HOME, and since the
+    LLM-source gate (b866ddfee) an unfunded opencode is refused ("no usable LLM
+    source") before any subject under test runs. Funding is never the subject of an
+    opencode row, so it is funded here once, the way the login-less harnesses are,
+    rather than in each module that lists opencode.
+    """
+    callspec = getattr(request.node, "callspec", None)
+    if callspec is not None and "opencode" in (str(v) for v in callspec.params.values()):
+        await fund_worker_without_a_login("opencode", even_with_device_login=True)
+    yield
+
+
 async def fund_worker_without_a_login(worker: str, *, even_with_device_login: bool = False) -> None:
     """A harness with no account of its own (``ApiAuthSpec.has_device_login`` False) cannot ride
     this machine's vendor logins like the others do: give it a stored provider key through the
