@@ -322,7 +322,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     let seen = null;
     m._uvToolInstallForce = async (args) => { seen = args; };
     m._ensureShimOnPath = async () => {};
-    m.ensureUv = async () => {};
     m._resolveFlowBin = async () => null;
     m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: '>=99.1' });
     await m.upgrade();
@@ -353,7 +352,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       m.args = null;
       m._uvToolInstallForce = async (a) => { m.args = a; };
       m._ensureShimOnPath = async () => {};
-      m.ensureUv = async () => {};
       m._resolveFlowBin = async () => null;
       Object.assign(m, over);
       return m;
@@ -431,21 +429,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       'reinstall: pins the release floor when it is above the bundled pin');
   }
 
-  // ── upgrade() must not assume uv exists ─────────────────────────
-  // A first install whose uv bootstrap failed leaves no uv; the update path then ran a bare `uv`, failed, and its
-  // own repair failed the same way (the "Update failed" dialog).
-  {
-    const m = new UvManager(silentLog);
-    const order = [];
-    m.ensureUv = async () => { order.push('ensureUv'); };
-    m._uvToolInstallForce = async () => { order.push('install'); };
-    m._ensureShimOnPath = async () => {};
-    m._resolveFlowBin = async () => null;
-    m._getLatestPypiInfo = async () => null;
-    await m.upgrade();
-    eq(order, ['ensureUv', 'install'], 'upgrade: makes sure uv is installed BEFORE running `uv tool install`');
-  }
-
   // ── interrupted install: marker, abort, repair ──────────────────────────────
   {
     const fs = require('fs'); const os = require('os'); const path = require('path');
@@ -499,7 +482,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       // repairIfInterrupted: reinstalls once and clears the marker.
       let reinstalls = 0;
       m = mk();
-      m.ensureUv = async () => {};
       m.reinstall = async () => { reinstalls++; };
       eq(await m.repairIfInterrupted(), true, 'repairIfInterrupted: repairs when the marker exists');
       eq(reinstalls, 1, 'repairIfInterrupted: reinstall ran once');
@@ -566,7 +548,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       // A successful repair through the REAL reinstall/_uvToolInstallForce clears the marker.
       fs.writeFileSync(marker, JSON.stringify({ pid: 999999999 }));
       m = mk();
-      m.ensureUv = async () => {};
       m._getLatestPypiInfo = async () => null;
       m._ensureShimOnPath = async () => {};
       m._resolveFlowBin = async () => null;
