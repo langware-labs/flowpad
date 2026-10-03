@@ -433,7 +433,8 @@ class FlowData(BaseModel):
         return True
 
     def __repr__(self):
-        return f"FlowData({self.element_type}, {self.data_type}, {self.flow_value[:10]}..., index={self.index})"
+        # flow_value is Any (a dict by default), so preview its text, never slice the value itself.
+        return f"FlowData({self.element_type}, {self.data_type}, {str(self.flow_value)[:10]}..., index={self.index})"
 
 
 class FlowCheckpointData(FlowData):
