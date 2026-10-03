@@ -11,12 +11,13 @@ import { useMemo, useState, type ComponentType } from 'react';
 import { useLingui } from '@lingui/react/macro';
 
 /**
- * Compact outlined-button presentation — the Vibe hero's under-input strip.
+ * Compact outlined-button presentation — the Vibe hero's under-input strip,
+ * read as one sentence: "Select project [folder] [new] [select] [git]".
  * Bordered, filled and foreground-coloured so each action reads as a button,
  * not as muted hint text.
  */
 const LINK_CLASS =
-  'inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
+  'inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-2 py-1 text-xs font-medium text-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50';
 
 /** One action, in whichever presentation the host asked for. */
 function ActionButton({
@@ -30,6 +31,8 @@ function ActionButton({
   variant: 'tiles' | 'links';
   Icon: ComponentType<{ className?: string }>;
   label: string;
+  /** The one-word chip text of the `links` strip; `label` stays its tooltip. */
+  shortLabel: string;
   loading?: boolean;
   onClick: () => void;
   testId: string;
@@ -38,9 +41,17 @@ function ActionButton({
     return <DesktopTile Icon={Icon} label={label} loading={loading} onClick={onClick} data-testid={testId} />;
   }
   return (
-    <button type="button" onClick={onClick} disabled={loading} className={LINK_CLASS} data-testid={testId}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className={LINK_CLASS}
+      title={label}
+      aria-label={label}
+      data-testid={testId}
+    >
       {loading ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" /> : <Icon className="h-3.5 w-3.5 shrink-0" />}
-      {label}
+      {shortLabel}
     </button>
   );
 }
@@ -117,39 +128,48 @@ export function ProjectActionsRow({
   return (
     <>
       <div
-        className={`flex flex-wrap items-center ${variant === 'tiles' ? 'gap-3' : 'gap-2'} ${className}`}
+        className={`flex flex-wrap items-center ${variant === 'tiles' ? 'gap-3' : 'gap-1.5'} ${className}`}
         data-testid="project-actions-row"
       >
+        {variant === 'links' && (
+          <span className="text-xs text-muted-foreground" data-testid="project-actions-label">
+            {t`Select project`}
+          </span>
+        )}
         {canPickHostFolder && (
           <ActionButton
             variant={variant}
             Icon={FolderOpen}
             label={t`Open folder`}
+            shortLabel={t`folder`}
             loading={isOpeningFolder}
             onClick={() => void handleOpenFolder()}
             testId="vibe-open-project-folder"
-          />
-        )}
-        {hasProjects && (
-          <ActionButton
-            variant={variant}
-            Icon={FolderSearch}
-            label={t`Open project`}
-            onClick={() => setIsProjectModalOpen(true)}
-            testId="vibe-open-existing-project"
           />
         )}
         <ActionButton
           variant={variant}
           Icon={FolderPlus}
           label={t`New project`}
+          shortLabel={t`new`}
           onClick={() => setIsNewProjectOpen(true)}
           testId="vibe-new-project"
         />
+        {hasProjects && (
+          <ActionButton
+            variant={variant}
+            Icon={FolderSearch}
+            label={t`Open project`}
+            shortLabel={t`select`}
+            onClick={() => setIsProjectModalOpen(true)}
+            testId="vibe-open-existing-project"
+          />
+        )}
         <ActionButton
           variant={variant}
           Icon={GitBranch}
           label={t`Open from git`}
+          shortLabel={t`git`}
           onClick={() => setIsGitProjectOpen(true)}
           testId="vibe-open-from-git"
         />
