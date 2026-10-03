@@ -254,3 +254,24 @@ async def test_adding_a_folder_to_a_running_pty_worker_asks_for_a_restart(tmp_pa
 
     await p.remove_dir(extra)
     assert p.restart_required is False
+
+
+@pytest.mark.asyncio
+async def test_opening_the_input_folder_after_launch_never_asks_for_a_restart(tmp_path, monkeypatch):
+    """The terminal resolves the process's input folder (the ``input-dir`` GET creates it) as soon
+    as a live process is on screen. ``resolved_add_dirs`` mounts that folder once it exists, so if
+    it first appeared AFTER the launch snapshot, the very next save saw a new ``--add-dir`` and lit
+    the Restart glow on a process nobody had touched — and reverting a real change could never put
+    it out. Like the process-assets mount, it is a derived path: its presence is not launch intent."""
+    from flow_sdk.builtin.agentic_process.process_io import input_dir
+
+    monkeypatch.setattr(AgenticProcess, "_record_dir", lambda self: tmp_path / "record")
+    p = AgenticProcess(worker_type="claude_code", pty_mode=True, status=ProcessStatus.RUNNING.value, workdir=str(tmp_path))
+
+    p.last_started_hash = p._restart_snapshot()
+    await p.save()
+    assert p.restart_required is False
+
+    input_dir(p).mkdir(parents=True, exist_ok=True)  # what the input-dir GET does on screen
+    await p.save()
+    assert p.restart_required is False
