@@ -31,10 +31,13 @@ from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode, P
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ASSETS = Path(__file__).resolve().parents[2] / "flow_sdk/system_projects/flowpad_assistant/agentic-assets"
-TOOLS = ("claude-code", "python", "git", "node", "npm")
+#: The harness CLIs besides Claude Code: each has its own sub-wizard (`llm-setup-<h>`), run on
+#: request (`flow wizard run llm-setup-codex`), never by the unattended `llm-setup`.
+HARNESSES = ("codex", "copilot", "opencode")
+TOOLS = ("claude-code", "python", "git", "node", "npm", *HARNESSES)
 #: Each tool whose install op carries an agent `fallback`. npm has none: it ships
 #: with node's own installer, and on apt it is a plain second package.
-AGENT_FALLBACK = ("claude-code", "python", "git", "node")
+AGENT_FALLBACK = ("claude-code", "python", "git", "node", *HARNESSES)
 #: Whether the box has an LLM source. Settled before the wizard; here it only
 #: decides whether an agent fallback can run.
 LLM = "llm"
@@ -191,12 +194,12 @@ async def _person(replies: dict[str, str], asked: list[str]) -> None:
         await asyncio.sleep(0.01)
 
 
-async def _run(machine: Machine, platform: str, replies: dict[str, str]):
+async def _run(machine: Machine, platform: str, replies: dict[str, str], wizard: str = "llm-setup"):
     asked: list[str] = []
     person = asyncio.create_task(_person(replies, asked))
     try:
         result = await run_wizard(
-            read_wizard(ASSETS / "wizard" / "llm-setup"),
+            read_wizard(ASSETS / "wizard" / wizard),
             trusted=True,
             platform=platform,
             workdir=Path.cwd(),
@@ -472,3 +475,25 @@ async def test_with_no_llm_source_the_plain_installs_still_run(platform):
     assert "git" in machine.installed, "the command needs no LLM source"
     assert "claude-code" not in machine.installed and machine.agents == []
     assert not result.steps["claude-code"].steps["install"].ok
+
+
+@pytest.mark.parametrize("platform", ["darwin", "linux"])
+@pytest.mark.parametrize("harness", HARNESSES)
+async def test_a_harness_wizard_installs_it_with_the_command_alone(harness, platform):
+    """`llm-setup-<harness>`: asked, agreed, installed by the plain command — the install step's
+    answer is the command's (`CliResult`), and no agent was launched to get there."""
+    machine = Machine(platform, EVERYTHING - {harness})
+    result, asked = await _run(machine, platform, {f"ask-install-{harness}": "yes"}, wizard=f"llm-setup-{harness}")
+    assert result.ok, result.detail
+    assert asked == [f"ask-install-{harness}"]
+    assert isinstance(result.steps["install"], CliResult), result.steps["install"]
+    assert machine.agents == [] and harness in machine.installed
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+async def test_a_harness_wizard_never_reached_for_is_not_installed(harness):
+    """Declined: nothing ran, the harness stays missing."""
+    machine = Machine("linux", EVERYTHING - {harness})
+    result, _asked = await _run(machine, "linux", {f"ask-install-{harness}": "no"}, wizard=f"llm-setup-{harness}")
+    assert not result.ok
+    assert harness not in machine.installed and not machine.installed_anything

@@ -41,6 +41,10 @@ class Vendor:
     python_module: str | None = None       # the harness is ``python -m <module>``, not a binary on PATH
     python_requires: tuple[str, ...] = ()  # DISTRIBUTIONS whose presence makes a ``python_module`` harness "installed"
     transcript_stems: tuple[str, ...] = ()  # FlowPad-written transcript filename stems, when there is no dot-dir to sniff
+    # Where the vendor's own installer puts the binary (``~`` and ``%VAR%`` expanded). Searched
+    # after PATH: an installer edits the shell rc, which no running process re-reads, so a CLI
+    # installed a moment ago is on disk long before it is on anybody's PATH.
+    install_bin_dirs: tuple[str, ...] = ()
 
     @property
     def package(self) -> str:
@@ -59,6 +63,7 @@ VENDORS: tuple[Vendor, ...] = (
         dot_dir=".claude",
         session_entity_type="claude_session",
         model_prefixes=("claude",),
+        install_bin_dirs=("~/.local/bin",),
     ),
     Vendor(
         key="codex",
@@ -71,6 +76,7 @@ VENDORS: tuple[Vendor, ...] = (
         dot_dir=".codex",
         session_entity_type="codex_session",
         model_prefixes=("gpt",),
+        install_bin_dirs=("~/.local/bin", "%LOCALAPPDATA%/Programs/OpenAI/Codex/bin"),
     ),
     Vendor(
         key="copilot",
@@ -83,6 +89,7 @@ VENDORS: tuple[Vendor, ...] = (
         dot_dir=".copilot",
         session_entity_type="copilot_session",
         model_prefixes=(),  # no price table of its own: priced by the claude table (the documented fallback)
+        install_bin_dirs=("~/.local/bin",),  # $PREFIX/bin: ~/.local for a non-root user, /usr/local (on PATH) for root
     ),
     Vendor(
         key="opencode",
@@ -96,6 +103,7 @@ VENDORS: tuple[Vendor, ...] = (
         session_entity_type=None,
         model_prefixes=("openrouter/",),
         transcript_stems=("opencode_transcript", "session_ses_"),
+        install_bin_dirs=("~/.opencode/bin",),
     ),
     # LangChain's ``deepagents`` harness behind OUR runner CLI. A Python package, not a binary:
     # the builtin worker a box with nothing but an LLM endpoint still has. Headless-only and
@@ -128,6 +136,12 @@ for _v in VENDORS:
     _REGISTRY.register(_v, _v.key)
 
 VENDOR_KEYS: frozenset[str] = frozenset(_REGISTRY.kinds())
+
+
+def install_bin_dirs_for(executable: str) -> tuple[str, ...]:
+    """The declared install folders of the vendor whose executable this is — ``()`` for any other."""
+    vendor = next((v for v in VENDORS if v.key == executable), None)
+    return vendor.install_bin_dirs if vendor is not None else ()
 
 
 def vendor_or_none(name: object) -> Vendor | None:
