@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from cryptography.fernet import Fernet
 
+from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import FUNDED_MAX_OUTPUT_TOKENS
 from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
 
 # CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
@@ -292,6 +293,7 @@ async def test_claude_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth.env["ANTHROPIC_API_KEY"] == ""
     assert auth.env["MAX_THINKING_TOKENS"] == "0"
     assert auth.env["DISABLE_INTERLEAVED_THINKING"] == "1"
+    assert auth.env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == str(FUNDED_MAX_OUTPUT_TOKENS)
     assert auth.model_slug == "anthropic/claude-haiku-4.5"  # OpenRouter slugs: the endpoint is a passthrough
     assert auth.config_overrides == []
 
@@ -563,7 +565,39 @@ async def test_deepagents_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth is not None
     assert auth.env["FLOWPAD_DEEPAGENTS_BASE_URL"] == f"{HUB_INVOKE}/v1"
     assert auth.env["FLOWPAD_DEEPAGENTS_API_KEY"] == "fp-hub-key"
+    assert auth.env["FLOWPAD_DEEPAGENTS_MAX_OUTPUT_TOKENS"] == str(FUNDED_MAX_OUTPUT_TOKENS)
     assert auth.model_slug == "z-ai/glm-5.3-flash"
+
+
+@pytest.mark.parametrize(
+    ("worker", "var"),
+    [
+        ("claude", "CLAUDE_CODE_MAX_OUTPUT_TOKENS"),
+        ("opencode", "OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
+        ("deepagents", "FLOWPAD_DEEPAGENTS_MAX_OUTPUT_TOKENS"),
+    ],
+)
+async def test_a_funded_spawn_caps_its_replies_where_the_harness_takes_a_cap(env, monkeypatch, worker, var) -> None:
+    """Uncapped, a harness asks for 32000 (claude, opencode) or the model's maximum (deepagents):
+    a hub ceiling refuses the first, an OpenRouter daily limit the second."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api(worker, provider="flowpad")
+    auth = await resolve_worker_api_auth(_fake_process(worker, model="sm"))
+    assert auth is not None and auth.env[var] == str(FUNDED_MAX_OUTPUT_TOKENS)
+
+
+def test_the_deepagents_model_sends_the_cap_its_binding_set(monkeypatch) -> None:
+    """The runner's model carries the binding's reply cap -- and sends none when unset."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.deepagents import models, runner
+
+    monkeypatch.setenv(runner.BASE_URL_ENV, "http://hub/v1")
+    monkeypatch.setenv(runner.API_KEY_ENV, "k")
+    monkeypatch.setenv(runner.MAX_OUTPUT_ENV, "16384")
+    assert models.openai_wire_model("z-ai/glm-5").max_tokens == 16384
+    monkeypatch.delenv(runner.MAX_OUTPUT_ENV)
+    assert models.openai_wire_model("z-ai/glm-5").max_tokens is None
 
 
 async def test_deepagents_falls_back_to_a_models_allow_slug(env) -> None:
