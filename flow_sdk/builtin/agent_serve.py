@@ -165,7 +165,7 @@ class TurnEvent:
 class TurnEngine:
     """Runs an agent's turns on one placement (see the module docstring)."""
 
-    def __init__(self, agent, deployment, *, workdir: Optional[str] = None):
+    def __init__(self, agent=None, deployment=None, *, workdir: Optional[str] = None):
         self.agent = agent
         self.deployment = deployment
         self.workdir = workdir
@@ -311,6 +311,13 @@ class TurnEngine:
                 yield done(PromptResult.not_yet(
                     "The agent did not finish its turn in time.", timed_out=True, executor=executor,
                 ))
+                return
+            except RuntimeError as ended:
+                # The worker ended with no end-of-turn marker — it never came up (no funding,
+                # no CLI: ``start_failure`` says which) or died mid-turn. An answer, not a raise.
+                # The STARTED stamp stays, for the same reason as above: a redelivery runs a
+                # turn that left no transcript and reads the one that did.
+                yield done(PromptResult.not_yet(str(ended), executor=executor))
                 return
             # How the WORKER ended, read the one way AgenticProcess.run reads it:
             # an error or an interrupt is NOT_YET, whatever text it left behind.

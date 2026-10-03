@@ -27,7 +27,7 @@ def _no_bootstrap():
 
 async def test_streams_the_answer_and_exits_ok(mock_driver, tmp_path, capsys):
     driver = mock_driver(response_for=lambda prompt: "pong")
-    rc = await process_cmd._run_start("say pong", worker="claude_code", workdir=str(tmp_path))
+    rc = await process_cmd._run_start("say pong", worker_type="claude_code", workdir=str(tmp_path))
     out, err = capsys.readouterr()
     assert rc == 0
     assert out.strip().splitlines()[-1] == "pong"
@@ -39,45 +39,29 @@ async def test_streams_the_answer_and_exits_ok(mock_driver, tmp_path, capsys):
 async def test_a_failed_turn_is_a_nonzero_exit_with_its_reason(mock_driver, tmp_path, capsys):
     mock_driver(response_for=lambda prompt: "half an answer")
     with patch.object(AgenticProcess, "fetch_worker_status", return_value=WorkerStatus.ERROR):
-        rc = await process_cmd._run_start("go", worker="claude_code", workdir=str(tmp_path))
+        rc = await process_cmd._run_start("go", worker_type="claude_code", workdir=str(tmp_path))
     _, err = capsys.readouterr()
     assert rc == 1
     assert err.strip().splitlines()[-1]  # says why, not just a code
 
 
-async def test_a_worker_that_never_starts_exits_nonzero_with_the_reason(mock_driver, tmp_path, capsys):
+async def test_a_worker_that_never_starts_is_an_answer_not_a_raise(mock_driver, tmp_path, capsys):
     mock_driver()
     with patch.object(AgenticProcess, "stream_transcript", side_effect=RuntimeError("no usable LLM source")):
-        rc = await process_cmd._run_start("go", worker="claude_code", workdir=str(tmp_path))
+        rc = await process_cmd._run_start("go", worker_type="claude_code", workdir=str(tmp_path))
     _, err = capsys.readouterr()
     assert rc == 1
     assert "no usable LLM source" in err
 
 
-async def test_with_no_worker_named_an_uninstalled_selection_falls_back_to_deepagents():
-    with (
-        patch("flow_sdk.core.capabilities.registry.resolve_default_worker_type", AsyncMock(return_value="claude_code")),
-        patch(
-            "flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver.worker_is_installed",
-            side_effect=lambda name: name not in ("claude", "claude_code"),
-        ),
-    ):
-        assert await process_cmd._resolve_worker(None) == WorkerType.DEEPAGENTS.value
-
-
-async def test_with_no_worker_named_an_installed_selection_runs():
-    with (
-        patch("flow_sdk.core.capabilities.registry.resolve_default_worker_type", AsyncMock(return_value="codex")),
-        patch(
-            "flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver.worker_is_installed",
-            return_value=True,
-        ),
-    ):
-        assert await process_cmd._resolve_worker(None) == "codex"
-
-
-async def test_a_named_worker_takes_any_spelling():
-    assert await process_cmd._resolve_worker("claude") == WorkerType.CLAUDE_CODE.value
+async def test_with_no_worker_named_the_builtin_rule_picks_it(mock_driver, tmp_path):
+    """No ``--worker`` takes ``resolve_builtin_worker_type`` — the selected harness when
+    installed, else deepagents (that rule's own cases: test_builtin_worker_resolution.py)."""
+    mock_driver(response_for=lambda prompt: "ok")
+    rule = AsyncMock(return_value=WorkerType.DEEPAGENTS.value)
+    with patch("flow_sdk.core.capabilities.registry.resolve_builtin_worker_type", rule):
+        assert await process_cmd._run_start("go", workdir=str(tmp_path)) == 0
+    rule.assert_awaited_once()
 
 
 def test_refuses_beside_a_running_backend():

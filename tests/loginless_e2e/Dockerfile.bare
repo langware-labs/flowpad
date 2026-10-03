@@ -16,5 +16,5 @@ ENV PATH="/home/flow/venv/bin:${PATH}"
 
 COPY --chown=flow:flow dist/flowpad-*.whl /home/flow/wheels/
 RUN python -m venv /home/flow/venv \
- && pip install -q /home/flow/wheels/flowpad-*.whl \
+ && pip install -q --no-cache-dir /home/flow/wheels/flowpad-*.whl \
  && flow --help > /dev/null

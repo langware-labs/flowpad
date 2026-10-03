@@ -34,8 +34,8 @@ flow_sdk installed answers with no flags at all.
 
 from __future__ import annotations
 
-import asyncio
 import contextlib
+import logging
 import tempfile
 import uuid
 from typing import Optional
@@ -47,6 +47,9 @@ from typing_extensions import Annotated
 from flow_sdk.cli.commands._common import (
     EXIT_CONNECTION_ERROR,
     EXIT_INVALID_ARG,
+    quiet_logs,
+    run_async,
+    safe_echo,
 )
 from flow_sdk.cli.commands._common import (
     bad_response_message as _bad_response_message,
@@ -66,6 +69,7 @@ from flow_sdk.cli.commands._common import (
 from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
+from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 
 process_app = typer.Typer(
     name="process",
@@ -134,8 +138,7 @@ def restart_process(
 
 #: A backend for this instance is already running. ``start`` writes the process row in-process,
 #: and a second writer beside a live server is the SQLite contention ``flow llm`` routes around.
-EXIT_INSTANCE_RUNNING = 7
-EXIT_INTERRUPTED = 130
+EXIT_INSTANCE_RUNNING = int(ExitCode.REFUSED)
 
 
 @process_app.command(
@@ -170,42 +173,32 @@ def start_process(
             "A Flowpad backend is running for this instance; `flow process start` runs without one. "
             "Stop it, or point FLOW_INSTANCE at an instance that is not running.",
         )
-    import logging  # noqa: PLC0415
+    worker_type = None
+    if worker:
+        from flow_sdk.flowpad_types.vendors import vendor_or_none  # noqa: PLC0415
 
-    # The stream is the output: backend log lines would interleave with the answer. ERROR too —
-    # a turn that fails says why through its own verdict, so the log would only repeat it.
-    logging.disable(logging.ERROR)
-    try:
-        rc = asyncio.run(_run_start(prompt, worker=worker, model=model, workdir=workdir))
-    except KeyboardInterrupt:
-        rc = EXIT_INTERRUPTED
-    raise typer.Exit(rc)
-
-
-async def _resolve_worker(named: Optional[str]) -> str:
-    """The ``worker_type`` to run: *named* (any spelling) as given; else the builtin-process rule —
-    the selected harness when installed, else the bootstrap worker (``deepagents``: in-process,
-    shipped with the wheel), so a box with only flow_sdk installed still answers."""
-    from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
-    from flow_sdk.flowpad_types.vendors import vendor_or_none  # noqa: PLC0415
-
-    if named:
-        vendor = vendor_or_none(named)
+        vendor = vendor_or_none(worker)
         if vendor is None:
-            _fail(EXIT_INVALID_ARG, "UNKNOWN_WORKER", f"No worker named {named!r}.")
-        return vendor.worker_type
-    return await resolve_builtin_worker_type()
+            _fail(EXIT_INVALID_ARG, "UNKNOWN_WORKER", f"No worker named {worker!r}.")
+        worker_type = vendor.worker_type
+    # ERROR too: a turn that fails says why through its own verdict, so the log would only repeat it.
+    quiet_logs(logging.ERROR)
+    raise typer.Exit(run_async(_run_start(prompt, worker_type=worker_type, model=model, workdir=workdir)))
 
 
 async def _run_start(
     prompt: str,
     *,
-    worker: Optional[str] = None,
+    worker_type: Optional[str] = None,
     model: Optional[str] = None,
     workdir: Optional[str] = None,
 ) -> int:
+    """One turn, streamed: the process id and tool steps to stderr, the agent's messages to
+    stdout. No ``worker_type`` takes the builtin-process rule — the selected harness when
+    installed, else the bootstrap worker (``deepagents``, shipped in the wheel)."""
     from flow_sdk.builtin.agent_serve import Turn, TurnEngine  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+    from flow_sdk.core.capabilities.registry import resolve_builtin_worker_type  # noqa: PLC0415
     from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
 
     await _bootstrap_local()
@@ -213,36 +206,27 @@ async def _run_start(
     if model:
         cli_config["model"] = model
     ap = await AgenticProcess(
-        worker_type=await _resolve_worker(worker),
+        worker_type=worker_type or await resolve_builtin_worker_type(),
         workdir=workdir or tempfile.mkdtemp(prefix="flow-process-"),
         cli_config=cli_config,
         pty_mode=False,
         visible=False,
         load_flowpad_assistant=False,
     ).save()
-    _say(f"running agentic process {ap.typeid}…", err=True)
+    safe_echo(f"running agentic process {ap.typeid}…", err=True)
+    answer = None
     try:
         turn = Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=prompt)
-        async for event in TurnEngine(None, None).run_stream(turn, process=ap):
+        async for event in TurnEngine().run_stream(turn, process=ap):
             if event.kind == "text":
-                _say(event.text)
+                safe_echo(event.text)
             elif event.kind == "tool":
-                _say(f"· {event.name}", err=True)
-            elif event.kind == "done" and event.answer is not None:
-                if not event.answer.ok:
-                    _say(event.answer.detail or "The turn did not finish.", err=True)
-                return int(event.answer.exit_code)
-        return 1
-    except RuntimeError as e:
-        # The worker never came up — funding, a missing CLI, a spawn error. The stream says why.
-        _say(f"Error: {e}", err=True)
-        return 1
+                safe_echo(f"· {event.name}", err=True)
+            elif event.kind == "done":
+                answer = event.answer
     finally:
         with contextlib.suppress(Exception):
             await ap.exit()
-
-
-def _say(text: str, *, err: bool = False) -> None:
-    from flow_sdk.cli.commands.diagnose_cmd import _safe_echo  # noqa: PLC0415
-
-    _safe_echo(text, err=err)
+    if not answer.ok:
+        safe_echo(answer.detail or "The turn did not finish.", err=True)
+    return int(answer.exit_code)
