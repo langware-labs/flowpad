@@ -912,7 +912,6 @@ msgid "{replyCount, plural, one {# reply} other {# replies}}"
 msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "{selectedCount} selected"
 msgstr "{selectedCount} محددة"
 
@@ -2414,6 +2413,10 @@ msgstr "مفتاح Anthropic API للوصول المباشر إلى الـ API"
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "Any detail that helps (optional)"
 msgstr "أي تفصيل مفيد (اختياري)"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Any time"
+msgstr ""
 
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "anyone"
@@ -4119,6 +4122,8 @@ msgid "Clear filter"
 msgstr "مسح المرشح"
 
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear filters"
 msgstr "مسح المرشحات"
 
@@ -9049,6 +9054,10 @@ msgstr "ملفات موجودة على القرص ولم تُضف بعد إلى 
 msgid "Filter branches…"
 msgstr "تصفية الفروع…"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by date"
+msgstr ""
+
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Filter by entity type"
 msgstr "تصفية حسب نوع الكيان"
@@ -9061,9 +9070,17 @@ msgstr "تصفية حسب التسمية أو النمط أو السطر الم�
 msgid "Filter by name or last prompt…"
 msgstr "تصفية حسب الاسم أو آخر موجه…"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by sender"
+msgstr ""
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
 msgstr "تصفية حسب الجلسة"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by subject"
+msgstr ""
 
 #: src/components/events/EventFeed.tsx
 msgid "Filter by tag, subject or rule…"
@@ -9516,6 +9533,7 @@ msgstr ""
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "From"
 msgstr ""
 
@@ -11313,6 +11331,14 @@ msgstr "آخر {0}"
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Last {0}"
 msgstr "آخر {0}"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Last 30 days"
+msgstr ""
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Last 7 days"
+msgstr ""
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last attempt"
@@ -20899,6 +20925,7 @@ msgid "subgraph projection"
 msgstr "إسقاط الرسم الفرعي"
 
 #: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Subject"
 msgstr ""
 
@@ -22542,6 +22569,7 @@ msgstr ""
 #: src/components/cost-dashboard/constants.ts
 #: src/components/cron-view/CronForm.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/token-plan/MembersTable.tsx
 msgid "Today"
 msgstr "اليوم"
