@@ -531,7 +531,23 @@ export function HubHome() {
                         <Trans>Open</Trans>
                       </Button>
                     )
-                  ) : (
+                  ) : null}
+                  {/* A connected machine's own shells: each click spins out one more
+                      terminal session on it (the same path as the terminal strip). */}
+                  {isUserMachine(d) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void navigation.openNewShell({ computeNode: d })}
+                      disabled={!cardEnabled(d)}
+                      aria-label={t`Open a terminal on this machine`}
+                      data-testid="machine-terminal"
+                      className="h-7 shrink-0 px-2.5 text-xs"
+                    >
+                      <Trans>Terminal</Trans>
+                    </Button>
+                  )}
+                  {isLaunched(d) ? null : (
                     <Button
                       size="sm"
                       onClick={() => setLaunching(d)}
