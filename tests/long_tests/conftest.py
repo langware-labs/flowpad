@@ -190,6 +190,9 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_agentic_process_prompt_streaming",
         "test_agentic_cli_shell_mix",
         "test_claude_cli",
+        # Spawns a real claude PTY; since the LLM-source gate (b866ddfee) a sandbox-HOME probe
+        # reads "signed out" and createProcess answers 400.
+        "test_create_process_terminal_theme",
         "test_clean_claude_pty",
         "test_clean_claude_pty_stress",
         "test_cli_driver_binary_smoke",
