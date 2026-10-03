@@ -7470,6 +7470,7 @@ class AgenticProcess(Entity):
         cross_linked: set[str] = set()
         touched: list[str] = []
         touched_set: set[str] = set()
+        plan_announced: str | None = None  # resolved once per flush, on the first write
         for entry in entries:
             if isinstance(entry, ExitPlanModeEntry):
                 # The tool_use input carries only the ``plan`` prose — the path
@@ -7494,6 +7495,20 @@ class AgenticProcess(Entity):
                 if path and path not in touched_set:
                     touched_set.add(path)
                     touched.append(path)
+                # Writing the plan file the ``plan_mode`` attachment announced IS the plan.
+                # Claude Code 2.1.x defers ``ExitPlanMode`` and persists its tool_use only
+                # once the person answers the approval prompt, so waiting for it left
+                # ``plan_path`` unset — and the Open-Plan chip hidden — for exactly the
+                # stretch the plan sits awaiting approval.
+                if path and path != self.plan_path:
+                    if plan_announced is None:
+                        plan_announced = self.plan_path_from_attachments(self._current_transcript())
+                    if path == plan_announced:
+                        await self.on_plan_created(entry, plan_file_path=path)
+                        await self.emit_entity_event(
+                            "plan.create",
+                            {"plan_file_path": path, "session_id": self.session_id},
+                        )
 
             if isinstance(entry, (FileReadEntry, FileWriteEntry, FileEditEntry)):
                 path = getattr(entry, "path", None)
