@@ -271,3 +271,69 @@ def test_a_plain_shell_reports_to_the_instance_address(monkeypatch):
     run("report", "index", "inc-success")
 
     assert monitor.get("index").done == 1
+
+
+# ---------------------------------------------------------------- orchestrated work
+
+
+def test_subject_none_reports_to_the_box_from_inside_a_process(monkeypatch):
+    """An agent orchestrating work for the person watching must reach the footer, which
+    folds the agent's own scoped rows into its worker row."""
+    monkeypatch.setattr(
+        "flow_sdk.utils.environment.get_execution_scope",
+        lambda: [{"type": "agentic_process", "id": "abc"}],
+    )
+
+    run("report", "qa", "inc-success", "--subject", "none")
+
+    assert monitor.get("qa").done == 1
+    assert monitor.get("qa", subject_entity="agentic_process-abc") is None
+
+
+def test_plan_takes_the_compact_shell_form():
+    payload = run("report", "qa", "plan", "p02:2=pytest API, p05:3=vitest API, p11")
+
+    children = payload["activity"]["children"]
+    assert [(c["name"], c["label"], c["total"], c["state"]) for c in children] == [
+        ("p02", "pytest API", 2, "pending"),
+        ("p05", "vitest API", 3, "pending"),
+        ("p11", None, None, "pending"),
+    ]
+
+
+def test_set_progress_takes_key_value_pairs():
+    run("report", "qa/p02", "total", "6")
+    payload = run("report", "qa/p02", "set-progress", "done=4 skipped=1")
+
+    assert (payload["activity"]["done"], payload["activity"]["skipped"]) == (4, 1)
+
+
+def test_an_unreadable_set_progress_is_refused_before_any_request():
+    assert run_failing("report", "qa", "set-progress", "done=lots")["error_code"] == "BAD_ARGUMENT"
+    assert monitor.count() == 0
+
+
+def test_a_stdin_line_carries_its_own_ref():
+    """A reporter writes one quoted line per failure, each about a different test."""
+    lines = (
+        "total 3\n"
+        "inc-error 'AssertionError: 1 != 2' --ref tests/a.py::t1\n"
+        "inc-error \"KeyError: 'x'\" --ref tests/b.py::t2\n"
+        "set-progress done=1\n"
+    )
+    result = runner.invoke(app, ["progress", "report", "qa/p02", "--stdin"], input=lines)
+    assert result.exit_code == 0, result.output
+
+    spec = monitor.get("qa").children[0]
+    assert (spec.done, spec.errors_count) == (1, 2)
+    assert [(e.message, e.ref) for e in spec.errors] == [
+        ("AssertionError: 1 != 2", "tests/a.py::t1"),
+        ("KeyError: 'x'", "tests/b.py::t2"),
+    ]
+
+
+def test_a_stdin_line_that_is_not_shell_quoting_still_reads():
+    result = runner.invoke(app, ["progress", "report", "walk", "--stdin"], input="current it's.md\n")
+    assert result.exit_code == 0, result.output
+
+    assert monitor.get("walk").current == "it's.md"

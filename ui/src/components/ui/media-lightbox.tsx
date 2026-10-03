@@ -1,6 +1,9 @@
-import { useEffect } from 'react';
+import { t } from '@lingui/core/macro';
+import { Check, Copy, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { isImagePath } from '@sdk';
+import { notify } from '@src/notifications';
 
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'm4v', 'webm', 'ogv', 'ogg']);
 const VIDEO_MIME: Record<string, string> = {
@@ -38,6 +41,21 @@ export function videoSource(url: string, name: string) {
   return mime ? <source src={url} type={mime} /> : <source src={url} />;
 }
 
+// The clipboard only reliably takes PNG, so anything else is re-encoded
+// through a canvas first.
+async function imageAsPng(url: string): Promise<Blob> {
+  const blob = await (await fetch(url)).blob();
+  if (blob.type === 'image/png') return blob;
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((png) => (png ? resolve(png) : reject(new Error('PNG encode failed'))), 'image/png'),
+  );
+}
+
 interface MediaLightboxProps {
   url: string;
   /** File name — picks image vs video and labels the dialog. */
@@ -45,12 +63,19 @@ interface MediaLightboxProps {
   onClose: () => void;
 }
 
+const FRAME_BUTTON =
+  'flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
 /**
- * Fullscreen in-app preview for an image or video. Backdrop click + Esc close;
- * clicking the media itself does not. Portalled to `body` so a host with a
- * transform or overflow clip (a terminal pane, a chat bubble) can't trap it.
+ * In-app preview for an image or video, in a rounded, heavily bordered frame
+ * with a Close button and (for images) Copy to clipboard. Backdrop click + Esc
+ * close; clicking inside the frame does not. Portalled to `body` so a host
+ * with a transform or overflow clip (a terminal pane, a chat bubble) can't trap it.
  */
 export function MediaLightbox({ url, name, onClose }: MediaLightboxProps) {
+  const [copied, setCopied] = useState(false);
+  const isVideo = isVideoPath(name);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -59,6 +84,18 @@ export function MediaLightbox({ url, name, onClose }: MediaLightboxProps) {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const copyImage = useCallback(async () => {
+    try {
+      // ClipboardItem takes the Promise<Blob>, so write() runs inside the click
+      // gesture while the PNG is still being produced.
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': imageAsPng(url) })]);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      notify.error({ title: t`Clipboard not updated`, message: t`The image could not be copied to the clipboard.` });
+    }
+  }, [url]);
+
   return createPortal(
     <div
       role="dialog"
@@ -66,26 +103,51 @@ export function MediaLightbox({ url, name, onClose }: MediaLightboxProps) {
       aria-label={name}
       data-testid="media-lightbox"
       onClick={onClose}
-      className="fixed inset-0 z-[100] flex cursor-zoom-out items-center justify-center bg-black/80 p-6"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-background/70 p-6 backdrop-blur-sm"
     >
-      {isVideoPath(name) ? (
-        <video
-          controls
-          autoPlay
-          playsInline
-          onClick={(e) => e.stopPropagation()}
-          className="max-h-full max-w-full cursor-default rounded-lg bg-black shadow-2xl"
-        >
-          {videoSource(url, name)}
-        </video>
-      ) : (
-        <img
-          src={url}
-          alt={name}
-          onClick={(e) => e.stopPropagation()}
-          className="max-h-full max-w-full cursor-default rounded-lg object-contain shadow-2xl"
-        />
-      )}
+      <div
+        data-testid="media-lightbox-frame"
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-full max-w-full flex-col overflow-hidden rounded-2xl border-4 border-border bg-card text-card-foreground shadow-2xl"
+      >
+        <div className="flex items-center gap-2 border-b-2 border-border px-3 py-1.5">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>
+            {name}
+          </span>
+          {!isVideo && (
+            <button
+              type="button"
+              onClick={() => void copyImage()}
+              title={t`Copy image to clipboard`}
+              aria-label={t`Copy image to clipboard`}
+              data-testid="media-lightbox-copy"
+              className={FRAME_BUTTON}
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? t`Copied` : t`Copy`}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            title={t`Close`}
+            aria-label={t`Close`}
+            data-testid="media-lightbox-close"
+            className={FRAME_BUTTON}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-muted/40">
+          {isVideo ? (
+            <video controls autoPlay playsInline className="max-h-[calc(100vh-7rem)] max-w-full bg-black">
+              {videoSource(url, name)}
+            </video>
+          ) : (
+            <img src={url} alt={name} className="max-h-[calc(100vh-7rem)] max-w-full object-contain" />
+          )}
+        </div>
+      </div>
     </div>,
     document.body,
   );

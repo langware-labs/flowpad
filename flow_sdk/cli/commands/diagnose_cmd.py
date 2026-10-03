@@ -23,6 +23,8 @@ import typer
 from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
 from flow_sdk.agentic_warmup import await_worker_started
 from flow_sdk.api.api_types.identifier import is_valid_entity_id
+from flow_sdk.cli.commands._common import quiet_logs
+from flow_sdk.cli.commands._common import safe_echo as _safe_echo
 
 # The id keys report.py's result JSON carries. ``diagnosis_id`` is always an id;
 # the support pair is either both ids (an issue) or both ``None`` (a clean sweep).
@@ -73,26 +75,7 @@ def _quiet_logs() -> None:
     ``@local … legacy random id`` warnings from bootstrap. ERROR/CRITICAL still
     surface.
     """
-    logging.disable(logging.WARNING)
-
-
-# Glyph → ASCII fallbacks for consoles whose codepage can't encode the decorative
-# characters (Windows cp1252 has no ▸ / ✓, so ``typer.echo`` raises
-# UnicodeEncodeError on them). Only consulted when a direct echo fails, so UTF-8
-# terminals render the real glyphs unchanged.
-_GLYPH_FALLBACKS = {"▸": ">", "✓": "v", "✗": "x", "·": ".", "…": "...", "—": "-", "–": "-"}
-
-
-def _safe_echo(message: str = "", *, nl: bool = True, err: bool = False) -> None:
-    """``typer.echo`` that degrades gracefully instead of crashing the run on a
-    non-UTF-8 console. The encode error fires before any bytes are written, so the
-    ASCII-fallback retry cannot double-print.
-    """
-    try:
-        typer.echo(message, nl=nl, err=err)
-    except UnicodeEncodeError:
-        safe = "".join(_GLYPH_FALLBACKS.get(c, c) for c in message)
-        typer.echo(safe.encode("ascii", "replace").decode("ascii"), nl=nl, err=err)
+    quiet_logs(logging.WARNING)
 
 
 class _TerminalSink:

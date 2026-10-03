@@ -70,7 +70,7 @@ Parse the user's request and identify which of the 6 job types applies:
 
 | # | Job type | Trigger phrase |
 |---|----------|----------------|
-| i | **QA Cycle** | `run qa cycle` / `full qa` / `qa cycle` |
+| i | **QA Cycle** | `run qa cycle` / `full qa` / `qa cycle` — or a **partial** cycle: `run N tests from phase X [and M from phase Y]` |
 | ii | **Debug Test** | `debug test <X>` |
 | iii | **Run Scenario** | `run scenario <Y>` / `run <category>` |
 | iv | **Analyze** | `analyze [area]` |
@@ -100,7 +100,7 @@ If ambiguous, ask the user to clarify before continuing. **This is the ONLY mome
 - **The `index` is a convenience view, not the source of truth for coverage.** The authoritative set of specs-without-a-test (Phase 12's scope) is derived directly from the filesystem via the `comm -23` diff in `modes/qa-cycle.md` (Phase 12 → Coverage detection), so a stale index can never hide an un-executed `.md`.
 
 ### 4. Execute (job-type-specific)
-- **i. QA Cycle**: read `modes/qa-cycle.md`
+- **i. QA Cycle**: read `modes/progress.md` FIRST (the per-run plan and live progress), then `modes/qa-cycle.md`
 - **ii. Debug Test**: read `modes/debug.md`
 - **iii. Run Scenario**: read `modes/run.md`
 - **iv. Analyze**: read `modes/analyze.md`
@@ -133,6 +133,20 @@ If ambiguous, ask the user to clarify before continuing. **This is the ONLY mome
 For output formats, schemas, storage, error handling, and shared work products, read `modes/reference.md`.
 
 For team creation and teammate spawn templates, read `modes/team-setup.md` before spawning any teammates.
+
+---
+
+## Plan & Progress (non-negotiable)
+
+The person who started the job watches the footer **activity bar** and its details modal.
+For job type i the manager builds **one plan per run from the instruction** and announces
+it before any test runs — a partial cycle ("2 tests from phase 2 and 3 from phase 5")
+plans exactly those phases with exactly those totals and nothing else. Test counts and
+verdicts come from the runner through `flow test run` (its exit code is the verdict, its
+last stdout line the machine-read summary), never from the manager's own arithmetic. Each
+failure gets its own node the debugger and fixer report their steps on, and the run ends
+with the summary as the receipt. Full protocol, commands and selection rules:
+`modes/progress.md`.
 
 ---
 

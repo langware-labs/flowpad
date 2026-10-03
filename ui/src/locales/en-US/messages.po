@@ -4236,6 +4236,7 @@ msgid "Click to view full prompt"
 msgstr "Click to view full prompt"
 
 #: src/components/image-annotator/image-annotator-store.tsx
+#: src/components/ui/media-lightbox.tsx
 msgid "Clipboard not updated"
 msgstr "Clipboard not updated"
 
@@ -4306,6 +4307,8 @@ msgstr "Cloning…"
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 #: src/components/top-nav-bar/AddressAskField.tsx
 #: src/components/ui/dialog.tsx
+#: src/components/ui/media-lightbox.tsx
+#: src/components/ui/media-lightbox.tsx
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
@@ -5024,6 +5027,7 @@ msgstr "Conversation unavailable"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/ui/media-lightbox.tsx
 #: src/components/webapp-viewer.tsx
 msgid "Copied"
 msgstr "Copied"
@@ -5066,6 +5070,7 @@ msgstr "Copilot tab"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
+#: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Copy"
 msgstr "Copy"
@@ -5142,6 +5147,11 @@ msgstr "Copy event JSON"
 #: src/components/organization/budgets/EditableTitle.tsx
 msgid "Copy id"
 msgstr "Copy id"
+
+#: src/components/ui/media-lightbox.tsx
+#: src/components/ui/media-lightbox.tsx
+msgid "Copy image to clipboard"
+msgstr "Copy image to clipboard"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
 msgid "Copy join code"
@@ -9372,6 +9382,10 @@ msgstr "Focus local graph here"
 msgid "Focused"
 msgstr "Focused"
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "folder"
+msgstr "folder"
+
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
@@ -9671,6 +9685,7 @@ msgid "ghost"
 msgstr "ghost"
 
 #: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 msgid "git"
 msgstr "git"
 
@@ -10185,6 +10200,7 @@ msgstr "History of {scopeLabel}’s budget"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
@@ -12930,6 +12946,10 @@ msgstr "never run"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
 msgstr "Never synced to cloud"
+
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "new"
+msgstr "new"
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
@@ -18895,6 +18915,10 @@ msgstr "Seems like you are trying to clone a private git repo. You should connec
 msgid "Segment dur"
 msgstr "Segment dur"
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "select"
+msgstr "select"
+
 #. placeholder {0}: c.displayName
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Select {0}"
@@ -18993,6 +19017,7 @@ msgid "Select parent folder"
 msgstr "Select parent folder"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
@@ -21509,6 +21534,10 @@ msgstr "The hub refused the change."
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
 msgstr "The hub refused this client."
+
+#: src/components/ui/media-lightbox.tsx
+msgid "The image could not be copied to the clipboard."
+msgstr "The image could not be copied to the clipboard."
 
 #: src/i18n/pref-labels.ts
 msgid "The in-app terminal is always the primary shell. This controls whether a sidecar OS Terminal window is also opened."

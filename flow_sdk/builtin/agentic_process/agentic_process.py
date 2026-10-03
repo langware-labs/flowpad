@@ -3380,7 +3380,10 @@ class AgenticProcess(Entity):
         neutral.
 
         Args:
-            timeout: Maximum seconds to wait for the process to reach idle.
+            timeout: Seconds to wait for the turn to reach idle once its worker is no
+                longer active. A live worker is never cut off: a long tool call (an
+                install, a build) can write nothing for minutes, so the budget only
+                starts counting when the worker stops.
             poll_interval: How often (seconds) to check for new transcript data.
 
         Raises:
@@ -3418,6 +3421,8 @@ class AgenticProcess(Entity):
         while transcript_path is None:
             if _turn_ended():
                 raise _unfinished_turn()
+            if prompt_worker_active(self.id):
+                deadline = time.monotonic() + timeout
             if time.monotonic() > deadline:
                 raise TimeoutError("stream_transcript: transcript file did not appear within timeout")
             transcript_path = self.driver.transcript_path(self)
@@ -3519,6 +3524,8 @@ class AgenticProcess(Entity):
             # release while the tail still shows the prior marker — re-opening the
             # off-by-one.
             _worker_active = prompt_worker_active(self.id)
+            if _worker_active:
+                deadline = time.monotonic() + timeout
             _turn_idle = (
                 _is_user_turn is not None and tail_status == _WS.IDLE and _user_turns_seen > _user_turns_at_open
             )

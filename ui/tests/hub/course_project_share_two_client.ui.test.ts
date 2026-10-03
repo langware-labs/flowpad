@@ -205,10 +205,13 @@ describe('course project share → install → auto-launch (two instances)', () 
     await shot(bobPage.page, '01-bob-before-install');
 
     await openAssignedConversationInUI(bobPage, inviteConversationId);
-    const chip = bobPage.page.getByTestId('project-chip');
+    // The invite's bundle staged the project, so it is the generic dashed attachment chip
+    // (a9d635f32), not the legacy ProjectMessageChip; it opens the review popup, whose
+    // project branch offers the install.
+    const chip = bobPage.page.getByTestId(`entity-chip-project-${projectId}`);
     await chip.waitFor({ state: 'visible', timeout: 30_000 });
-    // The dashed chip opens the review popup; its project branch offers Install project.
-    await chip.getByRole('button').click();
+    expect(await bobPage.page.getByTestId('project-chip').count(), 'no legacy project chip').toBe(0);
+    await chip.click();
     const installButton = bobPage.page.getByTestId('asset-review-dialog').getByTestId('project-install-button');
     await installButton.waitFor({ state: 'visible', timeout: 30_000 });
     expect(await bobPage.page.getByTestId('incoming-project-dialog').count(), 'no install popup').toBe(0);

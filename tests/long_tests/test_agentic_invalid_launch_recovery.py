@@ -61,6 +61,19 @@ async def _run_real_agentic_scenario(root: Path) -> dict:
         compute_node = await ComputeNode.get_local()
         assert compute_node is not None
 
+        # The child's HOME is empty, so codex has no login of its own and the LLM-source
+        # gate would refuse the spawn before the PTY environment is ever built — the
+        # failure this test is about. Record the device login as signed in; the launch
+        # still fails at the embedded NUL, before codex itself runs.
+        from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginState
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
+        from flow_sdk.builtin.capability import Capability
+
+        cap = await Capability.get_by_kind(worker_capability_kind("codex"))
+        assert cap is not None, "no codex capability row seeded"
+        cap.login_state = DeviceLoginState.AUTHENTICATED
+        await cap.save(notify=False)
+
         process = AgenticProcess(
             worker_type="codex",
             project_id=project.id,

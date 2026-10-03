@@ -217,7 +217,7 @@ def resolve_asset_collisions(
     candidates: Iterable[CandidateT],
     stored: StoredOccurrences,
     identity_reader: Callable[[CandidateT | str], Identity | None],
-    git_probe: Callable[[str], datetime | None],
+    git_probe: Callable[[Sequence[str]], Mapping[str, datetime | None]],
     now: datetime,
 ) -> tuple[AssetCollision, ...]:
     """Resolve one primary path per ``(type, id)`` group.
@@ -225,7 +225,10 @@ def resolve_asset_collisions(
     ``identity_reader`` returns ``(type_name, entity_id, path)`` for a live
     candidate or stored path, or ``None`` when it cannot be validated. Stored
     validation must be read-only. Candidate order never affects the result. Git
-    is probed only for groups with multiple live paths.
+    is probed only for groups with multiple live paths, ONCE for all of them
+    (``git_probe`` takes every path and answers a map), and never again for a path
+    an earlier pass already ranked: when a path was introduced to its repository
+    is history, and the stored occurrence kept the answer.
     """
     observed_at = _utc(now)
     live: dict[tuple[str, str], set[str]] = {}
@@ -289,6 +292,19 @@ def resolve_asset_collisions(
                 continue
             live.setdefault(key, set()).add(occurrence.path)
 
+    # Every path in a collided group whose introduction is not already known from a pass that
+    # ranked it -- asked in one call, so a repository's history is walked once, not per path.
+    known: dict[str, datetime | None] = {
+        item.path: item.introduced_at for items in previous.values() if len(items) > 1 for item in items
+    }
+    unknown = sorted({path for paths in live.values() if len(paths) > 1 for path in paths} - set(known))
+    probed: Mapping[str, datetime | None] = {}
+    if unknown:
+        try:
+            probed = git_probe(unknown)
+        except Exception:  # noqa: BLE001 — git is best-effort evidence, never a reason to fail the index
+            probed = {}
+
     decisions: list[AssetCollision] = []
     for type_name, entity_id in sorted(set(live) | set(previous)):
         key = (type_name, entity_id)
@@ -299,10 +315,7 @@ def resolve_asset_collisions(
         git_introduced: dict[str, datetime | None] = {}
         if len(paths) > 1:
             for path in sorted(paths):
-                try:
-                    introduced = git_probe(path)
-                except Exception:
-                    introduced = None
+                introduced = known[path] if path in known else probed.get(path)
                 git_introduced[path] = _utc(introduced) if introduced is not None else None
 
         # Probed once per path rather than per comparison, so the evidence kept

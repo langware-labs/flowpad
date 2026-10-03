@@ -18,7 +18,11 @@ called ``list`` or ``show`` would shadow one. Verb-first also matches ``flow rec
 
 An agent running inside an AgenticProcess needs no ``--subject``: it defaults to that
 process, read from ``FLOWPAD_EXECUTION_SCOPE`` the same way ``flow record`` resolves its
-target, so an agent's progress lands on its own row in the footer chip.
+target, so an agent's progress lands on its own row in the footer chip. Work the agent
+ORCHESTRATES for the person watching goes to the whole box with ``--subject none``::
+
+    flow progress report qa plan "p02:2=pytest API,p05:3=vitest API" --subject none
+    flow progress report qa/p02 set-progress "done=1 skipped=0" --subject none
 
 For a tight loop, ``--stdin`` takes one ``verb arg`` per line, so walking ten thousand
 files is one process rather than ten thousand::
@@ -30,6 +34,8 @@ files is one process rather than ten thousand::
 
 from __future__ import annotations
 
+import json
+import shlex
 import sys
 from typing import Any, Optional
 
@@ -68,7 +74,7 @@ BASE = "/api/v1/activity"
 #: ``total 5000``, ``current a.md``. The message verbs read it as a sentence, because
 #: ``done "indexed 5,000"`` is how a person says it; the bare ones take none at all.
 _MESSAGE_VERBS = {"block", "pause", "done", "fail", "cancel", "message", "label", "inc_error"}
-_BARE_VERBS = {"resume", "reset"}
+_BARE_VERBS = {"resume", "reset", "rerun"}
 
 
 def _url(path: str, *parts: str) -> str:
@@ -81,13 +87,61 @@ def _url(path: str, *parts: str) -> str:
     return f"http://localhost:{port}{BASE}" + ("/" + "/".join(segments) if segments else "")
 
 
+#: ``--subject none`` — report to the whole box even from inside an AgenticProcess.
+#: Work an agent ORCHESTRATES (a QA cycle, a migration) belongs on the footer for the
+#: person watching, not on the agent's own row, which the footer folds into the worker.
+NO_SUBJECT = "none"
+
+
 def _default_subject(explicit: "Optional[str]") -> "Optional[str]":
     """``--subject`` wins; otherwise the calling AgenticProcess, if there is one.
 
     An agent reporting its own progress should not have to know its own id, and a plain
     shell on the box should get the instance-wide default. Both fall out of this.
+    ``--subject none`` is the explicit instance-wide address, process or not.
     """
+    if explicit is not None and explicit.strip().lower() == NO_SUBJECT:
+        return None
     return explicit or _current_process_typeid()
+
+
+def _parse_plan(arg: str) -> "list[dict[str, Any]]":
+    """``plan``'s argument: JSON, or ``name[:total][=label]`` items separated by commas.
+
+    ``"p02:2=pytest API,p05:3=vitest API"`` — the compact form a shell line can carry.
+    """
+    text = arg.strip()
+    if text.startswith("["):
+        return json.loads(text)
+    items: "list[dict[str, Any]]" = []
+    for part in (p.strip() for p in text.split(",")):
+        if not part:
+            continue
+        head, _, label = part.partition("=")
+        name, _, total = head.partition(":")
+        item: "dict[str, Any]" = {"name": name.strip()}
+        if label.strip():
+            item["label"] = label.strip()
+        if total.strip():
+            item["total"] = int(total)
+        items.append(item)
+    return items
+
+
+def _parse_progress(arg: str) -> "dict[str, int]":
+    """``set-progress``'s argument: JSON, or ``done=5 skipped=1 errors=0``."""
+    text = arg.strip()
+    if text.startswith("{"):
+        return json.loads(text)
+    out: "dict[str, int]" = {}
+    for token in text.replace(",", " ").split():
+        key, _, value = token.partition("=")
+        out[key.strip()] = int(value)
+    return out
+
+
+#: Verbs whose argument is structured rather than one value or one sentence.
+_PARSERS = {"plan": _parse_plan, "set_progress": _parse_progress}
 
 
 def _subject_params(subject_entity: "Optional[str]") -> "dict[str, Any]":
@@ -100,7 +154,12 @@ def _subject_params(subject_entity: "Optional[str]") -> "dict[str, Any]":
 
 def _body(verb: str, arg: "Optional[str]", *, ref, code, counter, n, subject_entity) -> "dict[str, Any]":
     body: "dict[str, Any]" = {"n": n, "subject_entity": subject_entity, "ref": ref, "code": code, "counter": counter}
-    if arg is not None and verb not in _BARE_VERBS:
+    if arg is not None and verb in _PARSERS:
+        try:
+            body["value"] = _PARSERS[verb](arg)
+        except (ValueError, TypeError) as exc:
+            _fail(EXIT_INVALID_ARG, "BAD_ARGUMENT", f"cannot read {verb} argument {arg!r}: {exc}")
+    elif arg is not None and verb not in _BARE_VERBS:
         body["message" if verb in _MESSAGE_VERBS else "value"] = arg
     return {k: v for k, v in body.items() if v is not None}
 
@@ -135,10 +194,43 @@ def _post(path: str, verb: str, body: "dict[str, Any]") -> dict:
     return _request("POST", _url(path, verb), json=body) or {}
 
 
+#: Options a ``--stdin`` line may carry for itself, overriding the command line's.
+_LINE_OPTIONS = {"--ref": "ref", "--code": "code", "--counter": "counter", "--n": "n"}
+
+
+def _parse_stream_line(line: str) -> "tuple[str, Optional[str], dict[str, str]]":
+    """One ``--stdin`` line: ``verb [arg ...] [--ref R] [--code C] [--counter K] [--n N]``.
+
+    Shell-quoted, so a reporter can write ``inc-error 'AssertionError: 1 != 2' --ref
+    tests/a.py::t`` and every failure carries its own ref. A line that is not valid shell
+    quoting (an unpaired apostrophe in a file name) falls back to the plain
+    ``verb rest-of-line`` form, which is what this read before options existed.
+    """
+    try:
+        tokens = shlex.split(line)
+    except ValueError:
+        head, _, rest = line.partition(" ")
+        return _canonical_verb(head), (rest.strip() or None), {}
+    if not tokens:
+        return "", None, {}
+    opts: "dict[str, str]" = {}
+    words: "list[str]" = []
+    i = 1
+    while i < len(tokens):
+        key = _LINE_OPTIONS.get(tokens[i])
+        if key is not None and i + 1 < len(tokens):
+            opts[key] = tokens[i + 1]
+            i += 2
+            continue
+        words.append(tokens[i])
+        i += 1
+    return _canonical_verb(tokens[0]), (" ".join(words) or None), opts
+
+
 @progress_app.command("report", context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def report(
     path: Annotated[str, typer.Argument(help="Activity address, e.g. 'index' or 'index/pdf'.")],
-    verb: Annotated[Optional[str], typer.Argument(help="label|total|current|message|icon|inc-success|inc-skipped|inc-error|inc|block|resume|done|fail|cancel|reset|show")] = None,
+    verb: Annotated[Optional[str], typer.Argument(help="label|total|current|message|icon|plan|inc-success|inc-skipped|inc-error|inc|set-counter|set-progress|block|pause|resume|rerun|done|fail|cancel|reset")] = None,
     arg: Annotated[Optional[str], typer.Argument(help="The verb's argument.")] = None,
     n: Annotated[int, typer.Option("--n", help="Repeat count for the inc verbs.")] = 1,
     ref: Annotated[Optional[str], typer.Option("--ref", help="What an error is ABOUT — a path, a TypeId.")] = None,
@@ -147,8 +239,8 @@ def report(
     subject_entity: Annotated[Optional[str], # `--scope` stays as an alias: agents and prompts already written against it
         # keep working, and a rename that silently breaks a running worker is not a
         # rename, it is a regression.
-        typer.Option("--subject", "--scope", help="TypeId this activity belongs to. Defaults to the calling process.")] = None,
-    read_stdin: Annotated[bool, typer.Option("--stdin", help="Read one 'verb arg' per line — one process for a whole loop.")] = False,
+        typer.Option("--subject", "--scope", help="TypeId this activity belongs to, or 'none' for the whole box. Defaults to the calling process.")] = None,
+    read_stdin: Annotated[bool, typer.Option("--stdin", help="Read one shell-quoted 'verb arg [--ref R] [--counter K] [--n N]' per line — one process for a whole loop.")] = False,
 ) -> None:
     """Apply one verb (or a stream of them) to the activity at ``path``."""
     resolved_subject = _default_subject(subject_entity)
@@ -159,10 +251,13 @@ def report(
             line = line.strip()
             if not line:
                 continue
-            parts = line.split(" ", 1)
-            stream_verb = _canonical_verb(parts[0])
-            stream_arg = parts[1].strip() if len(parts) > 1 else None
-            last = _post(path, stream_verb, _body(stream_verb, stream_arg, ref=ref, code=code, counter=counter, n=n, subject_entity=resolved_subject))
+            stream_verb, stream_arg, opts = _parse_stream_line(line)
+            last = _post(path, stream_verb, _body(
+                stream_verb, stream_arg,
+                ref=opts.get("ref", ref), code=opts.get("code", code),
+                counter=opts.get("counter", counter), n=int(opts.get("n", n)),
+                subject_entity=resolved_subject,
+            ))
         _ok({"activity": last})
         return
 

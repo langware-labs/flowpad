@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 from flow_sdk.schema.data_spec.returned_value_spec import CliResult
 
@@ -503,6 +503,80 @@ def git_asset_introduction(path: str) -> datetime | None:
         return min(dates) if dates else None
     except (OSError, ValueError):
         return None
+
+
+def _parse_iso_utc(line: str) -> datetime | None:
+    try:
+        parsed = datetime.fromisoformat(line.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
+
+
+def git_assets_introduction(paths: Iterable[str]) -> dict[str, datetime | None]:
+    """``git_asset_introduction`` for many paths, in one history walk per repository.
+
+    The per-path probe spawns ``git log`` once per path, and each walks the WHOLE history -- a
+    collision pass over many shipped assets in a large checkout ran for tens of seconds. Here
+    every repository answers in one ``git log --name-only`` over all of its paths: a path's
+    introduction is the earliest commit that ADDED it (a folder: any child under it).
+
+    One thing a shared walk cannot do is follow a rename (``--follow`` takes one path), so a
+    tracked FILE the walk saw no addition for -- its add is under an older name -- is asked again
+    alone, with ``--follow``. An untracked path is answered ``None`` without walking anything.
+    """
+    out: dict[str, datetime | None] = {}
+    by_root: dict[str, list[tuple[str, str, bool]]] = {}
+    for path in dict.fromkeys(paths):
+        out[path] = None
+        try:
+            root = find_project_root(path)
+            if root is None:
+                continue
+            target = Path(path).resolve()
+            rel = target.relative_to(Path(root).resolve()).as_posix()
+        except (OSError, ValueError):
+            continue
+        by_root.setdefault(root, []).append((path, rel, target.is_dir()))
+
+    for root, items in by_root.items():
+        tracked = set(_sync(root, "ls-files", "--", *(rel for _p, rel, _d in items)).splitlines())
+        live = [item for item in items if item[2] or item[1] in tracked]
+        if not live:
+            continue
+        # --full-diff + -M: a commit that touches these paths reports EVERY change in it, so a
+        # rename pairs its old and new names ("R100\told\tnew") instead of reading as an add.
+        log = _sync(
+            root, "log", "--format=@%aI", "--full-diff", "-M", "--name-status", "--diff-filter=AR",
+            "--", *(rel for _p, rel, _d in live), timeout=60,
+        )
+        earliest: dict[str, datetime] = {}
+        renamed: set[str] = set()
+        when: datetime | None = None
+        for line in log.splitlines():
+            if line.startswith("@"):
+                when = _parse_iso_utc(line[1:])
+                continue
+            fields = line.split("\t")
+            if when is None or len(fields) < 2:
+                continue
+            name = fields[-1]  # an add's path, or a rename's NEW path
+            for path, rel, is_dir in live:
+                if is_dir and name.startswith(rel + "/"):
+                    # A folder is introduced by its earliest child, however that child arrived.
+                    if path not in earliest or when < earliest[path]:
+                        earliest[path] = when
+                elif name == rel:
+                    if fields[0].startswith("R"):
+                        renamed.add(path)
+                    elif path not in earliest or when < earliest[path]:
+                        earliest[path] = when
+        for path, _rel, is_dir in live:
+            if not is_dir and path in renamed:
+                out[path] = git_asset_introduction(path)  # only --follow reaches the add under its old name
+            else:
+                out[path] = earliest.get(path)
+    return out
 
 
 async def git_commit_file(repo_path: str, rel_file: str, message: str) -> bool:

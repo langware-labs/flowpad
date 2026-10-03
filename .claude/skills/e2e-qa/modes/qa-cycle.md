@@ -1,6 +1,6 @@
 # QA Cycle Mode
 
-When invoked with `run qa cycle` / `full qa` / `qa cycle`:
+When invoked with `run qa cycle` / `full qa` / `qa cycle` — or a partial cycle, `run N tests from phase X [and M from phase Y]` (only those phases, only those tests):
 
 Runs all test suites in sequence across 12 phases. **You never advance to the next phase unless the current phase is RESOLVED** (see Phase Rules for the per-phase definition). All failures in a phase must be debugged and fixed — or, in phases 1–10, `flagged` — before moving on; in phases 11–12 an unresolved failure is a BLOCKED phase, not a flag.
 
@@ -62,6 +62,8 @@ Never raise a timeout to mask host-load slowness, and never kill a process you d
 
 **Step 0.5 — create the cycle-state file and record every test verdict.** Create `<output-dir>/<timestamp>/cycle-state.md` (phase, per-item dispositions, owners, instance locks, pending validations) and update it at every milestone — see SKILL.md "Durable cycle state". **Critically: before anything else starts (before the next phase work begins), every test attempt must end by recording its verdict** — either the test passed/failed outcome, or an explicit "no verdict: <reason>" — in cycle-state.md. An attempt without a recorded verdict is indistinguishable from an attempt that never ran, leaving the cycle's history incomplete and resumption ambiguous.
 
+**Step 0.6 — announce this run's plan, then run every phase through `flow test run`.** Before any test runs, build the plan from the instruction and announce it with ONE `plan` call; run each phase's command through `flow test run --activity $ROOT/pNN` so counts and the verdict come from the runner; give each failure its own `fail-<n>` node; end each phase and the root with its verdict. The tree, the commands, the selection rules for "N tests from phase X", and the verdict JSON are in **`modes/progress.md`** — read it before Phase 1. A partial cycle runs only the phases it names, in phase order, with the same gates.
+
 ---
 
 ## Phase Rules
@@ -107,6 +109,8 @@ python -m pytest tests/unit/ -v
 FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} python -m pytest tests/api/ -v
 ```
 
+Run it through the progress bridge (progress.md): `flow test run --activity $ROOT/p02 --env FLOW_INSTANCE=qa-cycle --env LOCAL_SERVER_PORT=${QA_BE} -- uv run pytest tests/api/ -q` (a partial run passes the selected node ids instead of `tests/api/`).
+
 - **Gate**: all tests pass → proceed to Phase 3
 
 ## Phase 3 — pytest long tests (backend required)
@@ -121,8 +125,25 @@ FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} python -m pytest tests/api/ -v
 uv run flow instance ctl is-up qa-cycle || scripts/instance_ctl.sh launch qa-cycle
 QA_BE=$(uv run flow instance ctl port qa-cycle --role backend)
 [ -n "$QA_BE" ] || { echo "FATAL: no live backend port for qa-cycle"; exit 1; }
-DEEP_TESTING=1 FLOWPAD_HUB_URL="http://localhost:${QA_BE}" python -m pytest tests/long_tests/ -v
+mkdir -p "$SCRATCH/p3home"   # throwaway FLOW_HOME: workers with no vendor login (deepagents) store a key there
+DEEP_TESTING=1 FLOW_INSTANCE=qa-p3 FLOW_HOME="$SCRATCH/p3home" FLOWPAD_HUB_URL="http://localhost:${QA_BE}" \
+  FLOWPAD_CLAUDE_HOME="$HOME/.claude" \
+  QA_API_URL="http://localhost:${QA_BE}" SCHEDULE_E2E_API_URL="http://localhost:${QA_BE}" \
+  python -m pytest tests/long_tests/ -x -v
 ```
+
+> **`FLOWPAD_CLAUDE_HOME="$HOME/.claude"` is REQUIRED (2026-10-03).** Without it the in-process
+> LLM-source probe looks at the throwaway sandbox Claude home and reports `claude is signed out`.
+> Real-worker tests then fail with "The agent ended error." (`test_asset_cleanup_agent`), or skip
+> because the transcript "did not appear". Set `QA_API_URL`/`SCHEDULE_E2E_API_URL` too, or those
+> tests skip.
+>
+> **Rebuild the compute-op Docker image when the SDK changed since it was built (2026-10-03).**
+> `test_compute_op_in_docker` runs the SDK baked into `flowpad-backend:compute-op-test`, and only
+> rebuilds when the image is missing. An 11-day-old image failed "the agent call ran, but the
+> check still fails"; the rebuilt one passed 12/12. Check with
+> `docker image inspect flowpad-backend:compute-op-test --format '{{.Created}}'` against
+> `git log -1 --format=%cI -- flow_sdk`, and set `FLOWPAD_OP_REBUILD=1` when it's older.
 
 > **Never parse `status` text for a port or for "is it up".** The old recipe here
 > did (`grep -oE 'backend :[0-9]+' | grep -A0 qa-cycle`) and was silently broken:
@@ -159,6 +180,8 @@ cd ui && npm run test:vitest:unit
 cd ui && FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} npm run test:vitest:api
 ```
 
+Run it through the progress bridge (progress.md), without `--bail` so every failure is counted: `flow test run --activity $ROOT/p05 --cwd ui --env FLOW_INSTANCE=qa-cycle --env LOCAL_SERVER_PORT=${QA_BE} -- npx vitest run --project api --no-file-parallelism` (a partial run adds the file and an anchored `-t`).
+
 - **`FLOW_INSTANCE` is REQUIRED, not decoration.** `tests/api/setup_project_stale_memory.test.ts`
   refuses to run without it ("it creates real projects, and `.env.local` is never a live-test
   fallback") — that refusal is the tier telling you the target is wrong.
@@ -171,9 +194,27 @@ cd ui && FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} npm run test:vitest:a
 ## Phase 6 — vitest react tests
 
 ```bash
-cd ui && npm run test:vitest:react
+# A HERMETIC react instance: its own Claude/Codex/Copilot homes, never the user's.
+H=$HOME/.flow/instances/qa-react-homes   # sibling: `flow instance reset` wipes the instance dir state; remove it after `kill qa-react`
+mkdir -p $H/claude/projects $H/codex/sessions $H/copilot
+FLOWPAD_CLAUDE_HOME=$H/claude CODEX_HOME=$H/codex FLOWPAD_COPILOT_HOME=$H/copilot \
+  scripts/instance_ctl.sh launch qa-react --hub http://localhost:8093
+cd ui && FLOW_INSTANCE=qa-react FLOWPAD_CLAUDE_HOME=$H/claude npm run test:vitest:react
 ```
 
+- **Why a separate, hermetic instance (2026-10-03):** `chats-open-recency` writes real transcripts
+  into the backend's Claude home and reads them back through `worker-history`. On the shared
+  `~/.claude` (9 GB) plus `~/.codex` (2.7 GB), the first worker-history call on a just-booted backend
+  took 6–12s. That's longer than the test's 8s wait, so it failed whenever the react run hit a
+  fresh backend, and it also wrote fixtures into the user's real store. Use an instance with its own
+  homes: cold worker-history then takes 0.07s. Don't point `qa-cycle` at empty homes instead:
+  Phases 3/7 drive the real CLI and need the user's signed-in Claude. Pass the same three vars to
+  any `flow instance reset qa-react`, or the relaunch falls back to the real homes.
+
+- **`FLOW_INSTANCE` is REQUIRED.** `tests/react/reactSetup.ts` fails every file closed without a
+  launcher-owned disposable instance (a fixed set of react files bootstraps the real SDK). Without
+  it all ~114 files fail with "react vitest requires FLOW_INSTANCE=<disposable-name>" — a harness
+  refusal, not a verdict. Also `env -u LOCAL_SERVER_PORT` if your shell exports prod's port.
 - **Gate**: all tests pass → proceed to Phase 7
 
 ## Phase 7 — vitest long tests (backend required)

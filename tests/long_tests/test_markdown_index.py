@@ -33,6 +33,7 @@ pytestmark = [
 from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
 from flow_sdk.assets.frontmatter import _extract_frontmatter, _yaml_load
+from tests.long_tests._transcript_helpers import assert_prompt_ok
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
@@ -130,15 +131,32 @@ def _rebuild_instruction(vault_root: Path, markdown_index_typeid: str) -> str:
     ])
 
 
+
+@pytest.fixture
+async def docs_root(tmp_path_factory):
+    """``<fresh dir>/docs``: beside ``local_project``'s folder, never inside it.
+
+    The rebuild prompt materializes a Project for its workdir; projects do not nest, and
+    under ``tmp_path`` (the ``local`` project) the prompt was refused and the test only
+    learned it 240s later, as a transcript that never appeared. Names are unique too, so
+    the "docs" project is deleted after each test.
+    """
+    from flow_sdk.builtin.project import Project
+
+    root = tmp_path_factory.mktemp("vault") / "docs"
+    yield root
+    project = await Project.find_by_cwd(str(root))
+    if project is not None:
+        await project.delete()
+
 @pytest.mark.asyncio
 # Budget: see BUDGETS at the top of this file.
 @pytest.mark.timeout(300)
 async def test_markdown_index_cold_build(
-    make_process, local_project, local_compute_node, tmp_path, worker_id,
+    make_process, local_project, local_compute_node, docs_root, worker_id,
 ):
     """Cold build: every folder gets an index.md with valid frontmatter."""
     assert local_compute_node is not None
-    docs_root = tmp_path / "docs"
     _seed_docs(docs_root)
 
     from flow_sdk.builtin.markdown_index import MarkdownIndex
@@ -167,7 +185,7 @@ async def test_markdown_index_cold_build(
     # prompt at once — see ``is_ready_from_busy``.
     assert is_ready_for_input(process) is (process.pty_mode is False)
 
-    await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
+    assert_prompt_ok(await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid))))
 
     # 240s: ~1.7x the measured ~140s cold build (see the note on the marker).
     async for entry in process.stream_transcript(timeout=240):
@@ -213,11 +231,10 @@ async def test_markdown_index_cold_build(
 # (cold build, then warm incremental), hence double the process cap.
 @pytest.mark.timeout(600)
 async def test_markdown_index_incremental(
-    make_process, local_project, local_compute_node, tmp_path, worker_id,
+    make_process, local_project, local_compute_node, docs_root, worker_id,
 ):
     """Edit one file → only the chain from leaf to root rebuilds."""
     assert local_compute_node is not None
-    docs_root = tmp_path / "docs"
     _seed_docs(docs_root)
 
     from flow_sdk.builtin.markdown_index import MarkdownIndex
@@ -241,7 +258,7 @@ async def test_markdown_index_incremental(
         workdir=str(docs_root),
         cli_config={"model": ModelTier.MD.value},
     )
-    await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
+    assert_prompt_ok(await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid))))
     async for _ in process.stream_transcript(timeout=240):
         pass
 
@@ -266,7 +283,7 @@ async def test_markdown_index_incremental(
         workdir=str(docs_root),
         cli_config={"model": ModelTier.MD.value},
     )
-    await process2.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
+    assert_prompt_ok(await process2.prompt(_rebuild_instruction(docs_root, str(root_index.typeid))))
     async for _ in process2.stream_transcript(timeout=240):
         pass
 

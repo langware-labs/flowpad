@@ -4,15 +4,13 @@ import os
 import threading
 from typing import Optional
 
-import requests
 import typer
+import typer.core
+import typer.main
 from typing_extensions import Annotated
 
 from flow_sdk._version import __version__
-from flow_sdk.cli.auth.hub_login import is_logged_in, set_api_key
 from flow_sdk.cli.cli_context import ClaudeScope, CLIContext
-from flow_sdk.cli.commands.prompt_cmd import run_prompt_command
-from flow_sdk.cli.commands.setup_cmd.setup_cmd import run_setup
 from flow_sdk.cli.config_manager import (
     list_config,
     remove_config_value,
@@ -25,8 +23,80 @@ from flow_sdk.instance_settings import get_instance_settings
 # Initialize CLI - load environment variables as first step
 cli_init()
 
+#: The commands that live in their own module, imported only when invoked (or listed by --help):
+#: ``name -> (module, attribute, command settings)``. An attribute that is a ``typer.Typer`` is a
+#: command group; a function is a single command, registered with the settings given.
+#:
+#: Importing them all up front made every `flow X` pay for every command's dependency tree --
+#: ~1,060 modules (fastapi, the entity model, requests, ...) before `X` ran. On a Windows VM that
+#: alone was 10.7s, so a setup step that ran `flow status --check` blew its 30s budget.
+_EXTRA = {"context_settings": {"allow_extra_args": True, "ignore_unknown_options": True}}
+LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
+    "connect": ("flow_sdk.cli.commands.connect_cmd", "connect", {}),
+    "navigate": ("flow_sdk.cli.commands.navigate_cmd", "navigate_app", None),
+    "artifact": ("flow_sdk.cli.commands.artifact_cmd", "artifact_app", None),
+    "asset": ("flow_sdk.cli.commands.asset_cmd", "asset_app", None),
+    "op": ("flow_sdk.cli.commands.op_cmd", "op_app", None),
+    "show": ("flow_sdk.cli.commands.show_cmd", "show_app", None),
+    "snippet": ("flow_sdk.cli.commands.snippet_cmd", "snippet_app", None),
+    "source": ("flow_sdk.cli.commands.source_cmd", "source_app", None),
+    "terminal": ("flow_sdk.cli.commands.terminal_cmd", "terminal_app", None),
+    "tag": ("flow_sdk.cli.commands.tag_cmd", "tag_app", None),
+    "app": ("flow_sdk.cli.commands.app_cmd", "app_app", None),
+    "context": ("flow_sdk.cli.commands.context_cmd", "context_app", None),
+    "llm": ("flow_sdk.cli.commands.llm_cmd", "llm_app", None),
+    "connections": ("flow_sdk.cli.commands.connections_cmd", "connections_app", None),
+    "status": ("flow_sdk.cli.commands.status_cmd", "status_app", None),
+    "credentials": ("flow_sdk.cli.commands.credentials_cmd", "credentials_app", None),
+    "agent": ("flow_sdk.cli.commands.agent_cmd", "agent_app", None),
+    "project": ("flow_sdk.cli.commands.project_cmd", "project_app", None),
+    "schema": ("flow_sdk.cli.commands.schema_cmd", "schema_app", None),
+    "progress": ("flow_sdk.cli.commands.progress_cmd", "progress_app", None),
+    "test": ("flow_sdk.cli.commands.test_cmd", "test_app", None),
+    "record": ("flow_sdk.cli.commands.record_cmd", "record_app", None),
+    "conversation": ("flow_sdk.cli.commands.conversation_cmd", "conversation_app", None),
+    "process": ("flow_sdk.cli.commands.process_cmd", "process_app", None),
+    "task": ("flow_sdk.cli.commands.task_cmd", "task_app", None),
+    "ask": ("flow_sdk.cli.commands.ask_cmd", "ask_app", None),
+    # No positional args: the rest of the line is the command's own (`flow wizard run <name>`,
+    # `flow diagnose backend down` -- the issue is read at a prompt, stray words ignored).
+    "wizard": ("flow_sdk.cli.commands.wizard_cmd", "wizard_command", _EXTRA),
+    "migrate": ("flow_sdk.cli.commands.migrate_cmd", "migrate_app", None),
+    "instance": ("flow_sdk.cli.commands.instance_cmd", "instance_app", None),
+    "diagnose": ("flow_sdk.cli.commands.diagnose_cmd", "diagnose_command", _EXTRA),
+}
+
+
+class _LazyGroup(typer.core.TyperGroup):
+    """The `flow` group, resolving a `LAZY_COMMANDS` entry when click first asks for it by name."""
+
+    def list_commands(self, ctx):  # noqa: ANN001, ANN201
+        return sorted(set(super().list_commands(ctx)) | set(LAZY_COMMANDS))
+
+    def get_command(self, ctx, cmd_name):  # noqa: ANN001, ANN201
+        command = super().get_command(ctx, cmd_name)
+        if command is not None or cmd_name not in LAZY_COMMANDS:
+            return command
+        import importlib  # noqa: PLC0415
+
+        module, attribute, settings = LAZY_COMMANDS[cmd_name]
+        target = getattr(importlib.import_module(module), attribute)
+        # Registered exactly as an eager `app.add_typer` / `app.command` would have, on a holder
+        # app, so a lazy command behaves identically: a one-command group stays a group (`flow
+        # asset install`), and a callback-only group keeps its callback's options (`flow status`).
+        holder = typer.Typer()
+        if isinstance(target, typer.Typer):
+            holder.add_typer(target, name=cmd_name)
+        else:
+            holder.command(cmd_name, **(settings or {}))(target)
+        command = typer.main.get_group(holder).commands[cmd_name]
+        command.name = cmd_name
+        self.add_command(command, cmd_name)
+        return command
+
+
 # Create Typer app
-app = typer.Typer(name="flow", help="Flow CLI tool for flowpad", add_completion=False)
+app = typer.Typer(name="flow", help="Flow CLI tool for flowpad", add_completion=False, cls=_LazyGroup)
 
 # Global context (initialized once)
 _context: Optional[CLIContext] = None
@@ -79,6 +149,8 @@ def setup(
     # Set first_time_prompt flag when running setup
     set_config_value("first_time_prompt", "true")
 
+    from flow_sdk.cli.commands.setup_cmd.setup_cmd import run_setup  # noqa: PLC0415
+
     run_setup(agent_name, context)
 
 
@@ -90,6 +162,8 @@ def prompt(prompt_text: Annotated[Optional[str], typer.Argument(help="Prompt tex
     Example: flow prompt "analyze this code"
     """
     if prompt_text:
+        from flow_sdk.cli.commands.prompt_cmd import run_prompt_command  # noqa: PLC0415
+
         run_prompt_command(prompt_text)
 
 
@@ -102,6 +176,8 @@ def ping(
 
     Example: flow ping hello
     """
+    import requests  # noqa: PLC0415
+
     get_context()
 
     port = _discover_port()
@@ -318,46 +394,6 @@ def stop():
 
 
 @app.command()
-def status():
-    """
-    Show server and monitor status.
-
-    Example: flow status
-    """
-    import shutil
-    import sys
-    from pathlib import Path
-
-    import flow_sdk.server as _srv_pkg
-    from flow_sdk.server.launch import get_status
-
-    s = get_status()
-    port = s["port"]
-
-    cli_path = shutil.which("flow") or sys.argv[0]
-    server_path = Path(_srv_pkg.__file__).parent
-
-    typer.echo(f"Port:    {port}")
-    typer.echo(f"CLI:     {cli_path}")
-    typer.echo(f"Server:  {server_path}")
-
-    if s["monitor_alive"]:
-        typer.echo(f"Monitor: running (PID {s['monitor_pid']})")
-    else:
-        typer.echo("Monitor: not running")
-
-    if s["server_healthy"]:
-        typer.echo(f"Health:  healthy (PID {s['server_pid']})")
-    elif s["server_alive"]:
-        typer.echo(f"Health:  alive but unhealthy (PID {s['server_pid']})")
-    else:
-        typer.echo("Health:  not running")
-
-    if s["launch_iso_time"]:
-        typer.echo(f"Started: {s['launch_iso_time']}")
-
-
-@app.command()
 def trace():
     """
     Start the server and trace hook events in real-time.
@@ -479,6 +515,8 @@ def auth_login(
       flow auth login your-api-key-here
       flow auth login  # Opens browser
     """
+    from flow_sdk.cli.auth.hub_login import set_api_key  # noqa: PLC0415
+
     if api_key:
         # Direct API key login
         from flow_sdk.cli.app_config import set_user
@@ -546,6 +584,8 @@ def auth_logout():
 
     Example: flow auth logout
     """
+    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
+
     if not is_logged_in():
         typer.echo("⚠ Not currently logged in")
         return
@@ -935,6 +975,8 @@ def hooks_report(
     import sys
     from pathlib import Path
 
+    import requests  # noqa: PLC0415
+
     if process_id and hook_entry_id:
         raise typer.BadParameter("--process-id and --hook-entry-id are mutually exclusive")
     if process_id:
@@ -1259,128 +1301,7 @@ def hooks_list(
 log_app = typer.Typer(help="View and replay CLI invocation logs")
 app.add_typer(log_app, name="log")
 
-from flow_sdk.cli.commands.connect_cmd import connect as _connect_command
-
-app.command("connect")(_connect_command)
-
-from flow_sdk.cli.commands.navigate_cmd import navigate_app
-
-app.add_typer(navigate_app, name="navigate")
-
-from flow_sdk.cli.commands.artifact_cmd import artifact_app
-
-app.add_typer(artifact_app, name="artifact")
-
-from flow_sdk.cli.commands.asset_cmd import asset_app
-
-app.add_typer(asset_app, name="asset")
-
-from flow_sdk.cli.commands.op_cmd import op_app
-
-app.add_typer(op_app, name="op")
-
-from flow_sdk.cli.commands.show_cmd import show_app
-
-app.add_typer(show_app, name="show")
-
-from flow_sdk.cli.commands.snippet_cmd import snippet_app
-
-app.add_typer(snippet_app, name="snippet")
-
-from flow_sdk.cli.commands.source_cmd import source_app
-
-app.add_typer(source_app, name="source")
-
-from flow_sdk.cli.commands.terminal_cmd import terminal_app
-
-app.add_typer(terminal_app, name="terminal")
-
-from flow_sdk.cli.commands.tag_cmd import tag_app
-
-app.add_typer(tag_app, name="tag")
-
-from flow_sdk.cli.commands.app_cmd import app_app
-
-app.add_typer(app_app, name="app")
-
-from flow_sdk.cli.commands.context_cmd import context_app
-
-app.add_typer(context_app, name="context")
-
-from flow_sdk.cli.commands.llm_cmd import llm_app
-
-app.add_typer(llm_app, name="llm")
-
-from flow_sdk.cli.commands.connections_cmd import connections_app
-
-app.add_typer(connections_app, name="connections")
-
-from flow_sdk.cli.commands.status_cmd import status_app
-
-app.add_typer(status_app, name="status")
-
-from flow_sdk.cli.commands.credentials_cmd import credentials_app
-
-app.add_typer(credentials_app, name="credentials")
-
-from flow_sdk.cli.commands.agent_cmd import agent_app  # noqa: E402
-
-app.add_typer(agent_app, name="agent")
-
-from flow_sdk.cli.commands.project_cmd import project_app
-
-app.add_typer(project_app, name="project")
-
-from flow_sdk.cli.commands.schema_cmd import schema_app
-
-app.add_typer(schema_app, name="schema")
-
-from flow_sdk.cli.commands.progress_cmd import progress_app
-from flow_sdk.cli.commands.record_cmd import record_app
-
-app.add_typer(progress_app, name="progress")
-app.add_typer(record_app, name="record")
-
-from flow_sdk.cli.commands.conversation_cmd import conversation_app
-
-app.add_typer(conversation_app, name="conversation")
-
-
-from flow_sdk.cli.commands.process_cmd import process_app
-
-app.add_typer(process_app, name="process")
-
-from flow_sdk.cli.commands.task_cmd import task_app
-
-app.add_typer(task_app, name="task")
-
-from flow_sdk.cli.commands.ask_cmd import ask_app
-
-app.add_typer(ask_app, name="ask")
-
-from flow_sdk.cli.commands.wizard_cmd import wizard_command
-
-app.command(
-    "wizard",
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-)(wizard_command)
-
-from flow_sdk.cli.commands.migrate_cmd import migrate_app
-
-app.add_typer(migrate_app, name="migrate")
-
-from flow_sdk.cli.commands.instance_cmd import instance_app
-
-app.add_typer(instance_app, name="instance")
-
-from flow_sdk.cli.commands.diagnose_cmd import diagnose_command
-
-# No positional MESSAGE arg — the issue is read at a prompt. allow_extra_args so
-# stray words (e.g. `flow diagnose backend down`) are ignored, not errors.
-app.command(
-    "diagnose",
-    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
-)(diagnose_command)
+# Every other command group is imported on first USE, not at `flow` startup -- see `_LazyGroup`.
 
 
 @log_app.callback(invoke_without_command=True)
