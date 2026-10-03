@@ -105,7 +105,7 @@ async def create_node(machine_id: str, name: str, workspace_port: int) -> dict[s
 
 
 async def setup_node(node_id: str) -> str:
-    """``ops/setup`` pins ``node_provider_id`` to this machine id. Idempotent."""
+    """``ops/setup`` pins ``node_provider_id`` to the node's own id. Idempotent."""
     from flow_sdk.cloud_client.transport.hub_http import hub_post
     from flow_sdk.schema.types import EntityType
 
@@ -135,9 +135,19 @@ async def ensure_node(machine_id: str, name: str | None, workspace_port: int) ->
         created = True
     else:
         node = await _refresh_node_config(node, machine_id, workspace_port)
-    if node.get("node_provider_id") != machine_id:
+    if not node_is_set_up(node):
         await setup_node(str(node["id"]))
     return node, created
+
+
+def node_is_set_up(node: dict[str, Any]) -> bool:
+    """The hub's own test: ``ops/setup`` pins ``node_provider_id`` to the node's id.
+
+    Comparing it to the machine id instead made every re-run call ``ops/setup``
+    again — which a device-enrolled machine's key may not (403 ``owner_by_api``),
+    so a machine enrolled with a code could never reconnect.
+    """
+    return bool(node.get("id")) and node.get("node_provider_id") == node.get("id")
 
 
 def _current_hub_api_key() -> str | None:
@@ -272,6 +282,10 @@ def connect(
                 {"node_id": node_id, "node_name": name or "", "hub_url": api_base_url, "connected_at": time.time()},
             )
 
+    def on_activity(line: str) -> None:
+        # Every command the hub sends this machine, and which PTY session it lands in.
+        typer.echo(f"{time.strftime('%H:%M:%S')} hub> {line}")
+
     try:
         asyncio.run(
             run_worker(
@@ -280,6 +294,7 @@ def connect(
                 api_base_url=api_base_url,
                 api_key=api_key,
                 on_connected=on_connected,
+                on_activity=on_activity,
             )
         )
     except WorkerAuthRejected as exc:

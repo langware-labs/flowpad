@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -92,6 +93,7 @@ class UserMachineWorker:
         ssl_context: Any = None,
         home_dir: str | None = None,
         on_connected: Callable[[], None] | None = None,
+        on_activity: Callable[[str], None] | None = None,
     ) -> None:
         self.node_id = node_id
         self.machine_id = machine_id
@@ -100,6 +102,7 @@ class UserMachineWorker:
         self.ssl_context = ssl_context
         self.home_dir = home_dir or str(Path.home())
         self.on_connected = on_connected
+        self.on_activity = on_activity
         self.stop_event = asyncio.Event()
         self._ws: Any = None
         self._send_lock = asyncio.Lock()
@@ -264,15 +267,27 @@ class UserMachineWorker:
         if handler is None:
             await self._reply(request_id, error=f"unsupported sub_path {sub_path!r}")
             return
+        # Shown as it arrives (a run's exit line follows it); a PTY start once it has a pid.
+        line = describe_command(sub_path, body)
+        if line and sub_path != "pty_start":
+            self._activity(line)
         try:
             content = await handler(body)
         except Exception as exc:  # noqa: BLE001 — every failure is reported to the hub, never swallowed
             logger.warning("[connect] %s failed: %s", sub_path, exc)
+            if line:
+                self._activity(f"{line}  FAILED: {type(exc).__name__}: {exc}")
             await self._reply(request_id, error=f"{type(exc).__name__}: {exc}")
             return
+        if line and sub_path == "pty_start":
+            self._activity(f"{line} -> pid {content.get('pid')}")
         await self._reply(request_id, content)
         if sub_path == "shutdown":
             self.stop_event.set()
+
+    def _activity(self, line: str) -> None:
+        if self.on_activity is not None:
+            self.on_activity(line)
 
     # ------------------------------------------------------------------ commands
     async def _op_run(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -308,6 +323,7 @@ class UserMachineWorker:
         try:
             await asyncio.gather(relay(process.stdout, "stdout"), relay(process.stderr, "stderr"))
             exit_code = await process.wait()
+            self._activity(f"run #{command_message_id[:8]} exited {exit_code}")
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -441,6 +457,40 @@ class UserMachineWorker:
             self._pty_sessions.clear()
 
 
+# Credentials ride in commands as ``flow auth <sub>`` arguments and as HTTP header
+# values (the workspace cookie gate's secret, in both): shown by name, never by value.
+_FLOW_AUTH_ARGS = re.compile(r"(\bflow(?:\.exe)?\s+auth\s+[\w-]+)\s+[^;&|]*")
+_HEADER_VALUES = re.compile(r"((?:-H|--header)\s+['\"]?[\w-]+:\s*)[^'\"\s]+")
+
+
+def describe_command(sub_path: str, body: dict[str, Any]) -> str | None:
+    """One console line for a command the hub sent, or None for one that is not shown.
+
+    PTY keystrokes (``pty_input``) are never shown — they are whatever the person types,
+    passwords included. ``set_env`` shows names, never values; ``flow auth`` and header
+    values are redacted.
+    """
+    if sub_path == "pty_input":
+        return None
+    session = body.get("session_id")
+    if sub_path == "run":
+        where = f" in {body['cwd']}" if body.get("cwd") else ""
+        cmd = _HEADER_VALUES.sub(r"\1<redacted>", _FLOW_AUTH_ARGS.sub(r"\1 <redacted>", str(body.get("cmd"))))
+        return f"run #{str(body.get('command_message_id', ''))[:8]}{where}: {cmd}"
+    if sub_path == "pty_start":
+        return f"pty_start session {session} ({body.get('cols') or 80}x{body.get('rows') or 24})"
+    if sub_path == "pty_resize":
+        return f"pty_resize session {session} {body.get('cols') or 80}x{body.get('rows') or 24}"
+    if sub_path == "pty_close":
+        return f"pty_close session {session}"
+    if sub_path == "cancel":
+        return f"cancel run #{str(body.get('command_message_id', ''))[:8]}"
+    if sub_path == "set_env":
+        return f"set_env {body.get('name')}"
+    paths = body.get("paths") or [f.get("path") for f in body.get("files") or [] if isinstance(f, dict)]
+    return f"{sub_path} {', '.join(map(str, paths))}" if paths else sub_path
+
+
 async def run_worker(
     *,
     node_id: str,
@@ -448,6 +498,7 @@ async def run_worker(
     api_base_url: str,
     api_key: str,
     on_connected: Callable[[], None] | None = None,
+    on_activity: Callable[[str], None] | None = None,
 ) -> None:
     """Serve this machine to the hub until stopped or rejected."""
     from flow_sdk.cloud_client.client_hooks import attach_machine_id
@@ -462,5 +513,6 @@ async def run_worker(
         headers=headers,
         ssl_context=_hub_ssl_context() if ws_url.startswith("wss://") else None,
         on_connected=on_connected,
+        on_activity=on_activity,
     )
     await worker.run_forever()

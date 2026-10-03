@@ -18,7 +18,7 @@ import uuid
 import pytest
 import websockets
 
-from flow_sdk.compute.user_machine.worker import UserMachineWorker, build_hub_node_ws_url
+from flow_sdk.compute.user_machine.worker import UserMachineWorker, build_hub_node_ws_url, describe_command
 
 
 class FakeHub:
@@ -96,7 +96,7 @@ class FakeHub:
         raise AssertionError(f"command {command_message_id} did not finish")
 
 
-async def _connected_worker(tmp_path):
+async def _connected_worker(tmp_path, on_activity=None):
     hub = FakeHub()
     await hub.start()
     worker = UserMachineWorker(
@@ -105,6 +105,7 @@ async def _connected_worker(tmp_path):
         ws_url=build_hub_node_ws_url(f"http://127.0.0.1:{hub.port}/api/v1", "node-1"),
         headers={"Authorization": "Bearer test"},
         home_dir=str(tmp_path),
+        on_activity=on_activity,
     )
     task = asyncio.create_task(worker.run_forever())
     await asyncio.wait_for(hub.attached.wait(), timeout=10)
@@ -217,6 +218,45 @@ async def test_unknown_requests_are_refused_not_ignored(tmp_path):
             await hub.request("format_disk", {})
     finally:
         await _stop(hub, worker, task)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
+async def test_every_hub_command_is_shown_with_its_pty_session_but_never_keystrokes(tmp_path):
+    lines: list[str] = []
+    hub, worker, task = await _connected_worker(tmp_path, on_activity=lines.append)
+    try:
+        cmd_id = uuid.uuid4().hex
+        await hub.request("run", {"command_message_id": cmd_id, "cmd": "echo hi", "env": {}})
+        await hub.wait_exit(cmd_id)
+        started = await hub.request("pty_start", {"session_id": "s1", "rows": 24, "cols": 80})
+        secret = base64.b64encode(b"hunter2\n").decode()
+        await hub.request("pty_input", {"session_id": "s1", "data": secret, "cols": 80, "rows": 24})
+        await hub.request("pty_resize", {"session_id": "s1", "cols": 100, "rows": 30})
+        await hub.request("pty_close", {"session_id": "s1"})
+        await hub.request("set_env", {"name": "TOKEN", "value": "s3cret"})
+        with pytest.raises(RuntimeError):
+            await hub.request("read_files", {"paths": [str(tmp_path / "missing")]})
+    finally:
+        await _stop(hub, worker, task)
+
+    assert lines[:2] == [f"run #{cmd_id[:8]}: echo hi", f"run #{cmd_id[:8]} exited 0"]
+    assert f"pty_start session s1 (80x24) -> pid {started['pid']}" in lines
+    assert "pty_resize session s1 100x30" in lines
+    assert "pty_close session s1" in lines
+    assert "set_env TOKEN" in lines
+    assert any(line.startswith(f"read_files {tmp_path / 'missing'}  FAILED:") for line in lines)
+    assert not any("hunter2" in line or "s3cret" in line or "pty_input" in line for line in lines)
+
+
+def test_flow_auth_arguments_are_never_shown():
+    line = describe_command("run", {"command_message_id": "abcdef0123", "cmd": "flow auth set-cookie-gate -- QgEwEs6"})
+    assert line == "run #abcdef01: flow auth set-cookie-gate <redacted>"
+    chained = describe_command("run", {"command_message_id": "x", "cmd": "flow.exe auth login --key k1; flow start"})
+    assert chained == "run #x: flow.exe auth login <redacted>; flow start"
+    probe = describe_command(
+        "run", {"command_message_id": "y", "cmd": "curl -s -H 'X-Cookie-Gate: QgEwEs6' 'http://127.0.0.1:9007/'"}
+    )
+    assert probe == "run #y: curl -s -H 'X-Cookie-Gate: <redacted>' 'http://127.0.0.1:9007/'"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
