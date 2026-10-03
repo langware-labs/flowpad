@@ -1,10 +1,11 @@
 ---
 id: 72621c37-45ba-5d74-a639-70bb5ccf9054
 name: docs-browse
-description: Use this skill to do fast and efficient browsing in the project documents.
-  Whenever you need to find information, answer a question, or locate a tag inside
-  a project's docs/markdown tree, use this skill FIRST — it navigates the pre-built
-  `index.md` chain instead of grepping or reading files blindly.
+description: Answers any question about what a project's documentation says. A docs
+  or markdown folder that has an `index.md` is indexed — open that index.md FIRST,
+  before any grep, find or file read, and follow it down to the right document in a
+  few reads. Use it for "what does the documentation say about X", looking up a
+  value, policy or procedure, or locating a tag in a docs/markdown tree.
 tags:
 - markdown
 - index
