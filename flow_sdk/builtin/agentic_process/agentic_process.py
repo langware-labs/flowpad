@@ -5810,13 +5810,21 @@ class AgenticProcess(Entity):
         # The canonical process-assets mount is a derived implementation path,
         # not persisted user launch intent. Hook semantics are represented by
         # generic.process_hooks; generated path presence/absence must not alter
-        # restart identity.
+        # restart identity. The run's input folder is the same kind of path: it is
+        # mounted once it exists, and the terminal's ``input-dir`` GET creates it
+        # as soon as a live process is on screen — counting it lit a phantom
+        # Restart glow that no revert could put out.
+        from flow_sdk.builtin.agentic_process.process_io import input_dir  # noqa: PLC0415
+
+        input_folder = str(input_dir(self))
         add_dirs = worker_snapshot.get("add_dirs")
         if isinstance(add_dirs, list):
             worker_snapshot = {
                 **worker_snapshot,
                 "add_dirs": [
-                    directory for directory in add_dirs if not self.asset_workspace._is_process_assets_path(directory)
+                    directory
+                    for directory in add_dirs
+                    if not self.asset_workspace._is_process_assets_path(directory) and directory != input_folder
                 ],
             }
         return {
