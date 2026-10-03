@@ -13,6 +13,10 @@ rows must have been created after `owner` existed — the bar treats an unowned 
 as the local user's either way, but the disjointness check below assumes the
 agent's rows carry `owner`.
 
+Automated (`attached_channels.md.ts`): the Slack source talks to the slack driver's loopback
+Double (`tests/e2e/channel_doubles.py --channels slack`, which also plants the Slack connection),
+so no real workspace is needed; the agent and both sources are seeded over the API.
+
 What is being proved: the header line is one component over `DataSource.owner`
 and the spec's `sends` flag. The user's stream inbox and each agent's stream inbox show
 DISJOINT rows; a mark filters the list, the details popover carries the one
@@ -33,8 +37,8 @@ test 3: the details popover is where on/off and delete live
 - [browser] click data-testid="attached-channels-details": one data-testid="attached-channel-row" per channel with its switch and trash
 - [browser] flip the switch off: the mark's ring turns dashed; [api] GET /api/v1/graph/data_source/<id> — `status` is `disabled`
 - [browser] flip it on: a toast says "Resumed — it polls on the next tick."; [api] `status` is `setup` (Slack owes a Verify) and the mark wears the "!" badge with "Finish setup, then press Verify." under its name
-- [browser] "Manage in Data Sources…" opens that screen; press Verify; back on the stream inbox the mark has its green dot
-- [browser] the trash asks "Remove this source?" — cancel
+- [browser] the list's "See all sources" opens the Data Sources screen; press Verify; back on the stream inbox the mark has its green dot
+- [browser] the trash asks "Delete this data source?" — cancel
 
 test 4: an agent's bar is its own
 - [browser] navigate to {APP_URL}/dock/agent/<agent-id>/stream_inbox; the line shows no mark of the user's

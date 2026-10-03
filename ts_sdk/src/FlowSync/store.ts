@@ -767,6 +767,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     ref.pendingUpdate = null;
     ref.entity = this.castAndDeepAssign(pending);
     this._notifyAllAliases(typeId, ref.entity, ref.entity);
+    // The data-op's query notify already ran when it arrived — with the row still holding
+    // what the in-flight save sent (a toggle's optimistic `new`), so every list re-rendered
+    // that value. The merge above mutates the very object those results hold; notify again
+    // or the lists keep the stale render until something unrelated re-renders them.
+    for (const watchedQuery of this.watchedQueries.getWatchCallbacksByType(typeId.type)) {
+      if (watchedQuery.results?.some((entity: any) => entity.typeId.equals(typeId))) watchedQuery.notifyCallbacks();
+    }
     return true;
   }
 
