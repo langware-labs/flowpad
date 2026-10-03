@@ -5,7 +5,6 @@ import { isContentAssetDock } from '@src/navigation/content-asset-dock';
 import { isAdoptableChildDock } from '@src/navigation/adoptable-child-dock';
 import { ViewType } from '@src/types/ViewType';
 import { dockLabel, sinceTabSwitch } from '@src/navigation/tab-switch-state';
-import { rememberLastTab } from './last-tab-restore';
 
 export interface TabSetupResult {
   tab: Tab | null;
@@ -277,7 +276,6 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   ) {
     tabManager.lifecycle.set(key, TabLifecycleState.Opening, { tabId: opened.tabId });
     void tabManager.activate(opened.tabId).catch(() => {});
-    rememberLastTab(dock, opened.tabId);
     try {
       await adapter.setupTab(dock);
       tabManager.lifecycle.set(key, TabLifecycleState.Opened, { tabId: opened.tabId });
@@ -321,7 +319,6 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
       // record selection too — the shell/process loaders' own stamp covers only
       // their tabs. Fire-and-forget: loaders stay fast.
       void tabManager.activate(tab.id).catch(() => {});
-      rememberLastTab(dock, tab.id);
       tabManager.recordViewModeEvent(tab, ViewModeEvent.TabOpen, dock.viewMode);
       options.onMaterialized?.(tabs);
       await adapter.setupTab(dock);
