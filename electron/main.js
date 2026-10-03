@@ -271,6 +271,12 @@ let desktopPromptClosed = Promise.resolve();
 async function checkPackageUpdateInBackground({ compareWithPypi = true, label = 'periodic' } = {}) {
   if (isDev) return;
   if (!uvManager || !mainWindow || mainWindow.isDestroyed()) return;
+  if (!uvManager.getInstalledFlowBin()) {
+    // Nothing is installed (the first-time setup failed): there is nothing to "update". An "Update Available"
+    // dialog here sent the user down the upgrade path instead of the first-time setup and its Retry.
+    log.info(`[uv] ${label} package check skipped: flowpad is not installed`);
+    return;
+  }
   if (pendingDesktopVersion) {
     // A newer desktop is on its way. The engine is updated BY the new desktop (it may need a Python pin, or
     // a start contract, that only the new desktop knows) — an old desktop upgrading it first is what left

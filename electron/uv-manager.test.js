@@ -322,6 +322,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     let seen = null;
     m._uvToolInstallForce = async (args) => { seen = args; };
     m._ensureShimOnPath = async () => {};
+    m.ensureUv = async () => {};
     m._resolveFlowBin = async () => null;
     m._getLatestPypiInfo = async () => ({ version: '9.9.9', requires_python: '>=99.1' });
     await m.upgrade();
@@ -352,6 +353,7 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       m.args = null;
       m._uvToolInstallForce = async (a) => { m.args = a; };
       m._ensureShimOnPath = async () => {};
+      m.ensureUv = async () => {};
       m._resolveFlowBin = async () => null;
       Object.assign(m, over);
       return m;
@@ -427,6 +429,21 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     await mk().reinstall();
     eq(seen[1], ['tool', 'install', 'flowpad', '--python', '99.1', '--reinstall', '--force'],
       'reinstall: pins the release floor when it is above the bundled pin');
+  }
+
+  // ── upgrade() must not assume uv exists ─────────────────────────
+  // A first install whose uv bootstrap failed leaves no uv; the update path then ran a bare `uv`, failed, and its
+  // own repair failed the same way (the "Update failed" dialog).
+  {
+    const m = new UvManager(silentLog);
+    const order = [];
+    m.ensureUv = async () => { order.push('ensureUv'); };
+    m._uvToolInstallForce = async () => { order.push('install'); };
+    m._ensureShimOnPath = async () => {};
+    m._resolveFlowBin = async () => null;
+    m._getLatestPypiInfo = async () => null;
+    await m.upgrade();
+    eq(order, ['ensureUv', 'install'], 'upgrade: makes sure uv is installed BEFORE running `uv tool install`');
   }
 
   // ── interrupted install: marker, abort, repair ──────────────────────────────
