@@ -108,6 +108,7 @@ import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
 const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
 import { XTERM_BASE_OPTIONS, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
+import { retireXterm } from './retire-xterm';
 import { workerCliVendor } from './process-cli-presentation';
 import { isTextInputTarget } from '@src/utils/isTextInputTarget';
 
@@ -981,13 +982,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (terminalRef.current) {
         const term = terminalRef.current;
         toplog.log('pty', `xterm_dispose shell=${sessionId} active=${active}`);
-        setTimeout(() => {
-          try {
-            term.dispose();
-          } catch (e) {
-            console.warn('[InteractiveTerminal] Error disposing terminal:', e);
-          }
-        }, 10);
+        retireXterm(term, (e) => console.warn('[InteractiveTerminal] Error disposing terminal:', e));
 
         terminalRef.current = null;
         fitAddonRef.current = null;
@@ -1263,13 +1258,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       collectFirstPromptInput(data);
       if (data.includes('\r') || data.includes('\n')) scheduleEnterRefetch();
       const shell = shellRef.current;
-      if (shell?.connected) {
+      if (shell) {
+        // The connection decides: send now, hold as typeahead until its first
+        // attach, or refuse on a pane that was live and dropped.
         inputDropRunRef.current = false;
         await shell.sendInput(data);
       } else if (!inputDropRunRef.current) {
-        // Typing into a pane whose shell isn't connected is silently lost.
+        // No shell entity yet — nothing to hold the keystrokes for.
         inputDropRunRef.current = true;
-        toplog.log('pty', `input_dropped shell=${sessionId} reason=shell_not_connected has_shell=${Boolean(shell)}`);
+        toplog.log('pty', `input_dropped shell=${sessionId} reason=no_shell`);
       }
     });
 
