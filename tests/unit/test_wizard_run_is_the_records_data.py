@@ -1,6 +1,6 @@
 """A wizard's run is that wizard RECORD's data, on this instance -- never a machine-wide file.
 
-It lived under the shared flow home (``~/.flow/wizard-runs/<id>``), and a shipped wizard has the
+It once lived in a machine-wide folder under the shared flow home, and a shipped wizard has the
 same id on every instance, so every instance on a machine read and overwrote one run: a fresh
 instance's first-run setup opened onto another instance's answers (the first-run e2e saw
 "satisfied" before Start was pressed), and a test run clobbered prod's.
