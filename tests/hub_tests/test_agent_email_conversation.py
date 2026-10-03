@@ -163,7 +163,11 @@ def _inject_claude_harness() -> None:
     set_capability_value(
         CapabilityValue(
             kind=kind,
-            value={"path": str(Path(binary).resolve().parent), "ref_type": "folder"},
+            # The folder ON PATH, as a discovery sweep records it — not the symlink's target:
+            # `claude` is now a link into a versions dir whose file is named after the
+            # version (`.../versions/2.1.288`), so that folder holds no `claude` at all and
+            # the harness reads as "not installed".
+            value={"path": str(Path(binary).parent), "ref_type": "folder"},
             value_spec=DataSpec.parse("fs_ref"),
         )
     )
