@@ -311,133 +311,21 @@ async def test_trailing_show_survives_stale_turn_save(bootstrapped_client, user)
     assert row["context_data"]["last_shown"].get("type") == "skill"
 
 
-async def _owner_bookmarks(owner, bookmark_type, *, source: str | None = None) -> list:
-    """The owner's bookmarks of one type, optionally narrowed to one ``source``
-    (``AUTO_SOURCE`` = the machine-built `flow show` tree, never manual stars)."""
-    from flow_sdk.builtin.bookmark import Bookmark  # noqa: PLC0415
-
-    query = {"bookmark_type": bookmark_type.value}
-    if source is not None:
-        query["source"] = source
-    return await Bookmark.get_all(query, source_entity=owner)
-
-
 @pytest.mark.asyncio
-async def test_show_auto_bookmarks_into_nested_type_tree(bootstrapped_client, user):
-    """Every `flow show` files its target into `Auto / <type> / item` (nested,
-    idempotent). Two types → two subfolders under one Auto root; re-showing the
-    same target does not duplicate the leaf."""
-    from flow_sdk.builtin.bookmark import BookmarkType
-    from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+async def test_show_files_no_bookmark(bootstrapped_client, user):
+    """A `flow show` is not a bookmark. Shows used to auto-file into an
+    `Auto / <type> / item` favorites tree; that feature is gone (bookmarks are
+    only what the user starred), so a show must leave the bookmark table alone."""
+    from flow_sdk.builtin.bookmark import Bookmark
 
-    owner = await get_or_create_local_user()
-
-    async def _favs():
-        return (
-            await _owner_bookmarks(owner, BookmarkType.FAVORITE_FOLDER),
-            await _owner_bookmarks(owner, BookmarkType.FAVORITE),
-        )
-
+    before = {b.id for b in await Bookmark.get_all({})}
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
-
-    # A resolved skill entity show (payload shape from resolve_display_target).
-    ap = await AgenticProcess.get_by_id(pid)
-    await ap.on_show({
-        "kind": "entity", "typeid": "skill-s1", "type": "skill", "id": "s1",
-        "path": "/ws/proj/.claude/skills/traffic-dash/SKILL.md",
-    })
-    folders, leaves = await _favs()
-    root = next(f for f in folders if (f.data or {}).get("auto_root"))
-    assert root.title == "Auto"
-    skills = next(f for f in folders if (f.data or {}).get("auto_type") == "skill")
-    assert skills.title == "Skills" and skills.parent_id == str(root.id)
-    leaf = next(b for b in leaves if (b.data or {}).get("entity_id") == "s1")
-    assert leaf.source == "auto" and leaf.parent_id == str(skills.id)
-    assert leaf.title == "traffic-dash"  # folder-main file → parent folder name
-
-    # A markdown show → a SECOND subfolder under the SAME Auto root.
-    ap2 = await AgenticProcess.get_by_id(pid)
-    await ap2.on_show({
+    await (await AgenticProcess.get_by_id(pid)).on_show({
         "kind": "entity", "typeid": "markdown-m1", "type": "markdown", "id": "m1",
         "path": "/ws/proj/docs/release-notes.md",
     })
-    folders, leaves = await _favs()
-    roots = [f for f in folders if (f.data or {}).get("auto_root")]
-    assert len(roots) == 1, "one Auto root, not one per type"
-    docs = next(f for f in folders if (f.data or {}).get("auto_type") == "markdown")
-    assert docs.title == "Documents" and docs.parent_id == str(root.id)
-
-    # Re-show the skill → idempotent (no duplicate leaf, no duplicate subfolder).
-    ap3 = await AgenticProcess.get_by_id(pid)
-    await ap3.on_show({
-        "kind": "entity", "typeid": "skill-s1", "type": "skill", "id": "s1",
-        "path": "/ws/proj/.claude/skills/traffic-dash/SKILL.md",
-    })
-    folders, leaves = await _favs()
-    assert len([f for f in folders if (f.data or {}).get("auto_type") == "skill"]) == 1
-    assert len([b for b in leaves if (b.data or {}).get("entity_id") == "s1"]) == 1
-
-
-@pytest.mark.asyncio
-async def test_show_auto_bookmarks_are_project_scoped(bootstrapped_client, user, tmp_path):
-    """A `flow show` files its auto favorite into the SHOWING PROJECT's tree — two
-    projects get their own stamped root and leaf, or one project's slider shows
-    every other project's shows (unscoped rows are global — see bookmark-scope.ts).
-    """
-    from flow_sdk.builtin.bookmark import AUTO_SOURCE, BookmarkType
-    from flow_sdk.server.routes.bootstrap import get_or_create_local_user
-
-    owner = await get_or_create_local_user()
-    payload = {
-        "kind": "entity", "typeid": "markdown-shared", "type": "markdown", "id": "shared",
-        "path": str(tmp_path / "notes.md"),
-    }
-
-    async def _auto(bookmark_type: BookmarkType) -> list:
-        return await _owner_bookmarks(owner, bookmark_type, source=AUTO_SOURCE)
-
-    proj_a = Project(name="fav-scope-a", fs_storage_mount_path=str(tmp_path / "a"))
-    proj_b = Project(name="fav-scope-b", fs_storage_mount_path=str(tmp_path / "b"))
-    await proj_a.save()
-    await proj_b.save()
-
-    pids = {}
-    for project in (proj_a, proj_b):
-        pids[project.id] = await create_agentic_process(
-            bootstrapped_client, visible=False, pty_mode=False, project_id=project.id
-        )
-        await (await AgenticProcess.get_by_id(pids[project.id])).on_show(payload)
-
-    leaves = [b for b in await _auto(BookmarkType.FAVORITE) if (b.data or {}).get("entity_id") == "shared"]
-    assert {b.project_id for b in leaves} == {proj_a.id, proj_b.id}, (
-        f"one leaf per showing project, each stamped: {[(b.project_id, b.title) for b in leaves]}"
-    )
-
-    # One Auto root per project. (Other rows in this shared DB may carry no
-    # project — a project-less show is legitimately unscoped — so assert on this
-    # test's two projects, not on the whole set.)
-    roots = [f for f in await _auto(BookmarkType.FAVORITE_FOLDER) if (f.data or {}).get("auto_root")]
-    for project in (proj_a, proj_b):
-        assert len([f for f in roots if f.project_id == project.id]) == 1, (
-            f"expected exactly one Auto root for {project.name}: "
-            f"{[(f.project_id, f.id) for f in roots]}"
-        )
-
-    # Re-showing from project A is still idempotent WITHIN its own tree — it must
-    # not adopt B's root or mint a second leaf.
-    await (await AgenticProcess.get_by_id(pids[proj_a.id])).on_show(payload)
-    again = [b for b in await _auto(BookmarkType.FAVORITE) if (b.data or {}).get("entity_id") == "shared"]
-    assert len(again) == 2, "re-show must not duplicate within a project"
-
-    # A project-less process keeps the legacy unscoped row (global favorite).
-    pid_none = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
-    await (await AgenticProcess.get_by_id(pid_none)).on_show(payload)
-    unscoped = [
-        b
-        for b in await _auto(BookmarkType.FAVORITE)
-        if (b.data or {}).get("entity_id") == "shared" and not b.project_id
-    ]
-    assert len(unscoped) == 1, "project-less show mints exactly one unscoped favorite"
+    after = {b.id for b in await Bookmark.get_all({})}
+    assert after == before, f"flow show minted bookmark rows: {after - before}"
 
 
 @pytest.mark.asyncio

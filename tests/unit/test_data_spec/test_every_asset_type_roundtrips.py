@@ -62,7 +62,13 @@ VALID: dict[str, dict] = {
     # an attempt is tagged: an `agent` attempt may not also carry `commands`
     # `exe_data` is the class its `subkind` names, and `output_spec_kind` must
     # name a registered kind — a filler string is refused at read, by design
-    "compute_op": {"subkind": "cli", "exe_data": {"commands": {"linux": "true"}}, "output_spec_kind": "string"},
+    # A completion_check OR a status_check, never both: filled, the other stays unset.
+    "compute_op": {
+        "subkind": "cli",
+        "exe_data": {"commands": {"linux": "true"}},
+        "output_spec_kind": "string",
+        "status_check": None,
+    },
     # a source has ONE credential lifetime, not four at once; `reflect` is closed;
     # a permission's key is a `permission.*` dot path and its mechanism a closed set;
     # a webhook's URL is one of the credential's variables

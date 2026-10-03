@@ -7,9 +7,9 @@ import pytest
 
 import flow_sdk.core.capabilities.discovery as discovery_mod
 from flow_sdk.core.capabilities import CapabilityKind, CapabilityResult, get_capability_registry
-from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.core.capabilities.discovery import get_capability_value, set_capability_value
 from flow_sdk.core.capabilities.models import CapabilityValue
+from flow_sdk.schema.data_spec import DataSpec
 
 
 @pytest.fixture(autouse=True)
@@ -575,39 +575,6 @@ async def test_ensure_discovered_runs_one_full_sweep(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_compute_harness_state_reports_default_and_installed(monkeypatch):
-    import flow_sdk.core.capabilities.harness_state as harness_state_mod
-    import flow_sdk.core.capabilities.registry as registry_mod
-
-    async def fake_ensure_discovered():
-        return True
-
-    runner = get_capability_registry().get(CapabilityKind.HARNESS.value)
-
-    async def fake_reference():
-        return CapabilityKind.CODEX_CLI.value
-
-    monkeypatch.setattr(harness_state_mod, "ensure_discovered", fake_ensure_discovered)
-    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/bin/{executable}")
-    monkeypatch.setattr(
-        registry_mod.subprocess,
-        "run",
-        lambda *args, **kwargs: type("Completed", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
-    )
-    monkeypatch.setattr(runner, "_resolve_reference_kind", fake_reference)
-    _seed_cli_value(CapabilityKind.CODEX_CLI.value, "/bin")
-
-    state = await harness_state_mod.compute_harness_state()
-
-    assert state["show_harness_select"] is False
-    by_kind = {h["kind"]: h for h in state["harnesses"]}
-    assert by_kind[CapabilityKind.CODEX_CLI.value]["installed"] is True
-    assert by_kind[CapabilityKind.CODEX_CLI.value]["is_default"] is True
-    assert by_kind[CapabilityKind.CLAUDE_CLI.value]["installed"] is False
-    assert by_kind[CapabilityKind.CLAUDE_CLI.value]["is_default"] is False
-
-
-@pytest.mark.asyncio
 async def test_run_discovery_probe_timeout_falls_back_to_process_path(monkeypatch):
     import asyncio as _asyncio
 
@@ -676,9 +643,8 @@ def test_worker_path_env_none_when_capability_absent(monkeypatch):
     so on a machine that has codex installed this would otherwise resolve and the
     assertion would quietly stop asserting anything.
     """
-    from tests.utils.fake_cli import clear_harness_capability
-
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
+    from tests.utils.fake_cli import clear_harness_capability
 
     clear_harness_capability(monkeypatch, "codex")
     assert worker_path_env("codex") is None

@@ -13,6 +13,8 @@ The public API (``get_config`` / ``set_config`` / ``get_user`` / ``set_user`` /
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -48,11 +50,24 @@ def _load_config() -> dict:
 
 
 def _save_config(config: dict) -> None:
-    """Atomic-ish write: ensure the instance_dir exists, then write the file.
-    The instance_dir may not exist yet on a fresh install — create it."""
+    """Atomic write: a sibling temp file, then ``os.replace``.
+
+    Writing in place truncates first, and ``_load_config`` reads a half-written
+    file as ``{}`` — so while ANY key was being saved, a concurrent ``get_user``
+    saw no user and ``is_logged_in()`` answered False. ``handle_add_message``
+    then treated a shared conversation as local and never sent the message to
+    the hub (3.8% of reads under a write loop). The instance_dir may not exist
+    yet on a fresh install — create it."""
     path = _config_file_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2))
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps(config, indent=2))
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def set_config(key: str, value: Any) -> None:

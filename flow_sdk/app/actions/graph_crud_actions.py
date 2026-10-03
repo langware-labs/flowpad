@@ -284,7 +284,10 @@ async def handle_record_action():
 
     from flow_sdk.storage.asset_vfs import local_asset_vfs_binding
 
-    asset_binding = local_asset_vfs_binding(entity)
+    # Only Git-publishable assets ARE entity-VFS records; a type that merely
+    # keeps its files in its folder (``files_in_asset_folder``) keeps its refs.
+    info = SchemaRegistry.get(entity.get_type())
+    asset_binding = local_asset_vfs_binding(entity) if info is not None and info.git_publishable else None
     if asset_binding is not None:
         type_id = str(entity.typeid)
         return ApiSuccessResponse(
@@ -481,13 +484,14 @@ async def _dispatch_create_save(
     """The three create arms (standalone / visitor / parented), extracted so
     handle_create_entity can wrap them under one ValueError→400 mapping.
 
-    ``find_existing``: a standalone create answers with the row that already
-    holds its natural key (``Entity.find_existing_for_create``) instead of a twin."""
+    ``find_existing``: a create answers with the row that already holds its natural
+    key (``Entity.find_existing_for_create``) instead of a twin."""
+    # A natural key names one row wherever the create is addressed — standalone or under a parent.
+    if find_existing and (existing := await entity.find_existing_for_create()) is not None:
+        return existing
     target_typeid = (request_info.target_entity_typeid if destination_parent is _DEFAULT_CREATE_PARENT
                      else destination_parent.typeid if destination_parent is not None else None)
     if not target_typeid or target_typeid.type == User.get_type():
-        if find_existing and (existing := await entity.find_existing_for_create()) is not None:
-            return existing
         entity = await entity.save(someone_typeid)
     elif target_typeid.type == Visitor.get_type():
         entity = await entity.save()

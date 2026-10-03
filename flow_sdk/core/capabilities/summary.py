@@ -4,7 +4,7 @@ The single source of truth behind ``getCapabilitiesSummary()`` (Python here,
 mirrored 1:1 in TS). A pure projection over the three existing stores — the
 registry (specs + dependency cascade), the discovery dict (typed values), and
 the Capability entity rows (live ``reference_kind`` + last install process) —
-shaped for direct rendering. Same pattern as ``compute_harness_state``: the
+shaped for direct rendering. Same pattern as the status record (``core.status``): the
 backend does all the math, the UI just renders.
 
 Grouped by **intent** = ``kind.split(".")[0]`` — the segment-1 handle that

@@ -278,11 +278,15 @@ def init_temp_dir():
     specifically for Flowpad, and cleans it up if it already exists.
     """
     global FLOWPAD_TEMP_DIR
+    # A module logger, not ``logging.info``: this runs at import, and the root-level call
+    # installs root's bare default handler, which turns the timestamped ``basicConfig``
+    # below into a no-op and leaves every stdlib line in the server log without a time.
+    log = logging.getLogger(__name__)
     if FLOWPAD_TEMP_DIR:
-        logging.info(f"Temporary directory already set: {FLOWPAD_TEMP_DIR}")
+        log.info(f"Temporary directory already set: {FLOWPAD_TEMP_DIR}")
     else:
         FLOWPAD_TEMP_DIR = str(Path(tempfile.gettempdir()) / "flowpad_temp")
-        logging.info(f"Using temporary directory: {FLOWPAD_TEMP_DIR}")
+        log.info(f"Using temporary directory: {FLOWPAD_TEMP_DIR}")
 
     # Create the temp directory
     os.makedirs(FLOWPAD_TEMP_DIR, exist_ok=True)
@@ -969,7 +973,9 @@ class ServiceConfig(BaseSettings):
 # Module-level initialization
 # ---------------------------------------------------------------------------
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+# The same shape as ``server/app.py``: this module is imported first, so its call is the one that
+# takes effect, and the server log names the logger on every timestamped line.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
 
 # Global default service config instance
 default_service_config: ServiceConfig = ServiceConfig()

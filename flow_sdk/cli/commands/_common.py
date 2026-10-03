@@ -21,7 +21,9 @@ presents the secret.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Literal, NoReturn, Optional, overload
 
@@ -32,6 +34,41 @@ if TYPE_CHECKING:
 
 EXIT_INVALID_ARG = 2
 EXIT_CONNECTION_ERROR = 5
+#: Ctrl-C — the shell's own convention (128 + SIGINT), not click's "Aborted!" exit 1.
+EXIT_INTERRUPTED = 130
+
+
+def run_async(awaitable: "Awaitable[Any]") -> Any:
+    """``asyncio.run`` for a command body; Ctrl-C exits ``EXIT_INTERRUPTED``."""
+    try:
+        return asyncio.run(awaitable)
+    except KeyboardInterrupt:
+        raise typer.Exit(EXIT_INTERRUPTED) from None
+
+
+def quiet_logs(level: int = logging.WARNING) -> None:
+    """Silence in-process backend logging at *level* and below, for a command whose stream IS
+    its output (an agent's turn): log lines would interleave with it."""
+    logging.disable(level)
+
+
+# Glyph → ASCII fallbacks for consoles whose codepage can't encode the decorative
+# characters (Windows cp1252 has no ▸ / ✓, so ``typer.echo`` raises
+# UnicodeEncodeError on them). Only consulted when a direct echo fails, so UTF-8
+# terminals render the real glyphs unchanged.
+_GLYPH_FALLBACKS = {"▸": ">", "✓": "v", "✗": "x", "·": ".", "…": "...", "—": "-", "–": "-"}
+
+
+def safe_echo(message: str = "", *, nl: bool = True, err: bool = False) -> None:
+    """``typer.echo`` that degrades gracefully instead of crashing the run on a
+    non-UTF-8 console. The encode error fires before any bytes are written, so the
+    ASCII-fallback retry cannot double-print.
+    """
+    try:
+        typer.echo(message, nl=nl, err=err)
+    except UnicodeEncodeError:
+        safe = "".join(_GLYPH_FALLBACKS.get(c, c) for c in message)
+        typer.echo(safe.encode("ascii", "replace").decode("ascii"), nl=nl, err=err)
 
 
 def fail(exit_code: int, error_code: str, message: str, extra: "dict[str, Any] | None" = None) -> NoReturn:

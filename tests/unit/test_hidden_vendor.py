@@ -17,7 +17,6 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     no_worker_message,
 )
 from flow_sdk.core.capabilities import discovery as discovery_mod
-from flow_sdk.core.capabilities import harness_state
 from flow_sdk.flowpad_types.vendors import VENDORS
 
 REPO = Path(__file__).resolve().parents[2]
@@ -27,21 +26,6 @@ OFFERED = [v for v in VENDORS if not v.hidden]
 
 def test_there_is_a_hidden_vendor_to_pin():
     assert HIDDEN, "no hidden vendor — this file would silently assert nothing"
-
-
-async def test_the_harness_picker_never_lists_a_hidden_vendor(monkeypatch):
-    """``compute_harness_state`` is the bootstrap payload's harness list — what the picker shows."""
-
-    async def _no_sweep() -> bool:
-        return True
-
-    monkeypatch.setattr(harness_state, "ensure_discovered", _no_sweep)
-    state = await harness_state.compute_harness_state()
-    kinds = {h["kind"] for h in state["harnesses"]}
-
-    assert kinds == {v.capability_kind for v in OFFERED}
-    for vendor in HIDDEN:
-        assert vendor.capability_kind not in kinds
 
 
 async def test_the_capabilities_window_never_lists_a_hidden_vendor():
@@ -99,7 +83,7 @@ def test_the_filters_ask_the_fact_not_a_key():
     """No ``== "deepagents"`` in generic machinery: a second hidden vendor must need no edit."""
     from flow_sdk.core.capabilities.summary import compute_capabilities_summary
 
-    for fn in (harness_state.compute_harness_state, no_worker_message, compute_capabilities_summary):
+    for fn in (no_worker_message, compute_capabilities_summary):
         source = inspect.getsource(fn)
         assert ".hidden" in source or "HIDDEN_CAPABILITY_KINDS" in source
         for vendor in HIDDEN:

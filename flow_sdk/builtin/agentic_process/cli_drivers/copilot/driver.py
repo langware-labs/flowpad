@@ -22,6 +22,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     ProcessHookRuntime,
     ProcessMcpRuntime,
     WorkerAuthResult,
+    WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
     restart_payload_from_cli_options,
@@ -309,7 +310,11 @@ class CopilotDriver:
         full_prompt = self.compose_prompt(instruction, process.get_agents_json())
         cli_cfg = process.cli_config or {}
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
-        await apply_worker_secret_env(env_vars, process)
+        try:
+            await apply_worker_secret_env(env_vars, process)
+            setup_error = None
+        except WorkerSpawnError as e:
+            setup_error = e  # fails inside the turn: FAILED + start_failure, not a raise from here
         context = AgenticContext(
             workdir=process.workdir,
             env_vars=env_vars,
@@ -328,7 +333,8 @@ class CopilotDriver:
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
         return await run_headless_turn(
-            self, process, worker, prompt=full_prompt, context=context, logger=logger
+            self, process, worker, prompt=full_prompt, context=context, logger=logger,
+            setup_error=setup_error,
         )
 
     def stream_worker(self, process: "AgenticProcess") -> CopilotCLIStreamWorker:

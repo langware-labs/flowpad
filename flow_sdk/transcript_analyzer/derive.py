@@ -74,6 +74,7 @@ _FLOW_VERBS = frozenset(
         "tag",
         "task",
         "terminal",
+        "test",
         "trace",
         "upgrade",
         "uninstall",

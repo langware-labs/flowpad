@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -173,6 +173,9 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   if (roots.length === 0) {
     return (
       <div className={`p-4 text-center ${className}`}>
+        {/* The root level can still take a first row — an empty tree is
+            exactly when its "add here" matters most. */}
+        {levelFooter?.('', mirrored)}
         {emptyState ?? (
           <p className="text-xs text-muted-foreground">
             <Trans>No items</Trans>
@@ -436,14 +439,6 @@ function BrowseableRow({
   // (HTML5 hides the body pre-drop) — accept optimistically on MIME presence
   // and run the full canDrop check at drop time via readBrowseableDrag.
   const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
-  // Space reserved (on hover/focus only) so the label clears the
-  // absolutely-positioned compact toolbar (pinned to the row's inline end)
-  // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1). At rest the toolbar is
-  // hidden, so the label — badge included — keeps the full width: a badge
-  // row reserves nothing at rest (in a narrow pane a permanent slot truncated
-  // every label to a letter), and its badge gives way to the toolbar on hover.
-  const toolbarSpace = node.toolbar && node.toolbar.length > 0 ? node.toolbar.length * 22 + 6 : 0;
-
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
       if (!node.dragData) return;
@@ -573,12 +568,7 @@ function BrowseableRow({
       <div
         className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
           mirrored ? 'flex-row-reverse text-end' : ''
-        } ${
-          toolbarSpace
-            ? 'transition-[padding] group-focus-within:pe-[var(--toolbar-space)] group-hover:pe-[var(--toolbar-space)]'
-            : ''
         }`}
-        style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
       >
         {hasChildrenHint ? (
           <button
@@ -632,22 +622,24 @@ function BrowseableRow({
               <span className="min-w-0 flex-1 truncate" title={node.tooltip ? undefined : node.label}>
                 {node.label}
               </span>
-              {node.badge && (
-                <div
-                  className={`flex-shrink-0 ${
-                    toolbarSpace ? 'group-focus-within:invisible group-hover:invisible' : ''
-                  }`}
-                >
-                  {node.badge}
-                </div>
-              )}
+              {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
             </>
           )}
         </div>
       </div>
 
+      {/* The row's LAST flex child, so it sits on the edge OPPOSITE the chevron
+          in both orientations (a mirrored row reverses it along with
+          everything else). Its slot is always allocated and only its
+          visibility changes on hover: nothing slides into the spot the pointer
+          was aiming at, and a content-sized menu doesn't resize under it. The
+          slot is text-height (`h-4`) and the buttons overflow it, so reserving
+          it never makes the row taller. */}
       {node.toolbar && node.toolbar.length > 0 && (
-        <div className="pointer-events-none absolute end-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+        <div
+          className="invisible flex h-4 flex-shrink-0 items-center gap-0.5 overflow-visible group-focus-within:visible group-hover:visible"
+          data-testid={`browseable-row-toolbar-${node.id}`}
+        >
           {node.toolbar.map((a) => (
             <ToolbarButton key={a.id} action={a} compact />
           ))}
@@ -740,39 +732,59 @@ function BrowseableRow({
 }
 
 export function ToolbarButton({ action, compact }: { action: ToolbarAction; compact?: boolean }) {
+  const { t } = useLingui();
   const [busy, setBusy] = useState(false);
+  // A destructive action takes two clicks: the first arms it, the second runs.
+  const [armed, setArmed] = useState(false);
   const showBusy = action.showBusyIndicator ?? true;
 
-  const handleClick = useCallback(
-    async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      const result = action.run();
-      if (result instanceof Promise) {
-        if (showBusy) setBusy(true);
-        try {
-          await result;
-        } finally {
-          if (showBusy) setBusy(false);
-        }
+  const handleClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (action.destructive && !armed) {
+      setArmed(true);
+      return;
+    }
+    setArmed(false);
+    const result = action.run();
+    if (result instanceof Promise) {
+      if (showBusy) setBusy(true);
+      try {
+        await result;
+      } finally {
+        setBusy(false);
       }
-    },
-    [action, showBusy],
-  );
+    }
+  };
+
+  const label = armed ? t`Confirm: ${action.label}` : action.label;
 
   return (
     <Button
       type="button"
       variant="ghost"
       size="icon"
-      className={compact ? 'h-5 w-5' : 'h-6 w-6'}
+      className={`${compact ? 'h-5 w-5' : 'h-6 w-6'} ${
+        armed ? 'bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive' : ''
+      }`}
       onClick={(e) => void handleClick(e)}
+      onPointerLeave={() => setArmed(false)}
+      onBlur={() => setArmed(false)}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape' && armed) {
+          e.stopPropagation();
+          setArmed(false);
+        }
+      }}
       disabled={busy}
-      title={action.label}
-      aria-label={action.label}
+      title={label}
+      aria-label={label}
+      data-armed={armed || undefined}
       data-testid={`browseable-toolbar-${action.id}`}
     >
-      {busy && showBusy ? (
+      {busy ? (
         <Loader2 className="h-3 w-3 animate-spin" />
+      ) : armed ? (
+        <Check className="h-3 w-3" />
       ) : (
         <span className="[&>svg]:h-3 [&>svg]:w-3">{action.icon}</span>
       )}

@@ -94,6 +94,13 @@ class Task(Entity):
     def is_file_backed(self) -> bool:
         return bool(self.asset_ref) or self.placement != "instance"
 
+    async def find_existing_for_create(self) -> "Task | None":
+        """One message, at most one task: a create for a message already made a task ("Task it")
+        answers with that task — a double click, a second tab, or Send racing the bubble."""
+        if not self.origin_message:
+            return None
+        return next(iter(await Task.get_all({"origin_message": self.origin_message})), None)
+
     # ── a delegated task: the task ledger (``flow_sdk/tasks/ledger.py`` is the one writer) ──
     #: Who asked for it, as a typed ref: ``agent:<id>`` / ``user:<id>``.
     creator: Optional[str] = APIField(None)
@@ -105,6 +112,9 @@ class Task(Entity):
     #: PRIVATE: a local row id — a shared task's hub copy has no such field, and a save round-tripped
     #: through the hub would otherwise come back without it.
     origin_conversation: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
+    #: The message it was made from ("Task it" on a conversation message) — PRIVATE for the same
+    #: reason as ``origin_conversation``: a local row id. One message, at most one task.
+    origin_message: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     #: The creator's session (its process's target — a conversation, or its chat) — where task news
     #: wakes it, so it answers with the memory of the request.
     origin_session: Optional[str] = APIField(None)

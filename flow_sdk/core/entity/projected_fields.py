@@ -15,14 +15,15 @@ Three pieces, and all three are needed:
   leaky in the other direction: generic graph CRUD breaks.
 * ``_set_projection`` is the one sanctioned writer, gated on a module-private
   sentinel so a call site has to reach for it deliberately.
-* ``_adopt_stored_projections`` closes the last door: a SAVE. A save writes the
+* ``preserved_fields_on_save`` closes the last door: a SAVE. A save writes the
   whole row, so any writer holding a copy read before the projection last moved
   (a hub frame, a disk→DB record refresh, the unread recount) wrote its stale
   ``message_ids`` back over the fresh ones — the new message stayed in the
   pointer index and the edge table, and vanished from the row the UI renders.
-  ``Entity.save`` calls it inside the record guard and the writer transaction,
-  so every projection a save did not itself set is re-read from the stored row
-  and written back unchanged.
+  The driver asks this hook under the writer transaction, against the stored
+  ``data`` it is about to overwrite (``_preserve_managed_data_fields``), on
+  every update path — ordinary and bulk — so every projection a save did not
+  itself set is written back unchanged.
 
 Declare ``projected_fields`` and ``projection_writer`` on the subclass; the
 latter names the function that IS allowed to write, and appears in the error a
@@ -30,7 +31,8 @@ developer will read.
 """
 from __future__ import annotations
 
-from typing import ClassVar, FrozenSet
+from contextlib import contextmanager
+from typing import ClassVar, FrozenSet, Iterator
 
 #: Held privately here so a caller cannot pass it accidentally. The sentinel is
 #: not the security boundary — it is a speed bump that makes the sanctioned
@@ -67,43 +69,43 @@ class ProjectedFields:
             fields = {k: v for k, v in fields.items() if k not in self.projected_fields}
         return super().apply_field_updates(fields)
 
+    @contextmanager
+    def _projection_write(self) -> Iterator[None]:
+        """Hold the guard open for the duration of the block.
+
+        ``object.__setattr__`` so the flag itself doesn't recurse through the
+        guard; ``finally`` so a failed write can't leave the door open. Used by
+        ``_set_projection`` and by the driver's write-back of preserved fields.
+        """
+        object.__setattr__(self, "_allow_projection_write", True)
+        try:
+            yield
+        finally:
+            object.__setattr__(self, "_allow_projection_write", False)
+
     def _set_projection(self, key: str, value, sentinel) -> None:
         """The one sanctioned writer. ``sentinel`` must be ``PROJECTION_SENTINEL``."""
         if sentinel is not _SENTINEL:
             raise PermissionError("invalid projection sentinel")
-        # object.__setattr__ so the flag itself doesn't recurse through the
-        # guard; try/finally so a failed write can't leave the door open.
-        object.__setattr__(self, "_allow_projection_write", True)
-        try:
+        with self._projection_write():
             setattr(self, key, value)
-        finally:
-            object.__setattr__(self, "_allow_projection_write", False)
         written = self.__dict__.get("_projections_set")
         object.__setattr__(self, "_projections_set", (written or frozenset()) | {key})
 
-    async def _adopt_stored_projections(self) -> None:
-        """Before a save of an existing row: take every projected field this
-        instance did NOT set through ``_set_projection`` from the stored row.
+    def preserved_fields_on_save(self, current_data: dict) -> tuple[str, ...]:
+        """On a save of an existing row: every projected field this instance did
+        NOT set through ``_set_projection`` keeps its stored value.
 
-        The caller holds the record guard and the writer transaction, so the
-        read and the write that follows are one step — no projection can land
-        between them. Clears the set afterwards: the next save of this same
+        Called by the driver inside the writer transaction, against the stored
+        ``data`` the UPDATE is about to replace — no projection can land between
+        the read and the write. Clears the set: the next save of this same
         instance starts from "set nothing" again.
         """
         written = self.__dict__.get("_projections_set") or frozenset()
         object.__setattr__(self, "_projections_set", frozenset())
-        stale = [f for f in self.projected_fields if f not in written]
-        if not stale:
-            return
-        stored = await self._db.get_by_id(str(self.id), self.get_type())
-        if stored is None:
-            return
-        object.__setattr__(self, "_allow_projection_write", True)
-        try:
-            for field in stale:
-                setattr(self, field, getattr(stored, field, None))
-        finally:
-            object.__setattr__(self, "_allow_projection_write", False)
+        if not current_data:
+            return ()
+        return tuple(f for f in self.projected_fields if f not in written)
 
 
 #: Re-exported for the sanctioned writers. One object, not one per module.

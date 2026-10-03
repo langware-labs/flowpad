@@ -135,7 +135,7 @@ export interface PrefInfo {
    * (e.g. the Vite-glob notification-sound manifest in `ui`). PrefControl maps
    * a known source string to its option list at render time.
    */
-  optionsSource?: 'notification_sounds';
+  optionsSource?: 'notification_sounds' | 'locales';
   /**
    * Render this pref as a control in the Preferences screen. Default **false**:
    * most prefs are contextual UI state (sort dirs, filters, modes) set via their
@@ -387,6 +387,10 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: 'Interface language and text direction.',
     dataType: PrefDataType.STRING,
     defaultValue: 'en-US',
+    // Every shipped locale, always — the footer's quick switch is offered only
+    // when the user has 2+ languages in common with the app, so this is where
+    // the rest are reached.
+    optionsSource: 'locales',
   },
   [PrefKey.VIBE_MODEL_TIER]: {
     key: PrefKey.VIBE_MODEL_TIER,

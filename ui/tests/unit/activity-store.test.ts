@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActivityProgressSpec } from '@sdk/activity';
+import { renderHook, act } from '@testing-library/react';
 import {
   RECEIPT_LINGER_MS,
   __resetActivityStoreForTest,
+  dismissActivityReceipt,
   getActivities,
   getActivity,
   handleActivitySnapshot,
   subscribeToActivities,
+  useActivityReceipt,
 } from '@src/store/activity-store';
 
 /**
@@ -122,6 +125,20 @@ describe('activity store', () => {
       expect(getActivity('index')).toBeNull();
     },
   );
+
+  it('keeps the last finished root as a receipt past the linger, until dismissed', () => {
+    const { result } = renderHook(() => useActivityReceipt());
+    act(() => handleActivitySnapshot(spec({ seq: 2, state: 'failed', message: '1 RED' })));
+    act(() => {
+      vi.advanceTimersByTime(RECEIPT_LINGER_MS + 1);
+    });
+
+    expect(getActivity('index')).toBeNull();
+    expect(result.current?.message).toBe('1 RED');
+
+    act(() => dismissActivityReceipt());
+    expect(result.current).toBeNull();
+  });
 
   it('a new activity at a recycled address replaces the receipt instead of being dropped', () => {
     /**

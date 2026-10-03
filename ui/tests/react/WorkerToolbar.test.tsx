@@ -47,6 +47,14 @@ describe('WorkerToolbar — display modes', () => {
     expect(screen.queryByTestId('t-launch-more')).toBeNull();
   });
 
+  it('each vendor glyph wears its vendor tint, not the plain foreground', () => {
+    render(<WorkerToolbar onLaunch={() => {}} mode="all" testIdPrefix="t" />);
+    const glyph = (worker: string) => screen.getByTestId(`t-launch-${worker}`).firstElementChild;
+    expect(glyph('claude_code')?.getAttribute('class')).toContain('text-orange-500');
+    expect(glyph('codex')?.getAttribute('class')).toContain('text-emerald-500');
+    expect(glyph('copilot')?.getAttribute('class')).toContain('text-sky-500');
+  });
+
   it('Standard view defaults to lastOpened: one worker + chevron', () => {
     render(<WorkerToolbar onLaunch={() => {}} testIdPrefix="t" />);
     // No remembered worker yet → falls back to claude_code as primary.

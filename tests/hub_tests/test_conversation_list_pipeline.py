@@ -683,6 +683,9 @@ async def test_settled_conversation_is_not_redispatched(hub_base_url, hub_login_
 
     conv_id = await _hub_create_conversation(hub_base_url, api_key, title=f"converge-{uuid.uuid4()}")
     await _hub_add_message(hub_base_url, api_key, conv_id, "converge msg")
+    hub_updated = Conversation._as_datetime(
+        (await _hub_get_conversation(hub_base_url, api_key, conv_id)).get("updated_date")
+    )
 
     someone = await _local_user_typeid()
     first = await handle_conversation_list(someone)
@@ -690,8 +693,11 @@ async def test_settled_conversation_is_not_redispatched(hub_base_url, hub_login_
         "precondition: the first catch-up must fetch this conversation"
     )
 
-    # Let the detached drain finish — the local projection must match the hub.
-    settled = await _poll_until(_projected(conv_id, expected_count=1), timeout=10.0)
+    # Let the detached drain finish. Settled means BOTH writes landed: the
+    # projection, and then the watermark the drain stamps in a separate save
+    # once the fetch returns. Polling on the projection alone races that second
+    # save, and a list call in the gap rightly re-dispatches.
+    settled = await _poll_until(_projected(conv_id, expected_count=1, hub_updated=hub_updated), timeout=10.0)
     assert settled is not None, f"catch-up never projected the message for {conv_id[:8]}"
 
     # Nothing has happened on the hub since. This catch-up has no work to do.

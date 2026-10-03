@@ -29,6 +29,7 @@ EXPECTED_PATHS = (
     "modes/analyze.md",
     "modes/bug-detector.md",
     "modes/debug.md",
+    "modes/progress.md",
     "modes/qa-cycle.md",
     "modes/reference.md",
     "modes/report.md",

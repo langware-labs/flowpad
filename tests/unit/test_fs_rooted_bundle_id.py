@@ -12,11 +12,9 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.assets.materialize import extended_length_path, materialize_asset_sync
 from flow_sdk.assets.transfer import _ASSET_PACK_IGNORE
-from flow_sdk.builtin.flow_message_bundle import (
-    _extended_length_path,
-    _pack_file_backed_attachment,
-)
+from flow_sdk.builtin.flow_message_bundle import _pack_file_backed_attachment
 from flow_sdk.schema.types import EntityType
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -80,10 +78,10 @@ def test_asset_pack_ignore_drops_env_and_cache_trees(tmp_path):
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows extended-length path semantics")
 def test_extended_length_path_prefixes_and_is_idempotent(tmp_path):
-    out = str(_extended_length_path(tmp_path))
+    out = str(extended_length_path(tmp_path))
     assert out.startswith("\\\\?\\")
     # Re-wrapping an already-prefixed path must not double-prefix.
-    assert _extended_length_path(_extended_length_path(tmp_path)) == _extended_length_path(tmp_path)
+    assert extended_length_path(extended_length_path(tmp_path)) == extended_length_path(tmp_path)
 
 
 # The bug, captured at the extraction primitive (real zip, real FS, no mocks).
@@ -122,8 +120,8 @@ def test_deep_bundle_member_extracts_only_with_extended_length_root(tmp_path):
     ext_root = tmp_path / "on"
     ext_root.mkdir()
     with zipfile.ZipFile(zip_path, "r") as zf:
-        zf.extractall(_extended_length_path(ext_root))
-    landed = Path(str(_extended_length_path(ext_root)) + os.sep + deep_arc.replace("/", os.sep))
+        zf.extractall(extended_length_path(ext_root))
+    landed = Path(str(extended_length_path(ext_root)) + os.sep + deep_arc.replace("/", os.sep))
     assert landed.exists()
     assert landed.read_bytes() == b"x"
 
@@ -260,3 +258,25 @@ async def test_pack_single_file_copies_md_and_js_byte_for_byte(tmp_path, monkeyp
     # No injected "id:" line and the sender id never appears in the JS body.
     assert b"id:" not in js_dest.read_bytes()
     assert ENTITY_ID not in js_dest.read_text(encoding="utf-8")
+
+
+# Found by a live session against a Windows host: staging (``.asset-install-*/new``,
+# ``.../previous``) sits ~30 chars deeper than the destination, so a legal final path
+# crossed MAX_PATH while copied (``Errno 2``) and again while cleaned up (``WinError 145``).
+@pytest.mark.skipif(os.name != "nt", reason="MAX_PATH (260) is a Windows-only limit")
+def test_materialize_copies_a_tree_that_crosses_max_path_only_while_staged(tmp_path):
+    leaf = "attachment/prompt-3550afd9-dfee-4e14-ad80-336f0070de33/agentic-assets/prompt/what_is_6_times_7__reply_with_just_the_.md"
+    source = tmp_path / "src"
+    (source / leaf).parent.mkdir(parents=True)
+    (source / leaf).write_text("6 x 7")
+    # A destination whose own final path stays under 260, so only staging crosses it.
+    pad = "d" * max(1, 236 - len(str(tmp_path / "x" / leaf)))
+    destination = tmp_path / pad / "unpacked"
+    assert len(str(destination / leaf)) < 260 < len(str(destination.parent / ".asset-install-xxxxxxxx" / "new" / "unpacked" / leaf))
+
+    materialize_asset_sync(source, destination, overwrite=True)
+    # Again: the overwrite moves the first tree to ``.asset-install-*/previous`` and
+    # deletes it there — the same depth, so the same MAX_PATH crossing on cleanup.
+    materialize_asset_sync(source, destination, overwrite=True)
+
+    assert (destination / leaf).read_text() == "6 x 7"

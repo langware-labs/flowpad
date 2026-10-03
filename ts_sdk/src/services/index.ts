@@ -7,6 +7,7 @@ export * from './credentials-service';
 export * from './llm-endpoints-service';
 export * from './connections-service';
 export * from './llm-sources-service';
+export * from './status-service';
 export * from './token-plan-service';
 export * from './budgets-service';
 export * from './secretApprovalGate';

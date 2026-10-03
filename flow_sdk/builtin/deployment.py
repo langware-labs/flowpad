@@ -35,7 +35,6 @@ converges through :meth:`find_existing`, never through a key baked into the id.
 from __future__ import annotations
 
 import logging
-import weakref
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Optional
 
@@ -50,6 +49,7 @@ from flow_sdk.schema.data_spec.deployment_secrets_spec import DeploymentSecretsS
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode
 from flow_sdk.schema.data_spec.service_endpoint_spec import EndpointDeclaration
 from flow_sdk.schema.types import EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.worldview.models import (
     ArtifactLinkSource,
     DeploymentObservation,
@@ -65,7 +65,7 @@ if TYPE_CHECKING:
     from flow_sdk.secrets import SecretStoreRef
 
 #: Per event loop, per deployment (``stream_inbox/_locks``): ``keep_in``'s read-modify-write of a binding.
-_SECRETS_LOCKS: "weakref.WeakKeyDictionary" = weakref.WeakKeyDictionary()
+_SECRETS_LOCKS = new_registry()
 
 #: Who a box logs in as for a deployment: nobody, the placed agent's own identity, or its owner.
 DeploymentIdentity = Literal["none", "agent", "user"]
@@ -339,8 +339,6 @@ class Deployment(Entity):
         the stored row, never from this instance's copy: two credentials saved at once (each holding
         the deployment it loaded before the other wrote) would otherwise each write back the binding
         it read, and the first one's variables silently fall back to the default store."""
-        from flow_sdk.stream_inbox._locks import keyed_loop_lock  # noqa: PLC0415
-
         async with keyed_loop_lock(_SECRETS_LOCKS, str(self.id)):
             stored = await type(self).get_by_id(str(self.id)) if self.id else None
             row = stored if stored is not None else self

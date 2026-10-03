@@ -41,12 +41,17 @@ export interface SendReplyTarget {
   conversationId: string;
 }
 
+/** What a send answers with: the new message's row id (a draft send answers too). */
+export interface SentReply {
+  id: string | null;
+}
+
 export async function sendReply(
   target: SendReplyTarget,
   message: string,
   files?: File[],
   extras?: SendReplyExtras,
-): Promise<void> {
+): Promise<SentReply> {
   const conversationId = target?.conversationId ?? null;
   if (!conversationId) {
     throw new Error('sendReply requires a conversationId');
@@ -86,7 +91,7 @@ export async function sendReply(
     if (extras?.replyPolicy) form.append('reply_policy', extras.replyPolicy);
     action.bodyParameters = form;
     // File sends are multipart — binary bodies only travel over REST.
-    await dataManager.callAction(action);
+    return sentReply(await dataManager.callAction(action));
   } else {
     const body: Record<string, unknown> = { message };
     if (extras?.promptText) body.prompt_text = extras.promptText;
@@ -97,8 +102,13 @@ export async function sendReply(
     action.bodyParameters = body;
     // Text-only send: prefer the WebSocket hop when the socket is open
     // (skips an HTTP round-trip), fall back to REST otherwise.
-    await dataManager.callActionPreferWS(action);
+    return sentReply(await dataManager.callActionPreferWS(action));
   }
+}
+
+function sentReply(data: unknown): SentReply {
+  const id = (data as { id?: unknown } | null | undefined)?.id;
+  return { id: typeof id === 'string' && id ? id : null };
 }
 
 export async function refreshNotifications(projectPath?: string): Promise<void> {

@@ -44,7 +44,6 @@ export function useMarkdownContent(
   const [currentDocument, setCurrentDocument] = useState<AssetDocument | null>(null);
   const [conflict, setConflict] = useState(false);
   const [isMissing, setMissing] = useState(false);
-  const [loading, setLoading] = useState(!!fsRef);
   const [saving, setSaving] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const draft = useRef<DocumentDraft | null>(null);
@@ -66,7 +65,8 @@ export function useMarkdownContent(
     previousLoad.current = { identity, reloadTrigger };
     if (!explicit && (draft.current?.dirty || inFlight.current || saveBlocked.current)) return;
     const token = ++epoch.current;
-    draft.current = null;
+    // Nulling the ref renders nothing; redraw so a cleared draft reads as loading at once.
+    if (draft.current) { draft.current = null; redraw(); }
     saveBlocked.current = false;
     inFlight.current = false;
     pendingSave.current = false;
@@ -78,19 +78,17 @@ export function useMarkdownContent(
     setMissing(false);
     setLastSync(null);
     const target = ref.current;
-    setLoading(!!target);
     if (!target) return;
     void target.readDocument().then((document) => {
       if (epoch.current !== token) return;
       draft.current = new DocumentDraft(document);
+      redraw();
     }).catch(async (error: unknown) => {
       if (epoch.current !== token) return;
       const missing = target.exists ? !(await target.exists().catch(() => true)) : false;
       if (epoch.current !== token) return;
       setMissing(missing);
       if (!missing) setLoadError(error instanceof Error ? error : new Error(String(error)));
-    }).finally(() => {
-      if (epoch.current === token) { setLoading(false); redraw(); }
     });
   }, [identity, reloadTrigger, reloadKey]);
 
@@ -167,9 +165,12 @@ export function useMarkdownContent(
     const timer = setTimeout(() => { void saveRef.current(); }, autoSaveMs);
     return () => clearTimeout(timer);
   }, [autoSave, autoSaveMs, dirty, generation]);
-  usePrimaryContentPending(loading);
-
   const current = draft.current;
+  // Derived, never state: a state flag lags the draft ref by a render, and that render
+  // read as an empty loaded file — an editor showed it and autosaved it over the file.
+  const isLoading = !!fsRef && !current && !loadError && !isMissing;
+  usePrimaryContentPending(isLoading);
+
   // Text inputs only expose scalars; structured metadata survives in the typed draft.
   const fields = Object.fromEntries(Object.entries(current?.fields ?? {}).filter(([, value]) =>
     value === null || typeof value !== 'object',
@@ -177,7 +178,7 @@ export function useMarkdownContent(
   return {
     fields, typedFields: current?.fields ?? {}, hasFields: Object.keys(current?.fields ?? {}).length > 0,
     body: current?.body ?? '', bodyStartLine: current?.document.body_start_line ?? 1,
-    setBody, setField, dropField, dirty, saving, lastSync, isLoading: loading, loadError,
+    setBody, setField, dropField, dirty, saving, lastSync, isLoading, loadError,
     saveError, conflict, currentDocument, inspectCurrent, metadataError: current?.document.metadata_error ?? null,
     isMissing, recreate, save, reload,
   };

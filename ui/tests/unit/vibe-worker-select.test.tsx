@@ -4,15 +4,21 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 
-import { capabilityManager, CapabilityKinds } from '@sdk';
-import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { normalizeWorkerType } from '@src/components/workers/worker-types';
 import { VibeWorkerSelect } from '@src/pages/flow-page/vibe-worker-select';
 
+const h = vi.hoisted(() => ({ record: null as unknown }));
+
+// The status record says what is installed; `null` is "not read yet", which fails open.
+vi.mock('@src/components/status/use-status-record', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useStatusRecord: () => ({ status: h.record, isLoading: false }),
+}));
+
 /**
- * The select navigates on a warned pick, so every render needs a Router. With no
- * `HarnessCapabilitiesProvider` mounted the capability read yields null, which
- * fails open — no warnings, no navigation, the plain switcher behaviour below.
+ * The select navigates on a warned pick, so every render needs a Router. With no status
+ * record read yet nothing is known, which fails open — no warnings, no navigation, the plain
+ * switcher behaviour below.
  */
 function renderSelect(ui: React.ReactNode) {
   return render(<MemoryRouter initialEntries={['/dock/shell']}>{ui}</MemoryRouter>);
@@ -57,7 +63,7 @@ describe('VibeWorkerSelect', () => {
     expect(normalizeWorkerType('copilot')).toBe('copilot');
   });
 
-  it('renders no warning badge when no harness capability is known', async () => {
+  it('renders no warning badge when nothing is known about the harnesses', async () => {
     const user = userEvent.setup();
 
     renderSelect(<VibeWorkerSelect value="claude_code" onChange={vi.fn()} />);
@@ -76,34 +82,28 @@ describe('VibeWorkerSelect', () => {
 describe('VibeWorkerSelect — unavailable harness', () => {
   const UNAVAILABLE = 'Copilot is not installed on this machine.';
 
-  function snapshotFor(kind: string) {
-    const missing = kind === CapabilityKinds.Copilot;
-    return {
-      queryKind: kind,
-      capabilities: [],
-      capability: null,
-      // `checked` is what a probe produces — the whole reason the picker calls
-      // `ensureChecked` on open. Unchecked would fail open and flag nothing.
-      available: !missing,
-      checked: true,
-      result: missing ? { ok: true, available: false, message: UNAVAILABLE } : null,
-      dependencies: {},
-      processId: null,
-      resolvedKind: kind,
-      resolvedWorkerType: null,
-    };
-  }
-
   beforeEach(() => {
-    vi.spyOn(capabilityManager, 'load').mockResolvedValue([]);
-    vi.spyOn(capabilityManager, 'ensureChecked').mockImplementation((kind: string) =>
-      Promise.resolve(snapshotFor(kind) as never),
-    );
-    vi.spyOn(capabilityManager, 'getSnapshot').mockImplementation((kind: string) => snapshotFor(kind) as never);
+    // The record as the backend serves it after the boot sweep: Copilot's CLI is absent.
+    h.record = {
+      harnesses: [
+        ['claude', 'Claude'],
+        ['codex', 'Codex'],
+        ['copilot', 'Copilot'],
+        ['opencode', 'OpenCode'],
+      ].map(([w, label]) => ({
+        kind: `harness.${w}.cli`,
+        worker_type: w,
+        label,
+        install: w === 'copilot' ? 'not_installed' : 'installed',
+      })),
+      keys: [],
+      hub: { login: 'signed_out' },
+      default_harness: 'harness.claude.cli',
+    };
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    h.record = null;
   });
 
   function renderWithCopilotMissing() {
@@ -121,10 +121,10 @@ describe('VibeWorkerSelect — unavailable harness', () => {
           <Route
             path="/dock/:viewType"
             element={
-              <HarnessCapabilitiesProvider>
+              <>
                 <Probe />
                 <VibeWorkerSelect value="claude_code" onChange={onChange} />
-              </HarnessCapabilitiesProvider>
+              </>
             }
           />
         </Routes>

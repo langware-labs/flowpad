@@ -318,11 +318,11 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
     [appPage, switchingPage],
   );
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (refresh = false) => {
     setLoading(true);
     setError(null);
     try {
-      setData(await apiClient.get<VersionCheckResponse>('/api/v1/version/check'));
+      setData(await apiClient.get<VersionCheckResponse>(`/api/v1/version/check${refresh ? '?refresh=true' : ''}`));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -471,7 +471,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             </div>
             <button
               type="button"
-              onClick={() => void fetchData()}
+              onClick={() => void fetchData(true)}
               disabled={loading}
               className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
               title={t`Check again`}

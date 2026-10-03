@@ -32,7 +32,6 @@ import {
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, KeyRound, ShieldAlert, X } from 'lucide-react';
 
@@ -161,15 +160,9 @@ function HarnessFunding({
   const { t } = useLingui();
   // "Installed on this machine" is not the box's funding question and must not be re-derived
   // from it: the resolver answers for EVERY harness it knows, installed or not, so a person
-  // with no Copilot still gets a verdict about Copilot — and when its presumed device login
-  // is ineligible the ladder falls to this budget, printing "this budget" for an assistant
-  // that does not exist here. The capability check is the one authority on presence, and
-  // `probeHarnesses` is why it is worth asking now: the app subscribes with `autoCheck:
-  // false`, so without a nudge every harness reads `checked: false` and nothing is filtered.
-  const { warnings, probeHarnesses } = useHarnessAvailability();
-  useEffect(() => probeHarnesses(), [probeHarnesses]);
-  // A harness whose check RAN and FAILED is absent; unchecked is not absent (the shared rule
-  // in `harnessWarning`), so this fails open exactly like the worker picker does.
+  // with no Copilot still gets a verdict about Copilot. The status record is the one
+  // authority on presence; a harness it has not swept yet fails open, like the worker picker.
+  const { warnings } = useHarnessAvailability();
   const present = harnessKinds(status).filter((kind) => {
     const worker = LAUNCHABLE_WORKERS.find((w) => HARNESS_CAPABILITY_BY_WORKER[w] === kind);
     return !worker || !warnings[worker];

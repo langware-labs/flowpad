@@ -247,6 +247,26 @@ def test_tail_status_end_turn_is_complete(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
 
+def test_tail_status_post_turn_system_lines_do_not_hide_end_turn(tmp_path: Path):
+    """Claude 2.1.x closes an interactive turn with ``stop_hook_summary`` +
+    ``turn_duration`` and writes ``last-prompt`` only at exit. The end_turn before
+    them (here pushed beyond the 4 KB first window by a large reply) is the turn's
+    end: a finished PTY turn used to read UNKNOWN until the session closed."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user", "content": "go"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn",
+                                              "content": [{"type": "text", "text": "x" * 8000}]}},
+            {"type": "system", "subtype": "stop_hook_summary", "content": "y" * 3000},
+            {"type": "system", "subtype": "turn_duration", "durationMs": 2100},
+            {"type": "cost-state"},
+        ],
+    )
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
 def test_tail_status_stop_sequence_is_error(tmp_path: Path):
     """Assistant stop_reason=stop_sequence → ERROR."""
     f = tmp_path / "session.jsonl"

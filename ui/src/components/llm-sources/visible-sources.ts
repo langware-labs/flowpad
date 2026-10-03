@@ -20,9 +20,9 @@
  * no holder at all (`_hub_stub`), so every attribution test says "not yours" until a listing
  * catches up.
  *
- * Deliberately NOT done in the backend. `_hub_user_typeid` says why in its own words: the
- * resolver legitimately spends a pool that belongs to an org, so dropping those rows from the
- * listing would break a spawn to tidy up a screen.
+ * Deliberately NOT done in the backend: the resolver legitimately spends a pool that belongs to
+ * an org, so dropping those rows from the listing would break a spawn to tidy up a screen. The
+ * hub user (`hubUserTypeid`) is a STATUS fact — read from the status record, not the funding one.
  */
 import { LLMFundingKind, type LLMFundingStatus, type LLMSource } from '@sdk';
 
@@ -41,9 +41,10 @@ export function visibleSources(
   status: LLMFundingStatus | null | undefined,
   kind: string,
   funding?: LLMFundingKind,
+  hubUserTypeid?: string | null,
 ): LLMSource[] {
   const inUse = status?.resolved?.[kind]?.endpoint_typeid ?? '';
-  const bound = status?.endpoint_typeid ?? '';
+  const bound = status?.binding?.endpoint_typeid ?? '';
   return (status?.sources?.[kind] ?? []).filter((source) => {
     const offer = endpointOf(status, source);
     if (funding && offer?.kind !== funding) return false;
@@ -51,6 +52,6 @@ export function visibleSources(
     // against — there is nothing to narrow, and asking would rule every one of them out.
     if (offer?.kind !== LLMFundingKind.Hub) return true;
     if (source.endpoint_typeid === inUse || source.endpoint_typeid === bound) return true;
-    return !!offer && isAllocatedToUser(offer, status?.hub_user_typeid);
+    return !!offer && isAllocatedToUser(offer, hubUserTypeid);
   });
 }

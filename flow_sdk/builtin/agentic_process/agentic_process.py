@@ -1108,9 +1108,11 @@ class AgenticProcess(Entity):
         no longer waits on a discovery sweep: resolution falls back to PATH on
         its own, which is why this is immediate.
         """
-        from flow_sdk.builtin.agentic_process.cli_drivers import worker_bin_folder  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+            worker_is_installed,
+        )
 
-        return worker_bin_folder(get_driver(worker_type).name) is not None
+        return worker_is_installed(get_driver(worker_type).name)
 
     @classmethod
     async def is_logged_in(cls, worker_type: "WorkerType | str | None" = None) -> "WorkerAuthResult":
@@ -2960,28 +2962,6 @@ class AgenticProcess(Entity):
         except Exception:
             logger.warning("on_show: display persist failed", exc_info=True)
         await self.emit_entity_event("on_show", payload)
-        # Auto-file the shown target into the Auto/<type>/item favorites tree.
-        # Best-effort: a bookmark failure must never break `flow show`.
-        try:
-            await self._auto_bookmark_show(payload)
-        except Exception:
-            logger.warning("on_show: auto-bookmark failed", exc_info=True)
-
-    async def _auto_bookmark_show(self, payload: dict) -> None:
-        """Drop the shown target into the nested ``Auto / <type> / item`` favorites
-        tree (idempotent). Owned by the local user and scoped to this process's
-        project. Every leaf create broadcasts, so the folder counters tick live."""
-        from flow_sdk.builtin.bookmark import mint_auto_favorite  # noqa: PLC0415
-        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
-
-        owner = await get_or_create_local_user()
-        if owner is None:
-            return
-        # `effective_project_id`, not the raw field: a child process (received
-        # session, sub-run) inherits its parent's project rather than filing the
-        # show unscoped. It tests self before walking, so a project-bound process
-        # costs no extra lookup. `on_show` already wraps this call best-effort.
-        await mint_auto_favorite(owner=owner, payload=payload, project_id=await self.effective_project_id())
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -3400,7 +3380,10 @@ class AgenticProcess(Entity):
         neutral.
 
         Args:
-            timeout: Maximum seconds to wait for the process to reach idle.
+            timeout: Seconds to wait for the turn to reach idle once its worker is no
+                longer active. A live worker is never cut off: a long tool call (an
+                install, a build) can write nothing for minutes, so the budget only
+                starts counting when the worker stops.
             poll_interval: How often (seconds) to check for new transcript data.
 
         Raises:
@@ -3421,8 +3404,25 @@ class AgenticProcess(Entity):
 
         # Wait until the driver can locate a transcript (worker has been
         # spawned and produced — or pre-touched — a session JSONL).
+        # The headless turn this stream follows (``None`` for a PTY turn). Read from
+        # the process-global registry, so it holds on a hydrated copy too. Once it
+        # has finished, nothing more is written: a worker that failed to spawn or
+        # crashed mid-turn leaves no terminal marker, and waiting for one would only
+        # delay the failure to the deadline — minutes, for nothing.
+        turn_task = _PROMPT_TASKS.get(str(self.id))
+
+        def _turn_ended() -> bool:
+            return turn_task is not None and turn_task.done() and not prompt_worker_active(self.id)
+
+        def _unfinished_turn() -> RuntimeError:
+            return RuntimeError(getattr(self, "start_failure", None) or "the worker exited without finishing its turn")
+
         transcript_path: Path | None = None
         while transcript_path is None:
+            if _turn_ended():
+                raise _unfinished_turn()
+            if prompt_worker_active(self.id):
+                deadline = time.monotonic() + timeout
             if time.monotonic() > deadline:
                 raise TimeoutError("stream_transcript: transcript file did not appear within timeout")
             transcript_path = self.driver.transcript_path(self)
@@ -3465,6 +3465,7 @@ class AgenticProcess(Entity):
         _terminal_size: int | None = None
         _post_tool_since: float | None = None
         _post_tool_size: int | None = None
+        _ended_since: float | None = None
 
         offset = 0
         while True:
@@ -3523,6 +3524,8 @@ class AgenticProcess(Entity):
             # release while the tail still shows the prior marker — re-opening the
             # off-by-one.
             _worker_active = prompt_worker_active(self.id)
+            if _worker_active:
+                deadline = time.monotonic() + timeout
             _turn_idle = (
                 _is_user_turn is not None and tail_status == _WS.IDLE and _user_turns_seen > _user_turns_at_open
             )
@@ -3587,6 +3590,13 @@ class AgenticProcess(Entity):
                 _terminal_size = None
                 _post_tool_since = None
                 _post_tool_size = None
+                # The settle window still applies: a late flush may yet land the marker.
+                if not _turn_ended():
+                    _ended_since = None
+                elif _ended_since is None:
+                    _ended_since = now
+                elif now - _ended_since >= _settle_seconds:
+                    raise _unfinished_turn()
 
             if time.monotonic() > deadline:
                 raise TimeoutError(f"stream_transcript: process did not reach idle within {timeout}s")
@@ -6783,67 +6793,17 @@ class AgenticProcess(Entity):
         self.load_flowpad_assistant = True
         return self
 
-    # ── ContextProcess: bind a captured GraphContext to this process ──────────
-
-    @staticmethod
-    def _render_context_summary(resolved: "list[Entity]") -> str:
-        """Render resolved context entities into the system-prompt block.
-
-        Pure (no DB) so it's trivially unit-testable. Inlines each entity's id
-        (``<type>-<id>``) AND its content (a message's ``text``, else ``name``)
-        so the worker is told both what it is working on and how to reference it
-        — without having to go fetch anything.
-        """
-        lines = []
-        for e in resolved:
-            if e is None:
-                continue
-            etype = str(getattr(e, "type", "") or "")
-            label = etype.replace("_", " ").title()
-            tid = f"{etype}-{getattr(e, 'id', '')}"
-            content = getattr(e, "text", None) or getattr(e, "name", None) or getattr(e, "id", "")
-            lines.append(f"- {label} [{tid}]: {content}")
-        return "At creation time, the context entities are:\n" + "\n".join(lines) if lines else ""
-
-    def set_graph_context(self, ctx: "Entity") -> "AgenticProcess":
-        """Bind a captured ``GraphContext`` to this process BEFORE launch.
-
-        See ``contextProcess.md`` §2.2. Records the GraphContext id and mirrors
-        its typeids onto the queryable ``shared_context_entities`` (so the
-        processes-in-context grid works with no new index). The context entities
-        are resolved + rendered lazily by :meth:`resolve_context_summary` (at
-        launch), so the bound entities can be saved after this call.
-
-        Pre-launch only: once ``session_id`` exists the binding is frozen, so
-        re-binding is a programming error — this raises rather than re-stamping.
-        Returns ``self`` for chaining; the caller persists via ``save()``.
-        """
-        if self.session_id:
-            raise RuntimeError(
-                "set_graph_context must be called before launch; this process "
-                f"already has session_id={self.session_id!r} (context is frozen)."
-            )
-        self.context_data = {**(self.context_data or {}), "graph_context_id": ctx.id}
-        for raw in getattr(ctx, "context_typeids", None) or []:
-            try:
-                self.add_shared_context_entities(TypeId(str(raw)))
-            except Exception:  # noqa: BLE001 — skip malformed entries, never block the bind
-                continue
-        return self
-
     async def resolve_system_instructions(self) -> str | None:
         """The worker's full system-prompt append.
 
         Merges the caller's standing directions (``context_data.instructions``,
-        set at create time by the SDK) with the bound-context summary
-        (:meth:`resolve_context_summary`). Either part may be empty; ``None``
-        when both are. This is the single source both turn paths (headless
-        driver + inline print-mode) must use — passing only the context
-        summary silently drops caller instructions.
+        set at create time by the SDK) with the io, always-use-skills and
+        open-task blocks. Any part may be empty; ``None`` when all are. This is
+        the single source both turn paths (headless driver + inline print-mode)
+        must use.
         """
         explicit = str((self.context_data or {}).get("instructions") or "").strip()
         io = str((self.context_data or {}).get("io_instructions") or "").strip()  # ``process_io.prepare_io``
-        summary = (await self.resolve_context_summary()) or ""
         always = self._resolve_always_use_skills_block()
         # A Chief of Staff reads its open tasks every turn — resolved now, not at launch.
         tasks = ""
@@ -6851,7 +6811,7 @@ class AgenticProcess(Entity):
             from flow_sdk.tasks.cos import open_tasks_block  # noqa: PLC0415
 
             tasks = await open_tasks_block(self)
-        return "\n\n".join(p for p in (explicit, io, summary, always, tasks) if p) or None
+        return "\n\n".join(p for p in (explicit, io, always, tasks) if p) or None
 
     def _resolve_always_use_skills_block(self) -> str:
         """The project's ``always_use_skills`` as a system-prompt directive.
@@ -6873,8 +6833,7 @@ class AgenticProcess(Entity):
         Best-effort by construction — no workdir, no manifest, or a manifest that
         declares nothing all mean "no directive", never a failed launch.
 
-        Cached in ``context_data`` for the same reason as
-        :meth:`resolve_context_summary`, and it is not an optimization worth
+        Cached in ``context_data``, and it is not an optimization worth
         skipping: this resolves on EVERY headless/print turn, not once per
         launch, so an uncached read re-opens and re-parses the manifest on every
         message the worker receives. The manifest is a file in the project the
@@ -6913,45 +6872,6 @@ class AgenticProcess(Entity):
             "Follow the skill's own instructions rather than inferring its shape from its description."
         )
 
-    async def resolve_context_summary(self) -> str:
-        """The bound context as a system-prompt block — resolved at launch.
-
-        Loads the bound ``GraphContext``, fetches each context entity, and renders
-        them via :meth:`_render_context_summary`. ``""`` when no context is bound.
-
-        Cached in ``context_data['context_summary']`` after the first resolve: the
-        binding is frozen (``set_graph_context`` raises once a session exists), so
-        the block is invariant for the process's life and needn't re-hit the DB
-        (1 + N entity loads) on every headless turn.
-        """
-        data = self.context_data or {}
-        gc_id = data.get("graph_context_id")
-        if not gc_id:
-            return ""
-        cached = data.get("context_summary")
-        if cached is not None:
-            return cached
-        from flow_sdk.builtin.graph_context import GraphContext  # noqa: PLC0415
-        from flow_sdk.core.entity.entity_model import Entity as _Entity  # noqa: PLC0415
-
-        gc = await GraphContext.get_one({"id": gc_id})
-        if gc is None:
-            return ""
-
-        async def _load(raw) -> "Entity | None":
-            try:
-                return await _Entity.get_by_typeid(TypeId(str(raw)))
-            except Exception:  # noqa: BLE001 — a missing entity just drops from the summary
-                return None
-
-        # Concurrent loads — this runs on the launch path (PTY open + headless
-        # turn), where N serial round-trips would add directly to spawn latency.
-        loaded = await asyncio.gather(*(_load(raw) for raw in (gc.context_typeids or [])))
-        resolved = [ent for ent in loaded if ent is not None]
-        summary = self._render_context_summary(resolved)
-        self.context_data = {**data, "context_summary": summary}
-        return summary
-
     @action.post(action_name="set-display-context")
     async def set_display_context_action(self, data: dict | None = None) -> "ApiResponse":
         """The shown page reports its live state (TS ``process.setDisplayContext``).
@@ -6980,19 +6900,6 @@ class AgenticProcess(Entity):
         from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
         return ApiSuccessResponse(data=describe_display_context(self.context_data))
-
-    @action.post(action_name="set-graph-context")
-    async def set_graph_context_action(self, graph_context_id: str) -> "ApiResponse":
-        """HTTP face of :meth:`set_graph_context`. Pre-launch only."""
-        from flow_sdk.builtin.graph_context import GraphContext  # noqa: PLC0415
-        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
-
-        gc = await GraphContext.get_one({"id": graph_context_id})
-        if gc is None:
-            return ApiFailResponse(message=f"GraphContext not found: {graph_context_id}", status_code=404)
-        self.set_graph_context(gc)
-        await self.save()
-        return ApiSuccessResponse(data={"id": self.id, "graph_context_id": gc.id})
 
     @action.post(action_name="add-dir")
     async def add_dir(self, path: str) -> "ApiResponse":

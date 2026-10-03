@@ -232,6 +232,34 @@ async def _funding_item(deployment: "Deployment") -> Optional[ReadinessItemSpec]
     return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=where)
 
 
+async def _local_funding_item(agent: "Agent", project: Any) -> Optional[ReadinessItemSpec]:
+    """Can THIS computer pay for the agent's turns? The funding layer's own answer for the harness the
+    agent runs on (the user's default harness when it names none) -- the source a spawn would get,
+    or the reason nothing would, as the resolver states it. ``None`` when it cannot say."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (  # noqa: PLC0415
+        worker_capability_kind,
+    )
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import funding_status  # noqa: PLC0415
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
+
+    try:
+        funding = await funding_status(scope=LLMScope.of_project(str(getattr(project, "id", "") or "")))
+    except Exception:  # noqa: BLE001 — an unanswerable question does not block a run
+        return None
+    if agent.worker_type:
+        kind = worker_capability_kind(agent.worker_type)
+        pick, reason = funding.resolved.get(kind), funding.blocked.get(kind, "")
+    else:  # the user's default harness: the funding record's own set-up verdict
+        kind, pick, reason = funding.default.kind, funding.default.source, funding.default.reason
+    if not kind:
+        return None
+    req = RequirementSpec(kind=REQUIREMENT_FUNDING, name="model funding", derived=True)
+    if pick is not None:
+        return ReadinessItemSpec(requirement=req, status=STATUS_VERIFIED, where=pick.name or kind)
+    reason = reason or f"nothing funds {kind} on this computer"
+    return ReadinessItemSpec(requirement=req, status=STATUS_MISSING, where=kind, fix=f"{reason}: run `flow llm set auto`")
+
+
 def _values_item(
     req: RequirementSpec, names: list[str], present: dict[str, tuple[bool, str]], fix: str, remedy: str = ""
 ) -> ReadinessItemSpec:
@@ -288,7 +316,8 @@ async def readiness(agent: "Agent", deployment: Optional["Deployment"] = None) -
         return ReadinessItemSpec(requirement=req, status=STATUS_MISSING,
                                  fix="no grant for this permission here yet" if mapping else "no asset declares this permission")
 
-    asked = [item(req) for req in wanted] + ([_funding_item(deployment)] if cloud else [])
+    funding = _funding_item(deployment) if cloud else _local_funding_item(agent, project)
+    asked = [item(req) for req in wanted] + [funding]
     items = [i for i in await asyncio.gather(*asked) if i is not None]
     return ReadinessSpec(
         agent_id=str(agent.id), deployment_id=status.deployment_id, environment=status.environment,

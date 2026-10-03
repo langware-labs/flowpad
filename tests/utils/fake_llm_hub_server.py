@@ -74,8 +74,47 @@ def _completion_body(*, tool_call: dict[str, Any] | None, text: str | None, mode
     }
 
 
+#: The user this fake hub says it is talking to. ``start_backend.py`` seeds the same id as the box's
+#: local cloud profile, so the box's boot-time "who am I" check (``verify_current_user``) matches --
+#: which is what makes a box count as signed in to FlowPad (``core.status.hub_status``).
+FAKE_USER = {"type": "user", "id": "6f1a4f2e-8c5d-4c2b-9f77-2a0f5c9d3e11", "email": "e2e@fake-hub.test"}
+
+
+def _ws_frame(payload: bytes, opcode: int = 0x1) -> bytes:
+    """One unmasked server frame (RFC 6455)."""
+    head = bytes([0x80 | opcode])
+    n = len(payload)
+    if n < 126:
+        head += bytes([n])
+    elif n < 1 << 16:
+        head += bytes([126]) + n.to_bytes(2, "big")
+    else:
+        head += bytes([127]) + n.to_bytes(8, "big")
+    return head + payload
+
+
+def _ws_read(rfile) -> tuple[int, bytes] | None:
+    """One client frame (masked), or None when the peer went away."""
+    head = rfile.read(2)
+    if len(head) < 2:
+        return None
+    opcode, n = head[0] & 0x0F, head[1] & 0x7F
+    if n == 126:
+        n = int.from_bytes(rfile.read(2), "big")
+    elif n == 127:
+        n = int.from_bytes(rfile.read(8), "big")
+    mask = rfile.read(4) if head[1] & 0x80 else b"\0\0\0\0"
+    data = bytearray(rfile.read(n))
+    for i in range(len(data)):
+        data[i] ^= mask[i % 4]
+    return opcode, bytes(data)
+
+
 def _handler_class(endpoints: dict[str, EndpointScript]) -> type[BaseHTTPRequestHandler]:
     class _Handler(BaseHTTPRequestHandler):
+        # A WebSocket upgrade needs an HTTP/1.1 status line; every JSON reply carries a Content-Length.
+        protocol_version = "HTTP/1.1"
+
         def log_message(self, *_args: object) -> None:  # quiet — the test output speaks for itself
             pass
 
@@ -96,7 +135,43 @@ def _handler_class(endpoints: dict[str, EndpointScript]) -> type[BaseHTTPRequest
                 return None
             return parts[idx + 1] if idx + 1 < len(parts) else None
 
+        def _serve_ws(self) -> None:
+            """The hub socket, as much of it as a box needs: the ``ws_ready_msg`` greeting, an answer
+            to "which user am I" (a ``user`` resource request), and pongs so the box's listener stays
+            connected. Everything else it sends is read and dropped."""
+            import base64  # noqa: PLC0415
+            import hashlib  # noqa: PLC0415
+
+            key = self.headers.get("Sec-WebSocket-Key", "")
+            accept = base64.b64encode(hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest())
+            self.send_response(101, "Switching Protocols")
+            self.send_header("Upgrade", "websocket")
+            self.send_header("Connection", "Upgrade")
+            self.send_header("Sec-WebSocket-Accept", accept.decode())
+            self.end_headers()
+            self.wfile.write(_ws_frame(json.dumps({"message_type": "ws_ready_msg"}).encode()))
+            self.wfile.flush()
+            while True:
+                frame = _ws_read(self.rfile)
+                if frame is None or frame[0] == 0x8:  # gone, or a close
+                    return
+                opcode, data = frame
+                if opcode == 0x9:  # ping
+                    self.wfile.write(_ws_frame(data, 0xA))
+                elif opcode == 0x1:
+                    try:
+                        message = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    if message.get("direct_resource_type") == "user":
+                        reply = {"message_type": "response_msg", "content": {"status": "success", "data": FAKE_USER}}
+                        self.wfile.write(_ws_frame(json.dumps(reply).encode()))
+                self.wfile.flush()
+
         def do_GET(self) -> None:  # noqa: N802
+            if self.headers.get("Upgrade", "").lower() == "websocket":
+                self._serve_ws()
+                return
             path = urlparse(self.path).path
             endpoint_id = self._endpoint_id()
             if path.endswith("/chain") and endpoint_id in endpoints:

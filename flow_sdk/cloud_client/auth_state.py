@@ -113,6 +113,9 @@ async def set_login_status(
     # invitations/messages count as unread — repair the projection here so a
     # stale account can't keep driving the badge.
     stream_inbox.touch(f"login-status:{status.value if hasattr(status, 'value') else status}")
+    from flow_sdk.core.status.push import publish_status_changed
+
+    publish_status_changed()  # the hub login is a status fact
 
     if status == HubLoginStatus.LOGGED_OUT:
         await broadcast_auth_expired(reason or "logged_out")
@@ -139,6 +142,9 @@ async def set_connection_status(
     from flow_sdk.cloud_client.node_on_tag import emit_node_transition
 
     emit_node_transition(status.value, error)
+    from flow_sdk.core.status.push import publish_status_changed
+
+    publish_status_changed()  # the hub login reads the verified connection
 
 
 async def invalidate_hub_login(reason: str) -> None:

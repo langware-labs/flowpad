@@ -10,6 +10,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
 import { flushAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
+import { ActivityDetailsModalRoot } from '@src/components/footer/ActivityDetailsModal';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
 import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
@@ -52,11 +53,9 @@ import { WizardPopupRoot } from '@src/components/assets/editor/wizard/WizardPopu
 // service-unavailable / network / config errors before any React tree mounts,
 // so a parallel inline error UI here is no longer needed.
 
-// The harness capability set (default reference + Claude/Codex/Copilot) is owned by
-// `HarnessCapabilitiesProvider` below: it subscribes once, loads persisted
-// snapshots without executing external harness probes, and every consumer
-// reads them via `useHarnessCapabilities`. Launch/setup actions perform the
-// definitive on-demand check.
+// The default-harness capability is owned by `HarnessCapabilitiesProvider` below: it
+// subscribes once and every consumer reads it from there. What is installed and signed in
+// is the status record (`useStatusRecord`), pushed by the backend.
 
 /**
  * The app's global listener mount: WS commands, presence, `flow show`, the OS
@@ -151,6 +150,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             box opens on whichever the view mode picks. */}
         <IncomingDeepLink />
         <ActivityProgressModalRoot />
+        <ActivityDetailsModalRoot />
         <WikiModalRoot />
         <RunPreviewRoot />
         <FilePreviewRoot />

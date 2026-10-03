@@ -13,8 +13,9 @@ import pytest
 from cryptography.fernet import Fernet
 
 from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
 
-pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("harness_installed")]  # do not increase timeout without approval
 
 INVOKE_PATH = "/api/v1/graph/llm_endpoint/ep1/invoke"
 
@@ -59,22 +60,51 @@ async def _forget_probed_login_states() -> None:
             await cap.save(notify=False)
 
 
-@pytest.fixture(autouse=True)
-async def _reset_harness_auth_mode():
-    # Clear on the way IN as well as out: the startup sweep now resolves login_state, and a
-    # probe run by any earlier test in the session leaks its verdict into these.
-    await _forget_probed_login_states()
-    yield
-    await _forget_probed_login_states()
+async def _reset_stored_choices() -> None:
+    """Back to "no stated preference" for every harness -- the default ladder these tests pin."""
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_capability_kind
     from flow_sdk.builtin.capability import Capability
 
-    for worker in ("claude", "codex", "copilot"):
+    for worker in ("claude", "codex", "copilot", "opencode", "deepagents"):
         cap = await Capability.get_by_kind(worker_capability_kind(worker))
         if cap is not None and getattr(cap, "auth_mode", "device") != "device":
             cap.auth_mode = "device"
             cap.api_provider = None
             await cap.save(notify=False)
+
+
+@pytest.fixture(autouse=True)
+async def _reset_harness_auth_mode():
+    # Clear on the way IN as well as out: the session DB is shared, so a login verdict or a
+    # stored choice left by ANY earlier test file leaks into these otherwise.
+    await _forget_probed_login_states()
+    await _reset_stored_choices()
+    yield
+    await _forget_probed_login_states()
+    await _reset_stored_choices()
+
+
+@pytest.fixture(autouse=True)
+def _status_facts(monkeypatch):
+    """The STATUS facts funding reads, made deterministic (see test_llm_source_resolution):
+    every CLI installed, the hub signed in exactly when a hub key is stored, no spawn probe."""
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
+    from flow_sdk.core import status
+    from flow_sdk.core.status import InstallState
+
+    monkeypatch.setattr(status, "harness_install", lambda worker: InstallState.INSTALLED)
+    monkeypatch.setattr(llm_source, "_hub_signed_in", lambda: bool(resolve_hub_api_key()))
+
+    async def no_probe(worker_type):
+        return None
+
+    monkeypatch.setattr(llm_source, "check_unchecked_login", no_probe)
+
+
+def _bound(status: dict) -> str | None:
+    """The bound endpoint's typeid, read from the funding record's ``binding`` object."""
+    return (status.get("binding") or {}).get("endpoint_typeid")
 
 
 def _login() -> None:
@@ -257,9 +287,8 @@ async def test_bind_offers_the_endpoint_without_rewriting_the_users_choice(env) 
     status = await bind_hub_llm_endpoint(
         {"endpoint_typeid": "llm_endpoint:ep1", "invoke_path": INVOKE_PATH, "provider": "openrouter", "name": "OR"}
     )
-    assert status["endpoint_typeid"] == "llm_endpoint:ep1"
-    assert status["invoke_url"] == "https://hub.test" + INVOKE_PATH
-    assert status["hub_logged_in"] is True
+    assert _bound(status) == "llm_endpoint:ep1"
+    assert status["binding"]["invoke_url"] == "https://hub.test" + INVOKE_PATH
     assert len(status["active_for"]) == len(HUB_ENDPOINT_HARNESSES)
 
     assert all(state == ("device", None) for state in (await _harness_states()).values()), (
@@ -335,7 +364,7 @@ async def test_unbind_withdraws_the_offer(env) -> None:
     result = await unbind_hub_llm_endpoint()
     assert result["was_bound"] is True
     assert "reverted" not in result, "nothing is reverted: binding never wrote to Capability"
-    assert result["endpoint_typeid"] is None and result["active_for"] == []
+    assert _bound(result) is None and result["active_for"] == []
     assert llm_endpoint.get_hub_llm_endpoint() is None
     assert get_lm_api(LMApiProvider.FLOWPAD) is None
     assert all(state == ("device", None) for state in (await _harness_states()).values())
@@ -418,7 +447,7 @@ async def test_status_carries_what_the_user_may_spend(env) -> None:
 
     status = await hub_llm_endpoint_status()
     assert status["available"] == [], "logged out: nothing to choose from, and no error"
-    assert status["endpoint_typeid"] is None and status["hub_logged_in"] is False
+    assert _bound(status) is None
 
 
 async def test_the_hub_initiated_paths_answer_from_the_memo(env, monkeypatch) -> None:
@@ -558,7 +587,10 @@ async def test_a_refresh_drops_a_binding_the_hub_no_longer_lists(env, monkeypatc
     """
     import time
 
-    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import hub_llm_endpoint_status
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import (
+        hub_llm_endpoint_status,
+        prune_dead_binding,
+    )
     from flow_sdk.instance_settings import llm_endpoint
 
     _login()
@@ -567,8 +599,14 @@ async def test_a_refresh_drops_a_binding_the_hub_no_longer_lists(env, monkeypatc
     # A listing that SUCCEEDED and does not mention it.
     llm_endpoint._list_cache[llm_endpoint.get_instance_settings().instance_name] = (time.monotonic(), [])
 
+    # A status READ never writes: the dead binding is still there after one.
+    await hub_llm_endpoint_status()
+    assert llm_endpoint.get_hub_llm_endpoint() is not None, "a status read must not write"
+
+    # The explicit refresh (``status/refresh`` runs this) is what drops it.
+    assert await prune_dead_binding() is True
     status = await hub_llm_endpoint_status()
-    assert status["endpoint_typeid"] is None and status["invoke_url"] is None
+    assert status["binding"] is None
     assert llm_endpoint.get_hub_llm_endpoint() is None, "the dead binding survived a refresh"
 
 
@@ -583,7 +621,7 @@ async def test_a_refresh_keeps_a_binding_when_the_hub_could_not_be_reached(env, 
     llm_endpoint.set_hub_llm_endpoint("llm_endpoint:ep1", INVOKE_PATH, provider="openrouter", name="OR")
 
     status = await hub_llm_endpoint_status()
-    assert status["endpoint_typeid"] == "llm_endpoint:ep1"
+    assert _bound(status) == "llm_endpoint:ep1"
     assert llm_endpoint.get_hub_llm_endpoint() is not None, "a binding was dropped on no evidence"
 
 
@@ -617,7 +655,7 @@ async def test_binding_an_endpoint_the_listing_has_not_heard_of_survives_the_bin
             "name": "New",
         }
     )
-    assert status["endpoint_typeid"] == "llm_endpoint:brand-new", "the bind erased its own binding"
+    assert _bound(status) == "llm_endpoint:brand-new", "the bind erased its own binding"
     assert llm_endpoint.get_hub_llm_endpoint() is not None
 
 
@@ -833,5 +871,5 @@ async def test_a_refresh_never_drops_a_public_binding(env, monkeypatch) -> None:
     llm_endpoint._list_cache[llm_endpoint.get_instance_settings().instance_name] = (time.monotonic() + 1, [])
 
     status = await hub_llm_endpoint_status()
-    assert (status["endpoint_typeid"], status["public"]) == ("llm_endpoint:open", True)
+    assert (_bound(status), status["binding"]["public"]) == ("llm_endpoint:open", True)
     assert llm_endpoint.get_hub_llm_endpoint() is not None

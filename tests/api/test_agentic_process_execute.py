@@ -44,7 +44,9 @@ from tests.api.conftest import create_agentic_process, get_agentic_process
 from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
 
 # do not increase timeout without approval
-pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("usable_claude_source")]
+from tests.utils.harness_installed import funding_not_under_test  # noqa: F401 — a fixture
+
+pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("usable_claude_source", "funding_not_under_test")]
 
 
 _FAKE_SID = "fake-session-id"

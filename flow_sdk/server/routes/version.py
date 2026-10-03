@@ -177,7 +177,11 @@ def _pypi_releases(releases_raw: Any) -> list[PypiRelease]:
 
 async def _fetch_pypi(client: httpx.AsyncClient) -> PypiInfo:
     try:
-        resp = await client.get(PYPI_URL, timeout=HTTP_TIMEOUT)
+        # PyPI's CDN serves this document with max-age=900 and its edges
+        # disagree for minutes after an upload, so a fresh release can read as
+        # the previous one. A unique query string skips the edge cache; our own
+        # _CACHE_TTL_S still bounds how often we ask.
+        resp = await client.get(PYPI_URL, params={"t": time.time_ns()}, timeout=HTTP_TIMEOUT)
         resp.raise_for_status()
         data: dict[str, Any] = resp.json()
         latest = (data.get("info") or {}).get("version")
@@ -233,10 +237,14 @@ async def _fetch_github(client: httpx.AsyncClient) -> tuple[list[ReleaseInfo], O
 
 
 @router.get("/api/v1/version/check", response_model=ApiSuccessResponse[VersionCheckResponse])
-async def check_version() -> ApiSuccessResponse[VersionCheckResponse]:
-    """Standard ``{status, data}`` envelope; ``data`` is a :class:`VersionCheckResponse`."""
+async def check_version(refresh: bool = False) -> ApiSuccessResponse[VersionCheckResponse]:
+    """Standard ``{status, data}`` envelope; ``data`` is a :class:`VersionCheckResponse`.
+
+    ``refresh`` is the popover's "Check again": it skips the cache, because a
+    user who just heard about a release must not be shown the one before it.
+    """
     cached = _cache.get("v1")
-    if cached and time.monotonic() - cached[0] < _CACHE_TTL_S:
+    if not refresh and cached and time.monotonic() - cached[0] < _CACHE_TTL_S:
         return ApiSuccessResponse(data=cached[1])
     async with httpx.AsyncClient() as client:
         pypi_info, github_result, hub_raw = await asyncio.gather(

@@ -47,6 +47,8 @@ import uvicorn
 from dotenv import load_dotenv
 from filelock import FileLock
 
+from flow_sdk.core.capabilities.env_probe import adopt_terminal_path, start_terminal_path_capture
+
 # A named logger, never the module-level `logging.info(...)` helpers: those
 # install a root handler in the DEFAULT format on first use, and that first
 # use (raising RLIMIT_NOFILE) happens before app.py's basicConfig — which then
@@ -174,10 +176,23 @@ def _register_stack_dump(target: Path) -> None:
     log.info("[startup] SIGUSR1 dumps all thread stacks to %s", target)
 
 
+def _adopt_terminal_path(terminal_path) -> None:
+    """Adopt the terminal's PATH before uvicorn spawns anything, saying what it added and what it cost."""
+    waited = time.monotonic()
+    added, why = adopt_terminal_path(terminal_path)
+    took = f"waited {(time.monotonic() - waited) * 1000:.0f} ms"
+    if why:
+        print(f"[startup] PATH from the login shell NOT adopted ({took}): {why}. Running with the launch PATH.")
+    else:
+        print(f"[startup] PATH from the login shell ({took}) added {added}")
+
+
 def main():
     """Start the minihub server."""
     startup_start = time.time()
     _raise_nofile_soft_limit()
+    # The login shell costs ~1s; it runs while the app imports and lands before anything spawns.
+    terminal_path = start_terminal_path_capture()
 
     if not _acquire_singleton_lock():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")
@@ -211,8 +226,7 @@ def main():
             os.path.join(repo_root, "flow_sdk"),
             os.path.join(repo_root, "server"),
         ]
-        uvicorn.run("flow_sdk.server.app:app", **uvicorn_kwargs)
-        _release_singleton_lock()
+        target = "flow_sdk.server.app:app"
     else:
         # Import directly when not using reload
         from flow_sdk.server.app import _print_startup_timing, app
@@ -225,8 +239,12 @@ def main():
         print(f"Total startup time (until Uvicorn starts): {total_startup * 1000:.2f} ms\n")
 
         boot_progress.set_phase("uvicorn")
-        uvicorn.run(app, **uvicorn_kwargs)
+        target = app
 
+    # Before uvicorn starts anything, so nothing spawns with the launch PATH. The lifespan's
+    # capability sweep reads the login shell again later; that one is a refresh, not this.
+    _adopt_terminal_path(terminal_path)
+    uvicorn.run(target, **uvicorn_kwargs)
     _release_singleton_lock()
 
 
