@@ -446,9 +446,11 @@ def _install_dependencies_if_needed(app_dir: Path, start_cmd: str) -> None:
     if not (app_dir / "package.json").exists():
         return
     install_cmd = _install_command(start_cmd, app_dir)
-    log_dir = Path.home() / ".flow" / "app-open-logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / f"install-{re.sub(r'[^a-zA-Z0-9_.-]+', '-', app_dir.name) or 'app'}.log"
+    from flow_sdk.core.dev_server import log_dir  # noqa: PLC0415
+
+    logs = log_dir()
+    logs.mkdir(parents=True, exist_ok=True)
+    log_file = logs / f"install-{re.sub(r'[^a-zA-Z0-9_.-]+', '-', app_dir.name) or 'app'}.log"
     with log_file.open("ab") as log:
         result = subprocess.run(
             install_cmd,
