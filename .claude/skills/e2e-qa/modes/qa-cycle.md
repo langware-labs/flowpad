@@ -89,7 +89,7 @@ Never raise a timeout to mask host-load slowness, and never kill a process you d
 ## Phase 1 — pytest unit tests
 
 ```bash
-python -m pytest tests/unit/ -v
+python -m pytest tests/unit/ --long -v   # --long: CI and deploy pass it; without it every @pytest.mark.long test is DESELECTED
 ```
 
 - Run from repo root
@@ -106,10 +106,10 @@ python -m pytest tests/unit/ -v
 > ```
 
 ```bash
-FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} python -m pytest tests/api/ -v
+FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} python -m pytest tests/api/ --long -v
 ```
 
-Run it through the progress bridge (progress.md): `flow test run --activity $ROOT/p02 --env FLOW_INSTANCE=qa-cycle --env LOCAL_SERVER_PORT=${QA_BE} -- uv run pytest tests/api/ -q` (a partial run passes the selected node ids instead of `tests/api/`).
+Run it through the progress bridge (progress.md): `flow test run --activity $ROOT/p02 --env FLOW_INSTANCE=qa-cycle --env LOCAL_SERVER_PORT=${QA_BE} -- uv run pytest tests/api/ --long -q` (a partial run passes the selected node ids instead of `tests/api/`).
 
 - **Gate**: all tests pass → proceed to Phase 3
 
@@ -129,7 +129,7 @@ mkdir -p "$SCRATCH/p3home"   # throwaway FLOW_HOME: workers with no vendor login
 DEEP_TESTING=1 FLOW_INSTANCE=qa-p3 FLOW_HOME="$SCRATCH/p3home" FLOWPAD_HUB_URL="http://localhost:${QA_BE}" \
   FLOWPAD_CLAUDE_HOME="$HOME/.claude" \
   QA_API_URL="http://localhost:${QA_BE}" SCHEDULE_E2E_API_URL="http://localhost:${QA_BE}" \
-  python -m pytest tests/long_tests/ -x -v
+  python -m pytest tests/long_tests/ --long -x -v   # --long: files under long_tests/ can still hold marked tests (2026-10-03: 18 were never run)
 ```
 
 > **`FLOWPAD_CLAUDE_HOME="$HOME/.claude"` is REQUIRED (2026-10-03).** Without it the in-process
@@ -265,7 +265,7 @@ cd ui && FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} npm run test:vitest:h
 2. **Instances**: check `scripts/instance_ctl.sh status` first — **reuse any instance that is already UP** (do not relaunch it; `launch` kills an existing instance before starting, so re-launching a healthy one is a needless restart). Launch only what's missing via `scripts/instance_ctl.sh launch <name>`; if an instance goes unhealthy mid-phase, restart it with `kill <name>` + `launch <name>`.
 3. **Run**:
    ```bash
-   FLOWPAD_HUB_URL=${FLOWPAD_HUB_URL:-http://localhost:8093} python -m pytest tests/hub_tests -v
+   FLOWPAD_HUB_URL=${FLOWPAD_HUB_URL:-http://localhost:8093} python -m pytest tests/hub_tests --long -v
    ```
 4. **Auto-skips count as failures.** `tests/hub_tests/conftest.py` silently skips when the hub is unreachable or credentials are invalid. A skipped-for-infra test is NOT a pass — remediate (restart hub, re-seed users via `setup_test_users.sh`) and re-run. Zero hub-infra skips allowed in a PASS.
 5. **On failure**: existing Debug Mode flow (see `modes/debug.md`); unresolvable → `flagged`.
