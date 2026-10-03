@@ -128,8 +128,11 @@ async def test_the_observer_never_embeds(docs, monkeypatch):
 
 def test_markdown_runs_both_observers():
     """A single slot with two consumers is how the second one silently disappears."""
+    from flow_sdk.core.asset_type_bindings import register_asset_runtime_bindings
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
+    # The observers are bound lazily, by the same call the indexer makes before a sync.
+    register_asset_runtime_bindings()
     names = [getattr(fn, "__name__", "") for fn in SchemaRegistry.get("markdown").post_sync_callbacks]
     assert "reconcile_folder_doc_edges" in names
     assert "mark_rag_stale" in names
