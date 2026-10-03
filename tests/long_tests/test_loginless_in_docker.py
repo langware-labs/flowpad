@@ -7,6 +7,8 @@ two commands (``tests/loginless_e2e/run.sh``) and an agent answers:
     flow llm user use <public-endpoint-id> --hub <hub>
     python agentic_process_snippet.py        # docs/snippets/llm-endpoints.md
 
+and on a box with ONLY the wheel (no harness CLI), the CLI form: ``flow process start "<prompt>"``.
+
 Needs a hub YOU started for this, running code that knows ``public`` endpoints, plus docker and a
 real OpenRouter key (the endpoint still spends one -- only the BOX is credential-free):
 
@@ -101,6 +103,18 @@ def test_a_private_endpoint_is_refused_at_the_first_command(rig):
     done = _run(rig, ENDPOINT_ID=private, SKIP_BUILD="1")
     assert done.returncode == 6, done.stdout[-1000:] + done.stderr[-1000:]
     assert "NOT_PUBLIC" in done.stdout + done.stderr
+
+
+def test_only_the_wheel_answers_from_the_cli(rig):
+    """The barest box: Python and the wheel -- no node, no harness CLI. ``flow process start``
+    runs the bootstrap worker (deepagents, shipped inside the wheel) on the same public endpoint,
+    streams the answer to stdout and exits 0."""
+    if "ENDPOINT_ID" not in rig:
+        pytest.skip("the bind above did not run")
+    done = _run(rig, BARE="1")
+    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
+    assert done.stdout.strip().splitlines()[-1].strip().lower().rstrip(".") == "pong", done.stdout[-2000:]
+    assert "running agentic process agentic_process-" in done.stderr, done.stderr[-2000:]
 
 
 def test_every_harness_answers_on_cheap_open_models(rig):
