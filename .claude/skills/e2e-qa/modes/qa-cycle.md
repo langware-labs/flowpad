@@ -1,3 +1,6 @@
+---
+id: 9dea7271-64c7-4568-ad3a-e4504b351eee
+---
 # QA Cycle Mode
 
 When invoked with `run qa cycle` / `full qa` / `qa cycle` — or a partial cycle, `run N tests from phase X [and M from phase Y]` (only those phases, only those tests):
