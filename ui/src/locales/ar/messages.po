@@ -4236,6 +4236,7 @@ msgid "Click to view full prompt"
 msgstr "انقر لعرض الطلب الكامل"
 
 #: src/components/image-annotator/image-annotator-store.tsx
+#: src/components/ui/media-lightbox.tsx
 msgid "Clipboard not updated"
 msgstr "لم يتم تحديث الحافظة"
 
@@ -4306,6 +4307,8 @@ msgstr "جارِ الاستنساخ…"
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 #: src/components/top-nav-bar/AddressAskField.tsx
 #: src/components/ui/dialog.tsx
+#: src/components/ui/media-lightbox.tsx
+#: src/components/ui/media-lightbox.tsx
 #: src/components/ui/sheet.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
@@ -5024,6 +5027,7 @@ msgstr "المحادثة غير متاحة"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
+#: src/components/ui/media-lightbox.tsx
 #: src/components/webapp-viewer.tsx
 msgid "Copied"
 msgstr "تم النسخ"
@@ -5066,6 +5070,7 @@ msgstr "علامة تبويب Copilot"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
+#: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
 msgid "Copy"
 msgstr "نسخ"
@@ -5141,6 +5146,11 @@ msgstr "نسخ JSON للحدث"
 
 #: src/components/organization/budgets/EditableTitle.tsx
 msgid "Copy id"
+msgstr ""
+
+#: src/components/ui/media-lightbox.tsx
+#: src/components/ui/media-lightbox.tsx
+msgid "Copy image to clipboard"
 msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
@@ -10190,6 +10200,7 @@ msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
@@ -21523,6 +21534,10 @@ msgstr ""
 #: src/components/account/user-info.tsx
 msgid "The hub refused this client."
 msgstr "رفض Hub هذا العميل."
+
+#: src/components/ui/media-lightbox.tsx
+msgid "The image could not be copied to the clipboard."
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "The in-app terminal is always the primary shell. This controls whether a sidecar OS Terminal window is also opened."
