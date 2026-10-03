@@ -322,6 +322,49 @@ async def test_worker_reconnects_after_the_hub_drops_it(tmp_path):
         await _stop(hub, worker, task)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
+async def test_a_terminal_survives_a_dropped_socket_and_is_listed_in_the_next_hello(tmp_path):
+    """A socket blip (hub restart, Wi-Fi) must not kill the person's terminals: the
+    next hello lists them so the hub re-adopts them, and they still answer."""
+    hub, worker, task = await _connected_worker(tmp_path)
+    try:
+        started = await hub.request("pty_start", {"session_id": "s1", "rows": 24, "cols": 80})
+        hub.attached.clear()
+        await hub.ws.close()
+        await asyncio.wait_for(hub.attached.wait(), timeout=10)
+        assert hub.hello["pty_sessions"] == ["s1"]
+
+        marker = f"after-drop-{uuid.uuid4().hex[:6]}"
+        await hub.request(
+            "pty_input",
+            {
+                "session_id": "s1",
+                "data": base64.b64encode(f"echo {marker}\n".encode()).decode(),
+                "cols": 80,
+                "rows": 24,
+            },
+        )
+        deadline = asyncio.get_running_loop().time() + 10
+        while marker.encode() not in b"".join(hub.pty_frames.get("s1", [])):
+            assert asyncio.get_running_loop().time() < deadline, "the re-adopted terminal never answered"
+            await asyncio.sleep(0.05)
+    finally:
+        await _stop(hub, worker, task)
+    # Stopping the worker is what ends a terminal.
+    deadline = asyncio.get_running_loop().time() + 10
+    while _pid_alive(started["pid"]):
+        assert asyncio.get_running_loop().time() < deadline, "the terminal outlived the worker"
+        await asyncio.sleep(0.05)
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
 def test_command_env_puts_flow_on_path():
     from flow_sdk.compute.user_machine.worker import _command_env
 

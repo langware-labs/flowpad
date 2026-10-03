@@ -161,6 +161,8 @@ class UserMachineWorker:
             "os_type": info.os_type,
             # The dialect the hub must speak in ``run``: this machine's own shell.
             "control_shell": control_shell_kind(),
+            # Terminals still running from before a dropped socket: the hub re-adopts them.
+            "pty_sessions": sorted(self._pty_sessions),
             "home_path": self.home_dir,
             "temp_path": tempfile.gettempdir(),
             "cpu_count": info.cpu_count,
@@ -205,6 +207,7 @@ class UserMachineWorker:
         try:
             await self._serve_until_stopped()
         finally:
+            await self._close_terminals()
             if self._powershells is not None:
                 await self._powershells.close()
 
@@ -524,6 +527,8 @@ class UserMachineWorker:
         return {"stopping": True}
 
     async def _teardown_sessions(self) -> None:
+        """A dropped socket ends the hub's one-shot commands. Terminals live on: the
+        next hello lists them and the hub re-adopts them, like a tmux session."""
         for task in self._waiting.values():
             task.cancel()
         self._waiting.clear()
@@ -534,6 +539,9 @@ class UserMachineWorker:
                 except ProcessLookupError:
                     pass
             self._processes.pop(command_message_id, None)
+
+    async def _close_terminals(self) -> None:
+        """End every PTY session — when the worker stops, never on a dropped socket."""
         if self._provider is not None:
             for session_id in list(self._pty_sessions):
                 try:
