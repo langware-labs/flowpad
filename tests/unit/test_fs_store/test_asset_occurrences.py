@@ -21,11 +21,13 @@ def _identity(candidate: tuple[str, str, str]):
 
 
 def _resolve(candidates, stored=None, git=None):
+    """``git`` is a per-path answer (a dict's ``.get``, a fake); the resolver asks in one batch."""
+    per_path = git or (lambda _path: None)
     return resolve_asset_collisions(
         candidates,
         stored or {},
         _identity,
-        git or (lambda _path: None),
+        lambda paths: {path: per_path(path) for path in paths},
         NOW,
     )
 
@@ -144,23 +146,45 @@ def test_type_id_isolation_validation_and_duplicate_candidate_collapse() -> None
     assert all(len(item.occurrences) == 1 for item in decisions)
 
 
-def test_git_probe_is_collision_only_and_failure_is_best_effort() -> None:
-    calls: list[str] = []
+def test_git_probe_is_collision_only_batched_and_failure_is_best_effort() -> None:
+    calls: list[list[str]] = []
 
-    def probe(path: str):
-        calls.append(path)
-        if path.endswith("b"):
-            raise RuntimeError("git unavailable")
-        return None
+    def probe(paths):
+        calls.append(list(paths))
+        raise RuntimeError("git unavailable")
 
-    _resolve([("skill", "one", "/single")], git=probe)
-    assert calls == []
+    resolve_asset_collisions([("skill", "one", "/single")], {}, _identity, probe, NOW)
+    assert calls == [], "a lone path is never compared, so never probed"
 
-    decision = _resolve(
-        [("skill", "many", "/a"), ("skill", "many", "/b")], git=probe
+    decision = resolve_asset_collisions(
+        [("skill", "many", "/a"), ("skill", "many", "/b"), ("skill", "two", "/c"), ("skill", "two", "/d")],
+        {},
+        _identity,
+        probe,
+        NOW,
     )[0]
-    assert calls == ["/a", "/b"]
+    assert calls == [["/a", "/b", "/c", "/d"]], "every collided path in ONE call"
     assert decision.primary_path == "/a"
+
+
+def test_a_path_an_earlier_pass_ranked_is_never_probed_again() -> None:
+    """When a path entered its repository is history; the stored occurrence kept the answer."""
+    first = _resolve(
+        [("skill", "many", "/a"), ("skill", "many", "/b")], git={"/a": OLD, "/b": NOW}.get
+    )[0]
+    stored = {("skill", "many"): first.occurrences}
+    calls: list[list[str]] = []
+
+    def probe(paths):
+        calls.append(list(paths))
+        return {path: OLD - timedelta(days=1) for path in paths}
+
+    again = resolve_asset_collisions(
+        [("skill", "many", "/a"), ("skill", "many", "/b"), ("skill", "many", "/c")], stored, _identity, probe, NOW
+    )[0]
+
+    assert calls == [["/c"]], "only the path no pass has ranked is asked"
+    assert again.primary_path == "/c"
 
 
 def test_scoped_resolution_retains_live_stored_path_and_first_seen(
@@ -182,7 +206,7 @@ def test_scoped_resolution_retains_live_stored_path_and_first_seen(
         [("markdown", "same", str(current))],
         {("markdown", "same"): [stored_occurrence]},
         identity,
-        lambda _path: None,
+        lambda _paths: {},
         NOW,
     )
 
@@ -209,7 +233,7 @@ def test_stored_missing_and_rekeyed_paths_are_pruned(tmp_path: Path) -> None:
         path = candidate[2] if isinstance(candidate, tuple) else candidate
         return ("markdown", "new", path)
 
-    decision = resolve_asset_collisions([], stored, identity, lambda _path: None, NOW)[0]
+    decision = resolve_asset_collisions([], stored, identity, lambda _paths: {}, NOW)[0]
     assert decision.primary_path is None
     assert decision.occurrences == ()
     assert decision.changed is True
@@ -310,7 +334,7 @@ def test_stored_path_under_a_walk_denylisted_dir_is_not_retained(tmp_path: Path)
         [("markdown", "shipped", str(real))],
         {("markdown", "shipped"): [AssetOccurrence(str(vendored), OLD)]},
         identity,
-        lambda _path: None,
+        lambda _paths: {},
         NOW,
     )[0]
 

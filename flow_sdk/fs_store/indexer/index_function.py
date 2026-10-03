@@ -448,7 +448,7 @@ def resolve_collisions(
     file-bound; run it off the loop."""
     from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-    from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
+    from flow_sdk.utils.git import git_assets_introduction  # noqa: PLC0415
 
     stored_identities: dict[str, tuple[str, str, str]] = {}
     for (type_name, entity_id), occurrences in stored.items():
@@ -471,7 +471,7 @@ def resolve_collisions(
             return stored_identities.get(canonical_posix_path(candidate))
         return live_identity(candidate)
 
-    return resolve_asset_collisions(candidates, stored, identity, git_asset_introduction, datetime.now(timezone.utc))
+    return resolve_asset_collisions(candidates, stored, identity, git_assets_introduction, datetime.now(timezone.utc))
 
 
 def _same_path_dupe_groups(
