@@ -171,9 +171,27 @@ cd ui && FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} npm run test:vitest:a
 ## Phase 6 — vitest react tests
 
 ```bash
-cd ui && npm run test:vitest:react
+# A HERMETIC react instance: its own Claude/Codex/Copilot homes, never the user's.
+H=$HOME/.flow/instances/qa-react-homes   # sibling: `flow instance reset` wipes the instance dir state; remove it after `kill qa-react`
+mkdir -p $H/claude/projects $H/codex/sessions $H/copilot
+FLOWPAD_CLAUDE_HOME=$H/claude CODEX_HOME=$H/codex FLOWPAD_COPILOT_HOME=$H/copilot \
+  scripts/instance_ctl.sh launch qa-react --hub http://localhost:8093
+cd ui && FLOW_INSTANCE=qa-react FLOWPAD_CLAUDE_HOME=$H/claude npm run test:vitest:react
 ```
 
+- **Why a separate, hermetic instance (2026-10-03):** `chats-open-recency` writes real transcripts
+  into the backend's Claude home and reads them back through `worker-history`. On the shared
+  `~/.claude` (9 GB) plus `~/.codex` (2.7 GB), the first worker-history call on a just-booted backend
+  took 6–12s. That's longer than the test's 8s wait, so it failed whenever the react run hit a
+  fresh backend, and it also wrote fixtures into the user's real store. Use an instance with its own
+  homes: cold worker-history then takes 0.07s. Don't point `qa-cycle` at empty homes instead:
+  Phases 3/7 drive the real CLI and need the user's signed-in Claude. Pass the same three vars to
+  any `flow instance reset qa-react`, or the relaunch falls back to the real homes.
+
+- **`FLOW_INSTANCE` is REQUIRED.** `tests/react/reactSetup.ts` fails every file closed without a
+  launcher-owned disposable instance (a fixed set of react files bootstraps the real SDK). Without
+  it all ~114 files fail with "react vitest requires FLOW_INSTANCE=<disposable-name>" — a harness
+  refusal, not a verdict. Also `env -u LOCAL_SERVER_PORT` if your shell exports prod's port.
 - **Gate**: all tests pass → proceed to Phase 7
 
 ## Phase 7 — vitest long tests (backend required)
