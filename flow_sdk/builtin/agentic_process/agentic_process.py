@@ -7437,6 +7437,36 @@ class AgenticProcess(Entity):
                 self._flush_transcript_change(),
                 name=f"ap-flush-{key[:8]}",
             )
+        await self._broadcast_pty_turn_start()
+
+    async def _broadcast_pty_turn_start(self) -> None:
+        """Leading edge of a PTY turn: broadcast ``busy=True`` now, not after the debounce.
+
+        A PTY turn's busy edges come from the flush alone, and the flush only
+        reads the tail once the window closes. A turn that starts AND ends inside
+        one window therefore never broadcast ``busy=True``: every client kept
+        ``busy=false`` while the server's ``is_turn_busy`` said true. A
+        ``switch-mode`` sent in that gap is 409'd, and the client's reconcile —
+        which retries on the busy→idle edge — never saw an edge to retry on, so
+        the session stayed on the PTY (vibe_return_from_terminal_reconcile,
+        chat_terminal_switch_stress). Broadcasting the start edge here gives
+        every turn both edges, in order, on the same socket.
+
+        Only the idle→busy edge, and only while the last broadcast said idle:
+        once the key reads busy this returns before touching the transcript, so
+        a turn costs one tail read per event until its start is out. The end
+        edge stays with the flush.
+        """
+        if not self.pty_mode or self.status != ProcessStatus.RUNNING.value:
+            return
+        previous = self._last_broadcast_key
+        if previous is not None and previous.busy:
+            return
+        current = self.fetch_worker_status()
+        if not is_turn_busy(self, current):
+            return
+        self._last_broadcast_key = _BroadcastKey(self.status, True, str(current) if current is not None else None)
+        await self.notify_updated()
 
     async def _apply_transcript_names(self, durable: "AgenticProcess", entries: list) -> None:
         from .naming.runtime import apply_transcript_names
