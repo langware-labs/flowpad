@@ -257,6 +257,15 @@ def test_flow_auth_arguments_are_never_shown():
         "run", {"command_message_id": "y", "cmd": "curl -s -H 'X-Cookie-Gate: QgEwEs6' 'http://127.0.0.1:9007/'"}
     )
     assert probe == "run #y: curl -s -H 'X-Cookie-Gate: <redacted>' 'http://127.0.0.1:9007/'"
+    # The PowerShell spelling the hub sends a Windows machine.
+    ps_auth = "$PSNativeCommandArgumentPassing = 'Legacy'; & 'flow' 'auth' 'set-cookie-gate' '--' 'QgEwEs6'"
+    assert describe_command("run", {"command_message_id": "z", "cmd": ps_auth}) == (
+        "run #z: $PSNativeCommandArgumentPassing = 'Legacy'; & 'flow' 'auth' 'set-cookie-gate' <redacted>"
+    )
+    ps_probe = "& 'curl.exe' '-s' '-H' 'X-Cookie-Gate: QgEwEs6' 'http://127.0.0.1:9007/'"
+    assert describe_command("run", {"command_message_id": "w", "cmd": ps_probe}) == (
+        "run #w: & 'curl.exe' '-s' '-H' 'X-Cookie-Gate: <redacted>' 'http://127.0.0.1:9007/'"
+    )
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="PTY is POSIX-only")
