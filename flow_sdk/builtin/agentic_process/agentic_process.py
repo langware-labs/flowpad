@@ -5019,7 +5019,7 @@ class AgenticProcess(Entity):
 
         descriptor = self.transcript
         await self._persist_transcript_session_id(descriptor)
-        transcript = self._current_transcript()
+        transcript = await self._caught_up_transcript()
 
         if sub_path is TranscriptSubpath.PLAN:
             return await self._transcript_plan(transcript)
@@ -5207,7 +5207,7 @@ class AgenticProcess(Entity):
         """
         descriptor = self.transcript
         await self._persist_transcript_session_id(descriptor)
-        return await self._transcript_plan(self._current_transcript())
+        return await self._transcript_plan(await self._caught_up_transcript())
 
     # ── State ─────────────────────────────────────────────────────────────────
 
@@ -7638,6 +7638,30 @@ class AgenticProcess(Entity):
         if streamer is not None:
             return streamer.transcript
         return self._load_transcript()
+
+    async def _caught_up_transcript(self) -> "AgentTranscriptFile | None":
+        """``_current_transcript``, first catching the streamer up to the file on disk.
+
+        The streamer's copy only advances when the file watcher reports a change. A
+        codex PTY rollout was seen whose streamer stopped at the header (2 entries)
+        while the file held both finished turns, so ``transcript/full`` answered with
+        no user messages at all. A pull read that finds the copy behind the file's
+        size drives the registry's own incremental ``notify_change`` (new bytes only,
+        dispatched to subscribers as usual) instead of answering from the stale copy.
+        """
+        path = self.transcript_path
+        if path is not None:
+            from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
+
+            streamer = transcript_streamer_registry.get_streamer_by_path(path)
+            if streamer is not None:
+                try:
+                    behind = streamer.transcript._byte_offset < Path(path).stat().st_size
+                except (OSError, AttributeError):
+                    behind = False
+                if behind:
+                    await transcript_streamer_registry.notify_change(Path(path))
+        return self._current_transcript()
 
     def _collect_touched_from_transcript_tail(self) -> list[str]:
         """Files this turn wrote/edited, read from the transcript tail.
