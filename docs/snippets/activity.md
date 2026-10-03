@@ -247,3 +247,51 @@ curl -X POST $API/api/v1/activity/demo/done          -d '{"message":"indexed 5,0
 The route is the same sentence as the CLI. Live ticks arrive on the `progress_report`
 flow_data envelope with `attributes.kind == "activity"`; a refusal comes back as HTTP 200
 carrying an `error_code`, the same convention the rest of the API uses.
+
+## 11. Announce a plan, re-run a step
+
+Work that orchestrates steps (a QA cycle, a migration) says what it will do before it
+starts, so the person watching sees the whole outline — not only the step in flight:
+
+```python
+from flow_sdk.activity import Activity
+
+qa = Activity.get("qa-demo").label("QA cycle (partial)")
+qa.plan([
+    {"name": "p02", "label": "pytest API", "total": 2},
+    {"name": "p05", "label": "vitest API", "total": 3},
+])
+assert Activity.get("qa-demo/p05").state == "pending"   # labelled, counted, NOT started
+
+p02 = Activity.get("qa-demo/p02")
+p02.set_progress(done=1)                    # absolute counts, never backwards
+p02.inc_error("AssertionError", ref="tests/api/test_x.py::t2")
+p02.block("1 failing")                      # the failure is being worked
+
+p02.rerun()                                 # after the fix: counts start over, children stay
+p02.set_progress(done=2)
+p02.done("PASS · 2/2")
+qa.cancel("demo over")
+```
+
+`plan` creates its children PENDING with their label and total set — a labelled child
+would otherwise be started by the verb that names it. `rerun` is for running the same
+step again: `set_progress` never moves backwards, and the second run must not be added to
+the first. Unlike `reset`, it keeps the label, children and counters (what was learned
+about the earlier failures) and bumps `runs`.
+
+From a shell, an agent reports orchestrated work to the whole box with `--subject none`
+(the footer folds an agent's own scoped rows into its worker row, so they would not show
+in the activity bar):
+
+```bash
+flow progress report qa-demo plan "p02:2=pytest API,p05:3=vitest API" --subject none
+flow progress report qa-demo/p02 set-progress "done=1" --subject none
+```
+
+And a test command reports its own counts, read off the runner, with its exit code as
+the verdict (`PASS` ends the step; `RED` blocks it with the failures attached):
+
+```bash
+flow test run --activity qa-demo/p02 -- uv run pytest tests/api/test_x.py::t1 tests/api/test_x.py::t2
+```

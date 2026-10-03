@@ -52,6 +52,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, Optional[dict]]] = {
     "project": ("flow_sdk.cli.commands.project_cmd", "project_app", None),
     "schema": ("flow_sdk.cli.commands.schema_cmd", "schema_app", None),
     "progress": ("flow_sdk.cli.commands.progress_cmd", "progress_app", None),
+    "test": ("flow_sdk.cli.commands.test_cmd", "test_app", None),
     "record": ("flow_sdk.cli.commands.record_cmd", "record_app", None),
     "conversation": ("flow_sdk.cli.commands.conversation_cmd", "conversation_app", None),
     "process": ("flow_sdk.cli.commands.process_cmd", "process_app", None),

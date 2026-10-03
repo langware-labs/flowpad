@@ -2,6 +2,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { ViewToggle } from '@src/components/view-toggle/view-toggle';
 import { LanguageSelector } from '@src/components/footer/LanguageSelector';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
+import { ActivityStatusPill } from '@src/components/footer/ActivityStatusPill';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
@@ -88,6 +89,12 @@ export function Footer({ className = '' }: FooterProps) {
         {/* Status bar with project name — the single flexible slot that yields
             (its project name truncates) so the bar never overruns. */}
         <StatusBar className="min-w-0 flex-1 sm:ms-4" />
+
+        {/* The activity bar's one-liner: its own item, so it truncates instead of pushing
+            the right-hand group over the status bar. Capped at a fifth of the window. */}
+        <div className="hidden min-w-0 max-w-[20vw] shrink sm:flex">
+          <ActivityStatusPill />
+        </div>
 
         {/* Version + Powered by on the right */}
         <div className="flex w-full min-w-0 items-center justify-end gap-1 overflow-hidden sm:ms-auto sm:w-auto sm:flex-none sm:gap-2">
