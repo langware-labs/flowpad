@@ -25,7 +25,7 @@ import shlex
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
-from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
+from flow_sdk.builtin.agentic_process.model_tiers import is_family_model, resolve_family_tier, resolve_model_tier
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.flowpad_types.vendors import vendor_or_none
 
@@ -76,6 +76,10 @@ class ApiAuthSpec:
     config_overrides: tuple[tuple[str, str], ...] = ()  # codex `-c key=val` pairs
     provider_key: str = ""  # the ``model_providers.<name>`` those overrides declare
     model_env_vars: tuple[str, ...] = ()  # extra env vars that also carry the slug
+    #: How this harness spells a canonical ``vendor/model`` slug: prepended to a family model's
+    #: slug (``kimi:sm``). opencode addresses every model as ``<provider>/<model>``, so its
+    #: ``tier_models`` above are already spelled this way; a family slug is not, until here.
+    slug_prefix: str = ""
     #: Env vars that carry the model when there is NO argv to carry it. ``model_env_vars`` above
     #: is for a SPAWN, which passes ``--model`` / ``-c model=`` / a generated config; a person
     #: typing the CLI passes nothing, and the harness then asks for its own default -- which a
@@ -317,6 +321,7 @@ OPENCODE_API_AUTH_SPEC = ApiAuthSpec(
     },
     supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.FLOWPAD),
     default_provider=LMApiProvider.OPENROUTER,
+    slug_prefix="openrouter/",
     pointer_env="OPENCODE_CONFIG",
     user_config_path=".config/opencode/opencode.json",
     user_config_fmt="json",
@@ -450,7 +455,19 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     except LLMSourceError as exc:
         raise WorkerSpawnError(worker_type, str(exc)) from exc
 
-    return await binding_for_candidate(worker_type, candidate, tier=(process.cli_config or {}).get("model"))
+    model = (process.cli_config or {}).get("model")
+    auth = await binding_for_candidate(worker_type, candidate, tier=model)
+    if auth is None and is_family_model(model):
+        # A device login runs the vendor's own models under the vendor's own names; there is no
+        # gateway for ``kimi:sm`` to name a slug against. Passing it through would hand the CLI a
+        # model it has never heard of, and the turn would die with the vendor's sentence, not ours.
+        raise WorkerSpawnError(
+            worker_type,
+            f"{worker_type}: model {model!r} names a model family, which only an LLM endpoint serves, "
+            f"and {worker_type} is on its own login -- bind one (`flow llm user use <endpoint-id>`) "
+            "or name a model this CLI knows",
+        )
+    return auth
 
 
 async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None = None) -> WorkerApiAuth | None:
@@ -543,8 +560,19 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     # Folding them made every harness inherit the endpoint's defaults and silently
     # re-pointed codex at a Claude slug.
     merged = {**spec.tier_models, **overrides}
-    slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"
-    allowed_slug = _model_within_allowance(slug, endpoint.filters.models_allow)
+    try:
+        family_slug = resolve_family_tier(tier)
+    except ValueError as exc:
+        raise WorkerSpawnError(worker_type, str(exc)) from exc
+    if family_slug:
+        # The caller named the model, so an endpoint that refuses it refuses it -- the
+        # models_allow fallback below is for a CODE default, and would quietly run a different
+        # model than the one asked for.
+        slug = f"{spec.slug_prefix}{family_slug}"
+        allowed_slug = slug
+    else:
+        slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"
+        allowed_slug = _model_within_allowance(slug, endpoint.filters.models_allow)
     if allowed_slug != slug:
         logger.info(
             "%s: tier slug %r isn't in endpoint %s's models_allow; using %r instead",
