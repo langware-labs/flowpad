@@ -30,7 +30,8 @@ test('embedded Close is a pure host callback and destructive controls stay hidde
   expect(toolbar).toContain('{!embedded && <CommitMergeButton');
   expect(toolbar).toContain('{!embedded && <OpenInWorktreeButton');
   expect(toolbar).toMatch(/Open terminal in current folder[\s\S]*?\{!embedded && \([\s\S]*?<SquareTerminal/);
-  expect(toolbar).toMatch(/Fork — hidden in embedded mode[\s\S]*?\{!embedded && \([\s\S]*?<GitFork/);
+  // Fork is one slot shared by both headers (8d6e6b2b8); the slot itself is non-embedded-only.
+  expect(toolbar).toMatch(/const forkSlot = !embedded && \([\s\S]*?<GitFork/);
   expect(terminal).toContain('embedded={embedded}');
 
   const callers = readFileSync(
