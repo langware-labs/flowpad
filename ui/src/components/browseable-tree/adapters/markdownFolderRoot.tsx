@@ -17,7 +17,7 @@ import type {
   ToolbarAction,
 } from '@src/components/browseable-tree/types';
 import { AssetTypeCountBadge, parseAssetPointer } from './assetTypeRoot';
-import { scopeFilterKey, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
+import { isAllScope, scopeFilterKey, scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '@src/lib/scope-filter';
 import { DEFAULT_ASSET_FILTER } from '@src/components/assets/assetFilter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 
@@ -397,8 +397,11 @@ function folderBrowseable(args: {
 /** Mirror of backend ``apply_scope_filter`` for vault listing. Reads the
  *  unified ScopeFilter `{user, projects}`: a user vault is kept iff
  *  `sf.user`; a project vault is kept iff its Project id or legacy
- *  record_project_id is selected. Empty `projects` means no project vaults. */
+ *  record_project_id is selected. Empty `projects` means no project vaults —
+ *  except in the `all` scope, which selects no SPECIFIC project yet means
+ *  every vault. */
 function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
+  if (isAllScope(filter.scope)) return true;
   if (v.scope === 'user') return scopeIncludesUser(filter.scope);
   if (v.scope === 'project') {
     const selected = new Set(scopeProjectIds(filter.scope));
