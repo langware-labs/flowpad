@@ -398,12 +398,14 @@ def test_flow_verbs_match_the_real_cli_registry():
     listing it makes its chip silently degrade to a generic shell row, while a
     retired verb left behind makes an invalid call look real.
     """
-    from flow_sdk.cli.flow_cli import app
+    from flow_sdk.cli.flow_cli import LAZY_COMMANDS, app
     from flow_sdk.transcript_analyzer.derive import _FLOW_VERBS
 
-    registered = {cmd.name or cmd.callback.__name__.replace("_", "-") for cmd in app.registered_commands} | {
-        group.name for group in app.registered_groups
-    }
+    registered = (
+        {cmd.name or cmd.callback.__name__.replace("_", "-") for cmd in app.registered_commands}
+        | {group.name for group in app.registered_groups}
+        | set(LAZY_COMMANDS)
+    )
 
     assert registered == _FLOW_VERBS, (
         f"`flow` verb registry drift: missing={sorted(registered - _FLOW_VERBS)}, "

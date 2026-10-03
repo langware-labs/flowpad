@@ -78,6 +78,23 @@ def _instance_backend(name: str) -> str | None:
     return None
 
 
+def _instance_password(name: str) -> str | None:
+    """The hub password an instance_ctl instance logged in with, from ``.env.<name>.local``.
+
+    Bob is logged in as the INSTANCE's account (its cloud status names the email), so his
+    password must come from the same place — not from ``BOB_PW``, which other hub modules
+    set for a different account.
+    """
+    env = REPO_ROOT / f".env.{name}.local"
+    if not env.exists():
+        return None
+    for line in env.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("FLOWPAD_CLOUD_USER_PASSWORD="):
+            return line.split("=", 1)[1].strip().strip('"').strip("'") or None
+    return None
+
+
 def _reachable_logged_in(base: str) -> bool:
     try:
         if httpx.get(f"{base}/api/v1/health/status", timeout=2.0).status_code // 100 != 2:
@@ -103,7 +120,7 @@ def two_backends(hub_base_url) -> dict:
         "alice": alice,
         "bob": bob,
         "hub": hub_base_url,
-        "bob_pw": os.environ.get("BOB_PW", f"{BOB_INSTANCE}-pw-1234"),
+        "bob_pw": _instance_password(BOB_INSTANCE) or os.environ.get("BOB_PW", f"{BOB_INSTANCE}-pw-1234"),
     }
 
 

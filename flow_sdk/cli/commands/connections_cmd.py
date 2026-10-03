@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Annotated
 
 import typer
 
+from flow_sdk.cli.commands._common import EXIT_INTERRUPTED  # noqa: F401 — part of this group's exit contract
+from flow_sdk.cli.commands._common import run_async as _run
 from flow_sdk.core.connections import Authorization, list_connections
 from flow_sdk.core.connections import connect as connect_provider
 from flow_sdk.core.connections.presentation import open_authorization_in_system_browser
@@ -30,7 +31,6 @@ EXIT_INVALID_PROVIDER = 2
 EXIT_CANCELLED = 4
 EXIT_SERVICE = 5
 EXIT_AUTH = 6
-EXIT_INTERRUPTED = 130
 
 
 class _CliPresenter:
@@ -47,13 +47,6 @@ class _CliPresenter:
             open_authorization_in_system_browser(authorization)
             typer.echo(f"Open: {authorization.verification_uri}", err=True)
             typer.echo(f"Code: {authorization.user_code}", err=True)
-
-
-def _run(awaitable):
-    try:
-        return asyncio.run(awaitable)
-    except KeyboardInterrupt:
-        raise typer.Exit(EXIT_INTERRUPTED) from None
 
 
 def _error_exit(error: ConnectionConnectError, *, json_output: bool) -> None:

@@ -1,6 +1,6 @@
 """Turning a chosen ``LLMSource`` into a spawn binding.
 
-WHICH source funds a worker is decided by ``resolve_llm_source`` (``llm_source.py``);
+WHICH source funds a worker is decided by ``resolve_llm_endpoint`` (``llm_source.py``);
 this module owns the other half — the per-vendor recipe that turns that decision into
 env vars, a model slug and (codex) ``-c`` overrides. Each driver declares an
 :class:`ApiAuthSpec` with the exact values proven to work against the provider in the
@@ -427,7 +427,7 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
     there is nothing to inject, and ``None`` is what "spawn with device auth" has always
     meant to every caller.
 
-    Which source wins is NOT decided here any more: ``resolve_llm_source`` owns the
+    Which source wins is NOT decided here any more: ``resolve_llm_endpoint`` owns the
     ladder, so the answer this spawn uses and the answer the picker renders come from one
     place and cannot disagree. This function owns the other half -- turning a chosen
     source into env, model slug and config overrides.

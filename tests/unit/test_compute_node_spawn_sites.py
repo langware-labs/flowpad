@@ -10,12 +10,17 @@ validate post-`asset_ref` refactor constructor args (no `source_vfs_path`,
 correct field names) and that the action returns a success response.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.responses.response import ApiSuccessResponse
+from tests.utils.harness_installed import funding_not_under_test  # noqa: F401 — a fixture
+
+# Spawn mechanics, not funding: CI has no vendor CLI signed in (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("funding_not_under_test")
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -205,6 +210,12 @@ async def test_scan_create_process_uses_capability_default_without_overriding_ex
             AsyncMock(return_value="codex"),
         ),
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc),
+        # Worker SELECTION is under test, not funding: whether codex is funded on the machine
+        # running the suite (it is not installed on most) must not decide this case.
+        patch(
+            "flow_sdk.builtin.agentic_process.cli_drivers.llm_source.llm_picker_view",
+            AsyncMock(return_value=SimpleNamespace(chosen=object(), blocked="")),
+        ),
     ):
         with patch(_PATCH_REQ_SCAN, return_value=default_info):
             assert (await node._scan_create_process()).status == "SUCCESS"

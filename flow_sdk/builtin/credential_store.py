@@ -6,7 +6,8 @@ is that binding plus the deployment's ``environment``, and :func:`secret_store_r
 scope, a variable and a placement become a store config. A local store type with no config is
 completed per scope:
 
-    env_file → <scope root>/.env.local (development) or .env.<env>.local
+    env_file → <scope root>/.env.local (development) or .env.<env>.local; a project's declared
+               env files (``project_manifest.json`` ``env_files``) are read after it, in development
     vault    → prefix credential.[<env>.]user. / credential.[<env>.]project.<pid>.
 
 The scope root is the asset scope root Flowpad already has
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Optional
 
@@ -54,6 +56,38 @@ class CredentialScope:
     @property
     def key(self) -> tuple[str, Optional[str]]:
         return (self.scope, self.project_id)
+
+    @cached_property
+    def declared_env_files(self) -> tuple[tuple[Path, str], ...]:
+        """``(path, declared)`` for each env file a project lists in its manifest (``env_files``).
+        Read once per scope object, on first use — most callers (a vault, a write, a named
+        environment) never need it. A path a symlink takes out of the project is skipped."""
+        if self.scope != SCOPE_PROJECT or self.root is None:
+            return ()
+        from flow_sdk.assets.project_manifest import read_env_files  # noqa: PLC0415
+        from flow_sdk.fs_store.origin.fs_origin import safe_join  # noqa: PLC0415
+
+        joined = ((safe_join(self.root, rel), rel) for rel in read_env_files(self.root))
+        return tuple((path, rel) for path, rel in joined if path is not None)
+
+    def env_files(self, environment: str = DEFAULT_ENVIRONMENT) -> list[tuple[Optional[Path], Optional[str]]]:
+        """``(path, declared)`` for every env file ``environment`` reads here, the written one first
+        (``declared`` None). The declared files are this computer's development files only: a
+        named environment's values must never fall back to a developer's local ones."""
+        from flow_sdk.builtin.env_local_store import env_local_path  # noqa: PLC0415
+
+        files: list[tuple[Optional[Path], Optional[str]]] = [(env_local_path(self.root, environment), None)]
+        if environment == DEFAULT_ENVIRONMENT:
+            files += self.declared_env_files
+        return files
+
+    def env_file_ref(self, environment: str = DEFAULT_ENVIRONMENT) -> SecretStoreRef:
+        """The ``env_file`` store for ``environment`` here: the written file, then the declared extras."""
+        main, *extras = (str(path) if path else "" for path, _ in self.env_files(environment))
+        config: dict = {"env_file_path": main}
+        if extras:
+            config["fallback_paths"] = extras
+        return SecretStoreRef(type="env_file", config=config)
 
 
 def user_scope() -> CredentialScope:
@@ -135,10 +169,7 @@ def secret_store_ref(spec: "Credential", scope: CredentialScope, env_var: str, p
         prefix = vault_name(scope=scope.scope, project_id=scope.project_id, env_var="", environment=environment)
         return SecretStoreRef(type="vault", config={"prefix": prefix})
     if ref.type == "env_file":
-        from flow_sdk.builtin.env_local_store import env_local_path  # noqa: PLC0415
-
-        path = env_local_path(scope.root, environment)
-        return SecretStoreRef(type="env_file", config={"env_file_path": str(path) if path else ""})
+        return scope.env_file_ref(environment)
     return ref
 
 

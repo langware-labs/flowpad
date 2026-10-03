@@ -15,32 +15,73 @@ const h = vi.hoisted(() => ({
   login: vi.fn(() => Promise.resolve()),
   cancelLogin: vi.fn(() => Promise.resolve()),
   resolvedKind: 'harness.claude.cli' as string | null,
-  /** `checked && available` is what the modal turns into "installed". */
-  available: true,
-  loginState: null as string | null,
-  cloudStatus: 'logged_out' as string,
-  /** The hub's own answer to "who does FlowPad fund right now" — empty means signed in with
-   *  nothing bound, non-empty means it is actually issuing calls. */
-  activeFor: [] as string[],
+  /** The status record's `install` for every harness. */
+  install: 'installed',
+  /** The status record's FlowPad login. */
+  hubLogin: 'signed_out',
+  /** Which harnesses a FlowPad hub endpoint pays for — empty means signed in with nothing
+   *  bound, non-empty means it is actually funding calls. */
+  hubFunds: [] as string[],
 }));
+
+const WORKERS = [
+  ['claude', true],
+  ['codex', true],
+  ['copilot', true],
+  ['opencode', false],
+] as const;
+
+/** The status record as the backend serves it: four harnesses, no keys stored. */
+function record() {
+  return {
+    harnesses: WORKERS.map(([w, device]) => ({
+      kind: `harness.${w}.cli`,
+      worker_type: w,
+      label: w,
+      icon: '',
+      install: h.install,
+      version: '',
+      path: '',
+      login: h.install === 'installed' ? (device ? 'not_checked' : 'n_a') : 'n_a',
+      login_checked_at: '',
+      login_message: '',
+      account: { identity: '', plan: '' },
+      has_device_login: device,
+      key_providers: ['openrouter'],
+      install_command: '',
+      homepage_url: '',
+    })),
+    keys: [],
+    hub: { login: h.hubLogin, email: '', user_typeid: '', error: '' },
+    default_harness: 'harness.claude.cli',
+  };
+}
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openNewShell: vi.fn(), openDock: vi.fn() }, currentDock: null }),
 }));
 vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal: vi.fn() }));
 vi.mock('@src/components/llm-endpoints/llm-endpoints-pointer', () => ({ openLlmEndpoint: vi.fn() }));
-vi.mock('@src/components/llm-sources/use-llm-sources', () => ({
-  useLlmSources: () => ({ status: { active_for: h.activeFor }, isLoading: false }),
+vi.mock('@src/components/llm-sources/use-llm-sources', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useLlmSources: () => ({
+    status: {
+      resolved: Object.fromEntries(h.hubFunds.map((k) => [k, { endpoint_typeid: 'llm_endpoint-hub', name: 'Hub' }])),
+      endpoints: { 'llm_endpoint-hub': { id: 'hub', kind: 'hub' } },
+      blocked: {},
+    },
+    isLoading: false,
+  }),
+}));
+vi.mock('@src/components/status/use-status-record', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useStatusRecord: () => ({ status: record(), isLoading: false }),
 }));
 vi.mock('@src/notifications', () => ({ notify: { error: vi.fn(), success: vi.fn(), warning: vi.fn() } }));
 vi.mock('@sdk/react/hooks', () => ({
   useEntity: () => ({ data: null }),
   usePrimaryContentReady: () => false,
-  useCloudStatus: () => ({
-    login: { status: h.cloudStatus, user: null },
-    connection: { status: 'idle' },
-    cloudUrl: '',
-  }),
+  useCloudStatus: () => ({ cloudUrl: '' }),
 }));
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
@@ -48,20 +89,9 @@ vi.mock('@sdk', async (importOriginal) => {
     ...actual,
     cloudManager: { login: h.login, logout: vi.fn(), cancelLogin: h.cancelLogin },
     lmKeysService: { list: () => Promise.resolve([]) },
+    statusService: { refresh: () => Promise.resolve(record()) },
     capabilityManager: {
-      getSnapshot: () => ({
-        capability: {
-          kind: 'x',
-          login_state: h.loginState,
-          auth_mode: 'device',
-          authStatus: () => Promise.resolve(null),
-        },
-        checked: true,
-        available: h.available,
-        resolvedKind: h.resolvedKind,
-      }),
-      ensureChecked: () =>
-        Promise.resolve({ capability: null, checked: true, available: h.available, resolvedKind: h.resolvedKind }),
+      getSnapshot: () => ({ capability: null, resolvedKind: h.resolvedKind }),
       subscribe: () => () => {},
       // Behaves like the real manager: a successful set moves `resolvedKind`, which is what
       // `makeDefault` re-reads to confirm the change landed. A mock that always answered the
@@ -88,10 +118,9 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     cleanup();
     vi.clearAllMocks();
     h.resolvedKind = 'harness.claude.cli';
-    h.available = true;
-    h.loginState = null;
-    h.cloudStatus = 'logged_out';
-    h.activeFor = [];
+    h.install = 'installed';
+    h.hubLogin = 'signed_out';
+    h.hubFunds = [];
   });
 
   it('marks the default assistant, and moves the mark when another is chosen', async () => {
@@ -132,15 +161,15 @@ describe('Assistants & keys — one row per thing that can pay', () => {
     expect(screen.getByTestId('harness-row-codex-default').getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('never says "Not installed" in the list', async () => {
-    h.available = false; // nothing installed at all
+  it('says "Not installed" for an assistant whose CLI is missing', async () => {
+    h.install = 'not_installed'; // nothing installed at all
     mount();
 
-    await screen.findByTestId('harness-row-claude');
-    // The list answers "what pays for your calls". Whether a vendor's CLI happens to be on
-    // this machine is a different question, and it made four of five rows report a fact about
-    // the filesystem. It still appears INSIDE the row's own panel, where it is actionable.
-    expect(screen.queryByText('Not installed')).toBeNull();
+    const row = await screen.findByTestId('harness-row-claude');
+    // A CLI that is not on this machine funds nothing, so it IS the answer to "what pays for
+    // your calls". Reporting it as "Not signed in" hid why the row could not pay.
+    expect(row.textContent).toContain('Not installed');
+    expect(row.textContent).not.toContain('Not signed in');
   });
 
   it('offers a login only where there is something to log in to', async () => {
@@ -200,7 +229,7 @@ describe('Assistants & keys — one row per thing that can pay', () => {
 
   it('while signing in, says where to finish, and offers the page again or a way out', async () => {
     // A browser sign-in waits on a page this screen cannot see; it may never have opened.
-    h.cloudStatus = 'logging_in';
+    h.hubLogin = 'signing_in';
     mount();
 
     const waiting = await screen.findByTestId('harness-row-flowpad-waiting');
@@ -214,7 +243,7 @@ describe('Assistants & keys — one row per thing that can pay', () => {
   });
 
   it('says FlowPad is signed in once it is, without offering the login again', async () => {
-    h.cloudStatus = 'logged_in';
+    h.hubLogin = 'signed_in';
     mount();
 
     const action = await screen.findByTestId('harness-row-flowpad-action');
@@ -223,8 +252,8 @@ describe('Assistants & keys — one row per thing that can pay', () => {
   });
 
   it('clicking a signed-in, funding FlowPad row confirms the choice and offers a way out', async () => {
-    h.cloudStatus = 'logged_in';
-    h.activeFor = ['harness.claude.cli'];
+    h.hubLogin = 'signed_in';
+    h.hubFunds = ['harness.claude.cli'];
     mount();
 
     fireEvent.click(await screen.findByTestId('harness-row-flowpad-action'));
@@ -241,8 +270,8 @@ describe('Assistants & keys — one row per thing that can pay', () => {
   });
 
   it('clicking a signed-in FlowPad row that funds nothing says THAT, not that it is funding', async () => {
-    h.cloudStatus = 'logged_in';
-    h.activeFor = []; // signed in, but no endpoint bound — a real, honest state
+    h.hubLogin = 'signed_in';
+    h.hubFunds = []; // signed in, but no endpoint bound — a real, honest state
     mount();
 
     fireEvent.click(await screen.findByTestId('harness-row-flowpad-action'));

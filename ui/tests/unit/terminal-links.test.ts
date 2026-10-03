@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import type { Terminal, ILink } from '@xterm/xterm';
-import { FileLinkProvider, fileLinkMatches, linkAtCell } from '@src/components/terminal/interactive-terminal/terminal-links';
+import { TerminalLinkProvider, fileLinkMatches, linkAtCell } from '@src/components/terminal/interactive-terminal/terminal-links';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -46,12 +46,60 @@ describe('terminal links', () => {
     const terminal = new HeadlessTerminal({ cols: 20, rows: 5, allowProposedApi: true });
     try {
       await new Promise<void>((resolve) => terminal.write('界 /tmp/long-directory/file.py:12:3', resolve));
-      const provider = new FileLinkProvider(terminal as unknown as Terminal, () => {});
+      const provider = new TerminalLinkProvider(terminal as unknown as Terminal, () => {});
       let links: ILink[] | undefined;
       provider.provideLinks(2, (value) => { links = value; });
       expect(links?.[0].text).toBe('/tmp/long-directory/file.py:12:3');
       expect(links?.[0].range.start).toEqual({ x: 4, y: 1 });
       expect(links?.[0].range.end).toEqual({ x: 15, y: 2 });
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  it('joins a URL a TUI broke across rows itself (full row, cursor move, indented rest)', async () => {
+    // What Claude Code writes at 40 cols: it fills each row from col 3 to the edge and
+    // positions the cursor on the next row; no row is soft-wrapped.
+    const url = 'http://localhost:9007/dock/shell/agentic_process-aeb31b55?scope-mode=project&viewMode=advanced';
+    const terminal = new HeadlessTerminal({ cols: 40, rows: 6, allowProposedApi: true });
+    try {
+      const rows = ['⏺ ' + url.slice(0, 38), '  ' + url.slice(38, 76), '  ' + url.slice(76)];
+      await new Promise<void>((resolve) => terminal.write(rows.map((row, i) => `\x1b[${i + 1};1H${row}`).join('') + '\x1b[5;1Hnext', resolve));
+      expect(terminal.buffer.active.getLine(1)?.isWrapped).toBe(false);
+      const term = terminal as unknown as Terminal;
+      for (const y of [1, 2, 3]) {
+        const provider = new TerminalLinkProvider(term, () => {});
+        let links: ILink[] | undefined;
+        provider.provideLinks(y, (value) => { links = value; });
+        expect(links?.map((link) => link.text)).toEqual([url]);
+        expect(links?.[0].range).toEqual({ start: { x: 3, y: 1 }, end: { x: 2 + url.length - 76, y: 3 } });
+      }
+      expect(linkAtCell(term, 10, 2)).toBe(url);
+      // A row that stops short of the edge ends the line.
+      expect(linkAtCell(term, 1, 5)).toBeNull();
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  it('joins across the one blank margin cell Claude Code leaves when echoing the prompt', async () => {
+    const url = 'https://example.com/a-long/path?with=query&and=more';
+    const terminal = new HeadlessTerminal({ cols: 30, rows: 4, allowProposedApi: true });
+    try {
+      await new Promise<void>((resolve) => terminal.write(`\x1b[1;1H  ${url.slice(0, 27)}\x1b[2;1H  ${url.slice(27)}`, resolve));
+      expect(linkAtCell(terminal as unknown as Terminal, 5, 2)).toBe(url);
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  it('does not join a row that ends before the last column', async () => {
+    const terminal = new HeadlessTerminal({ cols: 40, rows: 4, allowProposedApi: true });
+    try {
+      await new Promise<void>((resolve) => terminal.write('see https://example.com/a\r\n  b/c.ts:3', resolve));
+      const term = terminal as unknown as Terminal;
+      expect(linkAtCell(term, 6, 1)).toBe('https://example.com/a');
+      expect(linkAtCell(term, 4, 2)).toBe('b/c.ts:3');
     } finally {
       terminal.dispose();
     }

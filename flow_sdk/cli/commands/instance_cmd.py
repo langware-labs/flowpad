@@ -9,7 +9,7 @@ categories.
 The reset is **surgical** — it only ever touches the *named* instance's own
 processes, data dir, repo-root env file, and account-scoped keychain slot. It
 never disturbs other running instances (``dev-1``/``dev-2``/``prod``), the shared
-``<flow_home>/global`` state, ``capability-installs``, or the hub user.
+``<flow_home>/global`` state or the hub user.
 
 Cross-platform: kill (``psutil`` via ``server/launch.py::kill_process``), wipe
 (``shutil.rmtree``) and keychain-clear are portable. The **relaunch** delegates to

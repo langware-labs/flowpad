@@ -103,7 +103,11 @@ async def _assert_worker_echoed_token(process, worker: str, failure_hint: str) -
     Shared by both hops so the staged-assertion policy — an environment gap
     SKIPS, a worker that ran and did not get the tool FAILS — is written once.
     """
-    await fund_worker_without_a_login(worker)  # a no-op for a harness with its own login
+    # opencode's device login is signed out in the test HOME, and since the LLM-source gate
+    # (b866ddfee) an unfunded opencode is refused before its free zero-auth fallback is ever
+    # reached — so it is funded by key like the login-less harnesses. The subject here is the
+    # MCP channel, not funding. A no-op for every other harness with its own login.
+    await fund_worker_without_a_login(worker, even_with_device_login=(worker == "opencode"))
     try:
         assert_prompt_ok(await process.prompt(_INSTRUCTION))
         transcript = await await_transcript(

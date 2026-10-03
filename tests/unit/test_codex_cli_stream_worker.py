@@ -121,7 +121,7 @@ def test_build_spawn_no_capability_raises_typed_error(tmp_path: Path, monkeypatc
     # Pin another vendor as installed: `no_worker_message` falls back to a
     # generic "nothing is installed" when NO vendor resolves, so on a bare CI
     # image this asserted the wrong branch. See the twin in the claude worker test.
-    seed_harness_capability(monkeypatch, "claude", make_fake_cli_bin(tmp_path, "claude"))
+    seed_harness_capability(monkeypatch, "claude", make_fake_cli_bin(tmp_path, "claude")[0])
 
     with pytest.raises(WorkerSpawnError, match=r"no harness\.codex\.cli installation discovered"):
         CodexCLIStreamWorker()._build_spawn(AgenticContext(workdir=str(tmp_path)), "hello")
@@ -345,9 +345,11 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
     task = next(t for t in asyncio.all_tasks() if t.get_name() == f"codex-{proc.id[:8]}")
     await task
 
+    # With no codex there is nothing to fund the turn either, and that check runs first: the
+    # LLM-source refusal is the honest earliest cause, latched the same way a spawn failure is.
     assert proc.status == ProcessStatus.FAILED.value
-    assert proc.start_failure is not None and "not found on worker PATH" in proc.start_failure
-    assert any("not found on worker PATH" in str(fd.get("flow_value", "")) for fd in proc.emitted)
+    assert proc.start_failure is not None and "codex is not installed" in proc.start_failure
+    assert any("codex is not installed" in str(fd.get("flow_value", "")) for fd in proc.emitted)
 
 
 @pytest.mark.asyncio

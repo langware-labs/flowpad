@@ -617,7 +617,7 @@ class ScanActionsMixin:
             # no error and nothing to click. The person who hit it typed into a
             # chat that never replied.
             #
-            # `llm_picker_view` rather than `resolve_llm_source`: it answers for
+            # `llm_picker_view` rather than `resolve_llm_endpoint`: it answers for
             # a worker_type + scope, and there is no process here to hand the
             # resolver. Same producer either way — `chosen` IS the resolver's
             # answer, so this can never refuse a launch that would have worked.
@@ -636,9 +636,15 @@ class ScanActionsMixin:
             # create would be refused here and would have spawned. Every caller
             # that has a project passes it, so this is narrow — but it is a real
             # false refusal, not a theoretical one, and belongs written down.
-            from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view  # noqa: PLC0415
+            from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
+                check_unchecked_login,
+                llm_picker_view,
+            )
             from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
 
+            # Creating a process is an action: probe a never-checked login now instead of
+            # refusing it -- funding never presumes a login works.
+            await check_unchecked_login(worker_type.value)
             funding = await llm_picker_view(worker_type.value, LLMScope(project_id=project_id or ""))
             toplog.log(
                 "agentic_process.load",

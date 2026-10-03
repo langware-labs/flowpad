@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Boxes, ChevronDown, File as FileIcon, Paperclip, Play, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { SessionReplyPolicy } from '@sdk';
+import type { TaskableMessage } from '@sdk/entities/task';
 import { sendReply, sendToChannel } from '@sdk/entities/notifications';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
@@ -13,6 +14,7 @@ import { EmojiPicker } from './EmojiPicker';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { buildSessionStartExtras, type SessionHost } from './session-start';
 import { useLocalUser } from './useLocalUser';
+import { TaskItIcon, taskItHint } from './task-it';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
@@ -58,6 +60,9 @@ interface MessageComposerProps {
   replyTo?: { id: string; sender: string; text: string; inThread?: boolean } | null;
   /** Dismiss the reply banner (and fires after a send that answered it). */
   onClearReply?: () => void;
+  /** "Task it" on send: when set, the composer offers a toggle; a send with it on hands the sent
+   *  message here (the same call the bubble's Task it makes). Plain conversation sends only. */
+  onTaskIt?: (sent: TaskableMessage) => void;
 }
 
 const SAVE_DEBOUNCE_MS = 400;
@@ -148,6 +153,7 @@ export function MessageComposer({
   channelAcceptsFiles = false,
   replyTo = null,
   onClearReply,
+  onTaskIt,
 }: MessageComposerProps) {
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
@@ -161,6 +167,8 @@ export function MessageComposer({
   // Prompt mode: the typed text is the prompt that opens a session on the
   // host's machine (not a chat line). Off by default; sticky until toggled.
   const [promptMode, setPromptMode] = useState(false);
+  // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
+  const [taskItOn, setTaskItOn] = useState(false);
   const [replyPolicy, setReplyPolicy] = useState<SessionReplyPolicy>(SessionReplyPolicy.AUTO);
   const [sending, setSending] = useState(false);
   const [discarding, setDiscarding] = useState(false);
@@ -335,18 +343,27 @@ export function MessageComposer({
           // SAME reply pipeline as a fresh send. Single code path beats forking
           // the upload/push plumbing for drafts.
           if (draft) await discardDraftFlowMessage(draft);
-          await sendReply(
+          const sent = await sendReply(
             { conversationId: effectiveConversationId },
             messageBody,
             outgoingFiles,
             Object.keys(extras).length > 0 ? extras : undefined,
           );
+          if (taskItOn && sent.id && !isPromptSend) {
+            onTaskIt?.({
+              id: sent.id,
+              text: messageBody,
+              conversation_id: effectiveConversationId,
+              sender_name: localUser?.name ?? null,
+            });
+          }
         }
       }
       if (!isDraftMode) {
         setText('');
         setFiles([]);
         setAssetRefs([]);
+        setTaskItOn(false);
       }
       if (!channel) onSent?.();
     } catch (err: unknown) {
@@ -568,6 +585,28 @@ export function MessageComposer({
     </div>
   ) : null;
 
+  // Offered on the plain reply box only: a channel send returns no message id, a prompt is a run.
+  const canTaskIt = !!onTaskIt && !channel && !isDraftMode && !liveSessionId && !startsSession;
+  const taskItToggle = canTaskIt ? (
+    <button
+      type="button"
+      onClick={() => setTaskItOn((on) => !on)}
+      disabled={isDisabled}
+      aria-pressed={taskItOn}
+      title={taskItOn ? t`This message will also become a task` : taskItHint()}
+      data-testid="composer-task-it"
+      className={cn(
+        'flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors disabled:opacity-40',
+        taskItOn
+          ? 'border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+      )}
+    >
+      <TaskItIcon className="h-3.5 w-3.5" />
+      {taskItOn && <Trans>Task</Trans>}
+    </button>
+  ) : null;
+
   const sendButton = (
     <button
       type="button"
@@ -710,6 +749,7 @@ export function MessageComposer({
           className="min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         />
         {sessionStartControl}
+        {taskItToggle}
         {sendButton}
       </div>
 

@@ -102,19 +102,26 @@ class Machine:
         self.ran: list[str] = []
         self.agents: list[str] = []
         self.checks: dict[str, tuple[str, bool]] = {}
+        self.status_facts: dict[str, str] = {}
         self.installs: dict[str, set[str]] = {}
         self.broken: set[str] = set()
         self.by_agent_label: dict[str, str] = {}
         for tool in TOOLS:
             install, question = _op(f"{tool}-on-path"), _op(f"ask-install-{tool}")
-            self.checks[install.completion_check.command_for(platform)] = (tool, False)
-            # An ask op's check prints the value it returns: the empty confirm.
-            self.checks[question.completion_check.command_for(platform)] = (tool, True)
+            for op, echoes in ((install, False), (question, True)):
+                if op.status_check:
+                    # A status fact (`install:claude`) is answered in-process, not by a shell
+                    # command -- `_status_facts` reads it off this machine's installed set.
+                    self.status_facts[op.status_check] = tool
+                else:
+                    # An ask op's shell check prints the value it returns: the empty confirm.
+                    self.checks[op.completion_check.command_for(platform)] = (tool, echoes)
             command = install.exe_data.command_for(platform)
             if tool in failing:
                 self.broken.add(command)
             else:
                 self.installs.setdefault(command, set()).add(tool)
+        _MACHINES.append(self)
         for tool in AGENT_FALLBACK:
             # The fallback runs under its op's own label — one op, one name.
             self.by_agent_label[_op(f"{tool}-on-path").display_label] = tool
@@ -144,6 +151,25 @@ class Machine:
     @property
     def installed_anything(self) -> bool:
         return any(command in self.installs for command in self.ran)
+
+
+@pytest.fixture(autouse=True)
+def _status_facts(monkeypatch):
+    """A status fact the ops ask is answered off the machine under test (`Machine.installed`)."""
+    import flow_sdk.core.status.check as status_check
+
+    async def check_fact(fact: str):
+        machine = _MACHINES[-1]
+        tool = machine.status_facts[fact]
+        held = tool in machine.installed
+        return held, f"{tool} is {'installed' if held else 'not installed'}"
+
+    monkeypatch.setattr(status_check, "check_fact", check_fact)
+    _MACHINES.clear()
+
+
+#: The machine a test built, for the status-fact answer above.
+_MACHINES: list = []
 
 
 async def _person(replies: dict[str, str], asked: list[str]) -> None:

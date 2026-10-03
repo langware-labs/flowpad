@@ -190,6 +190,9 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_agentic_process_prompt_streaming",
         "test_agentic_cli_shell_mix",
         "test_claude_cli",
+        # Spawns a real claude PTY; since the LLM-source gate (b866ddfee) a sandbox-HOME probe
+        # reads "signed out" and createProcess answers 400.
+        "test_create_process_terminal_theme",
         "test_clean_claude_pty",
         "test_clean_claude_pty_stress",
         "test_cli_driver_binary_smoke",
@@ -207,7 +210,6 @@ _REAL_HOME_TEST_MODULES = frozenset(
         "test_skill_chip_live_stream",
         "test_skill_transcript_analysis",
         "test_docs_browse_skill",
-        "test_context_process",
         "test_system_prompt",
         "test_settings_instruction",
         "test_asset_cleanup_agent",
@@ -222,7 +224,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
 
 
 @pytest.fixture(autouse=True)
-async def _real_home_for_cli_subprocess_tests(request):
+async def _real_home_for_cli_subprocess_tests(request, _rebind_session_db_driver):
     """Restore real ``$HOME`` for tests that spawn real worker CLI subprocesses.
 
     Scope of this fixture is **subprocess auth only**: the CLI inherits the
@@ -249,6 +251,11 @@ async def _real_home_for_cli_subprocess_tests(request):
     ``login_state=idle``; the spawn resolver honours that verdict, so this
     module's worker was refused as "claude is signed out" while the real HOME was
     signed in (and passed in isolation).
+
+    Ordered after ``_rebind_session_db_driver``: a module that serves the app in-process
+    (``test_ask_browser_matrix``) closes the session driver in its lifespan shutdown, and a
+    reset written before the rebind reopens it never reaches the database. The stale
+    "signed out" then survives into this module (2026-10-03).
     """
     module_stem = request.path.stem
     if module_stem in _REAL_HOME_TEST_MODULES:
@@ -274,6 +281,20 @@ from tests.api.conftest import (  # noqa: F401, E402
     drain_background_tasks,
     reset_db_for_testclient,
 )
+
+
+@pytest.fixture()
+def run_workdir(tmp_path) -> Path:
+    """A process workdir for a LIVE instance whose folder name is new on every run.
+
+    A visible process materializes a Project named after its workdir's basename,
+    and project names are unique. ``tmp_path`` is named after the test
+    (``test_prompt_admits_visible_pro0``), so the second run against the same
+    instance collides with the first run's project and ``createProcess`` 500s.
+    """
+    workdir = tmp_path / f"run-{uuid.uuid4().hex[:12]}"
+    workdir.mkdir()
+    return workdir
 
 
 @pytest.fixture()
@@ -521,7 +542,7 @@ def _openrouter_key() -> str:
     return key
 
 
-async def fund_worker_without_a_login(worker: str) -> None:
+async def fund_worker_without_a_login(worker: str, *, even_with_device_login: bool = False) -> None:
     """A harness with no account of its own (``ApiAuthSpec.has_device_login`` False) cannot ride
     this machine's vendor logins like the others do: give it a stored provider key through the
     product's own store, or SKIP — an unfunded worker is an environment gap, not a failure."""
@@ -531,7 +552,7 @@ async def fund_worker_without_a_login(worker: str) -> None:
     from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     spec = driver_api_auth_spec(worker)
-    if spec is None or spec.has_device_login:
+    if spec is None or (spec.has_device_login and not even_with_device_login):
         return
     key = _openrouter_key()
     if not key:

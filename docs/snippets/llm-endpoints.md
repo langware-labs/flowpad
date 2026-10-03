@@ -99,8 +99,7 @@ for endpoint, verdict in await list_llm_candidates("claude"):
 
 A candidate is a pair: the endpoint, and this harness's verdict on it. They travel together
 because a verdict names an endpoint and mirrors none of its fields, so rendering a row or
-funding a spawn needs both. `list_llm_sources` returns the verdicts alone when that is all
-you want.
+funding a spawn needs both; take `verdict` alone when that is all you want.
 
 ## 5. Completions
 
@@ -149,10 +148,25 @@ except LLMRateLimited:
 
 A hub endpoint can be opened to **whoever holds its id**. That is what lets a foreign machine —
 a colleague's laptop, a CI box, a container — run agents on your budget with no account, no
-key and no login. Two commands, on a box with nothing but `pip install flowpad` and a harness CLI:
+key and no login. Two commands, on a box with nothing but `pip install flowpad` — not even a
+harness CLI:
 
 ```bash
 flow llm user use <endpoint-id> --hub https://<your hub>    # --hub defaults to this box's hub
+flow process start "hi"
+```
+
+`flow process start` runs one headless turn in the CLI's own process (no Flowpad server), prints
+`running agentic process <id>…` on stderr and the agent's messages on stdout as they land (whole
+messages, not tokens), and exits with the turn's code — 0 when it answered. With no `--worker` it
+runs the selected harness when that CLI is installed, else `deepagents`, the worker that ships
+inside the wheel. `--model` picks the slug; `--workdir` where it works (a fresh temp dir by
+default). It refuses to run beside a live backend of the same instance.
+
+The same turn from Python, with a harness CLI installed:
+
+```bash
+flow llm user use <endpoint-id> --hub https://<your hub>
 python agentic_process_snippet.py
 ```
 

@@ -40,6 +40,8 @@ const CN = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const SHELL = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const PROC = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const PROC_SHELL = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+/** The world's one project — seeded into the cache and served as the project list. */
+const PROJECT_ROW = { id: P, name: 'p', fs_storage_mount_path: '/w/p' };
 
 interface Row {
   name: string;
@@ -88,7 +90,7 @@ const ROWS: Row[] = [...fixtureRows, ...worldRows, ...bareRows];
 
 function seedWorld(): void {
   seedBootstrap({ default_compute_node: { type: ComputeNode.type, id: CN } });
-  new Project({ id: P, name: 'p', fs_storage_mount_path: '/w/p' } as never).markAsExpanded();
+  new Project({ ...PROJECT_ROW } as never).markAsExpanded();
   new ComputeNode({ id: CN, name: 'local' } as never).markAsExpanded();
   new Shell({ id: SHELL, project_id: P, workdir: '/w/p' } as never).markAsExpanded();
   new Shell({ id: PROC_SHELL, project_id: P, agentic_process_id: PROC } as never).markAsExpanded();
@@ -115,6 +117,14 @@ const projectWiki = (req: RecordedRequest) => {
   if (req.path === `/graph/wiki/${WIKI}/resolve`) return { kind: 'missing' };
   return undefined;
 };
+
+/** The project list (`LazyAsset.Projects`) — the world's one project. Production
+ *  loads it at bootstrap; `getProjectByPath` (an Assets file's owning project)
+ *  reads it, so a cold row fetches it once and a warm visit hits the cache. */
+const projectList = (req: RecordedRequest) =>
+  req.method === 'GET' && req.path === '/graph/project'
+    ? [{ type: 'project', ...PROJECT_ROW }]
+    : undefined;
 
 /** The backend's answer for a project with no auto-launch agent. */
 const noAgentToLaunch = (req: RecordedRequest) =>
@@ -145,7 +155,7 @@ describe('dock loader matrix — coverage', () => {
 
 describe.each(ROWS)('dock loader — $name', ({ url }) => {
   it('settles with at most one redirect, and a warm visit asks the backend for nothing', async () => {
-    const log = recordRequests([fakeTabStore(), noAgentToLaunch, indexedDocument, projectWiki]);
+    const log = recordRequests([fakeTabStore(), noAgentToLaunch, indexedDocument, projectWiki, projectList]);
 
     const cold = await runDockLoader(url);
     expect(cold.outcome, `threw instead of settling: ${cold.outcome === 'error' ? String(cold.error) : ''}`).not.toBe(

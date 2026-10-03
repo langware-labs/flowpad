@@ -46,7 +46,7 @@ async def test_cache_expiry_refreshes_identity_without_repeating_setup_or_probes
     assert data['user']['name'] == user.name
     assert data['info_available'] is True
     assert data['desktop_info']['paths']['preferences']
-    assert not {'scan_info', 'harness_state', 'capabilities_summary', 'sniffer_hook',
+    assert not {'scan_info', 'capabilities_summary', 'sniffer_hook',
                 'sniffer_installed', 'sandbox_available', 'notice'} & data.keys()
     assert not {'installed_agents', 'cloud_login_available'} & data['desktop_info'].keys()
     setup.assert_not_called()

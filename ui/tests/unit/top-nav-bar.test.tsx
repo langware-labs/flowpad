@@ -78,6 +78,11 @@ const openWikiModal = vi.hoisted(() => vi.fn());
 vi.mock('@src/tabs/use-tab-manager', () => ({ useTabProjectBuckets: () => buckets.current }));
 vi.mock('@src/tabs/project-entry', () => ({ dockForProjectEntry, dockForGlobalEntry }));
 vi.mock('@src/components/wiki-tip/wiki-modal', () => ({ openWikiModal }));
+/** The Flowpad Assistant, when the bar is mounted under its provider. */
+const assistant = vi.hoisted(() => ({ current: null as { ask: ReturnType<typeof vi.fn> } | null }));
+vi.mock('@src/components/floating-chat/FloatingChatContext', () => ({
+  useOptionalFloatingChat: () => assistant.current,
+}));
 // The single writer of URL-derived context — a crumb click must never touch it.
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
@@ -136,6 +141,7 @@ beforeEach(() => {
   nav.canGoForward = false;
   crumbs.current = [crumb('Acme', 'project'), crumb('Design notes', 'current')];
   buckets.current = { buckets: [], globalTabCount: 0 };
+  assistant.current = null;
   vi.clearAllMocks();
 });
 afterEach(() => {
@@ -455,5 +461,55 @@ describe('the navigation bar', () => {
 
     expect(screen.getByTestId('top-nav-address')).toBeTruthy();
     expect(screen.queryByTestId('top-nav-search-input')).toBeNull();
+  });
+
+  describe('ask mode', () => {
+    beforeEach(() => {
+      assistant.current = { ask: vi.fn() };
+    });
+
+    it('turns the pill into an assistant prompt on a dead-space click, and sends it on Enter', async () => {
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      const input = screen.getByTestId('top-nav-ask-input');
+      expect(input.getAttribute('placeholder')).toBe('What do you want to do?');
+      expect(document.activeElement).toBe(input);
+
+      await user.type(input, 'tidy the docs{Enter}');
+      expect(assistant.current!.ask).toHaveBeenCalledWith('tidy the docs', expect.anything());
+      expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    });
+
+    it('leaves crumbs and the search button their own clicks', async () => {
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByText('Acme'));
+      expect(screen.queryByTestId('top-nav-ask-input')).toBeNull();
+      await user.click(screen.getByTestId('top-nav-search-open'));
+      expect(screen.queryByTestId('top-nav-ask-input')).toBeNull();
+      expect(screen.getByTestId('top-nav-search-input')).toBeTruthy();
+    });
+
+    it('gives the address back on Escape without asking', async () => {
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      await user.type(screen.getByTestId('top-nav-ask-input'), 'never mind{Escape}');
+      expect(assistant.current!.ask).not.toHaveBeenCalled();
+      expect(screen.getByTestId('top-nav-address')).toBeTruthy();
+    });
+
+    it('is not offered where there is no assistant', async () => {
+      assistant.current = null;
+      const user = userEvent.setup();
+      renderBar();
+
+      await user.click(screen.getByTestId('top-nav-address'));
+      expect(screen.queryByTestId('top-nav-ask-input')).toBeNull();
+    });
   });
 });

@@ -59,6 +59,13 @@ class ConnectionState(StrEnum):
     DISCONNECTED = "disconnected"
     NEEDS_REAUTH = "needs_reauth"
     UNKNOWN = "unknown"
+    # A harness whose CLI is not on this machine. Reported, not hidden: a missing CLI is
+    # the answer to "why does nothing fund this harness", and dropping the row hid it.
+    NOT_INSTALLED = "not_installed"
+    #: A sign-in is in flight (a device login, a hub login).
+    SIGNING_IN = "signing_in"
+    #: There is no login to have: a harness with no account of its own (it spends a key).
+    N_A = "n_a"
 
 
 class ConnectionSpec(DataSpec):

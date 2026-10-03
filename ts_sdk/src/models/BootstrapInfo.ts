@@ -86,19 +86,6 @@ export interface ScanInfo {
   stale: boolean;
 }
 
-export interface HarnessBootstrapItem {
-  kind: string;
-  name: string;
-  installed: boolean;
-  homepage_url?: string | null;
-  is_default: boolean;
-}
-
-export interface HarnessBootstrapState {
-  show_harness_select: boolean;
-  harnesses: HarnessBootstrapItem[];
-}
-
 /**
  * One-time, UI-facing notice produced during bootstrap (e.g. the per-instance
  * secrets file was reset after its keychain encryption key was lost). Surfaced
@@ -158,7 +145,6 @@ export interface BootstrapInfo {
    */
   runtime?: RuntimeInfo;
   desktop_info?: LmInfo;
-  harness_state?: HarnessBootstrapState;
   /** All capabilities + how to access each, grouped by intent (see CapabilityManager). */
   capabilities_summary?: CapabilitiesSummary;
   sniffer_hook?: IAgentHook;
@@ -170,6 +156,11 @@ export interface BootstrapInfo {
   /** Locales the app ships translations for (backend is the source of truth).
    *  The UI derives its picker from this — it does not hardcode a list. */
   supported_locales?: SupportedLocale[];
+  /** Languages the OS user reads or types on the backend's machine — display
+   *  languages AND keyboard layouts (flow_sdk/i18n/os_languages.py), as BCP-47
+   *  tags. Unioned with `navigator.languages`; the footer's quick language
+   *  switch shows only when that union shares 2+ with `supported_locales`. */
+  user_languages?: string[];
   /** Target languages for *document* translation (backend is the source of
    *  truth: flow_sdk/i18n/translation_targets.py). DISTINCT from
    *  `supported_locales` (the UI-catalog set) — this is the broad set the
@@ -197,7 +188,6 @@ export interface DeferredInfo {
     cloud_login_available?: boolean | null;
   } | null;
   scan_info?: ScanInfo | null;
-  harness_state?: HarnessBootstrapState | null;
   capabilities_summary?: CapabilitiesSummary | null;
   sandbox_available?: boolean | null;
   sandbox_compute_node?: IComputeNode | null;

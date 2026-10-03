@@ -71,14 +71,18 @@ Three ship out of the box:
 
 | type                 | config                                   | where a value lives                                                                                                                                           |
 | -------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `env_file`           | `env_file_path` — the file to read/write | that file, one `NAME=value` line per variable                                                                                                                 |
+| `env_file`           | `env_file_path` — the file to read/write; `fallback_paths` — read-only files tried, in order, for a name it lacks | that file, one `NAME=value` line per variable                                                                                                                 |
 | `vault`              | `prefix`, `entries` — the entry names    | the per-instance encrypted store, `<prefix><NAME>` or `entries`                                                                                               |
 | `gcp_secret_manager` | `gcp_project`, `prefix`                  | the secret `<prefix><NAME>` in that GCP project, latest version — read with a bound `google` connection ([§6](#6-connections--the-same-pattern-for-accounts)) |
 
 `SecretStore.get()` with no arguments is `env_file` on
 `project.env_file_path()` for `await context.current_project()` — the
-`.env.local` of the working directory's project. With no current project it
-raises `NoCurrentProject`: there is no default file to guess.
+`.env.local` at the root of the working directory's project — reading after it
+the env files the project declares (`env_files` in
+`agentic-assets/project_manifest/project_manifest.json`, project-relative, e.g.
+`backend/.env`; set from the Credentials screen's `+`). A declared file is read,
+never written or forgotten from. With no current project it raises
+`NoCurrentProject`: there is no default file to guess.
 
 The config says **where**; a store never infers anything from a scope or an
 environment. Whoever asks for a store resolves the path or prefix and hands it
@@ -190,7 +194,7 @@ variable and a deployment become a config:
 
 | store (no config)       | config it passes to `SecretStore.get`                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `env_file`              | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`                                  |
+| `env_file`              | `env_file_path`: the scope root's `.env.local` (`development`) or `.env.<env>.local`; in `development`, `fallback_paths`: the project's declared `env_files` |
 | `vault`                 | `prefix`: `credential.project.<pid>.` / `credential.user.`, with `<env>.` after `credential.` for a named environment |
 | any, + `lm_provider`    | `entries`: the one `lm_api.<provider>` entry, whatever the variable is called                                         |
 

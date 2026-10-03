@@ -28,6 +28,8 @@ import { createOverlayStore } from '@src/store/create-overlay-store';
 export interface HarnessLoginPayload {
   /** Capability kind to open directly, e.g. `harness.claude.cli`. Omit for the list. */
   kind?: string;
+  /** The opener has just refreshed status (the startup gate), so opening need not again. */
+  fresh?: boolean;
 }
 
 const store = createOverlayStore<HarnessLoginPayload>();

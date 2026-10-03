@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
   success: vi.fn(),
   warning: vi.fn(),
   status: vi.fn(),
+  refresh: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@src/notifications', () => ({
@@ -32,7 +33,14 @@ vi.mock('@src/notifications', () => ({
 }));
 vi.mock('@sdk/react/hooks', () => ({ useContext: () => ({ project: null }) }));
 vi.mock('@src/components/harness-login/harness-login-store', () => ({ openHarnessLoginModal: h.openLogin }));
-vi.mock('@sdk/react/hooks/useLazyAsset', () => ({ useLazyAsset: () => ({ data: h.status(), isLoading: false }) }));
+// Answers per asset: the page reads the status record (who is signed in to the hub) and the
+// funding picture (which source funds each harness) as two separate assets.
+vi.mock('@sdk/react/hooks/useLazyAsset', () => ({
+  useLazyAsset: (asset: string) => ({
+    data: asset === 'status' ? { harnesses: [], keys: [], hub: { login: 'signed_in', user_typeid: null } } : h.status(),
+    isLoading: false,
+  }),
+}));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: {}, currentDock: null }),
 }));
@@ -42,13 +50,13 @@ vi.mock('@sdk', async (importOriginal) => {
     ...actual,
     capabilityManager: { getSnapshot: () => ({ capability: null }), subscribe: h.subscribe },
     llmSourcesService: { testSource: h.testSource, select: h.select },
+    statusService: { refresh: h.refresh },
   };
 });
 
 import { LlmSourcesView } from '@src/components/llm-sources/LlmSourcesView';
 
 const CLAUDE = 'harness.claude.cli';
-const HARNESS = ['harness.claude.cli', 'harness.codex.cli', 'harness.copilot.cli', 'harness.opencode.cli'];
 const DEVICE_ID = 'llm_endpoint@device';
 const KEY_ID = 'llm_endpoint@key';
 const HUB_ID = 'llm_endpoint@hub';
@@ -65,6 +73,7 @@ function funding({ deviceEligible = true }: { deviceEligible?: boolean } = {}) {
           eligible: deviceEligible,
           auto: true,
           detail: 'signed in',
+          reason_code: deviceEligible ? '' : 'signed_out',
         },
         { endpoint_typeid: KEY_ID, name: 'openrouter key', rank: 10, eligible: true, auto: false },
         { endpoint_typeid: HUB_ID, name: 'Gadi +20', rank: 20, eligible: true, auto: false },
@@ -161,15 +170,6 @@ describe('the row follows a sign-in', () => {
     h.status.mockReturnValue(funding({ deviceEligible: false }));
   });
 
-  it('subscribes to capability news, so a completed login can flip Sign in to Use', () => {
-    // The reported symptom: sign in, succeed, and the row still offers Test and Sign in.
-    // `useRefreshLoginStates` is mount-only by design, so without this subscription the page
-    // keeps the snapshot it arrived with for as long as it stays open.
-    renderPage();
-
-    expect(h.subscribe).toHaveBeenCalled();
-  });
-
   it('shows Sign in while the login is not proven, and Use once it is', async () => {
     renderPage();
     await waitFor(() => expect(screen.getByTestId('llm-source-signin-claude')).toBeTruthy());
@@ -236,8 +236,7 @@ describe('choosing a device login proves it first', () => {
     screen.getByTestId('llm-source-use-claude-api_key').click();
 
     await waitFor(() => expect(h.select).toHaveBeenCalled());
-    // The arrival probe fires device checks on mount; what must not happen is a KEY probe,
-    // which is the one that spends.
+    // What must not happen is a KEY probe, which is the one that spends.
     expect(h.testSource).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'api_key' }));
   });
 });
@@ -317,74 +316,55 @@ describe('a failed verdict does not sit above a stale "signed in"', () => {
   });
 });
 
-describe('the arrival probe', () => {
+describe('the arrival refresh', () => {
   beforeEach(() => {
     cleanup();
     vi.clearAllMocks();
     h.status.mockReturnValue(funding());
+    h.refresh.mockResolvedValue(undefined);
     h.testSource.mockResolvedValue({ ok: true, status: 200, model: '', latency_ms: 3, message: '' });
   });
 
-  it('checks every device login without being asked', async () => {
+  it('re-checks every harness without being asked', async () => {
     // Reported: signed out of the CLI in a terminal, came to this page, and the row still
-    // claimed to be signed in until Test was pressed by hand. A vendor `auth-status` is a
-    // local subprocess against a subscription the user already pays for, so it is free to run
-    // on arrival — and running it is the only way the page can be right about a login that
-    // ended somewhere else.
+    // claimed to be signed in until Test was pressed by hand. The status layer's refresh
+    // re-discovers the CLIs and re-probes their logins (local, free), and its push re-reads the
+    // funding picture — so a sign-in made from the modal flips the row with nothing here
+    // following it.
     renderPage();
 
-    await waitFor(() => expect(h.testSource).toHaveBeenCalledWith(expect.objectContaining({ kind: 'device' })));
+    await waitFor(() => expect(h.refresh).toHaveBeenCalledTimes(1));
   });
 
-  it('never probes a key or a hub endpoint on its own', async () => {
-    // Those two SPEND on every press. Arriving at a page must not cost money.
+  it('never tests a source on its own', async () => {
+    // A key or hub test SPENDS on every press. Arriving at a page must not cost money, and a
+    // login re-check is the refresh's job, not a per-row test's.
     renderPage();
 
-    await waitFor(() => expect(h.testSource).toHaveBeenCalled());
-    expect(h.testSource).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'api_key' }));
-    expect(h.testSource).not.toHaveBeenCalledWith(expect.objectContaining({ kind: 'hub' }));
+    await waitFor(() => expect(h.refresh).toHaveBeenCalled());
+    expect(h.testSource).not.toHaveBeenCalled();
   });
 
-  it('does not force, so a refusal the harness made stands', async () => {
-    // `force` drops a latched refusal. The harness saying "not logged in" mid-turn is stronger
-    // evidence than `auth-status`, which proves a credential exists and never that it works —
-    // so clearing that automatically is how a signed-out harness reads as signed in again.
+  it('still renders when the refresh fails', async () => {
+    h.refresh.mockRejectedValue(new Error('probe timed out'));
     renderPage();
 
-    await waitFor(() => expect(h.testSource).toHaveBeenCalled());
-    for (const [arg] of h.testSource.mock.calls) expect(arg.force).toBeFalsy();
+    await waitFor(() => expect(h.refresh).toHaveBeenCalled());
+    expect(screen.getByTestId('llm-sources-view')).toBeTruthy();
   });
 
   it('forces when a person presses Test — that is the button that may', async () => {
     renderPage();
-    h.testSource.mockClear();
 
     screen.getByTestId('llm-source-test-claude-device-claude').click();
 
     await waitFor(() => expect(h.testSource).toHaveBeenCalledWith(expect.objectContaining({ force: true })));
   });
 
-  it('one wedged vendor CLI does not stop the others reporting', async () => {
-    // Carried over from the hook test this replaced. A per-harness catch, not one around the
-    // batch: three of four harnesses are usually not installed, and a missing or hanging
-    // binary is the ordinary case rather than the exception.
-    h.testSource.mockImplementation((s: { harness?: string }) =>
-      s.harness === HARNESS[0]
-        ? Promise.reject(new Error('probe timed out'))
-        : Promise.resolve({ ok: true, status: 200, model: '', latency_ms: 1, message: '' }),
-    );
-
-    renderPage();
-
-    await waitFor(() => expect(h.testSource.mock.calls.length).toBeGreaterThan(1));
-    // And the page still renders — a rejected probe is swallowed, not thrown.
-    expect(screen.getByTestId('llm-sources-view')).toBeTruthy();
-  });
-
   it('has no Re-check button left to press', () => {
     // It ran `authStatus`, which reports what FUNDS the harness — so on a signed-out row it
     // announced the hub endpoint, which is not what the button appeared to offer. The arrival
-    // probe answers its case unasked, and Test answers it on demand.
+    // refresh answers its case unasked, and Test answers it on demand.
     h.status.mockReturnValue(funding({ deviceEligible: false }));
     renderPage();
 

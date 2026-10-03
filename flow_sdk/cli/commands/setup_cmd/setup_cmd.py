@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import contextlib
 from enum import Enum
 
 import requests
@@ -133,6 +134,17 @@ def run_setup(agent_name, context):
     else:
         print(f"⚠ API server responded with status: {status_code} (expected 200)")
 
-    print("\nSetup complete!")
+    if not success:
+        # "Setup complete!" over a server that did not answer was the one line a person
+        # believed — and nothing behind it could run a turn.
+        print("\nSetup did not complete: the Flowpad server is not answering.")
+        return result
+    # What is on this box now — installed, signed in, stored keys — straight from the status
+    # record (`flow status`), so the last thing setup prints is a fact, not a promise.
+    from flow_sdk.cli.commands import status_cmd  # noqa: PLC0415
+
+    with contextlib.suppress(Exception, SystemExit):
+        print("\n" + status_cmd._render(status_cmd._fetch(False)))
+    print("\nSetup complete. `flow llm list` shows what funds each harness.")
 
     return result

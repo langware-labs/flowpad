@@ -52,7 +52,6 @@ side-effect · ❌ none.
 | `restart-info` | ✅ test_agentic_process_restart_info | ✅ test_agentic_process_actions (no baseline) | ❌ | ◐ CommandStatusViewer |
 | `cmd-line` | ✅ test_serialize_no_transcript_parse | ✅ test_agentic_process_actions (returns key) | ❌ | ❌ |
 | `status` | ✅ test_agentic_process_status | ✅ test_agentic_process_status_api | ◐ | ✅ WorkerStatusChip, process-status-line |
-| `set-graph-context` | ❌ | ✅L test_context_process | ❌ | ❌ |
 | `set-display-context` / `display-context` | ✅ test_display_context, test_display_context_hook_install | ✅ test_display_context | ✅ mcp-app-preview-page-sdk, html-preview-served-url | ✅ e2e page-sdk-bridge |
 | `add-dir` / `remove-dir` | ✅ via get_assets + restart_snapshot | ✅ test_agentic_process_actions (add then remove) | ❌ | ❌ |
 | `open` | ◐ lifecycle/latched_start_failure | ✅ test_pty_process_e2e | ✅ chat_ui_vs_pty_content, pty_test | ✅ new-agentic-tab-loader-regression |
@@ -68,7 +67,7 @@ null-on-404/workflow-run short-circuit). Still uncovered: `wait` /
 `waitForComplete` / `waitForIdle` (only `waitForReady`, long-only).
 
 **Long-ONLY actions** (no fast-suite coverage on ANY front): `load-embedded-subagent`,
-`attach-`/`detach-embedded-asset`, `set-graph-context`. (Previously also
+`attach-`/`detach-embedded-asset`. (Previously also
 switch-mode/fork/set-visible/input/submit/execute/prompt/get-plan — all now have
 fast api coverage via `test_agentic_process_actions.py` /
 `test_agentic_process_execute.py` / `test_agentic_process_mid_turn_guard.py`.)
@@ -193,7 +192,7 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 3. **Long-only CLI matrix beyond claude** — codex/copilot real-CLI is now
    `test_cli_driver_binary_smoke.py` but stays DEEP_TESTING + binary-gated; a
    missing binary still leaves zero signal.
-4. **`load-embedded-subagent`, `attach-`/`detach-embedded-asset`, `set-graph-context`** —
+4. **`load-embedded-subagent`, `attach-`/`detach-embedded-asset`** —
    fast suites still blind (long-only).
 
 ### Now covered (was zero-coverage, high-risk)
@@ -216,7 +215,7 @@ Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/upda
 
 ### Long-test-only coverage (fast suites still blind)
 
-`load-embedded-subagent`, embedded asset attach/detach, `set-graph-context`,
+`load-embedded-subagent`, embedded asset attach/detach,
 chat⇄terminal switching under load. `execute`/`prompt`/queue-drain now have fast
 api coverage in addition to the long suites.
 

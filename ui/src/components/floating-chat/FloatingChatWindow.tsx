@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { cn } from '@src/lib/utils';
 import { topmost } from '@src/lib/topmost';
+import { GENIE_DURATION_MS, GENIE_EASING, GENIE_SMALL_OPACITY, genieTransform } from '@src/lib/minimize-to-element';
 import { useFloatingChat } from './FloatingChatContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
@@ -26,7 +27,6 @@ const MIN_H = 420;
 const DEFAULT_W = 860;
 const DEFAULT_H = 660;
 const MARGIN = 16;
-const ANIM_MS = 240;
 
 type Phase = 'closed' | 'opening' | 'open' | 'closing';
 
@@ -222,19 +222,15 @@ function FloatingChatWindowInner() {
   // rect and ends at identity (the centered window position).
   const isAtRest = phase === 'open';
   const buttonRect = triggerRect;
-  let startTransform = 'scale(0.1)';
-  if (buttonRect) {
-    const buttonCx = buttonRect.x + buttonRect.width / 2;
-    const buttonCy = buttonRect.y + buttonRect.height / 2;
-    const winCx = bounds.x + bounds.width / 2;
-    const winCy = bounds.y + bounds.height / 2;
-    const dx = buttonCx - winCx;
-    const dy = buttonCy - winCy;
-    const sx = buttonRect.width / Math.max(1, bounds.width);
-    const sy = buttonRect.height / Math.max(1, bounds.height);
-    const s = Math.max(0.05, Math.min(sx, sy));
-    startTransform = `translate(${dx}px, ${dy}px) scale(${s})`;
-  }
+  // Maximize-from: the window grows out of the button the way a minimize
+  // flies into it — the same flight, timing and small-end opacity, played
+  // backwards. Without a rect (opened from code) it grows from its own center.
+  const startTransform = buttonRect
+    ? genieTransform(
+        { left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height },
+        { left: buttonRect.x, top: buttonRect.y, width: buttonRect.width, height: buttonRect.height },
+      )
+    : 'scale(0.1)';
 
   return createPortal(
     <div
@@ -259,8 +255,8 @@ function FloatingChatWindowInner() {
         resize: isAtRest ? 'both' : 'none',
         transformOrigin: 'center center',
         transform: isAtRest ? 'translate(0, 0) scale(1)' : startTransform,
-        opacity: isAtRest ? 1 : 0,
-        transition: `transform ${ANIM_MS}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${ANIM_MS}ms ease`,
+        opacity: isAtRest ? 1 : GENIE_SMALL_OPACITY,
+        transition: `transform ${GENIE_DURATION_MS}ms ${GENIE_EASING}, opacity ${GENIE_DURATION_MS}ms ${GENIE_EASING}`,
         willChange: 'transform, opacity',
         // Keep the node mounted across close/open so the inner panel's session
         // state survives. `display: none` removes it from the layout cleanly

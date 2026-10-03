@@ -4,6 +4,7 @@ import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
+import { TaskItIcon, taskItHint } from './task-it';
 import { MessageChips } from './chips/MessageChips';
 import { MarkdownView } from '@src/components/markdown-view';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
@@ -35,6 +36,9 @@ interface MessageBubbleProps {
    *  parent's share dialog to pick the target conversation; the backend then
    *  clones the message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
+  /** "Task it": make this message a task — or, once it is one (`open`), open it. The parent
+   *  decides which; the bubble only draws the control. */
+  taskIt?: { onClick: () => void; open: boolean };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -177,6 +181,7 @@ export function MessageBubble({
   onEditName,
   onDeleteMessage,
   onForwardMessage,
+  taskIt,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -318,6 +323,17 @@ export function MessageBubble({
               data-testid="message-forward"
             >
               <Forward className="h-2.5 w-2.5" />
+            </button>
+          )}
+          {taskIt && !editing && (
+            <button
+              onClick={taskIt.onClick}
+              className={`transition-colors hover:text-foreground ${taskIt.open ? 'text-violet-500' : 'text-muted-foreground/50'}`}
+              title={taskIt.open ? t`Open task` : taskItHint()}
+              aria-label={taskIt.open ? t`Open task` : t`Task it`}
+              data-testid="message-task-it"
+            >
+              <TaskItIcon className="h-2.5 w-2.5" />
             </button>
           )}
           {/* Channel mark — nothing at all when the message is ours

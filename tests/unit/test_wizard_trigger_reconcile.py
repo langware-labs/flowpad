@@ -36,6 +36,18 @@ from tests.pytest_plugin import async_context
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
+
+@pytest.fixture(autouse=True)
+def _no_settle_after_install(monkeypatch):
+    """These pin the FIRST settle and the run around it. The second -- after the steps have
+    installed the default harness -- refreshes real status and is pinned in `test_wizard_start`."""
+    from flow_sdk.core.wizard import start as wizard_start
+
+    async def keep(before):
+        return before
+
+    monkeypatch.setattr(wizard_start, "_settle_after_install", keep)
+
 DOC = {
     "name": "Developer toolchain",
     "steps": [

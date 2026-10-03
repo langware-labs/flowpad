@@ -360,7 +360,7 @@ def _assert_two_real_turns(transcript: dict, session_id: str) -> None:
 
 @pytest.mark.parametrize("worker_type", ["claude_code", "codex", "copilot"])
 @pytest.mark.parametrize("pty_mode", [True, False], ids=["pty", "headless"])
-async def test_prompt_streams_in_both_transports(hub_and_node, tmp_path, worker_type, pty_mode):
+async def test_prompt_streams_in_both_transports(hub_and_node, run_workdir, worker_type, pty_mode):
     """The SAME create→prompt→flow-frame flow works in PTY and headless, per vendor.
 
     Mode-agnostic assertion (flow-* frames, not terminal bytes) so it holds for
@@ -372,7 +372,7 @@ async def test_prompt_streams_in_both_transports(hub_and_node, tmp_path, worker_
     proc = await _create(
         hub_client,
         cnid,
-        str(tmp_path),
+        str(run_workdir),
         worker_type,
         pty_mode,
         created_process_ids,
@@ -392,7 +392,7 @@ async def test_prompt_streams_in_both_transports(hub_and_node, tmp_path, worker_
 
 @pytest.mark.parametrize("worker_type", ["claude_code", "codex", "copilot"])
 @pytest.mark.parametrize("pty_mode", [True, False], ids=["pty", "headless"])
-async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_type, pty_mode):
+async def test_multi_turn_resumes_same_session(hub_and_node, run_workdir, worker_type, pty_mode):
     """Two turns on one process stream in both modes, and the session_id is stable.
 
     This is where headless resume can regress (e.g. a vendor whose resume gate
@@ -405,7 +405,7 @@ async def test_multi_turn_resumes_same_session(hub_and_node, tmp_path, worker_ty
     proc = await _create(
         hub_client,
         cnid,
-        str(tmp_path),
+        str(run_workdir),
         worker_type,
         pty_mode,
         created_process_ids,

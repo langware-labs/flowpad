@@ -205,7 +205,7 @@ describe('flow show — agent-declared display focus reaches proc.onShow', () =>
    * lookup, no proposed_id), so it mints a FRESH uuid4 and forks a new entity
    * for the same path; the same-path duplicate sweep then reaps the old row.
    * Everything pinned to the first id — `context_data.last_shown`,
-   * `display_stack`, auto-bookmarks — is left pointing at a dead entity.
+   * `display_stack`, any favorite of it — is left pointing at a dead entity.
    *
    * No Claude worker here: the LLM is not part of the mechanism. This drives
    * the same real server calls the worker's CLI makes — the `show` action, a

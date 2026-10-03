@@ -27,6 +27,9 @@ class WSMessageType(Enum):
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
     PRIVACY_MODE_MSG = "privacy_mode_msg"
     TOPLOG_STATE_MSG = "toplog_state_msg"
+    # A status fact changed (harness install/login, a stored key, the hub login): re-read
+    # ``status`` and ``funding``. A signal, not a payload -- the GET stays the one reader.
+    STATUS_CHANGED_MSG = "status_changed_msg"
     # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
     TAG_MSG = "tag_msg"
 

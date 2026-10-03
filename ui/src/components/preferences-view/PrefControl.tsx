@@ -8,6 +8,7 @@ import { Textarea } from '@src/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Switch } from '@src/components/ui/switch';
 import { NOTIFICATION_SOUNDS } from '@src/assets/sounds/notification/manifest';
+import { setLocale, useLocale, useSupportedLocales } from '@src/contexts/locale-context';
 import { Play } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -50,6 +51,7 @@ export function PrefControl({ info }: { info: PrefInfo }) {
       return row(<Switch id={id} checked={value === true} onCheckedChange={(checked) => setValue(checked === true)} />);
 
     case PrefDataType.STRING: {
+      if (info.optionsSource === 'locales') return row(<LocaleSelectControl id={id} />);
       // dataType STRING ⇒ the stored value is a string (coerced by the store).
       const strValue = (value ?? '') as string;
       const options = resolveOptions(info);
@@ -79,6 +81,21 @@ export function PrefControl({ info }: { info: PrefInfo }) {
     default:
       return null;
   }
+}
+
+/**
+ * Every supported locale, whatever the user's OS languages. Goes through
+ * `setLocale` — not a bare preference write — so a choice made here records
+ * onto the current project and the recents exactly like the footer switch;
+ * a bare write would be undone by the next project's own language.
+ */
+function LocaleSelectControl({ id }: { id: string }) {
+  const active = useLocale();
+  const options = useSupportedLocales().map((l) => ({
+    value: l.code,
+    label: l.nativeName === l.englishName ? l.nativeName : `${l.nativeName} · ${l.englishName}`,
+  }));
+  return <SelectControl id={id} options={options} value={active} onChange={(code) => void setLocale(code)} />;
 }
 
 /** Select with an optional per-option audio preview button. Sits in the right column. */

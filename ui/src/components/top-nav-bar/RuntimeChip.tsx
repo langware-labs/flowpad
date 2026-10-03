@@ -67,11 +67,13 @@ function RuntimeIcon({ kind, className }: { kind: RuntimeKind; className: string
 
 /** One pill segment: tinted on hover so it reads as pressable. */
 const SEGMENT = 'inline-flex cursor-pointer items-center bg-inherit transition-colors hover:bg-black/20';
-/** The raised segment — the project home button — on its own darker surface so
- *  it separates from the runtime tint around it. A black overlay, not a fixed
- *  color, so it stays legible on every tint, light or dark. */
+/** The raised segment — the project home button — drawn as a key cap inside the
+ *  runtime tint so it reads as pressable: its own darker surface, a crisp rim,
+ *  a top highlight + drop shadow (raised), and a press-down on click. Overlays
+ *  and `currentColor`, never a fixed color, so it stays legible on every tint —
+ *  the hub chip flips to a light tint with dark text in dark mode. */
 const RAISED_SEGMENT =
-  'inline-flex cursor-pointer items-center rounded-full border border-white/30 bg-black/25 transition-colors hover:bg-black/40';
+  'inline-flex cursor-pointer items-center gap-1 rounded-full border border-[color-mix(in_srgb,currentColor_55%,transparent)] bg-black/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.3),0_1px_2px_rgba(0,0,0,0.45)] transition-[background-color,border-color,transform] hover:border-current hover:bg-black/45 active:translate-y-px active:shadow-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current';
 /** One header chip in the hover card. */
 const HEADER_CHIP = 'inline-flex h-6 items-center gap-1 rounded-full px-2 text-[11px]';
 
@@ -162,6 +164,11 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                     className={cn(RAISED_SEGMENT, 'my-0.5 ml-0.5 px-2')}
                   >
                     <ProjectIcon className="h-4 w-4 shrink-0" />
+                    {/* A word, not just a glyph: an icon alone on a tinted pill
+                        reads as decoration. Narrow windows drop it, like the name. */}
+                    <span className="hidden sm:inline">
+                      <Trans>Home</Trans>
+                    </span>
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-xs">

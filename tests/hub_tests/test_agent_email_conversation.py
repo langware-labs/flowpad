@@ -389,6 +389,10 @@ async def _sync_until_message(
                 return item
 
 
+# Two real internet email deliveries (Gmail → mailbox, reply → Gmail) plus an LLM turn:
+# measured ~40s end to end on SentFromAI. Cap raised 30s → 50s with the user's explicit
+# approval (2026-10-02). Do not increase further without approval.
+@pytest.mark.timeout(50)
 async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
     """The public SDK snippet: Gmail → Agent mailbox → real Agent → Gmail."""
     gmail_address = str(os.environ.get("GMAIL_ADDRESS") or "").strip().lower()
@@ -419,10 +423,12 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
         # the same shape docs/snippets/agent-email.md advertises.
         with mailbox_capability_required():
             mailbox = await pirate.allocate_mailbox(allowed_senders=[gmail.account_key])
-        if mailbox.provider != "agentmail":
+        # Any real provider (agentmail, sentfrom) gives a public address Gmail can
+        # reach; only the in-process `local` mailbox cannot receive real mail.
+        if mailbox.provider == "local":
             pytest.skip(
-                "Gmail delivery requires the local Hub to run with "
-                "AGENT_MAILBOX_PROVIDER=agentmail"
+                "Gmail delivery needs a real mailbox provider on the local Hub "
+                "(AGENT_MAILBOX_PROVIDER=agentmail or sentfrom), not `local`"
             )
 
         agent_source = await DataSource.find_for_account("cloud_email", "agent_id", pirate.id)
@@ -446,9 +452,11 @@ async def test_gmail_emails_a_pirate_agent_and_receives_its_reply(agent_server):
         )
         reply = await gmail.expect_reply(sent)
 
-        from flow_sdk.ingest.legacy_lift import origin_of
-
-        stored_reply = await SourceItem.find_existing(gmail.id, origin_of(gmail, reply))
+        # The reply names its own identity: Gmail scopes origins under the mailbox
+        # (`<account>/INBOX`), so re-deriving one from the row's account alone
+        # (`legacy_lift.origin_of`) names a row that was never written.
+        assert reply.origin is not None, "Gmail reply carries no origin"
+        stored_reply = await SourceItem.find_existing(str(gmail.id), reply.origin)
         assert stored_reply is not None, "Gmail reply was returned but not ingested"
         assert stored_reply.provider == "gmail"
         assert reply.author_external_id.lower() == pirate.mailbox.address.lower()

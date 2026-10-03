@@ -39,18 +39,18 @@ STATUS = {
             {"endpoint_typeid": EP, "name": "team pool", "rank": 0, "eligible": True, "auto": True},
         ],
     },
-    # ``unverified: False`` because this fixture is a HEALTHY box answered by a CURRENT
-    # backend — the flag is part of every verdict such a backend publishes. Leaving it out
-    # would quietly make the whole fixture test the older-backend path instead.
     "resolved": {
-        "harness.claude.cli": {"endpoint_typeid": EP, "origin": "user", "unverified": False},
-        "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user", "unverified": False},
+        "harness.claude.cli": {"endpoint_typeid": EP, "origin": "user"},
+        "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user"},
     },
     "endpoints": {
         EP: {"kind": "hub", "provider": "openrouter"},
         DEVICE: {"kind": "device", "provider": ""},
     },
+    # The backend's set-up verdict (`DefaultFundingSpec`): claude, the default, runs on the pool.
+    "default": {"kind": "harness.claude.cli", "installed": True, "source": {"endpoint_typeid": EP}, "reason": ""},
 }
+
 
 
 # ------------------------------------------------------------------ the list
@@ -608,28 +608,10 @@ def test_auto_reports_the_resolvers_winner_not_an_auto_eligible_row():
     assert (row.name, row.typeid) == ("team pool", EP)
 
 
-def test_auto_prefers_the_default_vendors_source():
-    """Any funded row is a truthful answer to "is this box funded", but a person at a prompt is
-    usually about to run THEIR harness, and naming a source that funds a different one reads as
-    a wrong answer."""
-    status = {
-        **STATUS,
-        "resolved": {
-            # Rank order would put the shared pool first; only claude's own row funds claude.
-            # Both verified — this test is about WHICH funded row is named, not about whether
-            # either is usable.
-            "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user", "unverified": False},
-            "harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "user", "unverified": False},
-        },
-    }
-
-    assert llm_cmd._auto_source(status).typeid == DEVICE
-
-
 def test_auto_finds_nothing_when_nothing_resolves():
     """The whole trigger for opening the chooser. ``sources`` is still full here — offers are
     not funding, and answering from them would leave the box unable to issue a call."""
-    assert llm_cmd._auto_source({**STATUS, "resolved": {}}) is None
+    assert llm_cmd._auto_source({**STATUS, "resolved": {}, "default": {"source": None}}) is None
     assert llm_cmd._auto_source({}) is None
 
 
@@ -674,7 +656,7 @@ def test_auto_never_opens_a_browser_when_the_box_is_already_funded(monkeypatch):
 def test_auto_with_no_browser_refuses_and_hands_back_the_chooser_url(monkeypatch):
     """An agent that cannot open a window can still hand the URL to the person who can, so the
     refusal carries it rather than only saying no."""
-    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}})
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}, "default": {"source": None}})
     monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
     monkeypatch.setattr(llm_cmd, "_backend_port", lambda: None)
 
@@ -714,7 +696,7 @@ def test_a_machine_with_no_browser_is_told_the_url_not_that_one_opened(monkeypat
         async def __anext__(self):
             raise StopAsyncIteration
 
-    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}})
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {**STATUS, "resolved": {}, "default": {"source": None}})
     monkeypatch.setattr("webbrowser.open", lambda _url: False)
     monkeypatch.setattr("websockets.connect", lambda *a, **k: _Socket())
     monkeypatch.setattr(typer, "echo", lambda msg="", **k: sent.append(str(msg)))
@@ -726,79 +708,55 @@ def test_a_machine_with_no_browser_is_told_the_url_not_that_one_opened(monkeypat
     assert "Opened http" not in said
 
 
-# ------------------------------------------- evidence, not a presumed device login
+# ------------------------------------------- a resolved source is evidence
 
 
-def test_a_presumed_device_login_is_not_evidence_the_box_can_issue_a_call():
-    """The CLI reads the backend's ``unverified`` verdict; it does not re-derive it. WHY a
-    device login is unverified is pinned in ``tests/unit/test_llm_source_resolution.py``,
-    beside ``Candidate.unverified`` — one rule, one owner, one test."""
+def test_a_resolved_source_is_evidence():
+    """The resolver funds only a login a probe confirmed -- never a presumed one -- so a
+    resolved verdict IS evidence the box can issue a call."""
     status = {
         "sources": {"harness.codex.cli": [{"endpoint_typeid": DEVICE, "name": "codex device login", "rank": 0}]},
-        "resolved": {"harness.codex.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": True}},
+        "resolved": {"harness.codex.cli": {"endpoint_typeid": DEVICE, "origin": "default"}},
         "endpoints": {DEVICE: {"kind": "device", "provider": ""}},
-    }
-
-    assert llm_cmd._auto_source(status) is None
-
-
-def test_a_verified_source_is_evidence():
-    status = {
-        "sources": {"harness.codex.cli": [{"endpoint_typeid": DEVICE, "name": "codex device login", "rank": 0}]},
-        "resolved": {"harness.codex.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": False}},
-        "endpoints": {DEVICE: {"kind": "device", "provider": ""}},
+        "default": {"kind": "harness.codex.cli", "installed": True, "source": {"endpoint_typeid": DEVICE}},
     }
 
     assert llm_cmd._auto_source(status).name == "codex device login"
 
 
-def test_a_verdict_with_no_flag_is_not_evidence():
-    """A missing ``unverified`` means the backend is older than this CLI — which is the NORMAL
-    state right after an upgrade, because a server keeps the code it loaded at start until
-    something restarts it. Reading that silence as "verified" told a box with codex not
-    installed at all that `codex device login funds codex`; the user finds out when a call
-    fails. Failing safe costs a chooser nobody strictly needed."""
-    older = {
-        **STATUS,
-        "resolved": {
-            kind: {k: v for k, v in (pick or {}).items() if k != "unverified"}
-            for kind, pick in STATUS["resolved"].items()
-        },
-    }
-
-    assert llm_cmd._auto_source(older) is None
-
-
-def test_auto_probes_before_sending_anyone_to_a_browser(monkeypatch):
-    """A device login is only ``cached`` once something probed it, and with NO backend nothing
-    ever has — so requiring evidence alone would send a perfectly good box to the chooser every
-    time. Ask first; a browser is far more expensive than a local subprocess."""
-    unproven = {
+def test_auto_checks_unchecked_logins_before_sending_anyone_to_a_browser(monkeypatch):
+    """With NO backend nothing has ever probed a login, and an unchecked login funds nothing --
+    so `auto` asks the status layer to check (a local probe) before opening a browser."""
+    unchecked = {
         "sources": {
             "harness.claude.cli": [
-                {"endpoint_typeid": DEVICE, "name": "claude device login", "rank": 0, "unverified": True},
+                {
+                    "endpoint_typeid": DEVICE,
+                    "name": "claude device login",
+                    "rank": 0,
+                    "reason": "claude sign-in has not been checked",
+                    "reason_code": "login_not_checked",
+                },
             ]
         },
-        "resolved": {"harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": True}},
+        "resolved": {"harness.claude.cli": None},
         "endpoints": {DEVICE: {"kind": "device", "provider": ""}},
     }
-    probed = {
-        **unproven,
-        "resolved": {
-            "harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": False},
-        },
-    }
-    calls: list[str] = []
-    seq = [unproven, probed]
+    pick = {"endpoint_typeid": DEVICE, "origin": "default"}
+    checked = {**unchecked, "resolved": {"harness.claude.cli": pick}, "default": {"source": pick}}
+    refreshed: list = []
+
+    from flow_sdk.cli.commands import status_cmd
 
     monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
-    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: seq[min(len(calls), 1)])
-    monkeypatch.setattr(llm_cmd, "_op", lambda op, payload=None: calls.append(op) or {})
-    monkeypatch.setattr(llm_cmd, "_serve_chooser_here", lambda: pytest.fail("probed box must not open a browser"))
+    monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: checked if refreshed else unchecked)
+    monkeypatch.setattr(status_cmd, "_fetch", lambda refresh, kinds=None: refreshed.append((refresh, kinds)) or {})
+    monkeypatch.setattr(llm_cmd, "_serve_chooser_here", lambda: pytest.fail("a checked box must not open a browser"))
 
     row = llm_cmd._resolve_or_choose()
 
-    assert calls == ["test_source"], "the un-probed device login was never asked"
+    # Only the harness nobody had asked about is re-probed.
+    assert refreshed == [(True, ["harness.claude.cli"])], "the login was never checked"
     assert row.name == "claude device login"
 
 
@@ -861,63 +819,24 @@ def test_no_listening_tab_falls_back_to_a_browser(monkeypatch):
 KEY = "llm_endpoint:key-openrouter"
 
 
-def _one(kind: str, *, unverified: bool | None, typeid: str = DEVICE, harness: str = "claude") -> dict:
-    """A status carrying exactly one resolved source of *kind*.
-
-    ``unverified=None`` omits the flag entirely — the shape an older backend sends.
-    """
+def _one(kind: str, *, typeid: str = DEVICE, harness: str = "claude") -> dict:
+    """A status carrying exactly one resolved source of *kind*."""
     pick: dict = {"endpoint_typeid": typeid, "origin": "default"}
-    if unverified is not None:
-        pick["unverified"] = unverified
     return {
         "sources": {f"harness.{harness}.cli": [{"endpoint_typeid": typeid, "name": "the source", "rank": 0}]},
         "resolved": {f"harness.{harness}.cli": pick},
         "endpoints": {typeid: {"kind": kind, "provider": "openrouter" if kind == "api_key" else ""}},
+        "default": {"kind": f"harness.{harness}.cli", "installed": True, "source": pick},
     }
 
 
-@pytest.mark.parametrize(
-    "kind,unverified,expected",
-    [
-        # Verified: every kind of source is a real answer. A hub endpoint is the FlowPad tile's
-        # own outcome, so it failing here would break the headline path.
-        ("hub", False, "the source"),
-        ("device", False, "the source"),
-        ("api_key", False, "the source"),
-        # Unverified: the backend says it cannot vouch for this, whatever kind it is.
-        ("hub", True, None),
-        ("device", True, None),
-        ("api_key", True, None),
-        # No flag at all — an older backend. Fails SAFE: silence is not a yes. Getting this
-        # wrong told a box with codex not installed that `codex device login funds codex`.
-        ("hub", None, None),
-        ("device", None, None),
-        ("api_key", None, None),
-    ],
-)
-def test_auto_answers_each_kind_and_verdict(kind, unverified, expected):
-    row = llm_cmd._auto_source(_one(kind, unverified=unverified))
+@pytest.mark.parametrize("kind", ["hub", "device", "api_key"])
+def test_auto_answers_each_kind(kind):
+    """Every kind of resolved source is a real answer -- a hub endpoint is the FlowPad tile's
+    own outcome, so it failing here would break the headline path."""
+    row = llm_cmd._auto_source(_one(kind))
 
-    assert (row.name if row else None) == expected
-
-
-def test_auto_picks_the_verified_source_over_an_unverified_one():
-    """The common shape on a real box: several offers, only some of them provable."""
-    status = {
-        "sources": {
-            "harness.claude.cli": [{"endpoint_typeid": DEVICE, "name": "claude device login", "rank": 0}],
-            "harness.codex.cli": [{"endpoint_typeid": EP, "name": "team pool", "rank": 5}],
-        },
-        "resolved": {
-            "harness.claude.cli": {"endpoint_typeid": DEVICE, "origin": "default", "unverified": True},
-            "harness.codex.cli": {"endpoint_typeid": EP, "origin": "user", "unverified": False},
-        },
-        "endpoints": {DEVICE: {"kind": "device", "provider": ""}, EP: {"kind": "hub", "provider": "openrouter"}},
-    }
-
-    row = llm_cmd._auto_source(status)
-
-    assert row is not None and row.typeid == EP, "an unverified row outranked a provable one"
+    assert (row.name if row else None) == "the source"
 
 
 def test_auto_ignores_a_verdict_naming_a_source_the_listing_never_sent():
@@ -925,25 +844,12 @@ def test_auto_ignores_a_verdict_naming_a_source_the_listing_never_sent():
     report — inventing one would put a name in front of the user that no listing backs."""
     status = {
         "sources": {},
-        "resolved": {"harness.claude.cli": {"endpoint_typeid": "llm_endpoint:ghost", "unverified": False}},
+        "resolved": {"harness.claude.cli": {"endpoint_typeid": "llm_endpoint:ghost"}},
         "endpoints": {},
+        "default": {"source": {"endpoint_typeid": "llm_endpoint:ghost"}},
     }
 
     assert llm_cmd._auto_source(status) is None
-
-
-def test_auto_falls_back_when_the_default_vendor_is_not_the_funded_one():
-    """The default vendor is a PREFERENCE among funded rows, never a filter. Treating it as a
-    filter would report "nothing" on a box that is demonstrably funded — for another harness."""
-    status = {
-        "sources": {"harness.opencode.cli": [{"endpoint_typeid": KEY, "name": "openrouter key", "rank": 0}]},
-        "resolved": {"harness.opencode.cli": {"endpoint_typeid": KEY, "origin": "user", "unverified": False}},
-        "endpoints": {KEY: {"kind": "api_key", "provider": "openrouter"}},
-    }
-
-    row = llm_cmd._auto_source(status)
-
-    assert row is not None and row.active_for == ["opencode"]
 
 
 def test_auto_answers_nothing_on_an_empty_box():
@@ -1026,7 +932,7 @@ def test_a_lost_socket_is_a_connection_error_not_a_missing_source(monkeypatch):
     one and gives up on the other."""
     monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {"resolved": {}})
     monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
-    monkeypatch.setattr(llm_cmd, "_probe_unproven_device_logins", lambda status: status)
+    monkeypatch.setattr(llm_cmd, "_check_unchecked_logins", lambda status, *_: status)
     monkeypatch.setattr(llm_cmd, "_backend_port", lambda: 6060)
     monkeypatch.setattr(llm_cmd, "_await_funding", lambda port, url: None)
     monkeypatch.setattr("asyncio.run", lambda coro: None)
@@ -1056,7 +962,7 @@ def test_a_skipped_choice_is_no_source_not_a_connection_error(monkeypatch):
     re-check reads as "not funded", after which it carries on with the installs."""
     monkeypatch.setattr(llm_cmd, "_status", lambda *a, **k: {"resolved": {}})
     monkeypatch.setattr(llm_cmd, "_project_for_cwd", lambda **k: "")
-    monkeypatch.setattr(llm_cmd, "_probe_unproven_device_logins", lambda status: status)
+    monkeypatch.setattr(llm_cmd, "_check_unchecked_logins", lambda status, *_: status)
     monkeypatch.setattr(llm_cmd, "_backend_port", lambda: 6060)
     monkeypatch.setattr(llm_cmd, "_await_funding", lambda port, url: None)
     monkeypatch.setattr("asyncio.run", lambda coro: llm_cmd._SKIPPED)

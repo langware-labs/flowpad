@@ -23,7 +23,7 @@ export function DetectedKeys({
   return (
     <div className="mt-6 max-w-5xl space-y-4" data-testid="detected-keys">
       {groups.map((group) => (
-        <DetectedGroupCard key={`${group.scope}:${group.projectId ?? ''}`} group={group} onPack={onPack} />
+        <DetectedGroupCard key={`${group.scope}:${group.projectId ?? ''}:${group.path ?? ''}`} group={group} onPack={onPack} />
       ))}
     </div>
   );
@@ -37,8 +37,7 @@ function DetectedGroupCard({
   onPack: (group: DetectedGroup, keys: string[]) => void;
 }) {
   const { t } = useLingui();
-  // `.env.local`, or `.env.<env>.local` when a named environment is shown.
-  const fileName = group.path?.split(/[\\/]/).pop() || '.env.local';
+  const fileName = group.name;
   const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
   const allKeys = group.keys.map((k) => k.key);
   // Derived, so a key that was packed or left the file drops out on its own.

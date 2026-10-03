@@ -61,6 +61,9 @@ const titles = () => screen.getAllByTestId('chat-history-row').map((r) => r.text
 
 describe('ChatsNavigator — session quick search', () => {
   beforeEach(() => {
+    // Rows are bucketed by local day; "2 hours ago" is yesterday shortly after midnight.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 5, 15, 12, 0, 0));
     vi.mocked(apiClient.get).mockResolvedValue({ results: [] });
     vi.spyOn(AgenticProcess, 'getByIdFromCache').mockReturnValue(null as unknown as AgenticProcess);
     vi.mocked(useWorkerHistory).mockReturnValue({
@@ -76,6 +79,7 @@ describe('ChatsNavigator — session quick search', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     DOCK.currentDock.scopeFilter = { mode: 'all' };
     cleanup();
     vi.restoreAllMocks();

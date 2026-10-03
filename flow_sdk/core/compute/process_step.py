@@ -106,7 +106,10 @@ async def _unfunded(worker_type: Any) -> Optional[str]:
     # (`process.driver.name`). Read through the module, at call time, so a swapped `get_driver` counts.
     from flow_sdk.builtin.agentic_process import agentic_process  # noqa: PLC0415
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec  # noqa: PLC0415
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import llm_picker_view  # noqa: PLC0415
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import (  # noqa: PLC0415
+        check_unchecked_login,
+        llm_picker_view,
+    )
     from flow_sdk.schema.data_spec.llm_source_spec import LLMScope  # noqa: PLC0415
 
     resolved = str(getattr(worker_type, "value", worker_type))
@@ -116,6 +119,9 @@ async def _unfunded(worker_type: Any) -> Optional[str]:
     # stop an agent that runs fine — and send the person to a chooser for nothing.
     if driver_api_auth_spec(name) is None:
         return None
+    # A launch is an action: an installed harness nobody has probed is asked now, rather than
+    # refused for a login that may well work (funding never presumes one does).
+    await check_unchecked_login(name)
     funding = await llm_picker_view(name, LLMScope(project_id=""))
     if funding.chosen is not None:
         return None

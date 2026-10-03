@@ -19,6 +19,37 @@ import { animateGlow } from './animate-glow';
 const PENDING_CHIP_SELECTOR = '[data-minimize-anchor="process-chip"]';
 const FOOTER_SELECTOR = '[data-minimize-anchor="footer"]';
 
+/** The flight's timing, shared with maximize-from (the same flight played backwards). */
+export const GENIE_DURATION_MS = 450;
+export const GENIE_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)';
+/** Opacity at the small end. Never 0: an invisible ghost is a fade, not a flight. */
+export const GENIE_SMALL_OPACITY = 0.2;
+
+interface Box {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The transform that lays an element sitting at `box` over `onto`: centers
+ * matched, scaled to fit INSIDE `onto` (min ratio, never enlarged — a
+ * wide-but-short target like the footer must still shrink it, not inflate it).
+ *
+ * Minimize animates identity → this; maximize-from (a window zooming out of
+ * the icon that opened it) animates this → identity.
+ */
+export function genieTransform(box: Box, onto: Box): string {
+  const dx = onto.left + onto.width / 2 - (box.left + box.width / 2);
+  const dy = onto.top + onto.height / 2 - (box.top + box.height / 2);
+  const scale = Math.min(
+    Math.max(Math.min(onto.width / Math.max(1, box.width), onto.height / Math.max(1, box.height)), 0.04),
+    1,
+  );
+  return `translate(${dx}px, ${dy}px) scale(${scale})`;
+}
+
 export function animateMinimizeToElement(
   source: HTMLElement | null,
   target: HTMLElement | null,
@@ -50,21 +81,12 @@ export function animateMinimizeToElement(
   // flight; the caller closes it right after, so it's about to unmount anyway.
   source.style.visibility = 'hidden';
 
-  const dx = to.left + to.width / 2 - (from.left + from.width / 2);
-  const dy = to.top + to.height / 2 - (from.top + from.height / 2);
-  // Fit INSIDE the target: min ratio, never enlarged. A wide-but-short target
-  // (the footer fallback) must still shrink the ghost, not inflate it.
-  const scale = Math.min(
-    Math.max(Math.min(to.width / from.width, to.height / from.height), 0.04),
-    1,
-  );
-
   const flight = ghost.animate(
     [
       { transform: 'translate(0, 0) scale(1)', opacity: 1 },
-      { transform: `translate(${dx}px, ${dy}px) scale(${scale})`, opacity: 0.2 },
+      { transform: genieTransform(from, to), opacity: GENIE_SMALL_OPACITY },
     ],
-    { duration: 450, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
+    { duration: GENIE_DURATION_MS, easing: GENIE_EASING },
   );
   const cleanup = () => ghost.remove();
   flight.oncancel = cleanup;

@@ -1,5 +1,6 @@
 ---
 id: a16f7ad9-19c9-41b7-88bb-8f06f3f27735
+manual: true
 ---
 # A WhatsApp agent, end to end — credential from `.env.local`, conversation in the stream inbox
 

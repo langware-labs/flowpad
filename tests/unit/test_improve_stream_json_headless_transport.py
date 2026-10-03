@@ -21,6 +21,7 @@ drainable process (before the fix it was born PTY-transport and hung).
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -28,6 +29,10 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
+
+# CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
+pytestmark = pytest.mark.usefixtures("harness_installed")
 
 _PATCH_REQ_SCAN = "flow_sdk.builtin.faas.scan_actions.get_current_request_info"
 
@@ -73,6 +78,13 @@ async def test_stream_json_create_request_yields_headless_drainable_process(monk
     # left real it asserts "a Claude CLI is installed", which is true on a dev
     # machine and false on CI.
     monkeypatch.setattr(AgenticProcess, "is_installed", AsyncMock(return_value=True), raising=True)
+    # Funding is not under test: a launch on a box where something funds claude.
+    from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
+
+    monkeypatch.setattr(llm_source, "check_unchecked_login", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        llm_source, "llm_picker_view", AsyncMock(return_value=SimpleNamespace(chosen=object(), blocked=""))
+    )
 
     resp = await node._scan_create_process()
     assert resp.status == "SUCCESS", getattr(resp, "message", resp)

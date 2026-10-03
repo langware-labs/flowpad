@@ -140,7 +140,7 @@ class BrowseSetup(NamedTuple):
 
 @pytest.fixture
 async def browse_setup(
-    request, tmp_path, local_project, local_compute_node
+    request, tmp_path_factory, local_project, local_compute_node
 ):
     """Seeded vault + indexed chain + a saved STANDARD process, torn down after.
 
@@ -150,7 +150,9 @@ async def browse_setup(
     database" on an unsaved instance."""
     if shutil.which("claude") is None:
         pytest.skip("claude CLI not installed")
-    vault, deep, nonce = _seed_from_repo_docs(tmp_path)
+    # Beside, not inside, ``local_project``'s folder (``tmp_path``): projects do not nest, and
+    # the prompt materializes one for the vault.
+    vault, deep, nonce = _seed_from_repo_docs(tmp_path_factory.mktemp("vault"))
     _build_index(vault)
     process = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
@@ -162,6 +164,13 @@ async def browse_setup(
         yield BrowseSetup(process, vault, deep, nonce)
     finally:
         await asyncio.shield(safe_exit(process))
+        # The prompt materializes a Project named after the workdir ("docs"); names are
+        # unique, so leaving it refuses the next param's process with a 500.
+        from flow_sdk.builtin.project import Project
+
+        project = await Project.find_by_cwd(str(vault))
+        if project is not None:
+            await project.delete()
 
 
 # ── transcript predicates ─────────────────────────────────────────────────────

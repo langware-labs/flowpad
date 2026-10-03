@@ -25,11 +25,10 @@ import type { ReactElement } from 'react';
 const h = vi.hoisted(() => ({
   test: vi.fn(),
   chain: vi.fn(),
-  probeHarnesses: vi.fn(),
   endpoint: null as unknown,
   isLoading: false,
   status: null as unknown,
-  // Per-worker capability warning: a string means the check ran and the harness is NOT on
+  // Per-worker install warning off the status record: a string means the harness is NOT on
   // this machine. All null = nothing known = nothing hidden (the shared fail-open rule).
   warnings: {} as Record<string, string | null>,
 }));
@@ -44,7 +43,7 @@ vi.mock('@sdk', async (importOriginal) => ({
   llmSourcesService: { test: h.test, chain: h.chain, status: vi.fn() },
 }));
 vi.mock('@src/components/workers/harness-availability', () => ({
-  useHarnessAvailability: () => ({ warnings: h.warnings, probeHarnesses: h.probeHarnesses }),
+  useHarnessAvailability: () => ({ warnings: h.warnings }),
 }));
 
 import { LlmEndpointAssetView } from '@src/components/assets/editor/llm-endpoint/LlmEndpointAssetView';
@@ -122,10 +121,10 @@ describe('myEndpoints', () => {
     const org = offer({ id: 'org', name: 'Acme', holder_typeid: null, can_administer: true });
     const team = offer({ id: 'team', name: 'Platform', holder_typeid: null, can_administer: true });
 
-    const kept = myEndpoints({
-      available: [org, mine, team, someoneElse, iAdminister, sharedRoot, givenToMe, alsoMine],
-      hub_user_typeid: ME,
-    } as never);
+    const kept = myEndpoints(
+      { available: [org, mine, team, someoneElse, iAdminister, sharedRoot, givenToMe, alsoMine] } as never,
+      ME,
+    );
 
     // Sorted by name; the colon spelling of the same id counts as mine.
     expect(kept.map((e) => e.id)).toEqual(['also', 'given', 'mine']);
@@ -149,8 +148,8 @@ describe('myEndpoints', () => {
     // Signed out (or an older backend that does not report it): "mine" is unprovable, and
     // guessing would show somebody else's wallet.
     const mine = offer({ holder_typeid: ME });
-    expect(myEndpoints({ available: [mine], hub_user_typeid: null } as never)).toEqual([]);
-    expect(myEndpoints(null)).toEqual([]);
+    expect(myEndpoints({ available: [mine] } as never, null)).toEqual([]);
+    expect(myEndpoints(null, ME)).toEqual([]);
   });
 });
 
@@ -263,12 +262,7 @@ describe('FundingProvenance — what the tick actually proves', () => {
     h.warnings = { claude_code: null, codex: null, copilot: 'not installed', opencode: 'not installed' };
     h.status = {
       available: [],
-      endpoint_typeid: null,
-      invoke_url: null,
-      name: null,
-      provider: null,
-      hub_logged_in: true,
-      hub_user_typeid: 'user-abc',
+      binding: null,
       sources: {
         'harness.claude.cli': [],
         'harness.codex.cli': [],
@@ -290,9 +284,6 @@ describe('FundingProvenance — what the tick actually proves', () => {
     expect(screen.getByTestId('llm-funding-harness.codex.cli')).toBeTruthy();
     expect(screen.queryByTestId('llm-funding-harness.copilot.cli')).toBeNull();
     expect(screen.queryByTestId('llm-funding-harness.opencode.cli')).toBeNull();
-    // Asking is the point: the app subscribes with autoCheck:false, so an unprobed harness
-    // would read "unknown" forever and nothing would ever be filtered.
-    expect(h.probeHarnesses).toHaveBeenCalled();
   });
 
   it('separately says what the local harnesses are on — the thing a passing test does NOT prove', async () => {
@@ -300,12 +291,7 @@ describe('FundingProvenance — what the tick actually proves', () => {
     // Conflating the two is exactly the confusion this block exists to end.
     h.status = {
       available: [],
-      endpoint_typeid: null,
-      invoke_url: null,
-      name: null,
-      provider: null,
-      hub_logged_in: true,
-      hub_user_typeid: 'user-abc',
+      binding: null,
       sources: { 'harness.claude.cli': [] },
       resolved: { 'harness.claude.cli': { endpoint_typeid: 'llm_endpoint-dev', name: 'Claude login' } },
       endpoints: {

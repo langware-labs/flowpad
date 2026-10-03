@@ -14,8 +14,12 @@ import subprocess
 import time
 from pathlib import Path
 
-#: Where a started server's output goes: ``<slug>-<port>.log``.
-LOG_DIR = Path.home() / ".flow" / "app-open-logs"
+
+def log_dir() -> Path:
+    """Where a started server's output goes (``<slug>-<port>.log``): this instance's logs."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415 -- leaf module
+
+    return get_instance_settings().logs_dir / "app-open"
 
 
 def find_free_port() -> int:
@@ -42,14 +46,15 @@ def wait_for_port(port: int, timeout: float) -> bool:
 
 
 def start_detached(command: str, *, cwd: Path, port: int, name: str) -> tuple[int | None, str]:
-    """Start *command* in its own session, logging to ``LOG_DIR``. Returns ``(pid, log_file)``.
+    """Start *command* in its own session, logging to ``log_dir()``. Returns ``(pid, log_file)``.
 
     ``PORT`` is set as well as whatever the command line says: a server that
     reads its port from the environment needs no ``{port}`` in its command.
     """
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    logs = log_dir()
+    logs.mkdir(parents=True, exist_ok=True)
     slug = re.sub(r"[^a-zA-Z0-9_.-]+", "-", name).strip("-") or "webapp"
-    log_file = LOG_DIR / f"{slug}-{port}.log"
+    log_file = logs / f"{slug}-{port}.log"
     log = log_file.open("ab")
     proc = subprocess.Popen(  # noqa: S602 -- the command is the app author's own start command
         command,
@@ -65,4 +70,4 @@ def start_detached(command: str, *, cwd: Path, port: int, name: str) -> tuple[in
     return proc.pid, str(log_file)
 
 
-__all__ = ["LOG_DIR", "find_free_port", "port_open", "start_detached", "wait_for_port"]
+__all__ = ["log_dir", "find_free_port", "port_open", "start_detached", "wait_for_port"]

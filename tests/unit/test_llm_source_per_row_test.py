@@ -259,6 +259,7 @@ async def test_an_unchanged_verdict_writes_nothing():
 
     cap = Capability(kind="harness.claude.cli")
     cap.login_state = DeviceLoginState.AUTHENTICATED
+    cap.login_checked_at = "2026-10-01T00:00:00+00:00"
     probe = WorkerAuthResult(status=WorkerAuthStatus.LOGGED_IN, verified=True)
 
     saved = AsyncMock()
@@ -273,6 +274,33 @@ async def test_an_unchanged_verdict_writes_nothing():
         await cap.refresh_login_state()
 
     saved.assert_not_awaited()
+    assert cap.login_checked_at == "2026-10-01T00:00:00+00:00", "a re-confirmation does not re-stamp"
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_with_no_stamp_is_stamped_once():
+    """A row from before ``login_checked_at`` existed holds a verdict nobody dated. The first
+    probe that confirms it stamps it -- once -- so status can say how old the verdict is."""
+    from flow_sdk.builtin.capability import Capability
+
+    cap = Capability(kind="harness.claude.cli")
+    cap.login_state = DeviceLoginState.AUTHENTICATED
+    probe = WorkerAuthResult(status=WorkerAuthStatus.LOGGED_IN, verified=True)
+
+    saved = AsyncMock()
+    with (
+        patch.object(Capability, "save", new=saved),
+        patch.object(Capability, "notify_updated", new=AsyncMock()),
+        patch(
+            "flow_sdk.builtin.agentic_process.cli_drivers.get_driver",
+            return_value=type("D", (), {"auth_probe": AsyncMock(return_value=probe)})(),
+        ),
+    ):
+        await cap.refresh_login_state()
+        await cap.refresh_login_state()
+
+    assert cap.login_checked_at
+    saved.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -719,10 +719,11 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
             raise RuntimeError(f"Install process {process_id} was not found.")
         await process.wait()
         # Re-discover before checking: a fresh install may live in a PATH dir
-        # (or new version-manager dir) the previous sweep didn't know about.
-        from flow_sdk.core.capabilities.discovery import run_discovery
+        # (or new version-manager dir) the previous sweep didn't know about. The
+        # status layer's refresh, so the install reaches every status reader.
+        from flow_sdk.core.status import refresh_status
 
-        await run_discovery([kind])
+        await refresh_status([kind])
         check = await get_capability_registry().test(kind)
         capability.last_check = check.result.model_dump(mode="json")
         started, started_details = _last_setup_parts(capability)
@@ -762,7 +763,6 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     ``harness`` capability. The result carries ``process_id`` immediately so UI
     surfaces can show/open the run while it is still active.
     """
-    from pathlib import Path
 
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.capability import capability_id_for_kind
@@ -770,7 +770,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     from flow_sdk.instance_settings import get_instance_settings
 
     prompt = install_prompt_for_spec(spec)
-    workdir = Path(get_instance_settings().flow_home) / "capability-installs"
+    workdir = get_instance_settings().instance_dir / "capability-installs"
     workdir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -848,7 +848,6 @@ def _install_failed(
 
 async def run_chrome_authenticated_probe() -> CapabilityResult:
     import secrets
-    from pathlib import Path
 
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -857,7 +856,7 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
     from flow_sdk.instance_settings import get_instance_settings
 
     nonce = f"flowpad-capability-{secrets.token_hex(8)}"
-    probe_dir = Path(get_instance_settings().flow_home) / "capability-probes"
+    probe_dir = get_instance_settings().instance_dir / "capability-probes"
     probe_dir.mkdir(parents=True, exist_ok=True)
     probe_file = probe_dir / "chrome-authenticated-probe.html"
     probe_file.write_text(
