@@ -3639,6 +3639,10 @@ msgstr "لا يمكن تحسين الأصل"
 msgid "Cannot open"
 msgstr "يتعذر الفتح"
 
+#: src/components/archive-preview/ArchivePreview.tsx
+msgid "Cannot open this archive: {error}"
+msgstr ""
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
 msgstr "تعذر تشغيل إعادة البناء"
@@ -5047,6 +5051,10 @@ msgstr "تم نسخ {0} رابط{1}"
 msgid "Copied to Clipboard"
 msgstr "تم النسخ إلى الحافظة"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copied to project"
+msgstr ""
+
 #: src/pages/entry/entry-shell.tsx
 msgid "Copied!"
 msgstr "تم النسخ!"
@@ -5149,6 +5157,10 @@ msgstr ""
 msgid "Copy event JSON"
 msgstr "نسخ JSON للحدث"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copy failed"
+msgstr ""
+
 #: src/components/organization/budgets/EditableTitle.tsx
 msgid "Copy id"
 msgstr ""
@@ -5225,6 +5237,10 @@ msgstr "نسخ مسار هذا الملف إلى الحافظة"
 #: src/components/version-popover/version-popover.tsx
 msgid "Copy to clipboard"
 msgstr "نسخ إلى الحافظة"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copy to project"
+msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
@@ -8563,6 +8579,10 @@ msgstr "متاجر معروفة إضافية"
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "extra rows fetched (limit + overfetch)"
 msgstr "صفوف إضافية تم جلبها (الحد الأقصى + الجلب الإضافي)"
+
+#: src/components/archive-preview/ArchivePreview.tsx
+msgid "Extracting…"
+msgstr ""
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
@@ -16242,6 +16262,10 @@ msgstr "معاينة {0}"
 msgid "Preview {label}"
 msgstr "معاينة {label}"
 
+#: src/components/conversation/AttachmentChip.tsx
+msgid "Preview contents"
+msgstr ""
+
 #: src/components/wiki-tip/WikiModalRoot.tsx
 msgid "Preview of the wiki page, shown without leaving the current view."
 msgstr "معاينة لصفحة الويكي تظهر دون مغادرة العرض الحالي."
@@ -17016,6 +17040,14 @@ msgstr "تم استلام مرفق — يُرجى المراجعة قبل الت
 msgid "Received attachments — review before installing."
 msgstr "تم استلام مرفقات — يُرجى المراجعة قبل التثبيت."
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received file — review before copying."
+msgstr ""
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received files — review before copying."
+msgstr ""
+
 #. placeholder {0}: currentDock?.pointer || 'none'
 #: src/components/app-host/AppHost.tsx
 #: src/components/show-view/ShowView.tsx
@@ -17352,6 +17384,10 @@ msgstr "إزالة مجلد السياق"
 msgid "Remove directory"
 msgstr "إزالة المجلد"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Remove failed"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Remove favorite"
@@ -17375,6 +17411,7 @@ msgid "Remove from folder"
 msgstr "إزالة من المجلد"
 
 #: src/components/connections-manager.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Remove from project"
 msgstr "إزالة من المشروع"
 
@@ -17465,6 +17502,10 @@ msgstr "تمت الإزالة من السحابة لجميع المشاركين"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for you; other members keep it"
 msgstr "تمت الإزالة لك فقط؛ الأعضاء الآخرون يحتفظون بها"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Removed from project"
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Removed from the manifest."
@@ -21271,6 +21312,7 @@ msgstr "القالب:"
 
 #: src/components/project-home/ProjectHome.tsx
 #: src/i18n/pref-labels.ts
+#: src/pages/hub-home/HubHome.tsx
 msgid "Terminal"
 msgstr "الطرفية"
 

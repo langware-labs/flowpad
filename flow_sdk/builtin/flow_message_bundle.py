@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 import tempfile
 import zipfile
@@ -34,7 +35,6 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, Protocol
 
 from flow_sdk.assets.layout import Folder
-from flow_sdk.assets.materialize import extended_length_path
 from flow_sdk.assets.transfer import (
     _attachment_snapshot,
     pack_tree,
@@ -52,6 +52,7 @@ from flow_sdk.fs_store.origin.field import ORIGIN_ADAPTER
 from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
+from flow_sdk.utils.archive import is_zip_filename
 
 logger = logging.getLogger(__name__)
 
@@ -1574,14 +1575,20 @@ async def _stage_file_attachments(
         # Synthesize the entry dir under the persisted staging tree, laid out
         # at the canonical install relpath so install mirrors it verbatim.
         entry_dir = fm_data_ops.staged_entry_dir(top_fm_id, entry_key)
-        dest = entry_dir / file_attachment_rel_subdir(filename) / filename
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+        if is_zip_filename(filename):
+            # A zip stages as its EXTRACTED folder: review browses it, and
+            # "Copy to project" lands the folder, never the archive.
+            entry_type, scope_class = await _stage_zip_contents(src, entry_dir)
+        else:
+            entry_type, scope_class = "file", untyped_fallback_class(filename)
+            dest = entry_dir / file_attachment_rel_subdir(filename) / filename
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
         ma = await _stage_attachment(
             top_fm_id=top_fm_id,
             conversation_id=staging_conv_id,
             entry_key=entry_key,
-            entry_type="file",
+            entry_type=entry_type,
             entry_id=asset_id,
             unpacked_path=fm_data_ops.staged_entry_rel_path(entry_key),
             name=filename,
@@ -1592,11 +1599,69 @@ async def _stage_file_attachments(
             # and the ONE policy owner answers from it: a markdown doc is
             # user-installable (``~/docs``), untyped bytes are project-only —
             # a bare file dropped in the user's home is never a sane destination.
-            user_scope_allowed=user_scope_allowed(untyped_fallback_class(filename)),
+            user_scope_allowed=user_scope_allowed(scope_class),
             owner_typeid=owner_typeid,
         )
         staged.append(ma)
     return staged
+
+
+def _zip_asset_type(root: Path) -> str | None:
+    """The ONE registered folder type whose shape ``root`` holds (``SKILL.md``,
+    ``agent.json``…), else None. Ambiguous (two types claim it) is None too —
+    an untyped folder is the safe reading."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    hits = []
+    for name in SchemaRegistry.get_all_types():
+        info = SchemaRegistry.get(name)
+        shape = getattr(info, "shape", None)
+        if not isinstance(shape, Folder) or not shape.main or info._resolved_layout[2] is None:
+            continue
+        if info.layout_of(root, verify=True).root is not None:
+            hits.append(name)
+    return hits[0] if len(hits) == 1 else None
+
+
+async def _stage_zip_contents(zip_src: Path, entry_dir: Path) -> "tuple[str, Any]":
+    """Extract a received zip into its staged entry dir; return ``(type, class)``
+    it stages as.
+
+    The zip is classified by what it holds: when its root — or the one folder it
+    wraps — is a registered folder asset (a zipped skill), it is laid out at that
+    type's canonical install relpath and stages as that type; otherwise it is a
+    plain folder named after the zip, at the project root (``<stem>/…``)."""
+    from flow_sdk.builtin.asset_placement import resolve_default_harness  # noqa: PLC0415
+
+    return await asyncio.to_thread(_place_zip_sync, zip_src, entry_dir, await resolve_default_harness())
+
+
+def _place_zip_sync(zip_src: Path, entry_dir: Path, default_worker) -> "tuple[str, Any]":
+    from flow_sdk.assets.placement import family_subdir, untyped_fallback_class  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    from flow_sdk.utils.archive import safe_extract_zip, unwrap_single_folder  # noqa: PLC0415
+
+    stem = PurePosixPath(zip_src.name).stem
+    # Extracted beside the entry dir — same volume, so placing it is a rename.
+    scratch = entry_dir.with_name(f"{entry_dir.name}.extracting")
+    shutil.rmtree(scratch, ignore_errors=True)
+    try:
+        safe_extract_zip(zip_src, scratch)
+        content = unwrap_single_folder(scratch)
+        asset_type = _zip_asset_type(content)
+        if asset_type is not None:
+            asset_class, harness, family = SchemaRegistry.get(asset_type)._resolved_layout
+            subdir = family_subdir(asset_class, harness, family, default_worker=default_worker) or ""
+            dest = entry_dir / subdir / (content.name if content != scratch else stem)
+        else:
+            asset_class = untyped_fallback_class(zip_src.name)
+            dest = entry_dir / file_attachment_rel_subdir(zip_src.name) / stem
+        shutil.rmtree(entry_dir, ignore_errors=True)  # a re-download restages from scratch
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(content, dest)
+        return asset_type or "file", asset_class
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 async def _notify_staged_attachments(mas: list) -> None:
@@ -2332,8 +2397,11 @@ async def unpack_bundle(
         # the packer already strips the deep `.venv`/cache trees that used to
         # trip this; this keeps a legitimately-deep asset from breaking a share.
         def _extract() -> None:
-            with zipfile.ZipFile(zip_path, "r") as zf:
-                zf.extractall(extended_length_path(tmp_root))
+            from flow_sdk.utils.archive import safe_extract_zip  # noqa: PLC0415
+
+            # The one extractor for sender-controlled archives: zip-slip and
+            # zip-bomb refused, symlink members skipped.
+            safe_extract_zip(zip_path, tmp_root)
 
         # Off-thread: a multi-MB bundle extraction on the sync path must not
         # stall the event loop (same rationale as the indexer's I/O-to-threads).
