@@ -9,6 +9,7 @@ import { runLoadRedirects } from './load-redirects';
 import '@src/journey/journey-load-redirect';
 import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
 import '@src/project-home-page/project-home-page-redirect'; // the Home button's `?homePage=open` target
+import { endLaunch, forgetLastTab, noteHomeLoad } from '@src/tabs/last-tab-restore'; // registers last: a launch reopens the last tab
 
 /**
  * Ensure compute node is loaded for the current project
@@ -50,6 +51,8 @@ export async function loadHomePage(args: LoaderArgs) {
 
   const url = new URL(args.request.url);
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
+  // Before the canonicalization below rewrites it: a bare `/` is how a launch arrives.
+  noteHomeLoad(url);
 
   // `/` arrives bare on every cold load — the browser loads the URL directly, so
   // `openDock`'s viewMode stamping never runs for it. Canonicalize it here so the
@@ -89,11 +92,15 @@ export async function loadHomePage(args: LoaderArgs) {
   // a post-render navigation hijack. The loader stays feature-agnostic:
   // features register resolvers from their own modules.
   const loadRedirect = await runLoadRedirects(args.request);
+  // The launch gets one resolver pass: if another redirect won it, a later Home click must not restore.
+  endLaunch();
   t.time('loadRedirects');
   if (loadRedirect) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw loadRedirect;
   }
+  // Home is the view with no tab: the next launch opens here, not on the tab just left.
+  forgetLastTab();
 
   t.done(1.2); // warn if total > 1200ms
 
