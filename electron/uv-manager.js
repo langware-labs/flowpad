@@ -2289,9 +2289,6 @@ class UvManager {
       pin = await this._pythonPinForUpgrade();
       this.log.info('[uv] Upgrading flowpad...');
     }
-    // An update can arrive on a machine whose first install never got uv (the bootstrap failed or was
-    // cancelled): without this the command is a bare `uv` that Windows cannot find, and the recovery fails the same way.
-    await this.ensureUv({ onProgress });
     await this._uvToolInstallForce(
       ['tool', 'install', spec, '--python', pin, '--force'],
       { onProgress },
