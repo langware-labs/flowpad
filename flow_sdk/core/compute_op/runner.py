@@ -46,10 +46,13 @@ Three properties the tests pin:
 
 from __future__ import annotations
 
+import asyncio
+import sys
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 from flow_sdk.core.compute.declared_value import (
     DeclaredShapeError,
@@ -489,17 +492,77 @@ async def _cli(
     command = spec.exe_data.command_for(platform)
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
-    # Each write to stdout/stderr re-says the rung: the one real sign of life a command gives, so a
-    # long quiet install is told apart from a hung one by the row's own last update.
-    said = await shell(
-        command,
-        timeout_seconds=spec.exe_data.timeout(),
-        workdir=workdir,
-        extra_env=env or {},
-        platform=platform,
-        on_output=lambda: say(f"{spec.display_label}: {spec.subkind}"),
-    )
+    running = f"{spec.display_label}: {spec.subkind}"
+    async with _permission_prompt_watch(spec.display_label, platform, say, running) as report:
+        # Each write to stdout/stderr re-says the rung: the one real sign of life a command gives, so a
+        # long quiet install is told apart from a hung one by the row's own last update.
+        said = await shell(
+            command,
+            timeout_seconds=spec.exe_data.timeout(),
+            workdir=workdir,
+            extra_env=env or {},
+            platform=platform,
+            on_output=lambda: report(running),
+        )
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
+
+
+#: How often a Windows call checks for an open permission prompt.
+_PERMISSION_PROMPT_POLL_SECONDS = 2.0
+
+
+@asynccontextmanager
+async def _permission_prompt_watch(
+    label: str, platform: str, say: Callable[[str], None], running: str
+) -> AsyncIterator[Callable[[str], None]]:
+    """While a Windows call runs, say "waiting for you" for as long as a permission prompt is open.
+
+    Yields the call's own reporter: what the call says passes through, except while a prompt is
+    open — then the row keeps saying the person has to act, and goes back to the call's latest
+    line once the prompt closes. Off Windows it is ``say`` itself and nothing is watched.
+    """
+    if (platform or sys.platform) != "win32":
+        yield say
+        return
+    state = {"open": False, "last": running}
+    waiting = f"{label}: waiting for you — approve the Windows permission prompt…"
+
+    def report(text: str) -> None:
+        if text:
+            state["last"] = text
+        if state["open"]:
+            say(waiting)
+        elif text:
+            say(text)
+
+    async def watch() -> None:
+        while True:
+            now_open = await asyncio.to_thread(_permission_prompt_open)
+            if now_open != state["open"]:
+                state["open"] = now_open
+                say(waiting if now_open else state["last"])
+            await asyncio.sleep(_PERMISSION_PROMPT_POLL_SECONDS)
+
+    watcher = asyncio.create_task(watch())
+    try:
+        yield report
+    finally:
+        watcher.cancel()
+
+
+def _permission_prompt_open() -> bool:
+    """Whether a Windows permission prompt (UAC, drawn by ``consent.exe``) is open.
+
+    A machine-wide installer blocks on it and prints nothing — the same silence as a hang — so
+    while it is open the row says the person has to act ("waiting for you"), not that the step
+    may be stuck. Any prompt counts: during a setup run it is almost always the install's own.
+    """
+    import psutil  # noqa: PLC0415
+
+    try:
+        return any((p.info.get("name") or "").lower() == "consent.exe" for p in psutil.process_iter(["name"]))
+    except Exception:  # noqa: BLE001 — a failed probe is "no prompt", never a failed install
+        return False
 
 
 async def _ask(
@@ -621,17 +684,19 @@ async def _agent(
     prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform, workdir=workdir)
     if spec.output_spec_kind is not None:
         prompt += result_contract(path, VALUE_KEY, fields_of_kind(spec.output_spec_kind))
-    said = await launch(
-        agent=spec.exe_data.agent,
-        prompt=prompt,
-        name=spec.display_label,
-        workdir=workdir,
-        context_data={"compute_op": spec.name},
-        target_typeid_str=subject,
-        timeout_seconds=spec.exe_data.timeout(),
-        on_status=lambda progress: say(getattr(progress, "text", "") or ""),
-        executor=executor,
-    )
+    # An agent that runs a machine-wide installer blocks on the same permission prompt a command does.
+    async with _permission_prompt_watch(spec.display_label, platform, say, f"{spec.display_label}: agent") as report:
+        said = await launch(
+            agent=spec.exe_data.agent,
+            prompt=prompt,
+            name=spec.display_label,
+            workdir=workdir,
+            context_data={"compute_op": spec.name},
+            target_typeid_str=subject,
+            timeout_seconds=spec.exe_data.timeout(),
+            on_status=lambda progress: report(getattr(progress, "text", "") or ""),
+            executor=executor,
+        )
     if spec.output_spec_kind is None or not said.ok:
         return said
     receipt = read_step_result(path, output=VALUE_KEY)
