@@ -12,14 +12,16 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 HUB="${HUB:-http://localhost:8094}"
+PROMPT="${PROMPT:-Reply with exactly the single word pong and nothing else.}"
 if [[ "${BARE:-}" == "1" ]]; then
   IMAGE="${IMAGE:-flowpad-loginless:bare}"
   DOCKERFILE=tests/loginless_e2e/Dockerfile.bare
+  SECOND="flow process start \"$PROMPT\""
 else
   IMAGE="${IMAGE:-flowpad-loginless:test}"
   DOCKERFILE=tests/loginless_e2e/Dockerfile
+  SECOND="python ${SCRIPT:-agentic_process_snippet.py}"
 fi
-PROMPT="${PROMPT:-Reply with exactly the single word pong and nothing else.}"
 # The container reaches the host's hub through the docker host alias.
 HUB_IN_CONTAINER="${HUB_IN_CONTAINER:-${HUB/localhost/host.docker.internal}}"
 
@@ -34,11 +36,6 @@ ENDPOINT_ID="${ENDPOINT_ID:-$(HUB="$HUB" uv run python tests/loginless_e2e/make_
 echo "public endpoint: $ENDPOINT_ID" >&2
 
 # THE two commands. Nothing before them, nothing between them.
-if [[ "${BARE:-}" == "1" ]]; then
-  SECOND="flow process start \"$PROMPT\""
-else
-  SECOND="python ${SCRIPT:-agentic_process_snippet.py}"
-fi
 docker run --rm --add-host=host.docker.internal:host-gateway "$IMAGE" sh -c "
   flow llm user use $ENDPOINT_ID --hub $HUB_IN_CONTAINER &&
   $SECOND"
