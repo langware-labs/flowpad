@@ -542,7 +542,7 @@ def _openrouter_key() -> str:
     return key
 
 
-async def fund_worker_without_a_login(worker: str) -> None:
+async def fund_worker_without_a_login(worker: str, *, even_with_device_login: bool = False) -> None:
     """A harness with no account of its own (``ApiAuthSpec.has_device_login`` False) cannot ride
     this machine's vendor logins like the others do: give it a stored provider key through the
     product's own store, or SKIP — an unfunded worker is an environment gap, not a failure."""
@@ -552,7 +552,7 @@ async def fund_worker_without_a_login(worker: str) -> None:
     from flow_sdk.lm_api import LMApiProvider, set_lm_api
 
     spec = driver_api_auth_spec(worker)
-    if spec is None or spec.has_device_login:
+    if spec is None or (spec.has_device_login and not even_with_device_login):
         return
     key = _openrouter_key()
     if not key:
