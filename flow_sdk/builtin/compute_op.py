@@ -71,6 +71,9 @@ class ComputeOp(Entity):
     completion_check: Optional[CliOp] = APIField(
         default=None, description="When this op is already done; absent means it always runs."
     )
+    status_check: Optional[str] = APIField(
+        default=None, description="The completion check as a status fact (install:<harness>), answered in-process."
+    )
     attempts: list[Rung] = APIField(
         default_factory=list, description="Further rungs (cli/prompt/agent) tried in order at the same goal."
     )

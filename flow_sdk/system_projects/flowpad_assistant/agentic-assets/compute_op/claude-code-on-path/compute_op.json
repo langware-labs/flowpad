@@ -23,12 +23,5 @@
       }
     }
   ],
-  "completion_check": {
-    "commands": {
-      "darwin": "\"$FLOWPAD_FLOW\" status --refresh --check install:claude",
-      "linux": "\"$FLOWPAD_FLOW\" status --refresh --check install:claude",
-      "win32": "& $env:FLOWPAD_FLOW status --refresh --check install:claude; exit $LASTEXITCODE"
-    },
-    "timeout_seconds": 30
-  }
+  "status_check": "install:claude"
 }

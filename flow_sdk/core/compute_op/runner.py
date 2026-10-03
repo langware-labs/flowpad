@@ -142,6 +142,8 @@ async def _check(
     What it printed is kept, not just the code: a check that proves a goal
     usually also knows the answer (`flow secret get` exits 0 and prints the secret).
     """
+    if spec.status_check:
+        return await _status_check(spec)
     if spec.completion_check is None:
         return None
     command = spec.completion_check.command_for(platform)
@@ -155,6 +157,20 @@ async def _check(
         platform=platform,
     )
     return said.model_copy(update={"exit_code": spec.verdict_of(said)})
+
+
+async def _status_check(spec: ComputeOpSpec) -> CliResult:
+    """A ``status_check``, answered by the status layer in this process (``core.status.check_fact``).
+
+    Never raises: a fact the layer cannot answer is a broken document, reported as such.
+    """
+    from flow_sdk.core.status.check import UnknownStatusFact, check_fact  # noqa: PLC0415
+
+    try:
+        held, detail = await check_fact(str(spec.status_check))
+    except UnknownStatusFact as exc:
+        return CliResult.not_found(f"{spec.display_label}: {exc}")
+    return CliResult.satisfied(detail, ran=True) if held else CliResult.not_yet(detail)
 
 
 async def run_op(
@@ -314,7 +330,7 @@ async def _call_and_check(
     if not call.duration_s:
         call = call.model_copy(update={"duration_s": time.monotonic() - started})
 
-    if spec.completion_check is None or not exe.RECHECKED:
+    if not spec.convergent or not exe.RECHECKED:
         # No re-check: an op with no check has only the call's own word, and a
         # person's valid answer IS the verdict of an ask. A call that never ran
         # (NOT_APPLICABLE is `ok` too) produced no value, so there is nothing to
@@ -653,7 +669,13 @@ def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
     that read "here" as that folder made its own copy of the check pass there
     while the re-check, run in ``workdir``, still failed.
     """
-    check = spec.completion_check.command_for(platform) if spec.completion_check is not None else None
+    check = (
+        f"flow status --refresh --check {spec.status_check}"
+        if spec.status_check
+        else spec.completion_check.command_for(platform)
+        if spec.completion_check is not None
+        else None
+    )
     bar = (
         f"You are done only when this exits 0, run from `{workdir}` — the caller "
         f"runs it there after you stop, so the goal lands there, not in your output folder:\n\n    {check}"
