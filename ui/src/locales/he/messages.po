@@ -9372,6 +9372,10 @@ msgstr "המקד את הגרף המקומי כאן"
 msgid "Focused"
 msgstr "במיקוד"
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "folder"
+msgstr ""
+
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
@@ -9671,6 +9675,7 @@ msgid "ghost"
 msgstr "רפאים"
 
 #: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 msgid "git"
 msgstr "Git"
 
@@ -12930,6 +12935,10 @@ msgstr "לא הופעל עדיין"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
 msgstr "מעולם לא סונכרן לענן"
+
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "new"
+msgstr ""
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
@@ -18895,6 +18904,10 @@ msgstr "נראה שאתם מנסים לשכפל מאגר git פרטי. עליכ�
 msgid "Segment dur"
 msgstr "משך המקטע"
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "select"
+msgstr ""
+
 #. placeholder {0}: c.displayName
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Select {0}"
@@ -18993,6 +19006,7 @@ msgid "Select parent folder"
 msgstr "בחר תיקייה הורית"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
