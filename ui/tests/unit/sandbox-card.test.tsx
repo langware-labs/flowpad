@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   openSandbox: vi.fn(),
+  openNewShell: vi.fn(() => Promise.resolve(null)),
   sandboxes: [] as Array<Record<string, unknown>>,
   sandboxesEnabled: true,
 }));
@@ -31,7 +32,7 @@ vi.mock('@sdk', async (importOriginal) => {
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
-    navigation: { openPage: vi.fn(), openDock: vi.fn() },
+    navigation: { openPage: vi.fn(), openDock: vi.fn(), openNewShell: h.openNewShell },
     currentDock: { page: 'hub' },
   }),
   useCurrentDock: () => ({ page: 'hub' }),
@@ -150,6 +151,25 @@ describe('the Open button', () => {
     await userEvent.click(open);
     expect(h.openSandbox).toHaveBeenCalledTimes(1);
     expect(h.openSandbox.mock.calls[0][0]).toMatchObject({ id: 'node-m' });
+  });
+});
+
+describe('the Terminal button', () => {
+  it('opens a new shell on that connected machine', async () => {
+    h.sandboxes[0] = { id: 'node-m', name: '@FLOWPAD-VM', node_provider: 'user_machine', node_provider_id: 'node-m' };
+    renderHome();
+
+    await userEvent.click(await screen.findByTestId('machine-terminal'));
+
+    expect(h.openNewShell).toHaveBeenCalledTimes(1);
+    expect(h.openNewShell.mock.calls[0][0]).toMatchObject({ computeNode: { id: 'node-m' } });
+  });
+
+  it('is not offered on a cloud sandbox', async () => {
+    renderHome();
+
+    await screen.findByTestId('sandbox-open');
+    expect(screen.queryByTestId('machine-terminal')).toBeNull();
   });
 });
 

@@ -8,6 +8,7 @@ import { ActionInfo } from '../models';
 import { TargetedDock } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { PtyConnection, stripAnsi } from '../services/shell/ptyConnection';
+import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
 import type { CliResult } from '../models/ReturnedValue';
 
@@ -275,6 +276,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const cols = opts.cols ?? Shell.DEFAULT_COLS;
     const rows = opts.rows ?? Shell.DEFAULT_ROWS;
     const workdir = opts.workdir ?? this.workdir ?? undefined;
+    if (isHubOnly()) return this.startOnHub(cols, rows, opts.timeout);
     const { ConnectionManager } = await import('../websocket');
     const connection_id = ConnectionManager.getInstance().id;
     const result = await this.post<Record<string, unknown> | null>('open', { connection_id, cols, rows, ...(workdir ? { working_dir: workdir } : {}) });
@@ -290,6 +292,24 @@ export class Shell extends APIEntity<Shell> implements IShell {
     // the current size and the mount-time fit()/resize() asserts the real one.
     await this.attachPty({ workdir, timeout: opts.timeout, ptyId: this.pty_pid ?? this.id });
     return this.pty_pid ?? this.id;
+  }
+
+  /**
+   * On the hub a terminal is a remote PTY session on its compute node — never a Shell
+   * row: it is started by its session id (this shell's id) through the node's
+   * `terminal-command/start`, then attached exactly like a local one.
+   */
+  private async startOnHub(cols: number, rows: number, timeout?: number): Promise<string> {
+    if (!this.compute_node_id) throw new Error(`Shell ${this.id} has no compute node`);
+    const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
+    action.subpath = 'start';
+    action.bodyParameters = { session_id: this.id, name: this.name ?? undefined, cols, rows };
+    await dataManager.callActionOverWS<any, any>(action, timeout !== undefined ? { timeout } : undefined);
+    this.pty_pid = this.id;
+    this.ptyConnection.computeNodeId = this.compute_node_id;
+    this.ptyConnection.shellId = this.id;
+    await this.attachPty({ timeout, ptyId: this.id });
+    return this.id;
   }
 
   /**
@@ -492,7 +512,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   /** The cached instance for these fields, refreshed — never a second instance of one shell
    *  (a second one orphans the first's output subscribers). */
-  private static adopt(data: Partial<IShell>): Shell {
+  static adopt(data: Partial<IShell>): Shell {
     const existing = data.id ? Shell.getByIdFromCache(data.id) : null;
     if (existing) {
       Object.assign(existing, data);
@@ -528,6 +548,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   static async list(computeNodeId: string): Promise<Shell[]> {
+    if (isHubOnly()) return Shell.listOnHub(computeNodeId);
     const { ComputeNode: ComputeNodeClass } = await import('./compute-node/compute-node');
     const action = new ActionInfo('list-shells', ComputeNodeClass.type, computeNodeId, 'GET');
     const response = await dataManager.callAction<any, any>(action);
@@ -541,6 +562,25 @@ export class Shell extends APIEntity<Shell> implements IShell {
         results.push(Shell.adopt(d));
       } catch {
         // skip entries with invalid IDs (e.g. non-UUID legacy records)
+      }
+    }
+    return results;
+  }
+
+  /** The node's remote PTY sessions on the hub (its control shell first), as Shells. */
+  private static async listOnHub(computeNodeId: string): Promise<Shell[]> {
+    const action = new ActionInfo('terminal-command', 'compute_node', computeNodeId, 'POST');
+    action.subpath = 'list';
+    // A read with no connection state: REST when the socket is not up yet (a cold load).
+    const response = await dataManager.callActionPreferWS<any, any>(action);
+    const sessions: Array<{ session_id: string; name?: string }> =
+      response?.sessions ?? response?.data?.sessions ?? (Array.isArray(response) ? response : []);
+    const results: Shell[] = [];
+    for (const s of sessions) {
+      try {
+        results.push(Shell.adopt({ id: s.session_id, name: s.name ?? null, compute_node_id: computeNodeId }));
+      } catch {
+        // a session id that is not a Shell id (a non-UUID session) is not a terminal tab
       }
     }
     return results;

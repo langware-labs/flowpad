@@ -39,7 +39,8 @@ import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
 import { rememberedViewMode, ViewMode } from '@src/contexts/view-mode-context';
-import { VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
+import { NODE_PARAM, VIEW_MODE_PARAM } from '@src/navigation/DockPointer';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { activeDisplayDock } from '@src/navigation/open-active-display';
 
 /**
@@ -476,7 +477,7 @@ export async function resolveShellRoute(
     await reconcileProcessScope(processId, requestPath, carry);
     return;
   }
-  if (!pointer || pointer === 'new_terminal') return;
+  if (!pointer || pointer === 'new_terminal' || isHubOnly()) return;
   const shellId = shellIdFromPointer(pointer);
   const linkedProcess = dataManager.findInCache<AgenticProcess>((p) => p.shell_id === shellId, AgenticProcess.type);
   const ownerId =
@@ -492,6 +493,24 @@ export async function resolveShellRoute(
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(shellUrl(new TypeId(AgenticProcess.type, ownerId).toString()));
   }
+}
+
+// ── HUB: a terminal on a remote compute node ────────────────────────────────
+
+/**
+ * The hub keeps no Shell rows — a terminal there is a PTY session on a compute
+ * node (`terminal-command/*`), named by the client-chosen shell id. So the URL is
+ * the whole identity: the shell id plus `?node=<compute node id>`, and a cold
+ * load rebuilds the same in-memory Shell the click made instead of fetching one.
+ */
+function loadHubShell(shellId: string, nodeId: string | undefined): Shell {
+  const shell =
+    Shell.getByIdFromCache<Shell>(shellId) ??
+    (nodeId ? Shell.adopt({ id: shellId, name: null, compute_node_id: nodeId }) : null);
+  if (!shell) throw new ShellLoadError('not_found', shellId);
+  dataContext.setActiveShellId(shell.id);
+  dataContext.setActiveTerminalTargetTypeId(shell.typeId);
+  return shell;
 }
 
 // ── ROUTE: public entry point ───────────────────────────────────────────────
@@ -517,6 +536,11 @@ export async function loadShellRoute(
   // Resolve first — unless the caller already did (the dock loader runs it at step 3,
   // before materializing the tab). A direct caller gets the same redirect policy.
   if (!carry?.resolved) await resolveShellRoute(pointer, requestPath, carry);
+
+  if (isHubOnly() && pointer && pointer !== 'new_terminal') {
+    loadHubShell(shellIdFromPointer(pointer), carry?.options?.[NODE_PARAM]);
+    return;
+  }
 
   // Every shell URL resolves identity/context only. The mounted TerminalPanel
   // owns the WS-bound start/attach (process and plain shell alike), so nothing

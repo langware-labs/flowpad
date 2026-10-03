@@ -1,4 +1,5 @@
 import { perfLog } from '../../utils/perf';
+import { isHubOnly } from '../../utils/hub-runtime';
 import { toplog } from '../toplog';
 import { dataContext } from '../../FlowSync/context';
 import type { OutputChunk } from '../../pty-sync/types.js';
@@ -751,6 +752,9 @@ export class PtyConnection {
       pty_id: ptyId,
       connection_id,
       ...(cols !== undefined && rows !== undefined ? { cols, rows } : {}),
+      // The hub records no pty-stream file: its replay buffer is the history,
+      // sent on attach from the last seq this connection saw.
+      ...(isHubOnly() ? { since_seq: this.lastSeq } : {}),
     };
     const result = await dataManager.callActionOverWS<any, any>(
       action,
