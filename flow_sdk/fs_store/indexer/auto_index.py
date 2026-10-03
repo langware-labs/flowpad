@@ -119,20 +119,31 @@ class AutoIndexConfig:
         return self.index_type is IndexType.FULL
 
 
+def own_index_task(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
+    """Put a detached index task in the set factory reset cancels and joins.
+
+    Every detached walk that writes index rows must be owned here — not just
+    project auto-indexes. The startup system-content pass resolves the system
+    project's id when it starts; left running through a wipe it lands its rows
+    in the NEW database stamped with the OLD project id, and the reset's own
+    re-index then skips them as hash-fresh.
+    """
+    _active_auto_index_tasks.add(task)
+    task.add_done_callback(_active_auto_index_tasks.discard)
+    return task
+
+
 def schedule_auto_index(project_id: str, *, created: bool) -> asyncio.Task[None]:
     """Start and own one detached auto-index task.
 
     Factory reset cancels this owned set before swapping the database, so an
     index launched by the previous graph cannot keep writing through the wipe.
     """
-    task = asyncio.create_task(maybe_auto_index(project_id, created=created))
-    _active_auto_index_tasks.add(task)
-    task.add_done_callback(_active_auto_index_tasks.discard)
-    return task
+    return own_index_task(asyncio.create_task(maybe_auto_index(project_id, created=created)))
 
 
 async def cancel_auto_indexes() -> None:
-    """Cancel and join detached auto-index work before destructive DB reset."""
+    """Cancel and join every owned detached index task before destructive DB reset."""
     current = asyncio.current_task()
     tasks = [task for task in _active_auto_index_tasks if task is not current and not task.done()]
     for task in tasks:
