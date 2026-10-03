@@ -221,7 +221,7 @@ _REAL_HOME_TEST_MODULES = frozenset(
 
 
 @pytest.fixture(autouse=True)
-async def _real_home_for_cli_subprocess_tests(request):
+async def _real_home_for_cli_subprocess_tests(request, _rebind_session_db_driver):
     """Restore real ``$HOME`` for tests that spawn real worker CLI subprocesses.
 
     Scope of this fixture is **subprocess auth only**: the CLI inherits the
@@ -248,6 +248,11 @@ async def _real_home_for_cli_subprocess_tests(request):
     ``login_state=idle``; the spawn resolver honours that verdict, so this
     module's worker was refused as "claude is signed out" while the real HOME was
     signed in (and passed in isolation).
+
+    Ordered after ``_rebind_session_db_driver``: a module that serves the app in-process
+    (``test_ask_browser_matrix``) closes the session driver in its lifespan shutdown, and a
+    reset written before the rebind reopens it never reaches the database. The stale
+    "signed out" then survives into this module (2026-10-03).
     """
     module_stem = request.path.stem
     if module_stem in _REAL_HOME_TEST_MODULES:
