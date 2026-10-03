@@ -48,3 +48,21 @@ def test_build_args_resolves_portable_model_tier():
     )
 
     assert args[args.index("--model") + 1] == "haiku"
+
+
+def test_build_env_strips_the_parent_claude_code_session(monkeypatch):
+    """A backend started from inside Claude Code carries its session markers. A headless
+    worker that inherits ``CLAUDE_CODE_CHILD_SESSION`` saves no transcript, so the next
+    ``--resume`` of that session fails "No conversation found" (hub test
+    chat_terminal_switch_stress). The PTY spawn already stripped the family; this one
+    did not."""
+    for key in ("CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION", "CLAUDE_CODE_SESSION_ID", "ENABLE_IDE_INTEGRATION"):
+        monkeypatch.setenv(key, "1")
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR_UNRELATED", "kept")
+    reset_instance_settings()
+
+    env = ClaudeCLIWorker.build_env(AgenticContext())
+
+    leaked = [k for k in env if k.startswith(("CLAUDECODE", "CLAUDE_CODE_")) or k == "ENABLE_IDE_INTEGRATION"]
+    assert leaked == [], leaked
+    assert env.get("CLAUDE_CONFIG_DIR_UNRELATED") == "kept"
