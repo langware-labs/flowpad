@@ -92,7 +92,9 @@ async def test_worker_mounts_context_folder(
     ctx_root = canonical_posix_path(tmp_path / "ctx-folder")
     sentinel_path = f"{ctx_root}/notes/sentinel.txt"
 
-    workdir = tmp_path / "wd"
+    # Project names are unique and every worker param shares the session DB: a fixed
+    # "wd" let the first param's project refuse the next one's.
+    workdir = tmp_path / f"wd-{uuid.uuid4().hex[:8]}"
     workdir.mkdir()
     project = await Project(name=str(workdir)).save()
     resp = await project.add_context_dir(str(tmp_path / "ctx-folder"))

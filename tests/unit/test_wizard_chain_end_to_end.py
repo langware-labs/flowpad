@@ -62,6 +62,19 @@ def _never_wait_for_a_person(monkeypatch):
     monkeypatch.setattr(ask, "PRESENCE_POLL_SECONDS", 0.01)
 
 
+@pytest.fixture(autouse=True)
+def _every_status_fact_holds(monkeypatch):
+    """The status facts an op asks in-process (`status_check: install:claude`) hold on this
+    machine too -- the same "already provisioned" box the shell double answers for, and no
+    real discovery sweep (which would record this test machine's own PATH for later tests)."""
+    import flow_sdk.core.status.check as status_check
+
+    async def holds(fact: str):
+        return True, f"{fact} holds"
+
+    monkeypatch.setattr(status_check, "check_fact", holds)
+
+
 async def _everything_is_installed(command: str, **_):
     """Every check passes, printing the empty confirm an ask op's check echoes."""
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult

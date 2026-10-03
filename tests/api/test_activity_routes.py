@@ -280,3 +280,48 @@ async def test_the_emitter_is_installed_at_server_startup():
         "server startup must install the activity emitter, or no activity tick ever "
         "reaches a client"
     )
+
+
+# ---------------------------------------------------------------- plan / rerun / set_progress
+
+
+async def test_plan_announces_pending_children_with_labels_and_totals(client):
+    resp = await post(client, "qa", "plan", value=[
+        {"name": "p02", "label": "pytest API", "total": 2},
+        {"name": "p05", "label": "vitest API", "total": 3},
+    ])
+
+    spec = data(resp)
+    assert spec["state"] == "running", "announcing a plan starts the work"
+    assert [(c["name"], c["label"], c["total"], c["state"]) for c in spec["children"]] == [
+        ("p02", "pytest API", 2, "pending"),
+        ("p05", "vitest API", 3, "pending"),
+    ]
+
+
+async def test_a_plan_that_is_not_a_list_is_a_bad_argument(client):
+    assert refusal(await post(client, "qa", "plan", value="p02")) == "BAD_ARGUMENT"
+
+
+async def test_set_progress_moves_absolute_counts(client):
+    await post(client, "qa/p02", "total", value=2)
+    spec = data(await post(client, "qa/p02", "set_progress", value={"done": 1, "skipped": 0}))
+
+    assert spec["done"] == 1
+
+
+async def test_set_progress_refuses_an_unknown_field(client):
+    assert refusal(await post(client, "qa", "set_progress", value={"passed": 1})) == "BAD_ARGUMENT"
+
+
+async def test_rerun_restarts_the_counts_and_keeps_the_children(client):
+    await post(client, "qa/p02", "total", value=2)
+    await post(client, "qa/p02", "inc_error", message="boom", ref="t1")
+    await post(client, "qa/p02/fail-1", "label", message="t1")
+    await post(client, "qa/p02", "block", message="1 failing")
+
+    spec = data(await post(client, "qa/p02", "rerun"))
+
+    assert (spec["state"], spec["done"], spec["errors_count"], spec["message"]) == ("running", 0, 0, None)
+    assert spec["counters"]["runs"] == 2
+    assert [c["name"] for c in spec["children"]] == ["fail-1"]

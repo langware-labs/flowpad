@@ -10,6 +10,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
 import { flushAgentAutoLaunchWarning } from '@src/agents/agent-auto-launch-warning';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
+import { ActivityDetailsModalRoot } from '@src/components/footer/ActivityDetailsModal';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
 import { RunPreviewRoot } from '@src/components/runs/RunPreviewRoot';
 import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
@@ -149,6 +150,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             box opens on whichever the view mode picks. */}
         <IncomingDeepLink />
         <ActivityProgressModalRoot />
+        <ActivityDetailsModalRoot />
         <WikiModalRoot />
         <RunPreviewRoot />
         <FilePreviewRoot />

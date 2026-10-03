@@ -327,6 +327,12 @@ class ComputeOpSpec(AssetDocumentSpec):
     output_spec_kind: Optional[str] = None
     #: When this op is already done. Absent ⇒ it always runs: a call, not a goal.
     completion_check: Optional[CliOp] = None
+    #: The same question when its answer is a STATUS fact (``install:<harness>``,
+    #: ``install:default``): answered in-process by the backend that owns the status
+    #: record -- that harness re-discovered, then its ``install`` read -- rather than by a
+    #: shell that starts the ``flow`` CLI only to ask this backend over HTTP. Either this
+    #: or ``completion_check``, not both.
+    status_check: Optional[str] = None
     #: Further rungs at the SAME goal, tried in order while the completion check
     #: still fails after the one before — the op's own call, then this list, for
     #: as many rungs as are named. Needs a completion_check: nothing else can
@@ -352,7 +358,9 @@ class ComputeOpSpec(AssetDocumentSpec):
 
     @model_validator(mode="after")
     def _attempts_need_a_check(self) -> "ComputeOpSpec":
-        if self.attempts and self.completion_check is None:
+        if self.completion_check is not None and self.status_check:
+            raise ValueError(f"{self.name or 'this op'}: a completion_check or a status_check, not both")
+        if self.attempts and not self.convergent:
             raise ValueError(
                 f"{self.name or 'this op'}: attempts need a completion_check — nothing else can say one missed"
             )
@@ -381,7 +389,7 @@ class ComputeOpSpec(AssetDocumentSpec):
     @property
     def convergent(self) -> bool:
         """True when this op can answer "already done" without doing anything."""
-        return self.completion_check is not None
+        return self.completion_check is not None or bool(self.status_check)
 
     def verdict_of(self, said: CliResult) -> ExitCode:
         """Read one completion-check run: ``OK`` the goal holds, ``NOT_APPLICABLE``

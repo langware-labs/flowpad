@@ -50,10 +50,18 @@ def target_segment(target: str) -> str:
 
 
 def run_dir(wizard_id: str) -> Path:
-    """This run's folder (see :func:`run_key`) — also the cwd its command steps execute in."""
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    """This run's folder (see :func:`run_key`) — also the cwd its command steps execute in.
 
-    return Path(get_instance_settings().flow_home) / "wizard-runs" / str(wizard_id)
+    The wizard RECORD's own data folder (``<records_data>/wizard/<id>/``, per instance): a run
+    is this wizard's data on this instance, not a machine-wide fact. A target's run is a folder
+    inside it. It used to live under the shared flow home, so every instance on a machine read
+    and overwrote the same run -- a fresh instance opened onto another instance's answers.
+    """
+    from flow_sdk.fs_store.record_paths import data_dir_for  # noqa: PLC0415
+
+    wizard, _, target = str(wizard_id).partition("/")
+    base = data_dir_for("wizard", wizard)
+    return base / target if target else base
 
 
 def _state_path(wizard_id: str) -> Path:

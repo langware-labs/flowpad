@@ -69,8 +69,33 @@ def _message(body: VerbBody) -> "Optional[str]":
     return None if body.value is None else str(body.value)
 
 
+def _plan_items(value: Any) -> "list[dict]":
+    """``plan``'s argument: a list of ``{name, label?, total?}``. A bare name is allowed
+    as shorthand for an unlabelled step. Anything else is a caller bug, raised as
+    ``TypeError`` so it comes back ``BAD_ARGUMENT``."""
+    if not isinstance(value, list) or not value:
+        raise TypeError("plan takes a non-empty list of {name, label?, total?}")
+    items = []
+    for raw in value:
+        item = {"name": raw} if isinstance(raw, str) else raw
+        if not isinstance(item, dict) or not item.get("name"):
+            raise TypeError(f"plan item needs a name: {raw!r}")
+        items.append({k: item.get(k) for k in ("name", "label", "total")})
+    return items
+
+
+def _progress_fields(value: Any) -> "dict[str, int]":
+    """``set_progress``'s argument: absolute ``{done?, skipped?, errors?}``."""
+    if not isinstance(value, dict):
+        raise TypeError("set_progress takes {done?, skipped?, errors?}")
+    unknown = set(value) - {"done", "skipped", "errors"}
+    if unknown:
+        raise TypeError(f"set_progress does not know {sorted(unknown)}")
+    return {k: int(v) for k, v in value.items() if v is not None}
+
+
 #: verb -> what it does to a node. Built once at import: a table rebuilt per request
-#: allocates sixteen closures to call one of them. It is also the ONLY list of verbs —
+#: allocates a closure per verb to call one of them. It is also the ONLY list of verbs —
 #: a separate tuple of names beside it is a second thing to keep in step.
 VERB_TABLE: "dict[str, Callable[[Activity, VerbBody], None]]" = {
     "label": lambda act, body: act.label(_message(body)),
@@ -92,6 +117,9 @@ VERB_TABLE: "dict[str, Callable[[Activity, VerbBody], None]]" = {
     "fail": lambda act, body: act.fail(_message(body)),
     "cancel": lambda act, body: act.cancel(_message(body)),
     "reset": lambda act, _body: act.reset(),
+    "plan": lambda act, body: act.plan(_plan_items(body.value)),
+    "rerun": lambda act, _body: act.rerun(),
+    "set_progress": lambda act, body: act.set_progress(**_progress_fields(body.value)),
 }
 
 

@@ -101,7 +101,9 @@ describe('context folder reaches a real worker', () => {
     await fs.mkdir(contextDir, { recursive: true });
     const token = `CTXTOKEN-${Math.random().toString(36).slice(2, 14)}`;
     await fs.writeFile(path.join(contextDir, 'sentinel.txt'), `${token}\n`);
-    const workdir = path.join(tmpRoot, 'wd');
+    // Project names are unique and this instance outlives the run: a fixed 'wd' made the
+    // next run's project collide with the last one's (400 "a project named 'wd' already exists").
+    const workdir = path.join(tmpRoot, `wd-${Math.random().toString(36).slice(2, 10)}`);
     await fs.mkdir(workdir);
 
     // Attach the folder via the real HTTP action; the server-computed

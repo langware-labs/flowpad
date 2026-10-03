@@ -68,7 +68,14 @@ def _migrations_root_at(commit: str, tmp: Path) -> Path:
 
 
 def _recipe_versions() -> list[str]:
-    return sorted(p.name for p in (REPO / MIGRATIONS).iterdir() if p.is_dir())
+    """Version directories that hold a real file. A recipe removed from the tree
+    leaves its directory behind locally when Python had compiled it — git does
+    not track the ``__pycache__`` left inside — and that husk is not a recipe."""
+    return sorted(
+        p.name
+        for p in (REPO / MIGRATIONS).iterdir()
+        if p.is_dir() and any(f.is_file() and "__pycache__" not in f.parts for f in p.rglob("*"))
+    )
 
 
 def _shipped_in_own_wheel(version: str, commit: str, tmp: Path) -> bool:

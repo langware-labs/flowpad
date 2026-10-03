@@ -212,6 +212,14 @@ _IGNORED_TYPES: frozenset[str] = frozenset(
 )
 
 
+# ``system`` lines Claude writes AFTER a turn has ended — bookkeeping about the turn,
+# not a state of the worker. Claude 2.1.x closes an interactive turn with
+# ``stop_hook_summary`` + ``turn_duration`` and only writes ``last-prompt`` much later
+# (at exit); read as the last meaningful entry they hid the ``end_turn`` before them
+# (often beyond the 4 KB window) and a finished PTY turn read UNKNOWN forever.
+_IGNORED_SYSTEM_SUBTYPES: frozenset[str] = frozenset({"turn_duration", "stop_hook_summary"})
+
+
 # Tools whose ``tool_use`` block BLOCKS on a human response. While one is pending
 # (its ``tool_result`` — keyed by ``tool_use_id`` — hasn't landed yet) the worker
 # has handed control back to the user and is idle awaiting them, NOT executing a
@@ -410,6 +418,8 @@ def _scan_reversed(
             continue
         t = entry.get("type", "")
         if t in _IGNORED_TYPES:
+            continue
+        if t == "system" and entry.get("subtype") in _IGNORED_SYSTEM_SUBTYPES:
             continue
         if last_type is None:
             last_type = t

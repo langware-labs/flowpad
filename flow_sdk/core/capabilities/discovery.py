@@ -26,6 +26,7 @@ import logging
 import os
 import shutil
 import sys
+from pathlib import Path
 
 from flow_sdk.core.capabilities.env_probe import adopt_path
 from flow_sdk.core.capabilities.models import CapabilityValue
@@ -135,10 +136,14 @@ async def _run_env_probe(executables: list[str]) -> dict:
     """
     if executables:
         try:
+            # By FILE PATH, not `-m`: `-m` imports the parent packages first, and
+            # `flow_sdk.core` / `flow_sdk.core.capabilities` pull in the entity model and the
+            # registry -- the server stack this stdlib-only child exists to avoid. On Windows
+            # that import alone outran PROBE_TIMEOUT_SECONDS, so every sweep waited the full
+            # cap and fell back to the process PATH.
             proc = await asyncio.create_subprocess_exec(
                 sys.executable,
-                "-m",
-                "flow_sdk.core.capabilities.env_probe",
+                str(Path(__file__).with_name("env_probe.py")),
                 *executables,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
