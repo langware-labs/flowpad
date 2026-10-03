@@ -763,7 +763,6 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     ``harness`` capability. The result carries ``process_id`` immediately so UI
     surfaces can show/open the run while it is still active.
     """
-    from pathlib import Path
 
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.capability import capability_id_for_kind
@@ -771,7 +770,7 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
     from flow_sdk.instance_settings import get_instance_settings
 
     prompt = install_prompt_for_spec(spec)
-    workdir = Path(get_instance_settings().flow_home) / "capability-installs"
+    workdir = get_instance_settings().instance_dir / "capability-installs"
     workdir.mkdir(parents=True, exist_ok=True)
 
     try:
@@ -849,7 +848,6 @@ def _install_failed(
 
 async def run_chrome_authenticated_probe() -> CapabilityResult:
     import secrets
-    from pathlib import Path
 
     from flow_sdk.builtin.agent_registry import get_agent_local_deployment
     from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -858,7 +856,7 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
     from flow_sdk.instance_settings import get_instance_settings
 
     nonce = f"flowpad-capability-{secrets.token_hex(8)}"
-    probe_dir = Path(get_instance_settings().flow_home) / "capability-probes"
+    probe_dir = get_instance_settings().instance_dir / "capability-probes"
     probe_dir.mkdir(parents=True, exist_ok=True)
     probe_file = probe_dir / "chrome-authenticated-probe.html"
     probe_file.write_text(

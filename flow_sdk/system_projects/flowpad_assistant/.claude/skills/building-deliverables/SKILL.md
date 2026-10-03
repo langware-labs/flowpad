@@ -98,7 +98,7 @@ switching later — the surface changes shape under the user mid-session:
 2. Only once that fetch returned 200 / the page body: `flow show webapp --port <that port>`.
    If it did not, STOP and report the failure — do not retry blind, do not call
    `flow show`, and do not fall back to `flow show file` as if nothing happened. The real
-   error is in `~/.flow/app-open-logs/`; read it.
+   error is in the log file `flow app open` printed (this instance's `logs/app-open/`); read it.
 
 **Never kill processes by name.** `pkill -f python` / `Get-Process python | Stop-Process -Force`
 takes down Flowpad's own Python backend along with everything else, and every `flow` command
