@@ -224,8 +224,11 @@ def connect(
     Does not start the local Flow server: the hub initializes the workspace app
     on first use, exactly as it does for a cloud sandbox.
     """
+    # ``force``: importing ``flow_sdk.config`` already set root to INFO for the server
+    # log, which made this call a no-op — every 5s enrollment poll printed an httpx
+    # "400 Bad Request" line and scrolled the code off the screen.
     logging.basicConfig(
-        level=logging.INFO if verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s"
+        level=logging.INFO if verbose else logging.WARNING, format="%(levelname)s %(name)s: %(message)s", force=True
     )
     from flow_sdk.cloud_client.client import ApiConfig
     from flow_sdk.instance_settings import get_instance_settings
