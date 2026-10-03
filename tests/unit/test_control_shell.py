@@ -83,3 +83,18 @@ async def test_a_cancelled_command_takes_its_shell_and_child_with_it(tmp_path):
         assert (out.strip(), code) == ("still serving", 0)
     finally:
         await shells.close()
+
+
+@windows_only
+async def test_closing_ends_shells_that_are_still_starting(tmp_path):
+    """Removing a machine stops the worker mid warm-up; a shell still starting must not
+    outlive it (seen on a Windows VM: an orphan PowerShell at 95 s CPU, parent gone)."""
+    import shutil
+
+    shells = ControlShells(shutil.which("powershell"), env=dict(__import__("os").environ), cwd=str(tmp_path))
+    shells.start()
+    while not shells._processes:  # the first PowerShell has been spawned, not yet ready
+        await asyncio.sleep(0.05)
+    started = list(shells._processes)
+    await shells.close()
+    assert all(p.returncode is not None for p in started)

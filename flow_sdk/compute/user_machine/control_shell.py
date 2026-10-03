@@ -166,6 +166,10 @@ class ControlShells:
         self._count = 0
         self._wanted = asyncio.Event()
         self._warmer: asyncio.Task | None = None
+        # Every PowerShell this pool started and that may still run — idle, busy or
+        # still starting. `close` ends them all: one left starting when the worker
+        # stopped outlived it (seen on Windows: an orphan at 95 s of CPU, parent gone).
+        self._processes: set[asyncio.subprocess.Process] = set()
 
     async def _start_one(self) -> ControlShell | None:
         encoded = base64.b64encode(_HOST.encode("utf-16-le")).decode("ascii")
@@ -184,12 +188,14 @@ class ControlShells:
             env=self.env,
             limit=_LIMIT,
         )
+        self._processes.add(process)
         assert process.stdout is not None
         line = await process.stdout.readline()
         if line.strip() != READY:
             logger.warning("[connect] a control shell did not start: %r", line[:200])
             if process.returncode is None:
                 process.kill()
+            self._processes.discard(process)
             return None
         return ControlShell(process)
 
@@ -231,14 +237,16 @@ class ControlShells:
     def discard(self, shell: ControlShell) -> None:
         """A shell whose command was cancelled or broke: end it, start a fresh one."""
         shell.kill()
+        self._processes.discard(shell.process)
         self._count -= 1
         self._wanted.set()
 
     async def close(self) -> None:
-        """End the idle shells. A busy one ends after its command: its stdin closes with us."""
+        """End every control shell this pool started — idle, busy, or still starting."""
         if self._warmer is not None:
             self._warmer.cancel()
-        while not self._idle.empty():
-            shell = self._idle.get_nowait()
-            shell.kill()
-            await shell.process.wait()
+        for process in list(self._processes):
+            ControlShell(process).kill()
+        for process in list(self._processes):
+            await process.wait()
+        self._processes.clear()
