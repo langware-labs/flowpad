@@ -35,7 +35,6 @@ from flow_sdk.schema.data_spec.credential_contract import (
     CREDENTIAL_SCOPES,
     DEFAULT_ENVIRONMENT,
     SCOPE_PROJECT,
-    SCOPE_SYSTEM,
     SCOPE_USER,
     CredentialVarKind,
 )
@@ -349,13 +348,17 @@ async def _release_orphaned_bindings(env_vars: list[str]) -> None:
     person's deployment config, never touched here."""
     from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
     from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
     if not env_vars:
         return
-    # A shipped template (system scope) holds no values and is read through no binding.
-    declared = {
-        name for other in await Credential.get_all() if other.scope != SCOPE_SYSTEM for name in other.var_names()
-    }
+    # Only AUTHORED credentials count: a shipped template (system scope) holds no values and is
+    # read through no binding.
+    authored = ExpressionNode(op=QueryOp.OR, operands=[
+        ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_USER]),
+        ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_PROJECT]),
+    ])
+    declared = {name for other in await Credential.get_all(QueryFilter(match=authored)) for name in other.var_names()}
     orphaned = [name for name in env_vars if name not in declared]
     if orphaned:
         await (await Deployment.this_computer()).release(orphaned)
