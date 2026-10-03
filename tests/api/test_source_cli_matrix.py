@@ -15,9 +15,20 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_types_and_list_answer(client, monkeypatch):
+    # `types` lists the INDEXED data drivers -- what the boot index of the shipped assets leaves in
+    # a real instance. A test client never runs that index, so it indexes the shipped drivers this
+    # matrix runs; without it the answer depended on whether an earlier test had indexed one.
+    from flow_sdk.config import system_projects_root
+    from tests.fixtures.identity import index_path
+
+    shipped = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "data_driver"
+    for name in NAMES:
+        await index_path("data_driver", shipped / name, write=False)
+
     driver = CliDriver(client, monkeypatch)
     assert isinstance((await driver.flow("list"))["sources"], list)
-    assert (await driver.flow("types"))["types"]
+    listed = {row["name"] for row in (await driver.flow("types"))["types"]}
+    assert set(NAMES) <= listed, f"shipped drivers missing from `flow source types`: {sorted(set(NAMES) - listed)}"
 
 
 @pytest.mark.parametrize("name", NAMES)
