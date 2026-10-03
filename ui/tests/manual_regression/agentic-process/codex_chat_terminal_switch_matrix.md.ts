@@ -71,7 +71,7 @@ test('C02-C16: transport switching stays one URL-first process with busy and acc
     'utf8',
   );
   const terminalPanel = readFileSync(
-    join(repo, 'ui/src/components/terminal/TabbedTerminal.tsx'),
+    join(repo, 'ui/src/components/terminal/TerminalPanel.tsx'),
     'utf8',
   );
   const sdk = readFileSync(join(repo, 'ts_sdk/src/process/agentic-process.ts'), 'utf8');
