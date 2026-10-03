@@ -218,6 +218,13 @@ def main() -> None:
 
     reset_instance_settings()
     set_api_key("fake-e2e-hub-key")
+    # The local cloud profile, naming the user the fake hub answers "who am I" with: a box is
+    # signed in to FlowPad once the hub confirms the same user (`core.status.hub_status`), and
+    # only a signed-in box spends a hub endpoint.
+    from flow_sdk.cli.app_config import set_user
+    from tests.utils.fake_llm_hub_server import FAKE_USER
+
+    set_user(dict(FAKE_USER))
     # Dash form on purpose — this is what endpoint_invoke_url() parses back through TypeId to
     # build the REAL invoke URL a spawn uses; a colon form there fails validation silently and
     # falls through to a stub with no id at all.
