@@ -1181,12 +1181,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
 
   async setHook(event: HookEventType): Promise<boolean> {
     const response = await this.post<{ changed: boolean }>('set-hook', { event });
+    await this.adoptHookChange(response.changed);
     return response.changed;
   }
 
   async removeHook(event: HookEventType): Promise<boolean> {
     const response = await this.post<{ changed: boolean }>('remove-hook', { event });
+    await this.adoptHookChange(response.changed);
     return response.changed;
+  }
+
+  /** A hook action persists server-side; read the row back so `process_hook_events`
+   *  is current when the call resolves. Waiting on the WebSocket push instead races
+   *  every caller that reads the process straight after (a cached getById hands back
+   *  this same instance). */
+  private async adoptHookChange(changed: boolean): Promise<void> {
+    if (changed) await dataManager.refreshByTypeId(this.typeId);
   }
 
   registerCallback(callback: ProcessHookCallback): () => void {
