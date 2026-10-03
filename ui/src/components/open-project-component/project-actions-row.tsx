@@ -24,6 +24,7 @@ function ActionButton({
   variant,
   Icon,
   label,
+  shortLabel,
   loading,
   onClick,
   testId,
