@@ -276,6 +276,20 @@ from tests.api.conftest import (  # noqa: F401, E402
 
 
 @pytest.fixture()
+def run_workdir(tmp_path) -> Path:
+    """A process workdir for a LIVE instance whose folder name is new on every run.
+
+    A visible process materializes a Project named after its workdir's basename,
+    and project names are unique. ``tmp_path`` is named after the test
+    (``test_prompt_admits_visible_pro0``), so the second run against the same
+    instance collides with the first run's project and ``createProcess`` 500s.
+    """
+    workdir = tmp_path / f"run-{uuid.uuid4().hex[:12]}"
+    workdir.mkdir()
+    return workdir
+
+
+@pytest.fixture()
 async def local_project(initialize_test_db, tmp_path):
     """Create an @local Project with tmp_path as its workdir, cleaned up after the test."""
     from flow_sdk.builtin.project import Project

@@ -118,7 +118,7 @@ async def _get_busy(hub_client, process_id: str) -> tuple[bool | None, str | Non
     return e.get("busy"), e.get("worker_status")
 
 
-async def test_cancel_prompt_clears_busy(hub_and_node, tmp_path):
+async def test_cancel_prompt_clears_busy(hub_and_node, run_workdir):
     """Cancel a real in-flight print-mode turn; ``busy`` must go False.
 
     Fails today: cancel-prompt returns ``{"cancelled": true}`` (the CLI is
@@ -126,7 +126,7 @@ async def test_cancel_prompt_clears_busy(hub_and_node, tmp_path):
     ``worker_status: "working"`` off the dead turn's transcript tail.
     """
     hub_client, compute_node_id = hub_and_node
-    process_id = await _create_print_mode_process(hub_client, compute_node_id, str(tmp_path))
+    process_id = await _create_print_mode_process(hub_client, compute_node_id, str(run_workdir))
 
     # Fire the turn and keep the stream open in the background — the vibe UI
     # holds the prompt stream for the whole turn; the cancel must land while
