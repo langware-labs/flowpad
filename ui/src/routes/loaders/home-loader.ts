@@ -4,12 +4,16 @@ import { TimeIt } from '@src/utils/timeit';
 import { adoptScopeProject } from './load-dock-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { getViewMode } from '@src/contexts/view-mode-context';
-import { runLoadRedirects } from './load-redirects';
+import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
 import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
 import '@src/project-home-page/project-home-page-redirect'; // the Home button's `?homePage=open` target
-import { endLaunch, forgetLastTab, noteHomeLoad } from '@src/tabs/last-tab-restore'; // registers last: a launch reopens the last tab
+import { endLaunch, forgetLastPlace, lastPlaceRestoreRedirect } from '@src/tabs/last-tab-restore';
+
+// Last, from this module's body — after the side-effect imports above have run —
+// so every redirect the user or the app asked for on this load outranks it.
+registerLoadRedirect(lastPlaceRestoreRedirect);
 
 /**
  * Ensure compute node is loaded for the current project
@@ -51,8 +55,6 @@ export async function loadHomePage(args: LoaderArgs) {
 
   const url = new URL(args.request.url);
   const dock = DockPointer.root().withOptionsFromUrl(`${url.pathname}${url.search}`);
-  // Before the canonicalization below rewrites it: a bare `/` is how a launch arrives.
-  noteHomeLoad(url);
 
   // `/` arrives bare on every cold load — the browser loads the URL directly, so
   // `openDock`'s viewMode stamping never runs for it. Canonicalize it here so the
@@ -100,7 +102,7 @@ export async function loadHomePage(args: LoaderArgs) {
     throw loadRedirect;
   }
   // Home is the view with no tab: the next launch opens here, not on the tab just left.
-  forgetLastTab();
+  forgetLastPlace();
 
   t.done(1.2); // warn if total > 1200ms
 

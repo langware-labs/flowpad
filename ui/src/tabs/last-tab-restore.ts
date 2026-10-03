@@ -1,95 +1,69 @@
-import { isHubOnly, Layout, tabManager } from '@sdk';
+import { Layout } from '@sdk';
 import { replace } from 'react-router';
 
-import { getViewMode, rememberedDockViewMode } from '@src/contexts/view-mode-context';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { registerLoadRedirect } from '@src/routes/loaders/load-redirects';
+import type { DockPointer } from '@src/navigation/DockPointer';
 
 /**
  * Restore the last view on launch, the way an IDE reopens where you left off.
  *
  * The app launches at a BARE `/` — Electron loads the backend root, a browser
  * opens the address — while every in-app navigation to Home states its mode
- * (`?viewMode=…`). So a bare `/` on the first home load of this document is a
- * launch, and only a launch restores; a reload stays where it is, and Home
+ * (`?viewMode=…`). So a document that opened at a bare `/` was launched, and
+ * only its first home load restores; a reload stays where it is, and Home
  * stays Home.
  *
- * What is restored is the last PLACE, not the newest `last_active_at`: landing
- * on a tab remembers it, landing on Home forgets it. A user who left a tab for
- * Home comes back to Home, not to the tab they had already left. A remembered
- * tab that has since been closed restores nothing.
+ * What is restored is the last PLACE: every dock load in the main window
+ * records its URL (canonical — scope and view mode included, so the restore
+ * lands in one hop), and Home, the view with no tab, forgets it. A user who left
+ * a tab for Home comes back to Home. Closing the shown tab moves the window
+ * elsewhere, which records that place instead.
  *
  * Per instance by construction: each instance serves its UI from its own port,
  * so `localStorage` is a separate origin for each.
  */
-const STORAGE_KEY = 'flowpad.lastTab';
+const STORAGE_KEY = 'flowpad.lastDockUrl';
 
-/** Whether this document's first home load was a launch. Decided once; consumed by the redirect. */
-let launch: 'undecided' | 'pending' | 'done' = 'undecided';
+/** Decided once, from the document's own URL; ended after the launch's one resolver pass. */
+let launchPending = isBareRoot(window.location);
 
-/** Record the home loader's URL. Only the first call of a document decides whether it was a launch. */
-export function noteHomeLoad(url: URL): void {
-  if (launch !== 'undecided') return;
-  launch = url.pathname === '/' && url.search === '' ? 'pending' : 'done';
+function isBareRoot(url: Pick<URL, 'pathname' | 'search'>): boolean {
+  return url.pathname === '/' && url.search === '';
 }
 
-/** The launch's one resolver pass is over, whichever redirect (if any) took it. */
-export function endLaunch(): void {
-  launch = 'done';
-}
-
-/** The main window landed on `tabId`. Pop-out windows (`/win`) never speak for the main window. */
-export function rememberLastTab(dock: DockPointer, tabId: string): void {
-  if (dock.layout !== Layout.DOCK) return;
+/** Storage can be unavailable (private mode, blocked site data): the launch then opens Home, as before. */
+function storage<T>(fn: (s: Storage) => T): T | null {
   try {
-    localStorage.setItem(STORAGE_KEY, tabId);
-  } catch {
-    // Storage unavailable: the next launch opens Home, as it did before.
-  }
-}
-
-/** The main window landed on Home — the view with no tab. */
-export function forgetLastTab(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Nothing remembered to clear.
-  }
-}
-
-function rememberedTabId(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
+    return fn(localStorage);
   } catch {
     return null;
   }
 }
 
+/** The main window finished loading `dock` at `url`. Pop-out windows (`/win`) never speak for it. */
+export function rememberLastPlace(dock: DockPointer, url: string): void {
+  if (dock.layout === Layout.DOCK) storage((s) => s.setItem(STORAGE_KEY, url));
+}
+
+/** The main window landed on Home — the view with no tab. */
+export function forgetLastPlace(): void {
+  storage((s) => s.removeItem(STORAGE_KEY));
+}
+
+/** The launch's one resolver pass is over, whichever redirect (if any) took it. */
+export function endLaunch(): void {
+  launchPending = false;
+}
+
 /**
- * On a launch, the remembered tab's dock — in the mode it was last shown in —
- * or null to stay on Home. `replace`: the bare launch URL must not stay behind
- * the tab as a Back step that bounces forward again.
+ * On a launch, the last place, or null to stay on Home. `replace`: the bare
+ * launch URL must not stay behind the tab as a Back step that bounces forward.
  */
-export async function lastTabRestoreRedirect(): Promise<Response | null> {
-  if (launch !== 'pending') return null;
-  launch = 'done';
-  if (isHubOnly()) return null;
-  const tabId = rememberedTabId();
-  if (!tabId) return null;
-
-  const tab = (await tabManager.snapshotOrRefresh()).find((t) => t.id === tabId);
-  const stored = tab && !tab.is_disabled ? tab.dockPointer : null;
-  if (!stored) return null;
-  const dock = new DockPointer(stored);
-  const mode = dock.viewMode ?? rememberedDockViewMode(dock) ?? getViewMode();
-  return replace(dock.withViewMode(mode).toUrl());
+export function lastPlaceRestoreRedirect(request: Request): Promise<Response | null> {
+  if (!launchPending || new URL(request.url).pathname !== '/') return Promise.resolve(null);
+  const url = storage((s) => s.getItem(STORAGE_KEY));
+  return Promise.resolve(url ? replace(url) : null);
 }
 
-export function resetLastTabRestoreForTests(): void {
-  launch = 'undecided';
+export function resetLastPlaceRestoreForTests(documentUrl: string): void {
+  launchPending = isBareRoot(new URL(documentUrl));
 }
-
-// Registered after every other load redirect (journeys, agent auto-launch, the
-// project home page): first redirect wins, and each of those is a destination
-// the user or the app asked for on this load.
-registerLoadRedirect(lastTabRestoreRedirect);
