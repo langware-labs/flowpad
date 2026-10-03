@@ -125,7 +125,8 @@ Run it through the progress bridge (progress.md): `flow test run --activity $ROO
 uv run flow instance ctl is-up qa-cycle || scripts/instance_ctl.sh launch qa-cycle
 QA_BE=$(uv run flow instance ctl port qa-cycle --role backend)
 [ -n "$QA_BE" ] || { echo "FATAL: no live backend port for qa-cycle"; exit 1; }
-DEEP_TESTING=1 FLOW_INSTANCE=qa-cycle FLOWPAD_HUB_URL="http://localhost:${QA_BE}" \
+mkdir -p "$SCRATCH/p3home"   # throwaway FLOW_HOME: workers with no vendor login (deepagents) store a key there
+DEEP_TESTING=1 FLOW_INSTANCE=qa-p3 FLOW_HOME="$SCRATCH/p3home" FLOWPAD_HUB_URL="http://localhost:${QA_BE}" \
   FLOWPAD_CLAUDE_HOME="$HOME/.claude" \
   QA_API_URL="http://localhost:${QA_BE}" SCHEDULE_E2E_API_URL="http://localhost:${QA_BE}" \
   python -m pytest tests/long_tests/ -x -v
