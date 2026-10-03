@@ -80,22 +80,23 @@ def _render(status: dict) -> str:
 
 
 def _check_target(spec: str) -> str:
-    """The harness a ``--check`` names: ``install:<harness>``, where ``<harness>`` is a driver name
-    (``claude``), a capability kind, or ``default`` (the user's default harness)."""
-    fact, _, name = spec.partition(":")
-    if fact != "install" or not name:
-        fail(EXIT_INVALID_ARG, "INVALID_ARG", f"unknown check {spec!r}; use install:<harness>")
-    return name
+    """The harness a ``--check`` names (``install:<harness>``, ``<harness>`` may be ``default``)."""
+    from flow_sdk.core.status.check import UnknownStatusFact, install_target  # noqa: PLC0415
+
+    try:
+        return install_target(spec)
+    except UnknownStatusFact as exc:
+        fail(EXIT_INVALID_ARG, "INVALID_ARG", str(exc))
+        raise
 
 
 def _kind_for(name: str, status: dict | None = None) -> str:
     """A ``--check`` name as a capability kind, ``""`` when it names no harness."""
-    from flow_sdk.flowpad_types.vendors import vendor_by, vendor_or_none  # noqa: PLC0415
+    from flow_sdk.core.status.check import harness_kind  # noqa: PLC0415
 
     if name == "default":
         return str((status or {}).get("default_harness") or "")
-    vendor = vendor_or_none(name) or vendor_by("capability_kind", name)
-    return vendor.capability_kind if vendor is not None else ""
+    return harness_kind(name)
 
 
 def _check(status: dict, kind: str) -> bool:
