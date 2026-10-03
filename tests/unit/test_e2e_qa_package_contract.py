@@ -79,7 +79,7 @@ def test_canonical_worktree_contract(canonical_files: dict[str, bytes]) -> None:
         revision=None,
     )
     assert report["valid"] is True
-    assert report["file_count"] == 19
+    assert report["file_count"] == 20
     assert [entry["path"] for entry in report["files"]] == sorted(
         validator.EXPECTED_PATHS,
         key=lambda path: path.encode(),
@@ -199,7 +199,7 @@ def test_cli_json_contract_and_explicit_worktree(
     assert report["algorithm"] == "sha256-path-content-v1"
     assert report["source"] == {"kind": "worktree", "revision": None}
     assert report["package_root"] == ".claude/skills/e2e-qa"
-    assert report["file_count"] == 19
+    assert report["file_count"] == 20
     assert report["valid"] is True
     assert report["errors"] == []
     assert len(report["package_sha256"]) == 64

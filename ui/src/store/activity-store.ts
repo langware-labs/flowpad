@@ -46,6 +46,13 @@ const listeners = new Set<() => void>();
 const evictionTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let snapshot: ReadonlyArray<ActivityProgressSpec> = [];
 let attached = false;
+/**
+ * The last root that FINISHED, kept until someone dismisses it or another root finishes.
+ * `RECEIPT_LINGER_MS` is right for the live list (it must not lie about what is running),
+ * but two seconds is not enough to read how a long job ended — a QA cycle's verdict, an
+ * index's error count. The receipt is that result, held where the footer can show it.
+ */
+let receipt: ActivityProgressSpec | null = null;
 
 function key(spec: Pick<ActivityProgressSpec, 'subject_entity' | 'path'>): string {
   return `${spec.subject_entity ?? ''}::${spec.path}`;
@@ -108,6 +115,7 @@ export function handleActivitySnapshot(spec: ActivityProgressSpec): void {
   sortKeys.set(k, Date.parse(spec.updated_at ?? spec.started_at ?? '') || 0);
 
   if (isTerminal(spec)) {
+    receipt = spec;
     evictionTimers.set(
       k,
       setTimeout(() => {
@@ -157,8 +165,23 @@ export async function replay(): Promise<void> {
   for (const row of rows) handleActivitySnapshot(row);
 }
 
+/** Forget the last finished root — the footer's dismiss. */
+export function dismissActivityReceipt(): void {
+  if (receipt === null) return;
+  receipt = null;
+  notify();
+}
+
+const getReceipt = (): ActivityProgressSpec | null => receipt;
+
+/** The last finished root, until dismissed or replaced by the next one to finish. */
+export function useActivityReceipt(): ActivityProgressSpec | null {
+  return useSyncExternalStore(subscribe, getReceipt, getReceipt);
+}
+
 /** Test seam: forget everything, including pending receipt timers. */
 export function __resetActivityStoreForTest(): void {
+  receipt = null;
   for (const timer of evictionTimers.values()) clearTimeout(timer);
   evictionTimers.clear();
   specs.clear();

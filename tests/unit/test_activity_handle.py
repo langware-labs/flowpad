@@ -363,3 +363,64 @@ def test_a_terminal_ancestor_is_not_revived_by_a_late_child_tick():
     child.inc_success()
 
     assert root.state is ActivityState.COMPLETED
+
+
+# ---------------------------------------------------------------- plan / rerun
+
+
+def test_plan_creates_labelled_children_that_stay_pending():
+    """A labelled child would otherwise be started by the verb that names it, and an
+    outline whose steps all read "running" says nothing about what is left."""
+    root = Activity.get("qa").plan([{"name": "p02", "label": "pytest API", "total": 2}, {"name": "p05"}])
+
+    assert root.state == ActivityState.RUNNING
+    p02, p05 = (Activity.get("qa/p02"), Activity.get("qa/p05"))
+    assert (p02.state, p02.label_text, p02.total_count, p02.started_at) == (ActivityState.PENDING, "pytest API", 2, None)
+    assert p05.state == ActivityState.PENDING
+
+
+def test_replanning_never_rewinds_a_step_in_flight():
+    Activity.get("qa").plan([{"name": "p02", "label": "pytest API", "total": 2}])
+    Activity.get("qa/p02").inc_success()
+
+    Activity.get("qa").plan([{"name": "p02", "label": "renamed", "total": 9}, {"name": "p05"}])
+
+    p02 = Activity.get("qa/p02")
+    assert (p02.state, p02.label_text, p02.total_count, p02.done_count) == (ActivityState.RUNNING, "pytest API", 2, 1)
+    assert Activity.get("qa/p05").state == ActivityState.PENDING
+
+
+def test_plan_publishes_one_transition():
+    seen = []
+    unsubscribe = monitor.subscribe(lambda root, transition: seen.append(transition))
+    try:
+        Activity.get("qa").plan([{"name": "a"}, {"name": "b"}])
+    finally:
+        unsubscribe()
+
+    assert seen == [True], "the outline goes out at once, not as two coalescable ticks"
+
+
+def test_rerun_starts_the_counts_over_and_keeps_what_was_learned():
+    step = Activity.get("qa/p02").total(2).inc_success()
+    step.inc_error("boom", ref="t2")
+    step.child("fail-1").label("t2")
+    step.inc("fixed")
+    step.block("1 failing")
+
+    step.rerun()
+
+    assert (step.state, step.done_count, step.errors_count, step.errors, step.message_text) == (
+        ActivityState.RUNNING, 0, 0, [], None)
+    assert step.total_count == 2
+    assert step.counters == {"fixed": 1, "runs": 2}
+    assert Activity.get("qa/p02/fail-1").label_text == "t2"
+
+
+def test_rerun_on_a_finished_node_is_dropped():
+    step = Activity.get("qa/p02").inc_success()
+    step.done()
+
+    step.rerun()
+
+    assert step.state == ActivityState.COMPLETED

@@ -64,6 +64,20 @@ describe('Activity handle (TypeScript)', () => {
     expect(posts[3].body).toMatchObject({ message: 'all good' });
   });
 
+  it('sends plan, setProgress and rerun with the shapes the route reads', async () => {
+    await Activity.get('qa').plan([{ name: 'p02', label: 'pytest API', total: 2 }]);
+    await Activity.get('qa/p02').setProgress({ done: 1, skipped: 0 });
+    await Activity.get('qa/p02').rerun();
+
+    expect(posts.map((p) => p.url)).toEqual([
+      '/api/v1/activity/qa/plan',
+      '/api/v1/activity/qa/p02/setProgress',
+      '/api/v1/activity/qa/p02/rerun',
+    ]);
+    expect(posts[0].body).toMatchObject({ value: [{ name: 'p02', label: 'pytest API', total: 2 }] });
+    expect(posts[1].body).toMatchObject({ value: { done: 1, skipped: 0 } });
+  });
+
   it('carries subject_entity on every verb so a scoped activity stays scoped', async () => {
     await Activity.get('run', 'agentic_process-abc').incSuccess();
 

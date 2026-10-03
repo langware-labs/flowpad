@@ -120,6 +120,17 @@ export class Activity {
     return this.send('incError', { message, ref: opts.ref, code: opts.code, n: opts.n ?? 1 });
   }
   inc(counter: string, n = 1) { return this.send('inc', { counter, n }); }
+  /** Absolute counts, never moving backwards — for a producer whose source is a running total. */
+  setProgress(counts: { done?: number; skipped?: number; errors?: number }) {
+    return this.send('setProgress', { value: counts });
+  }
+
+  /** Announce the steps ahead: children are created PENDING with their label and total. */
+  plan(items: ReadonlyArray<{ name: string; label?: string; total?: number }>) {
+    return this.send('plan', { value: items });
+  }
+  /** Start the counts over for a fresh run of the same work; children and counters stay. */
+  rerun() { return this.send('rerun'); }
 
   /** Rejects with `ActivityRefusedError` (`ACTIVITY_ENDED`) if the activity has already ended. */
   block(message?: string) { return this.send('block', { message }, true); }

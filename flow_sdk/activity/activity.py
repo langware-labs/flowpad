@@ -381,6 +381,59 @@ class Activity:
         self.icon_name = name
         return self._touch()
 
+    def plan(self, items: "list[dict]") -> "Activity":
+        """Announce the children this node will work through, before any of them starts.
+
+        Each item is ``{"name": ..., "label": ..., "total": ...}`` (label and total
+        optional). The children are created PENDING with their label and total set
+        directly — a labelled child would otherwise be started by the very verb that
+        names it, and a plan whose steps all read "running" says nothing about what is
+        left. This node itself wakes: announcing a plan is the start of the work.
+
+        A name already planned keeps its node; its label and total are refreshed only
+        while it is still pending, so re-announcing never rewinds a step in flight.
+        Published as a transition, so the whole outline is on the wire at once.
+        """
+        if self.is_terminal:
+            return self
+        for item in items:
+            name = str(item["name"])
+            node = self.child(name)
+            if node.state != ActivityState.PENDING:
+                continue
+            if item.get("label") is not None:
+                node.label_text = str(item["label"])
+            if item.get("total") is not None:
+                node.total_count = int(item["total"])
+        self._wake(_now())
+        self._monitor._notify(self, transition=True)
+        return self
+
+    def rerun(self) -> "Activity":
+        """Start this node's counting over for a fresh run of the same work.
+
+        For a step re-run after a fix: the counts of the earlier run must not be added to
+        the next one, and :meth:`set_progress` never moves backwards. Keeps the label,
+        total, counters and children (what was learned about the earlier failures stays
+        on the tree), clears the message (it described the earlier run) and bumps the
+        ``runs`` counter. Unlike :meth:`reset`, which drops
+        everything and returns the node to pending, the node stays running.
+        """
+        if self.is_terminal:
+            return self
+        self.done_count = 0
+        self.skipped = 0
+        self.errors_count = 0
+        self.errors = []
+        self.current_item = None
+        self.message_text = None
+        self.counters["runs"] = self.counters.get("runs", 1) + 1
+        if self.state in (ActivityState.BLOCKED, ActivityState.PAUSED):
+            self.state = ActivityState.RUNNING
+        self._wake(_now())
+        self._monitor._notify(self, transition=True)
+        return self
+
     def total(self, count: Optional[int]) -> "Activity":
         """Set the denominator. ``None`` means unknown, and unknown is not zero."""
         if self.is_terminal:
