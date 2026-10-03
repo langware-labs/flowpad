@@ -9372,6 +9372,10 @@ msgstr "التركيز على الرسم البياني المحلي هنا"
 msgid "Focused"
 msgstr "قيد التركيز"
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "folder"
+msgstr ""
+
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/data-sources/DataDriversView.tsx
 #: src/components/quick-create/ScopeSelection.tsx
@@ -9671,6 +9675,7 @@ msgid "ghost"
 msgstr "شبح"
 
 #: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 msgid "git"
 msgstr "git"
 
@@ -12930,6 +12935,10 @@ msgstr "لم يتم التشغيل أبداً"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Never synced to cloud"
 msgstr "لم تتم المزامنة مع السحابة أبدًا"
+
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "new"
+msgstr ""
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
@@ -18895,6 +18904,10 @@ msgstr "يبدو أن هناك محاولة لاستنساخ مستودع Git خ
 msgid "Segment dur"
 msgstr "مدة المقطع"
 
+#: src/components/open-project-component/project-actions-row.tsx
+msgid "select"
+msgstr ""
+
 #. placeholder {0}: c.displayName
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Select {0}"
@@ -18993,6 +19006,7 @@ msgid "Select parent folder"
 msgstr "اختيار المجلد الأب"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/open-project-component/project-actions-row.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/pages/hub-home/NewSandboxDialog.tsx
