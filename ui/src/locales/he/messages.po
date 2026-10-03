@@ -3639,6 +3639,10 @@ msgstr "לא ניתן לשפר את הנכס"
 msgid "Cannot open"
 msgstr "לא ניתן לפתוח"
 
+#: src/components/archive-preview/ArchivePreview.tsx
+msgid "Cannot open this archive: {error}"
+msgstr ""
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
 msgstr "לא ניתן להריץ בנייה מחדש"
@@ -5047,6 +5051,10 @@ msgstr "הועתקו {0} קישור{1}"
 msgid "Copied to Clipboard"
 msgstr "הועתק ללוח"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copied to project"
+msgstr ""
+
 #: src/pages/entry/entry-shell.tsx
 msgid "Copied!"
 msgstr "הועתק!"
@@ -5149,6 +5157,10 @@ msgstr ""
 msgid "Copy event JSON"
 msgstr "העתק JSON של אירוע"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copy failed"
+msgstr ""
+
 #: src/components/organization/budgets/EditableTitle.tsx
 msgid "Copy id"
 msgstr ""
@@ -5225,6 +5237,10 @@ msgstr "העתקת נתיב הקובץ הזה ללוח"
 #: src/components/version-popover/version-popover.tsx
 msgid "Copy to clipboard"
 msgstr "העתק ללוח"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copy to project"
+msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
@@ -8563,6 +8579,10 @@ msgstr "שווקים ידועים נוספים"
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "extra rows fetched (limit + overfetch)"
 msgstr "שורות נוספות שהובאו (limit + overfetch)"
+
+#: src/components/archive-preview/ArchivePreview.tsx
+msgid "Extracting…"
+msgstr ""
 
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
@@ -16242,6 +16262,10 @@ msgstr "תצוגה מקדימה של {0}"
 msgid "Preview {label}"
 msgstr "תצוגה מקדימה של {label}"
 
+#: src/components/conversation/AttachmentChip.tsx
+msgid "Preview contents"
+msgstr ""
+
 #: src/components/wiki-tip/WikiModalRoot.tsx
 msgid "Preview of the wiki page, shown without leaving the current view."
 msgstr "תצוגה מקדימה של דף הוויקי, מוצגת בלי לעזוב את התצוגה הנוכחית."
@@ -17016,6 +17040,14 @@ msgstr "התקבל קובץ מצורף — יש לבדוק לפני ההתקנה
 msgid "Received attachments — review before installing."
 msgstr "התקבלו קבצים מצורפים — יש לבדוק אותם לפני ההתקנה."
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received file — review before copying."
+msgstr ""
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received files — review before copying."
+msgstr ""
+
 #. placeholder {0}: currentDock?.pointer || 'none'
 #: src/components/app-host/AppHost.tsx
 #: src/components/show-view/ShowView.tsx
@@ -17352,6 +17384,10 @@ msgstr "הסרת תיקיית ההקשר"
 msgid "Remove directory"
 msgstr "הסר תיקייה"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Remove failed"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Remove favorite"
@@ -17375,6 +17411,7 @@ msgid "Remove from folder"
 msgstr "הסרה מהתיקייה"
 
 #: src/components/connections-manager.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Remove from project"
 msgstr "הסירו מהפרויקט"
 
@@ -17465,6 +17502,10 @@ msgstr "הוסר לכל המשתתפים בענן"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for you; other members keep it"
 msgstr "הוסר עבורך; חברים אחרים שומרים עליו"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Removed from project"
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Removed from the manifest."
@@ -21271,6 +21312,7 @@ msgstr "תבנית:"
 
 #: src/components/project-home/ProjectHome.tsx
 #: src/i18n/pref-labels.ts
+#: src/pages/hub-home/HubHome.tsx
 msgid "Terminal"
 msgstr "טרמינל"
 

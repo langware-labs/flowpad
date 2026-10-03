@@ -66,6 +66,7 @@ allowed_fs_actions = [
     "upload",
     "download",
     "read_optional",
+    "extract_preview",
     "serve",
     "download_zip",
     "upload_zip",

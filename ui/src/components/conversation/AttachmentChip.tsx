@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@src/lib/utils';
+import { AssetEditor, editorForPath } from '@src/navigation/asset-doc-types';
 import { isImagePath } from '@sdk';
 import { MediaLightbox, isVideoPath, videoSource } from '@src/components/ui/media-lightbox';
 
@@ -265,7 +266,7 @@ export function AttachmentChip({
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
             >
               <FileText className="h-3 w-3 text-muted-foreground" />
-              <Trans>Open in editor</Trans>
+              {editorForPath(filename) === AssetEditor.ARCHIVE ? <Trans>Preview contents</Trans> : <Trans>Open in editor</Trans>}
             </button>
           )}
           <a
