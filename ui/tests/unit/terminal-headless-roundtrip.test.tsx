@@ -102,7 +102,6 @@ vi.mock('@xterm/addon-fit', () => ({
   },
 }));
 vi.mock('@xterm/addon-search', () => ({ SearchAddon: class {} }));
-vi.mock('@xterm/addon-web-links', () => ({ WebLinksAddon: class {} }));
 
 // ---------------------------------------------------------------------------
 // pty-sync — inert session so the real lifecycle effect can call initialize/
