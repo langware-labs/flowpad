@@ -237,3 +237,29 @@ async def test_an_invalid_dict_spec_is_refused_as_invalid_spec(env) -> None:
     with pytest.raises(DecisionError) as e:
         await decide({"state": "x", "questions": {"t": {"type": "noul", "instructions": "?"}}})
     assert e.value.reason == "invalid_spec"
+
+
+# ── availability on the LLM sources screen (funding.status.decision) ────────
+
+
+async def test_the_llm_sources_status_names_the_decision_api(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import _decision_api
+
+    _login()
+    _hub(monkeypatch, listing={"data": []}, catalog=[DECIDER])
+    spec = await _decision_api(refresh=True)
+    assert spec.available and spec.endpoint == f"api_endpoint-{DECIDER['id']}"
+    assert (spec.name, spec.host, spec.reason) == ("Jev", "api.typesafe.ai", "")
+
+
+async def test_the_llm_sources_status_says_why_there_is_no_decision_api(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import _decision_api
+
+    _hub(monkeypatch, listing={"data": [DECIDER]}, catalog=[])
+    signed_out = await _decision_api(refresh=True)
+    assert not signed_out.available and "Sign in" in signed_out.reason
+
+    _login()
+    _hub(monkeypatch, listing={"data": [OTHER]}, catalog=[])
+    none_marked = await _decision_api(refresh=True)
+    assert not none_marked.available and "marked as a decision API" in none_marked.reason

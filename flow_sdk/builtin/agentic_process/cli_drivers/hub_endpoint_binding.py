@@ -35,6 +35,7 @@ from flow_sdk.instance_settings.llm_endpoint import (
     set_hub_llm_endpoint,
 )
 from flow_sdk.schema.data_spec.llm_source_spec import (
+    DecisionApiSpec,
     DefaultFundingSpec,
     FundingBindingSpec,
     FundingStatusSpec,
@@ -125,6 +126,20 @@ async def _default_funding(resolved: dict[str, LLMSource | None], blocked: dict[
     return DefaultFundingSpec(kind=kind, installed=False, source=source, reason=reason)
 
 
+async def _decision_api(*, refresh: bool) -> DecisionApiSpec:
+    """The first hub endpoint marked ``decision`` this user may call -- the one ``decide()`` uses."""
+    from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+    from flow_sdk.instance_settings.api_endpoint import decision_endpoints  # noqa: PLC0415
+
+    if not hub_auth_available():
+        return DecisionApiSpec(reason="Sign in to FlowPad to use a decision API")
+    offers = await decision_endpoints(cached_only=not refresh)
+    if not offers:
+        return DecisionApiSpec(reason="No hub API endpoint is marked as a decision API")
+    first = offers[0]
+    return DecisionApiSpec(available=True, endpoint=first.typeid, name=first.name, host=first.host)
+
+
 async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope()) -> FundingStatusSpec:
     """The funding record.
 
@@ -143,6 +158,7 @@ async def funding_status(*, refresh: bool = False, scope: LLMScope = LLMScope())
         resolved=resolved,
         blocked=blocked,
         default=await _default_funding(resolved, blocked),
+        decision=await _decision_api(refresh=refresh),
         notes=notes,
         endpoints=endpoints,
         available=[endpoint.to_wire() for endpoint in available],
