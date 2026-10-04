@@ -1,10 +1,12 @@
 """Hub-repo origin driver — the ``kind="hub_repo"`` behavior for the FSOrigin registry.
 
-``materialize`` brings a project's hub-hosted repository to this machine: a
-cache clone under the instance directory, synced to the hub on every call, read
-with the user's hub token. The caller joins ``rel_path`` onto the returned root
-to reach the asset (``project_manifest._source_root``). Nothing else writes to
-that cache, so it is always an exact copy of the hub.
+``materialize`` brings a project's hub-hosted repository to this machine, read
+with the user's hub token: with no ``preferred_root``, a cache clone under the
+instance directory, synced to the hub on every call; with one (a shared project's
+own folder), a working checkout that is only ever fast-forwarded. The caller
+joins ``rel_path`` onto the returned root to reach the asset
+(``project_manifest._source_root``). Nothing else writes to the cache, so it is
+always an exact copy of the hub.
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ class HubRepoOriginDriver:
         preferred_project_id: Optional[str] = None,
         token: Optional[str] = None,
     ) -> tuple[Path, Optional[str]]:
-        from flow_sdk.assets.hub_repo_sync import HubRepoMirror  # noqa: PLC0415
+        from flow_sdk.assets.hub_repo_sync import HubRepoCheckout, HubRepoMirror  # noqa: PLC0415
         from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
         from flow_sdk.cloud_client.transport.hub_http import hub_graph_url  # noqa: PLC0415
 
@@ -44,7 +46,12 @@ class HubRepoOriginDriver:
         hub_token = token or resolve_hub_api_key(require_live=True)
         if not clone_url or not hub_token:
             raise RuntimeError("the hub is not reachable from this desktop (not logged in to the cloud)")
-        root = preferred_root if preferred_root is not None else _received_root(repo_id)
+        if preferred_root is not None:
+            # A place the caller owns (a shared project's folder): a working checkout,
+            # cloned once and only fast-forwarded — never the cache's reset/clean.
+            await HubRepoCheckout(root=preferred_root, clone_url=clone_url, branch="main", token=hub_token).checkout()
+            return preferred_root, preferred_project_id
+        root = _received_root(repo_id)
         await HubRepoMirror(root=root, clone_url=clone_url, branch="main", token=hub_token).sync()
         return root, preferred_project_id
 

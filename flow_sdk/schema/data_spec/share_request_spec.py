@@ -6,6 +6,7 @@ The handler lives in ``flow_sdk/app/actions/share_action.py``.
 """
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Annotated, Optional, Union
 
 from pydantic import (
@@ -97,6 +98,16 @@ def _team_typeid(value: str) -> str:
 TeamTypeId = Annotated[str, AfterValidator(_team_typeid)]
 
 
+class ShareVia(StrEnum):
+    """How a shared Project's files reach its recipients."""
+
+    #: The project's own git remote (GitHub) — the default; recipients clone it with their own access.
+    GIT = "git"
+    #: A copy pushed to the project's hub-hosted repository — recipients clone it with their hub
+    #: login, so a private GitHub repo needs no GitHub access on the other side. Opt-in.
+    HUB_REPO = "hub_repo"
+
+
 class ShareRequestSpec(DataSpec):
     """The body of ``POST /graph/<type>/<id>/share``.
 
@@ -105,6 +116,8 @@ class ShareRequestSpec(DataSpec):
     * ``teams`` — ``team-<uuid>`` typeids, each granted on the hub as ONE group
       principal by ``Project.share`` (no expansion into people).
     * ``note`` — the sharer's personal message, carried in each invite message.
+    * ``via`` — how a Project's files travel (``ShareVia``); ``hub_repo`` re-publishes
+      (pushes the current HEAD) even when the project is already linked.
 
     ``teams`` and ``note`` apply to a Project share only; the handler enforces
     that, since it depends on the target in the URL, not on the body.
@@ -115,16 +128,17 @@ class ShareRequestSpec(DataSpec):
     recipients: tuple[WireInvitee, ...] = ()
     teams: tuple[TeamTypeId, ...] = ()
     note: Optional[str] = None
+    via: ShareVia = ShareVia.GIT
 
     @classmethod
     def from_body(cls, body: dict) -> "ShareRequestSpec":
         """Project the share keys out of a raw request body, field by field.
 
         The TS SDK posts the entity's own JSON alongside ``recipients``, so the
-        body is a foreign dict: anything but the three share keys is dropped
+        body is a foreign dict: anything but the share keys is dropped
         here rather than rejected by the spec's ``extra="forbid"``.
         """
         return cls.model_validate({key: body[key] for key in _SHARE_KEYS if body.get(key) is not None})
 
 
-_SHARE_KEYS = ("recipients", "teams", "note")
+_SHARE_KEYS = ("recipients", "teams", "note", "via")
