@@ -3786,6 +3786,11 @@ msgstr "Chats"
 msgid "check"
 msgstr "check"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "check again"
+msgstr "check again"
+
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Check again"
@@ -4814,6 +4819,10 @@ msgstr "Connect GitHub"
 msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr "Connect GitHub and the gh CLI with a guided setup."
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
+msgstr "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
+
 #~ msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 #~ msgstr "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 
@@ -5192,6 +5201,10 @@ msgstr "Copy link"
 #: src/components/assets/useAssetsModel.tsx
 msgid "Copy links"
 msgstr "Copy links"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Copy members' clone URL"
+msgstr "Copy members' clone URL"
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -9183,6 +9196,10 @@ msgstr "Find machine"
 msgid "Find or type an organization…"
 msgstr "Find or type an organization…"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Finish installing the FlowPad GitHub App on {repo}, then"
+msgstr "Finish installing the FlowPad GitHub App on {repo}, then"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Finish setting up Flowpad"
 msgstr "Finish setting up Flowpad"
@@ -11646,6 +11663,10 @@ msgstr "Link copied"
 msgid "Link copied to clipboard"
 msgstr "Link copied to clipboard"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Link the project to the cloud first: its members are the cloud project's members."
+msgstr "Link the project to the cloud first: its members are the cloud project's members."
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
@@ -12531,6 +12552,10 @@ msgstr "Members are unavailable in Local mode."
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "Members assigned, but some messages failed"
 msgstr "Members assigned, but some messages failed"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
+msgstr "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
 
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
@@ -14957,6 +14982,10 @@ msgstr "Open command in external terminal"
 msgid "Open comment"
 msgstr "Open comment"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Open connections"
+msgstr "Open connections"
+
 #: src/tabs/useTerminalStripController.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open Context"
@@ -16726,6 +16755,10 @@ msgstr "PTY Viewer"
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Public access removed"
 msgstr "Public access removed"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Public repos are already open to everyone."
+msgstr "Public repos are already open to everyone."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
@@ -19642,6 +19675,11 @@ msgstr "Share by name or email…"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Share code {0} to invite."
 msgstr "Share code {0} to invite."
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Share git with project members"
+msgstr "Share git with project members"
 
 #: src/i18n/pref-labels.ts
 msgid "Share message status"
