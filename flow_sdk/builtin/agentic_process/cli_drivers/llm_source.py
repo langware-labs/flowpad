@@ -720,6 +720,15 @@ async def resolve_llm_endpoint(process) -> Candidate:
     """
     worker_type = getattr(getattr(process, "driver", None), "name", None) or getattr(process, "worker_type", "")
     await check_unchecked_login(worker_type)
+    if _hub_has_token():
+        # The hub's own rows carry the allowance's filters (models_allow); the inventory reads
+        # them from the memo only, and a process that never listed -- an SDK script, a backend
+        # nobody has opened a picker on -- had only the binding's filter-less stub, so ``sm``
+        # went out as a model the allowance refuses. A spawn is about to call the hub anyway;
+        # this is a memo hit inside the TTL and answers the last good list on any failure.
+        from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
+
+        await fetch_hub_llm_endpoints()
     candidates = await list_llm_candidates(worker_type, LLMScope.of_process(process))
     chosen = pick_llm_candidate(candidates)
     if chosen is None:

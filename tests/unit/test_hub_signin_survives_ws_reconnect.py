@@ -2,7 +2,7 @@
 
 Production drops the desktop's hub socket on a ~10-minute cadence (``Hub WS listener
 closed: code=1006``). Funding reads "is this box signed in" from ``hub_ws_manager``'s
-verification (``llm_source._hub_signed_in`` → ``core.status.hub_status``), and the
+verification (``llm_source._hub_has_token`` → ``core.status.hub_status``), and the
 verification is asked only at boot. If a reconnect forgets it, every hub-funded LLM
 endpoint is refused with "this box is not logged in to the hub" ten minutes after the
 app starts -- observed on a tart VM where gadi+72's Begin allocation went ineligible
@@ -21,7 +21,7 @@ import time
 import pytest
 from websockets.asyncio.server import serve
 
-from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _hub_signed_in
+from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import _hub_has_token
 from flow_sdk.cli.app_config import clear_user, set_user
 from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
 from flow_sdk.cloud_client import ApiConfig
@@ -96,7 +96,7 @@ async def test_a_verified_box_stays_signed_in_across_a_hub_socket_reconnect(hub)
     # Boot, exactly as server/app.py does it: connect, then ask the hub who we are.
     await hub_ws_manager.start(wait_connected=True)
     await hub_ws_manager.verify_current_user()
-    assert _hub_signed_in(), "precondition: the hub named the user at boot"
+    assert _hub_has_token(), "precondition: the hub named the user at boot"
 
     # The production 10-minute drop: an abnormal close (1006), then the manager reconnects.
     mark = len(hub.statuses)
@@ -104,7 +104,7 @@ async def test_a_verified_box_stays_signed_in_across_a_hub_socket_reconnect(hub)
     await hub.wait_up_after(mark)
 
     assert hub_ws_manager.is_connected
-    assert _hub_signed_in(), (
+    assert _hub_has_token(), (
         "the socket reconnected with the same credentials, yet the box is no longer signed in "
         f"(hub_ws_verified={hub_ws_manager.is_verified}, status={hub_ws_manager.status_payload().get('hub_ws_status')})"
     )
