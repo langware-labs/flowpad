@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Boxes, ChevronDown, File as FileIcon, Paperclip, Play, Send, Smile, Trash2, X } from 'lucide-react';
+import { Boxes, ChevronDown, File as FileIcon, MonitorPlay, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { SessionReplyPolicy } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
@@ -505,31 +505,38 @@ export function MessageComposer({
     </>
   );
 
-  /** "Run on <host>'s machine": a two-part pill. The left half toggles prompt
-   *  mode (the typed text opens a session); the chevron picks the session's
-   *  reply policy. Rendered on the plain conversation composer only. */
+  /** Live-session mode: ONE icon in the attach row enters it (the typed text becomes the prompt
+   *  that opens a session on the host's machine). While it is on, a strip above the box names the
+   *  mode, holds the reply policy, and exits it. Rendered on the plain conversation composer only. */
   const hostName = sessionHost?.name?.trim() || t`the other participant`;
-  const sessionStartControl = canStartSession ? (
-    <div
+  const sessionToggle = canStartSession ? (
+    <button
+      type="button"
+      onClick={() => setPromptMode((v) => !v)}
+      disabled={isDisabled}
+      aria-pressed={promptMode}
+      title={promptMode ? t`Leave live session mode` : t`Live session: run a prompt on ${hostName}'s machine`}
+      data-testid="composer-session-toggle"
       className={cn(
-        'inline-flex h-7 shrink-0 items-stretch overflow-hidden rounded-full border text-xs font-medium transition-colors',
+        'flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors disabled:opacity-40',
         promptMode
-          ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-          : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300',
+          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
       )}
     >
-      <button
-        type="button"
-        onClick={() => setPromptMode((v) => !v)}
-        disabled={isDisabled}
-        aria-pressed={promptMode}
-        title={promptMode ? t`Prompt mode: this text opens a live session on ${hostName}'s machine` : t`Run this as a prompt on ${hostName}'s machine`}
-        data-testid="composer-session-toggle"
-        className="inline-flex items-center gap-1.5 px-2.5 hover:bg-emerald-500/15 disabled:opacity-40"
-      >
-        <Play className="h-3 w-3" />
-        <Trans>Run on {hostName}'s machine</Trans>
-      </button>
+      <MonitorPlay className="h-3.5 w-3.5" />
+    </button>
+  ) : null;
+
+  const sessionModeBar = startsSession ? (
+    <div
+      className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300"
+      data-testid="composer-session-mode"
+    >
+      <MonitorPlay className="h-3.5 w-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate font-medium">
+        <Trans>Live session on {hostName}'s machine</Trans>
+      </span>
       <Popover>
         <PopoverTrigger asChild>
           <button
@@ -537,8 +544,9 @@ export function MessageComposer({
             disabled={isDisabled}
             title={t`Session settings`}
             data-testid="composer-session-settings"
-            className="inline-flex items-center border-s border-emerald-500/30 px-1.5 hover:bg-emerald-500/15 disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-emerald-500/15 disabled:opacity-40"
           >
+            {replyPolicy === SessionReplyPolicy.REVIEW ? <Trans>Review replies</Trans> : <Trans>Auto-send</Trans>}
             <ChevronDown className="h-3 w-3" />
           </button>
         </PopoverTrigger>
@@ -585,6 +593,15 @@ export function MessageComposer({
           </p>
         </PopoverContent>
       </Popover>
+      <button
+        type="button"
+        onClick={() => setPromptMode(false)}
+        title={t`Leave live session mode`}
+        aria-label={t`Leave live session mode`}
+        className="rounded p-0.5 hover:bg-emerald-500/15"
+      >
+        <X className="h-3 w-3" />
+      </button>
     </div>
   ) : null;
 
@@ -724,6 +741,7 @@ export function MessageComposer({
           </button>
         </div>
       )}
+      {sessionModeBar}
       <div
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
@@ -733,7 +751,10 @@ export function MessageComposer({
           dragging && 'border-primary bg-primary/5',
         )}
       >
-        <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">{attachButtons}</div>
+        <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">
+          {attachButtons}
+          {sessionToggle}
+        </div>
         <textarea
           ref={textareaRef}
           value={text}
@@ -751,7 +772,6 @@ export function MessageComposer({
           disabled={isDisabled}
           className="min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         />
-        {sessionStartControl}
         {taskItToggle}
         {sendButton}
       </div>
