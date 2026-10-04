@@ -47,16 +47,26 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
     if (!bufferLine) continue;
     // A hard break's indentation and right margin are layout, not part of the text.
     let indent = row > start && continuesBelow(buffer, row - 1) === 'hard';
-    const width = row < end && continuesBelow(buffer, row) === 'hard' && !filled(bufferLine, bufferLine.length - 1)
-      ? bufferLine.length - 1 : bufferLine.length;
+    const width =
+      row < end && continuesBelow(buffer, row) === 'hard' && !filled(bufferLine, bufferLine.length - 1)
+        ? bufferLine.length - 1
+        : bufferLine.length;
     for (let col = 0; col < width; col++) {
       const cell = bufferLine.getCell(col);
       if (!cell || cell.getWidth() === 0) continue;
       if (indent && !cell.getChars().trim()) continue;
       indent = false;
       // A wide character can wrap one cell early, leaving a non-text spacer.
-      if (col === bufferLine.length - 1 && !cell.getChars() && buffer.getLine(row + 1)?.isWrapped &&
-          buffer.getLine(row + 1)?.getCell(0)?.getWidth() === 2) continue;
+      if (
+        col === bufferLine.length - 1 &&
+        !cell.getChars() &&
+        buffer.getLine(row + 1)?.isWrapped &&
+        buffer
+          .getLine(row + 1)
+          ?.getCell(0)
+          ?.getWidth() === 2
+      )
+        continue;
       const chars = cell.getChars() || ' ';
       line.text += chars;
       for (let i = 0; i < chars.length; i++) {
@@ -74,16 +84,21 @@ function rangeOf(line: LogicalLine, match: LinkMatch): IBufferRange {
 
 /** File references and web URLs. Maps only the requested logical line; never rescans scrollback on output. */
 export class TerminalLinkProvider implements ILinkProvider {
-  constructor(private readonly terminal: Terminal, private readonly activate: ActivateLink) {}
+  constructor(
+    private readonly terminal: Terminal,
+    private readonly activate: ActivateLink,
+  ) {}
 
   provideLinks(y: number, callback: (links: ILink[] | undefined) => void): void {
     const line = logicalLine(this.terminal, y);
     if (!line) return callback(undefined);
-    callback(linkMatches(line.text).map((match) => ({
-      text: match.text,
-      range: rangeOf(line, match),
-      activate: this.activate,
-    })));
+    callback(
+      linkMatches(line.text).map((match) => ({
+        text: match.text,
+        range: rangeOf(line, match),
+        activate: this.activate,
+      })),
+    );
   }
 }
 
@@ -138,14 +153,19 @@ export function registerTerminalLinks(terminal: Terminal, handlers: LinkHandlers
   // Hit-test the buffer rather than xterm's hover state, which is dropped whenever the
   // terminal refocuses or refits. Capture phase runs before xterm's own right-click
   // handling on its children; the listener goes away with the element.
-  terminal.element?.addEventListener('contextmenu', (event) => {
-    const cell = cellAtPoint(terminal, event.clientX, event.clientY);
-    if (!cell) return;
-    const link = linkAtCell(terminal, cell.x, cell.y)
-      ?? (oscLink && rangeContains(oscLink.range, cell.x, cell.y) ? oscLink.text : null);
-    if (!link) return;
-    event.preventDefault();
-    event.stopPropagation();
-    handlers.openMenu(link, event.clientX, event.clientY);
-  }, true);
+  terminal.element?.addEventListener(
+    'contextmenu',
+    (event) => {
+      const cell = cellAtPoint(terminal, event.clientX, event.clientY);
+      if (!cell) return;
+      const link =
+        linkAtCell(terminal, cell.x, cell.y) ??
+        (oscLink && rangeContains(oscLink.range, cell.x, cell.y) ? oscLink.text : null);
+      if (!link) return;
+      event.preventDefault();
+      event.stopPropagation();
+      handlers.openMenu(link, event.clientX, event.clientY);
+    },
+    true,
+  );
 }

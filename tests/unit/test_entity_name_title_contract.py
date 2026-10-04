@@ -33,6 +33,7 @@ from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.task import Task
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.schema.type_info import register_all
+from tests.unit._project_names import unique_project_name
 
 register_all()
 
@@ -127,13 +128,14 @@ def test_merge_skips_a_slot_that_did_not_change():
 async def test_materialize_mirrors_hub_project_name_verbatim():
     from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity
 
+    name = unique_project_name("Shared Project")
     project = await materialize_remote_membership_entity(
         Project,
-        {"id": str(uuid4()), "name": "Shared Project"},
+        {"id": str(uuid4()), "name": name},
         f"user-{uuid4()}",
     )
     assert project is not None
-    assert project.name == "Shared Project"
+    assert project.name == name
     assert project.remote is True
 
 
