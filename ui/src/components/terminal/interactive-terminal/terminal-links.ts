@@ -1,7 +1,8 @@
 import type { IBuffer, IBufferLine, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm';
-import { linkMatches, type LinkHandlers, type LinkMatch } from '@src/lib/link-matches';
+import { linkMatches, type LinkMatch } from '@src/lib/link-matches';
+import { isPrimaryClick, type LinkHandlers } from '@src/components/links/link-events';
 
-type ActivateLink = (event: MouseEvent, link: string) => void;
+type ActivateLink = LinkHandlers['activate'];
 
 interface LogicalLine {
   text: string;
@@ -71,10 +72,6 @@ function rangeOf(line: LogicalLine, match: LinkMatch): IBufferRange {
   return { start: line.starts[match.index], end: line.ends[match.index + match.text.length - 1] };
 }
 
-function lineLinks(line: LogicalLine): LinkMatch[] {
-  return linkMatches(line.text);
-}
-
 /** File references and web URLs. Maps only the requested logical line; never rescans scrollback on output. */
 export class TerminalLinkProvider implements ILinkProvider {
   constructor(private readonly terminal: Terminal, private readonly activate: ActivateLink) {}
@@ -82,20 +79,12 @@ export class TerminalLinkProvider implements ILinkProvider {
   provideLinks(y: number, callback: (links: ILink[] | undefined) => void): void {
     const line = logicalLine(this.terminal, y);
     if (!line) return callback(undefined);
-    callback(lineLinks(line).map((match) => ({
+    callback(linkMatches(line.text).map((match) => ({
       text: match.text,
       range: rangeOf(line, match),
       activate: this.activate,
     })));
   }
-}
-
-/**
- * xterm activates a link on mouseup for ANY button, so a right-click (or a macOS
- * ctrl-click) would navigate underneath the link menu it is meant to open.
- */
-function isPrimaryClick(event: MouseEvent): boolean {
-  return event.button === 0 && !(event.ctrlKey && /Mac/i.test(navigator.userAgent));
 }
 
 /** Whether a 1-based buffer cell falls inside a (possibly wrapped) link range. */
@@ -109,7 +98,7 @@ function rangeContains(range: IBufferRange, x: number, y: number): boolean {
 export function linkAtCell(terminal: Terminal, x: number, y: number): string | null {
   const line = logicalLine(terminal, y);
   if (!line) return null;
-  const hit = lineLinks(line).find((match) => rangeContains(rangeOf(line, match), x, y));
+  const hit = linkMatches(line.text).find((match) => rangeContains(rangeOf(line, match), x, y));
   return hit?.text ?? null;
 }
 

@@ -8,54 +8,26 @@
 import { expect, test, type Page } from '@playwright/test';
 import { mkdtemp, rm, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { createServer, type Server } from 'node:http';
-import { deflateSync } from 'node:zlib';
 import { apiBase, apiContext } from '../_shared/api';
+import { clickPrintedLink, printLink } from '../_shared/xterm';
 
-const sdkModule = `/@fs${resolve(dirname(fileURLToPath(import.meta.url)), '../../../../ts_sdk/src/index.ts')}`;
 const API = apiBase();
 let root: string;
 let server: Server;
 let origin: string;
 
-/** A solid 4×4 PNG, so the lightbox has real bytes to show. */
-function png(): Buffer {
-  const crcTable = Array.from({ length: 256 }, (_, n) => {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    return c >>> 0;
-  });
-  const crc = (buf: Buffer) => {
-    let c = 0xffffffff;
-    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-  };
-  const chunk = (type: string, data: Buffer) => {
-    const body = Buffer.concat([Buffer.from(type), data]);
-    const out = Buffer.alloc(body.length + 8);
-    out.writeUInt32BE(data.length, 0);
-    body.copy(out, 4);
-    out.writeUInt32BE(crc(body), body.length + 4);
-    return out;
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(4, 0);
-  header.writeUInt32BE(4, 4);
-  header.set([8, 2, 0, 0, 0], 8);
-  const rows = Buffer.concat(Array.from({ length: 4 }, () => Buffer.from([0, ...Array(4).fill([255, 64, 64]).flat()])));
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', deflateSync(rows)), chunk('IEND', Buffer.alloc(0))]);
-}
+/** A solid red 4×4 PNG, so the lightbox has real bytes to show. */
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGP47+AARwzEcQB6ohfxQHZOgQAAAABJRU5ErkJggg==', 'base64');
 
 test.beforeAll(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), 'flowpad-message-links-')));
   await writeFile(join(root, 'probe.py'), '# probe\nprint("message-link-probe")\n');
-  const image = png();
   server = createServer((req, res) => {
     if (req.url === '/shot.png') {
       res.setHeader('Content-Type', 'image/png');
-      res.end(image);
+      res.end(PNG);
       return;
     }
     res.setHeader('Content-Type', 'text/html');
@@ -151,29 +123,8 @@ test('message links: same matches, click, menu, lightbox and dock tab as the ter
   await page.goto('/dock/shell/new_terminal?viewMode=advanced');
   await expect(page).toHaveURL(/\/dock\/shell\/shell-/);
   const shellId = new URL(page.url()).pathname.split('/').pop()!.replace(/^shell-/, '');
-  await page.evaluate(async ({ sdkModule, shellId, command }) => {
-    const sdk = await import(sdkModule);
-    await (await sdk.Shell.getById(shellId)).sendInput(command);
-  }, { sdkModule, shellId, command: `printf '%s\\n' '${web}'\n` });
-  const row = page.locator('.xterm-rows:visible > div').filter({ hasText: web }).last();
-  await expect(row).toBeVisible();
-  const point = await row.evaluate((element, text) => {
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    let index = element.textContent?.replace(/\u00a0/g, ' ').indexOf(text) ?? -1;
-    let node: Node | null;
-    while ((node = walker.nextNode())) {
-      const length = node.textContent?.length ?? 0;
-      if (index >= length) { index -= length; continue; }
-      const range = document.createRange();
-      range.setStart(node, index);
-      range.setEnd(node, index + 1);
-      const rect = range.getBoundingClientRect();
-      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-    }
-    throw new Error(`No glyph for ${text}`);
-  }, web);
-  await page.mouse.move(point.x, point.y);
-  await page.mouse.click(point.x, point.y);
+  await printLink(page, shellId, web);
+  await clickPrintedLink(page, web);
   await expect(page.frameLocator('[data-testid="web-url-frame"]').getByRole('heading')).toHaveText('Web link content');
   expect(dockPath(page)).toBe(fromMessage);
 });

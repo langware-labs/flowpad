@@ -83,6 +83,9 @@ function CodeBlock({ children, codeChrome }: { children: React.ReactNode; codeCh
  * The app's canonical markdown element styling. Shared so any markdown surface
  * (the chat, the review-diff viewer) renders prose identically.
  */
+/** How a link reads inside rendered markdown — shared by every surface that overrides `a`. */
+export const MARKDOWN_LINK_CLASS = 'font-medium text-primary underline underline-offset-4 hover:text-primary/80';
+
 export function markdownComponents({
   compact = false,
   codeChrome = true,
@@ -157,7 +160,7 @@ export function markdownComponents({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+        className={MARKDOWN_LINK_CLASS}
       >
         {children}
       </a>

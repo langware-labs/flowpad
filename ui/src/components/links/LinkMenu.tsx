@@ -17,7 +17,7 @@ import {
 import { MediaLightbox, isLightboxMedia } from '@src/components/ui/media-lightbox';
 import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
 import { errorMessage } from '@src/lib/error-message';
-import type { LinkHandlers, LinkSource } from '@src/lib/link-matches';
+import type { LinkHandlers, LinkSource } from './link-events';
 import { useDockNavigation } from '@src/navigation';
 import { notify } from '@src/notifications/notify';
 
