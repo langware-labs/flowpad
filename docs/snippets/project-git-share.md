@@ -108,3 +108,26 @@ local = await Project.find_by_cwd(os.getcwd())
 await local.share_git()
 # GitShareError: Link the project to the cloud first: its members are the hub project's members
 ```
+
+## 6. Same verbs in TypeScript
+
+The project page uses the same three verbs through the TS SDK. They talk to the
+desk's `project/<id>/git_share` route, which uses the desk's cloud login:
+
+```ts
+import { Project } from '@sdk';
+
+const project = await Project.getById<Project>(projectId);
+let share = await project.shareGit();
+if (share.status === 'install_required' && share.install_url) {
+  window.open(share.install_url, '_blank'); // install the Flowpad GitHub App, then share again
+  share = await project.shareGit();
+}
+console.log(share.status, share.clone_url); // shared https://hub…/git_repo/<id>/git
+
+const status = await project.gitShare(); // no side effects
+const stopped = await project.unshareGit(); // members lose access; the GitHub repo is untouched
+```
+
+`ui/tests/unit/project-git-share-snippet.test.ts` runs this fence as written, with
+the desk's answers played by a double that checks each request's verb and path.
