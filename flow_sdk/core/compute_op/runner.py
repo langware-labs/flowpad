@@ -261,6 +261,25 @@ async def run_op(
     return answer
 
 
+def _adopt_installed_path() -> None:
+    """Give everything this process spawns next the PATH a new terminal gets now.
+
+    A call that changed the machine and passed its check usually installed a tool, and installers
+    extend the PATH a NEW shell gets (Windows: the registry; Unix: the login dotfiles) — never the
+    copy this process read at boot, which every worker, MCP server and shell it spawns inherits.
+    The check itself reads a fresh PATH, so without this an install "passes" and the next agent
+    still answers `command not found`. Never fails the op: an unreadable PATH leaves this one as is.
+    """
+    from flow_sdk.core.capabilities.env_probe import adopt_path, read_terminal_path  # noqa: PLC0415
+
+    try:
+        terminal, _why = read_terminal_path()
+        if terminal:
+            adopt_path(terminal)
+    except Exception:  # noqa: BLE001 — a PATH refresh is a courtesy to later spawns, never a verdict
+        pass
+
+
 def _check_ran_out(answer: ReturnedValue) -> bool:
     """The call ran, then its re-check was stopped at its budget before it could say anything."""
     return bool(answer.ran and answer.check is not None and answer.check.timed_out)
@@ -358,6 +377,8 @@ async def _call_and_check(
 
     after = await _check(spec, workdir=seams.workdir, platform=seams.platform, env=seams.env, shell=seams.shell)
     if after.exit_code is ExitCode.OK:
+        if isinstance(exe, (CliOp, AgentOp)):
+            _adopt_installed_path()
         done = call.model_copy(
             update={
                 "exit_code": ExitCode.OK,
