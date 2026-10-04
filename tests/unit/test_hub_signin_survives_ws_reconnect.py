@@ -83,6 +83,15 @@ async def hub(sod_env, monkeypatch):
     clear_user()
 
 
+# flowpad:capsule tag
+# version: 1
+# data:
+#   tags:
+#     breadcrumb.test.hub_signin_reconnect.rules: FAILING? a hub socket reconnect forgot
+#       who the hub named, signing the box out of every hub-funded LLM endpoint - read
+#       this tag's rules before touching HubWebSocketManager._run_forever/_set_state(verified=...)
+#       or core.status.hub_status
+# flowpad:endcapsule tag
 async def test_a_verified_box_stays_signed_in_across_a_hub_socket_reconnect(hub):
     # Boot, exactly as server/app.py does it: connect, then ask the hub who we are.
     await hub_ws_manager.start(wait_connected=True)
