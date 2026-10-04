@@ -1499,10 +1499,14 @@ msgstr "Add a machine"
 msgid "Add a message to send without it."
 msgstr "Add a message to send without it."
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Add a note to the running session"
+msgstr "Add a note to the running session"
+
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
-msgid "Add a note to the running session about this message"
-msgstr "Add a note to the running session about this message"
+#~ msgid "Add a note to the running session about this message"
+#~ msgstr "Add a note to the running session about this message"
 
 #~ msgid "Add a personal note..."
 #~ msgstr "Add a personal note..."
@@ -1719,6 +1723,7 @@ msgstr "Add tag…"
 msgid "Add this key under Connections"
 msgstr "Add this key under Connections"
 
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Add to favorites"
@@ -1733,7 +1738,7 @@ msgstr "Add to Private Context"
 msgid "Add to project"
 msgstr "Add to project"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
 msgstr "Add to queue"
@@ -1742,7 +1747,7 @@ msgstr "Add to queue"
 msgid "Add to Queue"
 msgstr "Add to Queue"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Add to the running session"
 msgstr "Add to the running session"
 
@@ -2533,7 +2538,7 @@ msgstr "App secrets are stored in your operating system keychain. Enable to allo
 msgid "App version"
 msgstr "App version"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "Appended to the current worker's prompt queue, tagged with this message."
 
@@ -6899,8 +6904,7 @@ msgstr "Delete key"
 msgid "Delete machine"
 msgstr "Delete machine"
 
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Delete message"
 msgstr "Delete message"
 
@@ -7636,7 +7640,7 @@ msgstr "Download failed"
 msgid "Download file"
 msgstr "Download file"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "Download message"
@@ -7668,6 +7672,10 @@ msgstr "Drag to pan · scroll to zoom · click a node to read"
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
 msgstr "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
+#~ msgstr "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Draws from"
@@ -7855,7 +7863,7 @@ msgstr "Edit in agent"
 msgid "Edit link"
 msgstr "Edit link"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "Edit name"
 
@@ -9538,25 +9546,25 @@ msgid "Forking…"
 msgstr "Forking…"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
 msgstr "Forward"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward message"
-msgstr "Forward message"
+#~ msgid "Forward message"
+#~ msgstr "Forward message"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward to another conversation"
-msgstr "Forward to another conversation"
+#~ msgid "Forward to another conversation"
+#~ msgstr "Forward to another conversation"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "forwarded"
-msgstr "forwarded"
+#~ msgid "forwarded"
+#~ msgstr "forwarded"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Forwarded from another conversation"
 msgstr "Forwarded from another conversation"
 
@@ -12622,6 +12630,11 @@ msgstr "Message"
 
 #~ msgid "Message (optional)"
 #~ msgstr "Message (optional)"
+
+#: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Message actions"
+msgstr "Message actions"
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
@@ -17046,8 +17059,7 @@ msgstr "Re-scan"
 msgid "Re-scan now"
 msgstr "Re-scan now"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "React"
 msgstr "React"
 
@@ -17502,6 +17514,10 @@ msgstr "Remove folder"
 msgid "Remove from {0}?"
 msgstr "Remove from {0}?"
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Remove from favorites"
+msgstr "Remove from favorites"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "Remove from folder"
@@ -17732,7 +17748,7 @@ msgstr "Replies wait as drafts until {hostName} sends them."
 msgid "Replies:"
 msgstr "Replies:"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply"
 msgstr "Reply"
 
@@ -17745,7 +17761,7 @@ msgstr "Reply awaiting your review"
 msgid "Reply in {0}"
 msgstr "Reply in {0}"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply in thread"
 msgstr "Reply in thread"
 
@@ -21338,8 +21354,7 @@ msgstr "Task assigned"
 msgid "Task created"
 msgstr "Task created"
 
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Task it"
 msgstr "Task it"
 
@@ -24153,7 +24168,7 @@ msgstr "What should issue your LLM calls?"
 msgid "What should the agent do each time it runs?"
 msgstr "What should the agent do each time it runs?"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
 
@@ -24641,6 +24656,10 @@ msgstr "Your help requests"
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup and caption on this image will be lost."
 msgstr "Your markup and caption on this image will be lost."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Your markup on this image will be lost."
+#~ msgstr "Your markup on this image will be lost."
 
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."

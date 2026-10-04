@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react';
+import { Check, CheckCheck, Clock } from 'lucide-react';
 import type { AgenticProcess, FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
-import { TaskItIcon, taskItHint, TaskOwnerChip, TaskStatusChip } from './task-it';
+import { TaskItIcon, TaskOwnerChip, TaskStatusChip } from './task-it';
 import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
-import { MessageChips } from './chips/MessageChips';
+import { MessageActionsMenu } from './MessageActionsMenu';
 import { MARKDOWN_LINK_CLASS, MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
 import { LinkifiedText } from '@src/components/links/LinkifiedText';
@@ -18,10 +18,8 @@ import { avatarColorForMessage } from './avatar-color';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
-import { ChannelBadge } from './ChannelBadge';
-import { ChannelMessageActions, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
+import { QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
-import { Trans } from '@lingui/react/macro';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -314,38 +312,6 @@ export function MessageBubble({
               {displayName}
             </SenderTag>
           )}
-          {!isBot && onEditName && !editing && (
-            <button
-              onClick={startEdit}
-              className="text-muted-foreground/50 transition-colors hover:text-muted-foreground"
-              title={t`Edit name`}
-            >
-              <Pencil className="h-2.5 w-2.5" />
-            </button>
-          )}
-          {onDeleteMessage && !editing && (
-            <button
-              onClick={() => setConfirmingDelete(true)}
-              className="text-muted-foreground/50 transition-colors hover:text-destructive"
-              title={t`Delete message`}
-              aria-label={t`Delete message`}
-            >
-              <Trash2 className="h-2.5 w-2.5" />
-            </button>
-          )}
-          {/* Channel mark — nothing at all when the message is ours
-              (`origin === null`), which is the whole badge rule. */}
-          <ChannelBadge origin={flowMessage?.origin} />
-          {flowMessage?.cloned_from_id && (
-            <span
-              className="inline-flex items-center gap-0.5 text-[10px] italic text-muted-foreground"
-              title={t`Forwarded from another conversation`}
-              data-testid="message-forwarded-marker"
-            >
-              <Forward className="h-2.5 w-2.5" />
-              <Trans>forwarded</Trans>
-            </span>
-          )}
           {time && (
             <span className="text-[10px] text-muted-foreground">
               {time}
@@ -353,18 +319,24 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
-          {!editing && (onReply || onReact) && (
-            <ChannelMessageActions
-              onReply={onReply}
-              replyInThread={replyInThread}
-              onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
-            />
+          {!editing && (
+            <span className="self-center">
+              <MessageActionsMenu
+                flowMessageId={flowMessageId}
+                conversationId={flowMessage?.conversation_id ?? undefined}
+                messageText={message.content}
+                origin={flowMessage?.origin}
+                forwarded={!!flowMessage?.cloned_from_id}
+                onReply={onReply}
+                replyInThread={replyInThread}
+                onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
+                onForward={onForwardMessage}
+                onTaskIt={taskIt && !taskIt.task ? taskIt.onClick : undefined}
+                onEditName={!isBot && onEditName ? startEdit : undefined}
+                onDelete={onDeleteMessage ? () => setConfirmingDelete(true) : undefined}
+              />
+            </span>
           )}
-          <MessageChips
-            flowMessageId={flowMessageId}
-            conversationId={flowMessage?.conversation_id ?? undefined}
-            messageText={message.content}
-          />
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
         {message.content && <MessageBody content={message.content} isBot={isBot} links={flowMessage ? links.handlers : null} />}
@@ -384,52 +356,23 @@ export function MessageBubble({
           />
         )}
         {footer}
-        {(onForwardMessage || taskIt) && !editing && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-actions">
-            {onForwardMessage && (
-              <button
-                type="button"
-                onClick={onForwardMessage}
-                className={`${CHIP_LAYOUT} ${chipStyleFor()}`}
-                title={t`Forward to another conversation`}
-                aria-label={t`Forward message`}
-                data-testid="message-forward"
-              >
-                <Forward className="h-3 w-3 rtl:-scale-x-100" />
-                <Trans>Forward</Trans>
-              </button>
-            )}
-            {taskIt && !taskIt.task && (
-              <button
-                type="button"
-                onClick={taskIt.onClick}
-                className={`${CHIP_LAYOUT} ${chipStyleFor()}`}
-                title={taskItHint()}
-                aria-label={t`Task it`}
-                data-testid="message-task-it"
-              >
-                <TaskItIcon className="h-3 w-3 shrink-0" />
-                <Trans>Task it</Trans>
-              </button>
-            )}
-            {/* An opened task: its chip, then its state at a glance — each opens the task. */}
-            {taskIt?.task && (
-              <>
-                <button
-                  type="button"
-                  onClick={taskIt.onClick}
-                  className={`${CHIP_LAYOUT} ${chipStyleFor(Task.type)}`}
-                  title={t`Open task`}
-                  aria-label={t`Open task`}
-                  data-testid="message-task-it"
-                >
-                  <TaskItIcon className="h-3 w-3 shrink-0" />
-                  <span className="max-w-[24rem] truncate">{taskIt.task.title || t`Task`}</span>
-                </button>
-                <TaskStatusChip status={taskIt.task.status} onClick={taskIt.onClick} />
-                <TaskOwnerChip task={taskIt.task} onClick={taskIt.onClick} />
-              </>
-            )}
+        {/* An opened task stays in view: its chip, then its state at a glance — each opens the task.
+            Making one (Task it) lives in the ⋮ menu with the other actions. */}
+        {taskIt?.task && !editing && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-task-chips">
+            <button
+              type="button"
+              onClick={taskIt.onClick}
+              className={`${CHIP_LAYOUT} ${chipStyleFor(Task.type)}`}
+              title={t`Open task`}
+              aria-label={t`Open task`}
+              data-testid="message-task-it"
+            >
+              <TaskItIcon className="h-3 w-3 shrink-0" />
+              <span className="max-w-[24rem] truncate">{taskIt.task.title || t`Task`}</span>
+            </button>
+            <TaskStatusChip status={taskIt.task.status} onClick={taskIt.onClick} />
+            <TaskOwnerChip task={taskIt.task} onClick={taskIt.onClick} />
           </div>
         )}
         {reactions && reactions.length > 0 && <ReactionChips reactions={reactions} onToggle={onReact} />}

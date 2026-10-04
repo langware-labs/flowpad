@@ -6,8 +6,8 @@ import { MemoryRouter } from 'react-router';
 import { MessageBubble } from '@src/components/conversation/MessageBubble';
 
 /**
- * "Task it" — one click makes a conversation message a task. The bubble's control creates it while
- * the message has none and opens it once it has one (one message, one task); the title is the
+ * "Task it" — one click makes a conversation message a task. The bubble's ⋮ menu creates it while
+ * the message has none; once it has one, a chip under the body opens it (one message, one task); the title is the
  * message's first line.
  */
 describe('Task it', () => {
@@ -21,8 +21,11 @@ describe('Task it', () => {
   it('creates when the message has no task', () => {
     const onTaskIt = vi.fn();
     render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: onTaskIt }} /></MemoryRouter>);
+    // Making a task is an item of the bubble's ⋮ menu.
+    expect(screen.queryByTestId('message-task-it')).toBeNull();
+    fireEvent.keyDown(screen.getByTestId('message-actions-menu'), { key: 'Enter' });
     const control = screen.getByTestId('message-task-it');
-    expect(control.getAttribute('aria-label')).toBe('Task it');
+    expect(control.textContent).toBe('Task it');
     fireEvent.click(control);
     expect(onTaskIt).toHaveBeenCalledTimes(1);
   });

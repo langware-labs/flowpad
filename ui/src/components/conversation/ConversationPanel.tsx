@@ -12,8 +12,6 @@ import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel'
 import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 import { ConversationView } from './ConversationView';
 import { useProjectMappingGate } from './useProjectMappingGate';
-import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
-import { taskChipKeys } from './chips/keys';
 import { ConversationBottomRibbon, type ConversationSideTab } from './ConversationBottomRibbon';
 import { ConversationContextPanel } from './ConversationContextPanel';
 import { MembersAvatarStack } from './MembersAvatarStack';
@@ -188,10 +186,6 @@ export function ConversationPanel({
   const ensureMapped = mappingGate.ensureMapped;
   const mappingDialogProps = mappingGate.dialogProps;
 
-  // Seed the chip-exclude scope used by per-message chip rows so they skip
-  // entities the toolbar/drawer already shows.
-  const taskKeys = useMemo(() => taskChipKeys(task ?? null), [task]);
-
   // Drawer + ribbon state. Drawer is collapsible — toggled via the ribbon.
   // Starts minimized: executing a prompt surfaces the run inline via the
   // per-message run-status one-liner (near the Execute button), so the drawer
@@ -345,24 +339,22 @@ export function ConversationPanel({
             </div>
           )}
           <LatestScroll className={`${bodyWrapper} relative`}>
-            <ChipsExcludeProvider add={taskKeys}>
-              <ConversationView
-                // Keyed so switching conversations RESETS the view's local
-                // state. Without it the instance is reused and an in-flight
-                // "composing…" line follows you into the next conversation.
-                key={conversationId}
-                conversationId={conversationId}
-                task={task}
-                senderName={senderName}
-                ensureMapped={ensureMapped}
-                selectedMessageIds={selectedMessageIds}
-                onSelectMessage={selectOneMessage}
-                onOpenRun={openRun}
-                threadId={threadId}
-                onThreadNavigate={onThreadNavigate}
-                agentId={agentId}
-              />
-            </ChipsExcludeProvider>
+            <ConversationView
+              // Keyed so switching conversations RESETS the view's local
+              // state. Without it the instance is reused and an in-flight
+              // "composing…" line follows you into the next conversation.
+              key={conversationId}
+              conversationId={conversationId}
+              task={task}
+              senderName={senderName}
+              ensureMapped={ensureMapped}
+              selectedMessageIds={selectedMessageIds}
+              onSelectMessage={selectOneMessage}
+              onOpenRun={openRun}
+              threadId={threadId}
+              onThreadNavigate={onThreadNavigate}
+              agentId={agentId}
+            />
           </LatestScroll>
         </div>
 

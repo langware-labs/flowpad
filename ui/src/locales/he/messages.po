@@ -1499,10 +1499,14 @@ msgstr ""
 msgid "Add a message to send without it."
 msgstr ""
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Add a note to the running session"
+msgstr ""
+
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
-msgid "Add a note to the running session about this message"
-msgstr "הוסף הערה לסשן הפעיל על הודעה זו"
+#~ msgid "Add a note to the running session about this message"
+#~ msgstr "הוסף הערה לסשן הפעיל על הודעה זו"
 
 #~ msgid "Add a personal note..."
 #~ msgstr "הוסף הערה אישית..."
@@ -1719,6 +1723,7 @@ msgstr "הוסף תג…"
 msgid "Add this key under Connections"
 msgstr "הוסף את המפתח הזה תחת חיבורים"
 
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Add to favorites"
@@ -1733,7 +1738,7 @@ msgstr "הוסף להקשר פרטי"
 msgid "Add to project"
 msgstr "הוסיפו לפרויקט"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
 msgstr "הוסף לתור"
@@ -1742,7 +1747,7 @@ msgstr "הוסף לתור"
 msgid "Add to Queue"
 msgstr "הוסף לתור"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Add to the running session"
 msgstr "הוסף לסשן הפעיל"
 
@@ -2533,7 +2538,7 @@ msgstr "סודות האפליקציה מאוחסנים במחזיק המפתחו
 msgid "App version"
 msgstr "גרסת האפליקציה"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "הוספה לתור הפרומפטים של העובד הנוכחי, מסומנת בהודעה זו."
 
@@ -6899,8 +6904,7 @@ msgstr "מחיקת מפתח"
 msgid "Delete machine"
 msgstr ""
 
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Delete message"
 msgstr "מחק הודעה"
 
@@ -7636,7 +7640,7 @@ msgstr "ההורדה נכשלה"
 msgid "Download file"
 msgstr "הורד קובץ"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "הורד הודעה"
@@ -7668,6 +7672,10 @@ msgstr "גרור כדי להזיז · גלול כדי להגדיל/הקטין ·
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
 msgstr "צייר עם העט או החץ, הוסף תיבות טקסט וכיתוב, ואז שמור כדי לצרף את ההעתק עם ההערות."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
+#~ msgstr "צייר עם העט או החץ, הוסף תיבות טקסט, ואז שמור כדי לצרף את ההעתק עם ההערות."
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Draws from"
@@ -7855,7 +7863,7 @@ msgstr ""
 msgid "Edit link"
 msgstr "עריכת קישור"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "ערוך שם"
 
@@ -9538,25 +9546,25 @@ msgid "Forking…"
 msgstr "יצירת ענף בתהליך..."
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
 msgstr "העבר"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward message"
-msgstr "העבר הודעה"
+#~ msgid "Forward message"
+#~ msgstr "העבר הודעה"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward to another conversation"
-msgstr "העבר לשיחה אחרת"
+#~ msgid "Forward to another conversation"
+#~ msgstr "העבר לשיחה אחרת"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "forwarded"
-msgstr "הועבר"
+#~ msgid "forwarded"
+#~ msgstr "הועבר"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Forwarded from another conversation"
 msgstr "הועבר משיחה אחרת"
 
@@ -12622,6 +12630,11 @@ msgstr "הודעה"
 
 #~ msgid "Message (optional)"
 #~ msgstr "הודעה (אופציונלי)"
+
+#: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Message actions"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
@@ -17046,8 +17059,7 @@ msgstr "סרוק מחדש"
 msgid "Re-scan now"
 msgstr "סרוק מחדש עכשיו"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "React"
 msgstr ""
 
@@ -17502,6 +17514,10 @@ msgstr ""
 msgid "Remove from {0}?"
 msgstr ""
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Remove from favorites"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "הסרה מהתיקייה"
@@ -17732,7 +17748,7 @@ msgstr ""
 msgid "Replies:"
 msgstr ""
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply"
 msgstr ""
 
@@ -17745,7 +17761,7 @@ msgstr ""
 msgid "Reply in {0}"
 msgstr "השיבו ב{0}"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply in thread"
 msgstr ""
 
@@ -21338,8 +21354,7 @@ msgstr "המשימה הוקצתה"
 msgid "Task created"
 msgstr "משימה נוצרה"
 
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Task it"
 msgstr ""
 
@@ -24153,7 +24168,7 @@ msgstr "מי צריך להנפיק את קריאות ה-LLM שלך?"
 msgid "What should the agent do each time it runs?"
 msgstr ""
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "What should the worker do with this message?"
 msgstr "מה צריך העובד לעשות עם הודעה זו?"
 
@@ -24641,6 +24656,10 @@ msgstr ""
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup and caption on this image will be lost."
 msgstr "ההערות והכיתוב שלך בתמונה זו יאבדו."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Your markup on this image will be lost."
+#~ msgstr "ההערות שלך בתמונה זו תאבדו."
 
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."
