@@ -3019,6 +3019,10 @@ msgstr "يتم التحقق من التحديثات تلقائياً كل ساع
 #~ msgid "Automatic"
 #~ msgstr "تلقائي"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "available"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -6579,6 +6583,10 @@ msgstr "تسجيل التصحيح"
 
 #~ msgid "DEBUG: remove 6 tools"
 #~ msgstr ""
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Decision API"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -17020,6 +17028,10 @@ msgstr "الرسائل في قائمة الانتظار"
 #: src/components/quick-create/QuickCreateTile.tsx
 msgid "Quick create"
 msgstr "الإنشاء السريع"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "quick requests open without an assistant turn"
+msgstr ""
 
 #: src/components/asset-counters/AssetListView.tsx
 #: src/components/asset-counters/AssetListView.tsx
