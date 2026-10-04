@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-PYPI_URL = "https://pypi.org/pypi/flowpad/json"
+PYPI_URL = self_update.PYPI_URL
 GITHUB_RELEASES_URL = "https://api.github.com/repos/langware-labs/flowpad/releases"
 HTTP_TIMEOUT = 8.0
 MAX_RELEASES = 20

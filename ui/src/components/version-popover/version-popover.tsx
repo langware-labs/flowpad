@@ -578,26 +578,22 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                 is version/date/yanked only), and GitHub Releases are desktop
                 tags, so an SDK version never resolves there. The rows that used
                 to try rendered nothing, every time. */}
-            {pypi?.update_available && (
+            {pypi?.update_available && pypi.latest && (
               <div className="pt-1">
-                {electronApi?.upgradeFlowpad ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleUpgrade()}
-                    disabled={upgrading}
-                    className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
-                  >
-                    {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                    {upgrading ? t`Upgrading…` : t`Upgrade to v${pypi.latest}`}
-                  </button>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-[10px] text-muted-foreground">
-                      <Trans>Run from your terminal:</Trans>
-                    </p>
-                    <CopyableCommand command="flow upgrade" />
-                  </div>
-                )}
+                {/* The desktop app upgrades through its own updater; a browser tab asks the backend
+                    to install the release and restart (the same install the version picker uses). */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    void (electronApi?.upgradeFlowpad ? handleUpgrade() : handleInstallVersion(pypi.latest!))
+                  }
+                  disabled={upgrading || restarting}
+                  data-testid="version-upgrade-button"
+                  className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {upgrading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {upgrading ? t`Upgrading…` : t`Upgrade to v${pypi.latest}`}
+                </button>
               </div>
             )}
             <button
@@ -680,7 +676,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
                                 <p className="text-[10px] text-muted-foreground">
                                   <Trans>Run from your terminal, then restart Flowpad:</Trans>
                                 </p>
-                                <CopyableCommand command={`uv tool install flowpad==${r.version} --force`} />
+                                <CopyableCommand command={`uv tool install flowpad==${r.version}`} />
                                 <CopyableCommand command={`pip install flowpad==${r.version}`} />
                               </div>
                             )}
