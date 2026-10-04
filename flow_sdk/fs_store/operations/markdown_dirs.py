@@ -9,6 +9,7 @@ import functools
 import os
 from pathlib import Path
 
+from flow_sdk.assets.scanning import is_in_doc_dir
 from flow_sdk.fs_store.gitignore import _WALK_IGNORED
 from flow_sdk.instance_settings import get_instance_settings
 
@@ -105,11 +106,11 @@ def doc_search_dirs() -> tuple[Path, ...]:
 
 
 def walk_markdown_files(root: Path) -> list[str]:
-    """Recursively collect every ``.md`` file under ``root``, honoring ``.gitignore``.
+    """Recursively collect the ``.md`` files under ``root``'s doc folders, honoring ``.gitignore``.
 
-    Walks the WHOLE subtree (not just ``docs/`` roots) so a project-root file
-    like ``streams_sdk.md`` is found, returning sorted relative POSIX paths
-    from ``root``. Delegates to the shared :func:`gitignore_walk`
+    Only files inside a ``docs``/``doc`` folder count (see :func:`is_in_doc_dir`)
+    — or every file, when ``root`` is itself one. Returns sorted relative POSIX
+    paths from ``root``. Delegates to the shared :func:`gitignore_walk`
     (:mod:`flow_sdk.fs_store.indexer.walk`): ``_WALK_IGNORED`` fast-path,
     ``.claude/`` force-include, nested ``.gitignore`` stack (monotonic across
     nested files — a child ``!`` re-include of something an ancestor
@@ -126,7 +127,8 @@ def walk_markdown_files(root: Path) -> list[str]:
 
     out = [
         f.relative_to(root).as_posix()
-        for _dir, _subdirs, files in gitignore_walk(root)
+        for dir_path, _subdirs, files in gitignore_walk(root)
+        if is_in_doc_dir(dir_path, root)
         for f in files
         if f.name.lower().endswith(".md")
     ]

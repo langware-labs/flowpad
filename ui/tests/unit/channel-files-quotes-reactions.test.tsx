@@ -10,24 +10,19 @@ vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => () 
 vi.mock('@src/components/conversation/useLocalUser', () => ({ useLocalUser: () => ({ localUser: { id: 'me', name: 'Me' }, updateName: vi.fn() }) }));
 vi.mock('@src/components/asset-manager/AssetManagerPopover', () => ({ AssetManagerPopover: ({ trigger }: { trigger: React.ReactNode }) => <>{trigger}</> }));
 vi.mock('@src/components/conversation/EmojiPicker', () => ({
-  EmojiPicker: ({ trigger, onPick }: { trigger: React.ReactNode; onPick: (e: string) => void }) => (
-    <span>
-      {trigger}
-      <button type="button" data-testid="pick-thumbs" onClick={() => onPick('👍')}>
-        pick
-      </button>
-    </span>
-  ),
+  EmojiPicker: ({ trigger }: { trigger: React.ReactNode }) => <>{trigger}</>,
 }));
 vi.mock('@src/components/conversation/AttachMenu', () => ({
   AssetRefChips: () => null,
   useAssetRefSelection: () => ({ selectedTypeIds: [] }),
 }));
-vi.mock('@src/components/image-annotator/annotate-files', () => ({ annotateImageFiles: (f: File[]) => Promise.resolve(f) }));
+vi.mock('@src/components/image-annotator/annotate-files', () => ({
+  annotateImageFiles: (f: File[]) => Promise.resolve({ files: f, caption: '' }),
+}));
 
 import { sendToChannel } from '@sdk/entities/notifications';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';
-import { ChannelMessageActions, QuotedMessage, ReactionChips } from '@src/components/conversation/ChannelMessageExtras';
+import { QuotedMessage, ReactionChips } from '@src/components/conversation/ChannelMessageExtras';
 
 const CONV = 'c0c0c0c0-0000-4000-8000-000000000007';
 
@@ -99,17 +94,6 @@ describe('channel message extras', () => {
     expect(screen.getByTestId('reaction-❤️').getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(thumbs);
     expect(onToggle).toHaveBeenCalledWith('👍', true);
-  });
-
-  it('Reply says "in thread" where the channel only threads; React hands the picked emoji up', () => {
-    const onReact = vi.fn();
-    const onReply = vi.fn();
-    render(<ChannelMessageActions onReply={onReply} replyInThread onReact={onReact} />);
-    expect(screen.getByTestId('message-reply').getAttribute('aria-label')).toBe('Reply in thread');
-    fireEvent.click(screen.getByTestId('pick-thumbs'));
-    expect(onReact).toHaveBeenCalledWith('👍');
-    fireEvent.click(screen.getByTestId('message-reply'));
-    expect(onReply).toHaveBeenCalled();
   });
 
   it('a quote shows who and what, and jumps to the original', () => {

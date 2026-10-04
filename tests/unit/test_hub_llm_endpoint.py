@@ -15,7 +15,10 @@ from cryptography.fernet import Fernet
 from flow_sdk.builtin.agentic_process.cli_drivers.hub_endpoint_binding import HUB_ENDPOINT_HARNESSES
 from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
 
-pytestmark = [pytest.mark.timeout(30), pytest.mark.usefixtures("harness_installed")]  # do not increase timeout without approval
+pytestmark = [
+    pytest.mark.timeout(30),
+    pytest.mark.usefixtures("harness_installed"),
+]  # do not increase timeout without approval
 
 INVOKE_PATH = "/api/v1/graph/llm_endpoint/ep1/invoke"
 
@@ -87,14 +90,13 @@ async def _reset_harness_auth_mode():
 @pytest.fixture(autouse=True)
 def _status_facts(monkeypatch):
     """The STATUS facts funding reads, made deterministic (see test_llm_source_resolution):
-    every CLI installed, the hub signed in exactly when a hub key is stored, no spawn probe."""
+    every CLI installed, a hub budget spendable exactly when a hub key is stored (the real rule,
+    not faked), no spawn probe."""
     from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
     from flow_sdk.core import status
     from flow_sdk.core.status import InstallState
 
     monkeypatch.setattr(status, "harness_install", lambda worker: InstallState.INSTALLED)
-    monkeypatch.setattr(llm_source, "_hub_signed_in", lambda: bool(resolve_hub_api_key()))
 
     async def no_probe(worker_type):
         return None

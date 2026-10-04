@@ -47,6 +47,14 @@ def _ref_sort_key(ref: "MessageRef") -> tuple:
     return (1, landed.timestamp())
 
 
+def member_label(member: dict) -> str:
+    """How a conversation member is named in plain text: ``name (role)``,
+    falling back to email then user id."""
+    label = member.get("name") or member.get("email") or member.get("user_id") or "?"
+    role = member.get("role")
+    return f"{label} ({role})" if role else str(label)
+
+
 class ConversationKind(StrEnum):
     """How a conversation should be interpreted across the UI/hub.
 
@@ -72,6 +80,7 @@ class ConversationStatus(StrEnum):
 
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.cloud_client.client import FlowpadClient
 
 
@@ -885,41 +894,60 @@ class Conversation(ProjectedFields, Entity):
         participants+roles, message count) followed by one line per message
         (``FlowMessage.summary()``), oldest-first.
 
-        Cheap and synchronous-ish: reads the on-disk jsonl pointer index (the
-        source of truth, same idiom as ``deliver_pending_messages``) and loads
-        each FlowMessage by id. No LLM, no hub calls.
+        Cheap: the ordered ``message_refs`` projection plus one bulk load.
+        No LLM, no hub calls.
         """
-        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
-            default_jsonl_path,
-            from_jsonl,
-            message_pointers,
-        )
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-        def _who(p: dict) -> str:
-            label = p.get("name") or p.get("email") or p.get("user_id") or "?"
-            role = p.get("role")
-            return f"{label} ({role})" if role else str(label)
-
-        participants = ", ".join(_who(p) for p in (self.members or [])) or "(none)"
+        participants = ", ".join(member_label(p) for p in (self.members or [])) or "(none)"
         lines = [
             f"Conversation: {self.title or '(untitled)'}",
             f"Participants: {participants}",
             f"Messages: {self.message_count}",
             "",
         ]
-        rec = from_jsonl(
-            default_jsonl_path(self.id),
-            parent_id="",
-            record_id=self.id,
-            parent_type=RecordType.PROJECT,
-        )
-        for ptr in message_pointers(rec):
-            fm = await FlowMessage.get_one({"id": ptr.id})
-            if fm is not None:
-                lines.append(fm.summary())
+        lines.extend(fm.summary() for fm in await self._messages_oldest_first())
         return "\n".join(lines)
+
+    async def _messages_oldest_first(
+        self, *, last: Optional[int] = None, since: Optional[datetime] = None
+    ) -> list["FlowMessage"]:
+        """This conversation's messages oldest-first, in the order the UI shows
+        them: ``message_refs`` sorted by event time (``_ref_sort_key``).
+        ``since`` / ``last`` narrow the REFS, so only the messages kept are
+        loaded, in one query."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+        refs = sorted(self.message_refs(), key=_ref_sort_key)
+        if since is not None:
+            refs = [r for r in refs if _ref_sort_key(r) >= (1, since.timestamp())]
+        if last is not None:
+            refs = refs[-last:] if last > 0 else []
+        ids = [r.id for r in refs]
+        if not ids:
+            return []
+        rows = await FlowMessage.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])))
+        by_id = {fm.id: fm for fm in rows}
+        return [by_id[pid] for pid in ids if pid in by_id]
+
+    async def transcript(
+        self,
+        *,
+        self_ids: frozenset[str] | set[str] = frozenset(),
+        last: Optional[int] = None,
+        since: Optional[datetime] = None,
+    ) -> dict:
+        """The unabridged read of this conversation for an agent: header plus
+        ``FlowMessage.read_entry`` per message, oldest-first. ``since`` keeps
+        messages at/after that instant; ``last`` then keeps the newest N.
+        Local reads only — the same residence ``summary`` reads."""
+        msgs = await self._messages_oldest_first(last=last, since=since)
+        return {
+            "id": self.id,
+            "title": self.title or "",
+            "participants": [member_label(p) for p in (self.members or [])],
+            "message_count": self.message_count,
+            "messages": [m.read_entry(self_ids) for m in msgs],
+        }
 
     async def add_message(
         self,

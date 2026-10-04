@@ -1,4 +1,4 @@
-import { fsStore, type AgenticProcess, type Shell } from '@sdk';
+import { fsStore, type AgenticProcess } from '@sdk';
 import { t } from '@lingui/core/macro';
 import { AppWindow, Copy, ExternalLink, PanelTop, Sparkles } from 'lucide-react';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
@@ -17,14 +17,14 @@ import {
 import { MediaLightbox, isLightboxMedia } from '@src/components/ui/media-lightbox';
 import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
 import { errorMessage } from '@src/lib/error-message';
+import type { LinkHandlers, LinkSource } from './link-events';
 import { useDockNavigation } from '@src/navigation';
 import { notify } from '@src/notifications/notify';
-import type { TerminalLinkHandlers } from './terminal-links';
 
-export interface TerminalLinks {
-  /** Pass to `registerTerminalLinks`; stable for the terminal's lifetime. */
-  handlers: TerminalLinkHandlers;
-  /** Render beside the terminal container; stable, so the terminal never re-renders for the menu. */
+export interface Links {
+  /** Stable for the surface's lifetime. */
+  handlers: LinkHandlers;
+  /** Render beside the surface; stable, so the surface never re-renders for the menu. */
   menu: ReactNode;
 }
 
@@ -64,26 +64,26 @@ export function lightboxMediaName(link: string): string | null {
 
 /**
  * The bytes behind an image/video link: a web URL as itself, a file reference as the
- * shell's own machine serves it (the path the backend resolved, on the shell's compute node).
+ * source's own machine serves it (the path the backend resolved, on its compute node).
  */
-async function mediaFor(link: string, shell: Shell | null): Promise<LinkMedia | null> {
+async function mediaFor(link: string, source: LinkSource | null): Promise<LinkMedia | null> {
   const name = lightboxMediaName(link);
   if (!name) return null;
   if (/^https?:/i.test(link)) return { url: link, name };
-  const node = shell?.computeNodeTypeId;
-  if (!shell || !node) return null;
-  const path = (await shell.resolveDisplayTarget(link))?.path;
+  const node = source?.computeNodeTypeId;
+  if (!source || !node) return null;
+  const path = (await source.resolveDisplayTarget(link))?.path;
   return path ? { url: fsStore.getState().getDownloadUrl(node, path), name } : null;
 }
 
 /**
  * Click opens a link in Flowpad — an image or video in the in-app lightbox, anything else as a tab; right-click offers copy / open in Flowpad / open in browser / open in one
- * browser profile of this machine, and — when the terminal belongs to a process — Vibe: that process in vibe
- * mode with the link as a tab.
+ * browser profile of this machine, and — when the surface belongs to a process — Vibe: that process in vibe
+ * mode with the link as a tab. Every link surface (terminal, message) shares this.
  */
-export function useTerminalLinks(source: RefObject<Shell | null>, process?: AgenticProcess | null): TerminalLinks {
+export function useLinks(source: RefObject<LinkSource | null>, process?: AgenticProcess | null): Links {
   const { navigation } = useDockNavigation();
-  // Read the current navigation/source/process without retaining a terminal render's closure.
+  // Read the current navigation/source/process without retaining a surface render's closure.
   const navRef = useRef(navigation);
   navRef.current = navigation;
   const processRef = useRef(process ?? null);
@@ -112,7 +112,7 @@ export function useTerminalLinks(source: RefObject<Shell | null>, process?: Agen
       },
       menu: (
         <>
-          <TerminalLinkMenu
+          <LinkMenu
             ref={menuRef}
             onOpen={open}
             onOpenInBrowser={openInBrowser}
@@ -143,7 +143,7 @@ const LinkPreview = forwardRef<LinkPreviewHandle>(function LinkPreview(_props, r
 });
 
 /** Owns the menu state, so opening and closing re-renders only this. */
-const TerminalLinkMenu = forwardRef<
+const LinkMenu = forwardRef<
   LinkMenuHandle,
   {
     onOpen: (link: string) => void;
@@ -151,7 +151,7 @@ const TerminalLinkMenu = forwardRef<
     onOpenInVibe: (link: string, host: AgenticProcess) => void;
     onOpenInProfile: (link: string, browser: string, profile: string) => void;
   }
->(function TerminalLinkMenu({ onOpen, onOpenInBrowser, onOpenInVibe, onOpenInProfile }, ref) {
+>(function LinkMenu({ onOpen, onOpenInBrowser, onOpenInVibe, onOpenInProfile }, ref) {
   // `id` remounts the menu so a right-click on another link re-anchors it.
   const [state, setState] = useState<{
     link: string;
@@ -182,7 +182,7 @@ const TerminalLinkMenu = forwardRef<
       <DropdownMenuTrigger asChild>
         <span aria-hidden style={{ position: 'fixed', left: x, top: y, width: 0, height: 0 }} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="max-w-sm" data-testid="terminal-link-menu">
+      <DropdownMenuContent align="start" className="max-w-sm" data-testid="link-menu">
         <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground" title={link}>
           {link}
         </DropdownMenuLabel>
@@ -196,7 +196,7 @@ const TerminalLinkMenu = forwardRef<
           {t`Open in Flowpad`}
         </DropdownMenuItem>
         {host && (
-          <DropdownMenuItem onSelect={() => onOpenInVibe(link, host)} data-testid="terminal-link-menu-vibe">
+          <DropdownMenuItem onSelect={() => onOpenInVibe(link, host)} data-testid="link-menu-vibe">
             <Sparkles className="mr-2 h-4 w-4" />
             {t`Vibe`}
           </DropdownMenuItem>
@@ -207,7 +207,7 @@ const TerminalLinkMenu = forwardRef<
         </DropdownMenuItem>
         {browsers.length > 0 && (
           <DropdownMenuSub>
-            <DropdownMenuSubTrigger data-testid="terminal-link-menu-open-in">
+            <DropdownMenuSubTrigger data-testid="link-menu-open-in">
               <AppWindow className="mr-2 h-4 w-4" />
               {t`Open in`}
             </DropdownMenuSubTrigger>
@@ -223,7 +223,7 @@ const TerminalLinkMenu = forwardRef<
                       <DropdownMenuItem
                         key={profile.id}
                         onSelect={() => onOpenInProfile(link, browser.id, profile.id)}
-                        data-testid={`terminal-link-menu-profile-${browser.id}-${profile.id}`}
+                        data-testid={`link-menu-profile-${browser.id}-${profile.id}`}
                         title={profile.email ?? profile.name}
                       >
                         <span className="truncate">

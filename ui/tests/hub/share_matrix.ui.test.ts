@@ -514,7 +514,9 @@ describe('C. forward a message', () => {
   it('C2 forward — dev-1 forwards the message via the bubble UI', async () => {
     await openConversation(p1, srcConvId);
     await waitForMessageText(p1, `forward me ${ts}`);
-    await p1.page.getByTestId('message-forward').first().click({ timeout: 15_000 });
+    // Forward lives in the bubble's ⋮ menu.
+    await p1.page.getByTestId('message-actions-menu').first().click({ timeout: 15_000 });
+    await p1.page.getByTestId('message-forward').click({ timeout: 15_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       title: fwdDstTitle,
@@ -526,7 +528,9 @@ describe('C. forward a message', () => {
   it('C3 provenance — the clone renders the forwarded marker on dev-1', async () => {
     await openConversation(p1, fwdConvId);
     await waitForMessageText(p1, `forward me ${ts}`);
-    await p1.page.getByTestId('message-forwarded-marker').first().waitFor({ timeout: 15_000 });
+    // The forwarded note heads the clone's ⋮ menu.
+    await p1.page.getByTestId('message-actions-menu').first().click({ timeout: 15_000 });
+    await p1.page.getByTestId('message-forwarded-marker').waitFor({ timeout: 15_000 });
   });
 
   it('C4 receive — dev-2 opens the assignment and sees the forwarded text', async () => {

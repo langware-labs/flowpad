@@ -1,5 +1,5 @@
 import { registerTerminalLinks } from './terminal-links';
-import { useTerminalLinks } from './TerminalLinkMenu';
+import { useLinks } from '@src/components/links/LinkMenu';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
@@ -80,7 +80,11 @@ import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
 import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
 import { EntityContextPanel } from '@src/components/entity-context';
-import { clipboardDataHasImage, imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
+import {
+  clipboardDataHasImage,
+  imageFilesFromClipboardItems,
+  textFromClipboardItems,
+} from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 export interface TraceFilters {
@@ -106,7 +110,7 @@ import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
-const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
+const bracketedPaste = (text: string) => `\x1b[200~${text}\x1b[201~`;
 import { XTERM_BASE_OPTIONS, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
 import { retireXterm } from './retire-xterm';
 import { workerCliVendor } from './process-cli-presentation';
@@ -239,7 +243,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
-  const terminalLinks = useTerminalLinks(shellRef, process);
+  const terminalLinks = useLinks(shellRef, process);
   const firstPromptBufferRef = useRef('');
   const firstPromptReportedRef = useRef(false);
 
@@ -431,10 +435,17 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (!inputDirInfo) return;
       try {
         const items = await navigator.clipboard.read();
-        const [captured] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
+        const [[captured], initialCaption] = await Promise.all([
+          imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' }),
+          textFromClipboardItems(items),
+        ]);
         if (!captured) return;
-        // Offer markup before the screenshot is attached. Cancel aborts.
-        const [file] = await annotateImageFiles([captured]);
+        // Offer markup (and a caption, prefilled with any text that came along)
+        // before the screenshot is attached. Cancel aborts.
+        const {
+          files: [file],
+          caption,
+        } = await annotateImageFiles([captured], { initialCaption });
         if (!file) return;
 
         const uploads = await fsStore
@@ -448,11 +459,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         // bracketed paste so the CLI re-reads the clipboard and inlines the
         // ANNOTATED image. The original paste-time signal was suppressed (the
         // capture-phase paste listener), so the CLI never saw the original.
-        await shellRef.current?.sendInput(EMPTY_BRACKETED_PASTE);
+        await shellRef.current?.sendInput(bracketedPaste(''));
         // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
         // so also reference the file by path.
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
         await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+        // The caption rides as a note after the file line — bracketed, so a
+        // multi-line note is typed into the prompt, never submitted line by line.
+        if (caption) await shellRef.current?.sendInput(bracketedPaste(`User note: ${caption}`));
         openSideTab(SideTabId.Files);
         // Opening the Files drawer (and the annotate dialog before it) drops
         // focus to <body> — hand it back to the terminal so typing continues.
@@ -1526,15 +1540,17 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // the PTY paste/drop handlers, but returns the reference line(s) so the chat
   // composer can splice them into the next prompt (instead of sending to a PTY).
   const handleChatPasteImages = useCallback(
-    async (incoming: File[]): Promise<string[]> => {
+    async (incoming: File[], { initialCaption }: { initialCaption?: string } = {}): Promise<string[]> => {
       if (!inputDirInfo || !incoming.length) return [];
       // Offer markup before the pasted image(s) are attached. Cancel aborts.
-      const files = await annotateImageFiles(incoming);
+      const { files, caption } = await annotateImageFiles(incoming, { initialCaption });
       if (!files.length) return [];
       const uploads = await fsStore.getState().uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
       await Promise.all(uploads.map((u) => u.waitForCompletion()));
       openSideTab(SideTabId.Files);
-      return files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
+      const refs = files.map((file) => `File ${file.name} is available here: ${inputDirInfo.absPath}/${file.name}`);
+      // The caption is the user's own prompt text — it follows the refs as-is.
+      return caption ? [...refs, caption] : refs;
     },
     [inputDirInfo, openSideTab],
   );

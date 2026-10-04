@@ -388,10 +388,11 @@ async def test_a_folder_asset_indexes_when_its_own_folder_is_named(
 async def test_a_plain_folder_is_still_walked_for_the_assets_inside(clean_target_types, tmp_path):
     from flow_sdk.responses.response import ApiSuccessResponse
 
-    (tmp_path / "notes").mkdir()
-    (tmp_path / "notes" / "inside.md").write_text("# inside\n", encoding="utf-8")
+    # A ``docs`` folder: project markdown is only indexed inside a doc folder.
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "inside.md").write_text("# inside\n", encoding="utf-8")
 
-    resp = await _Handler()._handle_fs_records_index(FakeRequestInfo({"type": "markdown", "path": str(tmp_path / "notes")}))
+    resp = await _Handler()._handle_fs_records_index(FakeRequestInfo({"type": "markdown", "path": str(tmp_path / "docs")}))
 
     assert isinstance(resp, ApiSuccessResponse)
     # The walk answers the single-type shape: `indexed`, and no one TypeId.

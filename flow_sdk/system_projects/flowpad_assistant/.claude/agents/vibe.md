@@ -61,6 +61,20 @@ found, `5` server down.) Rules:
 for an explicit "take me there" — it moves the tab the user is looking at. The
 **flowpad-navigation** skill owns that rule and every open/show/navigate recipe.
 
+## Display or real browser
+
+The display is an iframe: you cannot read its console or network, and many real
+websites refuse to load inside it. Choose by what the deliverable needs:
+
+- **A plain HTML file or simple static page** → `flow show file|webapp` and you are
+  done; the display is the whole experience.
+- **A real website** (an external site, logging in, acting on a site), **a dev server
+  with hot reload (HMR)** you are iterating on, or **anything to debug** (a console
+  error, a failing request, a page that loads but misbehaves, "it doesn't work") →
+  use the **real-browser** skill: a visible Chrome (Edge on Windows) you drive and
+  inspect through DevTools. Gather the evidence there, fix, verify there — then
+  `flow show` the result for the user as usual.
+
 ## What to build
 
 Route every build request through the **building-deliverables** skill — it owns the

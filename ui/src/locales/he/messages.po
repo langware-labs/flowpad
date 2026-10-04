@@ -1466,6 +1466,10 @@ msgstr "פעילות"
 msgid "Add"
 msgstr "הוסף"
 
+#: src/components/image-annotator/ImageAnnotator.tsx
+msgid "Add a caption…"
+msgstr "הוספת כיתוב…"
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Add a comment..."
 msgstr "הוסף הערה..."
@@ -1495,10 +1499,14 @@ msgstr ""
 msgid "Add a message to send without it."
 msgstr ""
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Add a note to the running session"
+msgstr ""
+
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
-msgid "Add a note to the running session about this message"
-msgstr "הוסף הערה לסשן הפעיל על הודעה זו"
+#~ msgid "Add a note to the running session about this message"
+#~ msgstr "הוסף הערה לסשן הפעיל על הודעה זו"
 
 #~ msgid "Add a personal note..."
 #~ msgstr "הוסף הערה אישית..."
@@ -1715,6 +1723,7 @@ msgstr "הוסף תג…"
 msgid "Add this key under Connections"
 msgstr "הוסף את המפתח הזה תחת חיבורים"
 
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Add to favorites"
@@ -1729,7 +1738,7 @@ msgstr "הוסף להקשר פרטי"
 msgid "Add to project"
 msgstr "הוסיפו לפרויקט"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
 msgstr "הוסף לתור"
@@ -1738,7 +1747,7 @@ msgstr "הוסף לתור"
 msgid "Add to Queue"
 msgstr "הוסף לתור"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Add to the running session"
 msgstr "הוסף לסשן הפעיל"
 
@@ -1992,6 +2001,7 @@ msgstr "יישור ההתחלה (שמאל ב-LTR, ימין ב-RTL)"
 msgid "all"
 msgstr "הכל"
 
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
@@ -2533,7 +2543,7 @@ msgstr "סודות האפליקציה מאוחסנים במחזיק המפתחו
 msgid "App version"
 msgstr "גרסת האפליקציה"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "הוספה לתור הפרומפטים של העובד הנוכחי, מסומנת בהודעה זו."
 
@@ -2997,6 +3007,7 @@ msgid "auto-login off"
 msgstr "כניסה אוטומטית כבויה"
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
 msgid "Auto-send"
 msgstr ""
@@ -3678,6 +3689,10 @@ msgstr "היכולות אינן זמינות. נסה שוב"
 msgid "Capability"
 msgstr "יכולת"
 
+#: src/components/image-annotator/ImageAnnotator.tsx
+msgid "Caption"
+msgstr "כיתוב"
+
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Carries"
 msgstr ""
@@ -3790,6 +3805,11 @@ msgstr "שיחות"
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "check"
 msgstr "בדיקה"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "check again"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -4258,7 +4278,7 @@ msgstr "לחץ כדי לצפות בפרומפט המלא"
 msgid "Clipboard not updated"
 msgstr "הלוח לא עודכן"
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Clipboard unavailable"
 msgstr ""
 
@@ -4819,6 +4839,14 @@ msgstr "חבר את GitHub"
 msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr "תהליך הגדרה מודרך יחבר את GitHub ויגדיר את ה-CLI של gh."
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Connect GitHub in FlowPad cloud first:"
+msgstr ""
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#~ msgid "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
+#~ msgstr ""
+
 #~ msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 #~ msgstr ""
 
@@ -5087,10 +5115,10 @@ msgstr "כרטיסיית Copilot"
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/markdown-view.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -5197,6 +5225,15 @@ msgstr "העתק קישור"
 #: src/components/assets/useAssetsModel.tsx
 msgid "Copy links"
 msgstr "העתקת קישורים"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Copy members' clone URL"
+msgstr ""
+
+#: src/components/tabs/TabTooltipName.tsx
+msgid "Copy name"
+msgstr "העתק שם"
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -5370,7 +5407,7 @@ msgstr "לא ניתן היה לבדוק את מצב ההתחברות"
 msgid "Could not connect to {displayName}."
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Could not copy link"
 msgstr ""
 
@@ -6877,8 +6914,7 @@ msgstr "מחיקת מפתח"
 msgid "Delete machine"
 msgstr ""
 
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Delete message"
 msgstr "מחק הודעה"
 
@@ -7614,7 +7650,7 @@ msgstr "ההורדה נכשלה"
 msgid "Download file"
 msgstr "הורד קובץ"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "הורד הודעה"
@@ -7644,8 +7680,12 @@ msgid "Drag to pan · scroll to zoom · click a node to read"
 msgstr "גרור כדי להזיז · גלול כדי להגדיל/הקטין · לחץ על צומת כדי לקרוא"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
-msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
-msgstr "צייר עם העט או החץ, הוסף תיבות טקסט, ואז שמור כדי לצרף את ההעתק עם ההערות."
+msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
+msgstr "צייר עם העט או החץ, הוסף תיבות טקסט וכיתוב, ואז שמור כדי לצרף את ההעתק עם ההערות."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
+#~ msgstr "צייר עם העט או החץ, הוסף תיבות טקסט, ואז שמור כדי לצרף את ההעתק עם ההערות."
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Draws from"
@@ -7833,7 +7873,7 @@ msgstr ""
 msgid "Edit link"
 msgstr "עריכת קישור"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "ערוך שם"
 
@@ -9193,6 +9233,10 @@ msgstr ""
 msgid "Find or type an organization…"
 msgstr ""
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Finish installing the FlowPad GitHub App on {repo}, then"
+msgstr ""
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Finish setting up Flowpad"
 msgstr "סיום ההגדרה של Flowpad"
@@ -9512,24 +9556,25 @@ msgid "Forking…"
 msgstr "יצירת ענף בתהליך..."
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
 msgstr "העבר"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward message"
-msgstr "העבר הודעה"
+#~ msgid "Forward message"
+#~ msgstr "העבר הודעה"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward to another conversation"
-msgstr "העבר לשיחה אחרת"
+#~ msgid "Forward to another conversation"
+#~ msgstr "העבר לשיחה אחרת"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "forwarded"
-msgstr "הועבר"
+#~ msgid "forwarded"
+#~ msgstr "הועבר"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Forwarded from another conversation"
 msgstr "הועבר משיחה אחרת"
 
@@ -10252,7 +10297,6 @@ msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
@@ -11522,6 +11566,10 @@ msgstr "עזוב שיחה"
 msgid "Leave empty to keep"
 msgstr ""
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Leave live session mode"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
 msgstr "לעזוב את השיחה הזו?"
@@ -11653,13 +11701,17 @@ msgid "Lines"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Link copied"
 msgstr "הקישור הועתק"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
 msgstr "הקישור הועתק ללוח"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Link the project to the cloud first: its members are the cloud project's members."
+msgstr ""
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -11755,9 +11807,17 @@ msgstr "סשן חי"
 msgid "Live session not found"
 msgstr "הסשן החי לא נמצא"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Live session on {hostName}'s machine"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {guestName} on your machine · {status}"
 msgstr "סשן חי עם {guestName} במחשב שלך · {status}"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Live session: run a prompt on {hostName}'s machine"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -12547,6 +12607,10 @@ msgstr "חברים אינם זמינים במצב Local"
 msgid "Members assigned, but some messages failed"
 msgstr "חברים הוקצו, אך חלק מההודעות לא נשלחו"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
+msgstr ""
+
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
 #: src/components/machine-overview/metrics-chart.tsx
@@ -12571,6 +12635,7 @@ msgstr "קונפליקטים בהיתוך"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message"
@@ -12578,6 +12643,11 @@ msgstr "הודעה"
 
 #~ msgid "Message (optional)"
 #~ msgstr "הודעה (אופציונלי)"
+
+#: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Message actions"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
@@ -13845,6 +13915,10 @@ msgstr ""
 msgid "No one added yet"
 msgstr ""
 
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "No open tasks."
+msgstr ""
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "No Operation (Trace Only)"
 msgstr "ללא פעולה (עקיבה בלבד)"
@@ -14198,6 +14272,10 @@ msgstr "לא נבחרה משימה"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "No tasks found for this session."
 msgstr "לא נמצאו משימות עבור הסעיף זה."
+
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "No tasks yet — \"Task it\" on a message makes one."
+msgstr ""
 
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "No team budget yet"
@@ -14846,6 +14924,7 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -14972,6 +15051,10 @@ msgstr "פתח פקודה בטרמינל חיצוני"
 msgid "Open comment"
 msgstr "פתח הערה"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Open connections"
+msgstr ""
+
 #: src/tabs/useTerminalStripController.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open Context"
@@ -15071,7 +15154,7 @@ msgstr ""
 msgid "Open help desk"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Open in"
 msgstr ""
 
@@ -15085,8 +15168,8 @@ msgstr "פתיחה בכרטיסיית דפדפן חדשה"
 msgid "Open in a new tab"
 msgstr "פתיחה בכרטיסייה חדשה"
 
+#: src/components/links/LinkMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
@@ -15126,7 +15209,7 @@ msgstr "פתחו בקבצים"
 msgid "Open in Finder/Explorer"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Open in Flowpad"
 msgstr ""
 
@@ -15277,6 +15360,7 @@ msgstr "פתיחת סשן המפרט"
 msgid "Open tabs"
 msgstr ""
 
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Open task"
@@ -15684,6 +15768,15 @@ msgstr "דרוס"
 #: src/components/git/RepoPicker.tsx
 msgid "Owner"
 msgstr "בעלים"
+
+#: src/components/conversation/MessageBubble.tsx
+#~ msgid "Owner: {0}"
+#~ msgstr ""
+
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
+msgid "Owner: {owner}"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "pacing"
@@ -16414,6 +16507,7 @@ msgstr "פרויקט"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/discover-page/DiscoverRow.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -16605,8 +16699,8 @@ msgid "Prompt Library — click a prompt to add it to the queue"
 msgstr "ספריית הפרומפטים — לחץ על פרומפט כדי להוסיף אותו לתור"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Prompt mode: this text opens a live session on {hostName}'s machine"
-msgstr ""
+#~ msgid "Prompt mode: this text opens a live session on {hostName}'s machine"
+#~ msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -16740,6 +16834,10 @@ msgstr "מציג PTY"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Public access removed"
+msgstr ""
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Public repos are already open to everyone."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -16974,8 +17072,7 @@ msgstr "סרוק מחדש"
 msgid "Re-scan now"
 msgstr "סרוק מחדש עכשיו"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "React"
 msgstr ""
 
@@ -17430,6 +17527,10 @@ msgstr ""
 msgid "Remove from {0}?"
 msgstr ""
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Remove from favorites"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "הסרה מהתיקייה"
@@ -17663,7 +17764,7 @@ msgstr ""
 msgid "Replies:"
 msgstr ""
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply"
 msgstr ""
 
@@ -17676,7 +17777,7 @@ msgstr ""
 msgid "Reply in {0}"
 msgstr "השיבו ב{0}"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply in thread"
 msgstr ""
 
@@ -18108,6 +18209,10 @@ msgstr "יש לבדוק כל נכס מצורף ולבחור כיצד להתקי�
 msgid "Review prompts"
 msgstr "סקירת פרומפטים"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Review replies"
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Review the shared project and install it."
 msgstr ""
@@ -18303,8 +18408,8 @@ msgid "Run now (spawns a process)"
 msgstr "הרץ עכשיו (יוצר תהליך)"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Run on {hostName}'s machine"
-msgstr ""
+#~ msgid "Run on {hostName}'s machine"
+#~ msgstr ""
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "Run script"
@@ -18343,8 +18448,8 @@ msgid "Run this agent on its own, at a time you pick. Runs are headless and show
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Run this as a prompt on {hostName}'s machine"
-msgstr ""
+#~ msgid "Run this as a prompt on {hostName}'s machine"
+#~ msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -19661,6 +19766,11 @@ msgstr "שיתוף לפי שם או דוא״ל…"
 msgid "Share code {0} to invite."
 msgstr "שתף קוד {0} להזמנה."
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Share git with project members"
+msgstr ""
+
 #: src/i18n/pref-labels.ts
 msgid "Share message status"
 msgstr "שיתוף סטטוס הודעות"
@@ -19939,6 +20049,10 @@ msgstr "הצג פרויקטי מערכת"
 #: src/i18n/pref-labels.ts
 msgid "Show system skills"
 msgstr "הצג מיומנויות מערכת"
+
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "Show the message it was made from"
+msgstr ""
 
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Show the other files this turn touched"
@@ -20746,6 +20860,7 @@ msgstr "סטטיסטיקות"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -21238,7 +21353,8 @@ msgstr "יעד, לדוגמה usage_report:abc"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
@@ -21254,7 +21370,7 @@ msgstr "המשימה הוקצתה"
 msgid "Task created"
 msgstr "משימה נוצרה"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Task it"
 msgstr ""
 
@@ -21280,10 +21396,15 @@ msgstr "בעל משימה"
 msgid "Tasked: {0}"
 msgstr ""
 
+#: src/components/conversation/ConversationPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/types/ViewType.ts
 msgid "Tasks"
 msgstr "משימות"
+
+#: src/components/conversation/ConversationPanel.tsx
+msgid "Tasks {openTaskCount}"
+msgstr ""
 
 #: src/components/account/organization-panel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -21817,8 +21938,8 @@ msgid "The task is now a folder in the project."
 msgstr ""
 
 #: src/navigation/NavigationActions.ts
-msgid "The terminal is not ready yet"
-msgstr ""
+#~ msgid "The terminal is not ready yet"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
@@ -22133,6 +22254,10 @@ msgstr ""
 
 #: src/navigation/NavigationActions.ts
 msgid "This link has no available viewer"
+msgstr ""
+
+#: src/navigation/NavigationActions.ts
+msgid "This link has no source yet"
 msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
@@ -23718,7 +23843,7 @@ msgstr ""
 msgid "via hub login"
 msgstr "דרך התחברות ל-Hub"
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Vibe"
 msgstr ""
 
@@ -23983,6 +24108,7 @@ msgid "What do you need help with?"
 msgstr "עם מה אתה צריך עזרה?"
 
 #: src/components/top-nav-bar/AddressAskField.tsx
+#: src/components/top-nav-bar/AddressField.tsx
 msgid "What do you want to do?"
 msgstr ""
 
@@ -24058,7 +24184,7 @@ msgstr "מי צריך להנפיק את קריאות ה-LLM שלך?"
 msgid "What should the agent do each time it runs?"
 msgstr ""
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "What should the worker do with this message?"
 msgstr "מה צריך העובד לעשות עם הודעה זו?"
 
@@ -24544,8 +24670,12 @@ msgid "Your help requests"
 msgstr ""
 
 #: src/components/image-annotator/ImageAnnotator.tsx
-msgid "Your markup on this image will be lost."
-msgstr "ההערות שלך בתמונה זו תאבדו."
+msgid "Your markup and caption on this image will be lost."
+msgstr "ההערות והכיתוב שלך בתמונה זו יאבדו."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Your markup on this image will be lost."
+#~ msgstr "ההערות שלך בתמונה זו תאבדו."
 
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."

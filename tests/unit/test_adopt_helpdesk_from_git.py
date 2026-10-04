@@ -66,7 +66,8 @@ def _desk_repo(root: Path, *, display_name: str, queue_id: str | None) -> str:
     if queue_id is not None:
         manifest["desk_project_id"] = queue_id
     (desk / "helpdesk.json").write_text(json.dumps(manifest), encoding="utf-8")
-    (root / "guide.md").write_text("# A guide\n", encoding="utf-8")
+    (root / "docs").mkdir()
+    (root / "docs" / "guide.md").write_text("# A guide\n", encoding="utf-8")
     _commit(root)
     return f"file://{root}"
 

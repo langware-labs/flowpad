@@ -54,11 +54,7 @@ import { mostRecentProcess } from '@src/utils/process-recency';
 import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
 import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
-
-// Cap the initial messages window so long conversations don't fetch + watch
-// every FlowMessage they've ever held. Newest-first so the visible window is
-// always at the bottom of the conversation; older messages load on demand.
-const CONVERSATION_MESSAGES_WINDOW = 500;
+import { conversationMessagesRequest } from './conversation-messages-query';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -195,23 +191,7 @@ export function ConversationView({
   // CONVERSATION_MESSAGES_WINDOW newest rows so long-running conversations
   // don't fetch + watch O(total) entities on every open; older messages
   // load on demand via a `created_date $LT` cursor extension here.
-  const messagesRequest = useMemo(
-    () =>
-      new QueryRequest({
-        type: FlowMessage.type,
-        scope: [],
-        name: `messages:${conversationId}`,
-        query: new QueryFilter({
-          match: {
-            op: '$AND',
-            operands: [{ op: '$EQ', operands: ['conversation_id', conversationId] }],
-          } as Record<string, unknown>,
-          limit: CONVERSATION_MESSAGES_WINDOW,
-          order_by: { created_date: 'desc' },
-        }),
-      }),
-    [conversationId],
-  );
+  const messagesRequest = useMemo(() => conversationMessagesRequest(conversationId), [conversationId]);
   const {
     data: conversationMessages = [],
     refetch: refetchConversationMessages,
