@@ -47,7 +47,10 @@ Three properties the tests pin:
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
 import sys
+import tempfile
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -61,7 +64,7 @@ from flow_sdk.core.compute.declared_value import (
     value_from_stdout,
 )
 from flow_sdk.core.compute.exec import run_shell
-from flow_sdk.core.compute.process_step import launch_step_process
+from flow_sdk.core.compute.process_step import NO_USABLE_LLM_SOURCE, launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.schema.data_spec.compute_op_spec import (
     CHECK_TIMEOUT,
@@ -250,9 +253,16 @@ async def run_op(
         promoted = spec.model_copy(update={"subkind": rung.subkind, "exe_data": exe_data, "attempts": []})
         rescued = await _attempt(promoted, answer.check or before, executor=None, seams=seams)
         prior_detail = answer.detail
-        answer = rescued.model_copy(
-            update={"detail": f"{rescued.detail} (after the {tried_as} attempt: {prior_detail})"}
-        )
+        if not rescued.ran and NO_USABLE_LLM_SOURCE in rescued.detail:
+            # The rung that could have tried another way had nobody to run it. "claude_code has no usable
+            # LLM source: …" is a fact about the machine, not about what the person can do next.
+            detail = (
+                f"{spec.display_label} wasn't installed: the automatic install didn't work, and no assistant is "
+                f"signed in to try another way. Sign in to an assistant, then run setup again. ({prior_detail})"
+            )
+        else:
+            detail = f"{rescued.detail} (after the {tried_as} attempt: {prior_detail})"
+        answer = rescued.model_copy(update={"detail": detail})
         tried_as = rung.subkind
         # The RAW detail, not the chain-wrapped one above — history entries stay
         # one line each rather than nesting a "(after ...)" inside a "(after ...)".
@@ -509,54 +519,134 @@ async def _cli(
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
     running = f"{spec.display_label}: {spec.subkind}"
-    async with _permission_prompt_watch(spec.display_label, platform, say, running) as report:
-        # Each write to stdout/stderr re-says the rung: the one real sign of life a command gives, so a
-        # long quiet install is told apart from a hung one by the row's own last update.
-        said = await shell(
-            command,
-            timeout_seconds=spec.exe_data.timeout(),
-            workdir=workdir,
-            extra_env=env or {},
-            platform=platform,
-            on_output=lambda: report(running),
-        )
+    command_pid: dict[str, int] = {}
+    async with _permission_prompt_watch(spec.display_label, platform, say, running, command_pid) as report:
+        async with _install_progress(lambda: report(running)) as temp_env:
+            # Each write to stdout/stderr re-says the rung: the one real sign of life a command gives, so a
+            # long quiet install is told apart from a hung one by the row's own last update. A silent one
+            # shows life by what it writes into its private temp folder (see `_install_progress`).
+            said = await shell(
+                command,
+                timeout_seconds=spec.exe_data.timeout(),
+                workdir=workdir,
+                extra_env={**temp_env, **(env or {})},
+                platform=platform,
+                on_output=lambda: report(running),
+                on_spawn=lambda pid: command_pid.update(pid=pid),
+            )
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
-#: How often a Windows call checks for an open permission prompt.
+#: How often a Windows call checks for an open permission prompt or installer window.
 _PERMISSION_PROMPT_POLL_SECONDS = 2.0
+
+#: How often a running call's private temp folder is looked at for growth.
+_PROGRESS_POLL_SECONDS = 5.0
+
+
+def _folder_bytes(folder: str) -> int:
+    """Bytes under *folder*. A file that vanishes mid-scan (an installer cleaning up) counts as 0."""
+    total = 0
+    stack = [folder]
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
+                        else:
+                            total += entry.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return total
+
+
+@asynccontextmanager
+async def _install_progress(on_progress: Callable[[], None]) -> AsyncIterator[dict]:
+    """A private temp folder for one command, and a sign of life whenever it grows.
+
+    A silent install (winget, an MSI) prints nothing for minutes, yet it is busy downloading and
+    unpacking — into the temp folder. Handing the command its OWN folder (``TEMP`` / ``TMP`` /
+    ``TMPDIR``) makes that growth the one place to look: no guessing which folders an installer
+    uses, and nothing outside the person's own temp folder that could be unreadable to them.
+    Growth calls ``on_progress`` (which re-says the rung, as output does); silence says nothing, so
+    a hung command still reads as stuck. Yields the environment that points the command at it.
+
+    Never fails the call: when the folder cannot be made the command runs with the machine's own
+    temp folder, unwatched.
+    """
+    try:
+        folder = tempfile.mkdtemp(prefix="flowpad-op-")
+    except OSError:
+        yield {}
+        return
+
+    async def watch() -> None:
+        last = 0
+        while True:
+            await asyncio.sleep(_PROGRESS_POLL_SECONDS)
+            size = await asyncio.to_thread(_folder_bytes, folder)
+            if size != last:
+                last = size
+                on_progress()
+
+    watcher = asyncio.create_task(watch())
+    try:
+        yield {"TEMP": folder, "TMP": folder, "TMPDIR": folder}
+    finally:
+        watcher.cancel()
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 @asynccontextmanager
 async def _permission_prompt_watch(
-    label: str, platform: str, say: Callable[[str], None], running: str
+    label: str,
+    platform: str,
+    say: Callable[[str], None],
+    running: str,
+    command_pid: Optional[dict] = None,
 ) -> AsyncIterator[Callable[[str], None]]:
-    """While a Windows call runs, say "waiting for you" for as long as a permission prompt is open.
+    """While a Windows call runs, say "waiting for you" for as long as it needs the person.
 
-    Yields the call's own reporter: what the call says passes through, except while a prompt is
-    open — then the row keeps saying the person has to act, and goes back to the call's latest
-    line once the prompt closes. Off Windows it is ``say`` itself and nothing is watched.
+    Two things need them: a permission prompt (UAC), and a window the command itself opened — an
+    installer asking something. Both leave the installer blocked and silent, which looks exactly like
+    a hang. ``command_pid`` (filled by the caller once the command exists) names the command whose
+    windows count; without it only a permission prompt is looked for.
+
+    Yields the call's own reporter: what the call says passes through, except while the person is
+    needed — then the row keeps saying so, and goes back to the call's latest line once they have
+    answered. Off Windows it is ``say`` itself and nothing is watched.
     """
     if (platform or sys.platform) != "win32":
         yield say
         return
-    state = {"open": False, "last": running}
-    waiting = f"{label}: waiting for you — approve the Windows permission prompt…"
+    state: dict = {"cause": None, "last": running}
+    waiting = {
+        "prompt": f"{label}: waiting for you — approve the Windows permission prompt…",
+        "window": f"{label}: waiting for you — a window opened by the installer needs your answer (look for it in the taskbar)…",
+    }
 
     def report(text: str) -> None:
         if text:
             state["last"] = text
-        if state["open"]:
-            say(waiting)
+        if state["cause"]:
+            say(waiting[state["cause"]])
         elif text:
             say(text)
 
     async def watch() -> None:
         while True:
-            now_open = await asyncio.to_thread(_permission_prompt_open)
-            if now_open != state["open"]:
-                state["open"] = now_open
-                say(waiting if now_open else state["last"])
+            cause = None
+            if await asyncio.to_thread(_permission_prompt_open):
+                cause = "prompt"
+            elif command_pid and await asyncio.to_thread(_command_window_open, command_pid.get("pid")):
+                cause = "window"
+            if cause != state["cause"]:
+                state["cause"] = cause
+                say(waiting[cause] if cause else state["last"])
             await asyncio.sleep(_PERMISSION_PROMPT_POLL_SECONDS)
 
     watcher = asyncio.create_task(watch())
@@ -578,6 +668,49 @@ def _permission_prompt_open() -> bool:
     try:
         return any((p.info.get("name") or "").lower() == "consent.exe" for p in psutil.process_iter(["name"]))
     except Exception:  # noqa: BLE001 — a failed probe is "no prompt", never a failed install
+        return False
+
+
+#: Window classes that are a console, not something a person answers.
+_CONSOLE_WINDOW_CLASSES = frozenset({"ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS"})
+
+
+def _command_window_open(pid: Optional[int]) -> bool:
+    """Whether the command *pid*, or anything it started, has a window on screen that has a title.
+
+    Only the command's own windows: an unrelated program's window is nothing this step waits for.
+    The command's own console is not one either. Windows only; anything unexpected is "no window".
+    """
+    if sys.platform != "win32" or not pid:
+        return False
+    try:
+        import ctypes  # noqa: PLC0415
+        from ctypes import wintypes  # noqa: PLC0415
+
+        import psutil  # noqa: PLC0415
+
+        tree = {pid, *(child.pid for child in psutil.Process(pid).children(recursive=True))}
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        found: list[int] = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)  # type: ignore[attr-defined]
+        def visit(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            owner = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value not in tree or user32.GetWindowTextLengthW(hwnd) == 0:
+                return True
+            window_class = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, window_class, 256)
+            if window_class.value in _CONSOLE_WINDOW_CLASSES:
+                return True
+            found.append(hwnd)
+            return False
+
+        user32.EnumWindows(visit, 0)
+        return bool(found)
+    except Exception:  # noqa: BLE001 — a failed probe is "no window", never a failed install
         return False
 
 
