@@ -22,6 +22,7 @@ Key functions brought over:
 """
 
 import asyncio
+import errno
 import functools
 import json
 import logging
@@ -1643,9 +1644,10 @@ async def remove_debug_tools() -> dict:
     and the interpreter it runs on are skipped, and the search goes on down
     PATH to the user's copy (see ``_is_flowpads_own``).
 
-    A binary on a read-only system volume (Apple's own `/usr/bin/git`) cannot
-    be removed this way at all — that is reported in `not_found` alongside the
-    OS error, not silently skipped.
+    The answer sorts every tool into one of four lists, so nothing reads as an error that is
+    not one: ``removed``; ``absent`` (not on this box); ``kept`` (Flowpad's own interpreter, or
+    a copy on a read-only system volume such as Apple's ``/usr/bin/git``, which cannot be
+    removed at all); ``failed`` (a removal that should have worked and did not, with why).
 
     Then runs the wizard CHECK-ONLY right here — the icons in the wizard's own
     page are its LAST COMPLETED run's record (`run_state`), never a live
@@ -1660,11 +1662,13 @@ async def remove_debug_tools() -> dict:
     """
     combined_path = os.environ.get("PATH", "") + os.pathsep + str(Path.home() / ".local" / "bin")
     removed: List[str] = []
-    not_found: List[str] = []
+    absent: List[str] = []
+    kept: List[str] = []
+    failed: List[str] = []
     for name in _DEBUG_TOOL_BINARIES:
         found, kept_own = _which_users_tool(name, combined_path)
         if not found:
-            not_found.append(f"{name} (only Flowpad's own interpreter, kept)" if kept_own else name)
+            (kept if kept_own else absent).append(f"{name} (Flowpad's own)" if kept_own else name)
             continue
         path = Path(found)
         formula = _brew_formula_of(path.resolve())
@@ -1680,14 +1684,17 @@ async def remove_debug_tools() -> dict:
                 )
                 _stdout, stderr = await proc.communicate()
                 if proc.returncode != 0:
-                    not_found.append(f"{name} (brew uninstall {formula} failed: {stderr.decode().strip()[:200]})")
+                    failed.append(f"{name} (brew uninstall {formula}: {stderr.decode().strip()[:200]})")
                     continue
                 removed.append(f"{name} (brew: {formula})")
             else:
                 path.unlink()
                 removed.append(name)
         except OSError as exc:
-            not_found.append(f"{name} ({exc})")
+            if exc.errno == errno.EROFS:
+                kept.append(f"{name} (system copy, read-only)")
+            else:
+                failed.append(f"{name} ({exc})")
 
     # Re-sweep, or the in-memory capability values still point at the binaries just
     # removed: `resolve_builtin_worker_type` would keep picking Claude Code, and the
@@ -1705,7 +1712,7 @@ async def remove_debug_tools() -> dict:
     if wizard is not None:
         result = await wizard.run(check_only=True)
         wizard_result = result.model_dump(mode="json")
-    return {"removed": removed, "not_found": not_found, "wizard": wizard_result}
+    return {"removed": removed, "absent": absent, "kept": kept, "failed": failed, "wizard": wizard_result}
 
 
 # ---------------------------------------------------------------------------

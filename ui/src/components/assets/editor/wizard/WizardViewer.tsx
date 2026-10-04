@@ -402,6 +402,10 @@ function WizardViewerBody({
       // progress arrives through the run record, not this reply.
       await wizard.start();
     } catch (e) {
+      // 409 is the backend's `busy` answer: this call was REPLACED by a newer start (`start_wizard`
+      // — the first-run trigger and this button race, the newest wins) or another run holds the
+      // wizard. Either way a run is live on this page, so there is nothing to report as a failure.
+      if ((e as { response?: { status?: number } })?.response?.status === 409) return;
       notify.error({ title: t`Could not start`, message: errorMessage(e, t`Could not start`) });
       setStarting(false);
     }
@@ -585,14 +589,14 @@ function WizardViewerBody({
                           <span className="font-medium text-foreground">{rowLabel}</span>
                           {trail.length > 0 && (
                             <span
-                              className="ml-2 text-xs text-muted-foreground/60"
+                              className="ms-2 text-xs text-muted-foreground/60"
                               data-testid={`wizard-step-${step_id}-rungs`}
                             >
                               ({trailText})
                             </span>
                           )}
                           {agentExecutor && (
-                            <span className="ml-2">
+                            <span className="ms-2">
                               <AgentRungLabel executorTypeId={agentExecutor} rowLabel={rowLabel} />
                             </span>
                           )}
@@ -601,9 +605,9 @@ function WizardViewerBody({
                       {(trail.length > 0 || agentExecutor) && (
                         <TooltipContent className="max-w-sm" data-testid={`wizard-step-${step_id}-summary-full`}>
                           <span className="font-medium">{rowLabel}</span>
-                          {trail.length > 0 && <span className="ml-2">({trailText})</span>}
+                          {trail.length > 0 && <span className="ms-2">({trailText})</span>}
                           {agentExecutor && (
-                            <span className="ml-2">
+                            <span className="ms-2">
                               <AgentRungLabel executorTypeId={agentExecutor} rowLabel={rowLabel} />
                             </span>
                           )}
