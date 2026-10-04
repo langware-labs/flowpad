@@ -26,6 +26,22 @@ is therefore not what is trusted; the signature is. Microsoft lists the Visual C
 To update: download both wheels, extract `msvcp140.dll`, check the signature on Windows, replace the files, and
 update the hashes here and in `runtime.py` (`tests/unit/test_rag_vcruntime.py` fails until they agree).
 
+## Measured on a machine without the runtime
+
+2026-10-05, Windows 11 ARM64 VM, Python 3.14 x64 (under emulation). The Arm64 Visual C++ Redistributable was
+uninstalled (`winget uninstall Microsoft.VCRedist.2015+.arm64`; `C:\Windows\System32\msvcp140.dll` gone):
+
+| | result |
+|---|---|
+| plain `import usearch.index` (twice, two working directories) | `ImportError: DLL load failed while importing compiled: The specified module could not be found.` |
+| `flow_sdk.rag.runtime.import_usearch()` | imports; `msvcp140.dll` was loaded from `flow_sdk\rag\vcruntime\win-amd64\` |
+| `runtime.refusal()` | `''` — no question to the person, no permission prompt |
+
+The redistributable was then reinstalled and `import usearch.index` worked again from the system copy. Not
+measured: an ARM64 (native) Python, which would load `win-arm64/`; that file was checked for signature, hash and
+PE type only. What each locked dependency's Windows wheels import is checked by
+`scripts/check_windows_wheel_deps.py` (`.github/workflows/windows-wheel-deps.yml`, weekly).
+
 ## What this does NOT do
 
 Windows Update does not patch these copies, so they should be refreshed with the runtime that Flowpad builds against.
