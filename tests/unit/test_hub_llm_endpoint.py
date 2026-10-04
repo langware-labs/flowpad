@@ -90,7 +90,8 @@ async def _reset_harness_auth_mode():
 @pytest.fixture(autouse=True)
 def _status_facts(monkeypatch):
     """The STATUS facts funding reads, made deterministic (see test_llm_source_resolution):
-    every CLI installed, the hub signed in exactly when a hub key is stored, no spawn probe."""
+    every CLI installed, a hub budget spendable exactly when a hub key is stored (the real rule,
+    not faked), no spawn probe."""
     from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
     from flow_sdk.core import status
     from flow_sdk.core.status import InstallState

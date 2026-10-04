@@ -41,8 +41,8 @@ interface MessageComposerProps {
    *  LiveSessionView; the plain conversation composer leaves it unset. */
   liveSessionId?: string;
   /** The participant whose machine a prompt runs on. When set, the composer
-   *  offers the "Run on <host>'s machine" toggle: a send in prompt mode opens
-   *  a NEW session (the backend mints it). Null = plain chat box. */
+   *  offers the live-session icon: a send in live-session mode opens a NEW
+   *  session (the backend mints it). Null = plain chat box. */
   sessionHost?: SessionHost | null;
   /** Fires after a successful send (fresh reply OR draft promoted to a reply). */
   onSent?: () => void;
@@ -72,6 +72,10 @@ const SAVE_DEBOUNCE_MS = 400;
 /** Ceiling for the auto-growing composer (~10 lines of text). Past this the
  *  textarea scrolls instead of eating the conversation above it. */
 const MAX_COMPOSER_HEIGHT_PX = 240;
+
+/** The flat icon buttons of the attach row (file, asset, emoji, live session). */
+const ICON_BUTTON_CLASS =
+  'flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -167,7 +171,7 @@ export function MessageComposer({
   const [text, setText] = useState(draft?.text ?? '');
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
-  // Prompt mode: the typed text is the prompt that opens a session on the
+  // Live-session mode: the typed text is the prompt that opens a session on the
   // host's machine (not a chat line). Off by default; sticky until toggled.
   const [promptMode, setPromptMode] = useState(false);
   // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
@@ -293,7 +297,7 @@ export function MessageComposer({
       return;
     }
     // A prompt send — a follow-up inside a session view, or a NEW session from
-    // the conversation composer in prompt mode. The typed text IS the prompt
+    // the conversation composer in live-session mode. The typed text IS the prompt
     // that runs on the host, so it rides as a PROMPT attachment (not a plain
     // body): the host's gate keys on the attachment, and the backend
     // synthesizes the placeholder body. A new session's opening proposal
@@ -491,7 +495,7 @@ export function MessageComposer({
         disabled={attachmentsDisabled}
         title={t`Attach files`}
         data-testid="attach-file-button"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+        className={ICON_BUTTON_CLASS}
       >
         <Paperclip className="h-3.5 w-3.5" />
       </button>
@@ -502,7 +506,7 @@ export function MessageComposer({
             disabled={assetsDisabled}
             title={t`Attach an asset (skill, agent, doc, spec)`}
             data-testid="attach-asset-button"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className={ICON_BUTTON_CLASS}
           >
             <Boxes className="h-3.5 w-3.5" />
           </button>
@@ -520,7 +524,7 @@ export function MessageComposer({
             disabled={isDisabled}
             title={t`Insert emoji`}
             data-testid="insert-emoji-button"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className={ICON_BUTTON_CLASS}
           >
             <Smile className="h-3.5 w-3.5" />
           </button>
@@ -531,7 +535,7 @@ export function MessageComposer({
 
   /** Live-session mode: ONE icon in the attach row enters it (the typed text becomes the prompt
    *  that opens a session on the host's machine). While it is on, a strip above the box names the
-   *  mode, holds the reply policy, and exits it. Rendered on the plain conversation composer only. */
+   *  mode and holds the reply policy; the icon leaves it. Rendered on the plain conversation composer only. */
   const hostName = sessionHost?.name?.trim() || t`the other participant`;
   const sessionToggle = canStartSession ? (
     <button
@@ -542,10 +546,9 @@ export function MessageComposer({
       title={promptMode ? t`Leave live session mode` : t`Live session: run a prompt on ${hostName}'s machine`}
       data-testid="composer-session-toggle"
       className={cn(
-        'flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors disabled:opacity-40',
-        promptMode
-          ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+        ICON_BUTTON_CLASS,
+        promptMode &&
+          'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300',
       )}
     >
       <MonitorPlay className="h-3.5 w-3.5" />
@@ -617,15 +620,6 @@ export function MessageComposer({
           </p>
         </PopoverContent>
       </Popover>
-      <button
-        type="button"
-        onClick={() => setPromptMode(false)}
-        title={t`Leave live session mode`}
-        aria-label={t`Leave live session mode`}
-        className="rounded p-0.5 hover:bg-emerald-500/15"
-      >
-        <X className="h-3 w-3" />
-      </button>
     </div>
   ) : null;
 
