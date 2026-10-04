@@ -1,6 +1,8 @@
 import { t } from '@lingui/core/macro';
 import { useMemo } from 'react';
-import { dataManager, fsManager, Project, QueryRequest, Task, TypeId, type TaskableMessage } from '@sdk';
+import { dataManager, fsManager, Project, QueryRequest, Task, TaskKind, TypeId, type TaskableMessage } from '@sdk';
+import { isTaskArchived } from '@src/components/task-bar/constants';
+import { statusFamily, TaskStatus } from '@src/components/task-bar/task-utils';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -29,8 +31,9 @@ export function TaskItIcon({ className }: { className?: string }) {
   return <Glyph className={className} />;
 }
 
-/** The tasks made from this conversation's messages, keyed by message id. One query per conversation. */
-export function useMessageTasks(conversationId: string | null | undefined): Map<string, Task> {
+/** Every task of this conversation (`origin_conversation`): made from its messages ("Task it") or
+ *  asked in it (the Vibe help button). One query per conversation, shared by every reader. */
+export function useConversationTasks(conversationId: string | null | undefined): Task[] {
   const request = useMemo(
     () =>
       new QueryRequest({
@@ -41,11 +44,27 @@ export function useMessageTasks(conversationId: string | null | undefined): Map<
     [conversationId],
   );
   const { data: tasks = NO_TASKS } = useEntitiesQuery<Task>(request, { enabled: !!conversationId });
+  return tasks;
+}
+
+/** The tasks made from this conversation's messages, keyed by message id. */
+export function useMessageTasks(conversationId: string | null | undefined): Map<string, Task> {
+  const tasks = useConversationTasks(conversationId);
   return useMemo(() => {
     const byMessage = new Map<string, Task>();
     for (const task of tasks) if (task.origin_message) byMessage.set(task.origin_message, task);
     return byMessage;
   }, [tasks]);
+}
+
+/** Still to do: not Done (nor Failed/Canceled) and not archived — what the Tasks tab shows first. */
+export function isOpenTask(task: Task): boolean {
+  return statusFamily(task.status) !== TaskStatus.DONE && !isTaskArchived(task);
+}
+
+/** A task's owner, as the task page names it: a group task's group, else its assignee. */
+export function taskOwner(task: Task): string | null {
+  return (task.kind === TaskKind.GROUP && task.group_name) || task.assignee || null;
 }
 
 /** Create the task for a message, then offer Open / Undo. */

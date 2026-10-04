@@ -15,7 +15,6 @@ import {
   Project,
   Prompt,
   Task,
-  TaskKind,
   TypeId,
   User,
   type AgenticProcess,
@@ -40,6 +39,7 @@ import {
 } from '@sdk/entities/flow-message';
 import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
+import { taskOwner } from './task-it';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
@@ -769,8 +769,7 @@ export function FlowMessageBubble({
                 onClick: () => navigation.openDock(messageTask.dockPointer),
                 title: messageTask.title || t`Task`,
                 status: messageTask.status,
-                // The owner, as the task page names it: a group task's group, else its assignee.
-                owner: (messageTask.kind === TaskKind.GROUP && messageTask.group_name) || messageTask.assignee || null,
+                owner: taskOwner(messageTask),
               }
             : onTaskIt && !fm.is_draft
               ? { onClick: () => onTaskIt(fm) }
