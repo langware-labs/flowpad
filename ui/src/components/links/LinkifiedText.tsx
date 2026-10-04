@@ -1,4 +1,4 @@
-import { useMemo, type KeyboardEvent, type MouseEvent } from 'react';
+import { useMemo, type MouseEvent } from 'react';
 import { linkSegments, type LinkHandlers } from '@src/lib/link-matches';
 
 /** The terminal's rule, on the DOM: only a plain primary click activates (never a macOS ctrl-click). */
@@ -27,8 +27,9 @@ export function LinkifiedText({ text, handlers }: { text: string; handlers: Link
         return (
           <span
             key={i}
+            // No tabIndex: a focusable span blocks a drag-selection from starting inside it, and a
+            // terminal link is not a tab stop either.
             role="link"
-            tabIndex={0}
             dir="ltr"
             data-link={link}
             className="cursor-pointer text-primary [unicode-bidi:isolate] hover:underline"
@@ -41,11 +42,6 @@ export function LinkifiedText({ text, handlers }: { text: string; handlers: Link
               event.preventDefault();
               event.stopPropagation();
               handlers.openMenu(link, event.clientX, event.clientY);
-            }}
-            onKeyDown={(event: KeyboardEvent) => {
-              if (event.key !== 'Enter') return;
-              event.preventDefault();
-              handlers.activate(new globalThis.MouseEvent('click'), link);
             }}
           >
             {segment.text}

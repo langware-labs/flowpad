@@ -17,7 +17,7 @@ vi.mock('@src/navigation', async (importOriginal) => ({
     navigation: { openLink: mocks.openLink, openLinkInBrowser: vi.fn(), openLinkInVibe: mocks.openLinkInVibe, openLinkInBrowserProfile: vi.fn() },
   }),
 }));
-vi.mock('@src/lib/browser-profiles', () => ({ fetchBrowserProfiles: async () => [] }));
+vi.mock('@src/lib/browser-profiles', () => ({ fetchBrowserProfiles: () => Promise.resolve([]) }));
 
 const { MessageBubble } = await import('@src/components/conversation/MessageBubble');
 
