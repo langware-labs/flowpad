@@ -3786,6 +3786,11 @@ msgstr "שיחות"
 msgid "check"
 msgstr "בדיקה"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "check again"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Check again"
@@ -4814,6 +4819,10 @@ msgstr "חבר את GitHub"
 msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr "תהליך הגדרה מודרך יחבר את GitHub ויגדיר את ה-CLI של gh."
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
+msgstr ""
+
 #~ msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 #~ msgstr ""
 
@@ -5192,6 +5201,10 @@ msgstr "העתק קישור"
 #: src/components/assets/useAssetsModel.tsx
 msgid "Copy links"
 msgstr "העתקת קישורים"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Copy members' clone URL"
+msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -9183,6 +9196,10 @@ msgstr ""
 msgid "Find or type an organization…"
 msgstr ""
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Finish installing the FlowPad GitHub App on {repo}, then"
+msgstr ""
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Finish setting up Flowpad"
 msgstr "סיום ההגדרה של Flowpad"
@@ -11646,6 +11663,10 @@ msgstr "הקישור הועתק"
 msgid "Link copied to clipboard"
 msgstr "הקישור הועתק ללוח"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Link the project to the cloud first: its members are the cloud project's members."
+msgstr ""
+
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/project-home/ProjectCloudLinkButton.tsx
@@ -12531,6 +12552,10 @@ msgstr "חברים אינם זמינים במצב Local"
 #: src/components/assets/editor/task/GroupTaskDialog.tsx
 msgid "Members assigned, but some messages failed"
 msgstr "חברים הוקצו, אך חלק מההודעות לא נשלחו"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
+msgstr ""
 
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
@@ -14957,6 +14982,10 @@ msgstr "פתח פקודה בטרמינל חיצוני"
 msgid "Open comment"
 msgstr "פתח הערה"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Open connections"
+msgstr ""
+
 #: src/tabs/useTerminalStripController.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open Context"
@@ -16725,6 +16754,10 @@ msgstr "מציג PTY"
 
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Public access removed"
+msgstr ""
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Public repos are already open to everyone."
 msgstr ""
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
@@ -19642,6 +19675,11 @@ msgstr "שיתוף לפי שם או דוא״ל…"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Share code {0} to invite."
 msgstr "שתף קוד {0} להזמנה."
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Share git with project members"
+msgstr ""
 
 #: src/i18n/pref-labels.ts
 msgid "Share message status"
