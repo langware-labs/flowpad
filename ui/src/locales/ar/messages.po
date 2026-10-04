@@ -1499,10 +1499,14 @@ msgstr ""
 msgid "Add a message to send without it."
 msgstr ""
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Add a note to the running session"
+msgstr ""
+
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
-msgid "Add a note to the running session about this message"
-msgstr "إضافة ملاحظة إلى الجلسة الجارية بشأن هذه الرسالة"
+#~ msgid "Add a note to the running session about this message"
+#~ msgstr "إضافة ملاحظة إلى الجلسة الجارية بشأن هذه الرسالة"
 
 #~ msgid "Add a personal note..."
 #~ msgstr "إضافة ملاحظة شخصية..."
@@ -1719,6 +1723,7 @@ msgstr "إضافة وسم…"
 msgid "Add this key under Connections"
 msgstr "أضف هذا المفتاح ضمن الاتصالات"
 
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Add to favorites"
@@ -1733,7 +1738,7 @@ msgstr "إضافة إلى السياق الخاص"
 msgid "Add to project"
 msgstr "إضافة إلى المشروع"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
 msgstr "إضافة إلى قائمة الانتظار"
@@ -1742,7 +1747,7 @@ msgstr "إضافة إلى قائمة الانتظار"
 msgid "Add to Queue"
 msgstr "إضافة إلى الطابور"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Add to the running session"
 msgstr "إضافة إلى الجلسة الجارية"
 
@@ -2533,7 +2538,7 @@ msgstr "تُحفظ أسرار التطبيق في سلسلة مفاتيح نظا
 msgid "App version"
 msgstr "إصدار التطبيق"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "تمت إضافته إلى قائمة انتظار أوامر العامل الحالي، ووُسم بهذه الرسالة."
 
@@ -6899,8 +6904,7 @@ msgstr "حذف المفتاح"
 msgid "Delete machine"
 msgstr ""
 
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Delete message"
 msgstr "حذف الرسالة"
 
@@ -7636,7 +7640,7 @@ msgstr "فشل التحميل"
 msgid "Download file"
 msgstr "تنزيل الملف"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "تنزيل الرسالة"
@@ -7668,6 +7672,10 @@ msgstr "اسحب للتحريك · مرّر للتكبير · انقر على ع
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
 msgstr "يمكنك الرسم بالقلم أو السهم، وإضافة مربعات نصية وشرح، ثم الحفظ لإرفاق النسخة المعلّقة."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
+#~ msgstr "يمكنك الرسم بالقلم أو السهم، وإضافة مربعات نصية، ثم الحفظ لإرفاق النسخة المعلّقة."
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Draws from"
@@ -7855,7 +7863,7 @@ msgstr ""
 msgid "Edit link"
 msgstr "تعديل الرابط"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "تعديل الاسم"
 
@@ -9538,25 +9546,25 @@ msgid "Forking…"
 msgstr "جاري التفريع…"
 
 #: src/components/account/system-diagnoses.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
 msgstr "إرسال"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward message"
-msgstr "إعادة توجيه الرسالة"
+#~ msgid "Forward message"
+#~ msgstr "إعادة توجيه الرسالة"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward to another conversation"
-msgstr "إعادة توجيه إلى محادثة أخرى"
+#~ msgid "Forward to another conversation"
+#~ msgstr "إعادة توجيه إلى محادثة أخرى"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "forwarded"
-msgstr "معاد توجيهها"
+#~ msgid "forwarded"
+#~ msgstr "معاد توجيهها"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Forwarded from another conversation"
 msgstr "معاد توجيهها من محادثة أخرى"
 
@@ -12622,6 +12630,11 @@ msgstr "رسالة"
 
 #~ msgid "Message (optional)"
 #~ msgstr "رسالة (اختيارية)"
+
+#: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Message actions"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
@@ -17046,8 +17059,7 @@ msgstr "إعادة الفحص"
 msgid "Re-scan now"
 msgstr "إعادة الفحص الآن"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "React"
 msgstr ""
 
@@ -17502,6 +17514,10 @@ msgstr ""
 msgid "Remove from {0}?"
 msgstr ""
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Remove from favorites"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "إزالة من المجلد"
@@ -17732,7 +17748,7 @@ msgstr ""
 msgid "Replies:"
 msgstr ""
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply"
 msgstr ""
 
@@ -17745,7 +17761,7 @@ msgstr ""
 msgid "Reply in {0}"
 msgstr "الرد في {0}"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply in thread"
 msgstr ""
 
@@ -21338,8 +21354,7 @@ msgstr "تم إسناد المهمة"
 msgid "Task created"
 msgstr "تم إنشاء المهمة"
 
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Task it"
 msgstr ""
 
@@ -24153,7 +24168,7 @@ msgstr "ما الذي يجب أن يُصدر طلبات LLM الخاصة بك؟"
 msgid "What should the agent do each time it runs?"
 msgstr ""
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "What should the worker do with this message?"
 msgstr "ماذا يجب أن يفعل العامل بهذه الرسالة؟"
 
@@ -24641,6 +24656,10 @@ msgstr ""
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Your markup and caption on this image will be lost."
 msgstr "ستُفقد التعليقات والشرح الذي أضفته على هذه الصورة."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Your markup on this image will be lost."
+#~ msgstr "ستُفقد جميع التعليقات التي أضفتها على هذه الصورة."
 
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."

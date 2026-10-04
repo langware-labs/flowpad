@@ -160,9 +160,9 @@ CHANNELS.forEach((channel, i) => {
     const quote = page.getByTestId('message-quote').filter({ hasText: `photo ${nonce}` });
     await expect(quote).toBeVisible();
 
-    // We react from the photo's bubble.
-    await photoBubble.hover();
-    await photoBubble.getByTestId('message-react').click();
+    // We react from the photo's bubble — React is in its ⋮ menu (the menu portals out of the bubble).
+    await photoBubble.getByTestId('message-actions-menu').click();
+    await page.getByTestId('message-react').click();
     await page.getByRole('option', { name: 'thumbs up yes approve like' }).click();
     await expect(photoBubble.getByTestId('reaction-👍')).toHaveAttribute('aria-pressed', 'true');
     await expect
@@ -179,8 +179,8 @@ CHANNELS.forEach((channel, i) => {
     if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/${channel}-reactions.png`, fullPage: true });
 
     // We answer the photo with a file.
-    await photoBubble.hover();
-    await photoBubble.getByTestId('message-reply').click();
+    await photoBubble.getByTestId('message-actions-menu').click();
+    await page.getByTestId('message-reply').click();
     await expect(page.getByTestId('composer-reply-banner')).toContainText(`photo ${nonce}`);
     await expect(page.getByTestId('attach-file-button')).toBeEnabled();
     const chooser = page.waitForEvent('filechooser');
