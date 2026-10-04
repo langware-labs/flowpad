@@ -437,6 +437,8 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     const mk = () => {
       const m = new UvManager(silentLog, { stateDir: dir });
       m._drainVenvProcesses = async () => {};
+      // ensureUv probes the real `uv`: present on a developer machine, absent on CI — which then tried the installer.
+      m.ensureUv = async () => {};
       return m;
     };
     try {
