@@ -14,6 +14,7 @@ import { flowIconComponent } from '@sdk/react/FlowIcon';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { formatTimeAgo, useLastStatusChange } from '@src/store/pending-actions-store';
 import { useEntityLocationLabel } from '@src/components/graph-view/ui/EntityIcon';
+import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
 
 import React, { useMemo } from 'react';
 
@@ -96,9 +97,7 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
 
   return (
     <div className="min-w-[220px] space-y-1.5">
-      <p className="text-xs font-semibold text-foreground" data-testid="tab-tooltip-name">
-        {displayName}
-      </p>
+      <TabTooltipName name={displayName} />
       {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
       <div className="flex items-center gap-2">
         <span
@@ -147,9 +146,7 @@ export const LazyProcessTooltip: React.FC<{
   if (process) return <ProcessInfoTooltip process={process} statusReason={statusReason} />;
   return (
     <div className="min-w-[180px] space-y-1">
-      <p className="text-xs font-semibold text-foreground" data-testid="tab-tooltip-name">
-        {fallbackName}
-      </p>
+      <TabTooltipName name={fallbackName} />
       {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
     </div>
   );
@@ -181,9 +178,7 @@ export const ContentTabTooltip: React.FC<{
 
   return (
     <div className="min-w-[220px] space-y-1.5">
-      <p className="text-xs font-semibold text-foreground" data-testid="tab-tooltip-name">
-        {tab.name || typeLabel}
-      </p>
+      <TabTooltipName name={tab.name || typeLabel} />
       {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
       {location !== undefined && (
         <p className="text-[11px] text-muted-foreground" data-testid="tab-tooltip-location">

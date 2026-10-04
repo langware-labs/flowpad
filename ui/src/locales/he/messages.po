@@ -5212,6 +5212,10 @@ msgid "Copy members' clone URL"
 msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/tabs/TabTooltipName.tsx
+msgid "Copy name"
+msgstr "העתק שם"
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 #: src/components/top-nav-bar/CopyPathButton.tsx
