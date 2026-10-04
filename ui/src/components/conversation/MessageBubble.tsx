@@ -1,11 +1,13 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
-import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react';
+import { Pencil, Check, CheckCheck, Clock, Forward, Trash2, User as UserIcon } from 'lucide-react';
 import type { AgenticProcess, FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
 import { TaskItIcon, taskItHint } from './task-it';
 import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
+import { STATUS_FAMILY_CHIP, statusLabel } from '@src/components/task-bar/constants';
+import { statusFamily } from '@src/components/task-bar/task-utils';
 import { MessageChips } from './chips/MessageChips';
 import { MARKDOWN_LINK_CLASS, MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
@@ -44,8 +46,9 @@ interface MessageBubbleProps {
    *  clones the message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
   /** "Task it": make this message a task — or, once it is one (`title` = the task's), open it.
-   *  The parent decides which; the bubble only draws the chip. */
-  taskIt?: { onClick: () => void; title?: string };
+   *  An opened task also shows its `status` and `owner` beside it. The parent decides which; the
+   *  bubble only draws the chips. */
+  taskIt?: { onClick: () => void; title?: string; status?: string; owner?: string | null };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -410,6 +413,30 @@ export function MessageBubble({
               >
                 <TaskItIcon className="h-3 w-3 shrink-0" />
                 <span className="max-w-[24rem] truncate">{taskIt.title || <Trans>Task it</Trans>}</span>
+              </button>
+            )}
+            {/* An opened task's state at a glance — each opens the task too. */}
+            {taskIt?.title && (
+              <button
+                type="button"
+                onClick={taskIt.onClick}
+                className={`${CHIP_LAYOUT} ${STATUS_FAMILY_CHIP[statusFamily(taskIt.status)]}`}
+                title={t`Status`}
+                data-testid="message-task-status"
+              >
+                {statusLabel(taskIt.status)}
+              </button>
+            )}
+            {taskIt?.title && taskIt.owner && (
+              <button
+                type="button"
+                onClick={taskIt.onClick}
+                className={`${CHIP_LAYOUT} ${chipStyleFor()}`}
+                title={t`Owner: ${taskIt.owner}`}
+                data-testid="message-task-owner"
+              >
+                <UserIcon className="h-3 w-3 shrink-0" />
+                <span className="max-w-[14rem] truncate">{taskIt.owner}</span>
               </button>
             )}
           </div>

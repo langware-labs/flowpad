@@ -34,6 +34,19 @@ describe('Task it', () => {
     expect(chip.textContent).toBe('Render HTML');
   });
 
+  it("shows an opened task's status and owner beside it", () => {
+    const task = { onClick: () => {}, title: 'Render HTML', status: 'in_progress', owner: 'ron@x.com' };
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={task} /></MemoryRouter>);
+    expect(screen.getByTestId('message-task-status').textContent).toBe('In progress');
+    expect(screen.getByTestId('message-task-owner').textContent).toBe('ron@x.com');
+  });
+
+  it('a message not yet a task has no status or owner chip', () => {
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {} }} /></MemoryRouter>);
+    expect(screen.queryByTestId('message-task-status')).toBeNull();
+    expect(screen.queryByTestId('message-task-owner')).toBeNull();
+  });
+
   it('offers nothing without a handler', () => {
     render(<MemoryRouter><MessageBubble message={message} senderName="Ron" /></MemoryRouter>);
     expect(screen.queryByTestId('message-task-it')).toBeNull();

@@ -32,6 +32,14 @@ export const STATUS_LABELS: Record<string, string> = {
   canceled: 'Canceled',
 };
 
+/** A status chip's colors per bucket (see `statusFamily`): New is neutral, In progress amber,
+ *  Done green — the chip shape is EntityChip's. */
+export const STATUS_FAMILY_CHIP: Record<string, string> = {
+  to_do: 'border border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground',
+  in_progress: 'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
+  done: 'border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
+};
+
 export function statusLabel(s?: string): string {
   return STATUS_LABELS[s ?? ''] ?? (s || 'New');
 }
