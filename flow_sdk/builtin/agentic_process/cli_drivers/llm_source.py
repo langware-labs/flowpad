@@ -372,10 +372,14 @@ def _hub_has_token() -> bool:
     one (an SDK script) and to a backend whose socket had restarted unverified. A key the hub
     already REJECTED stays refused. Imported per call so a monkeypatch on it applies.
     """
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+    from flow_sdk.cli.auth.hub_login import hub_auth_available, resolve_hub_api_key  # noqa: PLC0415
     from flow_sdk.core.status import HubLogin, hub_status  # noqa: PLC0415
 
-    return bool(resolve_hub_api_key()) and hub_status().login is not HubLogin.REJECTED
+    # ``hub_auth_available`` first: a login's user record (or the CI ``cloud_api_key``) is a plain
+    # read, where the key itself decrypts the credential store -- and the picker asks this per
+    # harness on every status poll. Only a key-only box (no user record) pays for the decrypt.
+    has_token = hub_auth_available() or bool(resolve_hub_api_key())
+    return has_token and hub_status().login is not HubLogin.REJECTED
 
 
 def _hub_spendable() -> bool:
@@ -720,15 +724,6 @@ async def resolve_llm_endpoint(process) -> Candidate:
     """
     worker_type = getattr(getattr(process, "driver", None), "name", None) or getattr(process, "worker_type", "")
     await check_unchecked_login(worker_type)
-    if _hub_has_token():
-        # The hub's own rows carry the allowance's filters (models_allow); the inventory reads
-        # them from the memo only, and a process that never listed -- an SDK script, a backend
-        # nobody has opened a picker on -- had only the binding's filter-less stub, so ``sm``
-        # went out as a model the allowance refuses. A spawn is about to call the hub anyway;
-        # this is a memo hit inside the TTL and answers the last good list on any failure.
-        from flow_sdk.instance_settings.llm_endpoint import fetch_hub_llm_endpoints  # noqa: PLC0415
-
-        await fetch_hub_llm_endpoints()
     candidates = await list_llm_candidates(worker_type, LLMScope.of_process(process))
     chosen = pick_llm_candidate(candidates)
     if chosen is None:
