@@ -1580,20 +1580,20 @@ async def onboarding_reset() -> ApiSuccessResponse[dict]:
     )
 
 
-#: The `llm-setup` wizard's own 6 tools, by the binary name each one's
+#: The `llm-setup` wizard's own 4 tools, by the binary name each one's
 #: `completion_check` actually looks for on PATH — never the wizard step id,
 #: which is a different spelling (``claude-code`` the step, ``claude`` the
 #: binary; ``python`` the step, ``python3``/``python`` the two names its check
 #: tries either of).
-_DEBUG_TOOL_BINARIES = ["jq", "rg", "claude", "python3", "python", "git", "node"]
+_DEBUG_TOOL_BINARIES = ["claude", "python3", "python", "git", "node"]
 
 
 def _brew_formula_of(resolved: Path) -> Optional[str]:
     """The Homebrew formula that owns *resolved*, when it is a Homebrew symlink
     into a Cellar — parsed from the REALPATH rather than a hardcoded name table,
-    since a formula's name does not always match the binary it installs
-    (``ripgrep`` -> ``rg``) and a versioned one doesn't match at all
-    (``python@3.12``). ``None`` means: not Homebrew's, remove the file itself.
+    since a versioned formula's name does not match the binary it installs
+    (``python@3.12`` -> ``python3``). ``None`` means: not Homebrew's, remove
+    the file itself.
     """
     parts = resolved.parts
     if "Cellar" in parts:
@@ -1607,7 +1607,7 @@ def _brew_formula_of(resolved: Path) -> Optional[str]:
 async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
     """DEBUG ONLY — temporary, for testing the `llm-setup` wizard end to end.
 
-    ACTUALLY UNINSTALLS every one of its 6 tools found on this box — `brew
+    ACTUALLY UNINSTALLS every one of its 4 tools found on this box — `brew
     uninstall --force` for anything Homebrew manages, deleting the file
     directly for anything else (e.g. Claude Code's own curl-installed binary).
 

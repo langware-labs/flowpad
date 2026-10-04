@@ -160,7 +160,7 @@ export function SettingsSection() {
                 variant="outline"
                 onClick={() => void handleRemoveTools()}
                 disabled={removingTools}
-                title="DEV ONLY — actually uninstalls jq/rg/claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
+                title="DEV ONLY — actually uninstalls claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
               >
                 {removingTools ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
               </Button>
