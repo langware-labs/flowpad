@@ -54,3 +54,9 @@ def test_a_project_can_be_checked_out_from_git_or_its_hub_copy_only():
     assert isinstance(as_project_origin({"kind": "hub_repo", "repo": "git_repo-1", "rel_path": "."}), HubRepoOrigin)
     assert as_project_origin({"kind": "git", "provider": "github", "owner": "o", "name": "n"}) is not None
     assert as_project_origin({"kind": "local", "base": "/x"}) is None
+
+
+async def test_a_machine_without_git_is_told_so(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+    with pytest.raises(Exception, match="Git is not installed"):
+        await HubRepoCheckout(root=tmp_path / "x", clone_url="http://h/r", branch="main", token="t").checkout()
