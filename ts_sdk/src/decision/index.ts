@@ -1,4 +1,6 @@
 export { DecisionError, decide, decisionEndpoints, pick } from './decide';
+export { navigatorRoute } from './navigator';
+export type { NavigationTarget, NavigatorRoute } from './navigator';
 export type {
   APIEndpointOffer,
   Answer,
