@@ -77,9 +77,11 @@ export function SettingsSection() {
       // page's icons are its LAST COMPLETED run's record, not a live check, so
       // without that this button would remove tools and leave everything
       // showing exactly as green as before.
-      const answer = await apiClient.post<{ removed: string[]; not_found: string[]; wizard: WizardResult | null }>(
-        '/api/v1/onboarding/debug/remove-tools',
-      );
+      const action = new ActionInfo('remove-tools', 'compute_node', '@local', 'POST');
+      const answer = await dataManager.callAction<
+        unknown,
+        { removed: string[]; not_found: string[]; wizard: WizardResult | null }
+      >(action);
       notify.success({
         title: t`Tools removed, wizard re-checked`,
         message: t`removed: ${answer.removed.join(', ') || '–'} · not found: ${answer.not_found.join(', ') || '–'}`,
