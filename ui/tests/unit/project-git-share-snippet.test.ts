@@ -17,21 +17,27 @@ function deskDouble() {
   const seen: string[] = [];
   let posts = 0;
   let shared = false;
-  const spy = vi.spyOn(dataManager, 'callAction').mockImplementation(async (info: ActionInfo) => {
+  const spy = vi.spyOn(dataManager, 'callAction').mockImplementation((info: ActionInfo) => {
     expect(info.name).toBe('git_share');
     expect(info.targetEntity?.toString()).toBe(`project-${PROJECT_ID}`);
     seen.push(info.method);
     if (info.method === 'POST') {
       posts += 1;
       if (posts === 1) {
-        return { status: 'install_required', repo: 'acme/api', install_url: 'https://github.com/apps/flowpad/installations/new' };
+        return Promise.resolve({
+          status: 'install_required',
+          repo: 'acme/api',
+          install_url: 'https://github.com/apps/flowpad/installations/new',
+        });
       }
       shared = true;
     }
     if (info.method === 'DELETE') shared = false;
-    return shared
-      ? { status: 'shared', repo: 'acme/api', git_repo: 'git_repo-77', clone_url: CLONE_URL, default_branch: 'main' }
-      : { status: 'not_shared', repo: 'acme/api' };
+    return Promise.resolve(
+      shared
+        ? { status: 'shared', repo: 'acme/api', git_repo: 'git_repo-77', clone_url: CLONE_URL, default_branch: 'main' }
+        : { status: 'not_shared', repo: 'acme/api' },
+    );
   });
   return { seen, spy };
 }
