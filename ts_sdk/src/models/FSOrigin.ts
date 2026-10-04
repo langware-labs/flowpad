@@ -1,4 +1,4 @@
-import { formatGitOrigin, type GitOrigin, isInstallableOrigin } from './GitOrigin';
+import { formatGitOrigin, type GitOrigin, gitOriginCloneUrl, isInstallableOrigin } from './GitOrigin';
 
 /** Fields shared by every filesystem-origin locator. */
 export interface FSOrigin {
@@ -113,4 +113,10 @@ export function projectOriginOf(
   const o = normalizeFSOrigin(entity?.origin ?? entity?.git_origin ?? null);
   if (isHubRepoOrigin(o)) return o.repo ? o : null;
   return isGitOrigin(o) && isInstallableOrigin(o) ? o : null;
+}
+
+/** Where a project's files come from, as one line to show: a git origin's clone URL,
+ *  or the hub-hosted copy's label (it has no URL of its own). */
+export function projectSourceLabel(origin: ProjectOrigin): string {
+  return isGitOrigin(origin) ? gitOriginCloneUrl(origin) : formatFSOrigin(origin);
 }

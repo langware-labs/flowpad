@@ -1397,11 +1397,16 @@ class Project(Entity):
         if not repo or not repo.get("repo"):
             raise RuntimeError("The hub has no repository for this project")
         origin = HubRepoOrigin(repo=repo["repo"], rel_path=".")
+        token = resolve_hub_api_key(require_live=True)
+        if not token:
+            raise RuntimeError("Cloud login required to share through the hub repository")
         await HubRepoCheckout(
             root=mount,
+            # This desktop's own hub URL, not the hub's ``clone_url``: the hub spells it
+            # with ITS external host, which a box behind a proxy (Docker) cannot reach.
             clone_url=hub_graph_url("git_repo", origin.repo_id, "git"),
             branch=repo.get("default_branch") or "main",
-            token=resolve_hub_api_key(require_live=True) or "",
+            token=token,
         ).push_head()
         await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
         return origin
@@ -1673,19 +1678,20 @@ class Project(Entity):
         from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
         from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
 
-        driver = get_origin_driver(origin.kind)
+        # The hub-hosted copy is read with the HUB token (its driver resolves it — a
+        # GitHub token must never be offered to the hub) into this project's own
+        # workspace slot, as a working checkout rather than the asset cache. A git
+        # origin keeps the git driver's own placement and the user's GitHub token.
+        token, slot = None, None
         if isinstance(origin, HubRepoOrigin):
-            # The hub-hosted copy: read with the HUB token (the driver resolves it —
-            # a GitHub token must never be offered to the hub), into this project's
-            # own workspace slot as a working checkout, not the asset cache.
             mount = Path(self.fs_storage_mount_path) if self.fs_storage_mount_path else None
-            slot = mount if mount and (mount / ".git").is_dir() else await asyncio.to_thread(
-                fresh_clone_slot, self.name or "project")
-            root, _ = await driver.materialize(origin, preferred_root=slot, preferred_project_id=str(self.id))
+            reuse = mount is not None and (mount / ".git").is_dir()
+            slot = mount if reuse else await asyncio.to_thread(fresh_clone_slot, self.name or "project")
         else:
-            root, _ = await driver.materialize(
-                origin, preferred_project_id=str(self.id), token=await _get_github_token_for_current_user()
-            )
+            token = await _get_github_token_for_current_user()
+        root, _ = await get_origin_driver(origin.kind).materialize(
+            origin, preferred_root=slot, preferred_project_id=str(self.id), token=token
+        )
         target_dir = str(root)
         self.fs_storage_mount_path = canonical_posix_path(target_dir)
         # Keep the name the sender shared; the folder leaf is only a fallback.
