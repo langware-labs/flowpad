@@ -47,11 +47,48 @@ export function ProjectGitShareToggle({ project }: { project: Project }) {
     ? t`Link the project to the cloud first: its members are the cloud project's members.`
     : t`Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed.`;
 
+  const step =
+    share?.status === 'install_required' ? (
+      <>
+        <span>
+          <Trans>Finish installing the FlowPad GitHub App on {repo}, then</Trans>
+        </span>
+        <button type="button" className="underline" onClick={() => void turnOn()}>
+          <Trans>check again</Trans>
+        </button>
+      </>
+    ) : share?.status === 'github_connect_required' ? (
+      <>
+        <span>
+          <Trans>Connect GitHub in FlowPad cloud first:</Trans>
+        </span>
+        <button
+          type="button"
+          className="underline"
+          onClick={() => {
+            const url = hubConnectionsUrl();
+            if (url) openExternal(url);
+          }}
+        >
+          <Trans>Open connections</Trans>
+        </button>
+        <button type="button" className="underline" onClick={() => void turnOn()}>
+          <Trans>check again</Trans>
+        </button>
+      </>
+    ) : share?.status === 'not_private' ? (
+      <span className="text-muted-foreground">
+        <Trans>Public repos are already open to everyone.</Trans>
+      </span>
+    ) : null;
+
   return (
-    <div className="flex min-w-0 flex-col gap-1" data-testid="project-git-share">
+    // The header row has no room for a second line: what the share needs next floats
+    // beneath the checkbox, over the page, instead of pushing the header apart.
+    <div className="relative inline-flex min-w-0 items-center gap-1.5" data-testid="project-git-share">
       <Tooltip>
         <TooltipTrigger asChild>
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
             <Checkbox
               checked={shared}
               disabled={!linked || working}
@@ -71,61 +108,33 @@ export function ProjectGitShareToggle({ project }: { project: Project }) {
       {shared && share?.clone_url && (
         <button
           type="button"
-          className="inline-flex items-center gap-1 self-start text-xs text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
           onClick={() => void navigator.clipboard.writeText(share.clone_url ?? '')}
-          title={share.clone_url}
+          title={t`Copy members' clone URL`}
+          aria-label={t`Copy members' clone URL`}
+          data-clone-url={share.clone_url}
           data-testid="project-git-share-copy"
         >
           <Copy className="h-3 w-3" aria-hidden />
-          <Trans>Copy members' clone URL</Trans>
         </button>
       )}
 
-      {share?.status === 'install_required' && (
-        <div className="flex items-center gap-2 text-xs" data-testid="project-git-share-step">
-          <span>
-            <Trans>Finish installing the FlowPad GitHub App on {repo}, then</Trans>
-          </span>
-          <button type="button" className="underline" onClick={() => void turnOn()}>
-            <Trans>check again</Trans>
-          </button>
-        </div>
-      )}
-
-      {share?.status === 'github_connect_required' && (
-        <div className="flex items-center gap-2 text-xs" data-testid="project-git-share-step">
-          <span>
-            <Trans>Connect GitHub in FlowPad cloud, so it can check you administer {repo}.</Trans>
-          </span>
-          <button
-            type="button"
-            className="underline"
-            onClick={() => {
-              const url = hubConnectionsUrl();
-              if (url) openExternal(url);
-            }}
-          >
-            <Trans>Open connections</Trans>
-          </button>
-          <button type="button" className="underline" onClick={() => void turnOn()}>
-            <Trans>check again</Trans>
-          </button>
-        </div>
-      )}
-
-      {share?.status === 'not_private' && (
-        <div className="text-xs text-muted-foreground" data-testid="project-git-share-step">
-          <Trans>Public repos are already open to everyone.</Trans>
-        </div>
-      )}
-
-      {error && (
-        <div
-          role="alert"
-          className="rounded border border-destructive bg-destructive/10 px-2 py-1 text-xs text-foreground"
-          data-testid="project-git-share-error"
-        >
-          {error}
+      {(step || error) && (
+        <div className="absolute left-0 top-full z-20 mt-1 flex flex-col gap-1 rounded-md border border-border bg-popover px-2 py-1.5 text-xs shadow-md">
+          {step && (
+            <div className="flex items-center gap-2 whitespace-nowrap" data-testid="project-git-share-step">
+              {step}
+            </div>
+          )}
+          {error && (
+            <div
+              role="alert"
+              className="rounded border border-destructive bg-destructive/10 px-2 py-1 text-foreground"
+              data-testid="project-git-share-error"
+            >
+              {error}
+            </div>
+          )}
         </div>
       )}
     </div>
