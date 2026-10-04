@@ -15,6 +15,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { buildSessionStartExtras, type SessionHost } from './session-start';
 import { useLocalUser } from './useLocalUser';
 import { TaskItIcon, taskItHint } from './task-it';
+import { useScrollToLatest } from './LatestScroll';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
@@ -158,6 +159,7 @@ export function MessageComposer({
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
   const { localUser } = useLocalUser();
+  const scrollToLatest = useScrollToLatest();
   const isDraftMode = !!draft;
   const effectiveConversationId = conversationId ?? draft?.conversation_id ?? undefined;
 
@@ -368,9 +370,8 @@ export function MessageComposer({
         setAssetRefs([]);
         setTaskItOn(false);
       }
-      // Your own send always brings you to the latest, even if you had scrolled up. The host marks
-      // its scroll box `data-scroll-latest` (a `flex-col-reverse` box, where top 0 IS the bottom).
-      textareaRef.current?.closest('[data-latest-root]')?.querySelector('[data-scroll-latest]')?.scrollTo({ top: 0 });
+      // Your own send always brings you to the latest, even if you had scrolled up.
+      scrollToLatest?.();
       if (!channel) onSent?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] send failed', err);
@@ -386,7 +387,9 @@ export function MessageComposer({
   // retry is typed straight away. A draft bubble goes away on send, so it is skipped.
   const wasSending = useRef(false);
   useEffect(() => {
-    if (wasSending.current && !sending && !isDraftMode) textareaRef.current?.focus();
+    // Only from <body>: if focus moved elsewhere during a slow send, leave it there.
+    const dropped = document.activeElement === document.body;
+    if (wasSending.current && !sending && !isDraftMode && dropped) textareaRef.current?.focus();
     wasSending.current = sending;
   }, [sending, isDraftMode]);
 

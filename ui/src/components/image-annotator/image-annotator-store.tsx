@@ -30,6 +30,9 @@ interface AnnotatorState {
 }
 
 let state: AnnotatorState = { open: false, file: null, resolve: null };
+/** What had focus when the annotator opened — where it goes back on close. Kept outside `state`:
+ *  `settle` clears that before the dialog's close handler runs. */
+let returnFocus: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -63,6 +66,7 @@ export function annotateImage(file: File, options: AnnotateImageOptions = {}): P
   // (resolve null) so nothing hangs.
   if (state.open) state.resolve?.(null);
   return new Promise<File | null>((resolve) => {
+    returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     state = { open: true, file, resolve, ...options };
     emit();
   });
@@ -98,6 +102,14 @@ export function ImageAnnotatorRoot() {
       file={file}
       submitLabel={submitLabel}
       onClipboard={(blob) => void writeImageToClipboard(blob)}
+      onCloseAutoFocus={(e) => {
+        // Radix returns focus only to a dialog trigger, and this one is opened imperatively —
+        // focus fell to <body>. Hand it back to whatever had it (the reply box a paste came from).
+        e.preventDefault();
+        const el = returnFocus;
+        returnFocus = null;
+        if (el?.isConnected) el.focus();
+      }}
       onSave={(annotated) => {
         if (!onSubmit) {
           settle(annotated);
