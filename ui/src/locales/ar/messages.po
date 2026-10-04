@@ -1466,6 +1466,10 @@ msgstr "النشاط"
 msgid "Add"
 msgstr "إضافة"
 
+#: src/components/image-annotator/ImageAnnotator.tsx
+msgid "Add a caption…"
+msgstr "إضافة شرح…"
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Add a comment..."
 msgstr "إضافة تعليق..."
@@ -3674,6 +3678,10 @@ msgstr "القدرات غير متاحة. أعد المحاولة"
 #: src/i18n/type-labels.ts
 msgid "Capability"
 msgstr "قدرة"
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+msgid "Caption"
+msgstr "الشرح"
 
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Carries"
@@ -7658,8 +7666,8 @@ msgid "Drag to pan · scroll to zoom · click a node to read"
 msgstr "اسحب للتحريك · مرّر للتكبير · انقر على عقدة للقراءة"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
-msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
-msgstr "يمكنك الرسم بالقلم أو السهم، وإضافة مربعات نصية، ثم الحفظ لإرفاق النسخة المعلّقة."
+msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
+msgstr "يمكنك الرسم بالقلم أو السهم، وإضافة مربعات نصية وشرح، ثم الحفظ لإرفاق النسخة المعلّقة."
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Draws from"
@@ -24631,8 +24639,8 @@ msgid "Your help requests"
 msgstr ""
 
 #: src/components/image-annotator/ImageAnnotator.tsx
-msgid "Your markup on this image will be lost."
-msgstr "ستُفقد جميع التعليقات التي أضفتها على هذه الصورة."
+msgid "Your markup and caption on this image will be lost."
+msgstr "ستُفقد التعليقات والشرح الذي أضفته على هذه الصورة."
 
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."

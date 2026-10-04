@@ -218,14 +218,24 @@ export function MessageComposer({
     return () => clearTimeout(handle);
   }, [text, draft]);
 
-  // Returns how many files survived (0 when every image's markup was cancelled),
-  // so paste can decide whether to also insert accompanying text.
-  const addFiles = async (incoming: FileList | File[] | null): Promise<number> => {
-    if (!incoming) return 0;
+  // A send asked for in the same update as the text/files it sends: `send` reads
+  // both from its render, so it must run in the render that already has them.
+  const [sendQueued, setSendQueued] = useState(false);
+
+  // Paste, drop and the picker all land here. Images go through the annotator
+  // first (markup + caption); `initialCaption` prefills the caption with text
+  // that came on the clipboard. The caption IS the message: with nothing typed
+  // yet it is sent straight away with the image (WhatsApp-style); otherwise it
+  // is inserted at the caret, `caret` captured before the dialog took focus.
+  const addFiles = async (
+    incoming: FileList | File[] | null,
+    { initialCaption, caret }: { initialCaption?: string; caret?: { start: number; end: number } } = {},
+  ): Promise<void> => {
+    if (!incoming) return;
     // Offer markup on captured images before attaching. Size cap is applied
     // after annotation since the flattened PNG may be larger than the original.
-    const annotated = await annotateImageFiles(Array.from(incoming));
-    if (annotated.length === 0) return 0; // markup cancelled → do nothing
+    const { files: annotated, caption } = await annotateImageFiles(Array.from(incoming), { initialCaption });
+    if (annotated.length === 0) return; // markup cancelled → do nothing
     const tooBig: string[] = [];
     setFiles((prev) => {
       const next = [...prev];
@@ -245,10 +255,28 @@ export function MessageComposer({
           ? t`"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
           : t`${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
     );
+    if (caption) {
+      const value = textareaRef.current?.value ?? text;
+      const attachable = annotated.some((f) => f.size <= MAX_FILE_SIZE_BYTES);
+      if (!value.trim() && !isDraftMode && !isDisabled && attachable) {
+        setText(caption);
+        setSendQueued(true);
+        return;
+      }
+      const start = caret?.start ?? value.length;
+      const end = caret?.end ?? start;
+      setText(`${value.slice(0, start)}${caption}${value.slice(end)}`);
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.focus();
+        ta.selectionStart = ta.selectionEnd = start + caption.length;
+      });
+      return;
+    }
     // Back to the text: the annotator dialog took focus and hands it to <body> on close, so
     // whatever attached the file — paste, drop, the picker — the next keystroke goes to the reply.
     requestAnimationFrame(() => textareaRef.current?.focus());
-    return annotated.length;
   };
 
   const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
@@ -395,6 +423,14 @@ export function MessageComposer({
 
   const handleSend = () => void send();
 
+  useEffect(() => {
+    if (!sendQueued) return;
+    setSendQueued(false);
+    void send();
+    // `send` is this render's — the one holding the queued text and files.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendQueued]);
+
   const handleDiscard = async () => {
     if (!draft || isBusy) return;
     if (!window.confirm(t`Discard this draft?`)) return;
@@ -436,22 +472,13 @@ export function MessageComposer({
     e.preventDefault();
 
     // Capture everything off the (pooled) event synchronously — the annotator
-    // popup is awaited below and `e` is unusable after the first await.
-    const pastedText = e.clipboardData.getData('text/plain');
+    // popup is awaited below and `e` is unusable after the first await. Text
+    // that came with the image prefills the caption; if the markup is
+    // cancelled, nothing lands — not even that text.
     const textarea = e.currentTarget;
-    const value = textarea.value;
-    const start = textarea.selectionStart ?? value.length;
+    const start = textarea.selectionStart ?? textarea.value.length;
     const end = textarea.selectionEnd ?? start;
-
-    // If the markup is cancelled, do nothing at all — not even the text paste.
-    const added = await addFiles(pastedImages);
-    if (added === 0 || !pastedText) return;
-
-    setText(`${value.slice(0, start)}${pastedText}${value.slice(end)}`);
-    requestAnimationFrame(() => {
-      textarea.selectionStart = start + pastedText.length;
-      textarea.selectionEnd = start + pastedText.length;
-    });
+    await addFiles(pastedImages, { initialCaption: e.clipboardData.getData('text/plain'), caret: { start, end } });
   };
 
   const canSend = (!!text.trim() || files.length > 0 || assetRefs.length > 0) && !isDisabled;

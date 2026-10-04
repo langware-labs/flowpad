@@ -3,7 +3,11 @@
  * input-prompt-modal pattern (module-level store + singleton mounted at the app
  * root). Any capture surface can do:
  *
- *   const result = await annotateImage(file);  // annotated File on Save, null on Cancel
+ *   const result = await annotateImage(file);  // { file, caption } on Save, null on Cancel
+ *
+ * The caption is the text the user typed under the image (WhatsApp-style) — it is
+ * NOT the text drawn on the image; each surface decides where it goes (the
+ * message body, a prompt line, a terminal note).
  *
  * On Save the annotated PNG is also written back to the system clipboard, so the
  * user's clipboard matches what was attached (WhatsApp-style). Clipboard failure
@@ -16,17 +20,23 @@ import type { ReactNode } from 'react';
 import { notify } from '@src/notifications';
 import { ImageAnnotator } from './ImageAnnotator';
 
-interface AnnotateImageOptions {
-  submitLabel?: ReactNode;
-  onSubmit?: (file: File) => Promise<void> | void;
+/** What a saved annotation hands back: the image to attach and the caption typed under it. */
+export interface AnnotationResult {
+  file: File;
+  caption: string;
 }
 
-interface AnnotatorState {
+export interface AnnotateImageOptions {
+  submitLabel?: ReactNode;
+  /** Prefills the caption — e.g. text that came on the clipboard with the image. */
+  initialCaption?: string;
+  onSubmit?: (file: File, caption: string) => Promise<void> | void;
+}
+
+interface AnnotatorState extends AnnotateImageOptions {
   open: boolean;
   file: File | null;
-  resolve: ((result: File | null) => void) | null;
-  submitLabel?: ReactNode;
-  onSubmit?: (file: File) => Promise<void> | void;
+  resolve: ((result: AnnotationResult | null) => void) | null;
 }
 
 let state: AnnotatorState = { open: false, file: null, resolve: null };
@@ -50,7 +60,7 @@ function getSnapshot(): AnnotatorState {
   return state;
 }
 
-function settle(result: File | null) {
+function settle(result: AnnotationResult | null) {
   const resolve = state.resolve;
   state = { open: false, file: null, resolve: null };
   emit();
@@ -59,13 +69,14 @@ function settle(result: File | null) {
 
 /**
  * Open the annotator for `file` and resolve once the user saves or dismisses.
- * Resolves with the flattened PNG on Save, or `null` on Cancel (abort).
+ * Resolves with the flattened PNG (or the untouched original) and the caption on
+ * Save, or `null` on Cancel (abort).
  */
-export function annotateImage(file: File, options: AnnotateImageOptions = {}): Promise<File | null> {
+export function annotateImage(file: File, options: AnnotateImageOptions = {}): Promise<AnnotationResult | null> {
   // A second call while one is open would orphan the first promise — cancel it
   // (resolve null) so nothing hangs.
   if (state.open) state.resolve?.(null);
-  return new Promise<File | null>((resolve) => {
+  return new Promise<AnnotationResult | null>((resolve) => {
     returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     state = { open: true, file, resolve, ...options };
     emit();
@@ -95,12 +106,13 @@ async function writeImageToClipboard(blob: Promise<Blob>): Promise<void> {
 }
 
 export function ImageAnnotatorRoot() {
-  const { open, file, submitLabel, onSubmit } = useSyncExternalStore(subscribe, getSnapshot);
+  const { open, file, submitLabel, initialCaption, onSubmit } = useSyncExternalStore(subscribe, getSnapshot);
   return (
     <ImageAnnotator
       open={open}
       file={file}
       submitLabel={submitLabel}
+      initialCaption={initialCaption}
       onClipboard={(blob) => void writeImageToClipboard(blob)}
       onCloseAutoFocus={(e) => {
         // Radix returns focus only to a dialog trigger, and this one is opened imperatively —
@@ -110,13 +122,13 @@ export function ImageAnnotatorRoot() {
         returnFocus = null;
         if (el?.isConnected) el.focus();
       }}
-      onSave={(annotated) => {
+      onSave={(annotated, caption) => {
         if (!onSubmit) {
-          settle(annotated);
+          settle({ file: annotated, caption });
           return;
         }
-        void Promise.resolve(onSubmit(annotated))
-          .then(() => settle(annotated))
+        void Promise.resolve(onSubmit(annotated, caption))
+          .then(() => settle({ file: annotated, caption }))
           .catch((err) => {
             notify.error({
               title: t`Annotation not submitted`,

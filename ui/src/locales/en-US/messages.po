@@ -1466,6 +1466,10 @@ msgstr "Activity"
 msgid "Add"
 msgstr "Add"
 
+#: src/components/image-annotator/ImageAnnotator.tsx
+msgid "Add a caption…"
+msgstr "Add a caption…"
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Add a comment..."
 msgstr "Add a comment..."
@@ -3674,6 +3678,10 @@ msgstr "Capabilities unavailable. Retry"
 #: src/i18n/type-labels.ts
 msgid "Capability"
 msgstr "Capability"
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+msgid "Caption"
+msgstr "Caption"
 
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Carries"
@@ -7658,8 +7666,8 @@ msgid "Drag to pan · scroll to zoom · click a node to read"
 msgstr "Drag to pan · scroll to zoom · click a node to read"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
-msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
-msgstr "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
+msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
+msgstr "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Draws from"
@@ -24631,8 +24639,8 @@ msgid "Your help requests"
 msgstr "Your help requests"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
-msgid "Your markup on this image will be lost."
-msgstr "Your markup on this image will be lost."
+msgid "Your markup and caption on this image will be lost."
+msgstr "Your markup and caption on this image will be lost."
 
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."
