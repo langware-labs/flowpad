@@ -5019,7 +5019,7 @@ class AgenticProcess(Entity):
 
         descriptor = self.transcript
         await self._persist_transcript_session_id(descriptor)
-        transcript = self._current_transcript()
+        transcript = await self._caught_up_transcript()
 
         if sub_path is TranscriptSubpath.PLAN:
             return await self._transcript_plan(transcript)
@@ -5207,7 +5207,7 @@ class AgenticProcess(Entity):
         """
         descriptor = self.transcript
         await self._persist_transcript_session_id(descriptor)
-        return await self._transcript_plan(self._current_transcript())
+        return await self._transcript_plan(await self._caught_up_transcript())
 
     # ── State ─────────────────────────────────────────────────────────────────
 
@@ -5810,13 +5810,21 @@ class AgenticProcess(Entity):
         # The canonical process-assets mount is a derived implementation path,
         # not persisted user launch intent. Hook semantics are represented by
         # generic.process_hooks; generated path presence/absence must not alter
-        # restart identity.
+        # restart identity. The run's input folder is the same kind of path: it is
+        # mounted once it exists, and the terminal's ``input-dir`` GET creates it
+        # as soon as a live process is on screen — counting it lit a phantom
+        # Restart glow that no revert could put out.
+        from flow_sdk.builtin.agentic_process.process_io import input_dir  # noqa: PLC0415
+
+        input_folder = str(input_dir(self))
         add_dirs = worker_snapshot.get("add_dirs")
         if isinstance(add_dirs, list):
             worker_snapshot = {
                 **worker_snapshot,
                 "add_dirs": [
-                    directory for directory in add_dirs if not self.asset_workspace._is_process_assets_path(directory)
+                    directory
+                    for directory in add_dirs
+                    if not self.asset_workspace._is_process_assets_path(directory) and directory != input_folder
                 ],
             }
         return {
@@ -7437,6 +7445,36 @@ class AgenticProcess(Entity):
                 self._flush_transcript_change(),
                 name=f"ap-flush-{key[:8]}",
             )
+        await self._broadcast_pty_turn_start()
+
+    async def _broadcast_pty_turn_start(self) -> None:
+        """Leading edge of a PTY turn: broadcast ``busy=True`` now, not after the debounce.
+
+        A PTY turn's busy edges come from the flush alone, and the flush only
+        reads the tail once the window closes. A turn that starts AND ends inside
+        one window therefore never broadcast ``busy=True``: every client kept
+        ``busy=false`` while the server's ``is_turn_busy`` said true. A
+        ``switch-mode`` sent in that gap is 409'd, and the client's reconcile —
+        which retries on the busy→idle edge — never saw an edge to retry on, so
+        the session stayed on the PTY (vibe_return_from_terminal_reconcile,
+        chat_terminal_switch_stress). Broadcasting the start edge here gives
+        every turn both edges, in order, on the same socket.
+
+        Only the idle→busy edge, and only while the last broadcast said idle:
+        once the key reads busy this returns before touching the transcript, so
+        a turn costs one tail read per event until its start is out. The end
+        edge stays with the flush.
+        """
+        if not self.pty_mode or self.status != ProcessStatus.RUNNING.value:
+            return
+        previous = self._last_broadcast_key
+        if previous is not None and previous.busy:
+            return
+        current = self.fetch_worker_status()
+        if not is_turn_busy(self, current):
+            return
+        self._last_broadcast_key = _BroadcastKey(self.status, True, str(current) if current is not None else None)
+        await self.notify_updated()
 
     async def _apply_transcript_names(self, durable: "AgenticProcess", entries: list) -> None:
         from .naming.runtime import apply_transcript_names
@@ -7470,6 +7508,7 @@ class AgenticProcess(Entity):
         cross_linked: set[str] = set()
         touched: list[str] = []
         touched_set: set[str] = set()
+        plan_announced: str | None = None  # resolved once per flush, on the first write
         for entry in entries:
             if isinstance(entry, ExitPlanModeEntry):
                 # The tool_use input carries only the ``plan`` prose — the path
@@ -7494,6 +7533,20 @@ class AgenticProcess(Entity):
                 if path and path not in touched_set:
                     touched_set.add(path)
                     touched.append(path)
+                # Writing the plan file the ``plan_mode`` attachment announced IS the plan.
+                # Claude Code 2.1.x defers ``ExitPlanMode`` and persists its tool_use only
+                # once the person answers the approval prompt, so waiting for it left
+                # ``plan_path`` unset — and the Open-Plan chip hidden — for exactly the
+                # stretch the plan sits awaiting approval.
+                if path and path != self.plan_path:
+                    if plan_announced is None:
+                        plan_announced = self.plan_path_from_attachments(self._current_transcript())
+                    if path == plan_announced:
+                        await self.on_plan_created(entry, plan_file_path=path)
+                        await self.emit_entity_event(
+                            "plan.create",
+                            {"plan_file_path": path, "session_id": self.session_id},
+                        )
 
             if isinstance(entry, (FileReadEntry, FileWriteEntry, FileEditEntry)):
                 path = getattr(entry, "path", None)
@@ -7623,6 +7676,30 @@ class AgenticProcess(Entity):
         if streamer is not None:
             return streamer.transcript
         return self._load_transcript()
+
+    async def _caught_up_transcript(self) -> "AgentTranscriptFile | None":
+        """``_current_transcript``, first catching the streamer up to the file on disk.
+
+        The streamer's copy only advances when the file watcher reports a change. A
+        codex PTY rollout was seen whose streamer stopped at the header (2 entries)
+        while the file held both finished turns, so ``transcript/full`` answered with
+        no user messages at all. A pull read that finds the copy behind the file's
+        size drives the registry's own incremental ``notify_change`` (new bytes only,
+        dispatched to subscribers as usual) instead of answering from the stale copy.
+        """
+        path = self.transcript_path
+        if path is not None:
+            from flow_sdk.transcript_streamer.registry import transcript_streamer_registry  # noqa: PLC0415
+
+            streamer = transcript_streamer_registry.get_streamer_by_path(path)
+            if streamer is not None:
+                try:
+                    behind = streamer.transcript._byte_offset < Path(path).stat().st_size
+                except (OSError, AttributeError):
+                    behind = False
+                if behind:
+                    await transcript_streamer_registry.notify_change(Path(path))
+        return self._current_transcript()
 
     def _collect_touched_from_transcript_tail(self) -> list[str]:
         """Files this turn wrote/edited, read from the transcript tail.

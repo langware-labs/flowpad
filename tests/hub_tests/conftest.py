@@ -11,6 +11,7 @@ import httpx
 import pytest
 
 from tests.hub_tests._local_login import login_as
+from tests.hub_tests._real_cli import real_claude_turn  # noqa: F401 — a fixture every real-turn hub test requests
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _LOCAL_HUB_STATUS: tuple[bool, str] | None = None

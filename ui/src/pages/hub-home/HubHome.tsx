@@ -15,7 +15,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { ProjectActionsRow } from '@src/components/open-project-component/project-actions-row';
 import { DesktopTile } from '@src/components/quick-create/QuickCreatePanel';
-import { useSandboxes, isLaunched, nextSandboxName, type SandboxDetails } from '@src/hooks/use-sandboxes';
+import { useSandboxes, isLaunched, isUserMachine, nextSandboxName, type SandboxDetails } from '@src/hooks/use-sandboxes';
 import { StepList } from '@src/components/ui/step-list';
 import { NewSandboxDialog } from './NewSandboxDialog';
 import { LaunchSandboxDialog } from './LaunchSandboxDialog';
@@ -252,6 +252,10 @@ export function HubHome() {
   } = useSandboxes();
   // Absent on older hubs that don't advertise the flag yet — treat as enabled.
   const sandboxesEnabled = dataContext.bootstrapInfo?.sandboxes_enabled !== false;
+  // `sandboxes_enabled` says the hub can provision CLOUD sandboxes. A machine a
+  // person connected with `flow connect` needs no provider, so its card stays
+  // usable on a hub that has none — Open was dead on every connected machine there.
+  const cardEnabled = (node: ComputeNode) => sandboxesEnabled || isUserMachine(node);
   // Creating a sandbox needs BOTH a provisioning-capable hub (e2b key) and a
   // signed-in user — a visitor's launch would just 401.
   const canCreateSandbox = sandboxesEnabled && !!currentUser;
@@ -459,10 +463,10 @@ export function HubHome() {
                 data-node-id={d.id}
                 data-provider-id={d.node_provider_id}
                 data-status={details[d.id]?.status}
-                title={sandboxesEnabled ? undefined : t`Sandbox unavailable`}
+                title={cardEnabled(d) ? undefined : t`Sandbox unavailable`}
                 className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
                   details[d.id]?.status,
-                )} ${sandboxesEnabled ? '' : 'opacity-60'}`}
+                )} ${cardEnabled(d) ? '' : 'opacity-60'}`}
               >
                 <div className="flex items-center gap-3">
                   <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -489,9 +493,9 @@ export function HubHome() {
                         setDraftName(d.name || '');
                         setEditingId(d.id);
                       }}
-                      disabled={!sandboxesEnabled}
+                      disabled={!cardEnabled(d)}
                       className="min-w-0 flex-1 truncate text-start text-sm hover:underline disabled:pointer-events-none"
-                      title={sandboxesEnabled ? t`Click to rename` : undefined}
+                      title={cardEnabled(d) ? t`Click to rename` : undefined}
                       data-testid="sandbox-name"
                     >
                       {d.name || t`Sandbox`}
@@ -519,7 +523,7 @@ export function HubHome() {
                         size="sm"
                         variant="secondary"
                         onClick={() => openSandbox(d)}
-                        disabled={!sandboxesEnabled}
+                        disabled={!cardEnabled(d)}
                         aria-label={t`Open sandbox`}
                         data-testid="sandbox-open"
                         className="h-7 shrink-0 px-2.5 text-xs"
@@ -527,11 +531,27 @@ export function HubHome() {
                         <Trans>Open</Trans>
                       </Button>
                     )
-                  ) : (
+                  ) : null}
+                  {/* A connected machine's own shells: each click spins out one more
+                      terminal session on it (the same path as the terminal strip). */}
+                  {isUserMachine(d) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void navigation.openNewShell({ computeNode: d })}
+                      disabled={!cardEnabled(d)}
+                      aria-label={t`Open a terminal on this machine`}
+                      data-testid="machine-terminal"
+                      className="h-7 shrink-0 px-2.5 text-xs"
+                    >
+                      <Trans>Terminal</Trans>
+                    </Button>
+                  )}
+                  {isLaunched(d) ? null : (
                     <Button
                       size="sm"
                       onClick={() => setLaunching(d)}
-                      disabled={!sandboxesEnabled || launchingId === d.id}
+                      disabled={!cardEnabled(d) || launchingId === d.id}
                       aria-label={t`Launch sandbox`}
                       data-testid="sandbox-launch"
                       className="h-7 shrink-0 px-2.5 text-xs"
@@ -556,7 +576,7 @@ export function HubHome() {
                         <button
                           type="button"
                           onClick={() => setUpgrading(d)}
-                          disabled={!sandboxesEnabled || upgradingId === d.id}
+                          disabled={!cardEnabled(d) || upgradingId === d.id}
                           aria-label={t`Upgrade FlowPad on this sandbox`}
                           data-testid="sandbox-upgrade"
                           className="shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
@@ -580,7 +600,7 @@ export function HubHome() {
                   <button
                     type="button"
                     onClick={() => setSharing(d)}
-                    disabled={!sandboxesEnabled || !currentUser}
+                    disabled={!cardEnabled(d) || !currentUser}
                     aria-label={t`Share sandbox`}
                     data-testid="sandbox-share"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
@@ -604,7 +624,7 @@ export function HubHome() {
                     <button
                       type="button"
                       onClick={() => void logoutSandbox(d)}
-                      disabled={loggingOutId === d.id || !sandboxesEnabled}
+                      disabled={loggingOutId === d.id || !cardEnabled(d)}
                       aria-label={t`Sign this sandbox out`}
                       title={t`Sign out of this sandbox (you stay signed in here)`}
                       data-testid="sandbox-logout"
@@ -620,7 +640,7 @@ export function HubHome() {
                   <button
                     type="button"
                     onClick={openSandboxSecrets}
-                    disabled={!sandboxesEnabled}
+                    disabled={!cardEnabled(d)}
                     aria-label={t`Machine secrets`}
                     data-testid="sandbox-secrets"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
@@ -630,7 +650,7 @@ export function HubHome() {
                   <button
                     type="button"
                     onClick={() => void deleteSandbox(d)}
-                    disabled={deletingId === d.id || !sandboxesEnabled}
+                    disabled={deletingId === d.id || !cardEnabled(d)}
                     aria-label={t`Delete sandbox`}
                     data-testid="sandbox-delete"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"

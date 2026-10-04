@@ -1,0 +1,23 @@
+{
+  "name": "llm-setup-copilot",
+  "description": "Asks whether to install GitHub Copilot CLI when it is missing. If the person agrees it installs it: the plain install command first, and an agent (with one retry) only when that did not get there.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "ask",
+      "label": "Install GitHub Copilot CLI?",
+      "kind": "compute",
+      "ref": "ask-install-copilot",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install",
+      "label": "Copilot",
+      "kind": "compute",
+      "ref": "copilot-on-path",
+      "on_fail": "abort"
+    }
+  ]
+}

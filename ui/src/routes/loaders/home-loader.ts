@@ -4,11 +4,16 @@ import { TimeIt } from '@src/utils/timeit';
 import { adoptScopeProject } from './load-dock-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { getViewMode } from '@src/contexts/view-mode-context';
-import { runLoadRedirects } from './load-redirects';
+import { registerLoadRedirect, runLoadRedirects } from './load-redirects';
 // Side-effect import: features register their load-redirect resolvers here.
 import '@src/journey/journey-load-redirect';
 import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
 import '@src/project-home-page/project-home-page-redirect'; // the Home button's `?homePage=open` target
+import { endLaunch, forgetLastPlace, lastPlaceRestoreRedirect } from '@src/tabs/last-tab-restore';
+
+// Last, from this module's body — after the side-effect imports above have run —
+// so every redirect the user or the app asked for on this load outranks it.
+registerLoadRedirect(lastPlaceRestoreRedirect);
 
 /**
  * Ensure compute node is loaded for the current project
@@ -89,11 +94,15 @@ export async function loadHomePage(args: LoaderArgs) {
   // a post-render navigation hijack. The loader stays feature-agnostic:
   // features register resolvers from their own modules.
   const loadRedirect = await runLoadRedirects(args.request);
+  // The launch gets one resolver pass: if another redirect won it, a later Home click must not restore.
+  endLaunch();
   t.time('loadRedirects');
   if (loadRedirect) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw loadRedirect;
   }
+  // Home is the view with no tab: the next launch opens here, not on the tab just left.
+  forgetLastPlace();
 
   t.done(1.2); // warn if total > 1200ms
 

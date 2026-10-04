@@ -4,6 +4,7 @@ import {
   CredentialsSubview,
   dataContext,
   DockPointerData,
+  isHubOnly,
   type IDockPointer,
   Layout,
   PageId,
@@ -20,7 +21,7 @@ import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
 import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
-import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM } from './DockPointer';
+import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM, NODE_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { getHistoryPosition } from './history-position-store';
 import { beginTabSwitch, dockLabel, tabSwitch } from './tab-switch-state';
@@ -908,7 +909,19 @@ export class NavigationActions {
     if (!shell) {
       return null;
     }
-    this.openDock(shell.dockPointer, extraOptions);
+    // On the hub a terminal lives on the hub page (there is no desk to host it).
+    this.openDock(
+      isHubOnly()
+        ? new DockPointer(
+            ViewType.SHELL,
+            shell.typeId.toString(),
+            shell.compute_node_id ? { [NODE_PARAM]: shell.compute_node_id } : undefined,
+            undefined,
+            PageId.HUB,
+          )
+        : shell.dockPointer,
+      extraOptions,
+    );
     return shell;
   }
 
@@ -1044,7 +1057,9 @@ export class NavigationActions {
       // bootstrap ``@local`` project if both are absent.
       const pinnedProjectId = options?.projectId ?? dataContext.project?.id ?? null;
       if (pinnedProjectId) newShell.project_id = pinnedProjectId;
-      await newShell.save(cn.typeId);
+      // On the hub a terminal is a remote PTY session on the node, never a Shell row:
+      // the shell lives in the client cache and starts by its id (Shell.start).
+      if (!isHubOnly()) await newShell.save(cn.typeId);
       if (!options?.skipNavigate) {
         await this.openShell(newShell.id, options);
       }

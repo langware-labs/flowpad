@@ -223,3 +223,48 @@ def test_the_wizards_own_document_carries_what_its_page_says_and_needs():
     assert plain.success_message == "" and plain.failure_message == ""
     assert plain.restart_label == "Restart"
     assert plain.spec().requires_llm_source is False
+
+
+def _harnesses_with_an_installer() -> dict[str, dict]:
+    """Every harness whose capability declares install commands, by vendor key -> those commands."""
+    from flow_sdk.core.capabilities.registry import get_default_capability_specs
+    from flow_sdk.flowpad_types.vendors import VENDORS
+
+    commands = {spec.kind: spec.install_commands for spec in get_default_capability_specs() if spec.install_commands}
+    return {v.key: commands[v.capability_kind] for v in VENDORS if v.capability_kind in commands}
+
+
+def test_every_harness_with_an_installer_ships_an_install_wizard():
+    """A harness the app can install by hand is one a wizard can install too: an ask op, an install
+    op and a sub-wizard sequencing them, all judged by the harness's own `install:<key>` fact."""
+    harnesses = _harnesses_with_an_installer()
+    assert {"claude", "codex", "copilot", "opencode"} <= set(harnesses), "the guard sees no harnesses"
+    ops = {name: _op(name) for name in sorted(p.name for p in OPS_DIR.iterdir() if p.is_dir())}
+    wizards = _wizard_folders()
+    for key in harnesses:
+        fact = f"install:{key}"
+        asks = [n for n, op in ops.items() if op.status_check == fact and op.subkind is OpSubkind.ASK]
+        installs = [n for n, op in ops.items() if op.status_check == fact and op.subkind is OpSubkind.CLI]
+        assert len(asks) == 1 and len(installs) == 1, f"{key}: ask ops {asks}, install ops {installs}"
+        sequencing = [
+            name for name, (_f, spec) in wizards.items()
+            if [(s.id, s.ref, s.on_fail) for s in spec.steps]
+            == [("ask", asks[0], "abort"), ("install", installs[0], "abort")]
+        ]  # fmt: skip
+        assert sequencing, f"{key}: no wizard asks {asks[0]} and then runs {installs[0]}"
+
+
+@pytest.mark.parametrize("key", ["claude", "codex", "copilot", "opencode"])
+def test_a_harness_install_op_runs_the_capabilitys_own_installer(key):
+    """The op's command IS the capability's installer (the part before its PATH-and-verify tail), so
+    the button in Capabilities and the wizard can never install two different things."""
+    installer = _harnesses_with_an_installer()[key]
+    op = next(
+        _op(p.name) for p in OPS_DIR.iterdir()
+        if p.is_dir() and _op(p.name).status_check == f"install:{key}" and _op(p.name).subkind is OpSubkind.CLI
+    )  # fmt: skip
+    for platform, command in installer.items():
+        assert op.exe_data.command_for(platform) == command.split(" && ")[0].split("; ")[0], (key, platform)
+    assert [r.subkind for r in op.attempts] == [OpSubkind.AGENT]
+    assert op.attempts[0].exe_data.agent == "provisioner" and op.attempts[0].exe_data.retries == 1
+    assert op.setup.strip()

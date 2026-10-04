@@ -259,6 +259,8 @@ cmd_launch() {
   # ---- 2. write the single per-instance env file (vite + backend both read it) ----
   # FLOWPAD_SKIP_DOTENV=true is load-bearing: run.py does load_dotenv(override=True)
   # on .env.local, which would otherwise clobber the values we inject here.
+  # FLOWPAD_SKIP_FIRST_RUN_SETUP=true: every launch/reset is a fresh install, so the
+  # fire-once llm-setup popup would open over the first tab and block every click.
   # A relaunch REWRITES this file, so read back any credential the instance
   # already had BEFORE truncating it. `launch` is how a running instance is
   # restarted (the terminal matrix does exactly that mid-suite, via execFileSync),
@@ -281,6 +283,7 @@ FLOWPAD_CLOUD_USER_EMAIL=$email
 FLOWPAD_CLOUD_USER_PASSWORD=$password
 MINIHUB_RELOAD=False
 FLOWPAD_SKIP_DOTENV=true
+FLOWPAD_SKIP_FIRST_RUN_SETUP=true
 EOF
   # The isolated backend intentionally skips the repo dotenv so its injected
   # ports/identity cannot be clobbered. Carry the explicitly exported E2B
