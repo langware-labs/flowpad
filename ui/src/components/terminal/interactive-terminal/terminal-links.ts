@@ -1,60 +1,7 @@
 import type { IBuffer, IBufferLine, IBufferRange, ILink, ILinkProvider, Terminal } from '@xterm/xterm';
+import { linkMatches, type LinkHandlers, type LinkMatch } from '@src/lib/link-matches';
 
 type ActivateLink = (event: MouseEvent, link: string) => void;
-
-/** What a terminal does with its links. */
-export interface TerminalLinkHandlers {
-  activate: ActivateLink;
-  /** Right-click on a link: the terminal has already claimed the event. */
-  openMenu: (link: string, clientX: number, clientY: number) => void;
-}
-
-/** WebLinksAddon's default URL pattern; one provider serves click and right-click alike. */
-const URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~[\]`()<>]/;
-const POSITION = String.raw`(?::\d+(?::\d+)?|#L\d+)`;
-const BARE_FILE = new RegExp(String.raw`^[\w@.-]+\.(?:[A-Za-z][\w-]+${POSITION}?|[A-Za-z]${POSITION})$`);
-
-/** Candidate recognition only. The backend decides whether the reference exists. */
-export function fileLinkMatches(text: string): Array<{ text: string; index: number }> {
-  const links: Array<{ text: string; index: number }> = [];
-  const tokens = /"([^"\r\n]+)"|'([^'\r\n]+)'|`([^`\r\n]+)`|[^\s"'`<>]+/g;
-  for (const match of text.matchAll(tokens)) {
-    const quoted = match[1] ?? match[2] ?? match[3];
-    // Prose wraps references in brackets: `(src/a.ts:49)`.
-    const lead = quoted === undefined ? /^[([{]*/.exec(match[0])![0].length : 0;
-    const value = quoted ?? match[0].slice(lead).replace(/[.,;:!?)\]}]+$/, '');
-    // webLinkMatches owns HTTP links, including their path portions.
-    if (!value || /^https?:/i.test(value)) continue;
-    // Placeholders (`/dock/...`) and bare punctuation or schemes name nothing.
-    // Checked on the raw token: trailing-punctuation stripping would eat the `...`.
-    if (/\.\.\.|…/.test(quoted ?? match[0]) || /^[./\\~]*$/.test(value) || /^file:\/*$/i.test(value)) continue;
-    if (
-      /^(?:file:\/\/|\.{0,2}\/|~\/|[A-Za-z]:[/\\])/.test(value) ||
-      /^[\w@.-]+(?:[/\\][\w@. -]+)+(?:[:#]\w+(?::\d+)?)?$/.test(value) ||
-      // A one-letter extension (`e.g`) is prose unless a position proves it is code (`main.c:3`).
-      BARE_FILE.test(value) ||
-      /^[a-z_]+-(?:@[\w.-]+|[0-9a-f]{8}-[0-9a-f-]{27})$/i.test(value)
-    ) links.push({ text: value, index: match.index + (quoted === undefined ? lead : 1) });
-  }
-  return links;
-}
-
-/** WebLinksAddon's check: the match must parse as a URL whose origin it starts with. */
-function isUrl(text: string): boolean {
-  try {
-    const url = new URL(text);
-    const auth = url.username ? `${url.username}${url.password ? `:${url.password}` : ''}@` : '';
-    return text.toLowerCase().startsWith(`${url.protocol}//${auth}${url.host}`.toLowerCase());
-  } catch {
-    return false;
-  }
-}
-
-export function webLinkMatches(text: string): Array<{ text: string; index: number }> {
-  return [...text.matchAll(new RegExp(URL_REGEX.source, 'g'))]
-    .filter((match) => isUrl(match[0]))
-    .map((match) => ({ text: match[0], index: match.index }));
-}
 
 interface LogicalLine {
   text: string;
@@ -120,12 +67,12 @@ function logicalLine(terminal: Terminal, y: number): LogicalLine | undefined {
   return line;
 }
 
-function rangeOf(line: LogicalLine, match: { text: string; index: number }): IBufferRange {
+function rangeOf(line: LogicalLine, match: LinkMatch): IBufferRange {
   return { start: line.starts[match.index], end: line.ends[match.index + match.text.length - 1] };
 }
 
-function lineLinks(line: LogicalLine): Array<{ text: string; index: number }> {
-  return [...fileLinkMatches(line.text), ...webLinkMatches(line.text)];
+function lineLinks(line: LogicalLine): LinkMatch[] {
+  return linkMatches(line.text);
 }
 
 /** File references and web URLs. Maps only the requested logical line; never rescans scrollback on output. */
@@ -177,7 +124,7 @@ function cellAtPoint(terminal: Terminal, clientX: number, clientY: number): { x:
 }
 
 /** Call after `terminal.open()`: the right-click menu listens on the terminal's own element. */
-export function registerTerminalLinks(terminal: Terminal, handlers: TerminalLinkHandlers): void {
+export function registerTerminalLinks(terminal: Terminal, handlers: LinkHandlers): void {
   const activate: ActivateLink = (event, link) => {
     if (isPrimaryClick(event)) handlers.activate(event, link);
   };

@@ -1,32 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import type { Terminal, ILink } from '@xterm/xterm';
-import { TerminalLinkProvider, fileLinkMatches, linkAtCell } from '@src/components/terminal/interactive-terminal/terminal-links';
+import { TerminalLinkProvider, linkAtCell } from '@src/components/terminal/interactive-terminal/terminal-links';
 import { dockForDisplayTarget } from '@src/navigation/display-target-pointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 describe('terminal links', () => {
-  it('recognizes paths, positions, quoted spaces, and entity references without stealing web URLs', () => {
-    const line = 'src/main.py:12:3 "/tmp/my file.txt" file:///tmp/a.txt skill-@link-probe https://example.org/src/main.py ordinary';
-    expect(fileLinkMatches(line).map((match) => match.text)).toEqual([
-      'src/main.py:12:3', '/tmp/my file.txt', 'file:///tmp/a.txt', 'skill-@link-probe',
-    ]);
-    for (const match of fileLinkMatches(line)) expect(line.slice(match.index, match.index + match.text.length)).toBe(match.text);
-  });
-
-  it('unwraps references that prose puts in brackets, keeping cell offsets exact', () => {
-    const line = 'see (ui/src/a-b.ts:49) and [a.ts:3], {src/b.py:1:2}: ((main.c:7))';
-    expect(fileLinkMatches(line).map((match) => match.text)).toEqual([
-      'ui/src/a-b.ts:49', 'a.ts:3', 'src/b.py:1:2', 'main.c:7',
-    ]);
-    for (const match of fileLinkMatches(line)) expect(line.slice(match.index, match.index + match.text.length)).toBe(match.text);
-  });
-
-  it('does not link placeholders, bare schemes, or abbreviations', () => {
-    const line = '- /dock/... and file://, e.g. i.e., x / y ~ ... … mailto: vscode: path:line:col http(s)://host/...';
-    expect(fileLinkMatches(line)).toEqual([]);
-  });
-
   it('finds the file reference or web URL under a buffer cell, without relying on hover', async () => {
     const terminal = new HeadlessTerminal({ cols: 80, rows: 5, allowProposedApi: true });
     try {

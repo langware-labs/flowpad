@@ -1,5 +1,5 @@
 import { registerTerminalLinks } from './terminal-links';
-import { useTerminalLinks } from './TerminalLinkMenu';
+import { useLinks } from '@src/components/links/LinkMenu';
 // InteractiveTerminal.tsx
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
@@ -239,7 +239,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
-  const terminalLinks = useTerminalLinks(shellRef, process);
+  const terminalLinks = useLinks(shellRef, process);
   const firstPromptBufferRef = useRef('');
   const firstPromptReportedRef = useRef(false);
 
