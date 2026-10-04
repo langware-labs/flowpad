@@ -93,7 +93,7 @@ describe('ProjectGitShareToggle', () => {
     mocks.project.gitShare.mockResolvedValue(share('shared', { clone_url: CLONE_URL }));
     renderToggle();
     await waitFor(() => expect(checkbox()).toHaveAttribute('data-state', 'checked'));
-    expect(screen.getByTestId('project-git-share-copy')).toHaveAttribute('title', CLONE_URL);
+    expect(screen.getByTestId('project-git-share-copy')).toHaveAttribute('data-clone-url', CLONE_URL);
   });
 
   it('walks through installing the GitHub App, then shares on "check again"', async () => {

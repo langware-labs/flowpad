@@ -4820,8 +4820,12 @@ msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr "Connect GitHub and the gh CLI with a guided setup."
 
 #: src/components/project-home/ProjectGitShareToggle.tsx
-msgid "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
-msgstr "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
+msgid "Connect GitHub in FlowPad cloud first:"
+msgstr "Connect GitHub in FlowPad cloud first:"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#~ msgid "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
+#~ msgstr "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
 
 #~ msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 #~ msgstr "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
@@ -5202,6 +5206,7 @@ msgstr "Copy link"
 msgid "Copy links"
 msgstr "Copy links"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
 #: src/components/project-home/ProjectGitShareToggle.tsx
 msgid "Copy members' clone URL"
 msgstr "Copy members' clone URL"
