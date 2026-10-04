@@ -2208,6 +2208,11 @@ msgstr "כבר מותקן?"
 msgid "Already launched in this project"
 msgstr ""
 
+#. placeholder {0}: answer.absent.join(', ')
+#: src/components/account/settings-section.tsx
+msgid "Already not installed: {0}"
+msgstr "כבר לא מותקנים: {0}"
+
 #. placeholder {0}: team.name
 #: src/components/organization/budgets/BudgetSection.tsx
 msgid "Already on {0}"
@@ -5685,6 +5690,11 @@ msgstr ""
 #: src/components/account/settings-section.tsx
 msgid "Could not remove tools"
 msgstr "לא ניתן להסיר את הכלים"
+
+#. placeholder {0}: answer.failed.join(', ')
+#: src/components/account/settings-section.tsx
+msgid "Could not remove: {0}"
+msgstr "לא ניתן היה להסיר: {0}"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Could not rename context"
@@ -11220,6 +11230,11 @@ msgstr "השאירו את ברכת ברירת המחדל…"
 #: src/components/assets/AssetsPage.tsx
 msgid "Keeping chat history can make this project reappear when projects are scanned."
 msgstr "שמירת היסטוריית הצ׳אטים עלולה לגרום לפרויקט להופיע שוב בסריקת פרויקטים."
+
+#. placeholder {0}: answer.kept.join(', ')
+#: src/components/account/settings-section.tsx
+msgid "Kept (cannot or should not be removed): {0}"
+msgstr "נשמרו (אי אפשר או אסור להסיר): {0}"
 
 #: src/components/helpdesk/HelpdeskLoadDialog.tsx
 msgid "kept current as a context folder"
@@ -17528,11 +17543,14 @@ msgstr ""
 msgid "Removed vibe agent"
 msgstr "הסוכן הוסר מסוכני Vibe"
 
-#. placeholder {0}: answer.removed.join(', ') || '–'
-#. placeholder {1}: answer.not_found.join(', ') || '–'
+#. placeholder {0}: answer.removed.join(', ')
 #: src/components/account/settings-section.tsx
-msgid "removed: {0} · not found: {1}"
-msgstr "הוסרו: {0} · לא נמצאו: {1}"
+msgid "Removed: {0}"
+msgstr "הוסרו: {0}"
+
+#: src/components/account/settings-section.tsx
+#~ msgid "removed: {0} · not found: {1}"
+#~ msgstr "הוסרו: {0} · לא נמצאו: {1}"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removes it everywhere"
