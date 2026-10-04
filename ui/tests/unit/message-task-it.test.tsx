@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConversationMessage } from '@sdk/entities/conversation';
-import { taskTitleFromText } from '@sdk/entities/task';
+import { taskTitleFromText, type Task } from '@sdk/entities/task';
 import { MemoryRouter } from 'react-router';
 import { MessageBubble } from '@src/components/conversation/MessageBubble';
 
@@ -28,23 +28,23 @@ describe('Task it', () => {
   });
 
   it('reads "Open task" once the message is a task', () => {
-    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, title: 'Render HTML' }} /></MemoryRouter>);
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, task: { title: 'Render HTML' } as Task }} /></MemoryRouter>);
     const chip = screen.getByTestId('message-task-it');
     expect(chip.getAttribute('aria-label')).toBe('Open task');
     expect(chip.textContent).toBe('Render HTML');
   });
 
   it("shows an opened task's status and owner beside it", () => {
-    const task = { onClick: () => {}, title: 'Render HTML', status: 'in_progress', owner: 'ron@x.com' };
-    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={task} /></MemoryRouter>);
-    expect(screen.getByTestId('message-task-status').textContent).toBe('In progress');
-    expect(screen.getByTestId('message-task-owner').textContent).toBe('ron@x.com');
+    const task = { title: 'Render HTML', status: 'in_progress', assignee: 'ron@x.com' } as Task;
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, task }} /></MemoryRouter>);
+    expect(screen.getByTestId('task-status-chip').textContent).toBe('In progress');
+    expect(screen.getByTestId('task-owner-chip').textContent).toBe('ron@x.com');
   });
 
   it('a message not yet a task has no status or owner chip', () => {
     render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {} }} /></MemoryRouter>);
-    expect(screen.queryByTestId('message-task-status')).toBeNull();
-    expect(screen.queryByTestId('message-task-owner')).toBeNull();
+    expect(screen.queryByTestId('task-status-chip')).toBeNull();
+    expect(screen.queryByTestId('task-owner-chip')).toBeNull();
   });
 
   it('offers nothing without a handler', () => {

@@ -26,8 +26,9 @@ describe('ConversationTasksPanel', () => {
       'Dark-mode check',
       'Ship the renderer',
     ]);
-    expect(screen.getByTestId('conversation-tasks-filter-open').textContent).toBe('Open 2');
-    expect(screen.getByTestId('conversation-tasks-filter-all').textContent).toBe('All 4');
+    expect(screen.getByRole('button', { name: /^Open/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: /^Open/ }).textContent).toContain('2');
+    expect(screen.getByRole('button', { name: /^All/ }).textContent).toContain('4');
   });
 
   it('shows every task once "All" is picked', () => {
@@ -36,7 +37,7 @@ describe('ConversationTasksPanel', () => {
         <ConversationTasksPanel tasks={tasks} />
       </MemoryRouter>,
     );
-    fireEvent.click(screen.getByTestId('conversation-tasks-filter-all'));
+    fireEvent.click(screen.getByRole('button', { name: /^All/ }));
     expect(titles()).toHaveLength(4);
   });
 
