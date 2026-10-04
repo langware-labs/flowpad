@@ -1020,6 +1020,9 @@ async def handle_add_message(
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
     reply_to_id = (body.get("reply_to_id") or "").strip() or None
+    # Writing INTO a thread without quoting anyone (the composer of an open thread): a message of
+    # that thread — its root, normally. A reply_to_id, when given, decides the thread instead.
+    join_thread_of = (body.get("thread_root_id") or "").strip() or None
     if (
         not message
         and not prompt_text_preview
@@ -1035,13 +1038,15 @@ async def handle_add_message(
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
     # A reply quotes one message of THIS conversation and joins the thread rooted at it.
     thread_root_id: Optional[str] = None
-    if reply_to_id:
+    if reply_to_id or join_thread_of:
         from flow_sdk.stream_inbox.native_threads import thread_root_for_reply  # noqa: PLC0415
 
-        thread_root_id = await thread_root_for_reply(conv.id, reply_to_id)
+        anchor = reply_to_id or join_thread_of
+        thread_root_id = await thread_root_for_reply(conv.id, anchor)
         if thread_root_id is None:
+            field = "reply_to_id" if reply_to_id else "thread_root_id"
             return ApiFailResponse(
-                message=f"reply_to_id {reply_to_id} is not a message of this conversation", status_code=400
+                message=f"{field} {anchor} is not a message of this conversation", status_code=400
             )
 
     # Merge the items being shared into THIS conversation's context (both the
@@ -1160,7 +1165,7 @@ async def handle_add_message(
         # is text-only and would drop the session-snapshot carrier attachment.
         and not remote_worker_session_id
         # So do replies: the WS body has no room for the quote / thread root.
-        and not reply_to_id
+        and not thread_root_id
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,

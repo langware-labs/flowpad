@@ -170,3 +170,20 @@ async def test_a_root_that_lands_after_its_reply_joins_the_thread(bootstrapped_c
     thread = await MessageThread.get_one({"id": thread_id})
     assert thread.message_count == 2
     assert thread.title == "the question", "the root names the thread once it lands"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_writing_into_an_open_thread_joins_it_without_quoting(bootstrapped_client, user, monkeypatch):
+    _logged_out(monkeypatch)
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    root = await _send(client, conv_id, "root")
+    first = await _send(client, conv_id, "first", reply_to=root["flow_message_id"])
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={"text": "more", "thread_root_id": root["flow_message_id"]},
+    )
+    more = resp.json()["data"]
+    assert more["reply_to_id"] is None, "no quote"
+    assert more["thread_root_id"] == root["flow_message_id"] and more["thread_id"] == first["thread_id"]
+    assert (await MessageThread.get_one({"id": first["thread_id"]})).message_count == 3
