@@ -77,13 +77,21 @@ export function SettingsSection() {
       // page's icons are its LAST COMPLETED run's record, not a live check, so
       // without that this button would remove tools and leave everything
       // showing exactly as green as before.
-      const answer = await apiClient.post<{ removed: string[]; not_found: string[]; wizard: WizardResult | null }>(
-        '/api/v1/onboarding/debug/remove-tools',
-      );
-      notify.success({
-        title: t`Tools removed, wizard re-checked`,
-        message: t`removed: ${answer.removed.join(', ') || '–'} · not found: ${answer.not_found.join(', ') || '–'}`,
-      });
+      const action = new ActionInfo('remove-tools', 'compute_node', '@local', 'POST');
+      const answer = await dataManager.callAction<
+        unknown,
+        { removed: string[]; absent: string[]; kept: string[]; failed: string[]; wizard: WizardResult | null }
+      >(action);
+      // One line per non-empty group: a tool that is already gone, or one that cannot be removed
+      // (Flowpad's own, a read-only system copy), is not an error and must not read like one.
+      const lines = [
+        answer.removed.length ? t`Removed: ${answer.removed.join(', ')}` : '',
+        answer.absent.length ? t`Already not installed: ${answer.absent.join(', ')}` : '',
+        answer.kept.length ? t`Kept (cannot or should not be removed): ${answer.kept.join(', ')}` : '',
+        answer.failed.length ? t`Could not remove: ${answer.failed.join(', ')}` : '',
+      ].filter(Boolean);
+      const notifyFn = answer.failed.length ? notify.warning : notify.success;
+      notifyFn({ title: t`Tools removed, wizard re-checked`, message: lines.join('\n') });
     } catch (err) {
       notify.error({ title: t`Could not remove tools`, message: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -160,7 +168,7 @@ export function SettingsSection() {
                 variant="outline"
                 onClick={() => void handleRemoveTools()}
                 disabled={removingTools}
-                title="DEV ONLY — actually uninstalls jq/rg/claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
+                title="DEV ONLY — actually uninstalls claude/python(3)/git/node (brew uninstall, or deletes the binary), then re-runs the wizard so its page reflects the new state. Remove this button before shipping."
               >
                 {removingTools ? <Trans>Resetting…</Trans> : <Trans>Reset</Trans>}
               </Button>

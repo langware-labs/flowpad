@@ -20,6 +20,7 @@ with the user's hub token as a Bearer header passed through the environment
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 from dataclasses import dataclass
@@ -28,6 +29,8 @@ from pathlib import Path, PurePosixPath
 from flow_sdk.assets.git_publish import AssetPublishCode, AssetPublishError, GitAuthor
 from flow_sdk.instances.atomic import locked, read_json, write_json_atomic
 from flow_sdk.utils.git_folder import KEEP_FILE
+
+logger = logging.getLogger(__name__)
 
 _locks: dict[str, asyncio.Lock] = {}
 
@@ -279,3 +282,31 @@ async def sync_asset_with_hub(
             [f"FlowPad-Asset: {asset_typeid}", f"FlowPad-User: {author.typeid or author.email}"],
         )
         return HubRepoSync(head_commit=head, tree=local, pushed=True, pulled_back=False)
+
+
+@dataclass
+class HubRepoCheckout(HubRepoMirror):
+    """A WORKING checkout of a hub-hosted repo — a shared project on a recipient.
+
+    Unlike the mirror (a cache nothing else writes, so it hard-resets and cleans),
+    this folder is the user's: it is cloned once, later only fast-forwarded, and
+    never reset, cleaned or deleted. A pull that cannot fast-forward (local work)
+    is left alone — the project still opens on what is there.
+    """
+
+    async def checkout(self) -> None:
+        if not (self.root / ".git").is_dir():
+            if self.root.exists() and any(self.root.iterdir()):
+                raise RuntimeError(f"{self.root} is not empty and not a checkout of this repository")
+            self.root.parent.mkdir(parents=True, exist_ok=True)
+            await self.git("clone", "-q", "--branch", self.branch, self.clone_url, str(self.root), cwd=self.root.parent)
+            return
+        await self.git("remote", "set-url", "origin", self.clone_url)
+        code, out = await self.git("pull", "-q", "--ff-only", "origin", self.branch, check=False)
+        if code != 0:
+            logger.warning("hub checkout %s: no fast-forward from the hub, keeping local state: %s", self.root, out)
+
+    async def push_head(self) -> None:
+        """Publish this checkout's HEAD as the hub branch — a fast-forward only, so a
+        re-share never rewrites what recipients already cloned."""
+        await self.git("push", "-q", self.clone_url, f"HEAD:refs/heads/{self.branch}")

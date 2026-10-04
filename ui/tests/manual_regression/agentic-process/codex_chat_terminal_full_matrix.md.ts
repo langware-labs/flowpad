@@ -179,7 +179,7 @@ test.describe('Codex durable transcript projection', () => {
       'utf8',
     );
     const terminalPanel = readFileSync(
-      join(repo, 'ui/src/components/terminal/TabbedTerminal.tsx'),
+      join(repo, 'ui/src/components/terminal/TerminalPanel.tsx'),
       'utf8',
     );
     // One mode selector (the footer ViewToggle); the transport reconcile that

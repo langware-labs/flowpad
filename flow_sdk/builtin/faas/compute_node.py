@@ -606,7 +606,7 @@ try:
                 if len(pieces) >= 4:
                     parts.append(pieces[3]); break
     elif system == "Windows":
-        parts.append(subprocess.check_output(["wmic", "csproduct", "get", "uuid"], shell=True).decode().splitlines()[1].strip())
+        parts.append(subprocess.check_output(["wmic", "csproduct", "get", "uuid"], stderr=subprocess.DEVNULL).decode().splitlines()[1].strip())
 except Exception:
     pass
 print(hashlib.sha256("|".join(parts).encode()).hexdigest())
@@ -796,7 +796,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
         # A placement is on a node only if its provider is node-backed; the node itself is derived.
-        node_backed = QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["target.provider", sorted(NODE_PROVIDERS)]))
+        node_backed = QueryFilter(
+            match=ExpressionNode(op=QueryOp.IN, operands=["target.provider", sorted(NODE_PROVIDERS)])
+        )
         return [d for d in await Deployment.get_all(node_backed) if d.compute_node_id == self.id]
 
     async def service_endpoints(self) -> list:
@@ -828,7 +830,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 continue
             served = {e.name for e in rows}
             missing.extend(
-                EndpointHealth(endpoint_id="", name=d.name, state="failing", detail=f"declared by {deployment.name}, not served")
+                EndpointHealth(
+                    endpoint_id="", name=d.name, state="failing", detail=f"declared by {deployment.name}, not served"
+                )
                 for d in deployment.exposes
                 if d.name not in served
             )
@@ -854,6 +858,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         note_user_activity()
         return ApiSuccessResponse()
+
+    @action.post(action_name="remove-tools")
+    async def remove_tools_action(self) -> "ApiResponse":
+        """DEBUG ONLY — the Settings › Setup dev Reset: uninstall the `llm-setup` wizard's tools
+        from this machine, then re-check the wizard. See ``bootstrap.remove_debug_tools``."""
+        from flow_sdk.server.routes.bootstrap import remove_debug_tools  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=await remove_debug_tools())
 
     @action.post(action_name="attach-secret")
     async def attach_secret(self, project_id: str = "", env_var: str = "") -> "ApiResponse":

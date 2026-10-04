@@ -348,6 +348,20 @@ class Deployment(Entity):
             self.secrets = row.secrets
         return self
 
+    async def release(self, env_vars: list[str]) -> "Deployment":
+        """Drop this placement's own exceptions for ``env_vars``: their values fall back to its
+        default store. The undo of :meth:`keep_in`, under the same per-deployment lock; a placement
+        with no exception for any of them is left untouched (not even saved)."""
+        async with keyed_loop_lock(_SECRETS_LOCKS, str(self.id)):
+            stored = await type(self).get_by_id(str(self.id)) if self.id else None
+            row = stored if stored is not None else self
+            if row.secrets is None or not set(env_vars) & set(row.secrets.exceptions):
+                return self
+            row.secrets = row.secrets.with_store(list(env_vars), row.secrets.store)
+            await row.save()
+            self.secrets = row.secrets
+        return self
+
     # ── a cloud placement's secrets, held by the hub ──────────────────────
 
     async def authorize(self, provider: str, permissions: list[str] | None = None) -> dict:

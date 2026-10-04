@@ -67,6 +67,8 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
   // The real rule, not a stub — same reason the Open card's test keeps it: which
   // buttons a card shows IS this question.
   isLaunched: (node: { node_provider_id?: string }) => !!node.node_provider_id,
+  // Every node here is a sandbox, never a machine connected with `flow connect`.
+  isUserMachine: () => false,
   nextSandboxName: () => 'Sandbox 2',
 }));
 vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));

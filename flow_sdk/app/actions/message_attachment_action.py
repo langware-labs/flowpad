@@ -29,6 +29,7 @@ from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.operations.flow_message import default_data_dir, unpacked_dir
 from flow_sdk.fs_store.record_paths import record_stem
 from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.utils.archive import is_zip_filename
 from flow_sdk.responses.response import (
     ApiFailResponse,
     ApiResponse,
@@ -451,6 +452,29 @@ def _staging_gone(suffix: str = "") -> ApiFailResponse:
 # ---------------------------------------------------------------------------
 
 
+async def _adopt_indexed_asset_id(ma: MessageAttachment, root: Path, placed: list[Path]) -> None:
+    """Point a zip-derived row at the entity its install indexed.
+
+    A typed asset that arrived inside a ZIP carries no id of its own — the row's
+    ``asset_id`` is a placeholder, and the indexer mints the real one from the
+    installed folder. Look that entity up by its installed path (its natural key)
+    and adopt its id, so Open / uninstall / the chip resolve it."""
+    from flow_sdk.builtin.flow_message_bundle import _notify_received_assets  # noqa: PLC0415
+    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    paths = [p.relative_to(root).as_posix() for p in placed]
+    asset_root, _ = _locate_staged_asset(root, paths, SchemaRegistry.get(ma.asset_type))
+    if asset_root is None:
+        return
+    ent = await Entity.get_by_asset_ref(root / asset_root)
+    if ent is None or str(ent.typeid.type) != ma.asset_type:
+        logger.warning("[install] no indexed %s at %s for %s", ma.asset_type, root / asset_root, ma.id)
+        return
+    ma.asset_id = str(ent.id)
+    await _notify_received_assets({(ma.asset_type, ma.asset_id)})
+
+
 async def handle_attachment_install(
     attachment_id: str,
     scope: str,
@@ -628,6 +652,8 @@ async def handle_attachment_install(
                 project_id=project_id,
                 owner=someone_typeid,
             )
+            if not is_raw_file and is_zip_filename(ma.name or ""):
+                await _adopt_indexed_asset_id(ma, root, placed)
     except FlowMessageExistsError as e:
         return ApiFailResponse(
             message="asset already exists — overwrite?",

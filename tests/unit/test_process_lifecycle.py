@@ -106,6 +106,36 @@ async def test_terminate_worker_sigkill_fallback():
 # ---------------------------------------------------------------------------
 
 
+def test_session_sweep_skips_a_process_that_exits_mid_read():
+    """The argv sweep reads every process's cmdline. On macOS a process exiting
+    between the table walk and the read makes psutil's ``proc_cmdline`` raise
+    ``SystemError`` (an exception set inside the C call) — not the
+    AccessDenied/ZombieProcess that ``process_iter(attrs)`` absorbs. That one
+    vanishing stranger failed the whole sweep, so ``exit`` (and every Restart)
+    answered 500 under load. A process whose argv cannot be read is not ours to
+    match: skip it, keep sweeping."""
+    session_id = "11111111-2222-4333-8444-555555555555"
+
+    vanishing = _fake_psutil_proc(101)
+    vanishing.cmdline.side_effect = SystemError("<built-in function proc_cmdline> returned a result with an exception set")
+    worker = _fake_psutil_proc(102)
+    worker.cmdline.return_value = ["claude", "--session-id", session_id]
+    stranger = _fake_psutil_proc(103)
+    stranger.cmdline.return_value = ["bash"]
+
+    def process_iter(attrs=None):
+        # psutil's own prefetch: ``attrs`` reads each one through ``as_dict``, which
+        # absorbs only AccessDenied/ZombieProcess — anything else escapes the iterator.
+        for proc in (vanishing, worker, stranger):
+            if attrs:
+                proc.info = {"pid": proc.pid, "cmdline": proc.cmdline()}
+            yield proc
+
+    shell = Shell.model_construct(worker_pid=None)
+    with patch("flow_sdk.builtin.shell.psutil.process_iter", side_effect=process_iter):
+        assert shell._session_worker_procs(session_id, set()) == [worker]
+
+
 @pytest.mark.asyncio
 async def test_process_exit_keeps_shell():
     """process.exit() preserves shell entity — calls stop(), NOT close()."""

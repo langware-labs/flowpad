@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react/macro';
-import { type GitOrigin, Project } from '@sdk';
+import { Project } from '@sdk';
+import { type ProjectOrigin, projectOriginOf } from '@sdk/models/FSOrigin';
 import { Bot, Code, Sparkles, Terminal } from 'lucide-react';
 import React from 'react';
 import { useParams } from 'react-router';
@@ -24,14 +25,17 @@ const ProjectShareLanding: React.FC = () => {
     <EntityLandingGate key={typeId.toString()} typeId={typeId}>
       {(project) => {
         const model = { ...entityLandingModel(typeId, project), hubUrl: projectHubPath(typeId.id) };
+        // A project opens from its git repo OR its hub-hosted copy — wider than the
+        // generic landing's git-only origin.
+        const origin = projectOriginOf(project as Project);
         return (
           <EntityLandingView
             typeId={typeId}
             model={model}
             hideBrowserCard
             desktopCard={
-              model.gitOrigin ? (
-                <OpenInFlowpadCard projectId={typeId.id} name={model.displayName} gitOrigin={model.gitOrigin} />
+              origin ? (
+                <OpenInFlowpadCard projectId={typeId.id} name={model.displayName} gitOrigin={origin} />
               ) : undefined
             }
           />
@@ -41,7 +45,7 @@ const ProjectShareLanding: React.FC = () => {
   );
 };
 
-const OpenInFlowpadCard: React.FC<{ projectId: string; name: string; gitOrigin: GitOrigin }> = ({
+const OpenInFlowpadCard: React.FC<{ projectId: string; name: string; gitOrigin: ProjectOrigin }> = ({
   projectId,
   name,
   gitOrigin,

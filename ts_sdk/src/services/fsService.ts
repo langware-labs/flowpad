@@ -282,6 +282,18 @@ export class FSManager {
   }
 
   /**
+   * Extract a local `.zip` to look inside it; returns the extracted folder's
+   * machine path. The folder is a disposable temp copy (re-extracted after the
+   * OS wipes temp) — nothing is written beside the zip.
+   */
+  async extractPreview(typeid: TypeId, path: string): Promise<string> {
+    const res = await dataManager.callAction<void, { path: string }>(
+      this.createFSAction(typeid, 'extract_preview', path, 'POST'),
+    );
+    return res.path;
+  }
+
+  /**
    * Get download URL for a file
    * @param typeid - Entity TypeId
    * @param path - File path

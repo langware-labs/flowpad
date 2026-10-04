@@ -809,6 +809,35 @@ ipcMain.on('set-menu-visible', (_event, visible) => {
   applyMenu();
 });
 
+// --- Zoom shortcuts (menu-independent) ----------------------------------
+//
+// Cmd/Ctrl + `=`/`+` zoom in, `-` zoom out, `0` reset — in EVERY view mode and
+// on every platform. The View menu's zoom roles can't own these: that menu is
+// absent outside Advanced (stripped on Win/Linux, baseline-only on macOS), and
+// a menu accelerator only exists while its item does. Handling the keys here
+// covers every app window (main + `/win/` focus windows). preventDefault stops
+// the Advanced View menu's own accelerator from firing a second step.
+const ZOOM_STEP = 0.5; // Chromium's own zoom step
+
+function zoomDeltaFor(input) {
+  if (input.type !== 'keyDown' || input.alt) return null;
+  if (!(isMac ? input.meta : input.control)) return null;
+  if (input.key === '=' || input.key === '+') return ZOOM_STEP;
+  if (input.key === '-' || input.key === '_') return -ZOOM_STEP;
+  if (input.key === '0') return 0;
+  return null;
+}
+
+app.on('web-contents-created', (_e, contents) => {
+  if (contents.getType() !== 'window') return;
+  contents.on('before-input-event', (event, input) => {
+    const delta = zoomDeltaFor(input);
+    if (delta === null) return;
+    event.preventDefault();
+    contents.setZoomLevel(delta === 0 ? 0 : contents.getZoomLevel() + delta);
+  });
+});
+
 // THE navigation-state string for the `[nav]` trace. Module scope so `startApp`
 // can log it too, not just createWindow()'s closure — one formatter, so the
 // fields can never drift between call sites.

@@ -16,6 +16,7 @@
  *   output in xterm's async write queue.
  */
 import { SerializeAddon } from '@xterm/addon-serialize';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { Terminal as HeadlessTerminal } from '@xterm/headless';
 import { apiClient } from '@sdk';
 import { base64ToBytes } from '@sdk/services/shell/ptyConnection.js';
@@ -70,6 +71,8 @@ export interface ReplayResult {
  * step 7) — the server answers with the whole recording when it has no usable one.
  */
 export async function fetchPtyStream(shellId: string): Promise<FramedPtyStream | null> {
+  // The hub records no pty-stream: a remote session replays from the hub's buffer on attach.
+  if (isHubOnly()) return null;
   try {
     const data = await apiClient.get<FramedPtyStream>(`/shell/${shellId}/pty-stream`, {
       params: { since: 'checkpoint' },

@@ -1,6 +1,8 @@
 """`flow wizard ...` — run a wizard, or close a conversational one.
 
-    flow wizard run <name> [--approved]      — run it; exit its answer's exit_code
+    flow wizard run <name> [--approved] [--yes]  — run it; exit its answer's exit_code.
+                                                 No backend running: a shipped wizard runs
+                                                 here, and --yes answers its confirm questions.
     flow wizard <agentic_process_id> close '{"status":"done","data":{}}'
 
 ``run`` exits exactly as ``flow op run`` does — the answer's own ``ExitCode``
@@ -160,12 +162,26 @@ def _close_from_args(wizard_id: Optional[str], args: list[str]) -> None:
 
 
 def _run_from_args(args: list[str]) -> None:
-    """``flow wizard run <name> [--approved]`` — run it, exit its exit_code."""
-    rest = [a for a in args if a != "--approved"]
+    """``flow wizard run <name> [--approved] [--yes]`` — run it, exit its exit_code.
+
+    With a backend running, the backend runs it. With none, it runs HERE (a shipped wizard only),
+    and ``--yes`` answers its confirm questions — this terminal is the only person there is.
+    """
+    flags = {"--approved", "--yes"}
+    rest = [a for a in args if a not in flags]
     if not rest:
-        _fail(EXIT_INVALID_ARG, "INVALID_WIZARD_COMMAND", "Usage: flow wizard run <name> [--approved]")
-    name, approved = rest[0], "--approved" in args
-    port = _discover_port()
+        _fail(EXIT_INVALID_ARG, "INVALID_WIZARD_COMMAND", "Usage: flow wizard run <name> [--approved] [--yes]")
+    name, approved, yes = rest[0], "--approved" in args, "--yes" in args
+    port = _discover_port(required=False)
+    if port is None:
+        _run_here(name, yes=yes)
+    if yes:
+        _fail(
+            EXIT_INVALID_ARG,
+            "YES_NEEDS_NO_BACKEND",
+            "--yes answers a wizard's questions in this terminal, which only happens with no backend running; "
+            "with one running, its questions are asked in the app.",
+        )
     base = f"http://127.0.0.1:{port}/api/v1/graph/wizard"
 
     def _on_request_error(status_code: int, body: dict):
@@ -200,6 +216,31 @@ def _run_from_args(args: list[str]) -> None:
         _fail(EXIT_REQUEST_FAILED, "NO_ANSWER", "The server returned no answer.")
     _ok({"wizard": name, "returned": returned})
     raise typer.Exit(int(returned["exit_code"]))
+
+
+def _run_here(name: str, *, yes: bool) -> None:
+    """Run the shipped wizard *name* in this process and exit its exit_code.
+
+    stdout: ``{"ok": …, "wizard": …, "returned": …, "steps": [{"step", "exit_code", "ok", "by",
+    "detail"}]}`` — ``by`` says which call settled each step (``already`` / ``nothing`` / ``cli`` / ``agent`` /
+    ``ask`` / ``wizard``), so a supervisor can tell an install the command did from one an agent
+    rescued. Progress goes to stderr.
+    """
+    from flow_sdk.cli.commands._common import quiet_logs, run_async, safe_echo  # noqa: PLC0415
+    from flow_sdk.core.wizard.local_run import run_shipped_wizard, step_rows  # noqa: PLC0415
+    from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
+
+    quiet_logs()
+
+    async def run():
+        await _bootstrap_local()
+        return await run_shipped_wizard(name, yes=yes, say=lambda text: safe_echo(f"  {text}", err=True))
+
+    result = run_async(run())
+    if result is None:
+        _fail(4, "WIZARD_NOT_FOUND", f"No shipped wizard named {name!r} (no backend is running to look further).")
+    _ok({"wizard": name, "returned": result.trimmed().model_dump(mode="json"), "steps": step_rows(result)})
+    raise typer.Exit(int(result.exit_code))
 
 
 def wizard_command(

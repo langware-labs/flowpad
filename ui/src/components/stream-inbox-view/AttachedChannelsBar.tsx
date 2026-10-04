@@ -242,7 +242,8 @@ function ChannelMark({
             'relative grid size-8 shrink-0 place-items-center rounded-full border-[1.5px] bg-background transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             state === 'off' ? 'border-dashed border-border' : 'border-border',
             pressed && 'border-primary ring-1 ring-primary',
-            ((filtering && !pressed) || state === 'off') && '[&>svg]:opacity-45 [&>svg]:grayscale',
+            // The glyph is the first child — an svg, or the <img>/<span> a brand mark renders as.
+            ((filtering && !pressed) || state === 'off') && '[&>:first-child]:opacity-45 [&>:first-child]:grayscale',
           )}
           data-testid="attached-channel"
           data-provider={group.provider}

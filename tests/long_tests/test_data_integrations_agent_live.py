@@ -61,7 +61,7 @@ async def _until(predicate, *, budget_s: float, every_s: float = 10.0):
         await asyncio.sleep(every_s)
 
 
-async def test_persona_connects_samples_and_defines(tmp_path):
+async def test_persona_connects_samples_and_defines(run_workdir):
     async with httpx.AsyncClient(base_url=BASE, timeout=httpx.Timeout(10.0, read=60.0)) as client:
         try:
             await client.get("/api/v1/graph/bootstrap")
@@ -70,9 +70,9 @@ async def test_persona_connects_samples_and_defines(tmp_path):
 
         with local_http_server(lambda _p, _h: (200, _atom(), {"Content-Type": "application/atom+xml"})) as feed:
             project = await _data(client, "POST", "/api/v1/graph/project",
-                                  json={"type": "project", "name": tmp_path.name, "fs_storage_mount_path": str(tmp_path)})
+                                  json={"type": "project", "name": run_workdir.name, "fs_storage_mount_path": str(run_workdir)})
             proc = await _data(client, "POST", "/api/v1/graph/agentic_process",
-                               json={"name": "live data integrations", "project_id": project["id"], "workdir": str(tmp_path),
+                               json={"name": "live data integrations", "project_id": project["id"], "workdir": str(run_workdir),
                                      "worker_type": "claude_code", "visible": False, "pty_mode": False, "process_type": "chat"})
             pid = proc["id"]
             subagents = await _data(client, "GET", "/api/v1/graph/subagent?include_system=true")
@@ -111,4 +111,4 @@ async def test_persona_connects_samples_and_defines(tmp_path):
             assert ds, "no dataset with a gold label bound to the source"
             assert ds["spec"]["examples"][0]["input"] == "ingest.source_item"
             assert ds["spec"]["examples"][0]["output"] == {"sentiment": "string"}
-            assert (tmp_path / "agentic-assets" / "dataset").is_dir()
+            assert (run_workdir / "agentic-assets" / "dataset").is_dir()

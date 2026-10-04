@@ -2,13 +2,17 @@
  * Regression test: a scheduled agent run, driven from the agent's own editor.
  *
  * A schedule is a child trigger asset of the agent
- * (`agentic-assets/agent/<name>/agentic-assets/trigger/<slug>/trigger.json`).
+ * (`agentic-assets/agent/<name>/agentic-assets/trigger/<slug>/trigger.json`), and it runs
+ * on one of the agent's deployments — so the agent is first deployed to this computer.
+ * Schedules live in the agent editor's left menu (a8fa1e99c): the section's `+` opens the
+ * schedules manager for this computer, and a row opens the schedule nested in the editor.
  *
  * Verifies:
- * - The Schedule tab pre-fills a new schedule's prompt from the agent's auto-launch prompt
+ * - A new schedule's prompt is pre-filled from the agent's auto-launch prompt
  * - A one-shot schedule set seconds ahead fires, and the row shows it ran
  * - "Runs" opens the run history scoped to the trigger, with one finished run
- * - Clicking the schedule opens the trigger; its pane says "Runs agent <name>" and links back
+ * - Clicking the schedule in the menu opens the trigger nested in the agent editor; its
+ *   pane says "Runs agent <name>" and links back to the agent
  * - Editing to a daily time keeps the trigger (same id, run count kept)
  * - Disabling persists across a reload
  * - Deleting removes the row and the trigger
@@ -52,9 +56,28 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
 
   await dismissSetupModal(page);
   await page.goto(`/dock/assets/editor/agent/typeid/agent-${agent.id}`);
-  await page.getByTestId('agent-place-tab-schedules').first().click();
+  // Opening an agent of another project switches the app into that project, which
+  // re-mounts the editor; act only once the switch has landed, or an open dialog is lost.
+  await expect(page.getByRole('button', { name: 'Open project list' })).toContainText(project.name);
+
+  // ── deploy to this computer: a schedule runs on a deployment ──────────────
+  await page.getByTestId('agent-new-deployment').click();
+  await page.getByTestId('new-deployment-type-local').click();
+  await page.getByTestId('new-deployment-launch').click();
+  await expect(page.getByTestId('agent-places-list')).toBeVisible();
+
+  // The schedules manager for this computer: the menu section's `+`.
+  const openManager = async () => {
+    await page.getByTestId('agent-resource-add-schedule').click();
+    await expect(page.getByTestId('agent-schedules-dialog')).toBeVisible();
+  };
+  const closeManager = async () => {
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('agent-schedules-dialog')).toHaveCount(0);
+  };
 
   // ── create: prompt defaults to the auto-launch prompt ──────────────────────
+  await openManager();
   await page.getByTestId('agent-schedule-add').click();
   await expect(page.getByTestId('agent-schedule-prompt')).toHaveValue('Reply with the single word: briefed');
   const form = page.getByTestId('agent-schedule-form');
@@ -82,17 +105,20 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
     return runs.map((r: { badge: string }) => r.badge).join(',');
   }, { timeout: 60_000 }).toBe('done');
 
-  // ── clicking the schedule opens the trigger, which links back ─────────────
+  // ── clicking the schedule in the menu opens the trigger, which links back ──
   await page.goBack();
-  await page.getByTestId('agent-place-tab-schedules').first().click();
-  await page.getByTestId('agent-schedule-open-0').click();
-  await expect(page).toHaveURL(new RegExp(`/dock/events\\?trigger=${trigger!.id}`));
+  await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
+  const section = page.getByTestId('navigator-section-schedules');
+  if ((await section.getAttribute('aria-expanded')) !== 'true') await section.click();
+  await page.getByTestId(`agent-resource-schedule-${trigger!.id}`).click();
+  await expect(page).toHaveURL(new RegExp(`/child/schedule/trigger-${trigger!.id}`));
   await expect(page.getByTestId('agent-schedule-detail')).toContainText('Runs agent');
   await page.getByTestId('trigger-runs-agent').click();
   await expect(page).toHaveURL(new RegExp(`/dock/assets/editor/agent/typeid/agent-${agent.id}`));
+  await expect(page).not.toHaveURL(/\/child\//);
 
   // ── edit keeps the trigger ─────────────────────────────────────────────────
-  await page.getByTestId('agent-place-tab-schedules').first().click();
+  await openManager();
   await page.getByTestId('agent-schedule-edit-0').click();
   await form.getByPlaceholder('Today').fill('Daily brief');
   await form.getByRole('button', { name: 'Daily', exact: true }).click();
@@ -104,8 +130,9 @@ test('a scheduled agent run: create, fire, open trigger, edit, disable, delete',
   // ── disable persists ───────────────────────────────────────────────────────
   await page.getByTestId('agent-schedule-enabled-0').click();
   await expect(page.getByTestId('agent-schedule-enabled-0')).toHaveAttribute('data-state', 'unchecked');
+  await closeManager();
   await page.reload();
-  await page.getByTestId('agent-place-tab-schedules').first().click();
+  await openManager();
   await expect(page.getByTestId('agent-schedule-enabled-0')).toHaveAttribute('data-state', 'unchecked');
 
   // ── delete ─────────────────────────────────────────────────────────────────

@@ -10,8 +10,8 @@ to the hub through ``FlowpadClient`` using the stored cloud credentials.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from json import JSONDecodeError
+from pathlib import Path
 
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -26,7 +26,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 
 # ``ShareInvitee`` is re-exported: callers import it from here.
 from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee as ShareInvitee
-from flow_sdk.schema.data_spec.share_request_spec import ShareRequestSpec
+from flow_sdk.schema.data_spec.share_request_spec import ShareRequestSpec, ShareVia
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +94,9 @@ async def share_entity() -> ApiResponse:
     invitees = list(share_request.recipients)
     teams = list(share_request.teams)
     note = share_request.note
-    if (teams or note) and not issubclass(entity_model, Project):
-        raise HTTPException(status_code=400, detail="share: 'teams' and 'note' apply to a project share only")
+    via = share_request.via
+    if (teams or note or via is not ShareVia.GIT) and not issubclass(entity_model, Project):
+        raise HTTPException(status_code=400, detail="share: 'teams', 'note' and 'via' apply to a project share only")
 
     # By-email and by-id invitees split back into the two addressing forms
     # ``Conversation.share`` takes; ``Project.share`` takes ``invitees`` as-is
@@ -130,7 +131,9 @@ async def share_entity() -> ApiResponse:
     # not a publish: it runs no publish gate (a dirty tree still invites) and
     # does not re-push or re-stamp the row. Publishing stays the job of a share
     # with nobody to invite — or of the first share, which publishes, then invites.
-    project_invite_only = isinstance(entity, Project) and bool(invitees or teams) and entity.remote is True
+    project_invite_only = (
+        isinstance(entity, Project) and bool(invitees or teams) and entity.remote is True and via is ShareVia.GIT
+    )
 
     project_git_origin = None
     if isinstance(entity, Project) and not project_invite_only:
@@ -190,7 +193,7 @@ async def share_entity() -> ApiResponse:
         elif project_invite_only:
             await entity.invite(invitees=invitees or None, teams=teams or None, note=note)
         elif isinstance(entity, Project):
-            await entity.share(invitees=invitees or None, teams=teams or None, note=note)
+            await entity.share(invitees=invitees or None, teams=teams or None, note=note, via=via)
         else:
             await entity.share()
     except ProjectInviteRoleError as exc:

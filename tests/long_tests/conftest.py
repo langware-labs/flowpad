@@ -418,9 +418,12 @@ def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
     }
     log = tmp_path / "backend.log"
     with log.open("wb") as sink:
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "flow_sdk.server.run"], env=env, stdout=sink, stderr=sink
+        # ``agents_on_mock_worker`` boots the same server with every agent turn on MockDriver.
+        command = (
+            [sys.executable, str(Path(__file__).resolve().parents[1] / "e2e" / "mock_worker_backend.py")]
+            if os.environ.get(_MOCK_WORKER_BACKEND) else [sys.executable, "-m", "flow_sdk.server.run"]
         )
+        proc = subprocess.Popen(command, env=env, stdout=sink, stderr=sink)
 
     monkeypatch.setenv("FLOW_INSTANCE", name)
     monkeypatch.setenv("FLOW_HOME", str(flow_home))
@@ -438,6 +441,22 @@ def live_backend(initialize_test_db, allocate_ports, tmp_path, monkeypatch):
         import asyncio  # noqa: PLC0415
 
         asyncio.get_event_loop().run_until_complete(_forget_login_verdicts())
+
+
+#: Set by ``agents_on_mock_worker``: ``live_backend`` then boots ``tests/e2e/mock_worker_backend.py``.
+_MOCK_WORKER_BACKEND = "FLOWPAD_TEST_MOCK_WORKER_BACKEND"
+
+
+@pytest.fixture
+def agents_on_mock_worker(monkeypatch, tmp_path):
+    """Before ``live_backend`` boots: every agent the BACKEND launches runs on ``MockDriver``. The
+    behavior is the test's ``MOCK_BEHAVIOR`` (``module:function``); turns' transcripts land in the
+    returned folder. For a flow whose agent the backend starts, e.g. a terminal's AI Assist, which
+    is raised at the backend (``ask_through_backend``) — patching the CLI's own process misses it."""
+    transcripts = tmp_path / "transcripts"
+    monkeypatch.setenv(_MOCK_WORKER_BACKEND, "1")
+    monkeypatch.setenv("MOCK_TRANSCRIPTS", str(transcripts))
+    return transcripts
 
 
 @pytest.fixture
@@ -540,6 +559,22 @@ def _openrouter_key() -> str:
             match = re.search(r"^OPENROUTER_API_KEY=(.+)$", env_file.read_text(), re.M)
             key = match.group(1).strip().strip("'\"") if match else ""
     return key
+
+
+@pytest.fixture(autouse=True)
+async def _fund_opencode_rows(request):
+    """Every row parametrized with ``opencode`` runs funded by key.
+
+    opencode's device login is always signed out under the test HOME, and since the
+    LLM-source gate (b866ddfee) an unfunded opencode is refused ("no usable LLM
+    source") before any subject under test runs. Funding is never the subject of an
+    opencode row, so it is funded here once, the way the login-less harnesses are,
+    rather than in each module that lists opencode.
+    """
+    callspec = getattr(request.node, "callspec", None)
+    if callspec is not None and "opencode" in (str(v) for v in callspec.params.values()):
+        await fund_worker_without_a_login("opencode", even_with_device_login=True)
+    yield
 
 
 async def fund_worker_without_a_login(worker: str, *, even_with_device_login: bool = False) -> None:

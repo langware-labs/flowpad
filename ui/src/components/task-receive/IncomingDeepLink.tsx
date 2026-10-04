@@ -1,4 +1,5 @@
-import { isCompleteGitOrigin, isInstallableOrigin, Project, type GitOrigin } from '@sdk';
+import { isCompleteGitOrigin, Project } from '@sdk';
+import { isGitOrigin, type ProjectOrigin, projectOriginOf } from '@sdk/models/FSOrigin';
 import { t } from '@lingui/core/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
@@ -75,13 +76,12 @@ export function IncomingDeepLink() {
     const title = params.get('title') || 'Shared';
     const senderName = params.get('sender_name') || 'Someone';
     const gitOriginParam = params.get('git_origin');
-    let gitOrigin: GitOrigin | null = null;
+    let gitOrigin: ProjectOrigin | null = null;
     if (gitOriginParam) {
       try {
-        const parsed = JSON.parse(gitOriginParam) as GitOrigin;
-        // A project's origin is its repo root (empty rel_path); the task branch
-        // below still requires an asset position.
-        gitOrigin = isInstallableOrigin(parsed) ? parsed : null;
+        // A project's origin is its repo root (empty rel_path) or its hub-hosted
+        // copy; the task branch below still requires a git asset position.
+        gitOrigin = projectOriginOf({ git_origin: JSON.parse(gitOriginParam) });
       } catch {
         gitOrigin = null;
       }
@@ -141,7 +141,7 @@ export function IncomingDeepLink() {
       return;
     }
 
-    if (gitOrigin && taskId && isCompleteGitOrigin(gitOrigin)) {
+    if (gitOrigin && taskId && isGitOrigin(gitOrigin) && isCompleteGitOrigin(gitOrigin)) {
       setPendingTask({ taskId, taskTitle: title, senderName, gitOrigin });
       return;
     }

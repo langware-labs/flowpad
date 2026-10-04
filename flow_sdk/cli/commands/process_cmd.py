@@ -215,15 +215,21 @@ async def _run_start(
     ).save()
     safe_echo(f"running agentic process {ap.typeid}…", err=True)
     answer = None
+    said = False
     try:
         turn = Turn(session=str(ap.typeid), key=str(uuid.uuid4()), body=prompt)
         async for event in TurnEngine().run_stream(turn, process=ap):
             if event.kind == "text":
                 safe_echo(event.text)
+                said = True
             elif event.kind == "tool":
                 safe_echo(f"· {event.name}", err=True)
             elif event.kind == "done":
                 answer = event.answer
+                # A reply written after the stream saw the turn end (codex writes its last message
+                # as the session closes) is still the answer: the engine re-reads the transcript.
+                if not said and answer.text:
+                    safe_echo(answer.text)
     finally:
         with contextlib.suppress(Exception):
             await ap.exit()

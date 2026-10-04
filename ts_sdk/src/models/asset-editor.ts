@@ -44,6 +44,7 @@ export enum AssetEditor {
   VIDEO = 'video',
   AUDIO = 'audio',
   PDF = 'pdf', // native browser render of a .pdf via <iframe>/<embed>
+  ARCHIVE = 'archive', // a .zip, browsed as the folder it extracts to (a temp copy)
 }
 
 /**
@@ -134,6 +135,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.VIDEO]: [],
   [AssetEditor.AUDIO]: [],
   [AssetEditor.PDF]: [],
+  [AssetEditor.ARCHIVE]: [],
 };
 
 /** True for editors that render raw files and have no backing record type. */
@@ -168,6 +170,7 @@ export const PREVIEW_EDITORS: ReadonlySet<AssetEditor> = new Set([
   AssetEditor.VIDEO,
   AssetEditor.AUDIO,
   AssetEditor.PDF,
+  AssetEditor.ARCHIVE,
 ]);
 
 export function isPreviewEditor(editor: AssetEditor | null | undefined): boolean {
@@ -269,6 +272,7 @@ const STATIC_EXT_TO_EDITOR: Record<string, AssetEditor> = {
   m4a: AssetEditor.AUDIO,
   ogg: AssetEditor.AUDIO,
   pdf: AssetEditor.PDF,
+  zip: AssetEditor.ARCHIVE,
 };
 
 /**
