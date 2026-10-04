@@ -1642,6 +1642,19 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return ApiFailResponse(message=exc.message, status_code=status, data={"reason": exc.reason})
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
+    @action.all(action_name="navigator-route", methods=["post"])
+    async def _navigator_route_action(self) -> ApiResponse:
+        """``POST {utterance, page?, context?}`` -> ``NavigatorRoute``: open something now, or
+        hand the request to the assistant. Never fails: anything missing or unsure is
+        ``route: "agentic"``, and with no decision API on the hub that is every answer."""
+        from flow_sdk.core.navigator import route  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        context = body.get("context") if isinstance(body.get("context"), dict) else {}
+        answer = await route(str(body.get("utterance") or ""), page=str(body.get("page") or ""), context=context)
+        return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+
     @action.all(action_name="llm-endpoint", methods=["get", "post", "delete"])
     async def _llm_endpoint_action(self) -> ApiResponse:
         """GET status / POST bind / DELETE unbind of the hub ``LLMEndpoint`` this box's
