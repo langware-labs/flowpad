@@ -97,7 +97,9 @@ async def open_auto_tabs(process: "AgenticProcess", tabs: list[AutoOpenTab]) -> 
         project_id=process.project_id,
     )
     for tab in tabs[1:]:
-        await ensure_tab(tab.pointer, project_id=process.project_id, parent_tab_id=anchor.id)
+        # Named on create: a nameless row falls back to the view's generic label.
+        name = tab.path.name if tab.path is not None else None
+        await ensure_tab(tab.pointer, project_id=process.project_id, parent_tab_id=anchor.id, name=name)
     first = tabs[0]
     if first.path is not None:
         target = await resolve_display_target(path=str(first.path))
