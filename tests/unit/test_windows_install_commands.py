@@ -10,6 +10,9 @@ that kept going wrong on Windows:
 * **Nothing that ships may need administrator rights.** A package with a per-user installer takes it
   first (Python). Git has none — the full installer opens a Windows permission prompt even with
   `--scope user`, measured on a Windows VM — so it ships as the portable MinGit.
+* **"Already installed" with the tool missing is repaired, not reported.** winget answers 0x8A15002B
+  when its record says the package is installed — even when the files were deleted — and a plain
+  install does nothing. Only that answer re-runs with `--force`.
 * **Node's zip is checked before it is unpacked,** and a half-unpacked folder is not "installed".
 * **One line means no PowerShell comment:** a ``#`` would comment out the rest of the command.
 """
@@ -30,6 +33,7 @@ OPS_DIR = system_projects_root() / "flowpad_assistant" / "agentic-assets" / "com
 SOURCE_ERRORS = ("-1978335138", "-1978335210", "-1978335163", "-1978335157")
 NO_PER_USER_INSTALLER = "-1978335216"  # NO_APPLICABLE_INSTALLER
 CANCELLED_BY_USER = "-1978334964"  # INSTALL_CANCELLED_BY_USER
+ALREADY_INSTALLED = "-1978335189"  # UPDATE_NOT_APPLICABLE: "found an existing package", nothing newer
 
 
 def _op(name: str) -> dict:
@@ -55,6 +59,35 @@ def test_winget_retries_only_when_its_own_source_failed(name):
     # An unconditional `if ($LASTEXITCODE -ne 0) { winget ... }` is what turned "No" into a second prompt.
     assert "$LASTEXITCODE -ne 0" not in command
     assert CANCELLED_BY_USER not in command, "a refusal is an answer; nothing may retry it"
+
+
+@pytest.mark.parametrize("name", ("python-on-path", "vcredist-installed"))
+def test_an_installer_winget_calls_already_done_is_run_again_with_force(name):
+    """The record says installed, the files are gone (deleted by hand, quarantined): `winget install` exits
+    0x8A15002B and installs nothing, so the check still fails and the ladder goes to an agent that may not
+    exist. For an installer package, `--force` runs the installer again. Gated on that one answer, never added
+    to the first attempt."""
+    command = _win32(name)
+
+    assert f"if ($c -eq {ALREADY_INSTALLED}) {{ winget @base @src @scp --force; $c = $LASTEXITCODE }}" in command
+    assert command.count("--force") == 1
+    assert command.index("--force") > command.index(f"$c -eq {ALREADY_INSTALLED}")
+    assert "'--force'" not in command, "not part of the base arguments every attempt shares"
+
+
+def test_a_portable_git_winget_calls_already_done_is_uninstalled_and_installed_again():
+    """MinGit is a portable package: winget's record also holds its alias in WinGet\\Links. `--force` puts the
+    files back but NOT the alias (measured on a Windows VM: git.exe returns, Links stays empty, `git` is not on
+    PATH, the check still fails). Uninstalling first forgets the record, and the install then recreates both."""
+    command = _win32("git-on-path")
+
+    reinstall = (
+        f"if ($c -eq {ALREADY_INSTALLED}) {{ winget uninstall --id Git.MinGit -e --silent --disable-interactivity @src;"
+        " winget @base @src @scp; $c = $LASTEXITCODE }"
+    )
+    assert reinstall in command
+    assert "--force" not in command
+    assert command.count("uninstall") == 1
 
 
 @pytest.mark.parametrize("name", PER_USER_OPS)
@@ -118,3 +151,28 @@ def test_no_shipped_windows_command_asks_for_the_store_python_alias():
         for section in (spec["exe_data"], spec.get("completion_check") or {}):
             command = (section.get("commands") or {}).get("win32", "")
             assert "python3" not in command, f"{op.name}: its Windows command asks for the Store alias `python3`"
+
+
+def test_no_shipped_windows_command_has_a_double_quote():
+    """The runner starts `powershell -Command <text>` as an argument list; Windows quoting then strips the
+    `"` of a string literal, so `$name = "node-$v-win"` becomes a command to run. The Node command broke that way
+    on a Windows VM — exit 0 with nothing installed, or a Remove-Item argument error — while passing every test
+    that fed it to PowerShell as EncodedCommand. Single quotes and `+` survive, so that is all they use."""
+    for op in sorted(OPS_DIR.iterdir()):
+        spec = json.loads((op / "compute_op.json").read_text())
+        for where, section in (("call", spec["exe_data"]), ("check", spec.get("completion_check") or {})):
+            command = (section.get("commands") or {}).get("win32", "")
+            assert '"' not in command, f"{op.name} ({where}): a double quote in a Windows command"
+
+
+@pytest.mark.parametrize("name", ("node-on-path", "npm-on-path"))
+def test_node_deletes_its_zip_without_remove_item(name):
+    """Windows PowerShell 5.1's Remove-Item cannot delete a file by its 8.3 short path — and a short TEMP
+    (`C:\\Users\\ADMINI~1\\AppData\\Local\\Temp`, the default for a user name over 8 characters or with a
+    space) is what a backend started by the Task Scheduler or a service sees. "An object at the specified path
+    C:\\Users\\TEST11~1 does not exist" failed the install AFTER it had downloaded and unpacked Node, even with
+    -LiteralPath. [IO.File]::Delete takes the same path."""
+    command = _win32(name)
+
+    assert "Remove-Item $zip" not in command
+    assert command.count("[IO.File]::Delete($zip)") == 2, "the checksum-mismatch branch and the normal one"

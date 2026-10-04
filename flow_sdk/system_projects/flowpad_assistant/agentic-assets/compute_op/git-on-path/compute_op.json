@@ -9,7 +9,7 @@
     "commands": {
       "darwin": "brew install git",
       "linux": "apt-get update && apt-get install -y git",
-      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; $base = @('install','--id','Git.MinGit','-e','--silent','--accept-package-agreements','--accept-source-agreements','--disable-interactivity'); $src = @('--source','winget'); $scp = @(); $srcErr = @(-1978335138,-1978335210,-1978335163,-1978335157); winget @base @src @scp; $c = $LASTEXITCODE; if ($srcErr -contains $c) { $src = @(); winget @base @src @scp; $c = $LASTEXITCODE }; if ($null -eq $c) { exit 1 }; exit $c"
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; $base = @('install','--id','Git.MinGit','-e','--silent','--accept-package-agreements','--accept-source-agreements','--disable-interactivity'); $src = @('--source','winget'); $scp = @(); $srcErr = @(-1978335138,-1978335210,-1978335163,-1978335157); winget @base @src @scp; $c = $LASTEXITCODE; if ($srcErr -contains $c) { $src = @(); winget @base @src @scp; $c = $LASTEXITCODE }; if ($c -eq -1978335189) { winget uninstall --id Git.MinGit -e --silent --disable-interactivity @src; winget @base @src @scp; $c = $LASTEXITCODE }; if ($null -eq $c) { exit 1 }; exit $c"
     },
     "timeout_seconds": 600
   },
