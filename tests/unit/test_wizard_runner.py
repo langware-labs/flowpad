@@ -727,3 +727,42 @@ async def test_a_broken_on_step_watcher_does_not_break_the_run_it_watches(tmp_pa
     result = await _run_wizard(spec, tmp_path=tmp_path, resolve_op=_ops(_op("jq")), on_step=on_step)
 
     assert result.ok, result.detail
+
+
+# ── the shell stack ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_steps_share_the_runs_shell_unless_a_wizard_or_op_asks_for_its_own(tmp_path):
+    """The run's shell is the base of a stack: every nested wizard and op reuses it, unless it
+    declares ``isolated_shell`` -- then a shell of its own serves its whole subtree. Here the
+    isolated subtree's checks are plain ``true`` run by a real ``SharedShell``, so none of them
+    reach the run's recording shell."""
+    seen: list[tuple[str, dict]] = []
+    shared = _shell(lambda _c: 0, seen=seen)
+    plain = WizardSpec.model_validate({"name": "plain", "steps": [{"id": "b", "kind": "compute", "ref": "b"}]})
+    own = WizardSpec.model_validate(
+        {"name": "own", "isolated_shell": True, "steps": [{"id": "c", "kind": "compute", "ref": "c"}]}
+    )
+    outer = WizardSpec.model_validate(
+        {
+            "name": "outer",
+            "steps": [
+                {"id": "a", "kind": "compute", "ref": "a"},
+                {"id": "plain", "kind": "wizard", "ref": "plain"},
+                {"id": "own", "kind": "wizard", "ref": "own"},
+                {"id": "d", "kind": "compute", "ref": "d"},
+            ],
+        }
+    )
+    isolated = {"completion_check": {"commands": {"linux": "true"}}}
+    result = await _run_wizard(
+        outer,
+        tmp_path=tmp_path,
+        shell=shared,
+        resolve_op=_ops(_op("a"), _op("b"), _op("c", **isolated), _op("d", isolated_shell=True, **isolated)),
+        resolve_wizard=_wizards({"plain": plain, "own": own}),
+    )
+
+    assert result.ok
+    assert [command for command, _env in seen] == ["have a", "have b"]

@@ -158,8 +158,22 @@ class ControlShell:
 class ControlShells:
     """The machine's control shells: started once, warmed one at a time, reused."""
 
-    def __init__(self, executable: str, *, env: Mapping[str, str], cwd: str) -> None:
+    def __init__(
+        self,
+        executable: str,
+        *,
+        env: Mapping[str, str],
+        cwd: str,
+        hosts: int = HOSTS,
+        max_hosts: int = MAX_HOSTS,
+        lazy: bool = False,
+    ) -> None:
         self.executable = executable
+        #: How many hosts to keep warm, and how many at most.
+        self.hosts = hosts
+        self.max_hosts = max_hosts
+        #: Start a host only when one is asked for -- never a replacement for one discarded or dead.
+        self.lazy = lazy
         self.env = dict(env)
         self.cwd = cwd
         self._idle: asyncio.Queue[ControlShell] = asyncio.Queue()
@@ -205,7 +219,7 @@ class ControlShells:
         while True:
             await self._wanted.wait()
             self._wanted.clear()
-            while self._count < HOSTS or (self._idle.empty() and self._count < MAX_HOSTS):
+            while self._count < self.hosts or (self._idle.empty() and self._count < self.max_hosts):
                 shell = await self._start_one()
                 if shell is None:
                     break  # the next command asks again; no hot loop on a broken PowerShell
@@ -232,6 +246,10 @@ class ControlShells:
             self._idle.put_nowait(shell)
         else:
             self._count -= 1
+            self._want_replacement()
+
+    def _want_replacement(self) -> None:
+        if not self.lazy:
             self._wanted.set()
 
     def discard(self, shell: ControlShell) -> None:
@@ -239,14 +257,14 @@ class ControlShells:
         shell.kill()
         self._processes.discard(shell.process)
         self._count -= 1
-        self._wanted.set()
+        self._want_replacement()
 
     async def close(self) -> None:
         """End every control shell this pool started — idle, busy, or still starting."""
         if self._warmer is not None:
             self._warmer.cancel()
-        for process in list(self._processes):
-            ControlShell(process).kill()
+        # Off the loop: each kill is a blocking ``taskkill`` (a new process -- slow on a scanned box).
+        await asyncio.gather(*(asyncio.to_thread(ControlShell(p).kill) for p in list(self._processes)))
         for process in list(self._processes):
             await process.wait()
         self._processes.clear()
