@@ -1,12 +1,15 @@
-import { useState, type MouseEvent, type ReactNode } from 'react';
+import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react';
-import type { FlowMessage } from '@sdk';
+import type { AgenticProcess, FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { TaskItIcon, taskItHint } from './task-it';
 import { MessageChips } from './chips/MessageChips';
 import { MarkdownView } from '@src/components/markdown-view';
+import { useLinks } from '@src/components/links/LinkMenu';
+import { LinkifiedText } from '@src/components/links/LinkifiedText';
+import type { LinkHandlers } from '@src/lib/link-matches';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForMessage } from './avatar-color';
@@ -29,6 +32,8 @@ interface MessageBubbleProps {
   message: ConversationMessage;
   flowMessageId?: string;
   flowMessage?: FlowMessage | null;
+  /** The conversation's process: a link's right-click offers Vibe in it, as a terminal's does. */
+  run?: AgenticProcess | null;
   task?: ITask;
   senderName: string;
   /** When set, the sender's name and avatar open the sender — an agent's profile. */
@@ -159,7 +164,7 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
  * div) stops the agent-quote and plain-text branches from drifting apart, which
  * is exactly how newlines got dropped from one branch before.
  */
-function MessageBody({ content, isBot }: { content: string; isBot: boolean }) {
+function MessageBody({ content, isBot, links }: { content: string; isBot: boolean; links: LinkHandlers }) {
   const bodyClass = `whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
   const claudeQuote = parseClaudeQuote(content);
   if (claudeQuote) {
@@ -171,18 +176,46 @@ function MessageBody({ content, isBot }: { content: string; isBot: boolean }) {
       <div className={`text-sm ${isBot ? 'text-foreground/70' : 'text-foreground/90'}`}>
         <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>
         <div className="mt-1 break-words text-foreground/85">
-          <MarkdownView value={claudeQuote.quoted} compact />
+          <MarkdownView
+            value={claudeQuote.quoted}
+            compact
+            components={{
+              a: ({ href, children }) => (
+                <a
+                  href={href}
+                  className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
+                  onClick={(event) => {
+                    if (!href || event.button !== 0 || event.metaKey || event.ctrlKey) return;
+                    event.preventDefault();
+                    links.activate(event.nativeEvent, href);
+                  }}
+                  onContextMenu={(event) => {
+                    if (!href) return;
+                    event.preventDefault();
+                    links.openMenu(href, event.clientX, event.clientY);
+                  }}
+                >
+                  {children}
+                </a>
+              ),
+            }}
+          />
         </div>
       </div>
     );
   }
-  return <div className={bodyClass}>{content}</div>;
+  return (
+    <div className={bodyClass}>
+      <LinkifiedText text={content} handlers={links} />
+    </div>
+  );
 }
 
 export function MessageBubble({
   message,
   flowMessageId,
   flowMessage,
+  run,
   senderName,
   onSenderClick,
   onEditName,
@@ -206,6 +239,10 @@ export function MessageBubble({
   const [editValue, setEditValue] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const { localUser } = useLocalUser();
+  // Links in the body resolve against this message, exactly as a terminal's resolve against its shell.
+  const linkSource = useRef(flowMessage ?? null);
+  linkSource.current = flowMessage ?? null;
+  const links = useLinks(linkSource, run);
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
@@ -260,7 +297,7 @@ export function MessageBubble({
     // inputs) so name-edit / attachment actions / attachment downloads keep
     // their native behaviour without double-firing selection.
     const target = e.target as HTMLElement;
-    if (target.closest('button, a, input, textarea, [role="menu"]')) return;
+    if (target.closest('button, a, input, textarea, [role="menu"], [role="link"]')) return;
     onSelect();
   };
 
@@ -355,7 +392,8 @@ export function MessageBubble({
           />
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
-        {message.content && <MessageBody content={message.content} isBot={isBot} />}
+        {message.content && <MessageBody content={message.content} isBot={isBot} links={links.handlers} />}
+        {links.menu}
         {showPromptRow && (
           <AttachmentActionsRow
             actions={actions}

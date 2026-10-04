@@ -746,6 +746,7 @@ export function FlowMessageBubble({
         message={message}
         flowMessageId={messageId}
         flowMessage={fm}
+        run={run}
         task={task ?? undefined}
         senderName={displayName}
         onSenderClick={agentSender ? () => navigation.openDock(agentSender.dockPointer) : undefined}

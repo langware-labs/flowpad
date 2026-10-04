@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import { taskTitleFromText } from '@sdk/entities/task';
+import { MemoryRouter } from 'react-router';
 import { MessageBubble } from '@src/components/conversation/MessageBubble';
 
 /**
@@ -19,7 +20,7 @@ describe('Task it', () => {
 
   it('creates when the message has no task', () => {
     const onTaskIt = vi.fn();
-    render(<MessageBubble message={message} senderName="Ron" taskIt={{ onClick: onTaskIt }} />);
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: onTaskIt }} /></MemoryRouter>);
     const control = screen.getByTestId('message-task-it');
     expect(control.getAttribute('aria-label')).toBe('Task it');
     fireEvent.click(control);
@@ -27,14 +28,14 @@ describe('Task it', () => {
   });
 
   it('reads "Open task" once the message is a task', () => {
-    render(<MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, title: 'Render HTML' }} />);
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, title: 'Render HTML' }} /></MemoryRouter>);
     const chip = screen.getByTestId('message-task-it');
     expect(chip.getAttribute('aria-label')).toBe('Open task');
     expect(chip.textContent).toBe('Render HTML');
   });
 
   it('offers nothing without a handler', () => {
-    render(<MessageBubble message={message} senderName="Ron" />);
+    render(<MemoryRouter><MessageBubble message={message} senderName="Ron" /></MemoryRouter>);
     expect(screen.queryByTestId('message-task-it')).toBeNull();
   });
 
