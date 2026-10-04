@@ -157,7 +157,7 @@ export function usePickedFiles({ enabled, disabled }: { enabled: boolean; disabl
 }
 
 /** `text` added to a composer's `prev` value on a line of its own. */
-export function appendLine(prev: string, text: string): string {
+function appendLine(prev: string, text: string): string {
   if (!prev) return text;
   return prev.endsWith('\n') ? `${prev}${text}` : `${prev}\n${text}`;
 }
@@ -167,12 +167,13 @@ export function appendLine(prev: string, text: string): string {
  * images go through the annotator (a cancelled image is dropped) and the
  * survivors become picked-file chips. Text that came on the clipboard with the
  * image prefills the annotator's caption, and the caption the user confirms is
- * handed to `insertText` (the composer's message). Returns a paste handler that
- * claims the event only when the clipboard carries images; text pastes fall through.
+ * appended, on its own line, to the composer's text through `setText` (a state
+ * setter). Returns a paste handler that claims the event only when the
+ * clipboard carries images; text pastes fall through.
  */
 export function useAnnotatedImagePaste(
   addFiles: (files: File[]) => void,
-  { enabled, insertText }: { enabled: boolean; insertText?: (caption: string) => void },
+  { enabled, setText }: { enabled: boolean; setText?: (update: (prev: string) => string) => void },
 ): (e: React.ClipboardEvent) => boolean {
   return useCallback(
     (e: React.ClipboardEvent) => {
@@ -184,11 +185,11 @@ export function useAnnotatedImagePaste(
       void annotateImageFiles(images, { initialCaption }).then(({ files, caption }) => {
         if (!files.length) return;
         addFiles(files);
-        if (caption) insertText?.(caption);
+        if (caption) setText?.((prev) => appendLine(prev, caption));
       });
       return true;
     },
-    [addFiles, enabled, insertText],
+    [addFiles, enabled, setText],
   );
 }
 

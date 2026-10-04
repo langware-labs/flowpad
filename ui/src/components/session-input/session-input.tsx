@@ -2,7 +2,6 @@ import { t } from '@lingui/core/macro';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
 import {
-  appendLine,
   AttachFilesButton,
   PickedFileList,
   useAnnotatedImagePaste,
@@ -75,15 +74,16 @@ export function SessionInput({
     }
   };
 
-  // Image paste: annotated, then chips (uploaded on submit).
-  // The annotator is modal, so `message` can't change under it — appending to it is safe.
-  const appendCaption = useCallback(
-    (caption: string) => setMessage(appendLine(message, caption)),
+  // Image paste: annotated, then chips (uploaded on submit); the caption joins the message.
+  // The parent owns `message` through a plain-string onChange, so the update is applied here;
+  // the annotator is modal, so `message` can't change under it.
+  const applyToMessage = useCallback(
+    (update: (prev: string) => string) => setMessage(update(message)),
     [message, setMessage],
   );
   const handlePaste = useAnnotatedImagePaste(picker.addFiles, {
     enabled: allowAttachments && !disabled,
-    insertText: appendCaption,
+    setText: applyToMessage,
   });
 
   return (

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ConversationParticipant, normalizeEmail, Task, TaskKind, type TaskAssignOptions, TypeId } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
@@ -10,7 +10,6 @@ import { loadSessionTranscript } from '@src/hooks/share-sources';
 import {
   AttachFilesButton,
   PickedFileList,
-  appendLine,
   useAnnotatedImagePaste,
   usePickedFiles,
 } from '@src/components/conversation/FileAttachmentPicker';
@@ -75,8 +74,7 @@ export function VibeAssignTaskDialog({
   // with "+", or dropped. They are stored IN the task's folder, so the
   // assignment's .flowmsg carries them.
   const picker = usePickedFiles({ enabled: true, disabled: busy });
-  const appendNote = useCallback((caption: string) => setNotes((prev) => appendLine(prev, caption)), []);
-  const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy, insertText: appendNote });
+  const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy, setText: setNotes });
 
   const person = picked[0] ?? null;
   const canSubmit = !!person && !!title.trim() && !busy;

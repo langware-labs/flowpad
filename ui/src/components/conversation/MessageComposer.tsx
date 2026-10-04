@@ -8,8 +8,9 @@ import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
-import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
+import { MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
+import { mergePickedFiles } from './FileAttachmentPicker';
 import { EmojiPicker } from './EmojiPicker';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { buildSessionStartExtras, type SessionHost } from './session-start';
@@ -236,18 +237,10 @@ export function MessageComposer({
     // after annotation since the flattened PNG may be larger than the original.
     const { files: annotated, caption } = await annotateImageFiles(Array.from(incoming), { initialCaption });
     if (annotated.length === 0) return; // markup cancelled → do nothing
-    const tooBig: string[] = [];
-    setFiles((prev) => {
-      const next = [...prev];
-      for (const f of annotated) {
-        if (f.size > MAX_FILE_SIZE_BYTES) {
-          tooBig.push(f.name);
-          continue;
-        }
-        if (!next.some((x) => x.name === f.name && x.size === f.size)) next.push(f);
-      }
-      return next;
-    });
+    // Size is a property of each file alone, so what gets rejected is known up front; the
+    // functional update still merges into the LATEST selection (dedup against it).
+    const { rejectedNames: tooBig } = mergePickedFiles([], annotated);
+    setFiles((prev) => mergePickedFiles(prev, annotated).files);
     setError(
       tooBig.length === 0
         ? null
@@ -255,23 +248,14 @@ export function MessageComposer({
           ? t`"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
           : t`${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
     );
+    const nothingTyped = !(textareaRef.current?.value ?? text).trim();
+    if (caption && nothingTyped && !isDraftMode && !isDisabled && tooBig.length < annotated.length) {
+      setText(caption);
+      setSendQueued(true);
+      return;
+    }
     if (caption) {
-      const value = textareaRef.current?.value ?? text;
-      const attachable = annotated.some((f) => f.size <= MAX_FILE_SIZE_BYTES);
-      if (!value.trim() && !isDraftMode && !isDisabled && attachable) {
-        setText(caption);
-        setSendQueued(true);
-        return;
-      }
-      const start = caret?.start ?? value.length;
-      const end = caret?.end ?? start;
-      setText(`${value.slice(0, start)}${caption}${value.slice(end)}`);
-      requestAnimationFrame(() => {
-        const ta = textareaRef.current;
-        if (!ta) return;
-        ta.focus();
-        ta.selectionStart = ta.selectionEnd = start + caption.length;
-      });
+      insertAtCaret(caption, caret);
       return;
     }
     // Back to the text: the annotator dialog took focus and hands it to <body> on close, so
@@ -281,24 +265,22 @@ export function MessageComposer({
 
   const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
 
-  // Insert the picked emoji at the textarea caret (or append when unfocused),
-  // then restore the caret just after the inserted glyph so the user can keep
-  // typing without re-clicking the field.
-  const insertEmoji = (emoji: string) => {
+  // Put `insert` at the caret — or over `range`, a selection captured before a dialog took
+  // focus — then restore the caret just after it so typing continues without re-clicking.
+  // With no textarea mounted it appends.
+  const insertAtCaret = (insert: string, range?: { start: number; end: number }) => {
     const textarea = textareaRef.current;
     if (!textarea) {
-      setText((prev) => prev + emoji);
+      setText((prev) => prev + insert);
       return;
     }
-    const start = textarea.selectionStart ?? text.length;
-    const end = textarea.selectionEnd ?? start;
-    const next = `${text.slice(0, start)}${emoji}${text.slice(end)}`;
-    setText(next);
+    const value = textarea.value;
+    const start = range?.start ?? textarea.selectionStart ?? value.length;
+    const end = range?.end ?? textarea.selectionEnd ?? start;
+    setText(`${value.slice(0, start)}${insert}${value.slice(end)}`);
     requestAnimationFrame(() => {
       textarea.focus();
-      const caret = start + emoji.length;
-      textarea.selectionStart = caret;
-      textarea.selectionEnd = caret;
+      textarea.selectionStart = textarea.selectionEnd = start + insert.length;
     });
   };
 
@@ -531,7 +513,7 @@ export function MessageComposer({
       />
       <EmojiPicker
         side="top"
-        onPick={insertEmoji}
+        onPick={insertAtCaret}
         trigger={
           <button
             type="button"
