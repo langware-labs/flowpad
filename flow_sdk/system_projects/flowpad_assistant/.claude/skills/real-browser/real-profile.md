@@ -12,6 +12,11 @@ Use this only when the user asks for their own browser or their logged-in
 session — "use my Chrome", "I'm already logged in to X". For anything else the
 agent profile (`setup.md`) does the job without touching their accounts.
 
+Attaching works with Google Chrome 144 or newer: it finds the running browser
+through Chrome's own data folder. When the user's browser is Edge or another
+Chromium browser, say so and offer the agent profile instead; they can sign in
+there once and the login persists for this instance.
+
 ## What attaching grants — say it before you start
 
 Attaching connects to the user's **whole running Chrome**, not one tab: every
@@ -22,26 +27,28 @@ in one sentence and suggest closing the windows of profiles you don't need.
 ## Consent flow
 
 ```bash
-S=<this skill's folder>/scripts/browser.sh
-$S start --real
+browser start --real
 ```
+
+0. **`NO_CHROME` (exit 7)** — Chrome is not installed for this user. Say so and
+   offer the agent profile (`setup.md`).
 
 1. **`NEEDS_USER` (exit 4)** — remote debugging is off in their Chrome. Only the
    user can turn it on: Chrome ignores `chrome://` addresses sent from outside
    the browser, so opening it for them does not work. The script put
-   `chrome://inspect/#remote-debugging` on the clipboard (macOS). Ask them to:
+   `chrome://inspect/#remote-debugging` on the clipboard. Ask them to:
 
    ```
    1. Switch to your Chrome window.
-   2. Click the address bar, paste (Cmd+V), press Enter.
+   2. Click the address bar, paste (Cmd+V on a Mac, Ctrl+V elsewhere), press Enter.
    3. Turn on "Remote debugging", then tell me.
    ```
 
-   Wait for their reply, then run `$S start --real` again.
+   Wait for their reply, then run `browser start --real` again.
 
 2. **`session=… attached`** — the first tool call makes Chrome show an
    **Allow** dialog. Tell the user to click Allow, then run
-   `$S run list_pages`. Chrome asks again for every new session.
+   `browser run list_pages`. Chrome asks again for every new session.
 
 ## While attached
 
@@ -50,4 +57,4 @@ $S start --real
 - Before any action that sends something outward — submitting a form, posting,
   buying, sending a message — show the user what you are about to submit and
   wait for their go-ahead. It is their identity on the other end.
-- When done, run `$S stop`. It ends the session and leaves their Chrome open.
+- When done, run `browser stop`. It ends the session and leaves their Chrome open.
