@@ -799,6 +799,42 @@ async def test_a_family_model_is_not_swapped_for_a_models_allow_default(env) -> 
     assert auth is not None and auth.model_slug == "z-ai/glm-4.7"
 
 
+@pytest.mark.parametrize(
+    ("tier", "expected"),
+    [
+        # The caller's model -- a name or a literal slug -- is kept, so the endpoint can refuse it.
+        ("haiku", "haiku"),
+        ("anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
+        # A size, or no model at all, is the tier map's code default: still re-picked.
+        ("sm", "z-ai/glm-5.3"),
+        (None, "z-ai/glm-5.3"),
+    ],
+)
+async def test_a_named_model_is_not_swapped_for_a_models_allow_default(env, tier, expected) -> None:
+    """A GLM-only allowance asked for haiku must not quietly run GLM: the turn would answer, bill
+    the allowance, and the caller would never learn their model was refused."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMFilters
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
+
+    set_api_key("fp-hub-key")
+    endpoint = LLMEndpoint.projection("hub", "glm-ep", name="GLM 5.3 only", provider="openrouter")
+    endpoint.filters = LLMFilters(models_allow=["z-ai/glm-5.3"])
+    source = LLMSource(
+        endpoint_typeid=str(endpoint.typeid),
+        name=endpoint.name,
+        rank=0,
+        eligible=True,
+        auto=True,
+        authority=LLMSourceAuthority.CACHED,
+    )
+
+    auth = await binding_for_candidate("claude_code", Candidate(endpoint, source), tier=tier)
+    assert auth is not None and auth.model_slug == expected
+
+
 async def test_a_family_model_with_a_bad_size_fails_the_spawn_with_the_sizes(env, monkeypatch) -> None:
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
