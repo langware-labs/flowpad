@@ -217,8 +217,8 @@ def _assets_stay_in_the_sandbox(tmp_path, monkeypatch):
     sandbox = Path(tmp_path) / "scope-roots"
     base = str(Path(tempfile.gettempdir()).resolve())
 
-    def root_for_scope(scope, *, project_mount=None):
-        root = real(scope, project_mount=project_mount)
+    def root_for_scope(scope, *, project_mount=None, asset_class=None):
+        root = real(scope, project_mount=project_mount, asset_class=asset_class)
         if root is None:
             return None
         resolved = Path(root).resolve()
@@ -247,7 +247,7 @@ def fresh_user_scope(tmp_path, monkeypatch):
     real = placement.root_for_scope
     home = tmp_path / "home"
 
-    def root_for_scope(scope, *, project_mount=None):
+    def root_for_scope(scope, *, project_mount=None, asset_class=None):
         return home if scope == Scope.USER else real(scope, project_mount=project_mount)
 
     monkeypatch.setattr(placement, "root_for_scope", root_for_scope)

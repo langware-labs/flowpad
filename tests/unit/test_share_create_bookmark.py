@@ -90,7 +90,7 @@ async def test_flag_on_mints_favorite_at_install(tmp_path, ids, monkeypatch):
     assert await _favorite_for("skill", ids.skill) is None
 
     user_root = tmp_path / "home"
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
     res = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
     assert await Skill.get_one({"id": ids.skill}) is not None
@@ -114,7 +114,7 @@ async def test_flag_off_mints_no_favorite(tmp_path, ids, monkeypatch):
     ma = await _stage(tmp_path, ids, create_bookmark=False)
     assert ma.create_bookmark is False
     user_root = tmp_path / "home"
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
     res = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
     assert await Skill.get_one({"id": ids.skill}) is not None
