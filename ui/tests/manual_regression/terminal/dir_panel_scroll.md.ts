@@ -21,6 +21,9 @@
  * Assumes the backend + frontend are already running (see playwright.config.ts).
  */
 import { test, expect, type Page } from '@playwright/test';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { apiContext } from '../_shared/api';
 import { RIBBON_TABS, dismissSetupModal, activePanel, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
 
 let cachedAgenticUrl: string | null = null;
@@ -69,6 +72,40 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
   cachedAgenticUrl = page.url().split('?')[0];
   return cachedAgenticUrl;
 }
+
+// The process opens in the instance's project folder, and a fresh project root
+// holds two entries — too few to overflow even a short viewport. Seed rows the
+// listing must scroll through (the fixture IS the overflow), and take them away
+// after. The folder is asked of the backend: a named instance's workspace is
+// `~/Flowpad workspaces/<name>/`, never a hardcoded path.
+const SEED_DIR = 'qa-dir-panel-scroll';
+const SEED_COUNT = 40;
+let seededDirs: string[] = [];
+
+async function projectRoot(): Promise<string> {
+  const api = await apiContext();
+  const rows = ((await (await api.get('/api/v1/graph/project')).json()).data ?? []) as { id: string; name: string }[];
+  const id = rows.find((r) => r.name === 'my_first_project')?.id;
+  const dir = id
+    ? ((await (await api.get(`/api/v1/graph/project/${id}`)).json()).data?.fs_storage_mount_path as string | undefined)
+    : undefined;
+  await api.dispose();
+  if (!dir) throw new Error("could not resolve this instance's my_first_project folder");
+  return dir;
+}
+
+test.beforeAll(async () => {
+  const root = await projectRoot();
+  seededDirs = Array.from({ length: SEED_COUNT }, (_, i) => path.join(root, `${SEED_DIR}-${String(i).padStart(2, '0')}`));
+  for (const d of seededDirs) {
+    mkdirSync(d, { recursive: true });
+    writeFileSync(path.join(d, 'README.md'), '# seeded by dir_panel_scroll\n');
+  }
+});
+
+test.afterAll(() => {
+  for (const d of seededDirs) rmSync(d, { recursive: true, force: true });
+});
 
 test.describe('Dir side window scrolling', () => {
   test.beforeEach(async ({ page }) => {

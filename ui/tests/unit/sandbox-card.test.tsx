@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const h = vi.hoisted(() => ({
   openSandbox: vi.fn(),
+  openNewShell: vi.fn(() => Promise.resolve(null)),
   sandboxes: [] as Array<Record<string, unknown>>,
   sandboxesEnabled: true,
 }));
@@ -31,7 +32,7 @@ vi.mock('@sdk', async (importOriginal) => {
 vi.mock('@src/notifications', () => ({ notify: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({
-    navigation: { openPage: vi.fn(), openDock: vi.fn() },
+    navigation: { openPage: vi.fn(), openDock: vi.fn(), openNewShell: h.openNewShell },
     currentDock: { page: 'hub' },
   }),
   useCurrentDock: () => ({ page: 'hub' }),
@@ -45,7 +46,7 @@ vi.mock('@src/hooks/useContext', () => ({ useContext: () => ({ project: null }) 
 vi.mock('@src/hooks/use-projects', () => ({
   useProjects: () => ({ projects: [], isLoading: false, refetch: vi.fn() }),
 }));
-vi.mock('@src/hooks/use-sandboxes', () => ({
+vi.mock('@src/hooks/use-sandboxes', async (importOriginal) => ({
   useSandboxes: () => ({
     sandboxes: h.sandboxes,
     isLoading: false,
@@ -69,6 +70,9 @@ vi.mock('@src/hooks/use-sandboxes', () => ({
   // question, and a mock that always answered "launched" would let the
   // unlaunched card rot untested.
   isLaunched: (node: { node_provider_id?: string }) => !!node.node_provider_id,
+  // Real too: the hub sends `node_provider`, the TS type says `node_provider_type`,
+  // and only the real reader bridges the two.
+  isUserMachine: (await importOriginal<typeof import('@src/hooks/use-sandboxes')>()).isUserMachine,
   nextSandboxName: () => 'Sandbox 2',
 }));
 vi.mock('@src/pages/hub-home/NewSandboxDialog', () => ({ NewSandboxDialog: () => null }));
@@ -132,6 +136,40 @@ describe('the Open button', () => {
 
     await userEvent.click(open);
     expect(h.openSandbox).not.toHaveBeenCalled();
+  });
+
+  it('stays usable on a machine connected with flow connect, even on a hub that cannot provision', async () => {
+    // `sandboxes_enabled` is about provisioning CLOUD sandboxes; a connected machine
+    // needs no provider. This is the hub's own wire shape for one (`node_provider`).
+    (dataContext as unknown as { bootstrapInfo: unknown }).bootstrapInfo = { sandboxes_enabled: false };
+    h.sandboxes[0] = { id: 'node-m', name: '@FLOWPAD-VM', node_provider: 'user_machine', node_provider_id: 'node-m' };
+    renderHome();
+
+    const open = await screen.findByTestId('sandbox-open');
+    expect(open.hasAttribute('disabled')).toBe(false);
+
+    await userEvent.click(open);
+    expect(h.openSandbox).toHaveBeenCalledTimes(1);
+    expect(h.openSandbox.mock.calls[0][0]).toMatchObject({ id: 'node-m' });
+  });
+});
+
+describe('the Terminal button', () => {
+  it('opens a new shell on that connected machine', async () => {
+    h.sandboxes[0] = { id: 'node-m', name: '@FLOWPAD-VM', node_provider: 'user_machine', node_provider_id: 'node-m' };
+    renderHome();
+
+    await userEvent.click(await screen.findByTestId('machine-terminal'));
+
+    expect(h.openNewShell).toHaveBeenCalledTimes(1);
+    expect(h.openNewShell.mock.calls[0][0]).toMatchObject({ computeNode: { id: 'node-m' } });
+  });
+
+  it('is not offered on a cloud sandbox', async () => {
+    renderHome();
+
+    await screen.findByTestId('sandbox-open');
+    expect(screen.queryByTestId('machine-terminal')).toBeNull();
   });
 });
 

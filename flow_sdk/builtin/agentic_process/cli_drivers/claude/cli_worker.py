@@ -81,7 +81,7 @@ class ClaudeCLIWorker(AgenticWorker):
     def build_env(context: AgenticContext) -> dict[str, str]:
         """Build a sanitized environment dict for the subprocess.
 
-        Starts from ``os.environ``, strips ``CLAUDECODE*`` vars, sets
+        Starts from ``os.environ``, strips the parent Claude Code session's markers, sets
         ``CLAUDE_PROJECT_DIR``, overlays ``context.env_vars``, and pins
         ``FLOW_INSTANCE`` to this backend's own instance.
 
@@ -89,7 +89,9 @@ class ClaudeCLIWorker(AgenticWorker):
         """
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+        from flow_sdk.claude_env import without_inherited_claude_session  # noqa: PLC0415
+
+        env = without_inherited_claude_session(os.environ)
         env.update(context.env_vars)
         if context.workdir:
             env["CLAUDE_PROJECT_DIR"] = context.workdir

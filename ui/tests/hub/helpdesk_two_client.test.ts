@@ -24,7 +24,7 @@
  * instance's email in `HELPDESK_STAFF_EMAILS` (granted `editor` on the
  * help desk project at seed); missing staff authorization is a real failure.
  */
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { getAliceCreds, getBobCreds, hubAvailable, hubDefaultDeskId, HELPDESK_DISPLAY_NAME, hubLogin, HUB_URL } from './_hub';
 import { pollUntil } from './_matrix';
 import {
@@ -72,7 +72,7 @@ beforeAll(async () => {
   // whole suite cleanly rather than hard-fail every setup. (The security
   // contract these tests assert requires a real, working help desk project.)
   try {
-    const probe = await guest.sdk.startHelpdeskTicket(`helpdesk-availability-probe ${Date.now()}`);
+    const probe = await openTicket(`helpdesk-availability-probe ${Date.now()}`);
     if (!probe?.conversation_id) {
       skipReason = 'help desk project advertised but a guest could not open a ticket';
     }
@@ -87,10 +87,35 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
+/** Every ticket this file opens on the shared canonical desk. They are closed in
+ *  `afterAll`: an open ticket stays in the desk's queue for good, and every later
+ *  helpdesk source's first pass backfills that whole queue — 263 leftover probes
+ *  pushed helpdesk_ten_turns' live ticket past its window. The opener (guest) may
+ *  close its own ticket. */
+const openedTickets: string[] = [];
+
+async function openTicket(text: string): Promise<{ conversation_id: string }> {
+  const started = await guest.sdk.startHelpdeskTicket(text);
+  if (started?.conversation_id) openedTickets.push(started.conversation_id);
+  return started;
+}
+
+afterAll(async () => {
+  if (!openedTickets.length) return;
+  const { token } = await hubLogin(guest.email, guestPassword);
+  for (const id of openedTickets) {
+    await fetch(`${HUB_URL}/api/v1/graph/conversation/${id}/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: '{}',
+    });
+  }
+});
+
 describe('help desk — authorization', () => {
   it('a ticket guest cannot enumerate the queue or resolve members (exposure closed)', async () => {
     const ts = Date.now();
-    const started = await guest.sdk.startHelpdeskTicket(`negative-probe ${ts}`);
+    const started = await openTicket(`negative-probe ${ts}`);
     const convId = started.conversation_id;
     expect(convId).toBeTruthy();
 
@@ -145,7 +170,7 @@ describe('help desk — authorization', () => {
     const ticketText = `my printer is broken ${ts}`;
 
     // 1. Guest opens a support ticket — routes through the hub help desk project.
-    const started = await guest.sdk.startHelpdeskTicket(ticketText);
+    const started = await openTicket(ticketText);
     const convId = started.conversation_id;
     expect(convId).toBeTruthy();
 

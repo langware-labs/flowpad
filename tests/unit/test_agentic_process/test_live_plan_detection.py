@@ -131,7 +131,37 @@ def claude_home(tmp_path: Path, monkeypatch) -> Path:
     reset_instance_settings()
 
 
-async def _setup(claude_home: Path, *, tool_use_carries_path: bool) -> tuple[AgenticProcess, Path]:
+def _write_plan_line(plan_file_path: str) -> str:
+    """The plan-mode turn writing its plan file — Claude's ``Write`` tool_use."""
+    return json.dumps({
+        "parentUuid": "00000000-0000-4000-8000-0000000000ca",
+        "isSidechain": False,
+        "type": "assistant",
+        "message": {
+            "model": "claude-sonnet-5",
+            "id": "msg_test_write",
+            "type": "message",
+            "role": "assistant",
+            "content": [{
+                "type": "tool_use",
+                "id": "toolu_test_write",
+                "name": "Write",
+                "input": {"file_path": plan_file_path, "content": "# CSV -> JSON CLI Tool\n"},
+            }],
+            "stop_reason": "tool_use",
+        },
+        "uuid": "00000000-0000-4000-8000-0000000003ea",
+        "timestamp": "2026-08-11T08:22:30.000Z",
+        "userType": "external",
+        "cwd": "/repo",
+        "sessionId": _SESSION_ID,
+        "version": "2.1.288",
+    })
+
+
+async def _setup(
+    claude_home: Path, *, tool_use_carries_path: bool, exit_plan_written: bool = True,
+) -> tuple[AgenticProcess, Path]:
     """Real plan .md + real transcript on disk + real DB rows."""
     settings = get_instance_settings()
     assert settings.claude_projects_dir == claude_home / "projects", (
@@ -150,7 +180,8 @@ async def _setup(claude_home: Path, *, tool_use_carries_path: bool) -> tuple[Age
         "\n".join([
             _user_line(),
             _plan_mode_attachment_line(str(plan_md)),
-            _exit_plan_line(str(plan_md) if tool_use_carries_path else None),
+            _write_plan_line(str(plan_md)),
+            *([_exit_plan_line(str(plan_md) if tool_use_carries_path else None)] if exit_plan_written else []),
         ]) + "\n",
         encoding="utf-8",
     )
@@ -231,3 +262,20 @@ async def test_plan_path_from_attachments_reads_the_plan_mode_attachment(
 
     assert AgenticProcess.plan_path_from_attachments(ap._load_transcript()) == str(plan_md)
     assert AgenticProcess.plan_path_from_attachments(None) == ""
+
+
+@pytest.mark.asyncio
+async def test_live_push_sets_plan_path_when_the_plan_awaits_approval(
+    claude_home: Path, initialize_test_db,
+) -> None:
+    """Claude Code 2.1.x defers ``ExitPlanMode`` and persists its tool_use only once the
+    person answers the approval prompt. While the plan waits, the transcript holds the
+    ``plan_mode`` attachment and the Write of that file — that Write is the plan."""
+    ap, plan_md = await _setup(claude_home, tool_use_carries_path=False, exit_plan_written=False)
+    assert ap.plan_path is None, "precondition: no plan detected yet"
+
+    await ap._process_transcript_entries(_entries(ap))
+
+    assert ap.plan_path == str(plan_md), (
+        "the Write of the announced plan file must set plan_path before ExitPlanMode lands"
+    )

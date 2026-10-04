@@ -912,7 +912,6 @@ msgid "{replyCount, plural, one {# reply} other {# replies}}"
 msgstr "{replyCount, plural, one {# reply} other {# replies}}"
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "{selectedCount} selected"
 msgstr "{selectedCount} selected"
 
@@ -1022,6 +1021,10 @@ msgstr "+ Enter path..."
 
 #~ msgid "+ Override"
 #~ msgstr "+ Override"
+
+#: src/components/terminal/HubTerminal.tsx
+msgid "+ Terminal"
+msgstr "+ Terminal"
 
 #. placeholder {0}: sessions.length - 5
 #: src/pages/live-status/LiveStatus.tsx
@@ -2415,6 +2418,10 @@ msgstr "Anthropic API key for direct API access"
 msgid "Any detail that helps (optional)"
 msgstr "Any detail that helps (optional)"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Any time"
+msgstr "Any time"
+
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "anyone"
 msgstr "anyone"
@@ -3636,6 +3643,10 @@ msgstr "Cannot improve asset"
 msgid "Cannot open"
 msgstr "Cannot open"
 
+#: src/components/archive-preview/ArchivePreview.tsx
+msgid "Cannot open this archive: {error}"
+msgstr "Cannot open this archive: {error}"
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
 msgstr "Cannot run rebuild"
@@ -4119,6 +4130,8 @@ msgid "Clear filter"
 msgstr "Clear filter"
 
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear filters"
 msgstr "Clear filters"
 
@@ -5042,6 +5055,10 @@ msgstr "Copied {0} link{1}"
 msgid "Copied to Clipboard"
 msgstr "Copied to Clipboard"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copied to project"
+msgstr "Copied to project"
+
 #: src/pages/entry/entry-shell.tsx
 msgid "Copied!"
 msgstr "Copied!"
@@ -5144,6 +5161,10 @@ msgstr "Copy error text"
 msgid "Copy event JSON"
 msgstr "Copy event JSON"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copy failed"
+msgstr "Copy failed"
+
 #: src/components/organization/budgets/EditableTitle.tsx
 msgid "Copy id"
 msgstr "Copy id"
@@ -5220,6 +5241,10 @@ msgstr "Copy this file's path to the clipboard"
 #: src/components/version-popover/version-popover.tsx
 msgid "Copy to clipboard"
 msgstr "Copy to clipboard"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copy to project"
+msgstr "Copy to project"
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
@@ -8559,6 +8584,10 @@ msgstr "Extra Known Marketplaces"
 msgid "extra rows fetched (limit + overfetch)"
 msgstr "extra rows fetched (limit + overfetch)"
 
+#: src/components/archive-preview/ArchivePreview.tsx
+msgid "Extracting…"
+msgstr "Extracting…"
+
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
@@ -9049,6 +9078,10 @@ msgstr "Files on disk not yet in the DB"
 msgid "Filter branches…"
 msgstr "Filter branches…"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by date"
+msgstr "Filter by date"
+
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Filter by entity type"
 msgstr "Filter by entity type"
@@ -9061,9 +9094,17 @@ msgstr "Filter by label, pattern, or matched line…"
 msgid "Filter by name or last prompt…"
 msgstr "Filter by name or last prompt…"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by sender"
+msgstr "Filter by sender"
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
 msgstr "Filter by session"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by subject"
+msgstr "Filter by subject"
 
 #: src/components/events/EventFeed.tsx
 msgid "Filter by tag, subject or rule…"
@@ -9516,6 +9557,7 @@ msgstr "from"
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "From"
 msgstr "From"
 
@@ -10399,6 +10441,7 @@ msgstr "https://github.com/owner/repo"
 msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
@@ -11313,6 +11356,14 @@ msgstr "last {0}"
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Last {0}"
 msgstr "Last {0}"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Last 30 days"
+msgstr "Last 30 days"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Last 7 days"
+msgstr "Last 7 days"
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last attempt"
@@ -14862,6 +14913,10 @@ msgstr "Open a project to see its assets."
 msgid "Open a session on this machine"
 msgstr "Open a session on this machine"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open a terminal on this machine"
+msgstr "Open a terminal on this machine"
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
 msgstr "Open address book"
@@ -16216,6 +16271,10 @@ msgstr "Preview {0}"
 msgid "Preview {label}"
 msgstr "Preview {label}"
 
+#: src/components/conversation/AttachmentChip.tsx
+msgid "Preview contents"
+msgstr "Preview contents"
+
 #: src/components/wiki-tip/WikiModalRoot.tsx
 msgid "Preview of the wiki page, shown without leaving the current view."
 msgstr "Preview of the wiki page, shown without leaving the current view."
@@ -16990,6 +17049,14 @@ msgstr "Received attachment — review before installing."
 msgid "Received attachments — review before installing."
 msgstr "Received attachments — review before installing."
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received file — review before copying."
+msgstr "Received file — review before copying."
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received files — review before copying."
+msgstr "Received files — review before copying."
+
 #. placeholder {0}: currentDock?.pointer || 'none'
 #: src/components/app-host/AppHost.tsx
 #: src/components/show-view/ShowView.tsx
@@ -17326,6 +17393,10 @@ msgstr "Remove context folder"
 msgid "Remove directory"
 msgstr "Remove directory"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Remove failed"
+msgstr "Remove failed"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Remove favorite"
@@ -17349,6 +17420,7 @@ msgid "Remove from folder"
 msgstr "Remove from folder"
 
 #: src/components/connections-manager.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Remove from project"
 msgstr "Remove from project"
 
@@ -17439,6 +17511,10 @@ msgstr "Removed for all participants on the cloud"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for you; other members keep it"
 msgstr "Removed for you; other members keep it"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Removed from project"
+msgstr "Removed from project"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Removed from the manifest."
@@ -20899,6 +20975,7 @@ msgid "subgraph projection"
 msgstr "subgraph projection"
 
 #: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Subject"
 msgstr "Subject"
 
@@ -21244,6 +21321,7 @@ msgstr "Template:"
 
 #: src/components/project-home/ProjectHome.tsx
 #: src/i18n/pref-labels.ts
+#: src/pages/hub-home/HubHome.tsx
 msgid "Terminal"
 msgstr "Terminal"
 
@@ -22149,6 +22227,10 @@ msgstr "this project"
 msgid "This project"
 msgstr "This project"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "This project can only be opened from its share."
+msgstr "This project can only be opened from its share."
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project could not be shared."
 msgstr "This project could not be shared."
@@ -22542,6 +22624,7 @@ msgstr "today"
 #: src/components/cost-dashboard/constants.ts
 #: src/components/cron-view/CronForm.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/token-plan/MembersTable.tsx
 msgid "Today"
 msgstr "Today"

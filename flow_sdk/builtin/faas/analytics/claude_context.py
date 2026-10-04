@@ -136,7 +136,9 @@ def get_claude_context_sync(session_id: str | None = None, session_title: str | 
     """
     # Strip CLAUDECODE so the nested-session guard doesn't block us.
     # Also ensure PATH includes common install dirs so the binary is found.
-    env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+    from flow_sdk.claude_env import without_inherited_claude_session  # noqa: PLC0415
+
+    env = without_inherited_claude_session(os.environ)
     home = os.path.expanduser("~")
     extra_paths = [
         os.path.join(home, ".local", "bin"),

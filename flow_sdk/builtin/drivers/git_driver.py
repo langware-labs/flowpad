@@ -92,10 +92,16 @@ class GitOriginDriver:
 
 
 async def _project_id_for_checkout(root: Path, preferred_root: Path | None, preferred_project_id: str | None) -> str | None:
-    """The local project a checkout maps to — the caller's own when the root is
-    the one it named, else the row at that path (or its derived id)."""
+    """The local project a checkout maps to — the caller's own when it named the
+    project (and either let the driver place it, or named this very root), else
+    the row at that path (or its derived id).
+
+    The caller's id must win BEFORE ``recover_by_path``: that recovery MINTS a row
+    for an unknown folder, so a shared project materializing its fresh clone would
+    otherwise get a second row at its own path — and lose the id it was shared
+    with, which an agent's ``auto_open`` names literally."""
     try:
-        if preferred_root is not None and preferred_project_id and root.resolve() == preferred_root.resolve():
+        if preferred_project_id and (preferred_root is None or root.resolve() == preferred_root.resolve()):
             return preferred_project_id
     except OSError:
         pass

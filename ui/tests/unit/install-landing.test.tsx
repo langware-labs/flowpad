@@ -56,6 +56,7 @@ vi.mock('@src/hooks/useAuth', () => ({
 
 vi.mock('@src/hooks/use-sandboxes', () => ({
   useSandboxes: () => ({ launch: mocks.launch, steps: [], launchUrl: null }),
+  isUserMachine: () => false,
 }));
 
 vi.mock('@src/components/git/RepoPicker', async () => {

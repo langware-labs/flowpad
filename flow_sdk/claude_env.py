@@ -42,6 +42,26 @@ TEMP_DIR = Path(tempfile.gettempdir()) / "claude_plugin_test"
 # Platform detection
 # ---------------------------------------------------------------------------
 
+# A process started from inside a Claude Code session inherits its session/IDE markers:
+# the legacy bare ``CLAUDECODE`` and the 2.x ``CLAUDE_CODE_*`` family
+# (``CLAUDE_CODE_CHILD_SESSION``, ``CLAUDE_CODE_SESSION_ID`` …) plus
+# ``ENABLE_IDE_INTEGRATION``. A worker ``claude`` that sees them runs as a CHILD of
+# that session — ``CLAUDE_CODE_CHILD_SESSION`` turns its transcript saving OFF, so a
+# later ``--resume`` finds "No conversation found". Every spawn of a worker CLI
+# strips the whole family through this one function.
+CLAUDE_INHERITED_ENV_PREFIXES = ("CLAUDECODE", "CLAUDE_CODE_")
+CLAUDE_INHERITED_ENV_VARS = ("ENABLE_IDE_INTEGRATION",)
+
+
+def without_inherited_claude_session(env: "dict[str, str] | os._Environ[str]") -> dict[str, str]:
+    """``env`` minus the parent Claude Code session's markers."""
+    return {
+        k: v
+        for k, v in env.items()
+        if not k.startswith(CLAUDE_INHERITED_ENV_PREFIXES) and k not in CLAUDE_INHERITED_ENV_VARS
+    }
+
+
 def _current_platform() -> str:
     """Return ``'darwin'``, ``'win32'``, or ``'linux'``."""
     if sys.platform.startswith("darwin"):
@@ -457,7 +477,7 @@ class ClaudeProjectEnvManager:
         sets UTF-8 encoding, and overlays any variables set via
         ``env_set()``.
         """
-        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+        env = without_inherited_claude_session(os.environ)
         env["PYTHONIOENCODING"] = "utf-8"
         env.update(self._env_vars)
         return env
