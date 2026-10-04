@@ -100,3 +100,40 @@ describe('terminal links', () => {
     expect(dockForDisplayTarget({ kind: 'vfs', path: '/tmp/a.md', line: 12 })?.options).toMatchObject({ initialLine: '12' });
   });
 });
+
+/**
+ * On Windows, Claude Code writes RTL lines pre-reversed into VISUAL order, so a sentence's
+ * trailing `.`/`:` lands in front of the path and a Hebrew prefix (`ב-`) is glued to its end.
+ * These rows are the buffer cells of a real Claude Code 2.1.289 reply, captured through a
+ * Windows PTY and replayed into xterm.
+ */
+describe('terminal links in pre-reversed RTL rows', () => {
+  async function linksOnRow(row: string): Promise<string[]> {
+    const terminal = new HeadlessTerminal({ cols: 200, rows: 3, allowProposedApi: true });
+    try {
+      await new Promise<void>((resolve) => terminal.write(row, resolve));
+      let links: ILink[] | undefined;
+      new TerminalLinkProvider(terminal as unknown as Terminal, () => {}).provideLinks(1, (value) => { links = value; });
+      return (links ?? []).map((link) => link.text);
+    } finally {
+      terminal.dispose();
+    }
+  }
+
+  it.each([
+    ['plain path, sentence period moved in front',
+      '● 1. .Notepad-ב םג ותוא חותפל רשפא .lectures/02-web-basics/docs/README.md :׳א ץבוק תא םיחתופ הז ירחא :שרושהמ אלמ ביתנ',
+      'lectures/02-web-basics/docs/README.md'],
+    ['backticked path (not drawn), sentence period moved in front',
+      '  2. .git-ה תודוקפ לכ תא ללוכ אוה .lectures/05-git-basics/docs/git-basics.md :ןאכ אצמנ ׳ב ץבוק :backticks ךותב אלמ ביתנ',
+      'lectures/05-git-basics/docs/git-basics.md'],
+    ['Hebrew prefix glued by a hyphen',
+      '  3. .ותוא ךל חתפא .docs/git-basics.md-ב אצמנ ץבוקה :)ךלש םוליצב ומכ( האצרהה תייקית ילב /docs-ב ליחתמש ביתנ',
+      'docs/git-basics.md'],
+    ['colon moved in front',
+      '  4. .2 האצרה לש ץבוקה הז :docs/README.md :הרושה תליחתב ביתנ',
+      'docs/README.md'],
+  ])('case: %s', async (_name, row, path) => {
+    expect(await linksOnRow(row)).toEqual(expect.arrayContaining([path]));
+  });
+});

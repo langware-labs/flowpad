@@ -1992,6 +1992,7 @@ msgstr "محاذاة البداية (يسار في الاتجاه من اليس�
 msgid "all"
 msgstr "الكل"
 
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
@@ -2992,6 +2993,7 @@ msgid "auto-login off"
 msgstr "تسجيل الدخول التلقائي معطّل"
 
 #: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/MessageComposer.tsx
 msgid "Auto-send"
 msgstr ""
@@ -4258,7 +4260,7 @@ msgstr "انقر لعرض الطلب الكامل"
 msgid "Clipboard not updated"
 msgstr "لم يتم تحديث الحافظة"
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Clipboard unavailable"
 msgstr ""
 
@@ -5095,10 +5097,10 @@ msgstr "علامة تبويب Copilot"
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/markdown-view.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -5211,11 +5213,11 @@ msgstr "نسخ الروابط"
 msgid "Copy members' clone URL"
 msgstr ""
 
-#: src/components/spec-editor/SpecEditor.tsx
 #: src/components/tabs/TabTooltipName.tsx
 msgid "Copy name"
 msgstr "نسخ الاسم"
 
+#: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 #: src/components/top-nav-bar/CopyPathButton.tsx
@@ -5387,7 +5389,7 @@ msgstr "تعذر التحقق من تسجيل الدخول"
 msgid "Could not connect to {displayName}."
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Could not copy link"
 msgstr ""
 
@@ -9528,6 +9530,7 @@ msgid "Forking…"
 msgstr "جاري التفريع…"
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
@@ -10268,7 +10271,6 @@ msgstr ""
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
@@ -11533,6 +11535,12 @@ msgstr "مغادرة المحادثة"
 msgid "Leave empty to keep"
 msgstr ""
 
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
+msgid "Leave live session mode"
+msgstr ""
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
 msgstr "مغادرة هذه المحادثة؟"
@@ -11664,7 +11672,7 @@ msgid "Lines"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Link copied"
 msgstr "تم نسخ الرابط"
 
@@ -11770,9 +11778,17 @@ msgstr "الجلسة المباشرة"
 msgid "Live session not found"
 msgstr "الجلسة المباشرة غير موجودة"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Live session on {hostName}'s machine"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {guestName} on your machine · {status}"
 msgstr "جلسة مباشرة مع {guestName} على جهازك · {status}"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Live session: run a prompt on {hostName}'s machine"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -12590,6 +12606,7 @@ msgstr "تعارضات الدمج"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message"
@@ -13864,6 +13881,10 @@ msgstr ""
 msgid "No one added yet"
 msgstr ""
 
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "No open tasks."
+msgstr ""
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "No Operation (Trace Only)"
 msgstr "لا إجراء (تتبع فقط)"
@@ -14217,6 +14238,10 @@ msgstr "لم يتم تحديد مهمة"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "No tasks found for this session."
 msgstr "لا توجد مهام لهذه الجلسة."
+
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "No tasks yet — \"Task it\" on a message makes one."
+msgstr ""
 
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "No team budget yet"
@@ -14865,6 +14890,7 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -15094,7 +15120,7 @@ msgstr ""
 msgid "Open help desk"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Open in"
 msgstr ""
 
@@ -15108,8 +15134,8 @@ msgstr "فتح في علامة تبويب جديدة"
 msgid "Open in a new tab"
 msgstr "فتح في علامة تبويب جديدة"
 
+#: src/components/links/LinkMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
@@ -15149,7 +15175,7 @@ msgstr "فتح في الملفات"
 msgid "Open in Finder/Explorer"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Open in Flowpad"
 msgstr ""
 
@@ -15300,6 +15326,7 @@ msgstr "فتح جلسة المواصفات"
 msgid "Open tabs"
 msgstr ""
 
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Open task"
@@ -15707,6 +15734,15 @@ msgstr "استبدال"
 #: src/components/git/RepoPicker.tsx
 msgid "Owner"
 msgstr "المالك"
+
+#. placeholder {0}: taskIt.owner
+#: src/components/conversation/MessageBubble.tsx
+msgid "Owner: {0}"
+msgstr ""
+
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "Owner: {owner}"
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "pacing"
@@ -16437,6 +16473,7 @@ msgstr "مشروع"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/discover-page/DiscoverRow.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -16628,8 +16665,8 @@ msgid "Prompt Library — click a prompt to add it to the queue"
 msgstr "مكتبة الأوامر — انقر على أمر لإضافته إلى قائمة الانتظار"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Prompt mode: this text opens a live session on {hostName}'s machine"
-msgstr ""
+#~ msgid "Prompt mode: this text opens a live session on {hostName}'s machine"
+#~ msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -18132,6 +18169,10 @@ msgstr "يُرجى مراجعة كل عنصر مرفق واختيار كيفية
 msgid "Review prompts"
 msgstr "مراجعة التعليمات"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Review replies"
+msgstr ""
+
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Review the shared project and install it."
 msgstr ""
@@ -18327,8 +18368,8 @@ msgid "Run now (spawns a process)"
 msgstr "تشغيل الآن (ينشئ عملية)"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Run on {hostName}'s machine"
-msgstr ""
+#~ msgid "Run on {hostName}'s machine"
+#~ msgstr ""
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "Run script"
@@ -18367,8 +18408,8 @@ msgid "Run this agent on its own, at a time you pick. Runs are headless and show
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Run this as a prompt on {hostName}'s machine"
-msgstr ""
+#~ msgid "Run this as a prompt on {hostName}'s machine"
+#~ msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -19969,6 +20010,10 @@ msgstr "عرض مشاريع النظام"
 msgid "Show system skills"
 msgstr "عرض مهارات النظام"
 
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "Show the message it was made from"
+msgstr ""
+
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Show the other files this turn touched"
 msgstr "عرض بقية الملفات التي مسّها هذا الدور"
@@ -20775,6 +20820,7 @@ msgstr "الإحصائيات"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -21267,6 +21313,7 @@ msgstr "الهدف (مثل usage_report:abc)"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/quick-create/registry.ts
@@ -21283,6 +21330,7 @@ msgstr "تم إسناد المهمة"
 msgid "Task created"
 msgstr "تم إنشاء المهمة"
 
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Task it"
 msgstr ""
@@ -21309,10 +21357,15 @@ msgstr "مرتبط بمهمة"
 msgid "Tasked: {0}"
 msgstr ""
 
+#: src/components/conversation/ConversationPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/types/ViewType.ts
 msgid "Tasks"
 msgstr "المهام"
+
+#: src/components/conversation/ConversationPanel.tsx
+msgid "Tasks {openTaskCount}"
+msgstr ""
 
 #: src/components/account/organization-panel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -21846,8 +21899,8 @@ msgid "The task is now a folder in the project."
 msgstr ""
 
 #: src/navigation/NavigationActions.ts
-msgid "The terminal is not ready yet"
-msgstr ""
+#~ msgid "The terminal is not ready yet"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
@@ -22162,6 +22215,10 @@ msgstr ""
 
 #: src/navigation/NavigationActions.ts
 msgid "This link has no available viewer"
+msgstr ""
+
+#: src/navigation/NavigationActions.ts
+msgid "This link has no source yet"
 msgstr ""
 
 #: src/pages/entry/OpenSandboxLanding.tsx
@@ -23747,7 +23804,7 @@ msgstr ""
 msgid "via hub login"
 msgstr "عبر تسجيل الدخول إلى Hub"
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Vibe"
 msgstr ""
 
@@ -24012,6 +24069,7 @@ msgid "What do you need help with?"
 msgstr "بماذا يمكننا مساعدتك؟"
 
 #: src/components/top-nav-bar/AddressAskField.tsx
+#: src/components/top-nav-bar/AddressField.tsx
 msgid "What do you want to do?"
 msgstr ""
 
