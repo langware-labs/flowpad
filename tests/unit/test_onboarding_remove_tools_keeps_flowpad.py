@@ -11,6 +11,8 @@ import os
 import sys
 from pathlib import Path
 
+import pytest
+
 from flow_sdk.server.routes import bootstrap
 
 
@@ -57,3 +59,51 @@ def test_an_unrelated_tool_is_still_found(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "prefix", str(tmp_path / "flowpad-venv"))
 
     assert bootstrap._which_users_tool("node", str(node.parent)) == (str(node), False)
+
+
+# Windows: the wizard installs git/node with winget, machine-wide under Program Files. Deleting the
+# file there is refused (WinError 5), so Reset uninstalls them with winget, elevated, instead.
+
+
+def _windows(monkeypatch, program_files: Path) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("ProgramFiles", str(program_files))
+    for var in ("ProgramFiles(x86)", "ProgramW6432", "ProgramData"):
+        monkeypatch.delenv(var, raising=False)
+
+
+def test_windows_all_users_git_and_node_are_uninstalled_with_winget(tmp_path, monkeypatch):
+    program_files = tmp_path / "Program Files"
+    _windows(monkeypatch, program_files)
+
+    assert bootstrap._all_users_winget_ids("git", _exe(program_files / "Git" / "cmd", "git.exe")) == ("Git.Git",)
+    assert bootstrap._all_users_winget_ids("node", _exe(program_files / "nodejs", "node.exe")) == (
+        "OpenJS.NodeJS.LTS",
+        "OpenJS.NodeJS",
+    )
+
+
+def test_windows_per_user_installs_and_other_tools_keep_file_removal(tmp_path, monkeypatch):
+    _windows(monkeypatch, tmp_path / "Program Files")
+
+    assert bootstrap._all_users_winget_ids("node", _exe(tmp_path / "AppData" / "node", "node.exe")) == ()
+    assert bootstrap._all_users_winget_ids("claude", _exe(tmp_path / "Program Files" / "c", "claude.exe")) == ()
+
+
+def test_mac_and_linux_never_use_winget(tmp_path, monkeypatch):
+    program_files = tmp_path / "Program Files"
+    _windows(monkeypatch, program_files)
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    assert bootstrap._all_users_winget_ids("git", _exe(program_files / "Git" / "cmd", "git.exe")) == ()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="runs a real winget-shaped .cmd")
+async def test_the_installed_winget_id_is_the_one_uninstalled(tmp_path):
+    # Node shows up as OpenJS.NodeJS.LTS OR OpenJS.NodeJS. Only the one `winget list` finds is
+    # uninstalled, so ITS failure is the one reported, not a "not found" for the other id.
+    winget = tmp_path / "winget.cmd"
+    winget.write_text('@echo off\r\nif "%1 %3"=="list OpenJS.NodeJS" exit /b 0\r\nexit /b 1\r\n')
+
+    assert await bootstrap._winget_installed_id(str(winget), ("OpenJS.NodeJS.LTS", "OpenJS.NodeJS")) == "OpenJS.NodeJS"
+    assert await bootstrap._winget_installed_id(str(winget), ("Git.Git",)) is None
