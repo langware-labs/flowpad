@@ -18422,8 +18422,8 @@ msgid "Run from your terminal, then restart Flowpad:"
 msgstr "يُرجى التنفيذ من الطرفية، ثم إعادة تشغيل Flowpad:"
 
 #: src/components/version-popover/version-popover.tsx
-#~ msgid "Run from your terminal:"
-#~ msgstr "يُرجى التنفيذ من الطرفية:"
+msgid "Run from your terminal:"
+msgstr "يُرجى التنفيذ من الطرفية:"
 
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx

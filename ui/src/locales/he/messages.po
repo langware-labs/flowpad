@@ -18422,8 +18422,8 @@ msgid "Run from your terminal, then restart Flowpad:"
 msgstr "הפעל מהטרמינל שלך, ואז הפעל את Flowpad מחדש:"
 
 #: src/components/version-popover/version-popover.tsx
-#~ msgid "Run from your terminal:"
-#~ msgstr "הפעל מהטרמינל שלך:"
+msgid "Run from your terminal:"
+msgstr "הפעל מהטרמינל שלך:"
 
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
