@@ -135,7 +135,7 @@ export class Activity {
   /** Rejects with `ActivityRefusedError` (`ACTIVITY_ENDED`) if the activity has already ended. */
   block(message?: string) { return this.send('block', { message }, true); }
   pause(message?: string) { return this.send('pause', { message }); }
-  /** Rejects with `ActivityRefusedError` (`ACTIVITY_ENDED`) if the activity has already ended. */
+  /** Rejects with `ActivityRefusedError`: `ACTIVITY_ENDED` on an ended child, `NOT_LIVE` on an ended (evicted) root. */
   resume() { return this.send('resume', {}, true); }
   done(message?: string) { return this.send('done', { message }); }
   fail(message?: string) { return this.send('fail', { message }); }
