@@ -28,9 +28,9 @@ async def _markdown_vaults() -> list[dict]:
     every scan root is reachable via the local compute node's VFS.
 
     A **project** vault is rooted at the project's mount path — the whole
-    project, NOT just its ``docs/`` subfolder — so the menu walks every ``.md``
-    in the project (gitignore-aware, via ``walk_markdown_files``). This is why a
-    project-root file like ``streams_sdk.md`` shows up alongside ``docs/`` files.
+    project — and the menu lists the ``.md`` files in every ``docs``/``doc``
+    folder inside it (gitignore-aware, via ``walk_markdown_files``); markdown
+    outside a doc folder is not a document.
     The single **user** vault is the user-level ``docs/`` knowledge dir.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
@@ -111,11 +111,11 @@ async def get_asset_types():
 async def list_markdown_files(
     root: str = Query(..., description="Absolute filesystem path of the vault root to walk."),
 ):
-    """Walk a vault root for every ``.md`` file, honoring ``.gitignore``.
+    """Walk a vault root for the ``.md`` files in its doc folders, honoring ``.gitignore``.
 
-    Powers the Markdown asset menu's folder tree. Returns the COMPLETE set of
-    markdown files under ``root`` (relative POSIX paths), so a project-root file
-    like ``streams_sdk.md`` is included — not just files under ``docs/``. The
+    Powers the Markdown asset menu's folder tree. Returns the markdown files
+    under ``root`` that sit in a ``docs``/``doc`` folder (relative POSIX paths).
+    The
     walk reuses the indexer's gitignore matcher (``_WALK_IGNORED`` fast-path,
     ``.claude/`` force-include, last-match-wins ``.gitignore`` stack).
     """

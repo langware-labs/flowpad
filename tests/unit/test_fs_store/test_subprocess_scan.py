@@ -49,7 +49,7 @@ def _ref_key(r: FSRef) -> tuple:
 
 @pytest.fixture()
 def project_tree(tmp_path: Path) -> Path:
-    """A project with a skill, an agent, a loose markdown, and a two-server
+    """A project with a skill, an agent, a docs markdown, and a two-server
     .mcp.json — the last one matters because its refs carry a ``json_path``
     fragment pointer, the field most likely to be dropped by a naive wire format.
 
@@ -70,7 +70,8 @@ def project_tree(tmp_path: Path) -> Path:
     agents = tmp_path / ".claude" / "agents"
     agents.mkdir(parents=True)
     (agents / "helper.md").write_text("---\nname: helper\n---\nagent body\n", encoding="utf-8")
-    (tmp_path / "notes.md").write_text("# notes\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "notes.md").write_text("# notes\n", encoding="utf-8")
     (tmp_path / ".mcp.json").write_text(
         json.dumps({"mcpServers": {"one": {"command": "x"}, "two": {"command": "y"}}}),
         encoding="utf-8",
