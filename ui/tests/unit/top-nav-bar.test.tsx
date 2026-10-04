@@ -482,6 +482,16 @@ describe('the navigation bar', () => {
       expect(screen.getByTestId('top-nav-address')).toBeTruthy();
     });
 
+    it('says what the dead space does, and a click on that hint asks', async () => {
+      const user = userEvent.setup();
+      renderBar();
+
+      const hint = screen.getByTestId('top-nav-ask-hint');
+      expect(hint.textContent).toBe('What do you want to do?');
+      await user.click(hint);
+      expect(screen.getByTestId('top-nav-ask-input')).toBeTruthy();
+    });
+
     it('leaves crumbs and the search button their own clicks', async () => {
       const user = userEvent.setup();
       renderBar();
@@ -508,6 +518,7 @@ describe('the navigation bar', () => {
       const user = userEvent.setup();
       renderBar();
 
+      expect(screen.queryByTestId('top-nav-ask-hint')).toBeNull();
       await user.click(screen.getByTestId('top-nav-address'));
       expect(screen.queryByTestId('top-nav-ask-input')).toBeNull();
     });

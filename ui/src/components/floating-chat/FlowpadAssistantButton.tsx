@@ -10,7 +10,8 @@ import { useLingui } from '@lingui/react/macro';
  * Sized + styled to match the theme-toggle and user avatar buttons in the header.
  *
  * Captures its on-screen rect on click so the floating window can animate from
- * the button position into center (and back to it on close).
+ * the button position into center. Closing always flies back into THIS button,
+ * however the chat was opened — it is the one-click way back in.
  *
  * The button always renders the dedicated round Flowpad icon
  * (bundled at `ui/src/assets/flowpad-icon.png`) — agents may ship their own
@@ -36,6 +37,7 @@ export function FlowpadAssistantButton() {
       aria-pressed={open}
       title={t`Flowpad Assistant`}
       data-testid="flowpad-assistant-button"
+      data-minimize-anchor="assistant-button"
       className={cn(
         'h-8 w-8 overflow-hidden rounded-full p-0',
         open && 'bg-accent text-accent-foreground',

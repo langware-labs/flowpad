@@ -220,6 +220,19 @@ export function AddressField({
             })}
           </BreadcrumbList>
         </Breadcrumb>
+        {/* The ask mode's own prompt, shown in the dead space that opens it — so
+            the empty stretch says what a click there does. `w-0 flex-1` takes
+            only the space the crumbs leave over and never squeezes them; it
+            truncates away on a long trail. Text-end follows the reading
+            direction, the same as the magnifier beside it. */}
+        {onAsk && (
+          <span
+            data-testid="top-nav-ask-hint"
+            className="w-0 flex-1 select-none truncate ps-3 text-end text-sm text-muted-foreground/60"
+          >
+            {t`What do you want to do?`}
+          </span>
+        )}
         {/* Search lives INSIDE the field, pinned to its trailing edge — the pill
             is the thing that becomes the query box, so the control that turns
             it into one belongs in it. `ms-auto` (margin-INLINE-start) keeps it
