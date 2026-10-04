@@ -9,7 +9,7 @@ project_id=...)``. Validates:
   - FOLDER is transient (no record_cls, never persisted);
   - markdown is discovered via the FOLDER → markdown_in_folder_fn fan-out;
   - markdown count **exactly equals** the disk-walk under the same predicate
-    (gitignore + _WALK_IGNORED + not-typed-record-dir);
+    (gitignore + _WALK_IGNORED + inside-a-docs/doc-dir + not-typed-record-dir);
   - hardcoded ``_WALK_IGNORED`` (.git, node_modules, .venv) is pruned;
   - .claude/ is force-included even if gitignored;
   - ``project_id`` flows from IndexerOptions / root FSRef onto every emitted
@@ -57,10 +57,11 @@ def _expected_markdown_paths(root: Path) -> set[Path]:
     stack = load_gitignore_stack(root)
 
     def walk(d: Path, push_count: int) -> None:
-        # Emit *.md from this directory unless it sits under a typed-record
-        # dir. The walker visits the root too, so the predicate runs on
-        # every descended directory.
-        if not _has_typed_ancestor(d):
+        # Emit *.md from this directory when it is (or lies under) a docs/doc
+        # dir, unless it sits under a typed-record dir. The walker visits the
+        # root too, so the predicate runs on every descended directory.
+        in_doc_dir = any(part.lower() in ("docs", "doc") for part in d.relative_to(root).parts)
+        if in_doc_dir and not _has_typed_ancestor(d):
             try:
                 for md in d.glob("*.md"):
                     # SKILL.md / skill.md is a skill's doc (claimed by the typed
