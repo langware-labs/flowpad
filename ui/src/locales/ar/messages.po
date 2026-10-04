@@ -15735,12 +15735,12 @@ msgstr "استبدال"
 msgid "Owner"
 msgstr "المالك"
 
-#. placeholder {0}: taskIt.owner
 #: src/components/conversation/MessageBubble.tsx
-msgid "Owner: {0}"
-msgstr ""
+#~ msgid "Owner: {0}"
+#~ msgstr ""
 
-#: src/components/conversation/ConversationTasksPanel.tsx
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
 msgid "Owner: {owner}"
 msgstr ""
 
@@ -20820,7 +20820,7 @@ msgstr "الإحصائيات"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -21314,7 +21314,7 @@ msgstr "الهدف (مثل usage_report:abc)"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationTasksPanel.tsx
-#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
