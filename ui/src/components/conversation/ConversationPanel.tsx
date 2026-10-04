@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Conversation, type Task, TypeId } from '@sdk';
+import { Conversation, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@src/lib/utils';
@@ -19,6 +19,9 @@ import { ConversationContextPanel } from './ConversationContextPanel';
 import { MembersAvatarStack } from './MembersAvatarStack';
 import { ProjectChip } from '@src/components/project/ProjectChip';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { ConversationTasksPanel } from './ConversationTasksPanel';
+import { isOpenTask, useConversationTasks } from './task-it';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -265,10 +268,19 @@ export function ConversationPanel({
       : 'flex h-9 flex-shrink-0 items-center gap-2 border-y border-border px-4 text-xs font-medium text-muted-foreground';
   const bodyWrapper = variant === 'compact' ? 'mt-1' : 'px-4 pt-3';
 
-  // Context first, Runs second. Runs is hidden entirely when there's no
+  // The Tasks tab: every task of this conversation; its count is the open ones.
+  const conversationTasks = useConversationTasks(conversationId);
+  const openTaskCount = useMemo(() => conversationTasks.filter(isOpenTask).length, [conversationTasks]);
+
+  // Context first, then Tasks, then Runs. Runs is hidden entirely when there's no
   // anchor to query (covered by `showRuns`).
   const tabs = [
     { id: 'context' as const, label: t`Context`, icon: Layers },
+    {
+      id: 'tasks' as const,
+      label: openTaskCount > 0 ? t`Tasks ${openTaskCount}` : t`Tasks`,
+      icon: iconForType(Task.type),
+    },
     ...(showRuns
       ? [{ id: 'runs' as const, label: runEntries.length > 0 ? `Runs ${runEntries.length}` : 'Runs', icon: History }]
       : []),
@@ -287,6 +299,7 @@ export function ConversationPanel({
       />
     ),
   };
+  drawerChildren.tasks = <ConversationTasksPanel tasks={conversationTasks} onShowMessage={selectOneMessage} />;
   if (showRuns) {
     drawerChildren.runs = (
       <ProcessRunsPanel
@@ -379,6 +392,7 @@ export function ConversationPanel({
         onToggleSideTab={toggleSideTab}
         showRuns={showRuns}
         runsBadge={runEntries.length}
+        tasksBadge={openTaskCount}
       />
 
       <OpenProjectComponent {...mappingDialogProps} />

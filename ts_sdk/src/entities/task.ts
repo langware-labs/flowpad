@@ -297,6 +297,9 @@ export class Task extends APIEntity<Task> implements ITask {
     if (!this.description || this.description === '') {
       return '';
     }
+    // A plain or markdown body (task.md, "Task it", the help dialog) IS the text; only the legacy
+    // Lexical JSON needs unwrapping — parsing every body logged an error per plain one.
+    if (!this.description.trimStart().startsWith('{')) return this.description;
     try {
       const root = JSON.parse(this.description).root;
       const lines: string[] = (root.children || []).map((paragraph: any) =>
