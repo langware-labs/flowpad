@@ -1,5 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { Conversation, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
@@ -55,7 +57,8 @@ interface ConversationPanelProps {
   onMessageNavigate?: (messageId: string) => void;
   /** URL-carried thread filter (`?thread=<id>`); null = show every thread. */
   threadId?: string | null;
-  /** Open a thread (id) or return to the packed list (null). */
+  /** Open a thread (id) or return to the packed list (null). Omitted (an embedded host such as a
+   *  task's conversation) → a thread opens in the conversation's own dock, by URL. */
   onThreadNavigate?: (threadId: string | null) => void;
   /** Agent mailbox scope preserved from the URL. */
   agentId?: string | null;
@@ -173,9 +176,17 @@ export function ConversationPanel({
   selectedMessageId,
   onMessageNavigate,
   threadId,
-  onThreadNavigate,
+  onThreadNavigate: hostThreadNavigate,
   agentId,
 }: ConversationPanelProps) {
+  const { navigation: dockNavigation } = useDockNavigation();
+  const onThreadNavigate = useCallback(
+    (id: string | null) =>
+      hostThreadNavigate
+        ? hostThreadNavigate(id)
+        : dockNavigation.openDock(DockPointer.forConversation(conversationId, { thread: id, agentId: agentId ?? null })),
+    [hostThreadNavigate, dockNavigation, conversationId, agentId],
+  );
   // One gate, two subject shapes. Remote provenance always lives on the
   // conversation; the gate stamps the task when present (task owns project_root
   // for cwd) or the conversation itself otherwise. Both shapes feed the same
