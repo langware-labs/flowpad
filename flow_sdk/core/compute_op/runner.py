@@ -236,7 +236,10 @@ async def run_op(
     # already found out.
     history = [f"{tried_as}: {answer.detail}"]
     for rung in spec.attempts:
-        if answer.exit_code is not ExitCode.NOT_YET:
+        if answer.exit_code is not ExitCode.NOT_YET or _check_ran_out(answer):
+            # A check that ran out of time gave no verdict: the goal may well hold already, and a
+            # costlier rung cannot make a slow machine answer faster — it would change a machine
+            # that may be fine. The timeout is the report.
             break
         # The rung before this one did not reach the goal: this one takes the SAME
         # goal, with the same check as its verdict — never the caller's executor,
@@ -256,6 +259,11 @@ async def run_op(
         # one line each rather than nesting a "(after ...)" inside a "(after ...)".
         history.append(f"{tried_as}: {rescued.detail}")
     return answer
+
+
+def _check_ran_out(answer: ReturnedValue) -> bool:
+    """The call ran, then its re-check was stopped at its budget before it could say anything."""
+    return bool(answer.ran and answer.check is not None and answer.check.timed_out)
 
 
 def _earlier_attempts(history: "list[str]") -> str:
@@ -359,16 +367,17 @@ async def _call_and_check(
         )
         return _with_value(spec, done, said=after)
     reason = _reason(call)
-    return call.model_copy(
-        update={
-            "exit_code": ExitCode.NOT_YET,
-            "value": None,
-            "check": after,
-            "detail": f"{spec.display_label}: {reason}"
-            if reason
-            else f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.{_why(call)}",
-        }
-    )
+    if after.timed_out:
+        budget = spec.completion_check.timeout(CHECK_TIMEOUT) if spec.completion_check else CHECK_TIMEOUT
+        detail = (
+            f"{spec.display_label}: the {spec.subkind} call ran, but its check did not answer within "
+            f"{budget:g} s, so whether it worked is unknown — this machine is slow to start a process."
+        )
+    elif reason:
+        detail = f"{spec.display_label}: {reason}"
+    else:
+        detail = f"{spec.display_label}: the {spec.subkind} call ran, but the check still fails.{_why(call)}"
+    return call.model_copy(update={"exit_code": ExitCode.NOT_YET, "value": None, "check": after, "detail": detail})
 
 
 #: `_build_run_result`'s bare boilerplate, with no cause appended — the discriminator between
