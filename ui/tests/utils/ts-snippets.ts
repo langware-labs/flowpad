@@ -9,13 +9,14 @@
  * - `import { A, B } from '<module>'` lines bind from the `scope` you pass —
  *   a fence's imports name what it uses, and a missing binding is an error, not
  *   an `undefined` that fails three lines later.
- * - The body is transpiled with esbuild (the one vitest already ships) and runs
- *   as an async function, so top-level `await` works as it does in a module.
+ * - The body is transpiled with TypeScript's own `transpileModule` (pure JS, so it
+ *   runs under jsdom, where esbuild refuses to start) and runs as an async
+ *   function, so top-level `await` works as it does in a module.
  * - Every top-level `const`/`let` comes back in the returned namespace.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { transform } from 'esbuild';
+import ts from 'typescript';
 
 const SHELF = resolve(__dirname, '../../../docs/snippets');
 
@@ -39,7 +40,8 @@ export function tsFenceUnder(markdown: string, heading: string, { lang = 'ts', n
   if (!start) throw new Error(`no heading starting with ${JSON.stringify(heading)}`);
   const end = headings.find((h) => h.at > start.at)?.at ?? markdown.length;
   const found = [...markdown.slice(start.at, end).matchAll(FENCE)].filter((m) => m[1] === lang).map((m) => m[2]);
-  if (found.length <= nth) throw new Error(`section ${JSON.stringify(heading)} has ${found.length} ${lang} fence(s), wanted #${nth}`);
+  if (found.length <= nth)
+    throw new Error(`section ${JSON.stringify(heading)} has ${found.length} ${lang} fence(s), wanted #${nth}`);
   return found[nth];
 }
 
@@ -47,7 +49,10 @@ const IMPORT = /^\s*import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+['"][^'"]+['"];?\s
 const DECLARED = /^(?:const|let)\s+([A-Za-z_$][\w$]*)/gm;
 
 /** Execute `source` with `scope` bound; resolves to its top-level declarations. */
-export async function runTsFence(source: string, scope: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+export async function runTsFence(
+  source: string,
+  scope: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
   const imported = [...source.matchAll(IMPORT)].flatMap((m) =>
     m[1]
       .split(',')
@@ -60,11 +65,11 @@ export async function runTsFence(source: string, scope: Record<string, unknown> 
   const body = source.replace(IMPORT, '');
   const declared = [...new Set([...body.matchAll(DECLARED)].map((m) => m[1]))];
   // Transpiled as the body of an async function (top-level `await`, a trailing `return`), then unwrapped.
-  const { code: wrapped } = await transform(
-    `async function __fence__() {\n${body}\nreturn { ${declared.join(', ')} };\n}`,
-    { loader: 'ts', target: 'es2022' },
-  );
+  const wrapped = ts.transpileModule(`async function __fence__() {\n${body}\nreturn { ${declared.join(', ')} };\n}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+  }).outputText;
   const code = wrapped.slice(wrapped.indexOf('{') + 1, wrapped.lastIndexOf('}'));
+  // eslint-disable-next-line @typescript-eslint/require-await -- only its constructor is wanted (AsyncFunction)
   const AsyncFunction = Object.getPrototypeOf(async () => undefined).constructor as new (
     ...args: string[]
   ) => (...values: unknown[]) => Promise<Record<string, unknown>>;
