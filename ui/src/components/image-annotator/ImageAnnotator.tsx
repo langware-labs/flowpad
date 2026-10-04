@@ -23,7 +23,6 @@ import { AnnotatorToolbar } from './AnnotatorToolbar';
 import { TextBoxLayer } from './TextBoxLayer';
 import { useTextBoxes } from './use-text-boxes';
 import { bakeTextBoxes, drawScene } from './draw';
-import { clipboardDataHasImage } from '@src/utils/clipboard-image';
 import { COLORS, toPngName, type Stroke, type Tool } from './types';
 
 /** The caption box grows with its text up to this height, then scrolls. */
@@ -384,10 +383,6 @@ export function ImageAnnotator({
             ref={captionRef}
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
-            onPaste={(e) => {
-              // An image pasted here would land as nothing useful; text pastes pass.
-              if (clipboardDataHasImage(e.clipboardData)) e.preventDefault();
-            }}
             rows={1}
             dir="auto"
             placeholder={t`Add a caption…`}

@@ -15,7 +15,6 @@
  * by newlines; '' when nothing was typed. `initialCaption` prefills only the
  * first image's caption, so text pasted alongside lands once.
  */
-import type { ReactNode } from 'react';
 import { isRasterizableImage } from '@src/utils/clipboard-image';
 import { annotateImage } from './image-annotator-store';
 
@@ -26,7 +25,7 @@ export interface AnnotatedFiles {
 
 export async function annotateImageFiles(
   files: File[],
-  { initialCaption, submitLabel }: { initialCaption?: string; submitLabel?: ReactNode } = {},
+  { initialCaption }: { initialCaption?: string } = {},
 ): Promise<AnnotatedFiles> {
   const out: File[] = [];
   const captions: string[] = [];
@@ -36,7 +35,7 @@ export async function annotateImageFiles(
       out.push(file);
       continue;
     }
-    const result = await annotateImage(file, { initialCaption: prefill, submitLabel });
+    const result = await annotateImage(file, { initialCaption: prefill });
     prefill = undefined;
     if (!result) continue; // cancelled => drop it
     out.push(result.file);

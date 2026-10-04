@@ -1,7 +1,6 @@
 import { cn } from '@src/lib/utils';
 import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
 import {
-  appendLine,
   AttachFilesButton,
   PickedFileList,
   useAnnotatedImagePaste,
@@ -248,10 +247,9 @@ export function CompactExecutionInput({
 
   // With no owner hook but attachments on (no process to upload into yet),
   // pasted images take the shared path: annotate, then chips sent with the text.
-  const appendCaption = useCallback((caption: string) => setValue((prev) => appendLine(prev, caption)), []);
   const pasteAsChips = useAnnotatedImagePaste(picker.addFiles, {
     enabled: allowAttachments && !disabled,
-    insertText: appendCaption,
+    setText: setValue,
   });
 
   // Image paste: hand the image files to the owner (upload + open Files tab),

@@ -110,7 +110,6 @@ import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 // An empty bracketed paste (RFC 6093 start+end markers, no payload) — the exact
 // signal an image paste delivers to the PTY, which the CLI reads the system
 // clipboard on. Re-emitted after annotation so the CLI inlines the annotated image.
-const EMPTY_BRACKETED_PASTE = '\x1b[200~\x1b[201~';
 const bracketedPaste = (text: string) => `\x1b[200~${text}\x1b[201~`;
 import { XTERM_BASE_OPTIONS, applyRtlGridContract, registerOsc52ClipboardWrite } from './terminalConfig';
 import { retireXterm } from './retire-xterm';
@@ -436,14 +435,17 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (!inputDirInfo) return;
       try {
         const items = await navigator.clipboard.read();
-        const [captured] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
+        const [[captured], initialCaption] = await Promise.all([
+          imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' }),
+          textFromClipboardItems(items),
+        ]);
         if (!captured) return;
         // Offer markup (and a caption, prefilled with any text that came along)
         // before the screenshot is attached. Cancel aborts.
         const {
           files: [file],
           caption,
-        } = await annotateImageFiles([captured], { initialCaption: await textFromClipboardItems(items) });
+        } = await annotateImageFiles([captured], { initialCaption });
         if (!file) return;
 
         const uploads = await fsStore
@@ -457,7 +459,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         // bracketed paste so the CLI re-reads the clipboard and inlines the
         // ANNOTATED image. The original paste-time signal was suppressed (the
         // capture-phase paste listener), so the CLI never saw the original.
-        await shellRef.current?.sendInput(EMPTY_BRACKETED_PASTE);
+        await shellRef.current?.sendInput(bracketedPaste(''));
         // Full-resolution fallback: the inline copy the CLI keeps may be downsized,
         // so also reference the file by path.
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
