@@ -35,6 +35,8 @@ const CHANNELS: Record<
   whatsapp: { follow: (r) => ({ reply_to: r.external_id }), quotesInbound: true, quotes: true }, // the person is the thread
   agentmail: { follow: (r) => ({ thread: r.thread }), quotesInbound: false, quotes: false },
   teams: { follow: (r) => ({ thread: r.thread }), quotesInbound: true, quotes: false }, // replyToId = the root
+  // An agent's email: agent-only (the hub's local agent mailbox, AGENT_MAILBOX_ENABLED on the hub).
+  cloud_email: { follow: (r) => ({ thread: r.thread }), quotesInbound: false, quotes: false },
 };
 const WANTED = (process.env.THREAD_CHANNELS || Object.keys(CHANNELS).join(',')).split(',').filter(Boolean);
 
@@ -51,6 +53,8 @@ let doubles: ChildProcessWithoutNullStreams | undefined;
 let control = '';
 let channels: Record<string, ChannelEntry> = {};
 let localUserId = '';
+let agentId = '';
+let agentMailboxSourceId = '';
 const created: string[] = [];
 
 async function controlJson<T>(method: 'GET' | 'POST', route: string, body?: unknown): Promise<T> {
@@ -96,10 +100,32 @@ test.beforeAll(async () => {
     doubles!.on('exit', (code, signal) => reject(new Error(`channel doubles exited with ${code ?? signal}\n${stderr.slice(-2000)}`)));
   });
   channels = await controlJson<Record<string, ChannelEntry>>('GET', '/channels');
+
+  // An agent-only channel (an agent's email) is opened per agent: it is not on /channels until the
+  // agent, its mailbox, and the outsider that writes in exist.
+  if (WANTED.some((c) => !channels[c])) {
+    const agent = await graph<{ id: string }>('post', '/graph/agent', {
+      name: `threads agent ${Date.now().toString(36)}`,
+      worker_type: 'claude',
+      system_prompt: 'Be brief.',
+    });
+    agentId = agent.id;
+    const mailbox = await graph<{ mailbox?: { address?: string }; sources?: Array<{ id: string }> }>(
+      'post',
+      `/graph/agent/${agentId}/allocate_mailbox`,
+      {},
+    );
+    const address = mailbox.mailbox?.address ?? '';
+    expect(address, 'the hub allocated no address (is AGENT_MAILBOX_ENABLED on?)').toBeTruthy();
+    agentMailboxSourceId = mailbox.sources?.[0]?.id ?? '';
+    await controlJson('POST', '/agent_mailbox', { agent_id: agentId, address });
+    channels = await controlJson<Record<string, ChannelEntry>>('GET', '/channels');
+  }
 });
 
 test.afterAll(async () => {
   for (const id of created) await api.delete(`/api/v1/graph/data_source/${id}`);
+  if (agentId) await api.delete(`/api/v1/graph/agent/${agentId}`);
   if (doubles && control) {
     const exited = new Promise<void>((resolve) => doubles!.once('exit', () => resolve()));
     await api.post(`${control}/shutdown`).catch(() => undefined);
@@ -122,6 +148,7 @@ async function open(page: Page, route: string) {
 
 async function sourceFor(channel: string): Promise<string> {
   const entry = channels[channel];
+  if (entry.agent_only) return agentMailboxSourceId; // the agent's own mailbox row
   const body: Record<string, unknown> = {
     name: `threads ${channel} ${Date.now().toString(36)}`,
     provider: channel,
@@ -160,7 +187,6 @@ const bare = (id: string) => id.split('/').pop() ?? id;
 for (const [i, channel] of WANTED.entries()) {
   test(`${i + 1}. ${channel}: a thread packs, opens by URL, and both a thread send and a reply land in the provider's thread`, async ({ page }) => {
     test.skip(!channels[channel], `${channel}: no double served`);
-    test.skip(!!channels[channel]?.agent_only, `${channel}: agent-only channel (needs an agent mailbox on the hub)`);
     const spec = CHANNELS[channel];
     const nonce = Math.random().toString(36).slice(2, 8);
     const sourceId = await sourceFor(channel);
@@ -175,7 +201,8 @@ for (const [i, channel] of WANTED.entries()) {
     await sync(sourceId);
 
     // From the base stream inbox: the conversation row, then the feed — one packed thread.
-    await open(page, '/dock/stream_inbox');
+    const agentOnly = !!channels[channel]?.agent_only;
+    await open(page, agentOnly ? `/dock/agent/${agentId}/stream_inbox` : '/dock/stream_inbox');
     const row = page.getByTestId('stream-inbox-conversation-row').filter({ hasText: nonce }).first();
     await expect(row).toBeVisible();
     await row.click();
@@ -235,7 +262,9 @@ for (const [i, channel] of WANTED.entries()) {
     await expect(page.getByTestId('thread-header')).toHaveCount(0);
     await expect(page.getByTestId('thread-stack-open')).toContainText('earlier in this thread');
 
-    await api.delete(`/api/v1/graph/data_source/${sourceId}`);
-    created.splice(created.indexOf(sourceId), 1);
+    if (!agentOnly) {
+      await api.delete(`/api/v1/graph/data_source/${sourceId}`);
+      created.splice(created.indexOf(sourceId), 1);
+    }
   });
 }

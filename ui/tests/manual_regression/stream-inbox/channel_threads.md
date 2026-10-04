@@ -6,7 +6,7 @@ precondition: an isolated instance (`scripts/instance_ctl.sh launch <name>`) and
     FLOW_INSTANCE=<name> VITE_PORT=<frontend port> [THREAD_CHANNELS=gmail,slack] [SHOT_DIR=<dir>] \
       npx playwright test --config tests/manual_regression/stream-inbox/playwright.config.ts channel_threads
 
-What is proved, per channel (gmail, slack, telegram, whatsapp, agentmail, teams). The person writes a root and
+What is proved, per channel (gmail, slack, telegram, whatsapp, agentmail, teams, cloud_email). The person writes a root and
 two more messages in its thread, each the way that channel continues a thread (gmail In-Reply-To, slack
 `thread_ts`, teams `replyToId`, agentmail thread id; on telegram/whatsapp the chat is the thread and the
 follow-up quotes the root).
@@ -28,8 +28,12 @@ Sender:
 
 Back: `thread-header-all` ("All messages") drops `?thread=`; the thread packs again.
 
+cloud_email is an agent's email, so its cell runs on an agent:
+- the spec creates the agent, allocates its mailbox and opens it on the doubles (`/agent_mailbox`);
+- the agent's stream inbox (`/dock/agent/<id>/stream_inbox`) is where it opens;
+- the hub needs `AGENT_MAILBOX_ENABLED=true AGENT_MAILBOX_PROVIDER=local`.
+
 Not covered here:
-- cloud_email is agent-only (needs an agent mailbox on the hub);
 - voice channels offer no Reply (`ChannelSpec.replies` false, unit-tested in `tests/unit/test_conversation_channel.py`);
 - Flowpad's own chat between two users is `native_threads.md`.
 
@@ -41,5 +45,6 @@ Not covered here:
 | whatsapp | test 4 |
 | agentmail | test 5 |
 | teams | test 6 |
+| cloud_email | test 7 (agent-owned) |
 
-Verified 2026-10-05 on instance thr-6 (local hub :8093): 6 passed.
+Verified 2026-10-05 on instance thr-6 (local hub :8093, agent mailbox on): 7 passed, twice.
