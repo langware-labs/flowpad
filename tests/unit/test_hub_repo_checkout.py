@@ -24,7 +24,9 @@ def upstream(tmp_path):
     _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     _git(tmp_path, "clone", "-q", str(bare), str(work))
     (work / "report.html").write_text("v1")
-    _git(work, "add", "-A"), _git(work, "commit", "-qm", "v1"), _git(work, "push", "-q", "origin", "HEAD:main")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-qm", "v1")
+    _git(work, "push", "-q", "origin", "HEAD:main")
     return bare, work
 
 
@@ -34,7 +36,8 @@ async def test_clone_then_fast_forward_keeps_local_work(tmp_path, upstream):
     await mine.checkout()
     (tmp_path / "mine/notes.md").write_text("mine")
     (author / "report.html").write_text("v2")
-    _git(author, "commit", "-qam", "v2"), _git(author, "push", "-q", "origin", "HEAD:main")
+    _git(author, "commit", "-qam", "v2")
+    _git(author, "push", "-q", "origin", "HEAD:main")
 
     await mine.checkout()
 
