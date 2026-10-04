@@ -212,7 +212,9 @@ export function AttachmentChip({
   };
 
   const overlay = (
-    <div className="absolute right-1 top-1 z-10">
+    // Every chip's overlay sits at z-10 in the same stacking context, so a later
+    // chip's overlay would paint over this one's open menu — lift it while open.
+    <div className={cn('absolute right-1 top-1', menuOpen ? 'z-30' : 'z-10')}>
       <div className="flex items-center gap-0.5 rounded-md border border-border bg-background/95 p-0.5 shadow-sm backdrop-blur-sm">
         <a
           href={url}
