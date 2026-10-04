@@ -107,3 +107,128 @@ async def test_the_installed_winget_id_is_the_one_uninstalled(tmp_path):
 
     assert await bootstrap._winget_installed_id(str(winget), ("OpenJS.NodeJS.LTS", "OpenJS.NodeJS")) == "OpenJS.NodeJS"
     assert await bootstrap._winget_installed_id(str(winget), ("Git.Git",)) is None
+
+
+# Windows, per user: the wizard installs MinGit and Python with winget (no administrator rights) and
+# unpacks Node's zip under the user's profile. Deleting the file leaves winget's record and MinGit's
+# `Links` alias behind (it then reads as installed to winget and missing to everything else), and leaves
+# Node's folder and PATH entry. Reset removes what the wizard installed, the way it was installed.
+
+
+def _user_windows(monkeypatch, local: Path) -> None:
+    _windows(monkeypatch, local.parent / "Program Files")
+    monkeypatch.setenv("LOCALAPPDATA", str(local))
+
+
+def test_windows_per_user_git_and_python_are_uninstalled_with_winget(tmp_path, monkeypatch):
+    local = tmp_path / "AppData" / "Local"
+    _user_windows(monkeypatch, local)
+
+    assert bootstrap._per_user_winget_ids("git", _exe(local / "Microsoft" / "WinGet" / "Links", "git.exe")) == (
+        "Git.MinGit",
+    )
+    assert bootstrap._per_user_winget_ids(
+        "git", _exe(local / "Microsoft" / "WinGet" / "Packages" / "Git.MinGit_x" / "cmd", "git.exe")
+    ) == ("Git.MinGit",)
+    for name in ("python", "python3", "py"):
+        folder = "Launcher" if name == "py" else "Python312"
+        python = _exe(local / "Programs" / "Python" / folder, f"{name}.exe")
+        assert bootstrap._per_user_winget_ids(name, python) == ("Python.Python.3.12",)
+
+
+def test_a_copy_that_is_not_the_wizards_per_user_install_is_left_to_the_other_paths(tmp_path, monkeypatch):
+    local = tmp_path / "AppData" / "Local"
+    _user_windows(monkeypatch, local)
+
+    assert bootstrap._per_user_winget_ids("git", _exe(tmp_path / "Program Files" / "Git" / "cmd", "git.exe")) == ()
+    assert bootstrap._per_user_winget_ids("python", _exe(tmp_path / "venv" / "Scripts", "python.exe")) == ()
+    assert bootstrap._per_user_winget_ids("py", _exe(tmp_path / "Windows", "py.exe")) == (), "a system-wide launcher"
+    assert bootstrap._per_user_winget_ids("claude", _exe(local / "Microsoft" / "WinGet" / "Links", "claude.exe")) == ()
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert bootstrap._per_user_winget_ids("git", _exe(local / "Microsoft" / "WinGet" / "Links", "git.exe")) == ()
+
+
+async def test_a_node_zip_install_is_removed_whole_with_its_path_entries(tmp_path, monkeypatch):
+    """Every unpacked copy goes (an x64 and an ARM64 one can sit side by side), and so do their PATH entries."""
+    local = tmp_path / "AppData" / "Local"
+    _user_windows(monkeypatch, local)
+    programs = local / "Programs"
+    x64 = _exe(programs / "node-v24.21.0-win-x64", "node.exe").parent
+    arm64 = _exe(programs / "node-v24.21.0-win-arm64", "node.exe").parent
+    unrelated = _exe(programs / "Python", "python.exe").parent
+    dropped: list[list[Path]] = []
+
+    async def drop(folders):
+        dropped.append(list(folders))
+
+    monkeypatch.setattr(bootstrap, "_drop_from_user_path", drop)
+
+    ok, what = await bootstrap._remove_windows_user_install("node", x64 / "node.exe")
+
+    assert ok and "node-v24.21.0-win-x64" in what and "node-v24.21.0-win-arm64" in what
+    assert not x64.exists() and not arm64.exists()
+    assert unrelated.exists(), "only Node's own folders"
+    assert dropped == [[arm64, x64]]
+
+
+async def test_git_is_uninstalled_through_winget_and_a_failure_is_reported_as_one(tmp_path, monkeypatch):
+    local = tmp_path / "AppData" / "Local"
+    _user_windows(monkeypatch, local)
+    git = _exe(local / "Microsoft" / "WinGet" / "Links", "git.exe")
+
+    async def uninstalled(ids):
+        assert ids == ("Git.MinGit",)
+        return "Git.MinGit", ""
+
+    monkeypatch.setattr(bootstrap, "_winget_uninstall_user", uninstalled)
+    assert await bootstrap._remove_windows_user_install("git", git) == (True, "git (winget: Git.MinGit)")
+
+    async def refused(ids):
+        return None, "winget uninstall Git.MinGit: exit 0x8A150006"
+
+    monkeypatch.setattr(bootstrap, "_winget_uninstall_user", refused)
+    assert await bootstrap._remove_windows_user_install("git", git) == (
+        False,
+        "git (winget uninstall Git.MinGit: exit 0x8A150006)",
+    )
+
+
+async def test_anything_else_and_other_platforms_are_not_touched(tmp_path, monkeypatch):
+    local = tmp_path / "AppData" / "Local"
+    _user_windows(monkeypatch, local)
+    assert await bootstrap._remove_windows_user_install("claude", _exe(local / "bin", "claude.exe")) is None
+    assert await bootstrap._remove_windows_user_install("node", _exe(tmp_path / "elsewhere", "node.exe")) is None
+    monkeypatch.setattr(sys, "platform", "darwin")
+    assert (
+        await bootstrap._remove_windows_user_install("git", _exe(local / "Microsoft" / "WinGet" / "Links", "git.exe"))
+        is None
+    )
+
+
+async def test_the_per_user_uninstall_asks_for_no_administrator_prompt(tmp_path, monkeypatch):
+    """Elevating would put a Windows prompt on a screen nobody is watching; a per-user package needs none."""
+    calls: list[tuple] = []
+
+    class _Proc:
+        returncode = 0
+
+        async def communicate(self):
+            return b"Successfully uninstalled\r\n", b""
+
+    async def spawn(*argv, **_kw):
+        calls.append(argv)
+        return _Proc()
+
+    async def installed(_winget, ids):
+        return ids[0]
+
+    async def never_elevated(*_a, **_kw):
+        raise AssertionError("a per-user uninstall must not be elevated")
+
+    monkeypatch.setattr(bootstrap, "_find_winget", lambda: "winget")
+    monkeypatch.setattr(bootstrap, "_winget_installed_id", installed)
+    monkeypatch.setattr(bootstrap, "_run_elevated", never_elevated)
+    monkeypatch.setattr(bootstrap.asyncio, "create_subprocess_exec", spawn)
+
+    assert await bootstrap._winget_uninstall_user(("Git.MinGit",)) == ("Git.MinGit", "")
+    assert calls[0][:5] == ("winget", "uninstall", "--id", "Git.MinGit", "-e")
