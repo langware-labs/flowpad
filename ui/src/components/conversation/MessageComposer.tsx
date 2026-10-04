@@ -243,6 +243,9 @@ export function MessageComposer({
           ? t`"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
           : t`${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
     );
+    // Back to the text: the annotator dialog took focus and hands it to <body> on close, so
+    // whatever attached the file — paste, drop, the picker — the next keystroke goes to the reply.
+    requestAnimationFrame(() => textareaRef.current?.focus());
     return annotated.length;
   };
 
