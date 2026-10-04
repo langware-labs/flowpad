@@ -55,8 +55,11 @@ class MessageSource(RecordSource):
     sends_may_draft: ClassVar[bool] = False
     #: The files ``send`` accepts — kinds, sizes, how many per provider message. Takes none by default.
     files: ClassVar[FileSupport] = FileSupport()
-    #: ``reply(origin)`` quotes THAT message (WhatsApp, Telegram, email's In-Reply-To); ``False`` means a
-    #: reply only lands in the message's thread (Slack).
+    #: A person can answer one message of this channel (``reply(origin)`` reaches them). ``False`` for a
+    #: channel that only speaks or only records — the surface then offers no Reply.
+    replies: ClassVar[bool] = True
+    #: ``reply(origin)`` quotes THAT message where the recipient reads (WhatsApp, Telegram); ``False``
+    #: means a reply only lands in the message's thread (email, Slack).
     quotes: ClassVar[bool] = False
     #: How many reactions one person keeps on a message: 1 = a new one replaces (WhatsApp, a Telegram
     #: bot); 0 = any number (Slack).

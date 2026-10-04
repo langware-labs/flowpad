@@ -86,6 +86,10 @@ def _fm_response_fields(fm: "FlowMessage", conv: "Conversation") -> dict:
         # without them the card waited for the next entity refetch.
         "remote_worker_session_id": dumped.get("remote_worker_session_id"),
         "kind": dumped.get("kind"),
+        # The quote + native thread ride the response too: the sender's bubble renders from it.
+        "reply_to_id": dumped.get("reply_to_id"),
+        "thread_root_id": dumped.get("thread_root_id"),
+        "thread_id": dumped.get("thread_id"),
         "is_draft": bool(dumped.get("is_draft")),
         "conversation_id": conv.id,
         "message_count": conv.message_count,
@@ -103,6 +107,8 @@ def _build_reply_flow_message(
     shared_context_entities: Optional[list[str]] = None,
     remote_worker_session_id: Optional[str] = None,
     kind: Optional[str] = None,
+    reply_to_id: Optional[str] = None,
+    thread_root_id: Optional[str] = None,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
@@ -140,6 +146,8 @@ def _build_reply_flow_message(
             "is_draft": is_draft,
             **({"remote_worker_session_id": remote_worker_session_id} if remote_worker_session_id else {}),
             **({"kind": kind} if kind else {}),
+            **({"reply_to_id": reply_to_id} if reply_to_id else {}),
+            **({"thread_root_id": thread_root_id} if thread_root_id else {}),
             # The sender authored this message → it is read from their side. Without
             # this the sender's own outgoing message persists is_read=False and the
             # stream inbox row's unread facet (``!latestMessage.is_read``, which does NOT
@@ -545,6 +553,8 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
             cloned_from_sender_id=reply_fm.cloned_from_sender_id or None,
             remote_worker_session_id=reply_fm.remote_worker_session_id or None,
             kind=sendable_kind.value if sendable_kind else None,
+            reply_to_id=reply_fm.reply_to_id or None,
+            thread_root_id=reply_fm.thread_root_id or None,
         )
         return True
     except Exception as e:  # noqa: BLE001
@@ -1009,6 +1019,7 @@ async def handle_add_message(
 
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
+    reply_to_id = (body.get("reply_to_id") or "").strip() or None
     if (
         not message
         and not prompt_text_preview
@@ -1022,6 +1033,16 @@ async def handle_add_message(
     conv = await Conversation.get_one({"id": conversation_id})
     if not conv:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
+    # A reply quotes one message of THIS conversation and joins the thread rooted at it.
+    thread_root_id: Optional[str] = None
+    if reply_to_id:
+        from flow_sdk.stream_inbox.native_threads import thread_root_for_reply  # noqa: PLC0415
+
+        thread_root_id = await thread_root_for_reply(conv.id, reply_to_id)
+        if thread_root_id is None:
+            return ApiFailResponse(
+                message=f"reply_to_id {reply_to_id} is not a message of this conversation", status_code=400
+            )
 
     # Merge the items being shared into THIS conversation's context (both the
     # conversation row and the items themselves), so a re-share into an existing
@@ -1079,6 +1100,8 @@ async def handle_add_message(
         shared_context_entities=shared_context_entities,
         remote_worker_session_id=remote_worker_session_id,
         kind=message_kind,
+        reply_to_id=reply_to_id,
+        thread_root_id=thread_root_id,
     )
 
     if start_settings is not None:
@@ -1136,6 +1159,8 @@ async def handle_add_message(
         # Session messages always ride the HTTP slow path: the WS bridge body
         # is text-only and would drop the session-snapshot carrier attachment.
         and not remote_worker_session_id
+        # So do replies: the WS body has no room for the quote / thread root.
+        and not reply_to_id
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,
@@ -1225,6 +1250,11 @@ async def handle_add_message(
         reply_fm.delivery_status = DeliveryStatus.PENDING_SEND.value
 
     reply_fm = await reply_fm.save(someone_typeid)
+
+    if reply_fm.thread_root_id and not is_draft:
+        from flow_sdk.stream_inbox.native_threads import project_native_thread  # noqa: PLC0415
+
+        await project_native_thread(reply_fm)
 
     if is_draft:
         # Local-only draft: skip jsonl append and hub push.
