@@ -1,0 +1,32 @@
+name: Windows wheel deps
+
+# Does a clean Windows still load everything a new install resolves?
+#
+# `usearch` imports MSVCP140.dll and a Windows without the Visual C++ Redistributable cannot load it, so
+# Flowpad ships that one DLL (flow_sdk/rag/vcruntime/). This reads the PE imports of every Windows wheel a
+# FRESH resolution of pyproject.toml picks today (what `uv tool install flowpad` gets — not uv.lock) and fails
+# if any other package needs a Redistributable DLL that neither Python nor Flowpad supplies.
+#
+# SCHEDULED, NOT PER-PR, on purpose: the answer changes when a dependency publishes a release, with no change
+# to this repository, and tests.yml's results feed the PyPI deploy gate — a third party's release must not
+# block ours. A red run here means: look at the package it names, then either ship its DLL like usearch's or
+# pin it. Reads the import tables only; whether a machine without the runtime loads the files was measured
+# once on Windows (flow_sdk/rag/vcruntime/README.md). Needs NO repository secrets.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+jobs:
+  scan:
+    name: Windows wheels import only supplied DLLs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          python-version: '3.11'
+      - name: Scan a fresh resolution
+        run: python3 scripts/check_windows_wheel_deps.py --fresh --tag cp311 --tag cp312 --tag cp313
