@@ -568,7 +568,11 @@ class HubWebSocketManager:
         try:
             while not self._stop_requested:
                 try:
-                    await self._set_state(HubConnectionStatus.CONNECTING, connected=False, verified=False, error=None)
+                    # ``verified`` is left alone on a reconnect: the same credentials can only
+                    # name the same user, and a refused key ends this loop as AUTH_REJECTED
+                    # below. Only ``stop()`` (logout, login's restart) forgets who the hub named
+                    # -- otherwise the ~10-minute drop signs the box out of every hub endpoint.
+                    await self._set_state(HubConnectionStatus.CONNECTING, connected=False, error=None)
                     # Fresh id every connect attempt — never reuse (see
                     # ``_connection_id`` doc: a reused id collides with a stale
                     # hub-side ghost handler and is rejected as a duplicate).
@@ -669,7 +673,7 @@ class HubWebSocketManager:
                         rejected_api_key=connection_credentials.api_key,
                     ):
                         return
-                    await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
+                    await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, error=None)
                 except Exception as exc:
                     self._fail_pending(exc)
                     logger.info("Hub WS listener disconnected: %s", exc)

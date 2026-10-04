@@ -58,3 +58,12 @@ async def test_a_default_still_missing_keeps_the_first_answer(box):
 
     assert await wizard_start._settle_after_install(skipped) is skipped
     assert box["settled"] == 0, "a person who skipped the chooser is not asked twice"
+
+
+async def test_a_skipped_chooser_is_not_reopened_once_the_default_is_installed(box):
+    """Skipping is an answer. Re-asking after the install navigated the tab to the chooser and
+    closed the wizard popup the person was watching (first_run_setup e2e)."""
+    skipped = CliResult.not_yet("no LLM source was chosen")
+
+    assert await wizard_start._settle_after_install(skipped) is skipped
+    assert box["settled"] == 0, "a person who skipped the chooser is not asked twice"

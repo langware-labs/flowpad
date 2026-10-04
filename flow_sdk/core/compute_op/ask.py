@@ -144,17 +144,29 @@ def served_here() -> bool:
     return _SERVED_HERE
 
 
+#: Something in THIS process answers every question it is handed (``answered_here(present=True)``),
+#: so a question needs no tab or window to count as shown.
+_ANSWERER_HERE = False
+
+
 @contextmanager
-def answered_here():
+def answered_here(*, present: bool = False):
     """For the length of the block, THIS process is where answers arrive — a CLI that answers its
     own questions on its terminal (``flow project setup``). Restored after, so nothing else run
-    in the process later mistakes it for the backend."""
-    global _SERVED_HERE
+    in the process later mistakes it for the backend.
+
+    ``present``: an answerer in this process takes every question (``flow wizard run --yes``), so an
+    ``until_answered`` ask has someone to wait for without a live tab — rather than concluding
+    "nobody could be shown the question" on a headless box.
+    """
+    global _SERVED_HERE, _ANSWERER_HERE
     prior, _SERVED_HERE = _SERVED_HERE, True
+    prior_present, _ANSWERER_HERE = _ANSWERER_HERE, present
     try:
         yield
     finally:
         _SERVED_HERE = prior
+        _ANSWERER_HERE = prior_present
 
 
 #: Questions waiting for an answer, by id. Empty between asks: a question is
@@ -357,7 +369,7 @@ async def ask_person(
         workdir=workdir,
         say=say,
     )
-    shown = await raise_question(question)
+    shown = _ANSWERER_HERE or await raise_question(question)
     if timeout is None and not shown:
         # No deadline: give a live tab the presence grace window before
         # concluding nobody is there — see `PRESENCE_GRACE_SECONDS`.

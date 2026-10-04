@@ -43,6 +43,8 @@ vi.mock('@src/hooks/use-projects', () => ({
   useProjects: () => ({ projects: h.projects, isLoading: false, refetch: h.refetchProjects }),
 }));
 vi.mock('@src/hooks/use-sandboxes', () => ({
+  // A sandbox card, never a machine connected with `flow connect`.
+  isUserMachine: () => false,
   useSandboxes: () => ({
     // `node_provider_id` marks it as launched — the card branches on it to
     // choose between Open and Launch.

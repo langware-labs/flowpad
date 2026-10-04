@@ -196,25 +196,7 @@ async def test_a_stranger_is_refused_by_the_pool_in_a_sentence(hub_session, bob_
 # ── an Agent owns the desk ───────────────────────────────────────────────────
 
 
-@pytest.fixture
-def cli_for_a_real_turn():
-    """The spawned CLI needs a harness capability and a Claude home it can
-    authenticate from. The capability is borrowed from the mailbox test so the
-    two agree on what a turn needs. The home is NOT taken by swapping `$HOME`
-    (that would also move this process's own credentials, and the poll would
-    read the desk signed out): `FLOWPAD_CLAUDE_HOME` is the variable the test
-    settings honour for exactly this — point it at the real `~/.claude`."""
-    import os
-
-    from tests.hub_tests.test_agent_email_conversation import _inject_claude_harness
-
-    if not os.environ.get("FLOWPAD_CLAUDE_HOME"):
-        pytest.skip("set FLOWPAD_CLAUDE_HOME=$HOME/.claude so the spawned CLI can authenticate")
-    _inject_claude_harness()
-    yield
-
-
-async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, desk, cli_for_a_real_turn):
+async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, desk, real_claude_turn):
     """The reason the desk became a source: an Agent can hold it and answer
     people nobody listed. Same triage as the mailbox test — no process at all is
     our wiring broken; a process that said nothing is the CLI's availability."""
@@ -225,7 +207,7 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
     from flow_sdk.stream_inbox import start_stream_inbox
     from flow_sdk.stream_inbox.agent_scope import resolve_agent_stream_inbox_scope
     from tests.hub_tests._hub_agent import create_hub_agent, delete_hub_agent
-    from tests.hub_tests.test_agent_email_conversation import _ran_a_turn
+    from tests.hub_tests._real_cli import fail_unless_a_turn_really_ran
 
     base, token = hub_session["base_url"], hub_session["api_key"]
     await get_or_create_local_user()
@@ -266,9 +248,7 @@ async def test_an_agent_owned_desk_answers_a_stranger(hub_session, bob_token, de
         await _poll(source)
         reply = await _await_hub_message(base, token, ticket, containing=nonce, not_from=guest_id)
         if reply is None:
-            if not await _ran_a_turn():
-                pytest.fail("no agent process was created — the ticket never reached the agent")
-            pytest.skip("agent process ran but produced no reply (no live CLI turn available)")
+            await fail_unless_a_turn_really_ran("no agent process was created — the ticket never reached the agent")
         # The hub saw a member reply and masked it; locally it is the agent's.
         assert reply["sender_name"] == DISPLAY_NAME
         await _poll(source)

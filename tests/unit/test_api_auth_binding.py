@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 from cryptography.fernet import Fernet
 
+from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import FUNDED_MAX_OUTPUT_TOKENS
 from tests.utils.harness_installed import harness_installed  # noqa: F401 — a fixture
 
 # CI has no vendor CLI on PATH; a turn needs one installed (tests/utils/harness_installed.py).
@@ -292,6 +293,7 @@ async def test_claude_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth.env["ANTHROPIC_API_KEY"] == ""
     assert auth.env["MAX_THINKING_TOKENS"] == "0"
     assert auth.env["DISABLE_INTERLEAVED_THINKING"] == "1"
+    assert auth.env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == str(FUNDED_MAX_OUTPUT_TOKENS)
     assert auth.model_slug == "anthropic/claude-haiku-4.5"  # OpenRouter slugs: the endpoint is a passthrough
     assert auth.config_overrides == []
 
@@ -563,7 +565,39 @@ async def test_deepagents_hub_endpoint_binding(env, monkeypatch) -> None:
     assert auth is not None
     assert auth.env["FLOWPAD_DEEPAGENTS_BASE_URL"] == f"{HUB_INVOKE}/v1"
     assert auth.env["FLOWPAD_DEEPAGENTS_API_KEY"] == "fp-hub-key"
+    assert auth.env["FLOWPAD_DEEPAGENTS_MAX_OUTPUT_TOKENS"] == str(FUNDED_MAX_OUTPUT_TOKENS)
     assert auth.model_slug == "z-ai/glm-5.3-flash"
+
+
+@pytest.mark.parametrize(
+    ("worker", "var"),
+    [
+        ("claude", "CLAUDE_CODE_MAX_OUTPUT_TOKENS"),
+        ("opencode", "OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
+        ("deepagents", "FLOWPAD_DEEPAGENTS_MAX_OUTPUT_TOKENS"),
+    ],
+)
+async def test_a_funded_spawn_caps_its_replies_where_the_harness_takes_a_cap(env, monkeypatch, worker, var) -> None:
+    """Uncapped, a harness asks for 32000 (claude, opencode) or the model's maximum (deepagents):
+    a hub ceiling refuses the first, an OpenRouter daily limit the second."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api(worker, provider="flowpad")
+    auth = await resolve_worker_api_auth(_fake_process(worker, model="sm"))
+    assert auth is not None and auth.env[var] == str(FUNDED_MAX_OUTPUT_TOKENS)
+
+
+def test_the_deepagents_model_sends_the_cap_its_binding_set(monkeypatch) -> None:
+    """The runner's model carries the binding's reply cap -- and sends none when unset."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.deepagents import models, runner
+
+    monkeypatch.setenv(runner.BASE_URL_ENV, "http://hub/v1")
+    monkeypatch.setenv(runner.API_KEY_ENV, "k")
+    monkeypatch.setenv(runner.MAX_OUTPUT_ENV, "16384")
+    assert models.openai_wire_model("z-ai/glm-5").max_tokens == 16384
+    monkeypatch.delenv(runner.MAX_OUTPUT_ENV)
+    assert models.openai_wire_model("z-ai/glm-5").max_tokens is None
 
 
 async def test_deepagents_falls_back_to_a_models_allow_slug(env) -> None:
@@ -675,3 +709,123 @@ async def test_deepagents_has_no_device_login_to_fall_back_on(env) -> None:
     assert device_rungs(await list_llm_candidates("claude"))
     with pytest.raises(WorkerSpawnError):
         await resolve_worker_api_auth(_fake_process("deepagents"))
+
+
+# ── --model <family>:<size> ─────────────────────────────────────────────────────────────────
+
+
+#: The family table, spelled out here so a change to it is a deliberate edit in two places: every
+#: slug must be one the hub can price (a cost-capped endpoint refuses an unpriced model).
+FAMILY_TABLE = {
+    "kimi": ("moonshotai/kimi-k2-thinking", "moonshotai/kimi-k2.5", "moonshotai/kimi-k2.6"),
+    "glm": ("z-ai/glm-4.7", "z-ai/glm-5", "z-ai/glm-5.3"),
+    "openai": ("openai/gpt-oss-20b", "openai/gpt-oss-120b", "openai/gpt-5"),
+    "claude": ("anthropic/claude-haiku-4.5", "anthropic/claude-sonnet-4.6", "anthropic/claude-opus-4.8"),
+}
+
+
+@pytest.mark.parametrize("family", sorted(FAMILY_TABLE))
+def test_every_family_size_resolves_to_its_slug(family) -> None:
+    from flow_sdk.builtin.agentic_process.model_tiers import resolve_family_tier
+
+    for size, slug in zip(("sm", "md", "lg"), FAMILY_TABLE[family]):
+        assert resolve_family_tier(f"{family}:{size}") == slug
+        assert resolve_family_tier(f"{family.upper()}:{size.upper()}") == slug  # a person's casing
+
+
+def test_what_is_not_family_syntax_is_left_alone() -> None:
+    from flow_sdk.builtin.agentic_process.model_tiers import is_family_model, resolve_family_tier
+
+    for model in (None, "", "sm", "lg", "z-ai/glm-4.7", "z-ai/glm-4.5-air:free", "haiku"):
+        assert not is_family_model(model)
+        assert resolve_family_tier(model) is None
+    with pytest.raises(ValueError, match="sm, md, lg"):
+        resolve_family_tier("kimi:xl")
+
+
+#: Every funded harness, and the slug ``kimi:md`` must reach it as -- opencode addresses every
+#: model as ``<provider>/<model>``; the rest take the gateway slug bare.
+FAMILY_SPELLING = {
+    "claude": "moonshotai/kimi-k2.5",
+    "codex": "moonshotai/kimi-k2.5",
+    "copilot": "moonshotai/kimi-k2.5",
+    "opencode": "openrouter/moonshotai/kimi-k2.5",
+    "deepagents": "moonshotai/kimi-k2.5",
+}
+
+
+@pytest.mark.parametrize("worker", sorted(FAMILY_SPELLING))
+async def test_a_family_model_reaches_each_hub_funded_worker_spelled_its_way(env, monkeypatch, worker) -> None:
+    """``flow process start --worker <w> --model kimi:md`` on a box bound to a hub endpoint: the
+    slug the binding resolves is what the spawn stamps onto the worker's command."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+        apply_api_model_to_options,
+        resolve_worker_api_auth,
+    )
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api(worker, provider="flowpad")
+
+    process = _fake_process(worker, model="kimi:md")
+    auth = await resolve_worker_api_auth(process)
+    assert auth is not None and auth.model_slug == FAMILY_SPELLING[worker]
+    cmd = SimpleNamespace(model="kimi:md")
+    await apply_api_model_to_options(cmd, process)
+    assert cmd.model == FAMILY_SPELLING[worker]
+
+
+async def test_a_family_model_is_not_swapped_for_a_models_allow_default(env) -> None:
+    """The models_allow fallback rescues a CODE default; a model the caller named is the
+    caller's choice, and an endpoint that refuses it should say so rather than run another."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
+    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMFilters
+    from flow_sdk.cli.auth.hub_login import set_api_key
+    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
+
+    set_api_key("fp-hub-key")
+    endpoint = LLMEndpoint.projection("hub", "course-ep", name="AI Course budget", provider="openrouter")
+    endpoint.filters = LLMFilters(models_allow=["anthropic/claude-haiku-4.5"])
+    source = LLMSource(
+        endpoint_typeid=str(endpoint.typeid),
+        name=endpoint.name,
+        rank=0,
+        eligible=True,
+        auto=True,
+        authority=LLMSourceAuthority.CACHED,
+    )
+
+    auth = await binding_for_candidate("deepagents", Candidate(endpoint, source), tier="glm:sm")
+    assert auth is not None and auth.model_slug == "z-ai/glm-4.7"
+
+
+async def test_a_family_model_with_a_bad_size_fails_the_spawn_with_the_sizes(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
+
+    _bind_hub(monkeypatch)
+    await _set_harness_api("deepagents", provider="flowpad")
+
+    with pytest.raises(WorkerSpawnError, match="sm, md, lg"):
+        await resolve_worker_api_auth(_fake_process("deepagents", model="glm:huge"))
+
+
+async def test_a_family_model_on_a_device_login_is_refused_in_a_sentence(env) -> None:
+    """A device login runs the vendor's own models; ``kimi:sm`` names nothing there."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerSpawnError
+
+    await _signed_in("claude")
+    with pytest.raises(WorkerSpawnError, match="model family.*flow llm user use"):
+        await resolve_worker_api_auth(_fake_process("claude", model="kimi:sm"))
+    # A tier on the same login is still the vendor's to resolve.
+    assert await resolve_worker_api_auth(_fake_process("claude", model="sm")) is None
+
+
+@pytest.mark.parametrize("worker", sorted(FAMILY_SPELLING))
+def test_a_specs_own_tier_slugs_are_spelled_with_its_prefix(worker) -> None:
+    """``slug_prefix`` is how the harness spells a model; its own tier slugs already are."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
+
+    spec = driver_api_auth_spec(worker)
+    assert all(slug.startswith(spec.slug_prefix) for slug in spec.tier_models.values())

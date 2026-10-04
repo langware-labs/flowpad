@@ -18,6 +18,7 @@ from flow_sdk.assets.types.wizard import read_wizard
 from flow_sdk.builtin.subagent_loading import load_system_subagent
 from flow_sdk.builtin.wizard import Wizard
 from flow_sdk.config import system_projects_root
+from flow_sdk.flowpad_types.vendors import VENDORS
 from flow_sdk.schema.data_spec.wizard_spec import StepKind, WizardSpec
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
@@ -98,6 +99,9 @@ def test_every_shipped_wizard_is_reachable():
         for folder, spec in specs.items()
         if spec.agent or (WIZARD_ROOT / folder / "agentic-assets" / "trigger").is_dir()
     }
+    # A harness CLI's own install wizard is run on request (`flow wizard run llm-setup-<h>`),
+    # never by the unattended `llm-setup` -- the CLI is its surface (test_llm_setup_wizard).
+    reachable |= {f"llm-setup-{v.key}" for v in VENDORS if v.install_bin_dirs} & set(specs)
     # A step names its callee by `name`, which need not be its folder's.
     frontier = list(reachable)
     while frontier:

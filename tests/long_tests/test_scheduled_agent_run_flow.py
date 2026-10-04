@@ -94,6 +94,9 @@ async def test_a_schedule_one_second_ahead_runs_the_agent_headlessly(tmp_path: P
         prompt = "Reply with the single word: scheduled"
 
         # ── the places: this computer first ─────────────────────────────────
+        # Listing places never creates one: this computer becomes a place once
+        # the agent is launched here — the UI's "New deployment → This computer".
+        await _data(client, "POST", f"/api/v1/graph/agent/{agent_id}/deploy", json={"provider": "local"})
         places = await _data(client, "GET", f"/api/v1/graph/agent/{agent_id}/places")
         assert places and places[0]["is_local"] is True, places
         here_id = places[0]["deployment"]["id"]

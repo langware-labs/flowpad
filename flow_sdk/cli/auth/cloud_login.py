@@ -297,7 +297,11 @@ async def _finalize_login(login_data: LoginData) -> None:
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-        await hub_ws_manager.restart()
+        await hub_ws_manager.restart(wait_connected=True)
+        # The restart forgot who the hub named; ask again, as boot does, or a box signed in
+        # after startup is never signed in to FlowPad (``core.status.hub_status``).
+        if hub_ws_manager.is_connected:
+            await hub_ws_manager.verify_current_user()
     except Exception:
         pass
 

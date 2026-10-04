@@ -14,10 +14,12 @@ import { useAllocateAgentMailbox } from '@src/hooks/use-allocate-agent-mailbox';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { errorMessage } from '@src/lib/error-message';
 import { notify } from '@src/notifications';
-import { useAttachedChannels } from './AttachedChannelsBar';
+import { AttachedChannelsBar, useAttachedChannels } from './AttachedChannelsBar';
 import { StreamInboxView } from './StreamInboxView';
 
 const MIN_REFRESH_SECONDS = 60;
+/** Nothing to narrow while the agent has no channel. */
+const NO_FILTER: ReadonlySet<string> = new Set();
 
 export function AgentStreamInboxView() {
   const { t } = useLingui();
@@ -43,7 +45,7 @@ export function AgentStreamInboxView() {
   const activeState = state?.agent_id === parsed.agentId ? state : null;
   // The agent's channels — the stream inbox header's own rows, so "has a
   // channel at all" and what that header shows can never disagree.
-  const { rows: channels } = useAttachedChannels(agentTypeId);
+  const { rows: channels, specFor } = useAttachedChannels(agentTypeId);
 
   const loadState = useCallback(async () => {
     const currentAgent = agentRef.current;
@@ -194,6 +196,11 @@ export function AgentStreamInboxView() {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+          {/* The header line's + is how an agent gets a non-email channel, so the
+              empty state keeps it rather than leaving email as the only way in. */}
+          {agentTypeId && (
+            <AttachedChannelsBar owner={agentTypeId} rows={channels} specFor={specFor} selected={NO_FILTER} onSelectedChange={() => undefined} />
+          )}
           <p>
             <Trans>No channel reaches this Agent yet. Give it an email address to start.</Trans>
           </p>

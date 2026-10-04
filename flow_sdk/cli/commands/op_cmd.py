@@ -4,7 +4,9 @@
     flow op check <name>         — ask the question; change nothing
     flow op run <name>           — ask, make the one call, prove
 
-A thin HTTP caller over the same entity actions the UI calls; no logic here.
+A thin HTTP caller over the same entity actions the UI calls; no logic here. With NO backend
+running, ``check`` / ``run`` run a SHIPPED op in this process instead (``core.wizard.local_run``),
+and ``run --yes`` answers its confirm question.
 
 **The exit code is the product.** It is the op's own verdict — the same one a
 wizard step reads — in the form a shell script can test, so both verbs answer in
@@ -133,8 +135,34 @@ def list_ops() -> None:
     ]})
 
 
+def _here(name: str, *, yes: bool = False, check_only: bool = False) -> NoReturn:
+    """No backend running: run (or check) the SHIPPED op *name* in this process, exit its code.
+
+    ``by`` says which call settled it (``already`` / ``nothing`` / ``cli`` / ``agent`` / ``ask``).
+    """
+    from flow_sdk.cli.commands._common import quiet_logs, run_async, safe_echo  # noqa: PLC0415
+    from flow_sdk.core.wizard.local_run import run_shipped_op, satisfied_by  # noqa: PLC0415
+    from flow_sdk.migrations.runner import _bootstrap_local  # noqa: PLC0415
+
+    quiet_logs()
+
+    async def run():
+        await _bootstrap_local()
+        return await run_shipped_op(
+            name, yes=yes, check_only=check_only, say=lambda text: safe_echo(f"  {text}", err=True)
+        )
+
+    returned = run_async(run())
+    if returned is None:
+        fail(EXIT_NOT_FOUND, "OP_NOT_FOUND", f"No shipped compute op named {name!r} (no backend is running to look further).")
+    ok({"op": name, "returned": returned.trimmed().model_dump(mode="json"), "by": satisfied_by(returned)})
+    raise typer.Exit(int(returned.exit_code))
+
+
 @op_app.command("check", help="Ask whether the goal already holds. Makes no call.")
 def check(name: Annotated[str, typer.Argument(help="The op's name.")]) -> None:
+    if discover_port(required=False) is None:
+        _here(name, check_only=True)
     row = _find(name)
     returned = get_graph_json(_url(f"compute_op/{row['id']}/check"), on_error=_on_error())
     ok({"op": name, "returned": returned or {}})
@@ -145,7 +173,20 @@ def check(name: Annotated[str, typer.Argument(help="The op's name.")]) -> None:
 def run(
     name: Annotated[str, typer.Argument(help="The op's name.")],
     approved: Annotated[bool, typer.Option("--approved", help="Authorize an op this instance does not ship.")] = False,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", help="No backend running: answer the op's confirm question yes, here."),
+    ] = False,
 ) -> None:
+    if discover_port(required=False) is None:
+        _here(name, yes=yes)
+    if yes:
+        fail(
+            EXIT_REQUEST_FAILED,
+            "YES_NEEDS_NO_BACKEND",
+            "--yes answers questions in this terminal, which only happens with no backend running; "
+            "with one running, its questions are asked in the app.",
+        )
     row = _find(name)
     returned: Optional[dict] = post_graph_json(
         _url(f"compute_op/{row['id']}/run"),

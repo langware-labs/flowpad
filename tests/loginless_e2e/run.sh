@@ -8,11 +8,17 @@
 # SCRIPT='worker_matrix.py [harness...]' runs every harness x cheap models instead of the snippet.
 # BARE=1 runs the wheel-only image (Dockerfile.bare: no node, no harness CLI) and the CLI form,
 # `flow process start "$PROMPT"`, on the bootstrap worker that ships inside the wheel.
+# MATRIX=1 runs family_matrix.sh in the wheel-only image instead: every harness installed by its
+# wizard, then every worker x family:size answering "hi", funded by make_matrix_endpoint.py's
+# public entry (Vertex root first, OpenRouter for what Vertex cannot serve).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 HUB="${HUB:-http://localhost:8094}"
 PROMPT="${PROMPT:-Reply with exactly the single word pong and nothing else.}"
+if [[ "${MATRIX:-}" == "1" ]]; then
+  BARE=1
+fi
 if [[ "${BARE:-}" == "1" ]]; then
   IMAGE="${IMAGE:-flowpad-loginless:bare}"
   DOCKERFILE=tests/loginless_e2e/Dockerfile.bare
@@ -32,6 +38,14 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   docker build -q -f "$DOCKERFILE" -t "$IMAGE" . >/dev/null
 fi
 
+if [[ "${MATRIX:-}" == "1" ]]; then
+  ENDPOINT_ID="${ENDPOINT_ID:-$(HUB="$HUB" uv run python tests/loginless_e2e/make_matrix_endpoint.py)}"
+  echo "public endpoint: $ENDPOINT_ID" >&2
+  exec docker run --rm --add-host=host.docker.internal:host-gateway \
+    -v "$PWD/tests/loginless_e2e/family_matrix.sh:/home/flow/family_matrix.sh:ro" \
+    -e WORKERS -e FAMILIES -e SIZES -e WIZARDS -e PROMPT="${CELL_PROMPT:-hi}" \
+    "$IMAGE" bash /home/flow/family_matrix.sh "$ENDPOINT_ID" "$HUB_IN_CONTAINER"
+fi
 ENDPOINT_ID="${ENDPOINT_ID:-$(HUB="$HUB" uv run python tests/loginless_e2e/make_public_endpoint.py)}"
 echo "public endpoint: $ENDPOINT_ID" >&2
 

@@ -73,6 +73,58 @@ DEEPAGENTS_MODEL_TIERS: dict[str, str] = {
 }
 
 
+# A model FAMILY at a size — ``--model kimi:sm`` — for a worker funded by an LLM endpoint. The
+# per-worker tables above pick ONE family per harness (claude's small is haiku, opencode's is a
+# GLM); this table lets any funded harness run any family. Canonical ``vendor/model`` gateway
+# slugs, every one in the hub's price table (a cost-capped endpoint refuses an unpriced model);
+# each harness then spells the slug its own way (``ApiAuthSpec.slug_prefix``). A device login has
+# no gateway to name these against, so there a family model is refused, not guessed.
+FAMILY_TIERS: dict[str, dict[str, str]] = {
+    "kimi": {
+        ModelTier.SM.value: "moonshotai/kimi-k2-thinking",
+        ModelTier.MD.value: "moonshotai/kimi-k2.5",
+        ModelTier.LG.value: "moonshotai/kimi-k2.6",
+    },
+    "glm": {
+        ModelTier.SM.value: "z-ai/glm-4.7",
+        ModelTier.MD.value: "z-ai/glm-5",
+        ModelTier.LG.value: "z-ai/glm-5.3",
+    },
+    "openai": {
+        ModelTier.SM.value: "openai/gpt-oss-20b",
+        ModelTier.MD.value: "openai/gpt-oss-120b",
+        ModelTier.LG.value: "openai/gpt-5",
+    },
+    "claude": {
+        ModelTier.SM.value: "anthropic/claude-haiku-4.5",
+        ModelTier.MD.value: "anthropic/claude-sonnet-4.6",
+        ModelTier.LG.value: "anthropic/claude-opus-4.8",
+    },
+}
+
+
+def is_family_model(model: str | None) -> bool:
+    """Whether *model* is ``<family>:<size>`` syntax for a known family (any size, even a bad
+    one — so a typo'd size is reported, not sent as a literal slug)."""
+    family, sep, _ = (model or "").partition(":")
+    return bool(sep) and family.strip().lower() in FAMILY_TIERS
+
+
+def resolve_family_tier(model: str | None) -> str | None:
+    """The canonical slug for ``<family>:<size>`` (``kimi:sm`` → ``moonshotai/kimi-k2-thinking``),
+    or ``None`` when *model* is not family syntax — a tier, a literal slug, an OpenRouter
+    ``:free`` variant. A known family with an unknown size raises ``ValueError`` naming the sizes.
+    """
+    if not is_family_model(model):
+        return None
+    family, _, size = model.partition(":")  # type: ignore[union-attr] — is_family_model checked it
+    sizes = FAMILY_TIERS[family.strip().lower()]
+    slug = sizes.get(size.strip().lower())
+    if slug is None:
+        raise ValueError(f"{model!r}: {family} comes in {', '.join(sizes)}")
+    return slug
+
+
 def resolve_model_tier(tier_map: dict[str, str | None], model: str | None) -> str | None:
     """Map a tier to a concrete model or vendor-auto via *tier_map*.
 

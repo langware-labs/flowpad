@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { formatFSOrigin, isGitOrigin, isHubRepoOrigin, normalizeFSOrigin, type HubRepoOrigin } from '@sdk';
+import { projectOriginOf } from '@sdk/models/FSOrigin';
 import { assetGitLinkFor } from '@src/hooks/use-asset-git-link';
 
 const HUB: HubRepoOrigin = {
@@ -48,5 +49,15 @@ describe('hub_repo origin', () => {
       repoLabel: 'acme/tools',
     });
     expect(assetGitLinkFor(null, false)).toEqual({ url: null, repoLabel: null });
+  });
+});
+
+describe('projectOriginOf — what a shared project can be checked out from', () => {
+  it('takes a git repo root or the hub-hosted copy, nothing else', () => {
+    const hub = { kind: 'hub_repo', repo: 'git_repo-1', rel_path: '.' } as const;
+    expect(projectOriginOf({ git_origin: hub })).toEqual(hub);
+    expect(projectOriginOf({ origin: { kind: 'git', provider: 'github', owner: 'o', name: 'n', rel_path: '' } })?.kind).toBe('git');
+    expect(projectOriginOf({ origin: { kind: 'hub_repo', repo: '', rel_path: '.' } })).toBeNull();
+    expect(projectOriginOf({ origin: { kind: 'local', base: '/x', rel_path: '' } })).toBeNull();
   });
 });

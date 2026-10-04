@@ -1,0 +1,27 @@
+{
+  "type": "compute_op",
+  "id": "0a7536ec-6c01-43a6-963d-2c6ed2f48595",
+  "name": "codex-on-path",
+  "label": "Codex",
+  "description": "codex (Codex CLI) is runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+      "linux": "curl -fsSL https://chatgpt.com/codex/install.sh | sh",
+      "win32": "irm https://chatgpt.com/codex/install.ps1 | iex"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install Codex CLI (https://openai.com/codex/) on this machine.",
+        "retries": 1
+      }
+    }
+  ],
+  "status_check": "install:codex"
+}
