@@ -22,6 +22,7 @@ Key functions brought over:
 """
 
 import asyncio
+import errno
 import functools
 import json
 import logging
@@ -31,6 +32,7 @@ import platform
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -1580,20 +1582,106 @@ async def onboarding_reset() -> ApiSuccessResponse[dict]:
     )
 
 
-#: The `llm-setup` wizard's own 6 tools, by the binary name each one's
+#: The `llm-setup` wizard's own 4 tools, by the binary name each one's
 #: `completion_check` actually looks for on PATH — never the wizard step id,
 #: which is a different spelling (``claude-code`` the step, ``claude`` the
 #: binary; ``python`` the step, ``python3``/``python`` the two names its check
 #: tries either of).
-_DEBUG_TOOL_BINARIES = ["jq", "rg", "claude", "python3", "python", "git", "node"]
+_DEBUG_TOOL_BINARIES = ["claude", "python3", "python", "git", "node"]
+
+#: The winget ids the wizard installs these with on Windows (`git-on-path`, `node-on-path`). Those
+#: installs are machine-wide, under Program Files, where only the package's own uninstaller —
+#: run as administrator — can remove them; deleting the file is refused (WinError 5).
+_WINGET_IDS = {"git": ("Git.Git",), "node": ("OpenJS.NodeJS.LTS", "OpenJS.NodeJS")}
+
+
+def _all_users_winget_ids(name: str, found: Path) -> tuple[str, ...]:
+    """The winget ids to uninstall *found* with when it is a Windows all-users install, else ``()``."""
+    if sys.platform != "win32" or name not in _WINGET_IDS:
+        return ()
+    roots = [os.environ.get(var) for var in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData")]
+    resolved = found.resolve()
+    if any(root and resolved.is_relative_to(Path(root).resolve()) for root in roots):
+        return _WINGET_IDS[name]
+    return ()
+
+
+async def _winget_uninstall(ids: tuple[str, ...]) -> tuple[Optional[str], str]:
+    """Uninstall whichever of *ids* winget lists as installed, as ``(package, "")``, or ``(None, why)``.
+
+    The uninstall runs ELEVATED, behind Windows' admin prompt on this machine's screen, and waits
+    for the answer. Unelevated, a silent MSI uninstaller (Node.js) cannot raise that prompt itself
+    and fails at once with Error 1730 "You must be an Administrator" (exit 1603); Git's own
+    uninstaller happens to elevate itself, which is why only Node failed.
+    """
+    windows_apps = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps"
+    winget = shutil.which("winget", path=os.environ.get("PATH", "") + os.pathsep + str(windows_apps))
+    if not winget:
+        return None, "winget not found"
+    package = await _winget_installed_id(winget, ids)
+    if package is None:
+        return None, f"winget lists none of {', '.join(ids)} as installed"
+    code, why = await _run_elevated(winget, ["uninstall", "--id", package, "-e", "--silent", *_WINGET_QUIET])
+    if code == 0:
+        return package, ""
+    return None, f"winget uninstall {package}: {why or f'exit 0x{code & 0xFFFFFFFF:08X}'}"
+
+
+_WINGET_QUIET = ("--accept-source-agreements", "--disable-interactivity")
+
+
+async def _winget_installed_id(winget: str, ids: tuple[str, ...]) -> Optional[str]:
+    """The first of *ids* that ``winget list`` finds installed — a read, so no admin prompt."""
+    for package in ids:
+        proc = await asyncio.create_subprocess_exec(
+            winget,
+            "list",
+            "--id",
+            package,
+            "-e",
+            *_WINGET_QUIET,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        if await proc.wait() == 0:
+            return package
+    return None
+
+
+async def _run_elevated(exe: str, args: List[str]) -> tuple[int, str]:
+    """Run *exe* as administrator through Windows' admin prompt and wait: ``(exit code, why)``.
+
+    An elevated child's output cannot be piped back, so only its exit code returns; *why* is set
+    when the prompt itself was declined.
+    """
+    quoted = ", ".join("'" + arg.replace("'", "''") + "'" for arg in args)
+    script = (
+        f"try {{ $p = Start-Process -FilePath '{exe}' -ArgumentList @({quoted}) -Verb RunAs -Wait -PassThru "
+        "-WindowStyle Hidden -ErrorAction Stop; exit $p.ExitCode } "
+        "catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1223 }"
+    )
+    proc = await asyncio.create_subprocess_exec(
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        script,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+    code = proc.returncode or 0
+    if code == 1223:
+        return code, f"admin prompt declined ({stderr.decode(errors='replace').strip()[:160]})"
+    return code, ""
 
 
 def _brew_formula_of(resolved: Path) -> Optional[str]:
     """The Homebrew formula that owns *resolved*, when it is a Homebrew symlink
     into a Cellar — parsed from the REALPATH rather than a hardcoded name table,
-    since a formula's name does not always match the binary it installs
-    (``ripgrep`` -> ``rg``) and a versioned one doesn't match at all
-    (``python@3.12``). ``None`` means: not Homebrew's, remove the file itself.
+    since a versioned formula's name does not match the binary it installs
+    (``python@3.12`` -> ``python3``). ``None`` means: not Homebrew's, remove
+    the file itself.
     """
     parts = resolved.parts
     if "Cellar" in parts:
@@ -1603,17 +1691,51 @@ def _brew_formula_of(resolved: Path) -> Optional[str]:
     return None
 
 
-@router.post("/api/v1/onboarding/debug/remove-tools")
-async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
-    """DEBUG ONLY — temporary, for testing the `llm-setup` wizard end to end.
+def _is_flowpads_own(found: Path) -> bool:
+    """Whether *found* is Flowpad's own install — its venv (``sys.prefix``) or the interpreter it
+    runs on. The server puts its own interpreter folder FIRST on PATH, so a plain ``which python3``
+    answers Flowpad's venv python; removing that leaves the built-in harness with no executable,
+    every LLM source refused ``not_installed``, and the wizard asking for a source forever.
+    """
+    if found.parent.resolve().is_relative_to(Path(sys.prefix).resolve()):
+        return True
+    return found.resolve() == Path(sys.executable).resolve()
 
-    ACTUALLY UNINSTALLS every one of its 6 tools found on this box — `brew
-    uninstall --force` for anything Homebrew manages, deleting the file
-    directly for anything else (e.g. Claude Code's own curl-installed binary).
 
-    A binary on a read-only system volume (Apple's own `/usr/bin/git`) cannot
-    be removed this way at all — that is reported in `not_found` alongside the
-    OS error, not silently skipped.
+def _which_users_tool(name: str, search_path: str) -> tuple[Optional[str], bool]:
+    """The first *name* on *search_path* that is NOT Flowpad's own, and whether a Flowpad-own copy
+    was passed over on the way — searched folder by folder, so the user's copy further down PATH
+    is still found (``shutil.which`` alone stops at the first hit)."""
+    kept_own = False
+    for folder in search_path.split(os.pathsep):
+        found = shutil.which(name, path=folder) if folder else None
+        if not found:
+            continue
+        if _is_flowpads_own(Path(found)):
+            kept_own = True
+            continue
+        return found, kept_own
+    return None, kept_own
+
+
+async def remove_debug_tools() -> dict:
+    """DEBUG ONLY — temporary, for testing the `llm-setup` wizard end to end. Served as
+    ``POST /api/v1/graph/compute_node/@local/remove-tools`` (``ComputeNode.remove_tools_action``).
+
+    ACTUALLY UNINSTALLS every one of its 4 tools found on this box — `brew
+    uninstall --force` for anything Homebrew manages, `winget uninstall` for
+    the Windows all-users git/node the wizard installs (behind Windows' admin
+    prompt), deleting the file directly for anything else (e.g. Claude Code's
+    own curl-installed binary).
+
+    Flowpad's own install is never touched: its venv's ``python``/``python3``
+    and the interpreter it runs on are skipped, and the search goes on down
+    PATH to the user's copy (see ``_is_flowpads_own``).
+
+    The answer sorts every tool into one of four lists, so nothing reads as an error that is
+    not one: ``removed``; ``absent`` (not on this box); ``kept`` (Flowpad's own interpreter, or
+    a copy on a read-only system volume such as Apple's ``/usr/bin/git``, which cannot be
+    removed at all); ``failed`` (a removal that should have worked and did not, with why).
 
     Then runs the wizard CHECK-ONLY right here — the icons in the wizard's own
     page are its LAST COMPLETED run's record (`run_state`), never a live
@@ -1628,13 +1750,23 @@ async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
     """
     combined_path = os.environ.get("PATH", "") + os.pathsep + str(Path.home() / ".local" / "bin")
     removed: List[str] = []
-    not_found: List[str] = []
+    absent: List[str] = []
+    kept: List[str] = []
+    failed: List[str] = []
     for name in _DEBUG_TOOL_BINARIES:
-        found = shutil.which(name, path=combined_path)
+        found, kept_own = _which_users_tool(name, combined_path)
         if not found:
-            not_found.append(name)
+            (kept if kept_own else absent).append(f"{name} (Flowpad's own)" if kept_own else name)
             continue
         path = Path(found)
+        winget_ids = _all_users_winget_ids(name, path)
+        if winget_ids:
+            package, why = await _winget_uninstall(winget_ids)
+            if package:
+                removed.append(f"{name} (winget: {package}, all users)")
+            else:
+                failed.append(f"{name} ({why})")
+            continue
         formula = _brew_formula_of(path.resolve())
         try:
             if formula:
@@ -1648,14 +1780,17 @@ async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
                 )
                 _stdout, stderr = await proc.communicate()
                 if proc.returncode != 0:
-                    not_found.append(f"{name} (brew uninstall {formula} failed: {stderr.decode().strip()[:200]})")
+                    failed.append(f"{name} (brew uninstall {formula}: {stderr.decode().strip()[:200]})")
                     continue
                 removed.append(f"{name} (brew: {formula})")
             else:
                 path.unlink()
                 removed.append(name)
         except OSError as exc:
-            not_found.append(f"{name} ({exc})")
+            if exc.errno == errno.EROFS:
+                kept.append(f"{name} (system copy, read-only)")
+            else:
+                failed.append(f"{name} ({exc})")
 
     # Re-sweep, or the in-memory capability values still point at the binaries just
     # removed: `resolve_builtin_worker_type` would keep picking Claude Code, and the
@@ -1673,7 +1808,7 @@ async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
     if wizard is not None:
         result = await wizard.run(check_only=True)
         wizard_result = result.model_dump(mode="json")
-    return ApiSuccessResponse[dict](data={"removed": removed, "not_found": not_found, "wizard": wizard_result})
+    return {"removed": removed, "absent": absent, "kept": kept, "failed": failed, "wizard": wizard_result}
 
 
 # ---------------------------------------------------------------------------
