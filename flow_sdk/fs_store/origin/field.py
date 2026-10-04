@@ -12,7 +12,7 @@ rather than breaking the entity that merely carries it.
 from __future__ import annotations
 
 import logging
-from typing import Annotated, Any, Optional, Union
+from typing import TYPE_CHECKING, Annotated, Any, Optional, Union
 
 from pydantic import Discriminator, Tag, TypeAdapter, ValidationError, WrapValidator
 
@@ -21,6 +21,10 @@ import flow_sdk.fs_store.origin.git_origin  # noqa: F401 — registers the git a
 import flow_sdk.fs_store.origin.hub_repo_origin  # noqa: F401 — registers the hub-repo arm
 import flow_sdk.fs_store.origin.local_origin  # noqa: F401 — registers the local arm
 from flow_sdk.fs_store.origin.fs_origin import CLOUD_ORIGIN_KIND, ORIGIN_MODELS, resolve_origin_kind
+
+if TYPE_CHECKING:
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
 
 logger = logging.getLogger(__name__)
 
@@ -60,3 +64,14 @@ OriginField = Annotated[Optional[_ORIGIN_UNION], WrapValidator(_soft)]
 # union; rebuilding it per call (e.g. once per bundle entry on unpack) is the
 # expensive part pydantic warns about. Reuse these everywhere.
 ORIGIN_ADAPTER: TypeAdapter = TypeAdapter(OriginField)
+
+
+def as_project_origin(origin: Any) -> "Optional[Union[GitOrigin, HubRepoOrigin]]":
+    """Narrow to an origin a whole project can be checked out from — its git
+    repository, or the hub-hosted copy of it. ``None`` for absent, malformed, or
+    an origin a project cannot be cloned from (a local path, a cloud channel)."""
+    from flow_sdk.fs_store.origin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin  # noqa: PLC0415
+
+    typed = origin if isinstance(origin, (GitOrigin, HubRepoOrigin)) else ORIGIN_ADAPTER.validate_python(origin)
+    return typed if isinstance(typed, (GitOrigin, HubRepoOrigin)) else None

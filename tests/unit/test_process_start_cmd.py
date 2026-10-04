@@ -64,6 +64,23 @@ async def test_with_no_worker_named_the_builtin_rule_picks_it(mock_driver, tmp_p
     rule.assert_awaited_once()
 
 
+async def test_a_reply_the_stream_missed_is_still_printed(mock_driver, tmp_path, capsys):
+    """codex can write its last message as the session closes, after the stream saw the turn end;
+    the engine's answer re-reads the transcript, and that answer is what gets printed."""
+    from flow_sdk.builtin.agent_serve import TurnEvent
+    from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
+
+    mock_driver()
+
+    async def late(self, turn, *, process=None):
+        yield TurnEvent("done", answer=PromptResult.satisfied("ok", text="hello late"))
+
+    with patch("flow_sdk.builtin.agent_serve.TurnEngine.run_stream", late):
+        rc = await process_cmd._run_start("go", worker_type="claude_code", workdir=str(tmp_path))
+    out, _ = capsys.readouterr()
+    assert rc == 0 and out.strip() == "hello late"
+
+
 def test_refuses_beside_a_running_backend():
     with patch.object(process_cmd, "_discover_port", return_value=9999):
         result = CliRunner().invoke(process_cmd.process_app, ["start", "hi"])

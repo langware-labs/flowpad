@@ -488,13 +488,15 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         )
         env_from_opts = dict(opts.env_vars)
 
-        # Start from os.environ so the CLI can find its creds, home. Strip
-        # CLAUDECODE* to avoid the CLI thinking it's already inside a Claude
-        # run. Context env_vars win (except the discovered capability bin
+        # Start from os.environ so the CLI can find its creds, home. Strip the
+        # parent Claude Code session's markers (CLAUDE_CODE_CHILD_SESSION turns
+        # the worker's transcript saving off). Context env_vars win (except the discovered capability bin
         # folder stays first on PATH); argv[0] is pinned to the discovered
         # absolute executable so a stripped backend service PATH can't break
         # the spawn.
-        base_env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+        from flow_sdk.claude_env import without_inherited_claude_session  # noqa: PLC0415
+
+        base_env = without_inherited_claude_session(os.environ)
         env = build_worker_spawn_env("claude", env_from_opts, base_env=base_env)
         argv = resolve_worker_argv0("claude", argv, env)
         return argv, env, stdin_payload

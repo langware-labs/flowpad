@@ -15,8 +15,8 @@ Run it free with a hub started as::
     AGENT_MAILBOX_ENABLED=true AGENT_MAILBOX_PROVIDER=local ...
 
 and point the tier at it with ``FLOWPAD_HUB_URL``. The turn itself spawns a real
-``claude`` CLI, so ``FLOWPAD_CLAUDE_HOME=$HOME/.claude`` is also required — see
-``real_home_for_cli_auth``.
+``claude`` CLI, funded the way every hub test funds one — see
+``tests/hub_tests/_real_cli.py``.
 
 The correspondent is a second real mailbox rather than a human with a mail
 client. That is the same substitution the hub's own live validation made
@@ -36,7 +36,6 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
-from pathlib import Path
 
 import httpx
 import pytest
@@ -47,9 +46,9 @@ from flow_sdk.builtin.agent_mailbox_driver import get_agent_mailbox_driver
 from flow_sdk.builtin.data_source import DataSource
 from flow_sdk.builtin.source_item import EmailMessageSpec, SourceItem
 from flow_sdk.ingest.sync import sync_source
-from flow_sdk.schema.data_spec import DataSpec
 from tests.hub_tests._hub_agent import create_hub_agent, mailbox_capability_required
 from tests.hub_tests._local_login import login_as
+from tests.hub_tests._real_cli import fail_unless_a_turn_really_ran
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.hub, pytest.mark.timeout(30)]
 
@@ -116,61 +115,13 @@ async def mailboxes(hub_base_url, hub_login_payload):
 
 
 @pytest.fixture(autouse=True)
-def real_home_for_cli_auth():
-    """Give the spawned CLI the real ``$HOME`` so it can authenticate.
-
-    The root conftest swaps HOME to a sandbox before flow_sdk imports, which is
-    right for the indexer (it otherwise walks the user's whole projects tree)
-    and wrong for a spawned worker: the CLI inherits the swapped HOME through
-    ``os.environ`` and finds no ``~/.claude/.credentials.json``, so the turn
-    starts, produces nothing, and the test reports "no reply" — infrastructure
-    read as a broken feature. `tests/long_tests/conftest.py` solves it the same
-    way for the same reason; the scope is subprocess auth ONLY, and in-process
-    flow_sdk state stays anchored to the sandbox because `InstanceSettings` was
-    built under it at import time.
-    """
-    real = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
-    sandbox = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE")}
-    os.environ["HOME"] = real
-    os.environ["USERPROFILE"] = real
-    try:
-        yield
-    finally:
-        for key, value in sandbox.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
-
-def _inject_claude_harness() -> None:
-    """Point the harness capability at the `claude` on PATH, or skip.
-
-    Skips rather than fails when there is no CLI: an absent binary is this
-    machine's state, not a defect in the feature under test — the same line
-    `tests/long_tests` draws.
-    """
-    from flow_sdk.core.capabilities.discovery import get_capability_value, set_capability_value
-    from flow_sdk.core.capabilities.models import CapabilityKind, CapabilityValue
-    from tests.utils.claude_utils import find_claude
-
-    kind = CapabilityKind.CLAUDE_CLI.value
-    if get_capability_value(kind) is not None:
-        return
-    binary = find_claude()
-    if not binary:
-        pytest.skip("no `claude` CLI on PATH — cannot run a real turn")
-    set_capability_value(
-        CapabilityValue(
-            kind=kind,
-            value={"path": str(Path(binary).resolve().parent), "ref_type": "folder"},
-            value_spec=DataSpec.parse("fs_ref"),
-        )
-    )
+def _every_test_here_runs_a_real_claude_turn(real_claude_turn):
+    """Real HOME for the CLI, FLOW_HOME pinned, harness injected, stale verdicts gone (`_real_cli`)."""
+    yield
 
 
 @pytest.fixture(autouse=True)
-async def agent_server():
+async def agent_server(_every_test_here_runs_a_real_claude_turn):
     """Bring the process up the way the server does, then run the test.
 
     pytest never runs server startup, so nothing serves and nothing discovers
@@ -197,8 +148,6 @@ async def agent_server():
     # on the setup rather than on the feature. `set_capability_value` exists for
     # exactly this ("injectable in tests"), and what it injects is what a sweep
     # would have found: the folder holding the CLI on PATH.
-    _inject_claude_harness()
-
     loops = _Loops()
     try:
         yield loops
@@ -320,36 +269,9 @@ async def test_an_outsider_emails_the_agent_and_gets_an_answer(mailboxes, agent_
 
     reply = await _await_reply(mailboxes["outsider_id"], from_address=mailboxes["agent_address"])
     if reply is None:
-        # Distinguish OUR wiring from the CLI's availability. No process at all
-        # means the chain never reached the agent — that is this feature broken.
-        # A process that ran and said nothing is an unauthenticated or stuck
-        # worker, which is infrastructure and skips rather than red-fails (the
-        # convention `tests/long_tests` already follows).
-        if not await _ran_a_turn():
-            pytest.fail("no agent process was created — inbound never reached the agent")
-        pytest.skip("agent process ran but produced no reply (no live CLI turn available)")
+        await fail_unless_a_turn_really_ran("no agent process was created — inbound never reached the agent")
     body = (reply.get("text") or reply.get("preview") or "")
     assert nonce in body, f"reply did not answer the question: {body[:200]!r}"
-
-
-async def _ran_a_turn() -> bool:
-    """Did any agent process get created for a conversation during this test?
-
-    No try/except: swallowing a query failure here would answer "no process",
-    and the caller reports that as "inbound never reached the agent" — turning
-    an infrastructure fault into precisely the wrong diagnosis, which is the
-    thing this helper exists to prevent.
-    """
-    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
-
-    # Composed from the delimiter the type owns, not the literal "conversation-";
-    # `TypeId` refuses an empty id, so the prefix cannot be built by calling it.
-    prefix = f"conversation{TypeId.TYPEID_DELIMITER}"
-    return any(
-        str(getattr(p, "target_typeid_str", "") or "").startswith(prefix)
-        for p in await AgenticProcess.get_all({})
-    )
 
 
 async def test_an_unlisted_sender_is_ignored(mailboxes, agent_server):

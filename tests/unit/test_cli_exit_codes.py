@@ -33,7 +33,7 @@ def _exit_code(call) -> int:
 # ── flow wizard run ──────────────────────────────────────────────────────────
 
 def _wizard_server(monkeypatch, *, post):
-    monkeypatch.setattr(wizard_cmd, "_discover_port", lambda: 1)
+    monkeypatch.setattr(wizard_cmd, "_discover_port", lambda required=True: 1)
     monkeypatch.setattr(
         wizard_cmd, "_get_graph_json",
         lambda url, on_error=None: {"entities": [{"id": "w1", "name": "setup"}]},
@@ -78,7 +78,7 @@ def test_wizard_close_exits_2_not_7_when_the_request_fails(monkeypatch):
     def post(url, body, timeout, on_error):
         on_error(500, {"message": "boom"})
 
-    monkeypatch.setattr(wizard_cmd, "_discover_port", lambda: 1)
+    monkeypatch.setattr(wizard_cmd, "_discover_port", lambda required=True: 1)
     monkeypatch.setattr(wizard_cmd, "_post_graph_json", post)
     code = _exit_code(lambda: wizard_cmd._close_from_args("proc-1", ["close", '{"status": "done"}']))
     assert code == 2

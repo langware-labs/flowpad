@@ -49,6 +49,8 @@ DEFAULT_MODEL_FACTORY = "flow_sdk.builtin.agentic_process.cli_drivers.deepagents
 
 BASE_URL_ENV = "FLOWPAD_DEEPAGENTS_BASE_URL"
 API_KEY_ENV = "FLOWPAD_DEEPAGENTS_API_KEY"
+#: A cap on one reply's length, set by the funding binding; unset sends none.
+MAX_OUTPUT_ENV = "FLOWPAD_DEEPAGENTS_MAX_OUTPUT_TOKENS"
 
 #: The one permission mode this harness can honour: its ``execute`` tool sits outside
 #: deepagents' filesystem permission model, so anything narrower would be a pretence.

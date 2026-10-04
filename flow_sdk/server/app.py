@@ -383,10 +383,15 @@ async def _start_system_content_index() -> None:
     try:
         import asyncio as _asyncio
 
+        from flow_sdk.fs_store.indexer.auto_index import own_index_task
         from flow_sdk.server.routes.bootstrap import index_system_content
 
         global _system_content_index_task
-        _system_content_index_task = _asyncio.create_task(index_system_content(), name="system-content-index")
+        # Owned like an auto-index: a factory reset arriving while this pass is
+        # still walking must cancel it, not let it write through the wipe.
+        _system_content_index_task = own_index_task(
+            _asyncio.create_task(index_system_content(), name="system-content-index")
+        )
         print("  System content index: scheduled (background)")
     except Exception:
         logging.getLogger(__name__).exception("System content index: failed to start")

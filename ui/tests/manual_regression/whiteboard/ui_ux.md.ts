@@ -55,11 +55,14 @@ async function openWhiteboardListExpanded(page: Page, projectId: string, whitebo
     .toBe('advanced');
   const chevron = page.getByTestId('browseable-chevron-asset-type:whiteboard');
   await expect(chevron).toBeVisible({ timeout: 15_000 });
+  // The row's delete button is its stable handle, but a row toolbar is
+  // `invisible` until the row is hovered (a807f58ee) — so "the row is listed"
+  // means the handle is ATTACHED, not visible.
   const createdRow = page.locator(`[data-testid="browseable-toolbar-delete:whiteboard:${whiteboardId}"]`);
-  if (!(await createdRow.isVisible({ timeout: 2_000 }).catch(() => false))) {
+  if ((await createdRow.count()) === 0) {
     await chevron.click();
   }
-  await expect(createdRow).toBeVisible({ timeout: 15_000 });
+  await expect(createdRow).toBeAttached({ timeout: 15_000 });
   return createdRow;
 }
 

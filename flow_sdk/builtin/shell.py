@@ -702,10 +702,17 @@ class Shell(Entity):
         shell row currently records.
         """
         matches: list[psutil.Process] = []
-        for proc in psutil.process_iter(["pid", "cmdline"]):
-            if proc.info["pid"] in exclude:
+        for proc in psutil.process_iter():
+            if proc.pid in exclude:
                 continue
-            cmdline = proc.info.get("cmdline") or []
+            # Read argv per process, not via ``process_iter(attrs)``: its prefetch absorbs
+            # only AccessDenied/ZombieProcess, and on macOS a process exiting mid-read
+            # surfaces as ``SystemError`` from ``proc_cmdline`` — one vanishing stranger
+            # failed the whole sweep and with it ``exit``. Unreadable argv is not ours.
+            try:
+                cmdline = proc.cmdline() or []
+            except (psutil.Error, SystemError, OSError):
+                continue
             sid = self._argv_flag_value(cmdline, "--session-id") or self._argv_flag_value(cmdline, "--resume")
             if sid == session_id:
                 matches.append(proc)
