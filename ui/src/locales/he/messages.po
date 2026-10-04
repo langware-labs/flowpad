@@ -11567,8 +11567,6 @@ msgid "Leave empty to keep"
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
-#: src/components/conversation/MessageComposer.tsx
-#: src/components/conversation/MessageComposer.tsx
 msgid "Leave live session mode"
 msgstr ""
 
