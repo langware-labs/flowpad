@@ -292,7 +292,6 @@ export class Task extends APIEntity<Task> implements ITask {
   // now" — reintroduce in Python's ``get_implicit_private_context_entities``
   // override on Task if there's a confirmed UX need.
 
-  // TODO: Remove getter and setter for descriptionPlainText when task is created with lexical description
   get descriptionPlainText(): string {
     if (!this.description || this.description === '') {
       return '';
@@ -312,28 +311,10 @@ export class Task extends APIEntity<Task> implements ITask {
     }
   }
 
+  /** The description is stored as written — plain or markdown, the task.md body. Reading still
+   *  unwraps a legacy Lexical JSON body; writing never produces one. */
   set descriptionPlainText(text: string) {
-    this.description = text
-      ? JSON.stringify({
-          root: {
-            children: [
-              {
-                children: [
-                  {
-                    text,
-                    type: 'text',
-                    version: 1,
-                  },
-                ],
-                type: 'paragraph',
-                version: 1,
-              },
-            ],
-            type: 'root',
-            version: 1,
-          },
-        })
-      : '';
+    this.description = text;
   }
 
   /**

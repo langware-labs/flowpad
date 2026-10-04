@@ -1,8 +1,12 @@
 import { t } from '@lingui/core/macro';
 import { useMemo } from 'react';
-import { dataManager, fsManager, Project, QueryRequest, Task, TaskKind, TypeId, type TaskableMessage } from '@sdk';
-import { isTaskArchived } from '@src/components/task-bar/constants';
-import { statusFamily, TaskStatus } from '@src/components/task-bar/task-utils';
+import { User as UserIcon } from 'lucide-react';
+import { dataManager, FlowMessage, fsManager, Project, QueryRequest, Task, TypeId, type TaskableMessage } from '@sdk';
+import { STATUS_FAMILY_CHIP, statusLabel } from '@src/components/task-bar/constants';
+import { statusFamily, taskOwner } from '@src/components/task-bar/task-utils';
+import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
+import { conversationMessagesRequest } from './conversation-messages-query';
+import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -18,6 +22,7 @@ import { notify } from '@src/notifications/notify';
 
 const UNDO_COMMAND = 'task-it.undo';
 const NO_TASKS: Task[] = [];
+const NO_MESSAGES: FlowMessage[] = [];
 /** Messages whose task is being created right now. The server answers a repeat create with the
  *  first task, but only once that task is saved; a double click lands inside the save. */
 const inFlight = new Set<string>();
@@ -31,9 +36,9 @@ export function TaskItIcon({ className }: { className?: string }) {
   return <Glyph className={className} />;
 }
 
-/** Every task of this conversation (`origin_conversation`): made from its messages ("Task it") or
- *  asked in it (the Vibe help button). One query per conversation, shared by every reader. */
-export function useConversationTasks(conversationId: string | null | undefined): Task[] {
+/** The tasks linked to this conversation (`origin_conversation`): made from its messages ("Task it")
+ *  or asked in it (the Vibe help button). One query, shared by every reader. */
+function useLinkedTasks(conversationId: string | null | undefined): Task[] {
   const request = useMemo(
     () =>
       new QueryRequest({
@@ -49,7 +54,7 @@ export function useConversationTasks(conversationId: string | null | undefined):
 
 /** The tasks made from this conversation's messages, keyed by message id. */
 export function useMessageTasks(conversationId: string | null | undefined): Map<string, Task> {
-  const tasks = useConversationTasks(conversationId);
+  const tasks = useLinkedTasks(conversationId);
   return useMemo(() => {
     const byMessage = new Map<string, Task>();
     for (const task of tasks) if (task.origin_message) byMessage.set(task.origin_message, task);
@@ -57,14 +62,72 @@ export function useMessageTasks(conversationId: string | null | undefined): Map<
   }, [tasks]);
 }
 
-/** Still to do: not Done (nor Failed/Canceled) and not archived — what the Tasks tab shows first. */
-export function isOpenTask(task: Task): boolean {
-  return statusFamily(task.status) !== TaskStatus.DONE && !isTaskArchived(task);
+/**
+ * Every task of this conversation, once each: the ones linked to it (`origin_conversation` — the
+ * sender's side), the conversation's own task (`ownTaskId` — what an assignee's copy is), and the
+ * tasks its messages carry as chips. The last two are how a received task reaches the conversation:
+ * its `origin_conversation` is the sender's local link and never travels.
+ */
+export function useConversationTasks(conversationId: string | null | undefined, ownTaskId?: string | null): Task[] {
+  const linked = useLinkedTasks(conversationId);
+  const messagesRequest = useMemo(() => conversationMessagesRequest(conversationId || '__none__'), [conversationId]);
+  const { data: messages = NO_MESSAGES } = useEntitiesQuery<FlowMessage>(messagesRequest, {
+    enabled: !!conversationId,
+  });
+  const attachedIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (ownTaskId) ids.add(ownTaskId);
+    for (const fm of messages) {
+      for (const tid of fm.sharedContextEntities ?? []) if (tid.type === Task.type) ids.add(String(tid.id));
+    }
+    for (const task of linked) ids.delete(task.id);
+    return [...ids];
+  }, [messages, ownTaskId, linked]);
+  const attached = useEntityBatch<Task>(Task.type, attachedIds);
+  return useMemo(() => (attached.length ? [...linked, ...attached] : linked), [linked, attached]);
 }
 
-/** A task's owner, as the task page names it: a group task's group, else its assignee. */
-export function taskOwner(task: Task): string | null {
-  return (task.kind === TaskKind.GROUP && task.group_name) || task.assignee || null;
+/** A task's status as a chip — its bucket's colors (New / In progress / Done). A button when it acts. */
+export function TaskStatusChip({ status, onClick }: { status?: string; onClick?: () => void }) {
+  const className = `${CHIP_LAYOUT} ${STATUS_FAMILY_CHIP[statusFamily(status)]}`;
+  const label = statusLabel(status);
+  return onClick ? (
+    <button type="button" onClick={onClick} className={className} title={t`Status`} data-testid="task-status-chip">
+      {label}
+    </button>
+  ) : (
+    <span className={className} data-testid="task-status-chip">
+      {label}
+    </span>
+  );
+}
+
+/** A task's owner as a chip (the group, else the assignee); nothing when it has none. */
+export function TaskOwnerChip({ task, onClick }: { task: Task; onClick?: () => void }) {
+  const owner = taskOwner(task);
+  if (!owner) return null;
+  const body = (
+    <>
+      <UserIcon className="h-3 w-3 shrink-0" />
+      <span className="max-w-[14rem] truncate">{owner}</span>
+    </>
+  );
+  const className = `${CHIP_LAYOUT} ${chipStyleFor()}`;
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      className={className}
+      title={t`Owner: ${owner}`}
+      data-testid="task-owner-chip"
+    >
+      {body}
+    </button>
+  ) : (
+    <span className={className} title={t`Owner: ${owner}`} data-testid="task-owner-chip">
+      {body}
+    </span>
+  );
 }
 
 /** Create the task for a message, then offer Open / Undo. */

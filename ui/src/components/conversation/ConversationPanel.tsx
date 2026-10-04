@@ -21,7 +21,8 @@ import { ProjectChip } from '@src/components/project/ProjectChip';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ConversationTasksPanel } from './ConversationTasksPanel';
-import { isOpenTask, useConversationTasks } from './task-it';
+import { useConversationTasks } from './task-it';
+import { isOpenTask } from '@src/components/task-bar/task-utils';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -269,7 +270,7 @@ export function ConversationPanel({
   const bodyWrapper = variant === 'compact' ? 'mt-1' : 'px-4 pt-3';
 
   // The Tasks tab: every task of this conversation; its count is the open ones.
-  const conversationTasks = useConversationTasks(conversationId);
+  const conversationTasks = useConversationTasks(conversationId, task?.id);
   const openTaskCount = useMemo(() => conversationTasks.filter(isOpenTask).length, [conversationTasks]);
 
   // Context first, then Tasks, then Runs. Runs is hidden entirely when there's no
@@ -298,8 +299,8 @@ export function ConversationPanel({
         onSelectEntity={selectEntity}
       />
     ),
+    tasks: <ConversationTasksPanel tasks={conversationTasks} onShowMessage={selectOneMessage} />,
   };
-  drawerChildren.tasks = <ConversationTasksPanel tasks={conversationTasks} onShowMessage={selectOneMessage} />;
   if (showRuns) {
     drawerChildren.runs = (
       <ProcessRunsPanel

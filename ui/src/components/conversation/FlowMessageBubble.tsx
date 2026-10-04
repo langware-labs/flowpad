@@ -39,7 +39,6 @@ import {
 } from '@sdk/entities/flow-message';
 import { Download, File, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
-import { taskOwner } from './task-it';
 import { attachmentFileName } from './ChannelMessageExtras';
 import { MessageRunStatus } from './MessageRunStatus';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
@@ -765,12 +764,7 @@ export function FlowMessageBubble({
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         taskIt={
           messageTask
-            ? {
-                onClick: () => navigation.openDock(messageTask.dockPointer),
-                title: messageTask.title || t`Task`,
-                status: messageTask.status,
-                owner: taskOwner(messageTask),
-              }
+            ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask }
             : onTaskIt && !fm.is_draft
               ? { onClick: () => onTaskIt(fm) }
               : undefined
