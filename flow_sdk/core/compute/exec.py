@@ -104,11 +104,14 @@ async def run_shell(
     platform: str = "",
     stop: Optional[asyncio.Event] = None,
     on_output: Optional[Callable[[], None]] = None,
+    on_spawn: Optional[Callable[[int], None]] = None,
 ) -> CliResult:
     """Run one shell one-liner. Never raises — a failure IS the result.
 
     ``on_output`` is called each time the command writes to stdout or stderr: the one real sign of
-    life a shell step gives, so a caller can tell a quiet install from a hung one.
+    life a shell step gives, so a caller can tell a quiet install from a hung one. ``on_spawn`` is
+    told the process id once it exists, so a caller can look at what the command has started (a
+    window an installer opened) while it runs.
 
     ``stdin`` is DEVNULL on purpose. An installer that decides to ask a
     question must fail on a closed stdin rather than block a headless run
@@ -130,6 +133,12 @@ async def run_shell(
         # No shell, no powershell, unusable cwd. The step must see a verdict.
         logger.warning("wizard: could not spawn %r: %s", command, exc)
         return CliResult.of_process(command, None, stderr=str(exc), duration_s=time.monotonic() - t0)
+
+    if on_spawn is not None:
+        try:
+            on_spawn(proc.pid)
+        except Exception:  # noqa: BLE001 — an observer must never fail the command
+            logger.debug("shell spawn observer failed", exc_info=True)
 
     timed_out = False
     # Not `wait_for(communicate())`: cancelling communicate on timeout throws

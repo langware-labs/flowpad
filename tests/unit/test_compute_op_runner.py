@@ -379,6 +379,24 @@ async def test_a_failed_call_says_why_in_its_own_words(tmp_path):
     assert quiet.detail == "jq: the cli call ran, but the check still fails."
 
 
+@pytest.mark.asyncio
+async def test_an_agent_rung_with_nobody_to_run_it_says_what_the_person_can_do(tmp_path):
+    """The install failed and the rung that could try another way has no LLM source. The report says so in plain
+    words and what to do next — not "claude_code has no usable LLM source: …", a fact about the machine."""
+
+    async def launch(**_kw):
+        return PromptResult.not_yet("claude_code has no usable LLM source: claude is signed out", ran=False)
+
+    spec = _spec(attempts=[{"subkind": "agent", "exe_data": {"agent": "provisioner", "prompt": "do it"}}])
+    answer = await _run_op(spec, _shell(lambda _c: 1), launch, tmp_path=tmp_path)
+
+    assert answer.exit_code is ExitCode.NOT_YET
+    assert answer.detail.startswith("jq wasn't installed")
+    assert "no assistant is signed in" in answer.detail and "run setup again" in answer.detail
+    assert "claude_code" not in answer.detail and "LLM source" not in answer.detail
+    assert "install jq: nope" in answer.detail, "what the automatic install said stays, as the detail"
+
+
 # ── a Windows permission prompt is the person's turn, not a hang ─────────────
 
 
@@ -432,6 +450,93 @@ async def test_no_permission_prompt_watch_off_windows(tmp_path, monkeypatch):
     answer = await _run_op(_spec(), _shell(code_for), tmp_path=tmp_path, on_status=said.append)
     assert answer.exit_code is ExitCode.OK
     assert probed == [] and not any("waiting for you" in s for s in said)
+
+
+@pytest.mark.asyncio
+async def test_a_window_the_command_opened_says_waiting_for_you_until_it_is_answered(tmp_path, monkeypatch):
+    """An installer that opens its own window (not a UAC prompt) blocks silently too: the row must point at it."""
+    import asyncio
+
+    from flow_sdk.core.compute_op import runner
+
+    window = {"open": True}
+    asked_about: list = []
+
+    def window_open(pid):
+        asked_about.append(pid)
+        return window["open"]
+
+    monkeypatch.setattr(runner, "_permission_prompt_open", lambda: False)
+    monkeypatch.setattr(runner, "_command_window_open", window_open)
+    monkeypatch.setattr(runner, "_PERMISSION_PROMPT_POLL_SECONDS", 0.01)
+    said: list[str] = []
+
+    async def until(pred):
+        while not pred():
+            await asyncio.sleep(0.01)
+
+    installed: list[bool] = []
+
+    async def shell(command, *, on_spawn=None, **_kw):
+        if command == "install jq":
+            on_spawn(4242)
+            await until(lambda: any("waiting for you" in s for s in said))
+            window["open"] = False
+            await until(lambda: said[-1] == "jq: cli")
+            installed.append(True)
+            return CliResult.of_process(command, 0, "", "")
+        return CliResult.of_process(command, 0 if installed else 1, "", "")
+
+    spec = _spec(exe_data={"commands": {"win32": "install jq"}}, completion_check={"commands": {"win32": "have jq"}})
+    answer = await run_op(spec, trusted=True, workdir=tmp_path, platform="win32", shell=shell, on_status=said.append)
+
+    assert answer.exit_code is ExitCode.OK
+    assert any("waiting for you" in s and "window opened by the installer" in s and "taskbar" in s for s in said)
+    assert 4242 in asked_about, "only the command's own windows are looked at"
+    assert not any("Windows permission prompt" in s for s in said), "it is not a UAC prompt"
+
+
+def test_no_window_is_looked_for_without_a_command_or_off_windows():
+    from flow_sdk.core.compute_op import runner
+
+    assert runner._command_window_open(None) is False
+    assert runner._command_window_open(1234) is False  # not Windows here
+
+
+@pytest.mark.asyncio
+async def test_a_silent_install_shows_life_by_what_it_writes_to_its_own_temp_folder(tmp_path, monkeypatch):
+    """A quiet installer prints nothing but downloads into TEMP: growth there is a sign of life, silence is not."""
+    import asyncio
+    import os
+
+    from flow_sdk.core.compute_op import runner
+
+    monkeypatch.setattr(runner, "_PROGRESS_POLL_SECONDS", 0.01)
+    said: list[str] = []
+    temps: list[str] = []
+    installed: list[bool] = []
+
+    async def shell(command, *, extra_env=None, **_kw):
+        if command == "install jq":
+            folder = extra_env["TEMP"]
+            temps.append(folder)
+            assert extra_env["TMP"] == folder == extra_env["TMPDIR"], "one folder, whichever variable the tool reads"
+            before = said.count("jq: cli")
+            await asyncio.sleep(0.05)  # silent: nothing written yet
+            quiet = said.count("jq: cli")
+            assert quiet == before, "nothing written, nothing said"
+            with open(os.path.join(folder, "download.part"), "wb") as f:
+                f.write(b"x" * 1000)
+            await asyncio.sleep(0.1)
+            assert said.count("jq: cli") > quiet, "growth re-says the rung, like output does"
+            installed.append(True)
+            return CliResult.of_process(command, 0, "", "")
+        return CliResult.of_process(command, 0 if installed else 1, "", "")
+
+    answer = await run_op(_spec(), trusted=True, workdir=tmp_path, platform="linux", shell=shell, on_status=said.append)
+
+    assert answer.exit_code is ExitCode.OK
+    assert temps and not os.path.exists(temps[0]), "the private folder is removed afterwards"
 
 
 @pytest.mark.asyncio
