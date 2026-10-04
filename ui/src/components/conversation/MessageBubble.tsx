@@ -18,6 +18,13 @@ import { ChannelMessageActions, QuotedMessage, ReactionChips } from './ChannelMe
 import type { IMessageReaction } from '@sdk/entities/flow-message';
 import { Trans } from '@lingui/react/macro';
 
+/** The message's action chips (Forward, Task it) — the entity-chip shape, so they read as one row. */
+const ACTION_CHIP =
+  'inline-flex h-6 items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium transition-colors';
+const ACTION_CHIP_IDLE = 'border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';
+const ACTION_CHIP_TASK =
+  'border-violet-500/40 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300';
+
 interface MessageBubbleProps {
   message: ConversationMessage;
   flowMessageId?: string;
@@ -36,9 +43,9 @@ interface MessageBubbleProps {
    *  parent's share dialog to pick the target conversation; the backend then
    *  clones the message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
-  /** "Task it": make this message a task — or, once it is one (`open`), open it. The parent
-   *  decides which; the bubble only draws the control. */
-  taskIt?: { onClick: () => void; open: boolean };
+  /** "Task it": make this message a task — or, once it is one (`title` = the task's), open it.
+   *  The parent decides which; the bubble only draws the chip. */
+  taskIt?: { onClick: () => void; title?: string };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -314,28 +321,6 @@ export function MessageBubble({
               <Trash2 className="h-2.5 w-2.5" />
             </button>
           )}
-          {onForwardMessage && !editing && (
-            <button
-              onClick={onForwardMessage}
-              className="text-muted-foreground/50 transition-colors hover:text-foreground"
-              title={t`Forward to another conversation`}
-              aria-label={t`Forward message`}
-              data-testid="message-forward"
-            >
-              <Forward className="h-2.5 w-2.5" />
-            </button>
-          )}
-          {taskIt && !editing && (
-            <button
-              onClick={taskIt.onClick}
-              className={`transition-colors hover:text-foreground ${taskIt.open ? 'text-violet-500' : 'text-muted-foreground/50'}`}
-              title={taskIt.open ? t`Open task` : taskItHint()}
-              aria-label={taskIt.open ? t`Open task` : t`Task it`}
-              data-testid="message-task-it"
-            >
-              <TaskItIcon className="h-2.5 w-2.5" />
-            </button>
-          )}
           {/* Channel mark — nothing at all when the message is ours
               (`origin === null`), which is the whole badge rule. */}
           <ChannelBadge origin={flowMessage?.origin} />
@@ -386,6 +371,36 @@ export function MessageBubble({
           />
         )}
         {footer}
+        {(onForwardMessage || taskIt) && !editing && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-actions">
+            {onForwardMessage && (
+              <button
+                type="button"
+                onClick={onForwardMessage}
+                className={`${ACTION_CHIP} ${ACTION_CHIP_IDLE}`}
+                title={t`Forward to another conversation`}
+                aria-label={t`Forward message`}
+                data-testid="message-forward"
+              >
+                <Forward className="h-3 w-3 rtl:-scale-x-100" />
+                <Trans>Forward</Trans>
+              </button>
+            )}
+            {taskIt && (
+              <button
+                type="button"
+                onClick={taskIt.onClick}
+                className={`${ACTION_CHIP} ${taskIt.title ? ACTION_CHIP_TASK : ACTION_CHIP_IDLE}`}
+                title={taskIt.title ? t`Open task` : taskItHint()}
+                aria-label={taskIt.title ? t`Open task` : t`Task it`}
+                data-testid="message-task-it"
+              >
+                <TaskItIcon className="h-3 w-3 shrink-0" />
+                <span className="max-w-[24rem] truncate">{taskIt.title || <Trans>Task it</Trans>}</span>
+              </button>
+            )}
+          </div>
+        )}
         {reactions && reactions.length > 0 && <ReactionChips reactions={reactions} onToggle={onReact} />}
       </div>
       {onDeleteMessage && (

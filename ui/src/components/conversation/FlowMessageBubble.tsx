@@ -710,14 +710,6 @@ export function FlowMessageBubble({
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
-      {messageTask && (
-        <span className="mt-1.5 inline-flex" data-testid="message-task-chip">
-          <EntityChip
-            entity={{ typeId: messageTask.typeId, name: messageTask.title || t`Task` }}
-            projectId={attachmentProjectId}
-          />
-        </span>
-      )}
     </>
   );
 
@@ -771,9 +763,9 @@ export function FlowMessageBubble({
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         taskIt={
           messageTask
-            ? { onClick: () => navigation.openDock(messageTask.dockPointer), open: true }
+            ? { onClick: () => navigation.openDock(messageTask.dockPointer), title: messageTask.title || t`Task` }
             : onTaskIt && !fm.is_draft
-              ? { onClick: () => onTaskIt(fm), open: false }
+              ? { onClick: () => onTaskIt(fm) }
               : undefined
         }
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
