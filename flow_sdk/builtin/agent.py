@@ -31,6 +31,7 @@ from pydantic import PrivateAttr
 
 from flow_sdk.api.api_types.api_field import APIField, Sharing
 from flow_sdk.auth import LoginRequired
+from flow_sdk.builtin.agent_auto_open import AutoOpenTab, open_auto_tabs, project_ids, rebase_auto_open
 from flow_sdk.builtin.agent_mailbox import AgentMailbox
 from flow_sdk.builtin.agent_mailbox_driver import AgentMailboxError
 from flow_sdk.builtin.deployment import Deployment
@@ -41,6 +42,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec._form import ShapeForm
 from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
+from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.schema.types import EntityType
@@ -263,6 +265,12 @@ class Agent(Entity):
         description="The agent's auto prompt: the first turn of every new session opened as it "
         "(Use, home page, auto-launch), delivered through the process prompt queue. Independent "
         "of ``auto_launch``. Empty = open sessions with no first turn.",
+    )
+    auto_open: Optional[list[DockPointerSpec]] = APIField(
+        default=None,
+        description="Tabs every new session as this agent opens with (Use, home page, auto-launch): "
+        "``Tab.pointer`` JSON, a file named inside the agent's project (``vfs/project-<id>/<path>``). "
+        "The first is the session's active display, the rest open beside it. Declaration only.",
     )
 
     # ── places ────────────────────────────────────────────────────────────
@@ -512,7 +520,26 @@ class Agent(Entity):
             # Straight into the queue: the ``enqueue`` action would also start a
             # drain, running turn 1 before the caller embeds its layers.
             process.queue.enqueue(prompt, source="auto_prompt")
+        if target.is_local:
+            try:
+                await open_auto_tabs(process, await self.auto_open_tabs())
+            except Exception:  # noqa: BLE001 -- a tab that cannot open never fails the session
+                logger.warning("auto_open for agent %s failed", self.id, exc_info=True)
         return process
+
+    async def auto_open_tabs(self) -> "list[AutoOpenTab]":
+        """``auto_open`` rebased onto this machine. A declared file counts only in a
+        project this agent lives in (``assets_under_roots``, the auto-launch scoping)."""
+        if not self.auto_open:
+            return []
+        from flow_sdk.builtin.project import Project, assets_under_roots  # noqa: PLC0415
+
+        roots: dict[str, str] = {}
+        for project_id in project_ids(self.auto_open):
+            project = await Project.get_by_id(project_id)
+            if project and project.fs_storage_mount_path and assets_under_roots([self], project.direct_context_roots()):
+                roots[project_id] = project.fs_storage_mount_path
+        return rebase_auto_open(self.auto_open, roots=roots)
 
     @staticmethod
     async def reset_auto_launch(project_id: str, agent_id: str) -> None:
