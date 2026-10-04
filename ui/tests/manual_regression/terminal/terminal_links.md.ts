@@ -267,15 +267,15 @@ test('right-click → Open in ▸ a Chrome profile really opens the link in that
 
   const point = await printedLinkPoint(page, link);
   await page.mouse.click(point.x, point.y, { button: 'right' });
-  const menu = page.getByTestId('terminal-link-menu');
+  const menu = page.getByTestId('link-menu');
   await expect(menu).toBeVisible();
-  await page.getByTestId('terminal-link-menu-open-in').click();
+  await page.getByTestId('link-menu-open-in').click();
   for (const profile of profiles) {
-    await expect(page.getByTestId(`terminal-link-menu-profile-chrome-${profile}`)).toBeVisible();
+    await expect(page.getByTestId(`link-menu-profile-chrome-${profile}`)).toBeVisible();
   }
 
   // The last profile, so a single-window default is not what proves it.
-  await page.getByTestId(`terminal-link-menu-profile-chrome-${profiles.at(-1)}`).click();
+  await page.getByTestId(`link-menu-profile-chrome-${profiles.at(-1)}`).click();
   await expect(menu).toBeHidden();
   // The system browser, not this Playwright page, is what asks for the page.
   await expect.poll(() => hits.has(path)).toBe(true);

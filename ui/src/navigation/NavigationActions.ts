@@ -38,6 +38,7 @@ import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
 import { errorMessage } from '@src/lib/error-message';
+import type { LinkSource } from '@src/lib/link-matches';
 import { notify } from '@src/notifications/notify';
 import { t } from '@lingui/core/macro';
 
@@ -785,9 +786,9 @@ export class NavigationActions {
     this.openDock(dockPointerForFile(path, options));
   }
 
-  /** Resolve a clicked terminal reference to the dock that presents it. */
-  private async resolveLinkDock(link: string, source: Shell | null): Promise<DockPointer> {
-    if (!source) throw new Error(t`The terminal is not ready yet`);
+  /** Resolve a clicked link (terminal output, message text) to the dock that presents it. */
+  private async resolveLinkDock(link: string, source: LinkSource | null): Promise<DockPointer> {
+    if (!source) throw new Error(t`This link has no source yet`);
     // An app URL copied from this browser is an internal address, not an iframe.
     if (isWebUrl(link)) {
       const url = new URL(link);
@@ -801,7 +802,7 @@ export class NavigationActions {
   }
 
   /** Resolve on activation, then open using the same presentation as an agent show. */
-  async openLink(link: string, source: Shell | null): Promise<void> {
+  async openLink(link: string, source: LinkSource | null): Promise<void> {
     const origin = this.here;
     try {
       const [dock, tabs] = await Promise.all([this.resolveLinkDock(link, source), tabManager.listAll()]);
@@ -818,7 +819,7 @@ export class NavigationActions {
   }
 
   /** The link as a tab of `process`'s vibe workspace — the process opens in vibe mode showing it. */
-  async openLinkInVibe(link: string, source: Shell | null, process: AgenticProcess): Promise<void> {
+  async openLinkInVibe(link: string, source: LinkSource | null, process: AgenticProcess): Promise<void> {
     try {
       const dock = placeDockInProject(
         await this.resolveLinkDock(link, source),
@@ -831,7 +832,7 @@ export class NavigationActions {
   }
 
   /** The system browser: a web URL as itself, anything else as the Flowpad view that presents it. */
-  async openLinkInBrowser(link: string, source: Shell | null): Promise<void> {
+  async openLinkInBrowser(link: string, source: LinkSource | null): Promise<void> {
     try {
       openExternal(await this.browserUrlFor(link, source));
     } catch (error) {
@@ -840,7 +841,7 @@ export class NavigationActions {
   }
 
   /** `openLinkInBrowser`, in one browser profile of this machine (`fetchBrowserProfiles`). */
-  async openLinkInBrowserProfile(link: string, source: Shell | null, browser: string, profile: string): Promise<void> {
+  async openLinkInBrowserProfile(link: string, source: LinkSource | null, browser: string, profile: string): Promise<void> {
     try {
       await openInBrowserProfile(await this.browserUrlFor(link, source), browser, profile);
     } catch (error) {
@@ -848,7 +849,7 @@ export class NavigationActions {
     }
   }
 
-  private async browserUrlFor(link: string, source: Shell | null): Promise<string> {
+  private async browserUrlFor(link: string, source: LinkSource | null): Promise<string> {
     if (isWebUrl(link)) return link;
     return this.getDockUrl(placeDockInProject(await this.resolveLinkDock(link, source), source?.project_id));
   }
