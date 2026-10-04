@@ -88,8 +88,12 @@ def test_flowpads_own_chat_replies_by_quoting_and_threading():
         ("agentmail", True, False),
         ("teams", True, False),
         ("helpdesk", True, False),
-        # A phone line speaks to the person; the harness writes into the thread itself.
+        ("http_chat", True, False),
+        ("task_manager", True, False),
+        # A call speaks to the person; the harness writes into the thread itself.
         ("voice_phone", False, False),
+        ("voice_browser", False, False),
+        ("voice_file", False, False),
         ("agent", False, False),
     ],
 )
