@@ -76,6 +76,8 @@ vi.mock('@src/components/conversation/asset-review/useRunReceivedSkill', () => (
 }));
 
 import { MessageEntityChip } from '@src/components/conversation/FlowMessageBubble';
+import { HOME_PAGE_OPEN, HOME_PAGE_PARAM } from '@src/project-home-page/home-page-state';
+import { ambientLoadProjectId } from '@src/routes/loaders/load-redirects';
 
 const PID = '11111111-1111-4111-8111-111111111111';
 const PROJECT_TID = new TypeId('project', PID);
@@ -365,6 +367,22 @@ describe('MessageEntityChip — project reference', () => {
       fireEvent.click(genericChip());
       expect(screen.queryByTestId('asset-review-dialog')).toBeNull();
       expect(h.openDock).toHaveBeenCalledTimes(1);
+    });
+
+    it('installed, Standard / Vibe: the chip lands on the project home page, like the email link', () => {
+      h.projects = [sharedRow('/Users/eli/Flowpad workspace/apollo')];
+      entityState(PROJECT_TID, { data: sharedRow('/Users/eli/Flowpad workspace/apollo') });
+      renderChip(PROJECT_TID, stagedProject('user'));
+
+      fireEvent.click(genericChip());
+      // Landing straight away or through the popup's Open are both fine; where it lands is the point.
+      if (screen.queryByTestId('asset-review-dialog')) fireEvent.click(screen.getByTestId('asset-open-entity'));
+
+      expect(h.openDock).toHaveBeenCalledTimes(1);
+      const landing = new URL(String(h.openDock.mock.calls[0][0].toUrl()), 'http://flowpad.local');
+      // The two conditions `projectHomePageRedirect` gates on: the home-page ask, on the bare project landing.
+      expect(landing.searchParams.get(HOME_PAGE_PARAM)).toBe(HOME_PAGE_OPEN);
+      expect(ambientLoadProjectId(new Request(landing))).toBe(PID);
     });
 
     it('installed, Advanced: the chip reopens the popup with Open and no Uninstall', () => {
