@@ -158,6 +158,12 @@ the **web-tester** skill, which sweeps every HTML target — standalone `.html` 
 running apps — and reports pass/fail. Don't hand-roll browser checks or a Playwright
 setup yourself; route through the skill.
 
+When you need to **look inside** a page rather than grade it — a dev server with hot
+reload you are iterating on, a page that loads but misbehaves, a console error or failing
+request to chase, a flow to click through, or a real external website (logging in, acting
+on it) → use the **real-browser** skill: a visible Chrome (Edge on Windows) you drive and
+inspect through DevTools. The pass/fail sweep stays with web-tester.
+
 ## Opening an EXISTING web app
 
 ("open the app", "run the dashboard", "show the frontend") → don't rebuild:

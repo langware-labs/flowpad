@@ -8,18 +8,18 @@
 > land in a chat or form can send something that cannot be taken back; ask the
 > user to switch windows instead.
 
-Every tool runs as `$S run <tool> <args…>` (`S=<this skill's folder>/scripts/browser.sh`);
-the script adds this instance's session. `$S run --help` lists all tools, and
-`$S run <tool> --help` shows one tool's arguments.
+Every tool runs as `browser run <tool> <args…>`; the script adds this
+instance's session. `browser run --help` lists all tools, and
+`browser run <tool> --help` shows one tool's arguments.
 
 ## The loop: snapshot → act on uid → re-snapshot
 
 ```bash
-$S run new_page "http://127.0.0.1:3000/"     # prints the page list; note the pageId
-$S run take_snapshot <pageId>               # accessibility tree, each element has a uid
-$S run click <pageId> <uid>
-$S run fill <pageId> <uid> "text"
-$S run take_snapshot <pageId>               # the page changed: old uids are stale
+browser run new_page "http://127.0.0.1:3000/"     # prints the page list; note the pageId
+browser run take_snapshot <pageId>               # accessibility tree, each element has a uid
+browser run click <pageId> <uid>
+browser run fill <pageId> <uid> "text"
+browser run take_snapshot <pageId>               # the page changed: old uids are stale
 ```
 
 Act on uids from the latest snapshot. They are what a user can see and reach,
@@ -34,10 +34,10 @@ snapshot is cheaper and exact. Save it to a file and open that file to see it:
 ## Debug: evidence before edits
 
 ```bash
-$S run list_console_messages <pageId>
-$S run get_console_message <pageId> <msgid>    # full text + stack
-$S run list_network_requests <pageId>
-$S run get_network_request <pageId> --reqid <reqid>   # status, headers, body
+browser run list_console_messages <pageId>
+browser run get_console_message <pageId> <msgid>    # full text + stack
+browser run list_network_requests <pageId>
+browser run get_network_request <pageId> --reqid <reqid>   # status, headers, body
 ```
 
 Name every bug with its evidence — the console text, or the request and its
@@ -68,7 +68,7 @@ finally {
 }
 ```
 
-- `PORT` comes from `$S status`; replay works on the agent profile only.
+- `PORT` comes from `browser status`; replay works on the agent profile only.
   Install the library where the script lives: `npm i playwright-core` (no
   browser download — it drives the Chrome that is already running).
 - Locate by role and name (`getByRole`, `getByLabel`), as the user sees the

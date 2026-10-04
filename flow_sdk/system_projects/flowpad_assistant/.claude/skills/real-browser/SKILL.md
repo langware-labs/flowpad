@@ -1,13 +1,14 @@
 ---
 id: 624500c5-1681-4ffb-b2b2-127b728f668a
 name: real-browser
-description: Gives you a real, visible Chrome — the user's own installed browser — to
+description: Gives you a real, visible browser — the user's own installed Chrome or Edge — to
   drive and debug through Chrome DevTools (clicks, forms, console, network requests,
   performance), on request. Use when the user asks you to "use a browser", "open it
   in Chrome", "click through it", "check it in a real browser", "see what the console
   says", "debug why the page breaks", "log in and do X on <site>", "use my Chrome /
-  my logged-in session", or when an app you built must be verified interactively and
-  a headless sweep is not enough. Also turns a flow you verified into a replayable
+  my logged-in session", when iterating on a dev server with hot reload (HMR), or when
+  an app you built must be verified interactively and a headless sweep is not enough.
+  Works on macOS, Linux and Windows (Chrome, or Edge when Chrome is absent). Also turns a flow you verified into a replayable
   script. NOT for a headless pass/fail sweep of pages (web-tester), showing a page
   in the Flowpad display (flowpad-navigation), or building the app (web-app-builder).
 tags:
@@ -32,9 +33,18 @@ allowed-tools:
 > land in a chat or form can send something that cannot be taken back; ask the
 > user to switch windows instead.
 
-Everything runs through `scripts/browser.sh` (in this skill's folder). It keeps
-one Chrome per Flowpad instance and one chrome-devtools session for it, so
-calls from several agents land on the same browser instead of spawning more.
+Everything runs through `scripts/browser.mjs` in this skill's folder; below,
+`browser` means `node <this skill's folder>/scripts/browser.mjs`. It is plain
+Node — the chrome-devtools CLI needs Node anyway — so it runs the same from
+bash, Git Bash and PowerShell on macOS, Linux and Windows. It keeps one browser
+per Flowpad instance and one chrome-devtools session for it, so calls from
+several agents land on the same browser instead of spawning more.
+
+Its tools come from Flowpad's setup wizard. When `node` is not found, or the
+script exits `NEEDS_SETUP` (8) or `NO_BROWSER` (2), run
+`flow wizard run browser-setup`: it checks Node.js, the chrome-devtools CLI and
+a browser, and asks the user before installing whatever is missing. Then run
+the script again.
 
 | When you need to…                                                         | Load              |
 | ------------------------------------------------------------------------- | ----------------- |
