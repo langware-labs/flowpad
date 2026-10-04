@@ -81,6 +81,7 @@ class ConversationStatus(StrEnum):
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.message_thread import MessageThread
     from flow_sdk.cloud_client.client import FlowpadClient
 
 
@@ -929,24 +930,65 @@ class Conversation(ProjectedFields, Entity):
         by_id = {fm.id: fm for fm in rows}
         return [by_id[pid] for pid in ids if pid in by_id]
 
+    async def threads(self) -> list["MessageThread"]:
+        """This conversation's threads (channel and native), oldest first."""
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+
+        rows = await MessageThread.get_all({"match": {"conversation_id": self.id}})
+        return sorted(rows, key=lambda t: str(t.created_date or ""))
+
+    async def resolve_thread_id(self, ref: str) -> Optional[str]:
+        """The id of the thread ``ref`` names in this conversation: a thread id, or the id of a
+        message in it (its root, for a native thread). None when neither."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+        ref = (ref or "").strip()
+        if not ref:
+            return None
+        if any(t.id == ref for t in await self.threads()):
+            return ref
+        fm = await FlowMessage.get_one({"id": ref})
+        if fm is not None and fm.conversation_id == self.id and fm.thread_id:
+            return fm.thread_id
+        return None
+
     async def transcript(
         self,
         *,
         self_ids: frozenset[str] | set[str] = frozenset(),
         last: Optional[int] = None,
         since: Optional[datetime] = None,
+        thread_id: Optional[str] = None,
     ) -> dict:
-        """The unabridged read of this conversation for an agent: header plus
-        ``FlowMessage.read_entry`` per message, oldest-first. ``since`` keeps
-        messages at/after that instant; ``last`` then keeps the newest N.
-        Local reads only — the same residence ``summary`` reads."""
-        msgs = await self._messages_oldest_first(last=last, since=since)
+        """The unabridged read of this conversation for an agent: header, its threads, and
+        ``FlowMessage.read_entry`` per message (with its thread's title), oldest-first.
+        ``thread_id`` keeps one thread; ``since`` keeps messages at/after that instant;
+        ``last`` then keeps the newest N. Local reads only — the same residence ``summary`` reads."""
+        if thread_id:
+            msgs = [m for m in await self._messages_oldest_first(since=since) if m.thread_id == thread_id]
+            if last is not None:
+                msgs = msgs[-last:] if last > 0 else []
+        else:
+            msgs = await self._messages_oldest_first(last=last, since=since)
+        threads = await self.threads()
+        titles = {t.id: t.title or "" for t in threads}
+        entries = []
+        for m in msgs:
+            entry = m.read_entry(self_ids)
+            if m.thread_id:
+                entry["thread_title"] = titles.get(m.thread_id, "")
+            entries.append(entry)
         return {
             "id": self.id,
             "title": self.title or "",
             "participants": [member_label(p) for p in (self.members or [])],
             "message_count": self.message_count,
-            "messages": [m.read_entry(self_ids) for m in msgs],
+            "threads": [
+                {"id": t.id, "title": t.title or "", "channel": t.channel, "message_count": t.message_count}
+                for t in threads
+            ],
+            "thread_id": thread_id,
+            "messages": entries,
         }
 
     async def add_message(
@@ -962,6 +1004,8 @@ class Conversation(ProjectedFields, Entity):
         cloned_from_sender_id: Optional[str] = None,
         remote_worker_session_id: Optional[str] = None,
         kind: Optional[str] = None,
+        reply_to_id: Optional[str] = None,
+        thread_root_id: Optional[str] = None,
     ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
@@ -1018,6 +1062,12 @@ class Conversation(ProjectedFields, Entity):
             body["remote_worker_session_id"] = remote_worker_session_id
         if kind:
             body["kind"] = kind
+        # The quote and the native thread — mirrored on the hub FlowMessage schema,
+        # so every member's copy carries them (``stream_inbox.native_threads``).
+        if reply_to_id:
+            body["reply_to_id"] = reply_to_id
+        if thread_root_id:
+            body["thread_root_id"] = thread_root_id
         body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
