@@ -1,5 +1,6 @@
-import { formatGitOrigin, gitOriginCloneUrl } from '@sdk/models/GitOrigin';
-import { Project, type GitOrigin } from '@sdk';
+import { gitOriginCloneUrl } from '@sdk/models/GitOrigin';
+import { formatFSOrigin, isGitOrigin, type ProjectOrigin } from '@sdk/models/FSOrigin';
+import { Project } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useCloneGitProjectAndOpen, useInstallSharedProjectAndOpen } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
@@ -31,7 +32,7 @@ type Step = 'confirm' | 'cloning' | 'collision' | 'success' | 'error';
 
 interface Props {
   open: boolean;
-  gitOrigin: GitOrigin;
+  gitOrigin: ProjectOrigin;
   projectName: string;
   senderName: string;
   /** A shared project's id: install it in place instead of cloning a template. */
@@ -52,8 +53,8 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
   const [nameOverride, setNameOverride] = useState('');
   const startedRef = useRef(false);
 
-  const originLabel = formatGitOrigin(gitOrigin);
-  const branch = gitOrigin.branch || '';
+  const originLabel = formatFSOrigin(gitOrigin);
+  const branch = isGitOrigin(gitOrigin) ? gitOrigin.branch || '' : '';
 
   // Reset when the dialog closes so a second share opens clean.
   const handleClose = useCallback(() => {
@@ -96,6 +97,12 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
     async (targetName?: string) => {
       if (!computeNode) {
         setErrorMsg(t`No compute node available in this workspace.`);
+        setStep('error');
+        return;
+      }
+      if (!isGitOrigin(gitOrigin)) {
+        // A hub-hosted copy is only ever a SHARED project, installed in place.
+        setErrorMsg(t`This project can only be opened from its share.`);
         setStep('error');
         return;
       }
