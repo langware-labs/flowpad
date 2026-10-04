@@ -9,7 +9,10 @@
  * lazy subfolder recursion over the same walk.
  */
 import { describe, expect, it } from 'vitest';
-import { childrenForPrefix } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
+import { childrenForPrefix, markdownFolderRoot } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
+import { DEFAULT_ASSET_FILTER } from '@src/components/assets/assetFilter';
+import { allScope, filterScope } from '@src/lib/scope-filter';
+import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 
 const VAULT_ABS = '/Users/me/proj';
 
@@ -66,5 +69,33 @@ describe('childrenForPrefix', () => {
 
   it('returns nothing for an empty walk', () => {
     expect(build('', [])).toEqual([]);
+  });
+});
+
+describe('markdownFolderRoot vault scoping', () => {
+  const TYPE: AssetTypeInfo = {
+    type_name: 'markdown',
+    label: 'Documents',
+    creatable: true,
+    vaults: [
+      { typeid: 'compute_node-@local', relPath: 'Users/me/a', absPath: '/Users/me/a', label: 'A', scope: 'project', project_id: 'pa' },
+      { typeid: 'compute_node-@local', relPath: 'Users/me/b', absPath: '/Users/me/b', label: 'B', scope: 'project', project_id: 'pb' },
+    ],
+  } as AssetTypeInfo;
+
+  const root = (scope: ReturnType<typeof allScope>) =>
+    markdownFolderRoot(TYPE, { indexType: async () => {}, filter: { ...DEFAULT_ASSET_FILTER, scope } });
+
+  // Regression (2026-10-03): the "All" scope selects no SPECIFIC project, so
+  // keepVault dropped every project vault and the Documents root lost its chevron.
+  it('the All scope keeps every vault', async () => {
+    const r = root(allScope());
+    expect(r.hasChildren).toBe(true);
+    expect((await r.listChildren!()).map((n) => n.label)).toEqual(['A', 'B']);
+  });
+
+  it('a filter scope keeps only the selected project vaults', async () => {
+    const r = root(filterScope(false, ['pb']));
+    expect((await r.listChildren!()).map((n) => n.label)).toEqual(['B']);
   });
 });

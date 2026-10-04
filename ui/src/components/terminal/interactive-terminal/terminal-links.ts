@@ -14,15 +14,25 @@ const URL_REGEX = /(https?|HTTPS?):[/]{2}[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~
 const POSITION = String.raw`(?::\d+(?::\d+)?|#L\d+)`;
 const BARE_FILE = new RegExp(String.raw`^[\w@.-]+\.(?:[A-Za-z][\w-]+${POSITION}?|[A-Za-z]${POSITION})$`);
 
+const RTL = String.raw`֐-ࣿיִ-﷿ﹰ-﻿`;
+const HAS_RTL = new RegExp(`[${RTL}]`);
+// Prose wraps references in brackets: `(src/a.ts:49)`. Hebrew glues a prefix on with a hyphen: `ב-src/a.ts`.
+const LEAD = new RegExp(`^(?:[([{]|[${RTL}]+-)*`);
+// A Claude Code row on Windows is pre-reversed into visual order (see terminalConfig.ts), so in a
+// row carrying RTL text the sentence's `.`/`:` and a glued Hebrew prefix land at the path's START
+// / END instead. `./` and `../` stay paths.
+const RTL_LEAD = new RegExp(`^(?:[([{]|[${RTL}]+-|[.,;:!?](?![./\\\\]))*`);
+const TRAIL = new RegExp(`(?:[.,;:!?)\\]}]|-[${RTL}]+)+$`);
+
 /** Candidate recognition only. The backend decides whether the reference exists. */
 export function fileLinkMatches(text: string): Array<{ text: string; index: number }> {
   const links: Array<{ text: string; index: number }> = [];
   const tokens = /"([^"\r\n]+)"|'([^'\r\n]+)'|`([^`\r\n]+)`|[^\s"'`<>]+/g;
+  const leadPattern = HAS_RTL.test(text) ? RTL_LEAD : LEAD;
   for (const match of text.matchAll(tokens)) {
     const quoted = match[1] ?? match[2] ?? match[3];
-    // Prose wraps references in brackets: `(src/a.ts:49)`.
-    const lead = quoted === undefined ? /^[([{]*/.exec(match[0])![0].length : 0;
-    const value = quoted ?? match[0].slice(lead).replace(/[.,;:!?)\]}]+$/, '');
+    const lead = quoted === undefined ? leadPattern.exec(match[0])![0].length : 0;
+    const value = quoted ?? match[0].slice(lead).replace(TRAIL, '');
     // webLinkMatches owns HTTP links, including their path portions.
     if (!value || /^https?:/i.test(value)) continue;
     // Placeholders (`/dock/...`) and bare punctuation or schemes name nothing.

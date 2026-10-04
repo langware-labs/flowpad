@@ -57,6 +57,14 @@ def _recompute_lock() -> asyncio.Lock:
     return loop_lock(_recompute_locks)
 
 
+#: Per loop: ``{"running": bool, "again": bool}`` — a touch that lands while a
+#: recompute is already scheduled marks it to run once more instead of queueing
+#: its own. A recompute reads canonical rows, so one run after the last touch
+#: converges; a run per touch made a burst of N projected messages cost N
+#: whole-table scans (quadratic: 120 messages took ~50s to land).
+_touch_states = new_registry()
+
+
 def viewer_email() -> Optional[str]:
     """Normalized email of the active cloud account, or None when logged out.
 
@@ -261,14 +269,31 @@ def touch(reason: str) -> None:
     Use the awaited :func:`recompute_unread` directly only where the caller
     must observe the fresh value before proceeding (bootstrap/startup repair).
     """
+    try:
+        state = _touch_states.setdefault(asyncio.get_running_loop(), {"running": False, "again": False})
+    except RuntimeError:
+        logger.debug("[stream-inbox] touch(%s) skipped — no running event loop", reason)
+        return
+    if state["running"]:
+        state["again"] = True
+        return
+
     async def _run() -> None:
         try:
-            await recompute_unread(reason)
-        except Exception:  # noqa: BLE001
-            logger.warning("[stream-inbox] recompute failed (%s)", reason, exc_info=True)
+            while True:
+                state["again"] = False
+                try:
+                    await recompute_unread(reason)
+                except Exception:  # noqa: BLE001
+                    logger.warning("[stream-inbox] recompute failed (%s)", reason, exc_info=True)
+                if not state["again"]:
+                    break
+        finally:
+            state["running"] = False
 
     from flow_sdk.request_context.detached import create_detached_task  # noqa: PLC0415
 
+    state["running"] = True
     try:
         # Detached: held until it finishes (never collected mid-write), and outside the caller's
         # request transaction — a touch inside a request must not write into a session that closes.
@@ -276,6 +301,7 @@ def touch(reason: str) -> None:
     except RuntimeError:
         # No running loop (sync/startup context) — the bootstrap/startup
         # repair recompute converges the projection.
+        state["running"] = False
         logger.debug("[stream-inbox] touch(%s) skipped — no running event loop", reason)
 
 

@@ -1,0 +1,17 @@
+{
+  "type": "compute_op",
+  "id": "e27f86a7-2322-4957-a93d-c8297c266ada",
+  "name": "ask-install-codex",
+  "label": "Install Codex CLI?",
+  "description": "Asks the person whether to install Codex CLI, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "Codex CLI is required to continue",
+    "detail": "It doesn't appear to be installed on your computer. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
+    "until_answered": true
+  },
+  "status_check": "install:codex",
+  "output_spec_kind": "confirm"
+}

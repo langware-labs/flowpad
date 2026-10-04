@@ -163,6 +163,12 @@ export class FSRef {
     return await fsManager.readIfExists(this.typeId, this.path);
   }
 
+  /** Extract this `.zip` to a temp folder and return that folder's machine path. */
+  async extractPreview(): Promise<string> {
+    const { fsManager } = await import('../services/fsService');
+    return await fsManager.extractPreview(this.typeId, this.path);
+  }
+
   /**
    * Recovery primitive — write `content` (default empty) at this path,
    * creating parent directories server-side. Pair with ``exists()`` for the

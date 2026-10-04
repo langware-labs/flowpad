@@ -1,6 +1,6 @@
 # Test Index
 
-> Last updated: 2026-09-22T20:53:03Z
+> Last updated: 2026-10-03T16:33:55Z
 > Scope: every .md and .md.ts per category.
 
 ## agentic-process (19 scenarios)
@@ -30,8 +30,8 @@
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---|---|---|---|
 | asset_id_collisions.md | - | yes | no | - |
-| asset_id_never_stamps_foreign_source.md (ts-only) | - | yes | no | - |
-| assets_list_mode.md | 6 | yes | no | - |
+| asset_id_never_stamps_foreign_source.md | - | yes | no | - |
+| assets_list_mode.md | - | yes | no | - |
 | deploy_git_setup_false_success.md | - | yes | no | - |
 | vfs_files_tree_selection.md (ts-only) | - | yes | no | - |
 | wiki_folder_tree.md | - | yes | no | - |
@@ -40,7 +40,7 @@
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---|---|---|---|
 | 401_unauthorized_when_closing_a_chat.md | - | yes | no | - |
-| chat_input_controls.md | 2 | yes | no | - |
+| chat_input_controls.md | - | yes | no | - |
 | chat_refresh_persistence.md | - | yes | no | - |
 | chat_tab_switching.md | - | yes | no | - |
 | closing_a_chat_produces_console_error_401.md | - | yes | no | - |
@@ -62,7 +62,7 @@
 ## cli-log (1 scenarios)
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---|---|---|---|
-| cli_log_viewer.md | - | yes | yes | - |
+| cli_log_viewer.md | - | yes | no | - |
 
 ## collaboration (9 scenarios)
 | Scenario | Tests | Playwright | Fast Path | Skip |
@@ -89,10 +89,10 @@
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---|---|---|---|
 | agent_integrations_e2e.md | - | yes | no | - |
-| attached_channels.md | - | no | no | - |
+| attached_channels.md | - | yes | no | - |
 | backend_served_sources.md | - | yes | no | - |
 | credentialed_sources.md | - | yes | no | - |
-| two_channels_one_stream_inbox.md | - | no | no | - |
+| two_channels_one_stream_inbox.md | - | yes | no | - |
 | whatsapp_agent_e2e.md | - | no | no | - |
 
 ## dock-sweep (1 scenarios)
@@ -156,10 +156,18 @@
 |---|---|---|---|---|
 | nav_collapse.md (ts-only) | - | yes | no | - |
 
+## navigation (4 scenarios)
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| chat_round_trips.md (ts-only) | - | yes | no | - |
+| every_place_renders.md (ts-only) | - | yes | no | - |
+| tab_switch_perf.md (ts-only) | - | yes | no | - |
+| terminal_round_trips.md (ts-only) | - | yes | no | - |
+
 ## sandbox (1 scenarios)
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---|---|---|---|
-| sandbox_share_link.md | - | no | no | manual |
+| sandbox_share_link.md | - | no | no | - |
 
 ## search (8 scenarios)
 | Scenario | Tests | Playwright | Fast Path | Skip |
@@ -167,7 +175,7 @@
 | mcp_index.md | - | yes | no | - |
 | rebuild_index_ui.md | - | yes | no | - |
 | record_search_from_home.md | - | yes | no | - |
-| record_search_view.md | - | yes | yes | - |
+| record_search_view.md | - | yes | no | - |
 | scan_records_viewer.md | - | yes | no | - |
 | search_bar.md | - | yes | no | - |
 | search_limit_param.md | - | yes | no | - |
@@ -198,9 +206,10 @@
 | sniffer_shared_state_single_backend_call.md | - | yes | no | - |
 | sniffer_spa_navigation_preserves_state.md | - | yes | no | - |
 
-## stream-inbox (1 scenarios)
+## stream-inbox (2 scenarios)
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---|---|---|---|
+| channel_files_reactions.md | - | yes | no | - |
 | channel_matrix.md | - | yes | no | - |
 
 ## tab_management (2 scenarios)
@@ -220,7 +229,7 @@
 | in_claude_ctrlv_does_not_paste.md | - | yes | no | - |
 | interactive_tabs_project_filtering_matrix.md | - | yes | no | - |
 | multiple_terminal_tabs.md | - | yes | no | - |
-| navigate_to_shell.md | 1 | yes | no | - |
+| navigate_to_shell.md | - | yes | no | - |
 | plain_shell_url_loads_silently.md (ts-only) | - | yes | no | - |
 | prompt_index_panel.md | - | yes | no | - |
 | run_basic_command.md | - | yes | no | - |
@@ -235,7 +244,7 @@
 | shell_tabs_remain_open_after_closing.md | - | yes | no | - |
 | shell_terminals_looks_empty.md | - | yes | no | - |
 | terminal_annotation_bookmark.md | - | yes | no | - |
-| terminal_clear_and_scrollback.md | 1 | yes | no | - |
+| terminal_clear_and_scrollback.md | - | yes | no | - |
 | terminal_command_history.md | - | yes | no | - |
 | terminal_ctrl_c.md | - | yes | no | - |
 | terminal_links.md (ts-only) | - | yes | no | - |
@@ -267,6 +276,11 @@
 | vibe_bugs.md | - | yes | no | - |
 | vibe_workspace_matrix.md | - | yes | no | - |
 
+## voice (1 scenarios)
+| Scenario | Tests | Playwright | Fast Path | Skip |
+|---|---|---|---|---|
+| voice_matrix.md (ts-only) | - | yes | no | - |
+
 ## whiteboard (8 scenarios)
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---|---|---|---|
@@ -282,5 +296,4 @@
 ## wiki (1 scenarios)
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |---|---|---|---|---|
-| wiki_link_layer.md | 23 | yes | no | - |
-
+| wiki_link_layer.md | - | yes | no | - |

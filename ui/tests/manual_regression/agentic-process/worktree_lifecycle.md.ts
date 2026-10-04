@@ -20,9 +20,24 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
+import { apiContext } from '../_shared/api';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionPopover, AP_HAS_CLAUDE_ONLY_CLI_FLAGS, AP_OPENER } from './_ap_helpers';
 
-const PROJECT_DIR = '/Users/shlom/Flowpad workspace/my_first_project';
+// The instance's OWN project folder, asked of the backend — a named instance's
+// workspace is `~/Flowpad workspaces/<name>/`, so a hardcoded prod path both
+// misses the folder the shell opens in and writes into prod's workspace.
+let PROJECT_DIR = '';
+async function resolveProjectDir(): Promise<string> {
+  const api = await apiContext();
+  const rows = ((await (await api.get('/api/v1/graph/project')).json()).data ?? []) as { id: string; name: string }[];
+  const id = rows.find((r) => r.name === 'my_first_project')?.id;
+  const dir = id
+    ? ((await (await api.get(`/api/v1/graph/project/${id}`)).json()).data?.fs_storage_mount_path as string | undefined)
+    : undefined;
+  await api.dispose();
+  if (!dir) throw new Error("could not resolve this instance's my_first_project folder");
+  return dir;
+}
 
 function gitInitWithCommit(dir: string) {
   execSync('git init -q && git -c user.email=qa@local -c user.name=qa commit -q --allow-empty -m init', { cwd: dir });
@@ -38,7 +53,8 @@ const worktreeBtn = (page: import('@playwright/test').Page) =>
   activePanel(page).locator('button[aria-label="Open in Worktree"]');
 
 test.describe('worktree lifecycle', () => {
-  test.afterEach(() => { cleanGit(PROJECT_DIR); });
+  test.beforeAll(async () => { PROJECT_DIR = await resolveProjectDir(); });
+  test.afterEach(() => { if (PROJECT_DIR) cleanGit(PROJECT_DIR); });
 
   test('test 1: OpenInWorktree spawns a worktree sibling; CommitMerge appears in it', async ({ page }) => {
     // --worktree is claude-only (getWorkerCliCapabilities reports worktree:false

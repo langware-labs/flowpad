@@ -77,8 +77,8 @@ export function isTerminal(spec: ActivityProgressSpec): boolean {
  * The one node actually doing something right now, or `null` when nothing under
  * this root is running.
  *
- * Depth-first, children before self: a leaf's own phase ("checking jq", "jq: cli",
- * "jq: waiting for you…") is what a viewer wants, and every ancestor up to the root
+ * Depth-first, children before self: a leaf's own phase ("checking node", "node: cli",
+ * "node: waiting for you…") is what a viewer wants, and every ancestor up to the root
  * is ALSO "running" the moment any descendant is touched (see the Python side's
  * `_wake`, which walks parents pending→running) — so returning the first match
  * found breadth-first would show the least specific label instead of the most.

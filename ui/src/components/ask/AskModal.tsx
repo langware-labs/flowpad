@@ -80,7 +80,9 @@ function AskModal({ questionId, onOpenChange }: { questionId: string; onOpenChan
           </p>
         ) : (
           <>
-            <DialogHeader>
+            {/* pr-6 clears the dialog's close X (pinned top-right): in RTL the title starts at the
+                right edge and ran under it. */}
+            <DialogHeader className="pr-6">
               <DialogTitle data-testid="ask-modal-prompt">{bt(question.prompt)}</DialogTitle>
               {question.detail ? (
                 <DialogDescription data-testid="ask-modal-detail">{bt(question.detail)}</DialogDescription>

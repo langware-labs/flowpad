@@ -1,4 +1,5 @@
 import { perfLog } from '../../utils/perf';
+import { isHubOnly } from '../../utils/hub-runtime';
 import { toplog } from '../toplog';
 import { dataContext } from '../../FlowSync/context';
 import type { OutputChunk } from '../../pty-sync/types.js';
@@ -109,6 +110,16 @@ export class PtyConnection {
   // `pty` toplog: log the first line of a run of dropped chunks / inputs only.
   private _traceDedupRun = false;
   private _traceInputDropRun = false;
+
+  /**
+   * Keystrokes typed before this connection was EVER ready — a real terminal's
+   * typeahead. A view mounts its xterm before the first attach completes, and
+   * what a person types in that gap belongs to the shell, not the floor. Only
+   * the first attach flushes it: input into a pane that WAS live and then
+   * dropped is still refused, so a dead pane never replays stale keys later.
+   */
+  private _typeahead = '';
+  private _everReady = false;
 
   /** Backend PTY ID currently attached in this browser client. */
   private _attachedPtyId: string | null = null;
@@ -447,9 +458,16 @@ export class PtyConnection {
 
   /** Send keystrokes to the backend PTY. */
   async sendInput(data: string): Promise<void> {
+    if (!this.isLive && !this._everReady) {
+      if (this._typeahead.length + data.length <= PtyConnection.TYPEAHEAD_MAX) {
+        if (!this._typeahead) toplog.log('pty', `input_typeahead shell=${this.shellId} started=${this.started}`);
+        this._typeahead += data;
+        return;
+      }
+    }
     if (!this.isLive) {
-      console.warn('[PtyConnection] sendInput: PTY not live');
       if (!this._traceInputDropRun) {
+        console.warn('[PtyConnection] sendInput: PTY not live');
         this._traceInputDropRun = true;
         toplog.log('pty', `input_dropped shell=${this.shellId} reason=not_live started=${this.started}`);
       }
@@ -560,6 +578,8 @@ export class PtyConnection {
       this._reattachPtyId = targetPtyId;
       this._wireReattachHooks();
       this._emitReady();
+      this._everReady = true;
+      void this._flushTypeahead();
     })();
 
     this._attachingPtyId = targetPtyId;
@@ -671,6 +691,18 @@ export class PtyConnection {
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
+  /** Upper bound on held typeahead — a paste larger than this before attach is refused as before. */
+  static readonly TYPEAHEAD_MAX = 4096;
+
+  /** Send what was typed before the first attach, in order, once the PTY is live. */
+  private async _flushTypeahead(): Promise<void> {
+    const pending = this._typeahead;
+    if (!pending || !this.isLive) return; // kept for the next attach that comes up live
+    this._typeahead = '';
+    toplog.log('pty', `input_typeahead_flush shell=${this.shellId} chars=${pending.length}`);
+    await this.sendInput(pending);
+  }
+
   private _emitReady(): void {
     for (const fn of this._readyListeners) {
       try {
@@ -720,6 +752,9 @@ export class PtyConnection {
       pty_id: ptyId,
       connection_id,
       ...(cols !== undefined && rows !== undefined ? { cols, rows } : {}),
+      // The hub records no pty-stream file: its replay buffer is the history,
+      // sent on attach from the last seq this connection saw.
+      ...(isHubOnly() ? { since_seq: this.lastSeq } : {}),
     };
     const result = await dataManager.callActionOverWS<any, any>(
       action,
