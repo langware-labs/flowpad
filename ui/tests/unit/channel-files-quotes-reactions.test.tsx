@@ -23,7 +23,9 @@ vi.mock('@src/components/conversation/AttachMenu', () => ({
   AssetRefChips: () => null,
   useAssetRefSelection: () => ({ selectedTypeIds: [] }),
 }));
-vi.mock('@src/components/image-annotator/annotate-files', () => ({ annotateImageFiles: (f: File[]) => Promise.resolve(f) }));
+vi.mock('@src/components/image-annotator/annotate-files', () => ({
+  annotateImageFiles: (f: File[]) => Promise.resolve({ files: f, caption: '' }),
+}));
 
 import { sendToChannel } from '@sdk/entities/notifications';
 import { MessageComposer } from '@src/components/conversation/MessageComposer';

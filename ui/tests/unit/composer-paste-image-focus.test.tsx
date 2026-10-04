@@ -21,7 +21,7 @@ vi.mock('@src/components/conversation/AttachMenu', () => ({
 vi.mock('@src/components/image-annotator/annotate-files', () => ({
   annotateImageFiles: (f: File[]) => {
     (document.activeElement as HTMLElement | null)?.blur();
-    return Promise.resolve(f);
+    return Promise.resolve({ files: f, caption: '' });
   },
 }));
 

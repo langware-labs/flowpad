@@ -156,15 +156,23 @@ export function usePickedFiles({ enabled, disabled }: { enabled: boolean; disabl
   return { inputId, files: picked.files, rejected: picked.rejected, dragging, addFiles, removeAt, clear, dragProps };
 }
 
+/** `text` added to a composer's `prev` value on a line of its own. */
+export function appendLine(prev: string, text: string): string {
+  if (!prev) return text;
+  return prev.endsWith('\n') ? `${prev}${text}` : `${prev}\n${text}`;
+}
+
 /**
  * The one image-paste path for composers that hold files until send: pasted
  * images go through the annotator (a cancelled image is dropped) and the
- * survivors become picked-file chips. Returns a paste handler that claims the
- * event only when the clipboard carries images; text pastes fall through.
+ * survivors become picked-file chips. Text that came on the clipboard with the
+ * image prefills the annotator's caption, and the caption the user confirms is
+ * handed to `insertText` (the composer's message). Returns a paste handler that
+ * claims the event only when the clipboard carries images; text pastes fall through.
  */
 export function useAnnotatedImagePaste(
   addFiles: (files: File[]) => void,
-  { enabled }: { enabled: boolean },
+  { enabled, insertText }: { enabled: boolean; insertText?: (caption: string) => void },
 ): (e: React.ClipboardEvent) => boolean {
   return useCallback(
     (e: React.ClipboardEvent) => {
@@ -172,12 +180,15 @@ export function useAnnotatedImagePaste(
       const images = imageFilesFromClipboardData(e.clipboardData, new Date(), { prefix: 'screenshot' });
       if (!images.length) return false;
       e.preventDefault();
-      void annotateImageFiles(images).then((annotated) => {
-        if (annotated.length) addFiles(annotated);
+      const initialCaption = e.clipboardData.getData('text/plain');
+      void annotateImageFiles(images, { initialCaption }).then(({ files, caption }) => {
+        if (!files.length) return;
+        addFiles(files);
+        if (caption) insertText?.(caption);
       });
       return true;
     },
-    [addFiles, enabled],
+    [addFiles, enabled, insertText],
   );
 }
 
