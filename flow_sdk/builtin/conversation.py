@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
 from pydantic import computed_field, model_validator
@@ -72,6 +72,7 @@ class ConversationStatus(StrEnum):
 
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.cloud_client.client import FlowpadClient
 
 
@@ -889,13 +890,6 @@ class Conversation(ProjectedFields, Entity):
         source of truth, same idiom as ``deliver_pending_messages``) and loads
         each FlowMessage by id. No LLM, no hub calls.
         """
-        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
-            default_jsonl_path,
-            from_jsonl,
-            message_pointers,
-        )
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         def _who(p: dict) -> str:
             label = p.get("name") or p.get("email") or p.get("user_id") or "?"
@@ -909,17 +903,68 @@ class Conversation(ProjectedFields, Entity):
             f"Messages: {self.message_count}",
             "",
         ]
+        lines.extend(fm.summary() for fm in await self._messages_oldest_first())
+        return "\n".join(lines)
+
+    async def _messages_oldest_first(
+        self, *, last: Optional[int] = None, since: Optional[datetime] = None
+    ) -> list["FlowMessage"]:
+        """This conversation's messages, oldest-first, via the on-disk jsonl
+        pointer index (the source of truth). Ordered by each pointer's own
+        timestamp — the file's line order is not chronological once a hub sync
+        rewrites it. ``since`` / ``last`` narrow the POINTERS, so only the
+        messages kept are loaded, in one query."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
+            default_jsonl_path,
+            from_jsonl,
+            message_pointers,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
+
         rec = from_jsonl(
             default_jsonl_path(self.id),
             parent_id="",
             record_id=self.id,
             parent_type=RecordType.PROJECT,
         )
-        for ptr in message_pointers(rec):
-            fm = await FlowMessage.get_one({"id": ptr.id})
-            if fm is not None:
-                lines.append(fm.summary())
-        return "\n".join(lines)
+        floor = datetime.min.replace(tzinfo=timezone.utc)
+        dated = sorted(((iso_to_utc(p.ts) or floor, p.id) for p in message_pointers(rec) if p.id), key=lambda d: d[0])
+        if since is not None:
+            dated = [d for d in dated if d[0] >= since]
+        if last is not None:
+            dated = dated[-last:] if last > 0 else []
+        ids = [pid for _, pid in dated]
+        if not ids:
+            return []
+        rows = await FlowMessage.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])))
+        by_id = {fm.id: fm for fm in rows}
+        return [by_id[pid] for pid in ids if pid in by_id]
+
+    async def transcript(
+        self,
+        *,
+        self_ids: frozenset[str] | set[str] = frozenset(),
+        last: Optional[int] = None,
+        since: Optional[datetime] = None,
+    ) -> dict:
+        """The unabridged read of this conversation for an agent: header plus
+        ``FlowMessage.read_entry`` per message, oldest-first. ``since`` keeps
+        messages at/after that instant; ``last`` then keeps the newest N.
+        Local reads only — the same residence ``summary`` reads."""
+        msgs = await self._messages_oldest_first(last=last, since=since)
+        return {
+            "id": self.id,
+            "title": self.title or "",
+            "participants": [
+                {"name": p.get("name") or p.get("email") or p.get("user_id"), "role": p.get("role")}
+                for p in (self.members or [])
+            ],
+            "message_count": self.message_count,
+            "messages": [m.read_entry(self_ids) for m in msgs],
+        }
 
     async def add_message(
         self,
