@@ -1,6 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
+import { formatFSOrigin, isHubRepoOrigin } from '@sdk/models/FSOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -24,6 +25,8 @@ import { StagedAssetViewer } from './StagedAssetViewer';
  *  hub-served reference fetched on open. */
 function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; detail: string | null } {
   const origin = (ma.origin ?? null) as GitOrigin | null;
+  // A project shared `via: hub_repo` rides as its hub-hosted copy: no git URL to show.
+  if (isHubRepoOrigin(origin)) return { label: t`Hub`, Icon: Cloud, detail: formatFSOrigin(origin) };
   if (ma.transfer_mode === 'git' || origin) {
     return { label: t`Git`, Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
   }

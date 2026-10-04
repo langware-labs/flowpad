@@ -65,5 +65,6 @@ async def test_use_opens_the_first_as_display_and_the_rest_under_the_session_tab
     anchor = next(t for t in tabs if t.target_id == str(process.id))
     children = [t for t in tabs if t.parent_tab_id == anchor.id]
     assert sorted(json.loads(t.pointer)["pointer"].rsplit("/", 1)[-1] for t in children) == ["b.html", "c.html"]
+    assert sorted(t.name for t in children) == ["b.html", "c.html"]
     shown = (await AgenticProcess.get_by_id(process.id)).context_data["last_shown"]
     assert shown["path"].endswith("/a.html")
