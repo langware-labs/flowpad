@@ -61,6 +61,7 @@ from flow_sdk.core.compute.declared_value import (
 from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.core.compute.process_step import launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
+from flow_sdk.core.compute.shared_shell import shell_for
 from flow_sdk.schema.data_spec.compute_op_spec import (
     CHECK_TIMEOUT,
     AgentOp,
@@ -189,7 +190,7 @@ async def run_op(
     #: default. ``None`` leaves it to the op (its own ``timeout_seconds``, else
     #: ``ASK_TIMEOUT_SECONDS``). A wizard is resumable, so a long wait costs nothing.
     ask_timeout: Optional[float] = None,
-    shell: Shell = run_shell,
+    shell: Optional[Shell] = None,
     launch: Launch = launch_step_process,
     on_status: Optional[Callable[[str], None]] = None,
     wizard_id: str = "",
@@ -199,66 +200,70 @@ async def run_op(
     #: now" action must not be met with an install prompt).
     check_only: bool = False,
 ) -> ReturnedValue:
-    """Reach the goal or produce the value, or say precisely why not. Never raises."""
-    exe = spec.exe_data
-    if not trusted:
-        # Refused before anything runs — an unapproved op cannot even ask its question.
-        return refused_for(spec)
-    workdir = Path(workdir) if workdir else Path.cwd()
-    say = _say(on_status)
+    """Reach the goal or produce the value, or say precisely why not. Never raises.
 
-    say(f"checking {spec.display_label}")
-    before = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
-    if before is not None and before.exit_code is ExitCode.OK:
-        return _already(spec, before)
-    if before is not None and before.exit_code is ExitCode.NOT_APPLICABLE:
-        return exe.ANSWER.not_applicable(f"{spec.display_label}: not applicable here.", check=before)
-    if check_only:
-        return exe.ANSWER.not_yet(f"{spec.display_label}: not installed yet.", check=before, ran=False)
+    ``shell`` is the run's: given none, this op IS the run and opens one for itself
+    (``SharedShell``); asked for its own (``isolated_shell``), it opens one for its subtree."""
+    async with shell_for(spec.isolated_shell, shell) as shell:
+        exe = spec.exe_data
+        if not trusted:
+            # Refused before anything runs — an unapproved op cannot even ask its question.
+            return refused_for(spec)
+        workdir = Path(workdir) if workdir else Path.cwd()
+        say = _say(on_status)
 
-    seams = _Seams(
-        workdir=workdir,
-        platform=platform,
-        env=env,
-        subject=subject,
-        ask_timeout=ask_timeout,
-        shell=shell,
-        launch=launch,
-        say=say,
-        wizard_id=wizard_id,
-    )
-    say(f"{spec.display_label}: {spec.subkind}")
-    answer = await _attempt(spec, before, executor=executor, seams=seams)
-    tried_as = spec.subkind
-    # What every rung so far tried and reported — a FRESH rung (never a retry
-    # within one's own session, which already remembers its own turns) is handed
-    # this, so it does not re-discover by hand what an earlier, cheaper rung
-    # already found out.
-    history = [f"{tried_as}: {answer.detail}"]
-    for rung in spec.attempts:
-        if answer.exit_code is not ExitCode.NOT_YET or _check_ran_out(answer):
-            # A check that ran out of time gave no verdict: the goal may well hold already, and a
-            # costlier rung cannot make a slow machine answer faster — it would change a machine
-            # that may be fine. The timeout is the report.
-            break
-        # The rung before this one did not reach the goal: this one takes the SAME
-        # goal, with the same check as its verdict — never the caller's executor,
-        # which belonged to whichever process just failed.
-        say(f"{spec.display_label}: {rung.subkind}")
-        exe_data = rung.exe_data
-        if isinstance(exe_data, (AgentOp, PromptOp)):
-            exe_data = exe_data.model_copy(update={"prompt": _earlier_attempts(history) + exe_data.prompt})
-        promoted = spec.model_copy(update={"subkind": rung.subkind, "exe_data": exe_data, "attempts": []})
-        rescued = await _attempt(promoted, answer.check or before, executor=None, seams=seams)
-        prior_detail = answer.detail
-        answer = rescued.model_copy(
-            update={"detail": f"{rescued.detail} (after the {tried_as} attempt: {prior_detail})"}
+        say(f"checking {spec.display_label}")
+        before = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+        if before is not None and before.exit_code is ExitCode.OK:
+            return _already(spec, before)
+        if before is not None and before.exit_code is ExitCode.NOT_APPLICABLE:
+            return exe.ANSWER.not_applicable(f"{spec.display_label}: not applicable here.", check=before)
+        if check_only:
+            return exe.ANSWER.not_yet(f"{spec.display_label}: not installed yet.", check=before, ran=False)
+
+        seams = _Seams(
+            workdir=workdir,
+            platform=platform,
+            env=env,
+            subject=subject,
+            ask_timeout=ask_timeout,
+            shell=shell,
+            launch=launch,
+            say=say,
+            wizard_id=wizard_id,
         )
-        tried_as = rung.subkind
-        # The RAW detail, not the chain-wrapped one above — history entries stay
-        # one line each rather than nesting a "(after ...)" inside a "(after ...)".
-        history.append(f"{tried_as}: {rescued.detail}")
-    return answer
+        say(f"{spec.display_label}: {spec.subkind}")
+        answer = await _attempt(spec, before, executor=executor, seams=seams)
+        tried_as = spec.subkind
+        # What every rung so far tried and reported — a FRESH rung (never a retry
+        # within one's own session, which already remembers its own turns) is handed
+        # this, so it does not re-discover by hand what an earlier, cheaper rung
+        # already found out.
+        history = [f"{tried_as}: {answer.detail}"]
+        for rung in spec.attempts:
+            if answer.exit_code is not ExitCode.NOT_YET or _check_ran_out(answer):
+                # A check that ran out of time gave no verdict: the goal may well hold already, and a
+                # costlier rung cannot make a slow machine answer faster — it would change a machine
+                # that may be fine. The timeout is the report.
+                break
+            # The rung before this one did not reach the goal: this one takes the SAME
+            # goal, with the same check as its verdict — never the caller's executor,
+            # which belonged to whichever process just failed.
+            say(f"{spec.display_label}: {rung.subkind}")
+            exe_data = rung.exe_data
+            if isinstance(exe_data, (AgentOp, PromptOp)):
+                exe_data = exe_data.model_copy(update={"prompt": _earlier_attempts(history) + exe_data.prompt})
+            promoted = spec.model_copy(update={"subkind": rung.subkind, "exe_data": exe_data, "attempts": []})
+            rescued = await _attempt(promoted, answer.check or before, executor=None, seams=seams)
+            prior_detail = answer.detail
+            answer = rescued.model_copy(
+                update={"detail": f"{rescued.detail} (after the {tried_as} attempt: {prior_detail})"}
+            )
+            tried_as = rung.subkind
+            # The RAW detail, not the chain-wrapped one above — history entries stay
+            # one line each rather than nesting a "(after ...)" inside a "(after ...)".
+            history.append(f"{tried_as}: {rescued.detail}")
+        return answer
 
 
 def _adopt_installed_path() -> None:
@@ -537,7 +542,9 @@ async def _cli(
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
     # Each write to stdout/stderr re-says the rung: the one real sign of life a command gives, so a
-    # long quiet install is told apart from a hung one by the row's own last update.
+    # long quiet install is told apart from a hung one by the row's own last update. ``fresh``: an
+    # installer runs in a process of its own with a closed stdin even when the checks share one
+    # shell -- one that asks a question must fail, never read the next command.
     said = await shell(
         command,
         timeout_seconds=spec.exe_data.timeout(),
@@ -545,6 +552,7 @@ async def _cli(
         extra_env=env or {},
         platform=platform,
         on_output=lambda: say(f"{spec.display_label}: {spec.subkind}"),
+        fresh=True,
     )
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 

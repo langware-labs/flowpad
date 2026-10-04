@@ -19,9 +19,11 @@ when the cheap one got there:
 
 Values travel ask → the run's values → the environment of ``flow credentials set``. Nothing prints them.
 """
+
 from __future__ import annotations
 
 import asyncio
+import functools
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -73,15 +75,28 @@ async def project_sources(project: "Project") -> list["DataSource"]:
 
 def _from_row(row: "CredentialStatusRowSpec", used_by: list[str]) -> SetupRequirementSpec:
     return SetupRequirementSpec(
-        kind=REQUIREMENT_PACK, name=row.name, title=row.title, setup=row.setup, help_url=row.help_url,
+        kind=REQUIREMENT_PACK,
+        name=row.name,
+        title=row.title,
+        setup=row.setup,
+        help_url=row.help_url,
         setup_timeout_seconds=row.setup_timeout_seconds,
         vars=[
-            SetupVarSpec(env_var=v.env_var, label=v.label, hint=v.hint, help_url=v.help_url,
-                         pattern=v.pattern, secret=v.secret, file=v.kind is CredentialVarKind.FILE,
-                         present=v.present)
-            for v in row.vars if v.is_must
+            SetupVarSpec(
+                env_var=v.env_var,
+                label=v.label,
+                hint=v.hint,
+                help_url=v.help_url,
+                pattern=v.pattern,
+                secret=v.secret,
+                file=v.kind is CredentialVarKind.FILE,
+                present=v.present,
+            )
+            for v in row.vars
+            if v.is_must
         ],
-        satisfied=row.state == "connected", used_by=used_by,
+        satisfied=row.state == "connected",
+        used_by=used_by,
         note="" if row.setup.strip() else "no setup instructions: AI Assist unavailable",
     )
 
@@ -90,13 +105,27 @@ def _from_template(template: "Credential", used_by: list[str]) -> SetupRequireme
     required = set(template.required_var_names())
     setup = str(getattr(template, "setup", "") or "")
     return SetupRequirementSpec(
-        kind=REQUIREMENT_PACK, name=str(template.name), title=template.title or str(template.name),
-        setup=setup, setup_timeout_seconds=getattr(template, "setup_timeout_seconds", None),
-        help_url=template.help_url or "", declared=False, satisfied=False, used_by=used_by,
+        kind=REQUIREMENT_PACK,
+        name=str(template.name),
+        title=template.title or str(template.name),
+        setup=setup,
+        setup_timeout_seconds=getattr(template, "setup_timeout_seconds", None),
+        help_url=template.help_url or "",
+        declared=False,
+        satisfied=False,
+        used_by=used_by,
         vars=[
-            SetupVarSpec(env_var=name, label=var.label, hint=var.hint, help_url=var.help_url,
-                         pattern=var.pattern, secret=var.secret, file=var.kind is CredentialVarKind.FILE)
-            for name, var in (template.vars or {}).items() if name in required
+            SetupVarSpec(
+                env_var=name,
+                label=var.label,
+                hint=var.hint,
+                help_url=var.help_url,
+                pattern=var.pattern,
+                secret=var.secret,
+                file=var.kind is CredentialVarKind.FILE,
+            )
+            for name, var in (template.vars or {}).items()
+            if name in required
         ],
         note="" if setup.strip() else "no setup instructions: AI Assist unavailable",
     )
@@ -150,20 +179,33 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
         who = str(source.name or source.provider)
         unclaimed = [name for req in await requirements_of_source(source, project) if (name := need(req, who))]
         if unclaimed:
-            gaps.append(SetupRequirementSpec(
-                kind=REQUIREMENT_GAP, name=who, used_by=[who],
-                note=f"needs {', '.join(unclaimed)}, and no credential declares it — add one with `setup` instructions",
-            ))
-    for agent in await Agent.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)]))):
+            gaps.append(
+                SetupRequirementSpec(
+                    kind=REQUIREMENT_GAP,
+                    name=who,
+                    used_by=[who],
+                    note=f"needs {', '.join(unclaimed)}, and no credential declares it — add one with `setup` instructions",
+                )
+            )
+    for agent in await Agent.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["project_id", str(project.id)]))
+    ):
         who = str(agent.name or agent.id)
         for req in agent.requirements or []:
             if not req.derived and (name := need(req, who)):
-                gaps.append(SetupRequirementSpec(kind=REQUIREMENT_GAP, name=name, used_by=[who],
-                                                 note=f"{who} needs {name}, and no credential declares it"))
+                gaps.append(
+                    SetupRequirementSpec(
+                        kind=REQUIREMENT_GAP,
+                        name=name,
+                        used_by=[who],
+                        note=f"{who} needs {name}, and no credential declares it",
+                    )
+                )
 
     out = [
-        SetupRequirementSpec(kind=REQUIREMENT_OAUTH, name=provider, title=provider,
-                             scopes=entry["scopes"], used_by=entry["used_by"])
+        SetupRequirementSpec(
+            kind=REQUIREMENT_OAUTH, name=provider, title=provider, scopes=entry["scopes"], used_by=entry["used_by"]
+        )
         for provider, entry in sorted(oauth.items())
     ]
     by_template = {str(t.name): t for t in templates}
@@ -173,10 +215,14 @@ async def collect_requirements(project: "Project", deployment_id: str = "") -> l
         elif name in by_template:
             out.append(_from_template(by_template[name], used_by))
         else:
-            out.append(SetupRequirementSpec(
-                kind=REQUIREMENT_GAP, name=name, used_by=used_by,
-                note=f"names the credential {name!r}, which is neither declared nor shipped as a template",
-            ))
+            out.append(
+                SetupRequirementSpec(
+                    kind=REQUIREMENT_GAP,
+                    name=name,
+                    used_by=used_by,
+                    note=f"names the credential {name!r}, which is neither declared nor shipped as a template",
+                )
+            )
     return out + gaps
 
 
@@ -217,39 +263,61 @@ def compile_setup(
     for req in requirements:
         if req.kind == REQUIREMENT_OAUTH:
             scopes = [arg for s in req.scopes for arg in ("--scope", s)]
-            add({
-                "name": f"connect-{req.name}", "label": f"Connect {req.title or req.name}",
-                "description": f"{req.name} is connected and its grant covers what {', '.join(req.used_by)} need.",
-                "subkind": "cli", "exe_data": _cli("connections", "connect", req.name),
-                "completion_check": _cli("connections", "test", req.name, *scopes),
-            })
+            add(
+                {
+                    "name": f"connect-{req.name}",
+                    "label": f"Connect {req.title or req.name}",
+                    "description": f"{req.name} is connected and its grant covers what {', '.join(req.used_by)} need.",
+                    "subkind": "cli",
+                    "exe_data": _cli("connections", "connect", req.name),
+                    "completion_check": _cli("connections", "test", req.name, *scopes),
+                }
+            )
         elif req.kind == REQUIREMENT_PACK:
             # AI Assist on each question: the provisioner follows the credential's own setup.md and
             # answers the question — the person's other way to give the value, not a step of its own.
             assist = AI_AGENT if ai and req.setup.strip() else ""
             check = _cli("credentials", "check", req.name, "--project", project_id, *target)
             for var in req.missing:
-                add({
-                    "name": f"ask-{req.name}-{var.env_var}", "label": f"{req.title or req.name}: {var.label or var.env_var}",
-                    "subkind": "ask", "output_spec_kind": "string",
-                    "exe_data": {"prompt": _ask_prompt(req, var), "secret": var.secret, "file": var.file,
-                                 "assist_agent": assist},
-                    # The credential's own guide rides the question: the person sees how to obtain the
-                    # value where they are asked for it.
-                    "setup": req.setup, "setup_timeout_seconds": req.setup_timeout_seconds,
-                    # The goal's own check: a re-run (resume) asks nobody once the values are stored.
+                add(
+                    {
+                        "name": f"ask-{req.name}-{var.env_var}",
+                        "label": f"{req.title or req.name}: {var.label or var.env_var}",
+                        "subkind": "ask",
+                        "output_spec_kind": "string",
+                        "exe_data": {
+                            "prompt": _ask_prompt(req, var),
+                            "secret": var.secret,
+                            "file": var.file,
+                            "assist_agent": assist,
+                        },
+                        # The credential's own guide rides the question: the person sees how to obtain the
+                        # value where they are asked for it.
+                        "setup": req.setup,
+                        "setup_timeout_seconds": req.setup_timeout_seconds,
+                        # The goal's own check: a re-run (resume) asks nobody once the values are stored.
+                        "completion_check": check,
+                    },
+                    bind=input_name(req.name, var.env_var),
+                )
+            add(
+                {
+                    "name": f"store-{req.name}",
+                    "label": f"Store {req.title or req.name}",
+                    "description": f"{req.name} has every value it needs in {where}.",
+                    "subkind": "cli",
+                    "exe_data": _cli("credentials", "set", req.name, "--project", project_id, *target, "--from-inputs"),
                     "completion_check": check,
-                }, bind=input_name(req.name, var.env_var))
-            add({
-                "name": f"store-{req.name}", "label": f"Store {req.title or req.name}",
-                "description": f"{req.name} has every value it needs in {where}.",
-                "subkind": "cli", "exe_data": _cli("credentials", "set", req.name, "--project", project_id, *target, "--from-inputs"),
-                "completion_check": check,
-            })
-    wizard = WizardSpec.model_validate({
-        "name": "project-setup", "description": "Set up this project's connections and credentials.",
-        "icon": "KeyRound", "steps": steps,
-    })
+                }
+            )
+    wizard = WizardSpec.model_validate(
+        {
+            "name": "project-setup",
+            "description": "Set up this project's connections and credentials.",
+            "icon": "KeyRound",
+            "steps": steps,
+        }
+    )
     return wizard, ops
 
 
@@ -279,7 +347,9 @@ async def readiness_of(project: "Project", deployment_id: str = "") -> ProjectRe
     requirements = await collect_requirements(project, deployment_id)
     left = [r for r in requirements if to_do(r)]
     return ProjectReadinessSpec(
-        project_id=str(project.id), ready=not left, to_do=left,
+        project_id=str(project.id),
+        ready=not left,
+        to_do=left,
         gaps=[r for r in requirements if r.kind == REQUIREMENT_GAP],
     )
 
@@ -309,10 +379,25 @@ async def start_setup(project: "Project", *, ai: bool = True) -> str:
             return Resolved(ops[name], True) if name in ops else None
 
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
-        task = asyncio.create_task(execute_wizard(
-            SETUP_WIZARD_ID, wizard, "", trusted=True, subject_entity=f"project-{pid}", target=pid,
-            resolve_op=resolve, cwd=Path(mount) if mount else None, shell=_setup_shell,
-        ))
+
+        async def run_setup():
+            # The run's shell: what the setup does not answer itself runs here, one start per run.
+            from flow_sdk.core.compute.shared_shell import SharedShell  # noqa: PLC0415
+
+            async with SharedShell() as base:
+                return await execute_wizard(
+                    SETUP_WIZARD_ID,
+                    wizard,
+                    "",
+                    trusted=True,
+                    subject_entity=f"project-{pid}",
+                    target=pid,
+                    resolve_op=resolve,
+                    cwd=Path(mount) if mount else None,
+                    shell=functools.partial(_setup_shell, inner=base),
+                )
+
+        task = asyncio.create_task(run_setup())
         task.add_done_callback(_log_failure)
         _RUNS[pid] = task
     return setup_run_address(pid)
@@ -335,8 +420,18 @@ def _own_check(command: str) -> Optional[tuple[str, str, str]]:
     return argv[5], given.get("--project", ""), given.get("--deployment", "")
 
 
-async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, extra_env: Optional[dict] = None,
-                       platform: str = "", stop: Optional[asyncio.Event] = None, on_output=None):
+async def _setup_shell(
+    command: str,
+    *,
+    timeout_seconds: float,
+    workdir: Path,
+    extra_env: Optional[dict] = None,
+    platform: str = "",
+    stop: Optional[asyncio.Event] = None,
+    on_output=None,
+    fresh: bool = False,
+    inner=None,
+):
     """The setup's shell: its own credential checks answered here, everything else run as usual.
 
     Every step checks its goal before it asks, and ``flow credentials check`` as a process imports
@@ -344,7 +439,7 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
     measured. The setup runs inside the instance the check would ask, so it asks the same
     ``credentials_status`` directly: same row (the project's own before the user's), same verdict
     (``connected`` is ready), same exit codes. Windows builds the command differently, so it keeps
-    the process."""
+    the process. Everything else goes to *inner*, the run's shell."""
     import json  # noqa: PLC0415
     import sys  # noqa: PLC0415
     import time  # noqa: PLC0415
@@ -353,8 +448,16 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
 
     own = _own_check(command) if (platform or sys.platform) != "win32" else None
     if own is None:
-        return await run_shell(command, timeout_seconds=timeout_seconds, workdir=workdir, extra_env=extra_env,
-                               platform=platform, stop=stop, on_output=on_output)
+        return await (inner or run_shell)(
+            command,
+            timeout_seconds=timeout_seconds,
+            workdir=workdir,
+            extra_env=extra_env,
+            platform=platform,
+            stop=stop,
+            on_output=on_output,
+            fresh=fresh,
+        )
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode  # noqa: PLC0415
@@ -367,8 +470,9 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
     row = next((r for r in rows if r.get("scope") == "project"), rows[0] if rows else None)
     ready = row is not None and row.get("state") == "connected"
     said = json.dumps({"name": name, "declared": row is not None, "ready": ready})
-    return CliResult.of_process(command, 0 if ready else int(ExitCode.NOT_YET), said,
-                                duration_s=time.monotonic() - started)
+    return CliResult.of_process(
+        command, 0 if ready else int(ExitCode.NOT_YET), said, duration_s=time.monotonic() - started
+    )
 
 
 def _log_failure(task: "asyncio.Task") -> None:
