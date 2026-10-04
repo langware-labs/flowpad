@@ -38,7 +38,7 @@ import { placeDockInProject, presentDockTab } from './present-dock-tab';
 import { openExternal } from '@src/lib/open-external';
 import { openInBrowserProfile } from '@src/lib/browser-profiles';
 import { errorMessage } from '@src/lib/error-message';
-import type { LinkSource } from '@src/lib/link-matches';
+import type { LinkSource } from '@src/components/links/link-events';
 import { notify } from '@src/notifications/notify';
 import { t } from '@lingui/core/macro';
 

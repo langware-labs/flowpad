@@ -42,13 +42,13 @@ describe('link matches', () => {
     const text = 'היי ערן, התיקון כאן\nPR: https://github.com/langware-labs/flowpad/pull/544 תודה';
     const segments = linkSegments(text);
     expect(segments.map((segment) => segment.text).join('')).toBe(text);
-    expect(segments.filter((segment) => segment.link).map((segment) => segment.link)).toEqual([
+    expect(segments.filter((segment) => segment.link).map((segment) => segment.text)).toEqual([
       'https://github.com/langware-labs/flowpad/pull/544',
     ]);
   });
 
   it('leaves text without links as one run', () => {
-    expect(linkSegments('just words, e.g. this.')).toEqual([{ text: 'just words, e.g. this.' }]);
+    expect(linkSegments('just words, e.g. this.')).toEqual([{ text: 'just words, e.g. this.', link: false }]);
     expect(linkSegments('')).toEqual([]);
   });
 });

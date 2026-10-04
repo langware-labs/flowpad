@@ -3,22 +3,6 @@
  * The terminal maps these matches onto buffer cells; a message renders them as spans.
  * Candidate recognition only: the backend decides whether a reference exists.
  */
-import type { AnyEntity, TypeId } from '@sdk';
-
-/**
- * The entity a link is resolved against (`resolveDisplayTarget`): a terminal's Shell, a
- * message's FlowMessage. A relative path resolves where the source lives; a source on a
- * compute node can also preview a referenced image in place.
- */
-export type LinkSource = AnyEntity & { project_id?: string | null; computeNodeTypeId?: TypeId | null };
-
-/** What a surface does with its links — the terminal and a message share these. */
-export interface LinkHandlers {
-  activate: (event: MouseEvent, link: string) => void;
-  /** Right-click on a link: the surface has already claimed the event. */
-  openMenu: (link: string, clientX: number, clientY: number) => void;
-}
-
 export interface LinkMatch {
   text: string;
   index: number;
@@ -84,14 +68,14 @@ export function linkMatches(text: string): LinkMatch[] {
 }
 
 /** `text` cut into plain runs and links, for a surface that renders DOM. Joined, the runs are `text`. */
-export function linkSegments(text: string): Array<{ text: string; link?: string }> {
-  const segments: Array<{ text: string; link?: string }> = [];
+export function linkSegments(text: string): Array<{ text: string; link: boolean }> {
+  const segments: Array<{ text: string; link: boolean }> = [];
   let at = 0;
   for (const match of linkMatches(text)) {
-    if (match.index > at) segments.push({ text: text.slice(at, match.index) });
-    segments.push({ text: match.text, link: match.text });
+    if (match.index > at) segments.push({ text: text.slice(at, match.index), link: false });
+    segments.push({ text: match.text, link: true });
     at = match.index + match.text.length;
   }
-  if (at < text.length) segments.push({ text: text.slice(at) });
+  if (at < text.length) segments.push({ text: text.slice(at), link: false });
   return segments;
 }

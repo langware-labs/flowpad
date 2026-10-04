@@ -1,4 +1,4 @@
-import { useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react';
 import type { AgenticProcess, FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
@@ -6,10 +6,11 @@ import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { TaskItIcon, taskItHint } from './task-it';
 import { MessageChips } from './chips/MessageChips';
-import { MarkdownView } from '@src/components/markdown-view';
+import { MARKDOWN_LINK_CLASS, MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
 import { LinkifiedText } from '@src/components/links/LinkifiedText';
-import type { LinkHandlers } from '@src/lib/link-matches';
+import { linkEventProps, type LinkHandlers } from '@src/components/links/link-events';
+import type { Components } from 'react-markdown';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForMessage } from './avatar-color';
@@ -164,8 +165,14 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
  * div) stops the agent-quote and plain-text branches from drifting apart, which
  * is exactly how newlines got dropped from one branch before.
  */
-function MessageBody({ content, isBot, links }: { content: string; isBot: boolean; links: LinkHandlers }) {
+function MessageBody({ content, isBot, links }: { content: string; isBot: boolean; links: LinkHandlers | null }) {
   const bodyClass = `whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
+  // Markdown links take the same click and menu as the plain-text ones.
+  const components = useMemo<Partial<Components> | undefined>(() => links ? {
+    a: ({ href, children }) => href
+      ? <a href={href} className={MARKDOWN_LINK_CLASS} {...linkEventProps(links, href)}>{children}</a>
+      : <>{children}</>,
+  } : undefined, [links]);
   const claudeQuote = parseClaudeQuote(content);
   if (claudeQuote) {
     // The executed reply renders as real Markdown (bold, lists, code fences,
@@ -176,39 +183,13 @@ function MessageBody({ content, isBot, links }: { content: string; isBot: boolea
       <div className={`text-sm ${isBot ? 'text-foreground/70' : 'text-foreground/90'}`}>
         <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>
         <div className="mt-1 break-words text-foreground/85">
-          <MarkdownView
-            value={claudeQuote.quoted}
-            compact
-            components={{
-              a: ({ href, children }) => (
-                <a
-                  href={href}
-                  className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
-                  onClick={(event) => {
-                    if (!href || event.button !== 0 || event.metaKey || event.ctrlKey) return;
-                    event.preventDefault();
-                    links.activate(event.nativeEvent, href);
-                  }}
-                  onContextMenu={(event) => {
-                    if (!href) return;
-                    event.preventDefault();
-                    links.openMenu(href, event.clientX, event.clientY);
-                  }}
-                >
-                  {children}
-                </a>
-              ),
-            }}
-          />
+          <MarkdownView value={claudeQuote.quoted} compact components={components} />
         </div>
       </div>
     );
   }
-  return (
-    <div className={bodyClass}>
-      <LinkifiedText text={content} handlers={links} />
-    </div>
-  );
+  // Without a message to resolve against, a link could only fail — keep it text.
+  return <div className={bodyClass}>{links ? <LinkifiedText text={content} handlers={links} /> : content}</div>;
 }
 
 export function MessageBubble({
@@ -297,7 +278,7 @@ export function MessageBubble({
     // inputs) so name-edit / attachment actions / attachment downloads keep
     // their native behaviour without double-firing selection.
     const target = e.target as HTMLElement;
-    if (target.closest('button, a, input, textarea, [role="menu"], [role="link"]')) return;
+    if (target.closest('button, a, input, textarea, [role="menu"], [data-link]')) return;
     onSelect();
   };
 
@@ -392,7 +373,7 @@ export function MessageBubble({
           />
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
-        {message.content && <MessageBody content={message.content} isBot={isBot} links={links.handlers} />}
+        {message.content && <MessageBody content={message.content} isBot={isBot} links={flowMessage ? links.handlers : null} />}
         {links.menu}
         {showPromptRow && (
           <AttachmentActionsRow
