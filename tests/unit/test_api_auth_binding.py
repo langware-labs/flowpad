@@ -71,12 +71,10 @@ def _status_facts(monkeypatch):
     """The STATUS facts funding reads, made deterministic (see test_llm_source_resolution):
     every CLI installed, the hub signed in exactly when a hub key is stored, no spawn probe."""
     from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
     from flow_sdk.core import status
     from flow_sdk.core.status import InstallState
 
     monkeypatch.setattr(status, "harness_install", lambda worker: InstallState.INSTALLED)
-    monkeypatch.setattr(llm_source, "_hub_signed_in", lambda: bool(resolve_hub_api_key()))
 
     async def no_probe(worker_type):
         return None

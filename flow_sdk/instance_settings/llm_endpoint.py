@@ -313,7 +313,7 @@ async def fetch_hub_llm_endpoints(*, cached_only: bool = False) -> list["LLMEndp
     #
     # BELOW the memo deliberately, so a cache hit still costs nothing -- the comment above stays
     # true, and the ``cached_only`` spawn path (documented as never calling out, and already
-    # resolving the key for itself in ``llm_source._hub_signed_in``) does not pay a second
+    # resolving the key for itself in ``llm_source._hub_has_token``) does not pay a second
     # credential read for a request it was never going to make.
     #
     # ``hub_auth_available`` and not ``resolve_hub_api_key(require_live=True)``: the expensive one

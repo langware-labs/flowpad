@@ -343,7 +343,7 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
         else []
     )
     candidates += _key_sources(spec, rows, stored)
-    candidates += _endpoint_sources(spec, endpoints, bound, _hub_signed_in(), listing_supersedes_binding())
+    candidates += _endpoint_sources(spec, endpoints, bound, _hub_has_token(), listing_supersedes_binding())
     if install not in (InstallState.INSTALLED, InstallState.BUILT_IN):
         # Nothing funds a harness that cannot run: a stored key or a hub budget would only be
         # spent by a CLI that is not on this machine. Every source stays LISTED (the picker
@@ -361,15 +361,21 @@ async def _inventory(worker_type: str) -> tuple[list[Candidate], Any]:
 # ── overlay ──────────────────────────────────────────────────────────────────────
 
 
-def _hub_signed_in() -> bool:
-    """Whether this box is signed in to FlowPad -- the status layer's answer, never re-derived.
+def _hub_has_token() -> bool:
+    """Whether this process holds a hub token the hub has not refused -- what spending a hub
+    budget takes, and all it takes.
 
-    Signed in means the hub NAMED the user (``core.status.hub_status``), not merely that a
-    key is stored. Imported per call so a monkeypatch on it applies.
+    Every invoke carries the token and the hub authorizes it against the endpoint in the URL
+    (role, models_allow, limits), so a stale or revoked one is answered there with a 401/403.
+    NOT the hub socket's "who am I" (``core.status.hub_status``): that is the live-events
+    channel, and gating funding on it refused every hub budget to any process that never opens
+    one (an SDK script) and to a backend whose socket had restarted unverified. A key the hub
+    already REJECTED stays refused. Imported per call so a monkeypatch on it applies.
     """
+    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
     from flow_sdk.core.status import HubLogin, hub_status  # noqa: PLC0415
 
-    return hub_status().login is HubLogin.SIGNED_IN
+    return bool(resolve_hub_api_key()) and hub_status().login is not HubLogin.REJECTED
 
 
 def _hub_spendable() -> bool:
@@ -381,7 +387,7 @@ def _hub_spendable() -> bool:
     """
     from flow_sdk.instance_settings.llm_endpoint import public_binding  # noqa: PLC0415
 
-    return _hub_signed_in() or public_binding() is not None
+    return _hub_has_token() or public_binding() is not None
 
 
 async def resolve_constraint(scope: LLMScope) -> tuple[str, LLMSourceOrigin] | None:
@@ -574,7 +580,7 @@ def _overlay(
     same reason: it is not harness-dependent, so a batch resolves it once for all four.
     """
     if constraint is not None:
-        return sorted(_apply_constraint(candidates, *constraint, _hub_signed_in()), key=lambda c: c.source.rank)
+        return sorted(_apply_constraint(candidates, *constraint, _hub_has_token()), key=lambda c: c.source.rank)
     return sorted(_apply_preference(candidates, cap, worker_type), key=lambda c: c.source.rank)
 
 
