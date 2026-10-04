@@ -15,6 +15,7 @@ import {
   Project,
   Prompt,
   Task,
+  TaskKind,
   TypeId,
   User,
   type AgenticProcess,
@@ -764,7 +765,13 @@ export function FlowMessageBubble({
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         taskIt={
           messageTask
-            ? { onClick: () => navigation.openDock(messageTask.dockPointer), title: messageTask.title || t`Task` }
+            ? {
+                onClick: () => navigation.openDock(messageTask.dockPointer),
+                title: messageTask.title || t`Task`,
+                status: messageTask.status,
+                // The owner, as the task page names it: a group task's group, else its assignee.
+                owner: (messageTask.kind === TaskKind.GROUP && messageTask.group_name) || messageTask.assignee || null,
+              }
             : onTaskIt && !fm.is_draft
               ? { onClick: () => onTaskIt(fm) }
               : undefined
