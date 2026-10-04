@@ -17,6 +17,7 @@ export * from './FSOptions';
 export * from './UserWarning';
 export * from './DockPointer';
 export * from './GitOrigin';
+export * from './GitShare';
 export * from './FSOrigin';
 export * from './Kind';
 export * from './ReturnedValue';

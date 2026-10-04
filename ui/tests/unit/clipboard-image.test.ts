@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  textFromClipboardItems,
   clipboardImageFilename,
   imageFilesFromClipboardItems,
   imageFilesFromClipboardData,
@@ -104,5 +105,23 @@ describe('clipboard image helpers', () => {
     expect(out).toHaveLength(1);
     expect(out[0].name).toBe('screenshot-20260614-090807-006.png');
     expect(out[0].type).toBe('image/png');
+  });
+});
+
+describe('textFromClipboardItems', () => {
+  const item = (types: Record<string, string>) =>
+    ({
+      types: Object.keys(types),
+      // jsdom's Blob has no text(); a browser's does.
+      getType: (t: string) => Promise.resolve({ text: () => Promise.resolve(types[t]) }),
+    }) as unknown as ClipboardItem;
+
+  it('returns the plain text that rode along with an image', async () => {
+    expect(await textFromClipboardItems([item({ 'image/png': 'x' }), item({ 'text/plain': 'note' })])).toBe('note');
+  });
+
+  it("is '' when the clipboard carries no text", async () => {
+    expect(await textFromClipboardItems([item({ 'image/png': 'x' })])).toBe('');
+    expect(await textFromClipboardItems(undefined)).toBe('');
   });
 });

@@ -333,6 +333,8 @@ class ComputeOpSpec(AssetDocumentSpec):
     #: shell that starts the ``flow`` CLI only to ask this backend over HTTP. Either this
     #: or ``completion_check``, not both.
     status_check: Optional[str] = None
+    #: Run in a shell of its own instead of the run's shared one (see ``SharedShell``).
+    isolated_shell: bool = False
     #: Further rungs at the SAME goal, tried in order while the completion check
     #: still fails after the one before — the op's own call, then this list, for
     #: as many rungs as are named. Needs a completion_check: nothing else can

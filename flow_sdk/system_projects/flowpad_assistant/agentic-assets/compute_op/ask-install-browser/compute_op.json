@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "ac495444-56c4-4bb1-acba-9a77d23cc4e0",
+  "name": "ask-install-browser",
+  "label": "Install Google Chrome?",
+  "description": "Asks the person whether to install Google Chrome, only when neither Chrome nor Edge is installed.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "A Chromium browser is required to continue",
+    "detail": "Agents drive a real Chrome or Edge window on this computer, and neither appears to be installed. Would you like to install Google Chrome now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "for b in \"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\" \"$HOME/Applications/Google Chrome.app/Contents/MacOS/Google Chrome\" \"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge\"; do [ -x \"$b\" ] && \"$b\" --version >/dev/null 2>&1 && { echo '{}'; exit 0; }; done; exit 1",
+      "linux": "for b in google-chrome google-chrome-stable chromium chromium-browser microsoft-edge; do command -v \"$b\" >/dev/null 2>&1 && \"$b\" --version >/dev/null 2>&1 && { echo '{}'; exit 0; }; done; exit 1",
+      "win32": "$found = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA) | Where-Object { $_ } | ForEach-Object { Join-Path $_ 'Google\\Chrome\\Application\\chrome.exe'; Join-Path $_ 'Microsoft\\Edge\\Application\\msedge.exe' } | Where-Object { Test-Path $_ } | Select-Object -First 1; if ($found) { '{}'; exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

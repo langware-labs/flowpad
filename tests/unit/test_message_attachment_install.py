@@ -153,7 +153,7 @@ async def test_install_user_scope_lands_under_claude_home_root(tmp_path, ids, mo
     ma = await _stage(tmp_path, ids)
     user_root = tmp_path / "home"
     user_root.mkdir()
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
 
     res = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
@@ -172,7 +172,7 @@ async def test_install_user_scope_allowed_for_repo_type(tmp_path, ids, monkeypat
     # test_placement_matrix's support cross-product.
     import flow_sdk.app.actions.message_attachment_action as ma_action
 
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: tmp_path / "home")
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: tmp_path / "home")
     await _stage(tmp_path, ids)
     spec_ma = await MessageAttachment.get_one(
         {"id": MessageAttachment.allocate_deterministic_id(ids.fm, f"spec-{ids.spec}")}
@@ -208,7 +208,7 @@ async def test_install_conflict_409_then_overwrite_replaces(tmp_path, ids):
 async def test_redownload_refreshes_staging_and_preserves_install_state(tmp_path, ids, monkeypatch):
     ma = await _stage(tmp_path, ids)
     user_root = tmp_path / "home"
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
     await handle_attachment_install(ma.id, "user", None)
 
     # Second unpack of an updated bundle: same deterministic MA id, staging
@@ -299,7 +299,7 @@ async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monke
     # --- user scope (install for me) ------------------------------------------
     user_root = tmp_path / "home"
     user_root.mkdir()
-    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda asset_class=None: user_root)
     res3 = await handle_attachment_install(ma.id, "user", None)
     assert isinstance(res3, ApiSuccessResponse), getattr(res3, "message", res3)
     assert (user_root / "docs" / fname).exists()

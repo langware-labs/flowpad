@@ -151,14 +151,22 @@ class HubRepoMirror:
     token: str
 
     async def git(self, *args: str, check: bool = True, cwd: Path | None = None) -> tuple[int, str]:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            *args,
-            cwd=str(cwd or self.root),
-            env=_git_env(self.token),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git",
+                *args,
+                cwd=str(cwd or self.root),
+                env=_git_env(self.token),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError as exc:
+            # A fresh machine (a new Windows install) may have no git at all; say so,
+            # rather than the bare "[WinError 2] The system cannot find the file".
+            raise AssetPublishError(
+                AssetPublishCode.HUB_PUBLISH_FAILED,
+                "Git is not installed on this machine — install it from Flowpad's setup, then try again",
+            ) from exc
         out, err = await proc.communicate()
         text = (out or b"").decode(errors="replace").strip()
         if check and proc.returncode != 0:

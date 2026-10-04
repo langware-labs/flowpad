@@ -251,7 +251,7 @@ async def unbind_hub_llm_endpoint() -> dict:
 
 def _hub_key() -> str | None:
     """The hub login key. Imported per call so a monkeypatch on it applies -- a module-scope
-    binding would freeze the function at import time (same reason as ``_hub_signed_in``)."""
+    binding would freeze the function at import time (same reason as ``_hub_has_token``)."""
     from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
 
     return resolve_hub_api_key()

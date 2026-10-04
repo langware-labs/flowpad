@@ -1,6 +1,6 @@
 import { t } from '@lingui/core/macro';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Conversation, type Task, TypeId } from '@sdk';
+import { Conversation, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { cn } from '@src/lib/utils';
@@ -12,12 +12,15 @@ import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel'
 import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 import { ConversationView } from './ConversationView';
 import { useProjectMappingGate } from './useProjectMappingGate';
-import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
-import { taskChipKeys } from './chips/keys';
 import { ConversationBottomRibbon, type ConversationSideTab } from './ConversationBottomRibbon';
 import { ConversationContextPanel } from './ConversationContextPanel';
 import { MembersAvatarStack } from './MembersAvatarStack';
 import { ProjectChip } from '@src/components/project/ProjectChip';
+import { LatestScroll } from '@src/components/conversation/LatestScroll';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { ConversationTasksPanel } from './ConversationTasksPanel';
+import { useConversationTasks } from './task-it';
+import { isOpenTask } from '@src/components/task-bar/task-utils';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -183,10 +186,6 @@ export function ConversationPanel({
   const ensureMapped = mappingGate.ensureMapped;
   const mappingDialogProps = mappingGate.dialogProps;
 
-  // Seed the chip-exclude scope used by per-message chip rows so they skip
-  // entities the toolbar/drawer already shows.
-  const taskKeys = useMemo(() => taskChipKeys(task ?? null), [task]);
-
   // Drawer + ribbon state. Drawer is collapsible — toggled via the ribbon.
   // Starts minimized: executing a prompt surfaces the run inline via the
   // per-message run-status one-liner (near the Execute button), so the drawer
@@ -264,10 +263,19 @@ export function ConversationPanel({
       : 'flex h-9 flex-shrink-0 items-center gap-2 border-y border-border px-4 text-xs font-medium text-muted-foreground';
   const bodyWrapper = variant === 'compact' ? 'mt-1' : 'px-4 pt-3';
 
-  // Context first, Runs second. Runs is hidden entirely when there's no
+  // The Tasks tab: every task of this conversation; its count is the open ones.
+  const conversationTasks = useConversationTasks(conversationId, task?.id);
+  const openTaskCount = useMemo(() => conversationTasks.filter(isOpenTask).length, [conversationTasks]);
+
+  // Context first, then Tasks, then Runs. Runs is hidden entirely when there's no
   // anchor to query (covered by `showRuns`).
   const tabs = [
     { id: 'context' as const, label: t`Context`, icon: Layers },
+    {
+      id: 'tasks' as const,
+      label: openTaskCount > 0 ? t`Tasks ${openTaskCount}` : t`Tasks`,
+      icon: iconForType(Task.type),
+    },
     ...(showRuns
       ? [{ id: 'runs' as const, label: runEntries.length > 0 ? `Runs ${runEntries.length}` : 'Runs', icon: History }]
       : []),
@@ -285,6 +293,7 @@ export function ConversationPanel({
         onSelectEntity={selectEntity}
       />
     ),
+    tasks: <ConversationTasksPanel tasks={conversationTasks} onShowMessage={selectOneMessage} />,
   };
   if (showRuns) {
     drawerChildren.runs = (
@@ -329,26 +338,24 @@ export function ConversationPanel({
               <MembersAvatarStack typeId={new TypeId(Conversation.type, conversationId)} />
             </div>
           )}
-          <div className={`${bodyWrapper} relative min-h-0 flex-1 overflow-y-auto`}>
-            <ChipsExcludeProvider add={taskKeys}>
-              <ConversationView
-                // Keyed so switching conversations RESETS the view's local
-                // state. Without it the instance is reused and an in-flight
-                // "composing…" line follows you into the next conversation.
-                key={conversationId}
-                conversationId={conversationId}
-                task={task}
-                senderName={senderName}
-                ensureMapped={ensureMapped}
-                selectedMessageIds={selectedMessageIds}
-                onSelectMessage={selectOneMessage}
-                onOpenRun={openRun}
-                threadId={threadId}
-                onThreadNavigate={onThreadNavigate}
-                agentId={agentId}
-              />
-            </ChipsExcludeProvider>
-          </div>
+          <LatestScroll className={`${bodyWrapper} relative`}>
+            <ConversationView
+              // Keyed so switching conversations RESETS the view's local
+              // state. Without it the instance is reused and an in-flight
+              // "composing…" line follows you into the next conversation.
+              key={conversationId}
+              conversationId={conversationId}
+              task={task}
+              senderName={senderName}
+              ensureMapped={ensureMapped}
+              selectedMessageIds={selectedMessageIds}
+              onSelectMessage={selectOneMessage}
+              onOpenRun={openRun}
+              threadId={threadId}
+              onThreadNavigate={onThreadNavigate}
+              agentId={agentId}
+            />
+          </LatestScroll>
         </div>
 
         {sideOpen ? (
@@ -378,6 +385,7 @@ export function ConversationPanel({
         onToggleSideTab={toggleSideTab}
         showRuns={showRuns}
         runsBadge={runEntries.length}
+        tasksBadge={openTaskCount}
       />
 
       <OpenProjectComponent {...mappingDialogProps} />

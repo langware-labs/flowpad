@@ -1,0 +1,34 @@
+{
+  "type": "compute_op",
+  "id": "eb9d0cca-4ba8-49ed-b0b1-ce752cef3385",
+  "name": "chrome-devtools-on-path",
+  "label": "chrome-devtools CLI",
+  "description": "The chrome-devtools CLI (Chrome DevTools MCP) is on the PATH and runnable.",
+  "subkind": "cli",
+  "exe_data": {
+    "commands": {
+      "darwin": "npm install -g chrome-devtools-mcp@1",
+      "linux": "npm install -g chrome-devtools-mcp@1",
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); npm.cmd install -g chrome-devtools-mcp@1"
+    },
+    "timeout_seconds": 600
+  },
+  "attempts": [
+    {
+      "subkind": "agent",
+      "exe_data": {
+        "agent": "provisioner",
+        "prompt": "Install the chrome-devtools CLI on this machine with npm (`npm install -g chrome-devtools-mcp@1`) so that `chrome-devtools --version` answers from a fresh shell.",
+        "retries": 1
+      }
+    }
+  ],
+  "completion_check": {
+    "commands": {
+      "darwin": "chrome-devtools --version >/dev/null 2>&1",
+      "linux": "chrome-devtools --version >/dev/null 2>&1",
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); chrome-devtools.cmd --version *> $null; if ($LASTEXITCODE -eq 0) { exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  }
+}

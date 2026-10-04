@@ -29,7 +29,7 @@ def fresh_user_scope(tmp_path, monkeypatch):
     real = placement.root_for_scope
     home = tmp_path / "home"
 
-    def root_for_scope(scope, *, project_mount=None):
+    def root_for_scope(scope, *, project_mount=None, asset_class=None):
         return home if scope == Scope.USER else real(scope, project_mount=project_mount)
 
     monkeypatch.setattr(placement, "root_for_scope", root_for_scope)

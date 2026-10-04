@@ -1,44 +1,49 @@
-import { useState, type MouseEvent, type ReactNode } from 'react';
-import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react';
-import type { FlowMessage } from '@sdk';
+import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { Check, CheckCheck, Clock } from 'lucide-react';
+import type { AgenticProcess, FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
-import type { ITask } from '@sdk/entities/task';
-import { TaskItIcon, taskItHint } from './task-it';
-import { MessageChips } from './chips/MessageChips';
-import { MarkdownView } from '@src/components/markdown-view';
+import { Task, type ITask } from '@sdk/entities/task';
+import { TaskItIcon, TaskOwnerChip, TaskStatusChip } from './task-it';
+import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
+import { MessageActionsMenu } from './MessageActionsMenu';
+import { MARKDOWN_LINK_CLASS, MarkdownView } from '@src/components/markdown-view';
+import { useLinks } from '@src/components/links/LinkMenu';
+import { LinkifiedText } from '@src/components/links/LinkifiedText';
+import { linkEventProps, type LinkHandlers } from '@src/components/links/link-events';
+import type { Components } from 'react-markdown';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { avatarColorForMessage } from './avatar-color';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useLingui } from '@lingui/react/macro';
-import { ChannelBadge } from './ChannelBadge';
-import { ChannelMessageActions, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
+import { QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
-import { Trans } from '@lingui/react/macro';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
   flowMessageId?: string;
   flowMessage?: FlowMessage | null;
+  /** The conversation's process: a link's right-click offers Vibe in it, as a terminal's does. */
+  run?: AgenticProcess | null;
   task?: ITask;
   senderName: string;
   /** When set, the sender's name and avatar open the sender — an agent's profile. */
   onSenderClick?: () => void;
   onEditName?: (newName: string) => void;
-  /** When set, renders a delete (trash) control on the bubble. The parent
-   *  decides who may delete (sender or conversation owner) and only passes
-   *  this for messages the local user is allowed to remove. Clicking it opens
-   *  a destructive confirm dialog; on confirm this fires. */
+  /** When set, the ⋮ menu offers Delete. The parent decides who may delete
+   *  (sender or conversation owner) and only passes this for messages the
+   *  local user is allowed to remove. Choosing it opens a destructive confirm
+   *  dialog; on confirm this fires. */
   onDeleteMessage?: () => void;
-  /** When set, renders a forward control on the bubble. Clicking it opens the
-   *  parent's share dialog to pick the target conversation; the backend then
-   *  clones the message (cloned_from_id provenance) into it. */
+  /** When set, the ⋮ menu offers Forward. Choosing it opens the parent's
+   *  share dialog to pick the target conversation; the backend then clones the
+   *  message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
-  /** "Task it": make this message a task — or, once it is one (`open`), open it. The parent
-   *  decides which; the bubble only draws the control. */
-  taskIt?: { onClick: () => void; open: boolean };
+  /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
+   *  from the chips under the body, which also show its status and owner. */
+  taskIt?: { onClick: () => void; task?: Task | null };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
    *  chip styled like the primary attachment action when the bubble's message
@@ -67,9 +72,9 @@ interface MessageBubbleProps {
   quoted?: { sender: string; text: string; onJump?: () => void } | null;
   /** Who reacted with what (a channel message). */
   reactions?: IMessageReaction[];
-  /** When set, renders React — the channel shows reactions (`ChannelSpec.reacts`). */
+  /** When set, the ⋮ menu offers React — the channel shows reactions (`ChannelSpec.reacts`). */
   onReact?: (emoji: string, remove: boolean) => void;
-  /** When set, renders Reply — the composer answers this message. */
+  /** When set, the ⋮ menu offers Reply — the composer answers this message. */
   onReply?: () => void;
   /** The channel's replies only thread (`ChannelSpec.quotes` false): Reply says "Reply in thread". */
   replyInThread?: boolean;
@@ -152,8 +157,14 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
  * div) stops the agent-quote and plain-text branches from drifting apart, which
  * is exactly how newlines got dropped from one branch before.
  */
-function MessageBody({ content, isBot }: { content: string; isBot: boolean }) {
+function MessageBody({ content, isBot, links }: { content: string; isBot: boolean; links: LinkHandlers | null }) {
   const bodyClass = `whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
+  // Markdown links take the same click and menu as the plain-text ones.
+  const components = useMemo<Partial<Components> | undefined>(() => links ? {
+    a: ({ href, children }) => href
+      ? <a href={href} className={MARKDOWN_LINK_CLASS} {...linkEventProps(links, href)}>{children}</a>
+      : <>{children}</>,
+  } : undefined, [links]);
   const claudeQuote = parseClaudeQuote(content);
   if (claudeQuote) {
     // The executed reply renders as real Markdown (bold, lists, code fences,
@@ -164,18 +175,20 @@ function MessageBody({ content, isBot }: { content: string; isBot: boolean }) {
       <div className={`text-sm ${isBot ? 'text-foreground/70' : 'text-foreground/90'}`}>
         <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>
         <div className="mt-1 break-words text-foreground/85">
-          <MarkdownView value={claudeQuote.quoted} compact />
+          <MarkdownView value={claudeQuote.quoted} compact components={components} />
         </div>
       </div>
     );
   }
-  return <div className={bodyClass}>{content}</div>;
+  // Without a message to resolve against, a link could only fail — keep it text.
+  return <div className={bodyClass}>{links ? <LinkifiedText text={content} handlers={links} /> : content}</div>;
 }
 
 export function MessageBubble({
   message,
   flowMessageId,
   flowMessage,
+  run,
   senderName,
   onSenderClick,
   onEditName,
@@ -199,6 +212,10 @@ export function MessageBubble({
   const [editValue, setEditValue] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const { localUser } = useLocalUser();
+  // Links in the body resolve against this message, exactly as a terminal's resolve against its shell.
+  const linkSource = useRef(flowMessage ?? null);
+  linkSource.current = flowMessage ?? null;
+  const links = useLinks(linkSource, run);
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
@@ -253,7 +270,7 @@ export function MessageBubble({
     // inputs) so name-edit / attachment actions / attachment downloads keep
     // their native behaviour without double-firing selection.
     const target = e.target as HTMLElement;
-    if (target.closest('button, a, input, textarea, [role="menu"]')) return;
+    if (target.closest('button, a, input, textarea, [role="menu"], [data-link]')) return;
     onSelect();
   };
 
@@ -295,60 +312,6 @@ export function MessageBubble({
               {displayName}
             </SenderTag>
           )}
-          {!isBot && onEditName && !editing && (
-            <button
-              onClick={startEdit}
-              className="text-muted-foreground/50 transition-colors hover:text-muted-foreground"
-              title={t`Edit name`}
-            >
-              <Pencil className="h-2.5 w-2.5" />
-            </button>
-          )}
-          {onDeleteMessage && !editing && (
-            <button
-              onClick={() => setConfirmingDelete(true)}
-              className="text-muted-foreground/50 transition-colors hover:text-destructive"
-              title={t`Delete message`}
-              aria-label={t`Delete message`}
-            >
-              <Trash2 className="h-2.5 w-2.5" />
-            </button>
-          )}
-          {onForwardMessage && !editing && (
-            <button
-              onClick={onForwardMessage}
-              className="text-muted-foreground/50 transition-colors hover:text-foreground"
-              title={t`Forward to another conversation`}
-              aria-label={t`Forward message`}
-              data-testid="message-forward"
-            >
-              <Forward className="h-2.5 w-2.5" />
-            </button>
-          )}
-          {taskIt && !editing && (
-            <button
-              onClick={taskIt.onClick}
-              className={`transition-colors hover:text-foreground ${taskIt.open ? 'text-violet-500' : 'text-muted-foreground/50'}`}
-              title={taskIt.open ? t`Open task` : taskItHint()}
-              aria-label={taskIt.open ? t`Open task` : t`Task it`}
-              data-testid="message-task-it"
-            >
-              <TaskItIcon className="h-2.5 w-2.5" />
-            </button>
-          )}
-          {/* Channel mark — nothing at all when the message is ours
-              (`origin === null`), which is the whole badge rule. */}
-          <ChannelBadge origin={flowMessage?.origin} />
-          {flowMessage?.cloned_from_id && (
-            <span
-              className="inline-flex items-center gap-0.5 text-[10px] italic text-muted-foreground"
-              title={t`Forwarded from another conversation`}
-              data-testid="message-forwarded-marker"
-            >
-              <Forward className="h-2.5 w-2.5" />
-              <Trans>forwarded</Trans>
-            </span>
-          )}
           {time && (
             <span className="text-[10px] text-muted-foreground">
               {time}
@@ -356,21 +319,28 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
-          {!editing && (onReply || onReact) && (
-            <ChannelMessageActions
-              onReply={onReply}
-              replyInThread={replyInThread}
-              onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
-            />
+          {!editing && (
+            <span className="self-center">
+              <MessageActionsMenu
+                flowMessageId={flowMessageId}
+                conversationId={flowMessage?.conversation_id ?? undefined}
+                messageText={message.content}
+                origin={flowMessage?.origin}
+                forwarded={!!flowMessage?.cloned_from_id}
+                onReply={onReply}
+                replyInThread={replyInThread}
+                onReact={onReact ? (emoji) => onReact(emoji, false) : undefined}
+                onForward={onForwardMessage}
+                onTaskIt={taskIt && !taskIt.task ? taskIt.onClick : undefined}
+                onEditName={!isBot && onEditName ? startEdit : undefined}
+                onDelete={onDeleteMessage ? () => setConfirmingDelete(true) : undefined}
+              />
+            </span>
           )}
-          <MessageChips
-            flowMessageId={flowMessageId}
-            conversationId={flowMessage?.conversation_id ?? undefined}
-            messageText={message.content}
-          />
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
-        {message.content && <MessageBody content={message.content} isBot={isBot} />}
+        {message.content && <MessageBody content={message.content} isBot={isBot} links={flowMessage ? links.handlers : null} />}
+        {links.menu}
         {showPromptRow && (
           <AttachmentActionsRow
             actions={actions}
@@ -386,6 +356,25 @@ export function MessageBubble({
           />
         )}
         {footer}
+        {/* An opened task stays in view: its chip, then its state at a glance — each opens the task.
+            Making one (Task it) lives in the ⋮ menu with the other actions. */}
+        {taskIt?.task && !editing && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5" data-testid="message-task-chips">
+            <button
+              type="button"
+              onClick={taskIt.onClick}
+              className={`${CHIP_LAYOUT} ${chipStyleFor(Task.type)}`}
+              title={t`Open task`}
+              aria-label={t`Open task`}
+              data-testid="message-task-it"
+            >
+              <TaskItIcon className="h-3 w-3 shrink-0" />
+              <span className="max-w-[24rem] truncate">{taskIt.task.title || t`Task`}</span>
+            </button>
+            <TaskStatusChip status={taskIt.task.status} onClick={taskIt.onClick} />
+            <TaskOwnerChip task={taskIt.task} onClick={taskIt.onClick} />
+          </div>
+        )}
         {reactions && reactions.length > 0 && <ReactionChips reactions={reactions} onToggle={onReact} />}
       </div>
       {onDeleteMessage && (

@@ -3,11 +3,10 @@ import { expect, test, type Page } from '@playwright/test';
 import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { createServer, type Server } from 'node:http';
+import { clickPrintedLink, printLink, printedLinkPoint, sdkModule } from '../_shared/xterm';
 
-const sdkModule = `/@fs${resolve(dirname(fileURLToPath(import.meta.url)), '../../../../ts_sdk/src/index.ts')}`;
 let root: string;
 let outside: string;
 let webUrl: string;
@@ -60,47 +59,6 @@ async function openFixtureTerminal(page: Page) {
   await expect(page).toHaveURL(new RegExp(shellId));
   await expect(page.locator('.xterm-rows:visible').first()).toContainText(/[%>$]/);
   return { shellId, terminalUrl: page.url() };
-}
-
-async function printLink(page: Page, shellId: string, link: string, osc = false) {
-  // Quote an actual shell command; the displayed output remains ordinary PTY bytes.
-  const quote = (value: string) => `'${value.replace(/'/g, `'"'"'`)}'`;
-  const output = osc ? `\\033]8;;${link}\\007OSC destination\\033]8;;\\007` : link;
-  await page.evaluate(async ({ sdkModule, shellId, command }) => {
-    const sdk = await import(sdkModule);
-    const shell = await sdk.Shell.getById(shellId);
-    await shell.sendInput(command);
-  }, { sdkModule, shellId, command: `printf '%b\\n' ${quote(output)}\n` });
-  await expect(page.locator('.xterm-rows:visible').first()).toContainText(osc ? 'OSC destination' : link);
-}
-
-async function printedLinkPoint(page: Page, text: string, host = '') {
-  // xterm renders spans, not anchors. Click the actual glyph's DOM position.
-  const row = page.locator(`${host} .xterm-rows:visible > div`).filter({ hasText: text }).last();
-  await expect(row).toBeVisible();
-  return row.evaluate((element, text) => {
-    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-    let index = element.textContent?.replace(/\u00a0/g, ' ').indexOf(text) ?? -1;
-    let node: Node | null;
-    while ((node = walker.nextNode())) {
-      const length = node.textContent?.length ?? 0;
-      if (index >= length) { index -= length; continue; }
-      if (index < 0) break;
-      const range = document.createRange();
-      range.setStart(node, index);
-      range.setEnd(node, index + 1);
-      const rect = range.getBoundingClientRect();
-      return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-    }
-    throw new Error(`No glyph for ${text}`);
-  }, text);
-}
-
-async function clickPrintedLink(page: Page, text: string, host = '') {
-  const point = await printedLinkPoint(page, text, host);
-  await page.mouse.move(point.x, point.y);
-  await expect(page.locator(`${host} .xterm-screen:visible`).last()).toHaveClass(/xterm-cursor-pointer/);
-  await page.mouse.click(point.x, point.y);
 }
 
 for (const kind of ['python', 'skill', 'url', 'temp'] as const) {
@@ -267,15 +225,15 @@ test('right-click → Open in ▸ a Chrome profile really opens the link in that
 
   const point = await printedLinkPoint(page, link);
   await page.mouse.click(point.x, point.y, { button: 'right' });
-  const menu = page.getByTestId('terminal-link-menu');
+  const menu = page.getByTestId('link-menu');
   await expect(menu).toBeVisible();
-  await page.getByTestId('terminal-link-menu-open-in').click();
+  await page.getByTestId('link-menu-open-in').click();
   for (const profile of profiles) {
-    await expect(page.getByTestId(`terminal-link-menu-profile-chrome-${profile}`)).toBeVisible();
+    await expect(page.getByTestId(`link-menu-profile-chrome-${profile}`)).toBeVisible();
   }
 
   // The last profile, so a single-window default is not what proves it.
-  await page.getByTestId(`terminal-link-menu-profile-chrome-${profiles.at(-1)}`).click();
+  await page.getByTestId(`link-menu-profile-chrome-${profiles.at(-1)}`).click();
   await expect(menu).toBeHidden();
   // The system browser, not this Playwright page, is what asks for the page.
   await expect.poll(() => hits.has(path)).toBe(true);

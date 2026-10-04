@@ -24,7 +24,9 @@ def upstream(tmp_path):
     _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
     _git(tmp_path, "clone", "-q", str(bare), str(work))
     (work / "report.html").write_text("v1")
-    _git(work, "add", "-A"), _git(work, "commit", "-qm", "v1"), _git(work, "push", "-q", "origin", "HEAD:main")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-qm", "v1")
+    _git(work, "push", "-q", "origin", "HEAD:main")
     return bare, work
 
 
@@ -34,7 +36,8 @@ async def test_clone_then_fast_forward_keeps_local_work(tmp_path, upstream):
     await mine.checkout()
     (tmp_path / "mine/notes.md").write_text("mine")
     (author / "report.html").write_text("v2")
-    _git(author, "commit", "-qam", "v2"), _git(author, "push", "-q", "origin", "HEAD:main")
+    _git(author, "commit", "-qam", "v2")
+    _git(author, "push", "-q", "origin", "HEAD:main")
 
     await mine.checkout()
 
@@ -54,3 +57,9 @@ def test_a_project_can_be_checked_out_from_git_or_its_hub_copy_only():
     assert isinstance(as_project_origin({"kind": "hub_repo", "repo": "git_repo-1", "rel_path": "."}), HubRepoOrigin)
     assert as_project_origin({"kind": "git", "provider": "github", "owner": "o", "name": "n"}) is not None
     assert as_project_origin({"kind": "local", "base": "/x"}) is None
+
+
+async def test_a_machine_without_git_is_told_so(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path / "empty-bin"))
+    with pytest.raises(Exception, match="Git is not installed"):
+        await HubRepoCheckout(root=tmp_path / "x", clone_url="http://h/r", branch="main", token="t").checkout()

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Boxes, ChevronDown, File as FileIcon, Paperclip, Play, Send, Smile, Trash2, X } from 'lucide-react';
+import { Boxes, ChevronDown, File as FileIcon, MonitorPlay, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { SessionReplyPolicy } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
@@ -8,13 +8,15 @@ import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { AssetManagerPopover } from '@src/components/asset-manager/AssetManagerPopover';
-import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
+import { MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips, useAssetRefSelection } from './AttachMenu';
+import { mergePickedFiles } from './FileAttachmentPicker';
 import { EmojiPicker } from './EmojiPicker';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { buildSessionStartExtras, type SessionHost } from './session-start';
 import { useLocalUser } from './useLocalUser';
 import { TaskItIcon, taskItHint } from './task-it';
+import { useScrollToLatest } from './LatestScroll';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
@@ -39,8 +41,8 @@ interface MessageComposerProps {
    *  LiveSessionView; the plain conversation composer leaves it unset. */
   liveSessionId?: string;
   /** The participant whose machine a prompt runs on. When set, the composer
-   *  offers the "Run on <host>'s machine" toggle: a send in prompt mode opens
-   *  a NEW session (the backend mints it). Null = plain chat box. */
+   *  offers the live-session icon: a send in live-session mode opens a NEW
+   *  session (the backend mints it). Null = plain chat box. */
   sessionHost?: SessionHost | null;
   /** Fires after a successful send (fresh reply OR draft promoted to a reply). */
   onSent?: () => void;
@@ -70,6 +72,10 @@ const SAVE_DEBOUNCE_MS = 400;
 /** Ceiling for the auto-growing composer (~10 lines of text). Past this the
  *  textarea scrolls instead of eating the conversation above it. */
 const MAX_COMPOSER_HEIGHT_PX = 240;
+
+/** The flat icon buttons of the attach row (file, asset, emoji, live session). */
+const ICON_BUTTON_CLASS =
+  'flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40';
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -158,13 +164,14 @@ export function MessageComposer({
   const { t } = useLingui();
   const ensureCloudLogin = useCloudLoginGate();
   const { localUser } = useLocalUser();
+  const scrollToLatest = useScrollToLatest();
   const isDraftMode = !!draft;
   const effectiveConversationId = conversationId ?? draft?.conversation_id ?? undefined;
 
   const [text, setText] = useState(draft?.text ?? '');
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
-  // Prompt mode: the typed text is the prompt that opens a session on the
+  // Live-session mode: the typed text is the prompt that opens a session on the
   // host's machine (not a chat line). Off by default; sticky until toggled.
   const [promptMode, setPromptMode] = useState(false);
   // "Task it" on send: the next send also becomes a task. One send's worth — resets after it.
@@ -216,26 +223,28 @@ export function MessageComposer({
     return () => clearTimeout(handle);
   }, [text, draft]);
 
-  // Returns how many files survived (0 when every image's markup was cancelled),
-  // so paste can decide whether to also insert accompanying text.
-  const addFiles = async (incoming: FileList | File[] | null): Promise<number> => {
-    if (!incoming) return 0;
+  // A send asked for in the same update as the text/files it sends: `send` reads
+  // both from its render, so it must run in the render that already has them.
+  const [sendQueued, setSendQueued] = useState(false);
+
+  // Paste, drop and the picker all land here. Images go through the annotator
+  // first (markup + caption); `initialCaption` prefills the caption with text
+  // that came on the clipboard. The caption IS the message: with nothing typed
+  // yet it is sent straight away with the image (WhatsApp-style); otherwise it
+  // is inserted at the caret, `caret` captured before the dialog took focus.
+  const addFiles = async (
+    incoming: FileList | File[] | null,
+    { initialCaption, caret }: { initialCaption?: string; caret?: { start: number; end: number } } = {},
+  ): Promise<void> => {
+    if (!incoming) return;
     // Offer markup on captured images before attaching. Size cap is applied
     // after annotation since the flattened PNG may be larger than the original.
-    const annotated = await annotateImageFiles(Array.from(incoming));
-    if (annotated.length === 0) return 0; // markup cancelled → do nothing
-    const tooBig: string[] = [];
-    setFiles((prev) => {
-      const next = [...prev];
-      for (const f of annotated) {
-        if (f.size > MAX_FILE_SIZE_BYTES) {
-          tooBig.push(f.name);
-          continue;
-        }
-        if (!next.some((x) => x.name === f.name && x.size === f.size)) next.push(f);
-      }
-      return next;
-    });
+    const { files: annotated, caption } = await annotateImageFiles(Array.from(incoming), { initialCaption });
+    if (annotated.length === 0) return; // markup cancelled → do nothing
+    // Size is a property of each file alone, so what gets rejected is known up front; the
+    // functional update still merges into the LATEST selection (dedup against it).
+    const { rejectedNames: tooBig } = mergePickedFiles([], annotated);
+    setFiles((prev) => mergePickedFiles(prev, annotated).files);
     setError(
       tooBig.length === 0
         ? null
@@ -243,29 +252,39 @@ export function MessageComposer({
           ? t`"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
           : t`${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
     );
-    return annotated.length;
+    const nothingTyped = !(textareaRef.current?.value ?? text).trim();
+    if (caption && nothingTyped && !isDraftMode && !isDisabled && tooBig.length < annotated.length) {
+      setText(caption);
+      setSendQueued(true);
+      return;
+    }
+    if (caption) {
+      insertAtCaret(caption, caret);
+      return;
+    }
+    // Back to the text: the annotator dialog took focus and hands it to <body> on close, so
+    // whatever attached the file — paste, drop, the picker — the next keystroke goes to the reply.
+    requestAnimationFrame(() => textareaRef.current?.focus());
   };
 
   const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
 
-  // Insert the picked emoji at the textarea caret (or append when unfocused),
-  // then restore the caret just after the inserted glyph so the user can keep
-  // typing without re-clicking the field.
-  const insertEmoji = (emoji: string) => {
+  // Put `insert` at the caret — or over `range`, a selection captured before a dialog took
+  // focus — then restore the caret just after it so typing continues without re-clicking.
+  // With no textarea mounted it appends.
+  const insertAtCaret = (insert: string, range?: { start: number; end: number }) => {
     const textarea = textareaRef.current;
     if (!textarea) {
-      setText((prev) => prev + emoji);
+      setText((prev) => prev + insert);
       return;
     }
-    const start = textarea.selectionStart ?? text.length;
-    const end = textarea.selectionEnd ?? start;
-    const next = `${text.slice(0, start)}${emoji}${text.slice(end)}`;
-    setText(next);
+    const value = textarea.value;
+    const start = range?.start ?? textarea.selectionStart ?? value.length;
+    const end = range?.end ?? textarea.selectionEnd ?? start;
+    setText(`${value.slice(0, start)}${insert}${value.slice(end)}`);
     requestAnimationFrame(() => {
       textarea.focus();
-      const caret = start + emoji.length;
-      textarea.selectionStart = caret;
-      textarea.selectionEnd = caret;
+      textarea.selectionStart = textarea.selectionEnd = start + insert.length;
     });
   };
 
@@ -278,7 +297,7 @@ export function MessageComposer({
       return;
     }
     // A prompt send — a follow-up inside a session view, or a NEW session from
-    // the conversation composer in prompt mode. The typed text IS the prompt
+    // the conversation composer in live-session mode. The typed text IS the prompt
     // that runs on the host, so it rides as a PROMPT attachment (not a plain
     // body): the host's gate keys on the attachment, and the backend
     // synthesizes the placeholder body. A new session's opening proposal
@@ -365,6 +384,8 @@ export function MessageComposer({
         setAssetRefs([]);
         setTaskItOn(false);
       }
+      // Your own send always brings you to the latest, even if you had scrolled up.
+      scrollToLatest?.();
       if (!channel) onSent?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] send failed', err);
@@ -375,7 +396,26 @@ export function MessageComposer({
     }
   };
 
+  // The box is disabled while sending, which drops its focus. Once the send settles (and the box
+  // is enabled again — hence an effect, after the commit), hand focus back so the next message or a
+  // retry is typed straight away. A draft bubble goes away on send, so it is skipped.
+  const wasSending = useRef(false);
+  useEffect(() => {
+    // Only from <body>: if focus moved elsewhere during a slow send, leave it there.
+    const dropped = document.activeElement === document.body;
+    if (wasSending.current && !sending && !isDraftMode && dropped) textareaRef.current?.focus();
+    wasSending.current = sending;
+  }, [sending, isDraftMode]);
+
   const handleSend = () => void send();
+
+  useEffect(() => {
+    if (!sendQueued) return;
+    setSendQueued(false);
+    void send();
+    // `send` is this render's — the one holding the queued text and files.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendQueued]);
 
   const handleDiscard = async () => {
     if (!draft || isBusy) return;
@@ -418,22 +458,13 @@ export function MessageComposer({
     e.preventDefault();
 
     // Capture everything off the (pooled) event synchronously — the annotator
-    // popup is awaited below and `e` is unusable after the first await.
-    const pastedText = e.clipboardData.getData('text/plain');
+    // popup is awaited below and `e` is unusable after the first await. Text
+    // that came with the image prefills the caption; if the markup is
+    // cancelled, nothing lands — not even that text.
     const textarea = e.currentTarget;
-    const value = textarea.value;
-    const start = textarea.selectionStart ?? value.length;
+    const start = textarea.selectionStart ?? textarea.value.length;
     const end = textarea.selectionEnd ?? start;
-
-    // If the markup is cancelled, do nothing at all — not even the text paste.
-    const added = await addFiles(pastedImages);
-    if (added === 0 || !pastedText) return;
-
-    setText(`${value.slice(0, start)}${pastedText}${value.slice(end)}`);
-    requestAnimationFrame(() => {
-      textarea.selectionStart = start + pastedText.length;
-      textarea.selectionEnd = start + pastedText.length;
-    });
+    await addFiles(pastedImages, { initialCaption: e.clipboardData.getData('text/plain'), caret: { start, end } });
   };
 
   const canSend = (!!text.trim() || files.length > 0 || assetRefs.length > 0) && !isDisabled;
@@ -464,7 +495,7 @@ export function MessageComposer({
         disabled={attachmentsDisabled}
         title={t`Attach files`}
         data-testid="attach-file-button"
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+        className={ICON_BUTTON_CLASS}
       >
         <Paperclip className="h-3.5 w-3.5" />
       </button>
@@ -475,7 +506,7 @@ export function MessageComposer({
             disabled={assetsDisabled}
             title={t`Attach an asset (skill, agent, doc, spec)`}
             data-testid="attach-asset-button"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className={ICON_BUTTON_CLASS}
           >
             <Boxes className="h-3.5 w-3.5" />
           </button>
@@ -486,14 +517,14 @@ export function MessageComposer({
       />
       <EmojiPicker
         side="top"
-        onPick={insertEmoji}
+        onPick={insertAtCaret}
         trigger={
           <button
             type="button"
             disabled={isDisabled}
             title={t`Insert emoji`}
             data-testid="insert-emoji-button"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className={ICON_BUTTON_CLASS}
           >
             <Smile className="h-3.5 w-3.5" />
           </button>
@@ -502,31 +533,37 @@ export function MessageComposer({
     </>
   );
 
-  /** "Run on <host>'s machine": a two-part pill. The left half toggles prompt
-   *  mode (the typed text opens a session); the chevron picks the session's
-   *  reply policy. Rendered on the plain conversation composer only. */
+  /** Live-session mode: ONE icon in the attach row enters it (the typed text becomes the prompt
+   *  that opens a session on the host's machine). While it is on, a strip above the box names the
+   *  mode and holds the reply policy; the icon leaves it. Rendered on the plain conversation composer only. */
   const hostName = sessionHost?.name?.trim() || t`the other participant`;
-  const sessionStartControl = canStartSession ? (
-    <div
+  const sessionToggle = canStartSession ? (
+    <button
+      type="button"
+      onClick={() => setPromptMode((v) => !v)}
+      disabled={isDisabled}
+      aria-pressed={promptMode}
+      title={promptMode ? t`Leave live session mode` : t`Live session: run a prompt on ${hostName}'s machine`}
+      data-testid="composer-session-toggle"
       className={cn(
-        'inline-flex h-7 shrink-0 items-stretch overflow-hidden rounded-full border text-xs font-medium transition-colors',
-        promptMode
-          ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-          : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300',
+        ICON_BUTTON_CLASS,
+        promptMode &&
+          'bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 hover:text-emerald-700 dark:text-emerald-300',
       )}
     >
-      <button
-        type="button"
-        onClick={() => setPromptMode((v) => !v)}
-        disabled={isDisabled}
-        aria-pressed={promptMode}
-        title={promptMode ? t`Prompt mode: this text opens a live session on ${hostName}'s machine` : t`Run this as a prompt on ${hostName}'s machine`}
-        data-testid="composer-session-toggle"
-        className="inline-flex items-center gap-1.5 px-2.5 hover:bg-emerald-500/15 disabled:opacity-40"
-      >
-        <Play className="h-3 w-3" />
-        <Trans>Run on {hostName}'s machine</Trans>
-      </button>
+      <MonitorPlay className="h-3.5 w-3.5" />
+    </button>
+  ) : null;
+
+  const sessionModeBar = startsSession ? (
+    <div
+      className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-700 dark:text-emerald-300"
+      data-testid="composer-session-mode"
+    >
+      <MonitorPlay className="h-3.5 w-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 truncate font-medium">
+        <Trans>Live session on {hostName}'s machine</Trans>
+      </span>
       <Popover>
         <PopoverTrigger asChild>
           <button
@@ -534,8 +571,9 @@ export function MessageComposer({
             disabled={isDisabled}
             title={t`Session settings`}
             data-testid="composer-session-settings"
-            className="inline-flex items-center border-s border-emerald-500/30 px-1.5 hover:bg-emerald-500/15 disabled:opacity-40"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-emerald-500/15 disabled:opacity-40"
           >
+            {replyPolicy === SessionReplyPolicy.REVIEW ? <Trans>Review replies</Trans> : <Trans>Auto-send</Trans>}
             <ChevronDown className="h-3 w-3" />
           </button>
         </PopoverTrigger>
@@ -721,6 +759,7 @@ export function MessageComposer({
           </button>
         </div>
       )}
+      {sessionModeBar}
       <div
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
@@ -730,7 +769,10 @@ export function MessageComposer({
           dragging && 'border-primary bg-primary/5',
         )}
       >
-        <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">{attachButtons}</div>
+        <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">
+          {attachButtons}
+          {sessionToggle}
+        </div>
         <textarea
           ref={textareaRef}
           value={text}
@@ -748,7 +790,6 @@ export function MessageComposer({
           disabled={isDisabled}
           className="min-h-[1.5rem] flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         />
-        {sessionStartControl}
         {taskItToggle}
         {sendButton}
       </div>

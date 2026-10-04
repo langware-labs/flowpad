@@ -2,7 +2,7 @@
 
 The local half of the sample-repo cycle: generate the repository, publish it to a
 bare `file://` origin, clone it, attach the clone to a project as a **shared**
-context folder, and assert the project's menu reports all 35 assets by type.
+context folder, and assert the project's menu reports all 34 assets by type.
 
 This is the gate before the repo is published to GitHub — if a type declared in
 the manifest is not actually discovered from a context folder, the count is wrong
@@ -121,12 +121,12 @@ async def test_every_declared_type_is_discovered(attached):
         )
 
 
-async def test_all_35_assets_accumulate_into_the_project(attached):
+async def test_all_34_assets_accumulate_into_the_project(attached):
     """The project's own folder is empty, so its accumulated counts ARE the
     context folder's — the whole point of attaching one."""
     root = (await _menu(attached["project"]))["root"]
     assert _groups(root) == dict(SAMPLE_CONTEXT_ASSETS)
-    assert sum(_groups(root).values()) == SAMPLE_CONTEXT_TOTAL == 35
+    assert sum(_groups(root).values()) == SAMPLE_CONTEXT_TOTAL == 34
     # Nothing of its own: every asset arrived through the context folder.
     assert all(g["own_count"] == 0 for g in root["groups"])
 
@@ -146,10 +146,9 @@ async def test_the_context_folder_reports_a_git_origin(attached):
 
 
 async def test_no_markdown_comes_from_a_dot_directory(attached):
-    """The manifest says the menu reports one MORE markdown than we author,
-    because README.md is a document. That only holds because the walk skips
-    dot-directories — otherwise every .claude/plans and .claude/rules file would
-    be counted twice. Pin the rule here, so a regression in it fails pointing at
+    """The menu reports exactly the markdown we author — the root README is
+    outside a doc folder, and .claude/plans and .claude/rules files belong to
+    their own types. Pin the rule here, so a regression in it fails pointing at
     the rule rather than at an arithmetic mismatch in the manifest."""
     from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
 

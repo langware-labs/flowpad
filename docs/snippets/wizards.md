@@ -187,3 +187,10 @@ A REFUSAL is not covered by either: it stops the run whatever `on_fail` says,
 because continuing past an untrusted callee is exactly what the trust gate
 exists to prevent. The run then answers `REFUSED`, naming what it could not
 call — and `ran` still reports whether earlier steps did real work.
+
+## Which shell the steps run in
+
+A run has one shell, opened where the run starts and shared by every step, nested wizards
+included; on Windows that is one PowerShell host for the whole run instead of one per check. A
+wizard (or op) that sets `"isolated_shell": true` gets a shell of its own, which its steps
+share, closed when it ends.
