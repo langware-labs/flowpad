@@ -3,8 +3,9 @@ import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react'
 import type { AgenticProcess, FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
-import type { ITask } from '@sdk/entities/task';
+import { Task, type ITask } from '@sdk/entities/task';
 import { TaskItIcon, taskItHint } from './task-it';
+import { CHIP_LAYOUT, chipStyleFor } from './EntityChip';
 import { MessageChips } from './chips/MessageChips';
 import { MARKDOWN_LINK_CLASS, MarkdownView } from '@src/components/markdown-view';
 import { useLinks } from '@src/components/links/LinkMenu';
@@ -21,13 +22,6 @@ import { ChannelBadge } from './ChannelBadge';
 import { ChannelMessageActions, QuotedMessage, ReactionChips } from './ChannelMessageExtras';
 import type { IMessageReaction } from '@sdk/entities/flow-message';
 import { Trans } from '@lingui/react/macro';
-
-/** The message's action chips (Forward, Task it) — the entity-chip shape, so they read as one row. */
-const ACTION_CHIP =
-  'inline-flex h-6 items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium transition-colors';
-const ACTION_CHIP_IDLE = 'border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';
-const ACTION_CHIP_TASK =
-  'border-violet-500/40 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -396,7 +390,7 @@ export function MessageBubble({
               <button
                 type="button"
                 onClick={onForwardMessage}
-                className={`${ACTION_CHIP} ${ACTION_CHIP_IDLE}`}
+                className={`${CHIP_LAYOUT} ${chipStyleFor()}`}
                 title={t`Forward to another conversation`}
                 aria-label={t`Forward message`}
                 data-testid="message-forward"
@@ -409,7 +403,7 @@ export function MessageBubble({
               <button
                 type="button"
                 onClick={taskIt.onClick}
-                className={`${ACTION_CHIP} ${taskIt.title ? ACTION_CHIP_TASK : ACTION_CHIP_IDLE}`}
+                className={`${CHIP_LAYOUT} ${chipStyleFor(taskIt.title ? Task.type : undefined)}`}
                 title={taskIt.title ? t`Open task` : taskItHint()}
                 aria-label={taskIt.title ? t`Open task` : t`Task it`}
                 data-testid="message-task-it"

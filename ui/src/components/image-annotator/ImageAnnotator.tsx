@@ -38,9 +38,19 @@ export interface ImageAnnotatorProps {
   onCancel: () => void;
   /** Optional label for capture flows that submit directly instead of attaching. */
   submitLabel?: React.ReactNode;
+  /** Where focus goes when the dialog closes (it has no trigger to return to). */
+  onCloseAutoFocus?: (event: Event) => void;
 }
 
-export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, submitLabel }: ImageAnnotatorProps) {
+export function ImageAnnotator({
+  open,
+  file,
+  onSave,
+  onClipboard,
+  onCancel,
+  submitLabel,
+  onCloseAutoFocus,
+}: ImageAnnotatorProps) {
   const { t } = useLingui();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -265,6 +275,7 @@ export function ImageAnnotator({ open, file, onSave, onClipboard, onCancel, subm
         <DialogContent
           hideClose
           className="flex max-h-[92vh] w-auto max-w-[92vw] flex-col gap-2 p-2"
+          onCloseAutoFocus={onCloseAutoFocus}
           onEscapeKeyDown={(e) => {
             e.preventDefault();
             requestClose();

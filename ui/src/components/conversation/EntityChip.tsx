@@ -106,6 +106,16 @@ const STYLE_BY_TYPE: Record<string, string> = {
   spec: 'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
 };
 const DEFAULT_STYLE = 'border border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';
+
+/** The chip's pill shape — shared with action chips that sit beside entity chips (a message's
+ *  Forward / Task it), so the row reads as one. */
+export const CHIP_LAYOUT =
+  'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors';
+
+/** A chip's colors for an entity type (neutral when the type has none). */
+export function chipStyleFor(type?: string): string {
+  return (type && STYLE_BY_TYPE[type]) || DEFAULT_STYLE;
+}
 /** Greyed, non-interactive style for a context ref whose entity 404'd. */
 const MUTED_STYLE = 'border border-dashed border-border bg-transparent text-muted-foreground line-through';
 /** Staged (downloaded, not installed): dashed + clickable — AttachmentChip's
@@ -182,9 +192,7 @@ export function EntityChip({
   }, [muted, staged, onClick, resolved, inside, navigation, projectId]);
 
   const baseLayout =
-    size === 'chip'
-      ? 'inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors'
-      : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
+    size === 'chip' ? CHIP_LAYOUT : 'inline-flex items-center gap-1 text-[11px] font-medium transition-colors';
 
   return (
     <button
