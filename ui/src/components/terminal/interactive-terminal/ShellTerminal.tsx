@@ -117,8 +117,8 @@ export const ShellTerminal = forwardRef<ShellTerminalHandle, ShellTerminalProps>
   useEffect(() => {
     if (!term || !terminalReady) return;
     const disp = term.onData((data: string) => {
-      const live = shellRef.current;
-      if (live?.connected) void live.sendInput(data);
+      // The connection holds typeahead until its first attach; see PtyConnection.sendInput.
+      void shellRef.current?.sendInput(data);
     });
     return () => disp.dispose();
   }, [term, terminalReady]);

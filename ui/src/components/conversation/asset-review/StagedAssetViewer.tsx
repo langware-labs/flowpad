@@ -8,6 +8,8 @@ import { workerForSessionType } from '@src/components/lens-viewer/shared/transcr
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { StagedTranscriptPreview } from './StagedTranscriptPreview';
+import { ArchiveFolder } from '@src/components/archive-preview/ArchivePreview';
+import { isArchiveName, stagedZipRoot } from './staged-zip';
 
 /**
  * What review opens for a staged copy. Where the backend located the asset by its
@@ -80,6 +82,16 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
     return (
       <div className="py-6 text-center text-sm text-muted-foreground">
         <Trans>Nothing to review — the attachment has no files.</Trans>
+      </div>
+    );
+  }
+
+  // A received zip is staged EXTRACTED (backend `_stage_zip_contents`): browse
+  // the folder it became, not the first file in it.
+  if (assetType === 'file' && isArchiveName(attachment.name)) {
+    return (
+      <div className="h-[55vh] overflow-hidden rounded border border-border" data-testid="staged-review">
+        <ArchiveFolder root={stagedZipRoot(listing, attachment.name ?? '')} />
       </div>
     );
   }

@@ -271,6 +271,44 @@ async def test_delete_forgets_values_at_every_deployment_and_every_store(home, p
     ]
 
 
+async def test_a_deleted_credentials_store_pin_does_not_route_the_next_one(home, project):
+    """Saving with a store pins the credential's variables there on this computer. Once that
+    credential is deleted and nothing else declares the variable, the pin goes with it: the next
+    credential of the same name — a project's, declared later — keeps its value where development
+    keeps values (the project's ``.env.local``), not in the deleted one's vault."""
+    planted = await save_credential(
+        scope="user", manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"), values={"TELEGRAM_BOT_TOKEN": "a"}, store="vault",
+    )
+    assert (await Deployment.this_computer()).secrets.store_of("TELEGRAM_BOT_TOKEN").type == "vault"
+
+    await delete_credential(str(planted.typeid))
+
+    assert "TELEGRAM_BOT_TOKEN" not in (await Deployment.this_computer()).secrets.exceptions
+    await save_credential(
+        scope="project", project_id=str(project.id), manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"),
+        values={"TELEGRAM_BOT_TOKEN": "b"},
+    )
+    assert dotenv_values(Path(project.fs_storage_mount_path) / ".env.local") == {"TELEGRAM_BOT_TOKEN": "b"}
+
+
+async def test_a_pin_another_credential_still_reads_through_survives_a_delete(home, project):
+    """The same variable declared twice (the user's and a project's): deleting one leaves this
+    computer's pin, or the survivor's vault value would no longer be found."""
+    mine = await save_credential(
+        scope="user", manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"), values={"TELEGRAM_BOT_TOKEN": "a"}, store="vault",
+    )
+    theirs = await save_credential(
+        scope="project", project_id=str(project.id), manifest=_manifest("telegram", "TELEGRAM_BOT_TOKEN"),
+        values={"TELEGRAM_BOT_TOKEN": "b"},
+    )
+
+    await delete_credential(str(mine.typeid))
+
+    here = await Deployment.this_computer()
+    assert here.secrets.store_of("TELEGRAM_BOT_TOKEN").type == "vault"
+    assert (await theirs.secret_store(here)).ref.type == "vault"
+
+
 async def test_an_unknown_deployment_is_refused_before_anything_is_written(home, project):
     with pytest.raises(CredentialError, match="deployment not found"):
         await save_credential(

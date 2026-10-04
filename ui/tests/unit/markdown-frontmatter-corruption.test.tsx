@@ -40,6 +40,16 @@ describe('document editor', () => {
     act(() => result.current.reload()); await waitFor(() => expect(result.current.body).toBe('External'));
     expect(result.current.conflict).toBe(false); expect(result.current.dirty).toBe(false);
   });
+  it('a reload token refreshes in place — the loaded document never reads as loading', async () => {
+    const file = memoryDocument(); const { result, rerender } = renderHook(({ key }) => useMarkdownContent(file.ref, { autoSave: false, reloadKey: key }), { initialProps: { key: 1 } });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const seen: boolean[] = [];
+    file.externalEdit(); rerender({ key: 2 }); seen.push(result.current.isLoading);
+    await waitFor(() => expect(result.current.body).toBe('External'));
+    seen.push(result.current.isLoading);
+    // An editor that shows a spinner while loading would unmount its children (an open dialog).
+    expect(seen).toEqual([false, false]);
+  });
   it('an external reload token preserves unsaved edits and their original revision', async () => {
     const file = memoryDocument(); const { result, rerender } = renderHook(({ key }) => useMarkdownContent(file.ref, { autoSave: false, reloadKey: key }), { initialProps: { key: 1 } });
     await waitFor(() => expect(result.current.isLoading).toBe(false)); act(() => result.current.setBody('My draft'));

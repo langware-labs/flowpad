@@ -36,6 +36,7 @@ import { ConversationRoute } from '@src/components/conversation';
 import { StreamInboxView } from '@src/components/stream-inbox-view/StreamInboxView';
 import { AgentStreamInboxView } from '@src/components/stream-inbox-view/AgentStreamInboxView';
 import { TabbedTerminal } from '@src/components/terminal';
+import { HubTerminal } from '@src/components/terminal/HubTerminal';
 import { AppDisplayViewer } from '../app-display-viewer';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
@@ -277,6 +278,9 @@ function ContentPanelBody({
       case ViewType.CONVERSATION:
         // Reuse the OSS conversation viewer (pure-graph, hub-safe) under page=hub.
         return <ConversationRoute />;
+      case ViewType.SHELL:
+        // A terminal on a hub compute node (a connected machine's PTY session).
+        return <HubTerminal className="h-full" />;
       case ViewType.ASSETS:
         return <HubAssetsPage />;
       case ViewType.PROJECT:

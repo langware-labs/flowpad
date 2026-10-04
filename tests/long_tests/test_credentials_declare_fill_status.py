@@ -1,6 +1,7 @@
 """A credential, end to end: declared → filled by the AI rung of ``flow project setup`` → stored → status.
 
-The literal commands, a real backend, the mock worker as the agent — ``tests.utils.demo_credential``,
+The literal commands, a real backend whose agents run on the mock worker (AI Assist is raised AT the
+backend, which launches the agent) — ``tests.utils.demo_credential``,
 a few lines of Python that do what a model following the credential's ``setup`` does, so this pins
 the I/O between the pieces, not how well a model reads instructions:
 
@@ -35,14 +36,20 @@ pytestmark = [pytest.mark.timeout(60)]  # do not increase timeout without approv
 REPO = Path(__file__).resolve().parents[2]
 
 
-def _flow(project_dir: Path, transcripts: Path, *argv: str) -> subprocess.CompletedProcess:
-    """``flow <argv>`` in ``project_dir``, the agent it launches on the mock worker. Nobody at the terminal."""
+@pytest.fixture(autouse=True)
+def _assist_follows_setup(monkeypatch):
+    """The backend's agent turn (``agents_on_mock_worker``): do what the credential's setup says."""
+    monkeypatch.setenv("MOCK_BEHAVIOR", "tests.utils.demo_credential:follow_setup")
+    monkeypatch.setenv("PYTHONPATH", str(REPO))
+
+
+def _flow(project_dir: Path, *argv: str) -> subprocess.CompletedProcess:
+    """The stock ``flow <argv>`` in ``project_dir``. Nobody at the terminal."""
     from flow_sdk.db.drivers.db_driver import _driver_instances
 
     env = {**os.environ, "SQLITE_DATABASE_PATH": str(_driver_instances["sqlite"].config.database),
-           "FLOWPAD_SKIP_DOTENV": "true", "MOCK_TRANSCRIPTS": str(transcripts),
-           "MOCK_BEHAVIOR": "tests.utils.demo_credential:follow_setup", "PYTHONPATH": str(REPO)}
-    return subprocess.run([sys.executable, str(REPO / "tests/utils/mock_flow_cli.py"), *argv], cwd=project_dir, env=env,
+           "FLOWPAD_SKIP_DOTENV": "true"}
+    return subprocess.run([sys.executable, "-m", "flow_sdk.cli.flow_cli", *argv], cwd=project_dir, env=env,
                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
 
 
@@ -55,20 +62,20 @@ def _assert_filled(row: dict, key: str) -> None:
 
 
 @pytest.mark.long  # 11.2s: a real backend boot and five CLI runs, one of them launching the mock agent
-def test_declared_credential_is_filled_by_the_ai_rung_and_reported(live_backend, tmp_path):
-    project_dir, transcripts = tmp_path / "demo", tmp_path / "transcripts"
+def test_declared_credential_is_filled_by_the_ai_rung_and_reported(agents_on_mock_worker, live_backend, tmp_path):
+    project_dir, transcripts = tmp_path / "demo", agents_on_mock_worker
     project_dir.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=project_dir, check=True)
     (project_dir / "service.url").write_text(ENDPOINT + "\n")
 
     # 1. declare — the folder becomes a project, the credential its own.
-    declared = _flow(project_dir, transcripts, "credentials", "declare", str(MANIFEST_PATH))
+    declared = _flow(project_dir, "credentials", "declare", str(MANIFEST_PATH))
     assert declared.returncode == 0, declared.stderr[-2000:]
     project_id = json.loads(declared.stdout.splitlines()[-1])["project_id"]
     assert (project_dir / "agentic-assets/credential/demo-service/credential.json").is_file()
 
     # 2. setup, nobody at the terminal: every question left empty → the AI rung.
-    done = _flow(project_dir, transcripts, "project", "setup", "--json")
+    done = _flow(project_dir, "project", "setup", "--json")
     said = done.stdout + done.stderr
     assert done.returncode == 0, said[-3000:]
     (outcome,) = json.loads(done.stdout.splitlines()[-1])["requirements"]
@@ -78,12 +85,14 @@ def test_declared_credential_is_filled_by_the_ai_rung_and_reported(live_backend,
     stored = dotenv_values(project_dir / ".env.local")
     key = stored["DEMO_API_KEY"]
     assert re.match(KEY_PATTERN, key) and stored["DEMO_ENDPOINT"] == ENDPOINT, sorted(stored)
-    check = _flow(project_dir, transcripts, "credentials", "check", "demo-service")
+    check = _flow(project_dir, "credentials", "check", "demo-service")
     assert check.returncode == 0 and json.loads(check.stdout.splitlines()[-1])["ready"], check.stdout + check.stderr
-    (transcript,) = transcripts.glob("*.jsonl")
-    lines = transcript.read_text()
-    assert "--stdin" in lines and "openssl rand" in lines, "the agent ran the setup's pipe"
-    assert key not in lines, "the key never passed through the agent"
+    # AI Assist is per question: one agent turn for each value the setup produces.
+    turns = [t.read_text() for t in sorted(transcripts.glob("*.jsonl"))]
+    assert len(turns) == 2, f"one assist per question (API key, Endpoint), got {len(turns)}"
+    assert all("--stdin" in t for t in turns), "every assist piped its value into its answer command"
+    assert any("openssl rand" in t for t in turns), "the key's assist ran the setup's pipe"
+    assert all(key not in t for t in turns), "the key never passed through the agent"
     assert key not in said + declared.stdout + declared.stderr + check.stdout + check.stderr
 
     # 4. the status — Python SDK in this process, REST from the backend.
@@ -99,7 +108,7 @@ def test_declared_credential_is_filled_by_the_ai_rung_and_reported(live_backend,
     _assert_filled(rest_row, key)
 
     # 5. again: already done — no question, no agent.
-    again = _flow(project_dir, transcripts, "project", "setup")
+    again = _flow(project_dir, "project", "setup")
     assert again.returncode == 0, (again.stdout + again.stderr)[-3000:]
     assert "Leave it empty" not in again.stderr and "already done" in again.stdout
-    assert len(list(transcripts.glob("*.jsonl"))) == 1, "a credential that holds launches no agent"
+    assert len(list(transcripts.glob("*.jsonl"))) == len(turns), "a credential that holds launches no agent"

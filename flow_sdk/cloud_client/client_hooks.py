@@ -67,7 +67,10 @@ def _local_machine_id() -> str:
         elif system == "Windows":
             import subprocess  # noqa: PLC0415
 
-            out = subprocess.check_output(["wmic", "csproduct", "get", "uuid"], shell=True).decode()
+            # Windows 11 dropped wmic; through a shell, cmd printed "'wmic' is not recognized"
+            # onto the user's console on every CLI run. Without a shell, a missing wmic is a
+            # quiet FileNotFoundError and the id stays the base parts it already was there.
+            out = subprocess.check_output(["wmic", "csproduct", "get", "uuid"], stderr=subprocess.DEVNULL).decode()
             parts.append(out.splitlines()[1].strip())
     except Exception:  # noqa: BLE001 — id still works from the base parts
         pass

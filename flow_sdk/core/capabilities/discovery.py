@@ -93,13 +93,22 @@ def resolve_capability_value(kind: str) -> CapabilityValue | None:
     if not isinstance(runner, CliCapabilityRunner):
         return None
 
-    # The runner knows how it is located: a binary on PATH, or a package in this environment.
-    resolved = runner.locate_on_process_path()
+    # The runner knows how it is located: a binary on PATH, or a package in this environment —
+    # else where the vendor's installer put it, which no running process's PATH has yet.
+    resolved = runner.locate_on_process_path() or in_install_dirs(runner.executable)
     if not resolved:
         return None
     value = runner.value_from_executable_path(resolved, source="this process's PATH")
     set_capability_value(value)
     return value
+
+
+def in_install_dirs(executable: str) -> str | None:
+    """*executable* in its vendor's declared install folders (``Vendor.install_bin_dirs``), else None."""
+    from flow_sdk.flowpad_types.vendors import install_bin_dirs_for  # noqa: PLC0415
+
+    dirs = [os.path.expandvars(os.path.expanduser(d)) for d in install_bin_dirs_for(executable)]
+    return shutil.which(executable, path=os.pathsep.join(dirs)) if dirs else None
 
 
 def has_discovered() -> bool:
@@ -216,6 +225,12 @@ async def _run_discovery_inner(kinds: list[str] | None) -> dict[str, CapabilityV
                 if isinstance(candidate, CliCapabilityRunner):
                     cli_executables.add(candidate.executable)
     probe = await _run_env_probe(sorted(cli_executables))
+    # A miss on the terminal PATH is not the last word: the vendor's installer may have put the
+    # binary in its own folder, which only a NEW login shell's rc would add.
+    found = probe.setdefault("executables", {})
+    for executable in cli_executables:
+        if not found.get(executable):
+            found[executable] = in_install_dirs(executable)
     if not probe.get("fallback") and probe.get("path"):
         # A sweep runs at boot, on a capability refresh and after an install finishes: the PATH it
         # just read is the freshest there is, so everything spawned next gets it.

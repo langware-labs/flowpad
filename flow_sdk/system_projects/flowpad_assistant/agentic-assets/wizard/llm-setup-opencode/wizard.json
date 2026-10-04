@@ -1,0 +1,23 @@
+{
+  "name": "llm-setup-opencode",
+  "description": "Asks whether to install OpenCode when it is missing. If the person agrees it installs it: the plain install command first, and an agent (with one retry) only when that did not get there.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "steps": [
+    {
+      "id": "ask",
+      "label": "Install OpenCode?",
+      "kind": "compute",
+      "ref": "ask-install-opencode",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install",
+      "label": "OpenCode",
+      "kind": "compute",
+      "ref": "opencode-on-path",
+      "on_fail": "abort"
+    }
+  ]
+}

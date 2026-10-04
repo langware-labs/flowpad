@@ -96,6 +96,49 @@ function formatGmailTime(iso?: string | Date | null): string {
 
 type StreamInboxViewMode = 'all' | 'unread' | 'archived';
 
+// ── Column filters ──────────────────────────────────────────────────────────
+// One filter per row column, typed into the header line above that column:
+// From narrows on the sender names, Subject on the subject + preview text,
+// Date on the conversation's last activity. Local, like the channel filter.
+type DateWindow = 'any' | 'today' | '7d' | '30d';
+
+export interface ColumnFilter {
+  from: string;
+  subject: string;
+  date: DateWindow;
+}
+
+const NO_COLUMN_FILTER: ColumnFilter = { from: '', subject: '', date: 'any' };
+
+function isColumnFilterActive(f: ColumnFilter): boolean {
+  return f.from.trim() !== '' || f.subject.trim() !== '' || f.date !== 'any';
+}
+
+function windowStart(date: DateWindow): number | null {
+  if (date === 'any') return null;
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (date === '7d') d.setDate(d.getDate() - 6);
+  if (date === '30d') d.setDate(d.getDate() - 29);
+  return d.getTime();
+}
+
+export function matchesColumnFilter(
+  f: ColumnFilter,
+  row: { senders: string; subjectLine: string; updated?: string | Date | null },
+): boolean {
+  const from = f.from.trim().toLowerCase();
+  if (from && !row.senders.toLowerCase().includes(from)) return false;
+  const subject = f.subject.trim().toLowerCase();
+  if (subject && !row.subjectLine.toLowerCase().includes(subject)) return false;
+  const start = windowStart(f.date);
+  if (start !== null) {
+    const ts = row.updated ? new Date(row.updated).getTime() : NaN;
+    if (Number.isNaN(ts) || ts < start) return false;
+  }
+  return true;
+}
+
 interface ConversationListRowProps {
   conv: Conversation;
   isFocused: boolean;
@@ -139,6 +182,8 @@ interface ConversationListRowProps {
   onVisibilityChange: (convId: string, visible: boolean) => void;
   /** Set while the list is narrowed to some channels: does this message's source pass? */
   channelMatch?: (message: FlowMessage) => boolean;
+  /** Set while a header column filter is engaged. */
+  columnFilter?: ColumnFilter;
   /** The list resolves attribution once and hands each row its answer. */
   attributionFor: (
     origin: FlowMessage['origin'],
@@ -163,6 +208,7 @@ export function ConversationListRow({
   cloudUserId,
   onVisibilityChange,
   channelMatch,
+  columnFilter,
   attributionFor,
   refSetter,
   agentId,
@@ -251,17 +297,6 @@ export function ConversationListRow({
   // message is not loaded yet cannot claim a channel, so it waits hidden.
   if (!isHidden && channelMatch) isHidden = !latestMessage || !channelMatch(latestMessage);
 
-  const convId = conv.id ?? '';
-  // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
-  // updated before the browser paints — otherwise a row that ends up visible
-  // could briefly co-render with the "No conversations" empty state on the
-  // first frame.
-  useLayoutEffect(() => {
-    if (!convId) return;
-    onVisibilityChange(convId, !isHidden);
-    return () => onVisibilityChange(convId, false);
-  }, [convId, isHidden, onVisibilityChange]);
-
   // Gmail-style sender column: comma-joined names of everyone who has
   // participated in the thread, with the latest sender first so the most
   // recent author is the lead name. Deduped case-insensitively.
@@ -292,10 +327,7 @@ export function ConversationListRow({
     return names.length > 0 ? names : [t`Unknown`];
   }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.members, t]);
 
-  if (isHidden) return null;
-
   const senderLabel = participantNames.join(', ');
-  const count = pointers.length;
   // The stream inbox subject is the conversation's own user-set / hub-synced title
   // (NewConversationDialog at creation; carried in the bundle on cross-user
   // send). A task that happens to sit in the conversation's shared context is
@@ -312,6 +344,29 @@ export function ConversationListRow({
   const snippet = String(snippetMessage?.text || attachmentSummary(snippetMessage) || '')
     .replace(/\s+/g, ' ')
     .trim();
+  // Column filters match what the row shows, so they run on the rendered text.
+  if (!isHidden && columnFilter) {
+    isHidden = !matchesColumnFilter(columnFilter, {
+      senders: senderLabel,
+      subjectLine: `${subject} ${snippet}`,
+      updated: conv.updated_date,
+    });
+  }
+
+  const convId = conv.id ?? '';
+  // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
+  // updated before the browser paints — otherwise a row that ends up visible
+  // could briefly co-render with the "No conversations" empty state on the
+  // first frame.
+  useLayoutEffect(() => {
+    if (!convId) return;
+    onVisibilityChange(convId, !isHidden);
+    return () => onVisibilityChange(convId, false);
+  }, [convId, isHidden, onVisibilityChange]);
+
+  if (isHidden) return null;
+
+  const count = pointers.length;
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = facets.isUnread;
@@ -443,6 +498,9 @@ export function ConversationListRow({
   );
 }
 
+const columnInputClass =
+  'h-7 shrink-0 rounded-md border border-border/60 bg-background px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring';
+
 // ── StreamInboxView ───────────────────────────────────────────────────────────────
 
 export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
@@ -489,6 +547,13 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
           }
         : undefined,
     [channelFilter, ownerChannels],
+  );
+  const [columnFilter, setColumnFilter] = useState<ColumnFilter>(NO_COLUMN_FILTER);
+  const columnFilterActive = isColumnFilterActive(columnFilter);
+  const setColumn = useCallback(
+    <K extends keyof ColumnFilter>(key: K, value: ColumnFilter[K]) =>
+      setColumnFilter((cur) => ({ ...cur, [key]: value })),
+    [],
   );
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
@@ -1149,27 +1214,70 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {/* The header line: select-all on the left, the owner's attached channels
-            on the right. Rendered even with no conversations — the channels are
-            how one gets some. */}
+        {/* The header line: select-all, then one filter per row column (From over
+            the sender, Subject over the subject line, Date over the time), then the
+            owner's attached channels on the right. Rendered even with no
+            conversations — the channels are how one gets some, and a filter that
+            matched nothing must stay on screen to be cleared. The cells share the
+            row's px-3 / gap-3 / w-44 so each filter sits over its column. */}
         {!initialLoading && (
           <div
             className="flex min-h-10 items-center gap-3 border-b border-border/40 bg-muted/20 px-3"
             data-testid="stream-inbox-select-all-row"
           >
-            {visibleCount > 0 && (
-              <>
+            <span className="flex w-3.5 shrink-0 items-center">
+              {visibleCount > 0 && (
                 <Checkbox
                   checked={allVisibleSelected ? true : selectedCount > 0 ? 'indeterminate' : false}
                   onCheckedChange={toggleSelectAll}
                   aria-label={t`Select all conversations`}
+                  title={t`Select all`}
                   data-testid="stream-inbox-select-all"
                   className="h-3.5 w-3.5"
                 />
-                <span className="text-xs text-muted-foreground">
-                  {selectedCount > 0 ? <Trans>{selectedCount} selected</Trans> : t`Select all`}
-                </span>
-              </>
+              )}
+            </span>
+            <input
+              type="text"
+              value={columnFilter.from}
+              onChange={(e) => setColumn('from', e.target.value)}
+              placeholder={t`From`}
+              aria-label={t`Filter by sender`}
+              className={`${columnInputClass} w-44`}
+              data-testid="stream-inbox-filter-from"
+            />
+            <input
+              type="text"
+              value={columnFilter.subject}
+              onChange={(e) => setColumn('subject', e.target.value)}
+              placeholder={t`Subject`}
+              aria-label={t`Filter by subject`}
+              className={`${columnInputClass} min-w-0 flex-1`}
+              data-testid="stream-inbox-filter-subject"
+            />
+            <select
+              value={columnFilter.date}
+              onChange={(e) => setColumn('date', e.target.value as DateWindow)}
+              aria-label={t`Filter by date`}
+              className={columnInputClass}
+              data-testid="stream-inbox-filter-date"
+            >
+              <option value="any">{t`Any time`}</option>
+              <option value="today">{t`Today`}</option>
+              <option value="7d">{t`Last 7 days`}</option>
+              <option value="30d">{t`Last 30 days`}</option>
+            </select>
+            {columnFilterActive && (
+              <button
+                type="button"
+                onClick={() => setColumnFilter(NO_COLUMN_FILTER)}
+                className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                title={t`Clear filters`}
+                aria-label={t`Clear filters`}
+                data-testid="stream-inbox-filter-clear"
+              >
+                <X className="h-3 w-3" />
+              </button>
             )}
             {channelsOwner && (
               <AttachedChannelsBar
@@ -1178,7 +1286,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
                 specFor={specFor}
                 selected={channelFilter}
                 onSelectedChange={setChannelFilter}
-                className="ms-auto"
+                className="shrink-0"
               />
             )}
           </div>
@@ -1193,7 +1301,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
         {!initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
-              {searchActive
+              {searchActive || columnFilterActive
                 ? t`No matching conversations`
                 : inArchivedView
                   ? t`No archived conversations`
@@ -1201,7 +1309,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
                     ? t`No unread conversations`
                     : t`No conversations`}
             </span>
-            {!inArchivedView && !searchActive && (
+            {!inArchivedView && !searchActive && !columnFilterActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`me-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 <Trans>Check for new messages</Trans>
@@ -1235,6 +1343,7 @@ export function StreamInboxView({ agentId }: { agentId?: string } = {}) {
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
               channelMatch={channelMatch}
+              columnFilter={columnFilterActive ? columnFilter : undefined}
               attributionFor={attributionFor}
               refSetter={(el) => {
                 if (conv.id) rowRefs.current.set(conv.id, el);

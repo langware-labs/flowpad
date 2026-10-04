@@ -115,12 +115,19 @@ async def test_a_process_with_no_streamer_falls_back_to_the_parse(
 
 @pytest.mark.asyncio
 async def test_transcript_prompts_reuses_the_streamers_parsed_transcript(
-    initialize_test_db,
+    initialize_test_db, monkeypatch,
 ) -> None:
     """The terminal asks ``transcript/prompts`` ~1s after every Enter. A fresh
     parse per ask held the loop 0.8-1.6s on a live 135MB prod session (traced
-    2026-09-27). A prompt appended after the streamer's last delta is visible
-    only to a whole-file re-read, so seeing it means the action re-parsed."""
+    2026-09-27). The action must answer from the streamer's own object — never a
+    whole-file ``_load_transcript`` — yet not from a copy the watcher left BEHIND
+    the file: a prompt appended after the streamer's last delta is caught up
+    incrementally (new bytes only), through the registry, and is in the answer."""
+
+    def _no_whole_file_parse(self):
+        raise AssertionError("transcript/prompts re-parsed the whole transcript")
+
+    monkeypatch.setattr(AgenticProcess, "_load_transcript", _no_whole_file_parse)
     session_id = str(uuid.uuid4())
     path = _write_session(session_id)
     ap = await _running_ap(session_id)
@@ -145,6 +152,10 @@ async def test_transcript_prompts_reuses_the_streamers_parsed_transcript(
             set_execution_context(previous)
 
         prompts = [p["text"] for p in result.data["prompts"]]
-        assert prompts == ["go"], prompts
+        assert prompts == ["go", "unseen-by-streamer"], prompts
+        streamed = transcript_streamer_registry.get_streamer(session_id).transcript
+        assert any(getattr(e, "text", "") == "unseen-by-streamer" for e in streamed.entries), (
+            "the catch-up must advance the streamer's own object, not a side copy"
+        )
     finally:
         transcript_streamer_registry.remove(session_id)

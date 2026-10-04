@@ -428,6 +428,9 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
 
     monkeypatch.setattr(discovery_mod, "_run_env_probe", fake_probe)
     monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/bin/{executable}")
+    # No vendor installer has put anything in its own folder either (af3b45196 searches those
+    # after a PATH miss, through the same shutil.which the line above stubs to always hit).
+    monkeypatch.setattr(discovery_mod, "in_install_dirs", lambda executable: None)
     monkeypatch.setattr(
         registry_mod.subprocess,
         "run",

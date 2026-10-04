@@ -162,6 +162,10 @@ export class Agent extends APIEntity<Agent> {
    *  with `use(…, true)` — auto-launch included — delivered via
    *  the prompt queue. Independent of `auto_launch`. */
   auto_launch_prompt?: string;
+  /** Tabs every new session as this agent opens with — `Tab.pointer` JSON, a file
+   *  named inside the agent's project. The first is the session's active display.
+   *  Opened by the backend (`Agent.use`); the frontend only renders them. */
+  auto_open?: { viewType: string; pointer: string }[] | null;
   /** Per-place launch overrides, keyed by Deployment id (agent.json `places`). */
   places?: AgentPlaceSpecWire[] | null;
   /** Deployment id of the one place that answers this agent's email. */
@@ -202,6 +206,7 @@ export class Agent extends APIEntity<Agent> {
     this.intro = entity.intro;
     this.auto_launch = entity.auto_launch ?? false;
     this.auto_launch_prompt = entity.auto_launch_prompt;
+    this.auto_open = entity.auto_open ?? null;
     this.places = entity.places ?? null;
     this.email_place = entity.email_place ?? null;
     this.phone = entity.phone ?? null;

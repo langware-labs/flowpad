@@ -179,6 +179,10 @@ async def _settle_after_install(before: "Optional[CliResult]") -> "Optional[CliR
     from flow_sdk.flowpad_types.vendors import vendor_by  # noqa: PLC0415
     from flow_sdk.schema.data_spec.status_spec import InstallState  # noqa: PLC0415
 
+    if before is not None and not before.ok:
+        # The person skipped (or could not finish) the chooser: that is their answer, and they are
+        # not asked twice. Re-opening it here navigated the tab away from the wizard they watch.
+        return before
     try:
         kind = await default_harness_kind()
         await refresh_status([kind] if kind else None)
