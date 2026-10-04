@@ -31,6 +31,7 @@ import platform
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -1603,13 +1604,44 @@ def _brew_formula_of(resolved: Path) -> Optional[str]:
     return None
 
 
-@router.post("/api/v1/onboarding/debug/remove-tools")
-async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
-    """DEBUG ONLY — temporary, for testing the `llm-setup` wizard end to end.
+def _is_flowpads_own(found: Path) -> bool:
+    """Whether *found* is Flowpad's own install — its venv (``sys.prefix``) or the interpreter it
+    runs on. The server puts its own interpreter folder FIRST on PATH, so a plain ``which python3``
+    answers Flowpad's venv python; removing that leaves the built-in harness with no executable,
+    every LLM source refused ``not_installed``, and the wizard asking for a source forever.
+    """
+    if found.parent.resolve().is_relative_to(Path(sys.prefix).resolve()):
+        return True
+    return found.resolve() == Path(sys.executable).resolve()
+
+
+def _which_users_tool(name: str, search_path: str) -> tuple[Optional[str], bool]:
+    """The first *name* on *search_path* that is NOT Flowpad's own, and whether a Flowpad-own copy
+    was passed over on the way — searched folder by folder, so the user's copy further down PATH
+    is still found (``shutil.which`` alone stops at the first hit)."""
+    kept_own = False
+    for folder in search_path.split(os.pathsep):
+        found = shutil.which(name, path=folder) if folder else None
+        if not found:
+            continue
+        if _is_flowpads_own(Path(found)):
+            kept_own = True
+            continue
+        return found, kept_own
+    return None, kept_own
+
+
+async def remove_debug_tools() -> dict:
+    """DEBUG ONLY — temporary, for testing the `llm-setup` wizard end to end. Served as
+    ``POST /api/v1/graph/compute_node/@local/remove-tools`` (``ComputeNode.remove_tools_action``).
 
     ACTUALLY UNINSTALLS every one of its 4 tools found on this box — `brew
     uninstall --force` for anything Homebrew manages, deleting the file
     directly for anything else (e.g. Claude Code's own curl-installed binary).
+
+    Flowpad's own install is never touched: its venv's ``python``/``python3``
+    and the interpreter it runs on are skipped, and the search goes on down
+    PATH to the user's copy (see ``_is_flowpads_own``).
 
     A binary on a read-only system volume (Apple's own `/usr/bin/git`) cannot
     be removed this way at all — that is reported in `not_found` alongside the
@@ -1630,9 +1662,9 @@ async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
     removed: List[str] = []
     not_found: List[str] = []
     for name in _DEBUG_TOOL_BINARIES:
-        found = shutil.which(name, path=combined_path)
+        found, kept_own = _which_users_tool(name, combined_path)
         if not found:
-            not_found.append(name)
+            not_found.append(f"{name} (only Flowpad's own interpreter, kept)" if kept_own else name)
             continue
         path = Path(found)
         formula = _brew_formula_of(path.resolve())
@@ -1673,7 +1705,7 @@ async def onboarding_debug_remove_tools() -> ApiSuccessResponse[dict]:
     if wizard is not None:
         result = await wizard.run(check_only=True)
         wizard_result = result.model_dump(mode="json")
-    return ApiSuccessResponse[dict](data={"removed": removed, "not_found": not_found, "wizard": wizard_result})
+    return {"removed": removed, "not_found": not_found, "wizard": wizard_result}
 
 
 # ---------------------------------------------------------------------------
