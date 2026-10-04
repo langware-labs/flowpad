@@ -909,16 +909,16 @@ class FlowMessage(Entity):
         text = " ".join((self.text or "").split())
         preview = text if len(text) <= 80 else text[:77] + "..."
         sender = self.sender_name or self.sender_id or "unknown"
-        n = len(self._user_attachment_dicts())
+        n = len(self._user_attachments())
         suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
         return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
 
-    def _user_attachment_dicts(self) -> list[dict[str, Any]]:
+    def _user_attachments(self) -> list[Attachment]:
         """The message's attachments minus the two structural self-pointers
         every message carries (``conversation-<id>`` / ``flow_message-<id>``)."""
         structural = {f"conversation-{self.conversation_id}", f"flow_message-{self.id}"}
         return [
-            a.model_dump()
+            a
             for a in (self.attachment or [])
             if not (a.attachment_type == AttachmentType.TYPE_ID and a.data in structural)
         ]
@@ -933,12 +933,17 @@ class FlowMessage(Entity):
         bundle. Pure local reads, no hub calls."""
         from flow_sdk.fs_store.operations.flow_message import staged_attachments_dir, unpacked_dir  # noqa: PLC0415
 
-        atts = self._user_attachment_dicts()
-        state = self._body_download_state(atts)  # stamps local_path on FILE entries
+        atts = [a.model_dump(mode="json") for a in self._user_attachments()]
+        # No attachments of its own → nothing to probe on disk.
+        state = (
+            self._body_download_state(atts)  # stamps local_path on FILE entries
+            if atts
+            else {"body_downloaded": True, "body_unpacked": False, "body_missing_attachments": []}
+        )
         missing = {(m["attachment_type"], m["data"]) for m in state["body_missing_attachments"]}
         out_atts: list[dict[str, Any]] = []
         for a in atts:
-            atype = getattr(a.get("attachment_type"), "value", a.get("attachment_type"))
+            atype = a["attachment_type"]
             entry = {"type": atype, "data": a.get("data") or ""}
             if a.get("prompt_preview"):
                 entry["prompt_preview"] = a["prompt_preview"]
