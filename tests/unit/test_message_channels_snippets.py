@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -33,8 +34,11 @@ async def _conversation(script, address: str) -> str:
     """A chat with three messages from the customer, projected — what §1 answers in."""
     src = DataSource(name=f"snip {uuid.uuid4().hex[:6]}", provider=PROVIDER, account_key=address, config={"address": address})
     await src.save()
+    # Relative to now: ingest drops items older than the source's window (7 days by default).
+    start = datetime.now(timezone.utc) - timedelta(minutes=10)
     for n in (1, 2, 3):
-        script.push({"external_id": f"q{n}", "author": CUSTOMER, "thread_key": "t1", "body": f"question {n}", "occurred_at": f"2026-09-27T10:0{n}:00+00:00"})
+        occurred_at = (start + timedelta(minutes=n)).isoformat()
+        script.push({"external_id": f"q{n}", "author": CUSTOMER, "thread_key": "t1", "body": f"question {n}", "occurred_at": occurred_at})
         await sync_source(src)
         row = await SourceItem.get_one({"data_source_id": str(src.id), "external_id": f"q{n}"})
         await project_source_item(row, source=src, announce=False)

@@ -5,6 +5,7 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { APIEntity, TypeId, dataManager, workerFromSessionType, type AnyEntity } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { withHomePage } from '@src/project-home-page/home-page-state';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -226,10 +227,12 @@ export function buildDockPointer(
 ): DockPointer | null {
   switch (resolved.type) {
     case 'project':
-      return DockPointer.forProject(
-        resolved.id,
-        inside?.type === 'conversation' ? { conversationId: inside.id } : undefined,
-      );
+      // From a conversation, a project chip lands like the asset review popup's
+      // Open (ProjectInstallAction): the bare project asking for its home page.
+      // A `/conversation/<cid>` sub-path would stop the home-page redirect.
+      return inside?.type === 'conversation'
+        ? withHomePage(DockPointer.forProject(resolved.id))
+        : DockPointer.forProject(resolved.id);
     case 'task':
       return DockPointer.forTasks(
         resolved.id,
