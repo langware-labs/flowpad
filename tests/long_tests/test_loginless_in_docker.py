@@ -118,7 +118,7 @@ def test_only_the_wheel_answers_from_the_cli(rig):
 
 
 def test_every_harness_answers_on_cheap_open_models(rig):
-    """The same single bind funds all four harnesses, on models none of them ships with.
+    """The same single bind funds all five harnesses, on models none of them ships with.
 
     ``worker_matrix.py`` is claude/codex/copilot/opencode x Kimi, GLM and Qwen. The endpoint is the
     one ``make_public_endpoint.py`` makes, which routes around Novita: that host answered the Qwen
@@ -129,5 +129,25 @@ def test_every_harness_answers_on_cheap_open_models(rig):
         pytest.skip("the bind above did not run")
     done = _run(rig, SKIP_BUILD="1", SCRIPT="worker_matrix.py")
     cells = [line for line in done.stdout.splitlines() if line.startswith(("PASS", "FAIL", "SKIP"))]
-    assert done.returncode == 0 and len(cells) == 12, "\n".join(cells) + done.stderr[-1500:]
+    # claude/codex/copilot/opencode/deepagents x the three default models.
+    assert done.returncode == 0 and len(cells) == 15, "\n".join(cells) + done.stderr[-1500:]
     assert all(line.startswith("PASS") for line in cells), "\n".join(cells)
+
+
+def test_every_worker_answers_every_family_and_size_after_its_install_wizard(rig):
+    """The full loginless matrix on the wheel-only image (``MATRIX=1``, ``family_matrix.sh``).
+
+    Each harness CLI is installed by its own wizard, ``flow wizard run llm-setup-<h> --yes``, and
+    the wizard's CLI step must do it (an agent-rung install fails). Then all five workers answer
+    "hi" on kimi/glm/openai/claude x sm/md/lg -- 60 cells -- funded by ONE public id whose entry
+    draws on a Vertex root first and OpenRouter for what Vertex cannot serve
+    (``make_matrix_endpoint.py``; needs the Vertex service-account JSON on the host).
+    """
+    done = _run(rig, MATRIX="1")
+    lines = done.stdout.splitlines()
+    wizards = [line for line in lines if line.startswith("WIZARD ")]
+    cells = [line for line in lines if line.startswith(("PASS", "FAIL"))]
+    report = "\n".join(wizards + cells) + done.stderr[-1500:]
+    assert len(wizards) == 4 and all(line.startswith("WIZARD PASS") for line in wizards), report
+    assert done.returncode == 0 and len(cells) == 60, report
+    assert all(line.startswith("PASS") for line in cells), report

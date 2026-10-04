@@ -25,7 +25,8 @@
     "image",
     "video",
     "audio",
-    "pdf"
+    "pdf",
+    "archive"
   ],
   "editor_types": {
     "code": [],
@@ -94,7 +95,8 @@
     "image": [],
     "video": [],
     "audio": [],
-    "pdf": []
+    "pdf": [],
+    "archive": []
   },
   "type_to_editor": {
     "markdown": "markdown",

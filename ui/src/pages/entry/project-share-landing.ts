@@ -1,4 +1,5 @@
-import { type GitOrigin, PageId, ViewType } from '@sdk';
+import { PageId, ViewType } from '@sdk';
+import type { ProjectOrigin } from '@sdk/models/FSOrigin';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 /** The BROWSER target: this project on the hub page, `/dock/hub/project/<id>`. */
@@ -13,7 +14,7 @@ export function projectHubPath(projectId: string): string {
  * the box already holds as a file-less row, in place, keeping the id both ends
  * share.
  */
-export function projectOpenTargetPath(project: { id: string; name: string; gitOrigin: GitOrigin }): string {
+export function projectOpenTargetPath(project: { id: string; name: string; gitOrigin: ProjectOrigin }): string {
   const params = new URLSearchParams({
     action: 'open',
     setup_git: '1',

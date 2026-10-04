@@ -1,6 +1,7 @@
 import { t } from '@lingui/core/macro';
 import { dataManager, MessageAttachment, Project, TypeId, type AnyEntity } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
+import { formatFSOrigin, isHubRepoOrigin } from '@sdk/models/FSOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -24,6 +25,8 @@ import { StagedAssetViewer } from './StagedAssetViewer';
  *  hub-served reference fetched on open. */
 function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; detail: string | null } {
   const origin = (ma.origin ?? null) as GitOrigin | null;
+  // A project shared `via: hub_repo` rides as its hub-hosted copy: no git URL to show.
+  if (isHubRepoOrigin(origin)) return { label: t`Hub`, Icon: Cloud, detail: formatFSOrigin(origin) };
   if (ma.transfer_mode === 'git' || origin) {
     return { label: t`Git`, Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
   }
@@ -303,6 +306,30 @@ function AttachmentReviewDialog({
   const allProject = installable.length > 0 && scopes.every((s) => s === 'project');
   const allUser = installable.length > 0 && scopes.every((s) => s === 'user');
   const userScopeAllowed = installable.every((a) => a.user_scope_allowed !== false);
+  // Plain files (a received zip, a pdf) are not assets: putting one in a project
+  // is a copy, so the buttons say so instead of "install".
+  const allPlainFiles = installable.length > 0 && installable.every((a) => a.asset_type === 'file');
+  const labels = allPlainFiles
+    ? {
+        added: t`Copied to project`,
+        addFailed: t`Copy failed`,
+        removed: t`Removed from project`,
+        removeFailed: t`Remove failed`,
+        add: t`Copy to project`,
+        remove: t`Remove from project`,
+        titleOne: t`Received file — review before copying.`,
+        titleMany: t`Received files — review before copying.`,
+      }
+    : {
+        added: t`Installed in project`,
+        addFailed: t`Install failed`,
+        removed: t`Uninstalled`,
+        removeFailed: t`Uninstall failed`,
+        add: t`Install in project`,
+        remove: t`Uninstall from project`,
+        titleOne: t`Received attachment — review before installing.`,
+        titleMany: t`Received attachments — review before installing.`,
+      };
 
   const selectedIsGit = isGitAttachment(selected);
   // A project in the list gets Install project in place of the scope pair.
@@ -318,10 +345,10 @@ function AttachmentReviewDialog({
     setBusyAction('project');
     try {
       for (const a of installable) await a.install('project', projectId);
-      notify.success({ title: t`Installed in project`, message: name ?? '' });
+      notify.success({ title: labels.added, message: name ?? '' });
     } catch (err) {
       console.error('[asset-review] batch project install failed', err);
-      notify.error({ title: t`Install failed` });
+      notify.error({ title: labels.addFailed });
     } finally {
       setBusyAction(null);
     }
@@ -354,10 +381,10 @@ function AttachmentReviewDialog({
     setBusyAction('uninstall');
     try {
       for (const a of installable) if (a.effectiveScope != null) await a.uninstall();
-      notify.success({ title: t`Uninstalled` });
+      notify.success({ title: labels.removed });
     } catch (err) {
       console.error('[asset-review] batch uninstall failed', err);
-      notify.error({ title: t`Uninstall failed` });
+      notify.error({ title: labels.removeFailed });
     } finally {
       setBusyAction(null);
     }
@@ -419,11 +446,7 @@ function AttachmentReviewDialog({
           {/* Whole-popup title — the per-entity icon/name/type moved down to the
               selected-entity pane. Singular vs plural tracks the list size. */}
           <DialogTitle className="font-bold">
-            {multi ? (
-              <Trans>Received attachments — review before installing.</Trans>
-            ) : (
-              <Trans>Received attachment — review before installing.</Trans>
-            )}
+            {multi ? labels.titleMany : labels.titleOne}
           </DialogTitle>
           <DialogDescription className="sr-only">
             <Trans>Review each attached asset and choose how to install it.</Trans>
@@ -455,7 +478,7 @@ function AttachmentReviewDialog({
                   data-testid="asset-uninstall-project"
                 >
                   {spinnerFor('uninstall') ?? <Trash2 className="h-3.5 w-3.5" />}
-                  <Trans>Uninstall from project</Trans>
+                  {labels.remove}
                 </Button>
               ) : (
                 <Button
@@ -467,7 +490,7 @@ function AttachmentReviewDialog({
                   data-testid="asset-install-project"
                 >
                   {spinnerFor('project') ?? <FolderDown className="h-3.5 w-3.5" />}
-                  <Trans>Install in project</Trans>
+                  {labels.add}
                 </Button>
               )}
               {userScopeAllowed &&

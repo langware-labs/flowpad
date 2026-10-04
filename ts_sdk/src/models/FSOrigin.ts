@@ -1,4 +1,4 @@
-import { formatGitOrigin, type GitOrigin } from './GitOrigin';
+import { formatGitOrigin, type GitOrigin, isInstallableOrigin } from './GitOrigin';
 
 /** Fields shared by every filesystem-origin locator. */
 export interface FSOrigin {
@@ -98,4 +98,19 @@ export function isLocalOrigin(value: FSOriginField | null | undefined): value is
 
 export function isHubRepoOrigin(value: { kind?: string } | null | undefined): value is HubRepoOrigin {
   return value?.kind === 'hub_repo';
+}
+
+/** An origin a whole PROJECT can be checked out from — its git repository, or the
+ *  hub-hosted copy of it (a share made `via: hub_repo`). Mirrors the backend
+ *  `as_project_origin`. */
+export type ProjectOrigin = GitOrigin | HubRepoOrigin;
+
+/** The project origin off an entity (`origin`, or the hub's wire name `git_origin`),
+ *  or null when it is absent or nothing a project can be cloned from. */
+export function projectOriginOf(
+  entity: { origin?: FSOriginInput | null; git_origin?: FSOriginInput | null } | null | undefined,
+): ProjectOrigin | null {
+  const o = normalizeFSOrigin(entity?.origin ?? entity?.git_origin ?? null);
+  if (isHubRepoOrigin(o)) return o.repo ? o : null;
+  return isGitOrigin(o) && isInstallableOrigin(o) ? o : null;
 }

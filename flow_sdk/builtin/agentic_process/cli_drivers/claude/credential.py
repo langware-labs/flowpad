@@ -159,7 +159,9 @@ async def _force_renewal() -> None:
         debug_file=debug_file,
     )
     argv = opts.cli_cmd(instruction="ok")
-    base_env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+    from flow_sdk.claude_env import without_inherited_claude_session  # noqa: PLC0415
+
+    base_env = without_inherited_claude_session(os.environ)
     env = build_worker_spawn_env("claude", dict(opts.env_vars), base_env=base_env)
     argv = resolve_worker_argv0("claude", argv, env)
 

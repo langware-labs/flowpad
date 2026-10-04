@@ -912,7 +912,6 @@ msgid "{replyCount, plural, one {# reply} other {# replies}}"
 msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
-#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "{selectedCount} selected"
 msgstr "{selectedCount} נבחרו"
 
@@ -1022,6 +1021,10 @@ msgstr "+ הזן נתיב..."
 
 #~ msgid "+ Override"
 #~ msgstr ""
+
+#: src/components/terminal/HubTerminal.tsx
+msgid "+ Terminal"
+msgstr ""
 
 #. placeholder {0}: sessions.length - 5
 #: src/pages/live-status/LiveStatus.tsx
@@ -2415,6 +2418,10 @@ msgstr "מפתח API של Anthropic לגישה ישירה ל-API"
 msgid "Any detail that helps (optional)"
 msgstr "כל פרט שיכול לעזור (אופציונלי)"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Any time"
+msgstr ""
+
 #: src/components/graph-view/ui/AccessTab.tsx
 msgid "anyone"
 msgstr ""
@@ -3636,6 +3643,10 @@ msgstr "לא ניתן לשפר את הנכס"
 msgid "Cannot open"
 msgstr "לא ניתן לפתוח"
 
+#: src/components/archive-preview/ArchivePreview.tsx
+msgid "Cannot open this archive: {error}"
+msgstr ""
+
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Cannot run rebuild"
 msgstr "לא ניתן להריץ בנייה מחדש"
@@ -4119,6 +4130,8 @@ msgid "Clear filter"
 msgstr "נקה מסנן"
 
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Clear filters"
 msgstr "נקה סינונים"
 
@@ -5042,6 +5055,10 @@ msgstr "הועתקו {0} קישור{1}"
 msgid "Copied to Clipboard"
 msgstr "הועתק ללוח"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copied to project"
+msgstr ""
+
 #: src/pages/entry/entry-shell.tsx
 msgid "Copied!"
 msgstr "הועתק!"
@@ -5144,6 +5161,10 @@ msgstr ""
 msgid "Copy event JSON"
 msgstr "העתק JSON של אירוע"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copy failed"
+msgstr ""
+
 #: src/components/organization/budgets/EditableTitle.tsx
 msgid "Copy id"
 msgstr ""
@@ -5220,6 +5241,10 @@ msgstr "העתקת נתיב הקובץ הזה ללוח"
 #: src/components/version-popover/version-popover.tsx
 msgid "Copy to clipboard"
 msgstr "העתק ללוח"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Copy to project"
+msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
@@ -8559,6 +8584,10 @@ msgstr "שווקים ידועים נוספים"
 msgid "extra rows fetched (limit + overfetch)"
 msgstr "שורות נוספות שהובאו (limit + overfetch)"
 
+#: src/components/archive-preview/ArchivePreview.tsx
+msgid "Extracting…"
+msgstr ""
+
 #: src/components/llm-endpoints/TestEndpointButton.tsx
 #: src/components/organization/budgets/EndpointControls.tsx
 msgid "failed"
@@ -9049,6 +9078,10 @@ msgstr "קבצים בדיסק שעדיין לא בDB"
 msgid "Filter branches…"
 msgstr "סנן ענפים…"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by date"
+msgstr ""
+
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Filter by entity type"
 msgstr "סנן לפי סוג ישות"
@@ -9061,9 +9094,17 @@ msgstr "סנן לפי תווית, דפוס או שורה תואמת…"
 msgid "Filter by name or last prompt…"
 msgstr "סנן לפי שם או הפרומפט האחרון…"
 
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by sender"
+msgstr ""
+
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Filter by session"
 msgstr "סנן לפי סשן"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Filter by subject"
+msgstr ""
 
 #: src/components/events/EventFeed.tsx
 msgid "Filter by tag, subject or rule…"
@@ -9516,6 +9557,7 @@ msgstr ""
 #: src/components/conversation/FlowMessageBubble.tsx
 #: src/components/hub/AddMachineDialog.tsx
 #: src/components/llm-endpoints/AliasesEditor.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "From"
 msgstr ""
 
@@ -10399,6 +10441,7 @@ msgstr "https://github.com/owner/repo"
 msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
@@ -11313,6 +11356,14 @@ msgstr "הפעלה אחרונה {0}"
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Last {0}"
 msgstr "{0} אחרון"
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Last 30 days"
+msgstr ""
+
+#: src/components/stream-inbox-view/StreamInboxView.tsx
+msgid "Last 7 days"
+msgstr ""
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "Last attempt"
@@ -14862,6 +14913,10 @@ msgstr "יש לפתוח פרויקט כדי לראות את הנכסים שלו.
 msgid "Open a session on this machine"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open a terminal on this machine"
+msgstr ""
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
 msgstr "פתח ספר כתובות"
@@ -16216,6 +16271,10 @@ msgstr "תצוגה מקדימה של {0}"
 msgid "Preview {label}"
 msgstr "תצוגה מקדימה של {label}"
 
+#: src/components/conversation/AttachmentChip.tsx
+msgid "Preview contents"
+msgstr ""
+
 #: src/components/wiki-tip/WikiModalRoot.tsx
 msgid "Preview of the wiki page, shown without leaving the current view."
 msgstr "תצוגה מקדימה של דף הוויקי, מוצגת בלי לעזוב את התצוגה הנוכחית."
@@ -16990,6 +17049,14 @@ msgstr "התקבל קובץ מצורף — יש לבדוק לפני ההתקנה
 msgid "Received attachments — review before installing."
 msgstr "התקבלו קבצים מצורפים — יש לבדוק אותם לפני ההתקנה."
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received file — review before copying."
+msgstr ""
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received files — review before copying."
+msgstr ""
+
 #. placeholder {0}: currentDock?.pointer || 'none'
 #: src/components/app-host/AppHost.tsx
 #: src/components/show-view/ShowView.tsx
@@ -17326,6 +17393,10 @@ msgstr "הסרת תיקיית ההקשר"
 msgid "Remove directory"
 msgstr "הסר תיקייה"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Remove failed"
+msgstr ""
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Remove favorite"
@@ -17349,6 +17420,7 @@ msgid "Remove from folder"
 msgstr "הסרה מהתיקייה"
 
 #: src/components/connections-manager.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Remove from project"
 msgstr "הסירו מהפרויקט"
 
@@ -17439,6 +17511,10 @@ msgstr "הוסר לכל המשתתפים בענן"
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Removed for you; other members keep it"
 msgstr "הוסר עבורך; חברים אחרים שומרים עליו"
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Removed from project"
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Removed from the manifest."
@@ -20899,6 +20975,7 @@ msgid "subgraph projection"
 msgstr "היטל תת־גרף"
 
 #: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Subject"
 msgstr ""
 
@@ -21244,6 +21321,7 @@ msgstr "תבנית:"
 
 #: src/components/project-home/ProjectHome.tsx
 #: src/i18n/pref-labels.ts
+#: src/pages/hub-home/HubHome.tsx
 msgid "Terminal"
 msgstr "טרמינל"
 
@@ -22149,6 +22227,10 @@ msgstr ""
 msgid "This project"
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "This project can only be opened from its share."
+msgstr ""
+
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project could not be shared."
 msgstr ""
@@ -22542,6 +22624,7 @@ msgstr ""
 #: src/components/cost-dashboard/constants.ts
 #: src/components/cron-view/CronForm.tsx
 #: src/components/llm-endpoints/LlmEndpointsList.tsx
+#: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/token-plan/MembersTable.tsx
 msgid "Today"
 msgstr "היום"

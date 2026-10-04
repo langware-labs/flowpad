@@ -85,7 +85,11 @@ export function useChannelAttribution() {
       // `humanizeType` only for a channel nothing names.
       const sourceSpec = source ? specFor(source.provider) : undefined;
       const kindSpec = specFor(kind);
-      const label = sourceSpec?.title || kindSpec?.title || channelLabel(kind);
+      // A multi-channel transport (`agent`) names each channel's glyph, and its
+      // rows are labelled by that channel too — a Slack row reads "Slack", not
+      // "Agent transport".
+      const byChannel = !!sourceSpec?.channel_icon_names?.[kind];
+      const label = (byChannel ? undefined : sourceSpec?.title) || kindSpec?.title || channelLabel(kind);
       const name = sourceIconName(sourceSpec, kind) || sourceIconName(kindSpec, kind);
       return { icon: name ? lucideByName(name) : MessageSquare, label };
     },
