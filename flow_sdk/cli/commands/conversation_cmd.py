@@ -129,6 +129,10 @@ def _conversation_id(value: str) -> str:
     return _bare_id(value, "conversation", "conversation_id")
 
 
+def _message_id(value: str) -> str:
+    return _bare_id(value, "flow_message", "message_id")
+
+
 def _conv_summary_row(conv: dict) -> dict:
     """Trim a full conversation dump down to the fields ``list`` reports."""
     parts = [
@@ -156,8 +160,7 @@ def _conv_summary_row(conv: dict) -> dict:
     help="List the current user's conversations (title, participants, message count).",
 )
 def list_conversations() -> None:
-    port = _discover_port()
-    url = f"http://127.0.0.1:{port}/api/v1/graph/conversation-list"
+    url = _graph_url(_discover_port(), "conversation-list")
     data = _post_json(url, {})
     convs = [_conv_summary_row(c) for c in (data.get("conversations") or [])]
     _ok(
@@ -183,8 +186,7 @@ def summary_conversation(
     conversation_id: Annotated[str, typer.Argument(help=_CONV_ID_HELP)],
 ) -> None:
     cid = _conversation_id(conversation_id)
-    port = _discover_port()
-    url = f"http://127.0.0.1:{port}/api/v1/graph/conversation-summary"
+    url = _graph_url(_discover_port(), "conversation-summary")
     data = _post_json(url, {"conversation_id": cid}, not_found_hint=f"Conversation not found: {cid}")
     _ok({"conversation_id": cid, "summary": data.get("summary") or ""})
 
@@ -212,9 +214,7 @@ def _render_message(m: dict) -> str:
 
 
 def _render_transcript(data: dict) -> str:
-    people = ", ".join(
-        f"{p.get('name')} ({p['role']})" if p.get("role") else str(p.get("name")) for p in data.get("participants") or []
-    )
+    people = ", ".join(data.get("participants") or [])
     shown, total = len(data.get("messages") or []), data.get("message_count")
     lines = [
         f"Conversation: {data.get('title') or '(untitled)'}  [conversation-{data.get('id')}]",
@@ -268,7 +268,7 @@ def show_message(
     message_id: Annotated[str, typer.Argument(help=_MSG_ID_HELP)],
     as_json: Annotated[bool, typer.Option("--json", help="Emit the structured envelope instead of text.")] = False,
 ) -> None:
-    mid = _bare_id(message_id, "flow_message", "message_id")
+    mid = _message_id(message_id)
     url = _graph_url(_discover_port(), "conversation-message-read")
     data = _post_json(url, {"message_id": mid}, not_found_hint=f"Message not found: {mid}")
     if as_json:
@@ -284,7 +284,7 @@ def show_message(
 
 
 def _add_message_url(port: int, conversation_id: str) -> str:
-    return f"http://127.0.0.1:{port}/api/v1/graph/conversation/{conversation_id}/add_message"
+    return _graph_url(port, f"conversation/{conversation_id}/add_message")
 
 
 def _emit_send_result(conversation_id: str, data: dict) -> None:
@@ -381,7 +381,7 @@ def attach_message(
     tid = _entity_typeid_or_none(tgt)
     if tid is not None:
         # Entity reference — validate it exists before referencing it.
-        probe_url = f"http://127.0.0.1:{port}/api/v1/graph/{tid.type}/{tid.id}"
+        probe_url = _graph_url(port, f"{tid.type}/{tid.id}")
         try:
             probe = _local_get(probe_url, timeout=15)
         except requests.exceptions.RequestException as e:
@@ -478,10 +478,10 @@ def react_to_message(
 ) -> None:
     from flow_sdk.cli.commands._common import local_request  # noqa: PLC0415
 
-    mid = _bare_id(message_id, "flow_message", "message_id")
+    mid = _message_id(message_id)
     if not (emoji.strip() or remove):
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "an emoji is required")
-    url = f"http://127.0.0.1:{_discover_port()}/api/v1/graph/flow_message/{mid}/react"
+    url = _graph_url(_discover_port(), f"flow_message/{mid}/react")
     body = local_request("POST", url, json={"emoji": emoji.strip(), "remove": remove}, timeout=30).json()
     if body.get("status") != "SUCCESS":
         _fail(7, "REFUSED", str(body.get("message") or body))

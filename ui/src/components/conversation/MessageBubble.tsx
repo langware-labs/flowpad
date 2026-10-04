@@ -32,17 +32,17 @@ interface MessageBubbleProps {
   /** When set, the sender's name and avatar open the sender — an agent's profile. */
   onSenderClick?: () => void;
   onEditName?: (newName: string) => void;
-  /** When set, renders a delete (trash) control on the bubble. The parent
-   *  decides who may delete (sender or conversation owner) and only passes
-   *  this for messages the local user is allowed to remove. Clicking it opens
-   *  a destructive confirm dialog; on confirm this fires. */
+  /** When set, the ⋮ menu offers Delete. The parent decides who may delete
+   *  (sender or conversation owner) and only passes this for messages the
+   *  local user is allowed to remove. Choosing it opens a destructive confirm
+   *  dialog; on confirm this fires. */
   onDeleteMessage?: () => void;
-  /** When set, renders a forward control on the bubble. Clicking it opens the
-   *  parent's share dialog to pick the target conversation; the backend then
-   *  clones the message (cloned_from_id provenance) into it. */
+  /** When set, the ⋮ menu offers Forward. Choosing it opens the parent's
+   *  share dialog to pick the target conversation; the backend then clones the
+   *  message (cloned_from_id provenance) into it. */
   onForwardMessage?: () => void;
-  /** "Task it": make this message a task — or, once it is one (`task`), open it; an opened task
-   *  also shows its status and owner. The parent decides which; the bubble only draws the chips. */
+  /** "Task it": make this message a task (a ⋮ menu item) — or, once it is one (`task`), open it
+   *  from the chips under the body, which also show its status and owner. */
   taskIt?: { onClick: () => void; task?: Task | null };
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
@@ -72,9 +72,9 @@ interface MessageBubbleProps {
   quoted?: { sender: string; text: string; onJump?: () => void } | null;
   /** Who reacted with what (a channel message). */
   reactions?: IMessageReaction[];
-  /** When set, renders React — the channel shows reactions (`ChannelSpec.reacts`). */
+  /** When set, the ⋮ menu offers React — the channel shows reactions (`ChannelSpec.reacts`). */
   onReact?: (emoji: string, remove: boolean) => void;
-  /** When set, renders Reply — the composer answers this message. */
+  /** When set, the ⋮ menu offers Reply — the composer answers this message. */
   onReply?: () => void;
   /** The channel's replies only thread (`ChannelSpec.quotes` false): Reply says "Reply in thread". */
   replyInThread?: boolean;

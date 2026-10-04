@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Download, Forward, MoreVertical, Pencil, Reply, SmilePlus, Star, Trash2 } from 'lucide-react';
-import { useLingui } from '@lingui/react/macro';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 import { AgenticProcess, Conversation, TypeId, type ICloudOrigin } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { workerIcon } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
@@ -65,11 +64,6 @@ function useCurrentWorker(conversationId: string | undefined): AgenticProcess | 
 
 const ITEM_ICON = 'h-3.5 w-3.5 text-muted-foreground';
 
-/** Whether any action exists without a stored message (a draft bubble has none). */
-function hasAnyAction(p: MessageActionsMenuProps): boolean {
-  return !!(p.onReply || p.onReact || p.onForward || p.onTaskIt || p.onEditName || p.onDelete);
-}
-
 /**
  * Every per-message action behind one ⋮ on the header row, so the row itself
  * reads name · time · receipt · ⋮. The items (and the favorites / worker
@@ -84,8 +78,9 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
   const { t } = useLingui();
   const [noteOpen, setNoteOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const { flowMessageId, conversationId, onReact } = props;
-  if (!flowMessageId && !hasAnyAction(props)) return null;
+  const { flowMessageId, conversationId, onReply, onReact, onForward, onTaskIt, onEditName, onDelete } = props;
+  // A draft bubble (no stored message) with no handlers has nothing to offer.
+  if (!flowMessageId && !(onReply || onReact || onForward || onTaskIt || onEditName || onDelete)) return null;
 
   return (
     <>
@@ -108,7 +103,7 @@ export function MessageActionsMenu(props: MessageActionsMenuProps) {
             <MessageMenuItems {...props} onOpenPicker={() => setPickerOpen(true)} onOpenNote={() => setNoteOpen(true)} />
           </DropdownMenuContent>
         </DropdownMenu>
-        {onReact && (
+        {onReact && pickerOpen && (
           <EmojiPickerContent
             side="bottom"
             onPick={(emoji) => {

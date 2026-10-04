@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
 from pydantic import computed_field, model_validator
@@ -45,6 +45,14 @@ def _ref_sort_key(ref: "MessageRef") -> tuple:
     if landed.tzinfo is None:
         landed = landed.replace(tzinfo=timezone.utc)
     return (1, landed.timestamp())
+
+
+def member_label(member: dict) -> str:
+    """How a conversation member is named in plain text: ``name (role)``,
+    falling back to email then user id."""
+    label = member.get("name") or member.get("email") or member.get("user_id") or "?"
+    role = member.get("role")
+    return f"{label} ({role})" if role else str(label)
 
 
 class ConversationKind(StrEnum):
@@ -886,17 +894,10 @@ class Conversation(ProjectedFields, Entity):
         participants+roles, message count) followed by one line per message
         (``FlowMessage.summary()``), oldest-first.
 
-        Cheap and synchronous-ish: reads the on-disk jsonl pointer index (the
-        source of truth, same idiom as ``deliver_pending_messages``) and loads
-        each FlowMessage by id. No LLM, no hub calls.
+        Cheap: the ordered ``message_refs`` projection plus one bulk load.
+        No LLM, no hub calls.
         """
-
-        def _who(p: dict) -> str:
-            label = p.get("name") or p.get("email") or p.get("user_id") or "?"
-            role = p.get("role")
-            return f"{label} ({role})" if role else str(label)
-
-        participants = ", ".join(_who(p) for p in (self.members or [])) or "(none)"
+        participants = ", ".join(member_label(p) for p in (self.members or [])) or "(none)"
         lines = [
             f"Conversation: {self.title or '(untitled)'}",
             f"Participants: {participants}",
@@ -909,34 +910,19 @@ class Conversation(ProjectedFields, Entity):
     async def _messages_oldest_first(
         self, *, last: Optional[int] = None, since: Optional[datetime] = None
     ) -> list["FlowMessage"]:
-        """This conversation's messages, oldest-first, via the on-disk jsonl
-        pointer index (the source of truth). Ordered by each pointer's own
-        timestamp — the file's line order is not chronological once a hub sync
-        rewrites it. ``since`` / ``last`` narrow the POINTERS, so only the
-        messages kept are loaded, in one query."""
+        """This conversation's messages oldest-first, in the order the UI shows
+        them: ``message_refs`` sorted by event time (``_ref_sort_key``).
+        ``since`` / ``last`` narrow the REFS, so only the messages kept are
+        loaded, in one query."""
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
-            default_jsonl_path,
-            from_jsonl,
-            message_pointers,
-        )
-        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-        from flow_sdk.utils.serialization import iso_to_utc  # noqa: PLC0415
 
-        rec = from_jsonl(
-            default_jsonl_path(self.id),
-            parent_id="",
-            record_id=self.id,
-            parent_type=RecordType.PROJECT,
-        )
-        floor = datetime.min.replace(tzinfo=timezone.utc)
-        dated = sorted(((iso_to_utc(p.ts) or floor, p.id) for p in message_pointers(rec) if p.id), key=lambda d: d[0])
+        refs = sorted(self.message_refs(), key=_ref_sort_key)
         if since is not None:
-            dated = [d for d in dated if d[0] >= since]
+            refs = [r for r in refs if _ref_sort_key(r) >= (1, since.timestamp())]
         if last is not None:
-            dated = dated[-last:] if last > 0 else []
-        ids = [pid for _, pid in dated]
+            refs = refs[-last:] if last > 0 else []
+        ids = [r.id for r in refs]
         if not ids:
             return []
         rows = await FlowMessage.get_all(QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", ids])))
@@ -958,10 +944,7 @@ class Conversation(ProjectedFields, Entity):
         return {
             "id": self.id,
             "title": self.title or "",
-            "participants": [
-                {"name": p.get("name") or p.get("email") or p.get("user_id"), "role": p.get("role")}
-                for p in (self.members or [])
-            ],
+            "participants": [member_label(p) for p in (self.members or [])],
             "message_count": self.message_count,
             "messages": [m.read_entry(self_ids) for m in msgs],
         }
