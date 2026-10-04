@@ -3019,6 +3019,10 @@ msgstr "בדיקת עדכונים אוטומטית כל שעה."
 #~ msgid "Automatic"
 #~ msgstr "אוטומטי"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "available"
+msgstr ""
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -6579,6 +6583,10 @@ msgstr "רישום ניפוי באגים"
 
 #~ msgid "DEBUG: remove 6 tools"
 #~ msgstr ""
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Decision API"
+msgstr ""
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -17020,6 +17028,10 @@ msgstr "הודעות בתור"
 #: src/components/quick-create/QuickCreateTile.tsx
 msgid "Quick create"
 msgstr "יצירה מהירה"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "quick requests open without an assistant turn"
+msgstr ""
 
 #: src/components/asset-counters/AssetListView.tsx
 #: src/components/asset-counters/AssetListView.tsx

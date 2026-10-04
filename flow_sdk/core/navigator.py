@@ -24,10 +24,10 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, ClassVar, Literal, Optional
+from typing import Any, Literal, Optional
 
 from flow_sdk.core.dock_address import VIEW_META, PointerRequirement, parse_dock_url
-from flow_sdk.schema.data_spec.spec import DataSpec
+from flow_sdk.schema.data_spec.navigator_spec import NavigationTarget, NavigatorRoute
 
 logger = logging.getLogger(__name__)
 
@@ -35,34 +35,6 @@ logger = logging.getLogger(__name__)
 MIN_CONFIDENCE = 0.85
 #: Full-text candidates offered alongside the screens.
 CANDIDATE_LIMIT = 5
-
-Kind = Literal["view", "entity", "file", "url", "webapp", "app"]
-
-
-class NavigationTarget(DataSpec):
-    spec_kind: ClassVar[str] = "navigator.target"
-
-    kind: Kind
-    #: A dock address (``credentials/api-keys``, ``hub/token-plan``), a TypeId, a path, a URL,
-    #: a port, or an artifact id -- what ``kind`` says.
-    value: str
-
-
-class NavigatorRoute(DataSpec):
-    """What to do with a typed request."""
-
-    spec_kind: ClassVar[str] = "navigator.route"
-
-    route: Literal["quick", "agentic"]
-    target: Optional[NavigationTarget] = None
-    #: ``navigate`` only when the request asked to be TAKEN somewhere; showing is the default.
-    verb: Literal["show", "navigate"] = "show"
-    confidence: float = 0.0
-    #: How it was decided (``rule`` / ``decision``), or why it fell back (``no_endpoint``,
-    #: ``unsure``, ``agentic``, a ``DecisionError`` reason).
-    reason: str = ""
-    latency_ms: float = 0.0
-
 
 # ── the label space ──────────────────────────────────────────────────────────
 

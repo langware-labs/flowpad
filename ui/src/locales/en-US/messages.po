@@ -3019,6 +3019,10 @@ msgstr "Auto-updates check hourly."
 #~ msgid "Automatic"
 #~ msgstr "Automatic"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "available"
+msgstr "available"
+
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
@@ -6579,6 +6583,10 @@ msgstr "Debug logging"
 
 #~ msgid "DEBUG: remove 6 tools"
 #~ msgstr "DEBUG: remove 6 tools"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Decision API"
+msgstr "Decision API"
 
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
@@ -17020,6 +17028,10 @@ msgstr "Queued messages"
 #: src/components/quick-create/QuickCreateTile.tsx
 msgid "Quick create"
 msgstr "Quick create"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "quick requests open without an assistant turn"
+msgstr "quick requests open without an assistant turn"
 
 #: src/components/asset-counters/AssetListView.tsx
 #: src/components/asset-counters/AssetListView.tsx
