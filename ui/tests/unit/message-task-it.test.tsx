@@ -19,7 +19,7 @@ describe('Task it', () => {
 
   it('creates when the message has no task', () => {
     const onTaskIt = vi.fn();
-    render(<MessageBubble message={message} senderName="Ron" taskIt={{ onClick: onTaskIt, open: false }} />);
+    render(<MessageBubble message={message} senderName="Ron" taskIt={{ onClick: onTaskIt }} />);
     const control = screen.getByTestId('message-task-it');
     expect(control.getAttribute('aria-label')).toBe('Task it');
     fireEvent.click(control);
@@ -27,8 +27,10 @@ describe('Task it', () => {
   });
 
   it('reads "Open task" once the message is a task', () => {
-    render(<MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, open: true }} />);
-    expect(screen.getByTestId('message-task-it').getAttribute('aria-label')).toBe('Open task');
+    render(<MessageBubble message={message} senderName="Ron" taskIt={{ onClick: () => {}, title: 'Render HTML' }} />);
+    const chip = screen.getByTestId('message-task-it');
+    expect(chip.getAttribute('aria-label')).toBe('Open task');
+    expect(chip.textContent).toBe('Render HTML');
   });
 
   it('offers nothing without a handler', () => {
