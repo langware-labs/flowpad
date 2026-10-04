@@ -9,7 +9,7 @@
     "commands": {
       "darwin": "brew install python3",
       "linux": "apt-get update && apt-get install -y python3",
-      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; winget install --id Python.Python.3.12 -e --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity; if ($LASTEXITCODE -ne 0) { winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity }"
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; $base = @('install','--id','Python.Python.3.12','-e','--silent','--accept-package-agreements','--accept-source-agreements','--disable-interactivity'); $src = @('--source','winget'); $scp = @('--scope','user'); $srcErr = @(-1978335138,-1978335210,-1978335163,-1978335157); winget @base @src @scp; $c = $LASTEXITCODE; if ($srcErr -contains $c) { $src = @(); winget @base @src @scp; $c = $LASTEXITCODE }; if ($c -eq -1978335216) { $scp = @(); winget @base @src @scp; $c = $LASTEXITCODE }; if ($null -eq $c) { exit 1 }; exit $c"
     },
     "timeout_seconds": 600
   },
