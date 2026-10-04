@@ -27,7 +27,7 @@ const ProjectShareLanding: React.FC = () => {
         const model = { ...entityLandingModel(typeId, project), hubUrl: projectHubPath(typeId.id) };
         // A project opens from its git repo OR its hub-hosted copy — wider than the
         // generic landing's git-only origin.
-        const origin = projectOriginOf(project);
+        const origin = projectOriginOf(project as Project);
         return (
           <EntityLandingView
             typeId={typeId}
