@@ -10441,6 +10441,7 @@ msgstr "https://github.com/owner/repo"
 msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Hub"
@@ -22225,6 +22226,10 @@ msgstr "this project"
 #: src/components/credentials/CredentialDialog.tsx
 msgid "This project"
 msgstr "This project"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "This project can only be opened from its share."
+msgstr "This project can only be opened from its share."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "This project could not be shared."

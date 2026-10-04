@@ -24,6 +24,7 @@ from flow_sdk.fs_store.serializer.fields import asset_class as _asset_class
 from flow_sdk.fs_store.serializer.fields import unwrap_annotation as _unwrap
 from flow_sdk.schema.data_spec import DataSpec
 from flow_sdk.schema.data_spec._form import is_shape_form
+from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.io.native import Binary, FreeForm, Text
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
@@ -43,6 +44,8 @@ def sample(name: str, annotation: Any, default: Any) -> Any:
         return {f"{name}_k": "string", f"{name}_n": ["int"]}
     if ann is PhoneNumberSpec:  # validated digits: a "<name>-v" placeholder is not a number
         return PhoneNumberSpec(country_code="972", number="557709288")
+    if ann is DockPointerSpec:  # a real tab: the view must be one, and the file named by its project
+        return DockPointerSpec(viewType="project", pointer="p/editor/html/vfs/project-p/a.html")
     if ann is RequirementSpec:  # a closed `kind`: the sampler names one
         return RequirementSpec(kind="variable", name=f"{name.upper()}_V", why=f"{name}-why")
     if isinstance(ann, type) and issubclass(ann, DataSpec):  # a field whose VALUE is a shape

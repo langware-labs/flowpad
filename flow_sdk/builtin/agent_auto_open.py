@@ -75,7 +75,7 @@ def rebase_auto_open(entries: list[DockPointerSpec] | None, *, roots: dict[str, 
         pointer = f"{spec.pointer[:found.start()]}{found.group(1)}vfs/{local.abs_path}"
         # Plain JSON, not a DockPointerSpec: the rebased pointer names THIS machine,
         # which is exactly what a declared (travelling) pointer is refused for.
-        rebased = json.dumps({"viewType": spec.viewType.value, "pointer": pointer}, separators=(",", ":"))
+        rebased = json.dumps({"viewType": spec.viewType, "pointer": pointer}, separators=(",", ":"))
         tabs.append(AutoOpenTab(pointer=rebased, path=path))
     return tabs
 
