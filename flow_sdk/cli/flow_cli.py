@@ -206,8 +206,7 @@ def upgrade(
     """
     Upgrade flowpad to the latest version from PyPI.
 
-    Detects whether flowpad was installed via 'uv tool' or pip and
-    uses the appropriate upgrade mechanism.
+    Installs exactly that version, via 'uv tool' or pip -- whichever installed flowpad.
 
     Use --info to print version and machine info as JSON (used by the desktop app).
 
@@ -215,7 +214,6 @@ def upgrade(
     Example: flow upgrade --info
     """
     import json
-    import shutil
     import subprocess
     import sys
 
@@ -229,34 +227,49 @@ def upgrade(
         typer.echo(json.dumps(status))
         return
 
-    uv = shutil.which("uv")
+    from flow_sdk.server import self_update
+    from flow_sdk.utils.semver import is_newer
 
-    if uv:
-        # Ask uv where its tools live, then check if this Python lives there
-        dir_result = subprocess.run([uv, "tool", "dir"], capture_output=True, text=True)
-        if dir_result.returncode != 0:
-            typer.echo("Error: 'uv tool dir' failed — cannot determine install method.", err=True)
-            raise typer.Exit(1)
-        uv_tools_dir = dir_result.stdout.strip()
-        use_uv = sys.executable.startswith(uv_tools_dir)
-    else:
-        use_uv = False
+    latest = self_update.latest_release()
+    if latest is None:
+        typer.echo("Could not reach PyPI to find the latest flowpad.", err=True)
+        raise typer.Exit(1)
+    if not is_newer(__version__, latest):
+        typer.echo(f"flowpad {__version__} is the latest version.")
+        return
+    if self_update.is_editable_install():
+        typer.echo(f"flowpad {__version__} is an editable (source) install; update the checkout instead.", err=True)
+        raise typer.Exit(1)
 
-    if use_uv:
-        typer.echo("Detected install method: uv tool")
-        typer.echo("Upgrading flowpad via uv tool...")
-        cmd = [uv, "tool", "upgrade", "flowpad"]
-    else:
-        typer.echo("Detected install method: pip")
-        typer.echo("Upgrading flowpad via pip...")
-        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "flowpad"]
+    # An explicit flowpad==<latest> -- never `uv tool upgrade`: the desktop app and the version
+    # picker install an exact pin, and `uv tool upgrade` refreshes the dependencies under that pin
+    # and leaves flowpad where it was, exit 0.
+    method = self_update.detect_install_method()
+    typer.echo(f"Detected install method: {method}")
+    if sys.platform == "win32":
+        # Windows cannot replace the flow.exe running this very command; uv answers that by deleting
+        # the tool, pip by stopping halfway. So the install runs after this command exits, detached.
+        import tempfile
+        from pathlib import Path
 
-    result = subprocess.run(cmd)
+        log = Path(tempfile.gettempdir()) / "flowpad-upgrade.log"
+        log.write_text(f"Upgrading flowpad {__version__} -> {latest}...\n", encoding="utf-8")
+        flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        subprocess.Popen(
+            [sys.executable, "-m", "flow_sdk.server.self_update", "upgrade", latest, str(log),
+             str(os.getpid()), str(os.getppid())],
+            creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+        typer.echo(f"Upgrading flowpad {__version__} -> {latest} as soon as this command exits (about a minute).")
+        typer.echo(f"Progress: {log}   Check with: flow")
+        return
+    typer.echo(f"Upgrading flowpad {__version__} -> {latest}...")
+    result = subprocess.run(self_update.build_install_command(latest))
     if result.returncode != 0:
         typer.echo("Upgrade failed.", err=True)
         raise typer.Exit(result.returncode)
-
-    typer.echo("flowpad upgraded successfully.")
+    typer.echo(f"flowpad upgraded: {__version__} -> {latest}.")
 
 
 def _start_service(port: int) -> None:
