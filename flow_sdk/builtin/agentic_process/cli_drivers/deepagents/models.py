@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 
-from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import API_KEY_ENV, BASE_URL_ENV
+from flow_sdk.builtin.agentic_process.cli_drivers.deepagents.runner import API_KEY_ENV, BASE_URL_ENV, MAX_OUTPUT_ENV
 
 
 def openai_wire_model(model: str):
@@ -26,4 +26,12 @@ def openai_wire_model(model: str):
         raise RuntimeError(
             f"the deepagents worker is funded by an LLM endpoint: {BASE_URL_ENV} and {API_KEY_ENV} must both be set"
         )
-    return ChatOpenAI(model=model, base_url=base_url, api_key=api_key, use_responses_api=False, stream_usage=True)
+    max_tokens = int(os.environ.get(MAX_OUTPUT_ENV, "") or 0) or None
+    return ChatOpenAI(
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        use_responses_api=False,
+        stream_usage=True,
+        max_tokens=max_tokens,
+    )

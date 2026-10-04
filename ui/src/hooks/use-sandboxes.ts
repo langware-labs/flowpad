@@ -173,6 +173,11 @@ function readProvider(node: ComputeNode): string | undefined {
   return (node as unknown as { node_provider?: string }).node_provider ?? node.node_provider_type;
 }
 
+/** A machine a person connected with `flow connect` — not a cloud sandbox, so no provider gates it. */
+export function isUserMachine(node: ComputeNode): boolean {
+  return readProvider(node) === ComputeProviderType.USER_MACHINE;
+}
+
 function defaultSandboxProvider(): ComputeProviderType {
   // Validated against the SANDBOX providers, not against every provider: a hub
   // configured for `local_machine` would otherwise be taken at its word and mint

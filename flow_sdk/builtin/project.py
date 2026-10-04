@@ -37,7 +37,9 @@ from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializ
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
-from flow_sdk.fs_store.origin.git_origin import GitOrigin, as_git, fresh_clone_slot
+from flow_sdk.fs_store.origin.field import as_project_origin
+from flow_sdk.fs_store.origin.git_origin import GitOrigin, fresh_clone_slot
+from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
 from flow_sdk.fs_store.path_utils import (
     canonical_posix_path,
     is_path_under,
@@ -49,6 +51,7 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.schema.data_spec.share_request_spec import ShareVia
 from flow_sdk.schema.data_spec.share_result_spec import (
     ShareFailedSpec,
     ShareFailedTeamSpec,
@@ -1301,8 +1304,14 @@ class Project(Entity):
         *,
         teams: Optional[List[str]] = None,
         note: Optional[str] = None,
+        via: ShareVia = ShareVia.GIT,
     ) -> "Project":
         """Publish this project to the hub, then invite people and whole teams.
+
+        ``via=ShareVia.HUB_REPO`` (opt-in) also pushes the project's HEAD to its
+        hub-hosted repository and points the hub row's origin there, so recipients
+        clone it with their hub login (``_publish_to_hosted_repo``). The default
+        leaves the origin as the project's own git remote.
 
         Each new invitee gets ONE ``MembershipRequest`` via
         ``POST /graph/project/<id>/members`` — by hub user id when known, else by
@@ -1366,9 +1375,36 @@ class Project(Entity):
             # so only this line distinguishes "I published it" from "it was
             # shared to me" — which is what the push-to-cloud gate needs.
             self.hub_published_at = _now_iso()
+            if via is ShareVia.HUB_REPO:
+                await self._publish_to_hosted_repo()
             if invitees or teams:
                 await self._send_invites(client, creds, invitees, teams, note)
         return self
+
+    async def _publish_to_hosted_repo(self) -> HubRepoOrigin:
+        """Push HEAD to this project's hub-hosted repository and make that the hub
+        row's origin. The LOCAL row keeps its own git origin: only recipients read
+        the hub's. Needs a committed checkout — what travels is HEAD, never the
+        working tree."""
+        from flow_sdk.assets.hub_repo_sync import HubRepoCheckout  # noqa: PLC0415
+        from flow_sdk.cli.auth.hub_login import resolve_hub_api_key  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_graph_url, hub_post, hub_put  # noqa: PLC0415
+
+        mount = Path(self.fs_storage_mount_path or "")
+        if not (mount / ".git").exists():
+            raise RuntimeError("Sharing through the hub repository needs the project folder to be a git checkout")
+        repo = await hub_post(BuiltinEntityType.PROJECT, {}, self.id, action="hosted_repo")
+        if not repo or not repo.get("repo"):
+            raise RuntimeError("The hub has no repository for this project")
+        origin = HubRepoOrigin(repo=repo["repo"], rel_path=".")
+        await HubRepoCheckout(
+            root=mount,
+            clone_url=hub_graph_url("git_repo", origin.repo_id, "git"),
+            branch=repo.get("default_branch") or "main",
+            token=resolve_hub_api_key(require_live=True) or "",
+        ).push_head()
+        await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
+        return origin
 
     async def invite(
         self,
@@ -1629,7 +1665,7 @@ class Project(Entity):
         the project is usable without whatever the manifest additionally asked
         for, and ``reconcile_bootstrap`` is idempotent, so re-opening retries.
         """
-        origin = as_git(self.origin)
+        origin = as_project_origin(self.origin)
         if origin is None:
             raise RuntimeError("Shared project has no Git origin")
 
@@ -1637,9 +1673,19 @@ class Project(Entity):
         from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
         from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
 
-        root, _ = await get_origin_driver(origin.kind).materialize(
-            origin, token=await _get_github_token_for_current_user()
-        )
+        driver = get_origin_driver(origin.kind)
+        if isinstance(origin, HubRepoOrigin):
+            # The hub-hosted copy: read with the HUB token (the driver resolves it —
+            # a GitHub token must never be offered to the hub), into this project's
+            # own workspace slot as a working checkout, not the asset cache.
+            mount = Path(self.fs_storage_mount_path) if self.fs_storage_mount_path else None
+            slot = mount if mount and (mount / ".git").is_dir() else await asyncio.to_thread(
+                fresh_clone_slot, self.name or "project")
+            root, _ = await driver.materialize(origin, preferred_root=slot, preferred_project_id=str(self.id))
+        else:
+            root, _ = await driver.materialize(
+                origin, preferred_project_id=str(self.id), token=await _get_github_token_for_current_user()
+            )
         target_dir = str(root)
         self.fs_storage_mount_path = canonical_posix_path(target_dir)
         # Keep the name the sender shared; the folder leaf is only a fallback.
@@ -2144,7 +2190,7 @@ class Project(Entity):
         from flow_sdk.builtin.flow_message_bundle import ReferencePack  # noqa: PLC0415
 
         project = await cls.get_one({"id": entity_id})
-        origin = as_git(project.origin) if project is not None else None
+        origin = as_project_origin(project.origin) if project is not None else None
         if origin is None:
             return None
         metadata = project._hub_body()
@@ -2165,7 +2211,7 @@ class Project(Entity):
         then its own clone unless it is already set up here."""
         from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity  # noqa: PLC0415
 
-        origin = as_git(origin)
+        origin = as_project_origin(origin)
         if origin is None:
             return False
         project = await cls.get_one({"id": entity_id})
@@ -2218,7 +2264,7 @@ class Project(Entity):
             return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
         if project.fs_storage_mount_path:
             return ProjectOpenLinkSpec(project_id=entity_id)
-        origin = as_git(project.origin)
+        origin = as_project_origin(project.origin)
         if origin is None:
             return ProjectOpenLinkSpec(project_id=entity_id, project_error="unavailable")
         return ProjectOpenLinkSpec(

@@ -95,12 +95,15 @@ function FloatingChatWindowInner() {
   // The page whose chat is showing — a popout opens on that same chat.
   const boundUrlRef = useRef<string | null>(null);
   const onBoundChange = useCallback((dock: DockPointer | null) => {
-    boundUrlRef.current = dock ? dock.toUrl() : null;
+    boundUrlRef.current = dock?.viewType ? dock.toUrl() : null;
   }, []);
 
   // A popped-out assistant follows the main window: report where we are. Other
   // `win/` windows are not "where the user is".
-  const dockUrl = currentDock ? currentDock.toUrl() : '/';
+  // A URL naming no view (a deleted one, from an old link) parses to a pointer with no
+  // view type, and toUrl() throws on it — during render, which took the whole app down
+  // to the error page on /dock/execute-flow. Such a page reports as home.
+  const dockUrl = currentDock?.viewType ? currentDock.toUrl() : '/';
   useEffect(() => {
     if (!windowMode) publishDock(dockUrl);
   }, [dockUrl, windowMode, publishDock]);

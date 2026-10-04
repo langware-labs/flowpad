@@ -5,6 +5,7 @@ from pydantic import ConfigDict
 
 from flow_sdk.schema.data_spec import AssetDocumentSpec
 from flow_sdk.schema.data_spec._form import ShapeForm
+from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.io.native import Text
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
@@ -79,6 +80,8 @@ class AgentSpec(AssetDocumentSpec):
     intro: Optional[str] = None
     auto_launch: Optional[bool] = None
     auto_launch_prompt: Optional[str] = None
+    #: Tabs opened with every new session as this agent; the first is the active one. Declaration only.
+    auto_open: Optional[list[DockPointerSpec]] = None
     #: Per-place launch overrides, keyed by Deployment id.
     places: Optional[list[AgentPlaceSpec]] = None
     #: The ONE place (Deployment id) that answers this agent's email. Unset = legacy:

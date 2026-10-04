@@ -46,7 +46,7 @@ async def _make_ap(monkeypatch) -> AgenticProcess:
     monkeypatch.setattr(
         AgenticProcess,
         "_discover_status_from_transcript",
-        lambda self: WorkerStatus.RUNNING,
+        lambda self: WorkerStatus.WORKING,
         raising=False,
     )
     return ap

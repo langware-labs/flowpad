@@ -1,12 +1,16 @@
-# The barest foreign machine: Python and the flow_sdk wheel, and NOTHING else -- no node, no
-# harness CLI, no login, no key, no FLOWPAD_HUB_URL. The proof this image exists for (run.sh, BARE=1):
+# The barest foreign machine: an OS with its own tools (curl, tar), Python and the flow_sdk wheel,
+# and NOTHING else of ours -- no node, no harness CLI, no login, no key, no FLOWPAD_HUB_URL. A harness
+# CLI arrives the way a person gets one: `flow wizard run llm-setup-<harness> --yes`, whose command
+# is the vendor's own installer (and those need curl, which the -slim image does not carry).
+#
+# The proof this image exists for (run.sh, BARE=1):
 #
 #     flow llm user use <public-endpoint-id> --hub <hub>
 #     flow process start "hi"
 #
 # answers, because the bootstrap worker (deepagents) ships inside the wheel and a public hub
 # endpoint funds it. Anything that would have to be added here to make that pass is a product gap.
-FROM python:3.11-slim-bookworm
+FROM python:3.11-bookworm
 
 # Not root: a real foreign machine is a person's account, not uid 0.
 RUN useradd --create-home --shell /bin/bash flow

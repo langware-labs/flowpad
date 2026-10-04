@@ -338,6 +338,32 @@ async def declare_credential(manifest: dict[str, Any], *, project_id: str) -> "C
     return await save_credential(manifest=manifest, scope=SCOPE_PROJECT, project_id=project_id)
 
 
+async def _release_orphaned_bindings(env_vars: list[str]) -> None:
+    """After a credential is gone: drop this computer's store exception for each of its variables no
+    remaining credential declares. Saving a credential with a store pins its variables there on this
+    computer (``save_credential`` → ``keep_in``); left behind, that pin silently routes the NEXT
+    credential of the same variable — another project's, declared from the shipped template — into
+    the deleted one's store instead of the default. A variable another credential still declares
+    keeps its pin (its values are read through it), and a named deployment's exceptions are a
+    person's deployment config, never touched here."""
+    from flow_sdk.builtin.credential import Credential  # noqa: PLC0415
+    from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    if not env_vars:
+        return
+    # Only AUTHORED credentials count: a shipped template (system scope) holds no values and is
+    # read through no binding.
+    authored = ExpressionNode(op=QueryOp.OR, operands=[
+        ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_USER]),
+        ExpressionNode(op=QueryOp.EQ, operands=["scope", SCOPE_PROJECT]),
+    ])
+    declared = {name for other in await Credential.get_all(QueryFilter(match=authored)) for name in other.var_names()}
+    orphaned = [name for name in env_vars if name not in declared]
+    if orphaned:
+        await (await Deployment.this_computer()).release(orphaned)
+
+
 async def delete_credential(typeid: str) -> CredentialDeletedSpec:
     """Remove a credential and every value it owns, in every store a known deployment keeps it in.
 
@@ -360,6 +386,7 @@ async def delete_credential(typeid: str) -> CredentialDeletedSpec:
         if spec.asset_ref and Path(spec.asset_ref).is_dir():
             Asset.from_path(spec.asset_ref).remove()
         await spec.delete()
+        await _release_orphaned_bindings(names)
     return CredentialDeletedSpec(
         removed=removed,
         deleted=[n for n in names if n in deleted],
