@@ -256,7 +256,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   );
 
   return (
-    <div className="flex h-full flex-col" data-testid="live-session-view">
+    <div className="flex h-full flex-col" data-testid="live-session-view" data-latest-root>
       <div className="flex flex-shrink-0 items-center gap-2 border-b px-4 py-1.5">
         {conversationId && (
           <button
@@ -374,48 +374,58 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
       )}
 
       {/* ── terminal-style exchange ───────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950/[.03] px-4 py-3 font-mono text-[12.5px] leading-relaxed dark:bg-zinc-50/[.03]">
-        {messages.length === 0 ? (
-          <p className="text-muted-foreground/70">
-            <Trans>No turns yet — send a prompt below to start working on {hostName}'s machine.</Trans>
-          </p>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {messages.map((fm) => {
-              if (fm.kind === FlowMessageKind.SESSION_EVENT) {
-                return <SessionEventLine key={fm.id} text={fm.text ?? ''} />;
-              }
-              const result = resultTextOf(fm);
-              if (result !== null) {
-                if (fm.is_draft && isHost) {
-                  // Review policy: the reply waits as the host's draft — send
-                  // or discard it here, in the session, never in the thread.
+      {/* Latest-first: the bottom is the scroll anchor (see ConversationPanel). */}
+      <div
+        className="flex min-h-0 flex-1 flex-col-reverse overflow-y-auto bg-zinc-950/[.03] px-4 py-3 font-mono text-[12.5px] leading-relaxed dark:bg-zinc-50/[.03]"
+        data-scroll-latest
+      >
+        <div className="mb-auto">
+          {messages.length === 0 ? (
+            <p className="text-muted-foreground/70">
+              <Trans>No turns yet — send a prompt below to start working on {hostName}'s machine.</Trans>
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {messages.map((fm) => {
+                if (fm.kind === FlowMessageKind.SESSION_EVENT) {
+                  return <SessionEventLine key={fm.id} text={fm.text ?? ''} />;
+                }
+                const result = resultTextOf(fm);
+                if (result !== null) {
+                  if (fm.is_draft && isHost) {
+                    // Review policy: the reply waits as the host's draft — send
+                    // or discard it here, in the session, never in the thread.
+                    return (
+                      <div key={fm.id} className="flex flex-col gap-1" data-testid="live-session-review-draft">
+                        <span className="text-[11px] italic text-muted-foreground">
+                          <Trans>Reply awaiting your review</Trans>
+                        </span>
+                        <MessageComposer draft={fm} onSent={onSent} onAfterDiscard={onSent} />
+                      </div>
+                    );
+                  }
                   return (
-                    <div key={fm.id} className="flex flex-col gap-1" data-testid="live-session-review-draft">
-                      <span className="text-[11px] italic text-muted-foreground">
-                        <Trans>Reply awaiting your review</Trans>
-                      </span>
-                      <MessageComposer draft={fm} onSent={onSent} onAfterDiscard={onSent} />
-                    </div>
+                    <pre
+                      key={fm.id}
+                      className="whitespace-pre-wrap text-foreground/90"
+                      data-testid="live-session-reply"
+                    >
+                      {result}
+                    </pre>
                   );
                 }
+                const prompt = promptTextOf(fm);
+                if (!prompt) return null;
                 return (
-                  <pre key={fm.id} className="whitespace-pre-wrap text-foreground/90" data-testid="live-session-reply">
-                    {result}
-                  </pre>
+                  <div key={fm.id} className="flex gap-2">
+                    <span className="select-none text-emerald-600 dark:text-emerald-400">❯</span>
+                    <pre className="whitespace-pre-wrap">{prompt}</pre>
+                  </div>
                 );
-              }
-              const prompt = promptTextOf(fm);
-              if (!prompt) return null;
-              return (
-                <div key={fm.id} className="flex gap-2">
-                  <span className="select-none text-emerald-600 dark:text-emerald-400">❯</span>
-                  <pre className="whitespace-pre-wrap">{prompt}</pre>
-                </div>
-              );
-            })}
-          </div>
-        )}
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── composer (guest drives; host may also type) ───────────────── */}

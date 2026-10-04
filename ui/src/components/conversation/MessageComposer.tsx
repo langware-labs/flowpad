@@ -368,6 +368,9 @@ export function MessageComposer({
         setAssetRefs([]);
         setTaskItOn(false);
       }
+      // Your own send always brings you to the latest, even if you had scrolled up. The host marks
+      // its scroll box `data-scroll-latest` (a `flex-col-reverse` box, where top 0 IS the bottom).
+      textareaRef.current?.closest('[data-latest-root]')?.querySelector('[data-scroll-latest]')?.scrollTo({ top: 0 });
       if (!channel) onSent?.();
     } catch (err: unknown) {
       console.error('[MessageComposer] send failed', err);
@@ -377,6 +380,15 @@ export function MessageComposer({
       setSending(false);
     }
   };
+
+  // The box is disabled while sending, which drops its focus. Once the send settles (and the box
+  // is enabled again — hence an effect, after the commit), hand focus back so the next message or a
+  // retry is typed straight away. A draft bubble goes away on send, so it is skipped.
+  const wasSending = useRef(false);
+  useEffect(() => {
+    if (wasSending.current && !sending && !isDraftMode) textareaRef.current?.focus();
+    wasSending.current = sending;
+  }, [sending, isDraftMode]);
 
   const handleSend = () => void send();
 

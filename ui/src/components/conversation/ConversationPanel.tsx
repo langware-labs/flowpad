@@ -319,7 +319,7 @@ export function ConversationPanel({
   );
 
   return (
-    <div className={`flex h-full min-h-0 flex-1 flex-col ${className ?? ''}`}>
+    <div className={`flex h-full min-h-0 flex-1 flex-col ${className ?? ''}`} data-latest-root>
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           {headerLabel !== null && (
@@ -329,25 +329,33 @@ export function ConversationPanel({
               <MembersAvatarStack typeId={new TypeId(Conversation.type, conversationId)} />
             </div>
           )}
-          <div className={`${bodyWrapper} relative min-h-0 flex-1 overflow-y-auto`}>
-            <ChipsExcludeProvider add={taskKeys}>
-              <ConversationView
-                // Keyed so switching conversations RESETS the view's local
-                // state. Without it the instance is reused and an in-flight
-                // "composing…" line follows you into the next conversation.
-                key={conversationId}
-                conversationId={conversationId}
-                task={task}
-                senderName={senderName}
-                ensureMapped={ensureMapped}
-                selectedMessageIds={selectedMessageIds}
-                onSelectMessage={selectOneMessage}
-                onOpenRun={openRun}
-                threadId={threadId}
-                onThreadNavigate={onThreadNavigate}
-                agentId={agentId}
-              />
-            </ChipsExcludeProvider>
+          {/* Latest-first scrolling: `flex-col-reverse` anchors the scroll at the BOTTOM, so the
+              conversation opens on its latest message, follows new content while you are at the
+              bottom, and leaves you be while you read back. `mb-auto` keeps a short one at the top. */}
+          <div
+            className={`${bodyWrapper} relative flex min-h-0 flex-1 flex-col-reverse overflow-y-auto`}
+            data-scroll-latest
+          >
+            <div className="mb-auto">
+              <ChipsExcludeProvider add={taskKeys}>
+                <ConversationView
+                  // Keyed so switching conversations RESETS the view's local
+                  // state. Without it the instance is reused and an in-flight
+                  // "composing…" line follows you into the next conversation.
+                  key={conversationId}
+                  conversationId={conversationId}
+                  task={task}
+                  senderName={senderName}
+                  ensureMapped={ensureMapped}
+                  selectedMessageIds={selectedMessageIds}
+                  onSelectMessage={selectOneMessage}
+                  onOpenRun={openRun}
+                  threadId={threadId}
+                  onThreadNavigate={onThreadNavigate}
+                  agentId={agentId}
+                />
+              </ChipsExcludeProvider>
+            </div>
           </div>
         </div>
 
