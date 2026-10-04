@@ -485,6 +485,29 @@ async def read_optional(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> 
     return ApiSuccessResponse(data={"exists": True, "content": raw.decode("utf-8", errors="replace")})
 
 
+async def extract_preview(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResponse[dict]:
+    """Extract a local ``.zip`` to look inside it: ``{"path": <extracted folder>}``.
+
+    The folder lives in this instance's temp preview area (``archive.preview_root``)
+    — disposable, re-extracted after the OS wipes it. Nothing is written beside
+    the zip. Local storage only: the answer is a path on this machine."""
+    from flow_sdk.utils.archive import UnsafeArchiveError, extract_preview as _extract  # noqa: PLC0415
+
+    if request_info.method != "post":
+        return ApiFailResponse(message="extract_preview requires POST")
+    if not fs_info.vpath.typeid:
+        return ApiFailResponse(message="extract_preview requires typeid")
+    storage = await _get_storage_for_entity(request_info)
+    local_full_path = getattr(storage, "_local_full_path", None)
+    if local_full_path is None:
+        return ApiFailResponse(message="extract_preview needs a local file", status_code=400)
+    try:
+        out = await asyncio.to_thread(_extract, Path(local_full_path(fs_info.vpath.abs_vfspath)))
+    except UnsafeArchiveError as e:
+        return ApiFailResponse(message=f"cannot open archive: {e}", status_code=422)
+    return ApiSuccessResponse(data={"path": str(out)})
+
+
 async def watch_file(request_info: RequestInfo, fs_info: EntityFSReqInfo, *, on: bool) -> ApiResponse[bool]:
     """Start (``watch``) or stop (``unwatch``) telling this connection when the
     file changes on disk — a ``file_changed_msg`` naming the entity and path it

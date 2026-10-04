@@ -78,9 +78,8 @@ _FALSEY_ENV_VALUES = {"0", "false", "no", "off"}
 # makes interactive ``claude`` skip writing its ``~/.claude/projects/<cwd>/<id>.jsonl``
 # transcript, so Flowpad's transcript-derived ``worker_status`` is stuck at
 # INITIALIZING forever (Fork / Open-Transcript never enable). Scrub the whole
-# family so each PTY worker is a clean top-level session.
-_CLAUDE_INHERITED_ENV_PREFIXES = ("CLAUDECODE", "CLAUDE_CODE_")
-_CLAUDE_INHERITED_ENV_VARS = ("ENABLE_IDE_INTEGRATION",)
+# family so each PTY worker is a clean top-level session — through
+# ``claude_env.without_inherited_claude_session``, the one strip the headless spawns share.
 
 
 def _build_interactive_pty_env(
@@ -95,9 +94,9 @@ def _build_interactive_pty_env(
     Claude/Codex/plain shells by default. Explicit per-worker env still wins
     through ``extra_env``.
     """
-    env = {k: v for k, v in os.environ.items() if not k.startswith(_CLAUDE_INHERITED_ENV_PREFIXES)}
-    for key in _CLAUDE_INHERITED_ENV_VARS:
-        env.pop(key, None)
+    from flow_sdk.claude_env import without_inherited_claude_session  # noqa: PLC0415
+
+    env = without_inherited_claude_session(os.environ)
 
     for key in _INHERITED_NO_COLOR_ENV_VARS:
         env.pop(key, None)

@@ -66,6 +66,7 @@ class AssetEditor(StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     PDF = "pdf"
+    ARCHIVE = "archive"  # a .zip, browsed as the folder it extracts to (a temp copy)
 
 
 #: editor → the entity types it edits. Written with ``EntityType`` members
@@ -105,6 +106,7 @@ EDITOR_TYPES: dict[AssetEditor, list[str]] = {
     AssetEditor.VIDEO: [],
     AssetEditor.AUDIO: [],
     AssetEditor.PDF: [],
+    AssetEditor.ARCHIVE: [],
 }
 
 #: Derived inverse, exactly as the TS side derives it.

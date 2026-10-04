@@ -14,7 +14,28 @@
 # hand-written `# noqa: PLC0415` cycle-dodges. Moving that content to a neutral
 # leaf would let this package import `flow_cli` eagerly again.
 
-__all__ = ["cli_main"]
+__all__ = ["cli_main", "utf8_stdio"]
+
+
+def utf8_stdio() -> None:
+    """Make a redirected stdout/stderr UTF-8, so no CLI output can crash on a character.
+
+    Windows hands a stream that is not a console the ANSI code page (cp1252), and
+    the first character outside it raised: ``flow connect`` died printing its own
+    enrollment code (the QR's block glyphs) whenever its output was piped,
+    redirected, scripted or sent over ssh. A console already speaks Unicode and is
+    left alone; ``errors="replace"`` keeps a reader that is not UTF-8 from failing.
+    """
+    import sys
+
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None or stream.isatty():
+            continue
+        if (getattr(stream, "encoding", "") or "").lower().replace("-", "") == "utf8":
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def cli_main() -> None:
@@ -29,6 +50,8 @@ def cli_main() -> None:
     sees no extra lines.
     """
     import sys
+
+    utf8_stdio()
 
     from flow_sdk.boot_progress import start_if_requested
 

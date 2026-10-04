@@ -606,7 +606,7 @@ try:
                 if len(pieces) >= 4:
                     parts.append(pieces[3]); break
     elif system == "Windows":
-        parts.append(subprocess.check_output(["wmic", "csproduct", "get", "uuid"], shell=True).decode().splitlines()[1].strip())
+        parts.append(subprocess.check_output(["wmic", "csproduct", "get", "uuid"], stderr=subprocess.DEVNULL).decode().splitlines()[1].strip())
 except Exception:
     pass
 print(hashlib.sha256("|".join(parts).encode()).hexdigest())

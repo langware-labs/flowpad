@@ -1,3 +1,6 @@
+---
+id: 9dea7271-64c7-4568-ad3a-e4504b351eee
+---
 # QA Cycle Mode
 
 When invoked with `run qa cycle` / `full qa` / `qa cycle` — or a partial cycle, `run N tests from phase X [and M from phase Y]` (only those phases, only those tests):
@@ -89,7 +92,7 @@ Never raise a timeout to mask host-load slowness, and never kill a process you d
 ## Phase 1 — pytest unit tests
 
 ```bash
-python -m pytest tests/unit/ -v
+python -m pytest tests/unit/ --long -v   # --long: CI and deploy pass it; without it every @pytest.mark.long test is DESELECTED
 ```
 
 - Run from repo root
@@ -106,10 +109,10 @@ python -m pytest tests/unit/ -v
 > ```
 
 ```bash
-FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} python -m pytest tests/api/ -v
+FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} python -m pytest tests/api/ --long -v
 ```
 
-Run it through the progress bridge (progress.md): `flow test run --activity $ROOT/p02 --env FLOW_INSTANCE=qa-cycle --env LOCAL_SERVER_PORT=${QA_BE} -- uv run pytest tests/api/ -q` (a partial run passes the selected node ids instead of `tests/api/`).
+Run it through the progress bridge (progress.md): `flow test run --activity $ROOT/p02 --env FLOW_INSTANCE=qa-cycle --env LOCAL_SERVER_PORT=${QA_BE} -- uv run pytest tests/api/ --long -q` (a partial run passes the selected node ids instead of `tests/api/`).
 
 - **Gate**: all tests pass → proceed to Phase 3
 
@@ -129,7 +132,7 @@ mkdir -p "$SCRATCH/p3home"   # throwaway FLOW_HOME: workers with no vendor login
 DEEP_TESTING=1 FLOW_INSTANCE=qa-p3 FLOW_HOME="$SCRATCH/p3home" FLOWPAD_HUB_URL="http://localhost:${QA_BE}" \
   FLOWPAD_CLAUDE_HOME="$HOME/.claude" \
   QA_API_URL="http://localhost:${QA_BE}" SCHEDULE_E2E_API_URL="http://localhost:${QA_BE}" \
-  python -m pytest tests/long_tests/ -x -v
+  python -m pytest tests/long_tests/ --long -x -v   # --long: files under long_tests/ can still hold marked tests (2026-10-03: 18 were never run)
 ```
 
 > **`FLOWPAD_CLAUDE_HOME="$HOME/.claude"` is REQUIRED (2026-10-03).** Without it the in-process
@@ -265,7 +268,7 @@ cd ui && FLOW_INSTANCE=qa-cycle LOCAL_SERVER_PORT=${QA_BE} npm run test:vitest:h
 2. **Instances**: check `scripts/instance_ctl.sh status` first — **reuse any instance that is already UP** (do not relaunch it; `launch` kills an existing instance before starting, so re-launching a healthy one is a needless restart). Launch only what's missing via `scripts/instance_ctl.sh launch <name>`; if an instance goes unhealthy mid-phase, restart it with `kill <name>` + `launch <name>`.
 3. **Run**:
    ```bash
-   FLOWPAD_HUB_URL=${FLOWPAD_HUB_URL:-http://localhost:8093} python -m pytest tests/hub_tests -v
+   FLOWPAD_HUB_URL=${FLOWPAD_HUB_URL:-http://localhost:8093} python -m pytest tests/hub_tests --long -v
    ```
 4. **Auto-skips count as failures.** `tests/hub_tests/conftest.py` silently skips when the hub is unreachable or credentials are invalid. A skipped-for-infra test is NOT a pass — remediate (restart hub, re-seed users via `setup_test_users.sh`) and re-run. Zero hub-infra skips allowed in a PASS.
 5. **On failure**: existing Debug Mode flow (see `modes/debug.md`); unresolvable → `flagged`.
@@ -331,6 +334,10 @@ The frontend reads `preferences.json` fresh via its VFS path at each app boot, s
 ### 11a. Sweep — machine verdict (authoritative)
 
 1. Build/refresh the test index. List every `.md.ts` file under `scenarios-dir` (per file, not just per category).
+   **Category prerequisites the generic sweep instance does NOT carry** — run these categories on their own instance, or their reds are harness gaps, not verdicts (2026-10-03):
+   - `navigation/` needs the scripted mock worker: launch with `PATH=$PWD/tests/fixtures/mock_worker_bin:$PATH SHELL=$PWD/tests/fixtures/mock_worker_shell scripts/instance_ctl.sh launch dlm-7` (see `navigation/_world.ts`, `docs/navigation/dock-loading.md`) and run the category there without a `flow instance reset` (a reset relaunches the backend without that PATH).
+   - `terminal/sandbox_*` needs `sandbox_available`: the `e2b` SDK in the venv (it is not a declared dependency — `uv pip install e2b`) AND `E2B_KEY` exported in the shell that runs `instance_ctl.sh launch` (instances skip `.env.local`; `instances/env.py` carries an exported key into `.env.<name>.local`).
+   - Every instance must have been launched after fab53bbea (`FLOWPAD_SKIP_FIRST_RUN_SETUP=true` in `.env.<name>.local`), or the "Finish setting up Flowpad" dialog intercepts clicks and agentic-process specs time out.
 2. **Hybrid cadence — `flow instance reset` per CATEGORY + `desktop-db/clear` per FILE.** This is evidence-based (learned the hard way this cycle):
    - The backend degradation is **cumulative across categories** (leaked PTY/claude children accumulate; `desktop-db/clear` never resets the *process*, so after ~4-5 heavy categories it starts timing out and mass-fails). A **full `flow instance reset` at the START of each category** flushes that accumulation — a fresh, non-degraded backend per category.
    - But a **cold-booted backend can't surface warm-state-dependent tests** (e.g. an asset picker's self-seeded agent won't appear in the tree on a just-restarted backend — proven: `assets/agent_execution_asset_picker` 8/8 after `desktop-db/clear` vs 9/9 FAIL right after a reset). So **within a category, use `desktop-db/clear` per file** (fresh DB, backend stays warm) — NOT another reset.

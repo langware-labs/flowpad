@@ -991,3 +991,41 @@ where they execute. What is left here is this cycle's own evidence:
 
 ### Testing environment — 2026-09-23
 - Cycle 2026-09-22/23: worktree ../flowpad-qa-2026-09-23 @bfe66853e (Python 3.11 venv); owned instances qa-cycle :6005/:5005, qa-react-9 :6010, qa-l1-7 :6011, qa-l2-8 :6012; local hub :8093 (../test_flowpad/FlowPad @aec5d163c, AGENT_MAILBOX disabled, no dummyauth); host 14 cores, load 5–38 typical, 182 peak before crash. Results: ui/tests/manual_regression/_results/2026-09-22T20-52-28Z/.
+
+## Learnings — 2026-10-03 full cycle (whatsapp-setup)
+- `--long` on EVERY pytest phase (skill fixed 04db06830). Without it, every `@pytest.mark.long` test was deselected: 92 unit, 15 API and 18 long-tier tests. CI runs them, and two were red. A phase list built by collecting without `--long` also silently drops files whose tests are all marked.
+- Phase 11 categories that need their own instance (b17f4426a):
+  - `navigation/`: the mock worker on PATH, run without `flow instance reset`.
+  - `terminal/sandbox_*`: the `e2b` SDK (`uv pip install e2b`; not a declared dependency) plus an exported `E2B_KEY` at launch.
+  - Every instance must be launched after fab53bbea, or the first-run "Finish setting up Flowpad" dialog swallows clicks.
+- zsh does not word-split `$cats`, so a category list passed as one argument produces garbage. Use `${=cats}` or `bash -c`.
+- Hub vitest needs `FLOWPAD_HUB_URL` exported, or `_setup.ts` throws "not matching live launcher-owned infrastructure".
+- The local hub (pid 8410) died silently at 15:51: mid-line in its log, no traceback, an outside kill. Every hub-dependent test then went red with "Hub 0". Check `lsof -iTCP:8093` before trusting a hub verdict. A process on :8094 is another session's hub; don't kill it.
+- Leaked hub state skews later runs: helpdesk_two_client left 263 open tickets on the canonical desk, which pushed helpdesk_ten_turns turn 1 past its window (fixed e536e1fea). When a hub test starts failing on timing, count the shared hub-side rows first.
+- Test hygiene seen repeatedly:
+  - Hardcoded prod paths: `/Users/shlom/Flowpad workspace/...` in worktree_lifecycle. Resolve `project.fs_storage_mount_path`.
+  - `tmp_path`-named projects on live instances collide on unique project names. Use `run_workdir`.
+  - Fixture premises that drifted, e.g. a sparse project root that no longer overflows.
+- Real app bugs found this cycle:
+  - Restart hash drifted on the input folder (9581eacb0).
+  - psutil `SystemError` during a cmdline sweep (944635149).
+  - A reset raced the startup system index (b847acbd9).
+  - Keys typed before the PTY attached were dropped (ddfd7d247).
+  - A deferred xterm dispose left a double terminal (3dc1243ad).
+  - A reloadKey refresh unmounted dialogs (4933e6238).
+  - A deleted credential's store pin was left behind (5f664e9d3; the unscoped get_all in it was caught by the guard and fixed in 18cd2b95d).
+  - The all-scope dropped vaults (089713877).
+- Environment blocker: OpenRouter credits are exhausted (402 "can only afford N tokens"). Every Docker or OpenRouter-funded model turn fails. Check the credit balance before Phase 3.
+
+### Testing environment — 2026-10-03
+- Branch whatsapp-setup, macOS, node v22.15.0 (nvm), Python 3.11 venv.
+- Owned instances:
+  - qa-cycle (be 6015): Phase 2/3/5 target.
+  - qa-cycle-2 (be 6020): Phase 7.
+  - qa-cycle-3 (be 6022): isolated reruns.
+  - qa-react (Phase 6, hermetic homes).
+  - qa-pw (be 6019, fe 5020, with E2B_KEY): Phase 11 sweep.
+  - dlm-7 (be 6021, fe 5021, mock worker): navigation.
+  - dev-1/dev-2 (6018/6017): hub pair.
+- Local hub on :8093 (../test_flowpad/FlowPad, perl setsid) with Neo4j.
+- Host load 13–26 while phases overlapped. Spawn-timing specs failed only under that load, so run SLO and real-worker tiers alone.

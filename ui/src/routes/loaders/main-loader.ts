@@ -32,6 +32,8 @@ import { canonicalizeDockUrl } from './canonicalize';
 import { loadDockPointer } from './load-dock-pointer';
 import { processRouteCarry, resolveShellRoute } from './load-shell';
 import { runLoadRedirects } from './load-redirects';
+import { getDockLoadError } from './dock-load-error-store';
+import { rememberLastPlace } from '@src/tabs/last-tab-restore';
 // Side-effect import: feature-owned redirect resolvers register themselves.
 import '@src/journey/journey-load-redirect';
 import '@src/agents/agent-auto-launch-redirect'; // after journeys: first redirect wins
@@ -339,6 +341,11 @@ async function loadAgentAppBody(args: LoaderArgs) {
 
     if (dockForSetup && !setupHandled) {
       await setupTabAndAdopt(dockForSetup);
+    }
+
+    // The place a launch reopens — unless this load rendered an error.
+    if (dockForSetup && !getDockLoadError(dockForSetup)) {
+      rememberLastPlace(dockForSetup, `${requestUrl.pathname}${requestUrl.search}`);
     }
 
     t.done(slowThresholdSeconds);

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GitOrigin } from '@sdk/models/GitOrigin';
+import type { ProjectOrigin } from '@sdk/models/FSOrigin';
 
 /**
  * A pending "X shared a project with you" template launch. Set from the
@@ -9,8 +9,9 @@ import type { GitOrigin } from '@sdk/models/GitOrigin';
  * ``create-project-from-git``, which also indexes) and open it.
  */
 export interface IncomingProjectParams {
-  /** The template repo to clone. Required — this is the whole payload. */
-  gitOrigin: GitOrigin;
+  /** Where the project's files come from: a git repo (a template, or a shared
+   *  project's own remote) or its hub-hosted copy. Required — the whole payload. */
+  gitOrigin: ProjectOrigin;
   /** Display name for the copy ("… shared <projectName> with you"). */
   projectName: string;
   senderName: string;

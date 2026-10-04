@@ -95,6 +95,21 @@ class VFSPath:
     def from_entity_path(cls, typeid: TypeId, entity_vfs_path: str = "/") -> VFSPath:
         return cls(f"{typeid}/{entity_vfs_path.lstrip('/')}")
 
+    @classmethod
+    def from_machine_path(cls, machine_abs_path: str, typeid: TypeId) -> VFSPath:
+        """``<typeid>/<sub>`` for an absolute machine path — the mirror of the TS
+        ``VFSPath.fromMachinePath``: Windows drops the drive (``C:\\``) and turns
+        backslashes into ``/``; POSIX drops the leading ``/``. The two must agree
+        byte for byte, or a backend-built tab pointer and the FE's own one for
+        the same file are two tabs."""
+        if re.match(r"^[A-Za-z]:[\\/]", machine_abs_path):
+            sub = machine_abs_path[3:].replace("\\", "/")
+        elif machine_abs_path.startswith("/"):
+            sub = machine_abs_path[1:]
+        else:
+            raise ValueError(f"Path must be absolute. Got: {machine_abs_path}")
+        return cls(f"{typeid}/{sub}")
+
     @property
     def typeid(self) -> TypeId | None:
         if not self.type or not self.uuid:

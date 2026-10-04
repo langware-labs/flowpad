@@ -46,6 +46,7 @@ Three properties the tests pin:
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -669,8 +670,11 @@ def _prompt_for(spec: ComputeOpSpec, *, platform: str, workdir: Path) -> str:
     that read "here" as that folder made its own copy of the check pass there
     while the re-check, run in ``workdir``, still failed.
     """
+    # ``$FLOWPAD_FLOW``, never a bare ``flow``: an agent's PATH is scrubbed of Flowpad's own
+    # environment, so on a pip-installed box the bare name resolves to nothing.
+    flow = "& $env:FLOWPAD_FLOW" if (platform or sys.platform) == "win32" else '"$FLOWPAD_FLOW"'
     check = (
-        f"flow status --refresh --check {spec.status_check}"
+        f"{flow} status --refresh --check {spec.status_check}"
         if spec.status_check
         else spec.completion_check.command_for(platform)
         if spec.completion_check is not None

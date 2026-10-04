@@ -24,6 +24,8 @@ function hookData(processId = PROCESS_ID): AgentHookData {
 
 beforeEach(async () => {
   await dataManager.clearCache();
+  // A changed hook re-reads its process; no test here has a backend to read from.
+  vi.spyOn(dataManager, 'refreshByTypeId').mockResolvedValue(null);
 });
 
 afterEach(async () => {
@@ -47,6 +49,34 @@ describe('AgenticProcess process hooks', () => {
     expect(action.targetEntity?.type).toBe(AgenticProcess.type);
     expect(action.targetEntity?.id).toBe(PROCESS_ID);
     expect(action.bodyParameters).toEqual({ event: HookEventType.USER_PROMPT_SUBMIT });
+  });
+
+  it('a changed hook is on the instance when setHook resolves, not only once the WS push lands', async () => {
+    // The process is already cached, so a re-read (getById) hands back this same
+    // instance: without a refresh, `process_hook_events` stays at its pre-action
+    // value until the entity's WebSocket push arrives — a race a caller loses.
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ changed: true });
+    const process = new AgenticProcess({ id: PROCESS_ID });
+    const refresh = vi.spyOn(dataManager, 'refreshByTypeId').mockImplementation(async () => {
+      process.process_hook_events = [HookEventType.USER_PROMPT_SUBMIT];
+      return process;
+    });
+
+    await process.setHook(HookEventType.USER_PROMPT_SUBMIT);
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(String(refresh.mock.calls[0][0])).toBe(String(process.typeId));
+    expect(process.process_hook_events).toEqual([HookEventType.USER_PROMPT_SUBMIT]);
+  });
+
+  it('an unchanged hook does not re-read the process', async () => {
+    vi.spyOn(dataManager, 'callAction').mockResolvedValue({ changed: false });
+    const refresh = vi.spyOn(dataManager, 'refreshByTypeId');
+    const process = new AgenticProcess({ id: PROCESS_ID });
+
+    await process.removeHook(HookEventType.USER_PROMPT_SUBMIT);
+
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it('propagates the backend refusal when a harness cannot serve the cell', async () => {

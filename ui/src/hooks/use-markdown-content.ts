@@ -65,6 +65,20 @@ export function useMarkdownContent(
     previousLoad.current = { identity, reloadTrigger };
     if (!explicit && (draft.current?.dirty || inFlight.current || saveBlocked.current)) return;
     const token = ++epoch.current;
+    const target = ref.current;
+    // A reload token alone (the entity was re-saved — often by a backend push a
+    // second after opening) is a refresh of the SAME document: keep the loaded
+    // one on screen and swap the fresh copy in when it lands. Clearing it first
+    // read as loading, and an editor that renders a spinner while loading
+    // unmounted everything under it — an open dialog included.
+    if (!explicit && draft.current && target) {
+      void target.readDocument().then((document) => {
+        if (epoch.current !== token || draft.current?.dirty || inFlight.current || saveBlocked.current) return;
+        draft.current = new DocumentDraft(document);
+        redraw();
+      }).catch(() => { /* the loaded copy stays; the next reload or save surfaces a real failure */ });
+      return;
+    }
     // Nulling the ref renders nothing; redraw so a cleared draft reads as loading at once.
     if (draft.current) { draft.current = null; redraw(); }
     saveBlocked.current = false;
@@ -77,7 +91,6 @@ export function useMarkdownContent(
     setLoadError(null);
     setMissing(false);
     setLastSync(null);
-    const target = ref.current;
     if (!target) return;
     void target.readDocument().then((document) => {
       if (epoch.current !== token) return;

@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
@@ -40,6 +41,8 @@ from flow_sdk.cloud_client.ws_client import (
     _hub_ssl_context,
     build_hub_ws_path_url,
 )
+from flow_sdk.compute.user_machine.control_shell import ControlShells, command_script
+from flow_sdk.config import PLATFORM_WIN32
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +78,22 @@ def _command_env(extra: dict[str, str] | None) -> dict[str, str]:
     return env
 
 
+@functools.cache
+def _powershell() -> str | None:
+    """The PowerShell that runs the hub's commands on Windows — the same one a terminal gets."""
+    if sys.platform != PLATFORM_WIN32:
+        return None
+    from flow_sdk.compute.providers.desktop.provider import default_terminal_shell
+
+    shell = default_terminal_shell()
+    return shell if Path(shell).stem.lower() in ("pwsh", "powershell") else None
+
+
+def control_shell_kind() -> str:
+    """``powershell`` or ``posix``: the grammar of a ``run`` command on this machine."""
+    return "powershell" if _powershell() else "posix"
+
+
 def _expand(path: str) -> Path:
     return Path(os.path.expanduser(path))
 
@@ -92,6 +111,7 @@ class UserMachineWorker:
         ssl_context: Any = None,
         home_dir: str | None = None,
         on_connected: Callable[[], None] | None = None,
+        on_activity: Callable[[str], None] | None = None,
     ) -> None:
         self.node_id = node_id
         self.machine_id = machine_id
@@ -100,6 +120,7 @@ class UserMachineWorker:
         self.ssl_context = ssl_context
         self.home_dir = home_dir or str(Path.home())
         self.on_connected = on_connected
+        self.on_activity = on_activity
         self.stop_event = asyncio.Event()
         self._ws: Any = None
         self._send_lock = asyncio.Lock()
@@ -107,6 +128,10 @@ class UserMachineWorker:
         self._tasks: set[asyncio.Task] = set()
         self._provider = None  # LocalComputeProvider, created lazily (imports pty machinery)
         self._pty_sessions: set[str] = set()
+        # Windows: the hub's commands run in the machine's control shells (PowerShell).
+        self._powershells: ControlShells | None = None
+        # Commands acknowledged but still waiting for a warm PowerShell.
+        self._waiting: dict[str, asyncio.Task] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], Awaitable[Any]]] = {
             "run": self._op_run,
             "cancel": self._op_cancel,
@@ -134,6 +159,10 @@ class UserMachineWorker:
             "machine_id": self.machine_id,
             "hostname": platform.node(),
             "os_type": info.os_type,
+            # The dialect the hub must speak in ``run``: this machine's own shell.
+            "control_shell": control_shell_kind(),
+            # Terminals still running from before a dropped socket: the hub re-adopts them.
+            "pty_sessions": sorted(self._pty_sessions),
             "home_path": self.home_dir,
             "temp_path": tempfile.gettempdir(),
             "cpu_count": info.cpu_count,
@@ -171,6 +200,18 @@ class UserMachineWorker:
 
     async def run_forever(self) -> None:
         """Connect, serve, reconnect with backoff — until ``stop_event`` or auth rejection."""
+        powershell = _powershell()
+        if powershell is not None and self._powershells is None:
+            self._powershells = ControlShells(powershell, env=_command_env(None), cwd=self.home_dir)
+            self._powershells.start()
+        try:
+            await self._serve_until_stopped()
+        finally:
+            await self._close_terminals()
+            if self._powershells is not None:
+                await self._powershells.close()
+
+    async def _serve_until_stopped(self) -> None:
         import websockets
         from websockets.exceptions import ConnectionClosed, InvalidHandshake, InvalidStatus
 
@@ -264,33 +305,90 @@ class UserMachineWorker:
         if handler is None:
             await self._reply(request_id, error=f"unsupported sub_path {sub_path!r}")
             return
+        # Shown as it arrives (a run's exit line follows it); a PTY start once it has a pid.
+        line = describe_command(sub_path, body)
+        if line and sub_path != "pty_start":
+            self._activity(line)
         try:
             content = await handler(body)
         except Exception as exc:  # noqa: BLE001 — every failure is reported to the hub, never swallowed
             logger.warning("[connect] %s failed: %s", sub_path, exc)
+            if line:
+                self._activity(f"{line}  FAILED: {type(exc).__name__}: {exc}")
             await self._reply(request_id, error=f"{type(exc).__name__}: {exc}")
             return
+        if line and sub_path == "pty_start":
+            self._activity(f"{line} -> pid {content.get('pid')}")
         await self._reply(request_id, content)
         if sub_path == "shutdown":
             self.stop_event.set()
+
+    def _activity(self, line: str) -> None:
+        if self.on_activity is not None:
+            self.on_activity(line)
 
     # ------------------------------------------------------------------ commands
     async def _op_run(self, body: dict[str, Any]) -> dict[str, Any]:
         command_message_id = str(body["command_message_id"])
         cmd = str(body["cmd"])
         cwd = str(_expand(body["cwd"])) if body.get("cwd") else self.home_dir
-        env = _command_env(body.get("env") or None)
-        process = await asyncio.create_subprocess_shell(
-            cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=cwd,
-            env=env,
-            limit=10 * 1024 * 1024,
-        )
+        if self._powershells is not None:
+            # Acknowledged at once: the hub gives the ack 15 s, and the control shells
+            # may still be starting (the first command lands as the machine connects).
+            self._waiting[command_message_id] = self._spawn(
+                self._run_in_powershell(command_message_id, cmd, cwd, body.get("env") or None)
+            )
+            return {"started": True}
+        else:
+            process = await asyncio.create_subprocess_shell(
+                cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=cwd,
+                env=_command_env(body.get("env") or None),
+                limit=10 * 1024 * 1024,
+            )
         self._processes[command_message_id] = process
         self._spawn(self._pump(command_message_id, process))
         return {"started": True, "pid": process.pid}
+
+    async def _run_in_powershell(self, command_message_id: str, cmd: str, cwd: str, env: dict[str, str] | None) -> None:
+        """Run ``cmd`` in a control shell, reporting it to the hub exactly as a process is."""
+        assert self._powershells is not None
+        shell = None
+        exit_code: int | None = None
+        try:
+            shell = await self._powershells.acquire()
+            async for out in shell.run(command_script(cmd, cwd, env)):
+                if out.exit_code is not None:
+                    exit_code = out.exit_code
+                elif out.stdout is not None:
+                    await self._cmd_status(command_message_id, stdout=out.stdout)
+                else:
+                    await self._cmd_status(command_message_id, stderr=out.stderr)
+        except asyncio.CancelledError:
+            if shell is not None:
+                self._powershells.discard(shell)  # it is still running the cancelled command
+                shell = None
+            raise
+        except Exception as exc:  # noqa: BLE001 — reported to the hub as the command's failure
+            logger.warning("[connect] command %s failed in the control shell: %s", command_message_id, exc)
+            if shell is not None:
+                self._powershells.discard(shell)
+                shell = None
+            await self._cmd_status(command_message_id, stderr=f"control shell failed: {exc}\n")
+            exit_code = 1
+        finally:
+            self._waiting.pop(command_message_id, None)
+            if shell is not None:
+                self._powershells.release(shell)
+        if exit_code is not None:
+            self._activity(f"run #{command_message_id[:8]} exited {exit_code}")
+        if self._ws is not None:
+            try:
+                await self._cmd_status(command_message_id, exit_code=exit_code, ended=True)
+            except Exception:  # noqa: BLE001 — socket gone; the hub already completed it
+                pass
 
     async def _pump(self, command_message_id: str, process: asyncio.subprocess.Process) -> None:
         async def relay(stream: asyncio.StreamReader | None, field: str) -> None:
@@ -308,6 +406,7 @@ class UserMachineWorker:
         try:
             await asyncio.gather(relay(process.stdout, "stdout"), relay(process.stderr, "stderr"))
             exit_code = await process.wait()
+            self._activity(f"run #{command_message_id[:8]} exited {exit_code}")
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -321,6 +420,9 @@ class UserMachineWorker:
                     pass
 
     async def _op_cancel(self, body: dict[str, Any]) -> None:
+        waiting = self._waiting.pop(str(body.get("command_message_id")), None)
+        if waiting is not None:
+            waiting.cancel()
         process = self._processes.get(str(body.get("command_message_id")))
         if process is not None and process.returncode is None:
             process.terminate()
@@ -425,6 +527,11 @@ class UserMachineWorker:
         return {"stopping": True}
 
     async def _teardown_sessions(self) -> None:
+        """A dropped socket ends the hub's one-shot commands. Terminals live on: the
+        next hello lists them and the hub re-adopts them, like a tmux session."""
+        for task in self._waiting.values():
+            task.cancel()
+        self._waiting.clear()
         for command_message_id, process in list(self._processes.items()):
             if process.returncode is None:
                 try:
@@ -432,6 +539,9 @@ class UserMachineWorker:
                 except ProcessLookupError:
                     pass
             self._processes.pop(command_message_id, None)
+
+    async def _close_terminals(self) -> None:
+        """End every PTY session — when the worker stops, never on a dropped socket."""
         if self._provider is not None:
             for session_id in list(self._pty_sessions):
                 try:
@@ -441,6 +551,41 @@ class UserMachineWorker:
             self._pty_sessions.clear()
 
 
+# Credentials ride in commands as ``flow auth <sub>`` arguments and as HTTP header
+# values (the workspace cookie gate's secret, in both): shown by name, never by value.
+# Both spellings: sh (`flow auth x -- v`) and PowerShell (`& 'flow' 'auth' 'x' '--' 'v'`).
+_FLOW_AUTH_ARGS = re.compile(r"(\bflow(?:\.exe)?'?\s+'?auth'?\s+'?[\w-]+'?)\s+[^;&|\n]*")
+_HEADER_VALUES = re.compile(r"((?:-H|--header)'?\s+['\"]?[\w-]+:\s*)[^'\"\s]+")
+
+
+def describe_command(sub_path: str, body: dict[str, Any]) -> str | None:
+    """One console line for a command the hub sent, or None for one that is not shown.
+
+    PTY keystrokes (``pty_input``) are never shown — they are whatever the person types,
+    passwords included. ``set_env`` shows names, never values; ``flow auth`` and header
+    values are redacted.
+    """
+    if sub_path == "pty_input":
+        return None
+    session = body.get("session_id")
+    if sub_path == "run":
+        where = f" in {body['cwd']}" if body.get("cwd") else ""
+        cmd = _HEADER_VALUES.sub(r"\1<redacted>", _FLOW_AUTH_ARGS.sub(r"\1 <redacted>", str(body.get("cmd"))))
+        return f"run #{str(body.get('command_message_id', ''))[:8]}{where}: {cmd}"
+    if sub_path == "pty_start":
+        return f"pty_start session {session} ({body.get('cols') or 80}x{body.get('rows') or 24})"
+    if sub_path == "pty_resize":
+        return f"pty_resize session {session} {body.get('cols') or 80}x{body.get('rows') or 24}"
+    if sub_path == "pty_close":
+        return f"pty_close session {session}"
+    if sub_path == "cancel":
+        return f"cancel run #{str(body.get('command_message_id', ''))[:8]}"
+    if sub_path == "set_env":
+        return f"set_env {body.get('name')}"
+    paths = body.get("paths") or [f.get("path") for f in body.get("files") or [] if isinstance(f, dict)]
+    return f"{sub_path} {', '.join(map(str, paths))}" if paths else sub_path
+
+
 async def run_worker(
     *,
     node_id: str,
@@ -448,6 +593,7 @@ async def run_worker(
     api_base_url: str,
     api_key: str,
     on_connected: Callable[[], None] | None = None,
+    on_activity: Callable[[str], None] | None = None,
 ) -> None:
     """Serve this machine to the hub until stopped or rejected."""
     from flow_sdk.cloud_client.client_hooks import attach_machine_id
@@ -462,5 +608,6 @@ async def run_worker(
         headers=headers,
         ssl_context=_hub_ssl_context() if ws_url.startswith("wss://") else None,
         on_connected=on_connected,
+        on_activity=on_activity,
     )
     await worker.run_forever()
