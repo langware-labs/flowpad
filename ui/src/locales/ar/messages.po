@@ -1022,6 +1022,10 @@ msgstr "+ إدخال المسار..."
 #~ msgid "+ Override"
 #~ msgstr ""
 
+#: src/components/terminal/HubTerminal.tsx
+msgid "+ Terminal"
+msgstr ""
+
 #. placeholder {0}: sessions.length - 5
 #: src/pages/live-status/LiveStatus.tsx
 msgid "+{0} more"
@@ -14906,6 +14910,10 @@ msgstr "يمكن فتح مشروع لعرض موارده."
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
 msgid "Open a session on this machine"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open a terminal on this machine"
 msgstr ""
 
 #: src/components/contact-picker/AddressBookButton.tsx

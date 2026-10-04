@@ -25,7 +25,7 @@ export const HubTerminal: React.FC<{ className?: string }> = ({ className = '' }
       currentDock && shellId
         ? new Tab({
             id: shellId,
-            pointer: currentDock.toJSON(),
+            pointer: currentDock.toJSON() ?? undefined,
             target_type: Shell.type,
             target_id: shellId,
           })
