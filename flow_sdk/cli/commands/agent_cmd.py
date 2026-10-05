@@ -1,6 +1,6 @@
 """``flow agent deploy <agent>`` — put an agent on a machine of its own, through the running app.
 
-    flow agent deploy researcher                     # production, on the hub's compute provider
+    flow agent deploy researcher                     # production, on an e2b machine
     flow agent deploy researcher --environment staging
 
 The readiness gate runs in the app: a deploy whose placement's store (the hub) lacks a value, or whose
@@ -51,7 +51,7 @@ def deploy(
     """Deploy AGENT to a machine of its own; refused (exit 1) until the placement has what it needs."""
     port = discover_port(required=True)
     agent_id = _agent_id(port, agent)
-    data = post_graph_json(graph_url(port, f"agent/{agent_id}/deploy"), {"environment": environment},
+    data = post_graph_json(graph_url(port, f"agent/{agent_id}/deploy"), {"environment": environment, "provider": "e2b"},
                            timeout=DEPLOY_SECONDS, on_error=_refused)
     deployment = (data or {}).get("deployment") or {}
     ok({"agent_id": agent_id, "deployment_id": deployment.get("id"), "secrets": (data or {}).get("secrets")})

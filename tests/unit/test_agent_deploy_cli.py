@@ -48,7 +48,7 @@ def test_deploys_an_agent_named_by_its_name(app):
     assert result.exit_code == 0, result.stdout
     assert json.loads(result.stdout) == {"ok": True, "agent_id": AGENT_ID, "deployment_id": "d-1",
                                          "secrets": {"placed": ["STRIPE_KEY"], "failed": []}}
-    assert calls[-1][1].endswith(f"/agent/{AGENT_ID}/deploy") and calls[-1][2] == {"environment": "staging"}
+    assert calls[-1][1].endswith(f"/agent/{AGENT_ID}/deploy") and calls[-1][2] == {"environment": "staging", "provider": "e2b"}
 
 
 def test_a_readiness_refusal_exits_1_with_what_is_missing(app):

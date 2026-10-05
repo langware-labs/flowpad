@@ -190,6 +190,11 @@ export const assetDefinitions = {
     },
     subscribe: async (p) => onStatusChanged(LazyAsset.Connections, p),
   }),
+  [LazyAsset.DeployProviders]: defineAsset({
+    // The hub's list changes only when an operator reconfigures it; a minute is plenty fresh.
+    staleTime: 60_000,
+    load: async (_: undefined) => (await import('../entities/deployment')).Deployment.providers(),
+  }),
   [LazyAsset.Status]: defineAsset({
     // WHAT is on this box (installed, login, account, keys, hub). Python owns every fact; the
     // backend pushes `status_changed_msg` when one changes, so this never polls.
