@@ -3,8 +3,9 @@ id: 640216af-4aac-4fb7-ac62-19524cc5bf2f
 ---
 # Ask for help — the one design (contract v2) and the plan to get there
 
-Status: **PLAN — not implemented.** The proof is commit `9e63d0b92`: 15 red tests, each one way asking for help fails
-today (`tests/hub_tests/test_ask_for_help_never_fails.py`, `ui/tests/api/ask_for_help_never_fails.test.tsx`).
+Status: **IMPLEMENTED 2026-10-05.** P0 hub `f9ff57ace` + `0faddee32` (FLOWPAD-2181); P1 `c4140f6e4`, P2 `ff260b3d7`,
+P3 `ec89dd692`, P4/P5 `72642c730`. The red tests from `9e63d0b92` are green on the askst rig: backend 8/8, UI 8/8,
+hub-tier helpdesk two-client + ten-turn 14/14. Not done: a manual browser walk of both channels.
 Built from 13 per-issue analyses (desk + hub), reconciled into one contract.
 
 **Invariant.** A help request, once the user presses Send, is never lost, never duplicated, and its state is always visible.
