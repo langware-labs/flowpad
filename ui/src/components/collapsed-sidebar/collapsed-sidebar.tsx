@@ -4,7 +4,7 @@ import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useIsDev, useViewMode, ViewMode } from '@src/components/view-mode';
 import { buildHubRailItems, type HubItem, type RailIcon } from './hub-rail';
 import { OrgTeamsButton } from './OrgTeamsButton';
-import { resolveRail, type RailGate, type RailItemId, type RailSpec } from './rail-visibility';
+import { resolveRail, type RailItemId, type RailSpec } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -21,7 +21,6 @@ import {
 import { AgenticProcess, DataSource, PageId, RagIndex, dataContext } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TAB_LINE_HEIGHT_CLASS } from '@src/components/tabs/TabStrip';
-import { useHasConversations } from '@src/hooks/use-has-conversations';
 import { useLastVibeChat } from '@src/pages/flow-page/vibe-process-resolver';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { AMBIENT_JOURNEYS_ENABLED } from '@src/journey/journeys-enabled';
@@ -80,8 +79,6 @@ export function CollapsedSidebar() {
   const openLastVibeChat = useLastVibeChat();
   const { t } = useLingui();
 
-  const hasConversations = useHasConversations();
-
   /** Title/icon/target per id. A LOOKUP, not an order — see RAIL_ITEMS. */
   const navMeta: Partial<Record<RailItemId, NavItem>> = {
     // Glyph from the type registry (same rule as `data-sources` below): the rail
@@ -118,11 +115,7 @@ export function CollapsedSidebar() {
   // unused entries every desk render).
   const hubItems = useMemo(() => (hubMode ? buildHubRailItems(t) : NO_HUB_ITEMS), [hubMode, t]);
 
-  // Content gates: an icon earns its slot only once the thing it opens exists.
-  const gates: Record<RailGate, boolean> = {
-    conversations: hasConversations,
-  };
-  const railItems = hubMode ? [] : resolveRail(viewMode, gates);
+  const railItems = hubMode ? [] : resolveRail(viewMode);
   const topItems = railItems.filter((item) => item.placement === 'top');
   const overflowItems = railItems.filter((item) => item.placement === 'overflow');
 
