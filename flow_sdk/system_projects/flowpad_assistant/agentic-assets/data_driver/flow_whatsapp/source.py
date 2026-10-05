@@ -303,5 +303,9 @@ def _qr(url: str) -> str:
     """The link as a QR image (an SVG data URI) — scanned with the phone's camera to open WhatsApp."""
     import segno  # noqa: PLC0415
 
-    svg = segno.make(url, error="m").svg_inline(scale=4, border=2)
-    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+    import io  # noqa: PLC0415
+
+    # A standalone SVG, namespace and all: an <img> renders nothing from the bare inline form.
+    out = io.BytesIO()
+    segno.make(url, error="m").save(out, kind="svg", xmldecl=False, svgns=True, scale=4, border=2)
+    return "data:image/svg+xml;base64," + base64.b64encode(out.getvalue()).decode()
