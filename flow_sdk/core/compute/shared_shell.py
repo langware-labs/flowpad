@@ -104,9 +104,12 @@ class SharedShell(contextlib.AbstractAsyncContextManager):
         platform: str = "",
         stop: Optional[asyncio.Event] = None,
         on_output: Optional[Callable[[], None]] = None,
+        on_spawn: Optional[Callable[[int], None]] = None,
         fresh: bool = False,
     ) -> CliResult:
         if fresh or (platform or sys.platform) != "win32":
+            # ``on_spawn`` is told the pid of a process of its own. A command run in the shared host has none
+            # to report (the host is not the command), and is never an install: installs ask for ``fresh``.
             return await run_shell(
                 command,
                 timeout_seconds=timeout_seconds,
@@ -115,6 +118,7 @@ class SharedShell(contextlib.AbstractAsyncContextManager):
                 platform=platform,
                 stop=stop,
                 on_output=on_output,
+                on_spawn=on_spawn,
             )
         pool = self._hosts()
         fd, name = tempfile.mkstemp(prefix="flowpad-", suffix=".ps1")

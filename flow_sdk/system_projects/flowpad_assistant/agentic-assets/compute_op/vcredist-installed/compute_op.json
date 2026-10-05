@@ -7,7 +7,7 @@
   "subkind": "cli",
   "exe_data": {
     "commands": {
-      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; winget install --id Microsoft.VCRedist.2015+.x64 -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity"
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User') + ';' + $env:LOCALAPPDATA + '\\Microsoft\\WindowsApps'; $base = @('install','--id','Microsoft.VCRedist.2015+.x64','-e','--silent','--accept-package-agreements','--accept-source-agreements','--disable-interactivity'); $src = @('--source','winget'); $scp = @(); $srcErr = @(-1978335138,-1978335210,-1978335163,-1978335157); winget @base @src @scp; $c = $LASTEXITCODE; if ($srcErr -contains $c) { $src = @(); winget @base @src @scp; $c = $LASTEXITCODE }; if ($c -eq -1978335189) { winget @base @src @scp --force; $c = $LASTEXITCODE }; if ($null -eq $c) { exit 1 }; exit $c"
     },
     "timeout_seconds": 600
   },

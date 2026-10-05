@@ -1614,6 +1614,11 @@ def _all_users_winget_ids(name: str, found: Path) -> tuple[str, ...]:
     return ()
 
 
+def _find_winget() -> Optional[str]:
+    windows_apps = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps"
+    return shutil.which("winget", path=os.environ.get("PATH", "") + os.pathsep + str(windows_apps))
+
+
 async def _winget_uninstall(ids: tuple[str, ...]) -> tuple[Optional[str], str]:
     """Uninstall whichever of *ids* winget lists as installed, as ``(package, "")``, or ``(None, why)``.
 
@@ -1622,8 +1627,7 @@ async def _winget_uninstall(ids: tuple[str, ...]) -> tuple[Optional[str], str]:
     and fails at once with Error 1730 "You must be an Administrator" (exit 1603); Git's own
     uninstaller happens to elevate itself, which is why only Node failed.
     """
-    windows_apps = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WindowsApps"
-    winget = shutil.which("winget", path=os.environ.get("PATH", "") + os.pathsep + str(windows_apps))
+    winget = _find_winget()
     if not winget:
         return None, "winget not found"
     package = await _winget_installed_id(winget, ids)
@@ -1684,6 +1688,118 @@ async def _run_elevated(exe: str, args: List[str]) -> tuple[int, str]:
     return code, ""
 
 
+#: What the wizard installs on Windows WITHOUT administrator rights (`git-on-path`, `python-on-path`,
+#: `node-on-path`): portable MinGit and per-user Python through winget, Node as a zip unpacked under the
+#: user's profile. Deleting the file leaves winget's record (and MinGit's `Links` alias) behind, so the
+#: tool reads as installed to winget and as missing to everything else.
+_USER_WINGET_IDS = {
+    "git": ("Git.MinGit",),
+    "python": ("Python.Python.3.12",),
+    "python3": ("Python.Python.3.12",),
+    "py": ("Python.Python.3.12",),
+}
+
+
+def _under(path: Path, root: Path) -> bool:
+    """Whether *path* (as found, or with symlinks resolved) is inside *root*."""
+    for candidate in (path, path.resolve()):
+        if Path(os.path.normcase(candidate)).is_relative_to(Path(os.path.normcase(root))):
+            return True
+    return False
+
+
+def _per_user_winget_ids(name: str, found: Path) -> tuple[str, ...]:
+    """The winget ids to uninstall *found* with when it is one of the wizard's per-user installs, else ``()``."""
+    local = os.environ.get("LOCALAPPDATA")
+    if sys.platform != "win32" or name not in _USER_WINGET_IDS or not local:
+        return ()
+    roots = (Path(local) / "Microsoft" / "WinGet", Path(local) / "Programs" / "Python")
+    return _USER_WINGET_IDS[name] if any(_under(found, root) for root in roots) else ()
+
+
+def _node_zip_dirs() -> list[Path]:
+    """The folders the zip route unpacked Node into (``%LOCALAPPDATA%\\Programs\\node-v*-win-*``)."""
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        return []
+    return sorted(path for path in (Path(local) / "Programs").glob("node-v*-win-*") if path.is_dir())
+
+
+async def _drop_from_user_path(folders: list[Path]) -> None:
+    """Take *folders* out of the user's PATH (registry). The folders are passed in the environment, not the script."""
+    script = (
+        "$drop = @($env:FLOWPAD_DROP -split '[|]' | Where-Object { $_ }); "
+        "$user = [Environment]::GetEnvironmentVariable('Path', 'User'); "
+        "$keep = @(($user -split ';') | Where-Object { $_ -and ($drop -inotcontains $_.TrimEnd('\\')) }); "
+        "[Environment]::SetEnvironmentVariable('Path', ($keep -join ';'), 'User')"
+    )
+    proc = await asyncio.create_subprocess_exec(
+        "powershell.exe",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        script,
+        env={**os.environ, "FLOWPAD_DROP": "|".join(str(folder).rstrip("\\") for folder in folders)},
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await proc.wait()
+
+
+async def _winget_uninstall_user(ids: tuple[str, ...]) -> tuple[Optional[str], str]:
+    """Uninstall whichever of *ids* winget lists, as ``(package, "")``, or ``(None, why)``.
+
+    No elevation: these are per-user packages, so there is no administrator prompt to wait behind.
+    """
+    winget = _find_winget()
+    if not winget:
+        return None, "winget not found"
+    package = await _winget_installed_id(winget, ids)
+    if package is None:
+        return None, f"winget lists none of {', '.join(ids)} as installed"
+    proc = await asyncio.create_subprocess_exec(
+        winget,
+        "uninstall",
+        "--id",
+        package,
+        "-e",
+        "--silent",
+        *_WINGET_QUIET,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    output, _ = await proc.communicate()
+    code = proc.returncode or 0
+    if code == 0:
+        return package, ""
+    last = (output.decode(errors="replace").strip().splitlines() or [""])[-1][:160]
+    return None, f"winget uninstall {package}: exit 0x{code & 0xFFFFFFFF:08X} {last}".rstrip()
+
+
+async def _remove_windows_user_install(name: str, found: Path) -> Optional[tuple[bool, str]]:
+    """Remove *found* when it is one of the wizard's per-user Windows installs: ``(ok, what)``, else ``None``.
+
+    Uninstalls through winget (Git, Python) so its record and alias go too, and deletes the Node zip's folders and
+    their PATH entries — every one of them, since an x64 and an ARM64 copy can sit side by side.
+    """
+    if sys.platform != "win32":
+        return None
+    node_dirs = _node_zip_dirs()
+    if name == "node" and any(_under(found, folder) for folder in node_dirs):
+        try:
+            for folder in node_dirs:
+                shutil.rmtree(folder)
+        except OSError as exc:
+            return False, f"node ({exc})"
+        await _drop_from_user_path(node_dirs)
+        return True, f"node ({', '.join(folder.name for folder in node_dirs)})"
+    ids = _per_user_winget_ids(name, found)
+    if ids:
+        package, why = await _winget_uninstall_user(ids)
+        return (True, f"{name} (winget: {package})") if package else (False, f"{name} ({why})")
+    return None
+
+
 def _brew_formula_of(resolved: Path) -> Optional[str]:
     """The Homebrew formula that owns *resolved*, when it is a Homebrew symlink
     into a Cellar — parsed from the REALPATH rather than a hardcoded name table,
@@ -1732,9 +1848,11 @@ async def remove_debug_tools() -> dict:
 
     ACTUALLY UNINSTALLS every one of its 4 tools found on this box — `brew
     uninstall --force` for anything Homebrew manages, `winget uninstall` for
-    the Windows all-users git/node the wizard installs (behind Windows' admin
-    prompt), deleting the file directly for anything else (e.g. Claude Code's
-    own curl-installed binary).
+    the Windows all-users git/node an older wizard installed (behind Windows'
+    admin prompt), `winget uninstall` (no prompt) for the per-user Git and Python
+    the wizard installs now, the Node zip's folders and PATH entries, and deleting
+    the file directly for anything else (e.g. Claude Code's own curl-installed
+    binary).
 
     Flowpad's own install is never touched: its venv's ``python``/``python3``
     and the interpreter it runs on are skipped, and the search goes on down
@@ -1761,8 +1879,12 @@ async def remove_debug_tools() -> dict:
     absent: List[str] = []
     kept: List[str] = []
     failed: List[str] = []
-    for name in _DEBUG_TOOL_BINARIES:
+    # On Windows the wizard's Python check also accepts the `py` launcher, and a per-user Python can be on the
+    # machine with only that on PATH — so it is looked for too, but never reported as absent.
+    for name in (*_DEBUG_TOOL_BINARIES, *(("py",) if sys.platform == "win32" else ())):
         found, kept_own = _which_users_tool(name, combined_path)
+        if name == "py" and not found:
+            continue
         if not found:
             (kept if kept_own else absent).append(f"{name} (Flowpad's own)" if kept_own else name)
             continue
@@ -1774,6 +1896,13 @@ async def remove_debug_tools() -> dict:
                 removed.append(f"{name} (winget: {package}, all users)")
             else:
                 failed.append(f"{name} ({why})")
+            continue
+        user_install = await _remove_windows_user_install(name, path)
+        if name == "py" and user_install is None:
+            continue  # a system-wide launcher (C:\Windows\py.exe) is not something the wizard installed
+        if user_install is not None:
+            ok, what = user_install
+            (removed if ok else failed).append(what)
             continue
         formula = _brew_formula_of(path.resolve())
         try:

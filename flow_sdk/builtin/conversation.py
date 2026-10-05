@@ -13,6 +13,7 @@ from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
+from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.schema.data_spec.channel_spec import ChannelSpec
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
@@ -286,7 +287,9 @@ class Conversation(ProjectedFields, Entity):
     #: Projected beside ``is_unread`` by the same recompute, so the two never disagree.
     unread_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
-    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count)"
+    projection_writer: ClassVar[str] = (
+        "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count)"
+    )
 
     @classmethod
     def hub_clock_moved(cls, local: "Conversation", hub_updated: Optional[datetime]) -> bool:
@@ -307,6 +310,7 @@ class Conversation(ProjectedFields, Entity):
         if hub_updated is None:
             return False
         return cls._as_datetime(local.hub_updated_date) != hub_updated
+
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
     # (auto-revive on new activity). The stream inbox ignores this field entirely.
@@ -359,7 +363,9 @@ class Conversation(ProjectedFields, Entity):
         if self.channel_spec.transport == ChannelTransport.FLOWPAD:
             if files:
                 raise ValueError("files on Flowpad's own chat ride add_message's attachments, not send()")
-            return await self._send_native(body, reply_to_id=reply_id, thread_root_id=thread.thread_key if thread else None)
+            return await self._send_native(
+                body, reply_to_id=reply_id, thread_root_id=thread.thread_key if thread else None
+            )
 
         from flow_sdk.stream_inbox.outbound import (  # noqa: PLC0415
             outgoing_files,
@@ -378,7 +384,9 @@ class Conversation(ProjectedFields, Entity):
             newest = (await self.messages(thread=thread.id))[-1:]
             if newest:
                 target = await quoting(target, newest[0])
-        return await send_to(str(self.id), target, body, files=outgoing_files(target, files), quote=reply_id is not None)
+        return await send_to(
+            str(self.id), target, body, files=outgoing_files(target, files), quote=reply_id is not None
+        )
 
     async def _thread_of(self, ref) -> "MessageThread":
         thread = await self.resolve_thread(ref)
@@ -586,7 +594,7 @@ class Conversation(ProjectedFields, Entity):
             # row. Local context linking, pending-message delivery, and asset
             # sharing can all block or fail, so none may sit in this ownership
             # gap and leave an undeletable conversation behind.
-            await client.post(f"/graph/conversation/{self.id}/join", {})
+            await client.post(build_hub_url(self, action="join"), {})
 
             # Link each shared-context doc to this conversation locally (the hub
             # doesn't host doc types). This makes the doc effective-remote so a
@@ -638,7 +646,7 @@ class Conversation(ProjectedFields, Entity):
                 if not email:
                     continue
                 await client.post(
-                    f"/graph/conversation/{self.id}/members",
+                    build_hub_url(self, action="members"),
                     _membership_body(recipient_email=email),
                 )
 
@@ -648,14 +656,14 @@ class Conversation(ProjectedFields, Entity):
                 if not user_id:
                     continue
                 await client.post(
-                    f"/graph/conversation/{self.id}/members",
+                    build_hub_url(self, action="members"),
                     _membership_body(recipient_user_id=user_id),
                 )
             # One grant per group principal (a team).
             for principal in principals or []:
                 if principal:
                     await client.post(
-                        f"/graph/conversation/{self.id}/members",
+                        build_hub_url(self, action="members"),
                         _membership_body(principal=principal),
                     )
         return self
@@ -851,7 +859,7 @@ class Conversation(ProjectedFields, Entity):
         sharer owns it once joined) and the local row — so a refused invite leaves
         no empty conversation behind. Best-effort on each side."""
         try:
-            response = await client.request("DELETE", f"/graph/conversation/{self.id}")
+            response = await client.request("DELETE", build_hub_url(self))
             if response.status_code >= 400:
                 logging.warning("[invite] hub delete of conversation %s answered %s", self.id, response.status_code)
         except Exception as e:  # noqa: BLE001
@@ -1221,7 +1229,6 @@ class Conversation(ProjectedFields, Entity):
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         if not self.id:
             raise RuntimeError("Conversation.id is required")

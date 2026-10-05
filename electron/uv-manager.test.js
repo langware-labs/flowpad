@@ -437,6 +437,8 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     const mk = () => {
       const m = new UvManager(silentLog, { stateDir: dir });
       m._drainVenvProcesses = async () => {};
+      // ensureUv probes the real `uv`: present on a developer machine, absent on CI — which then tried the installer.
+      m.ensureUv = async () => {};
       return m;
     };
     try {
@@ -482,7 +484,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       // repairIfInterrupted: reinstalls once and clears the marker.
       let reinstalls = 0;
       m = mk();
-      m.ensureUv = async () => {};
       m.reinstall = async () => { reinstalls++; };
       eq(await m.repairIfInterrupted(), true, 'repairIfInterrupted: repairs when the marker exists');
       eq(reinstalls, 1, 'repairIfInterrupted: reinstall ran once');
@@ -549,7 +550,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       // A successful repair through the REAL reinstall/_uvToolInstallForce clears the marker.
       fs.writeFileSync(marker, JSON.stringify({ pid: 999999999 }));
       m = mk();
-      m.ensureUv = async () => {};
       m._getLatestPypiInfo = async () => null;
       m._ensureShimOnPath = async () => {};
       m._resolveFlowBin = async () => null;
@@ -1393,6 +1393,66 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     } finally {
       if (savedElectron) require.cache[electronId] = savedElectron; else delete require.cache[electronId];
     }
+  }
+
+  // ── close(): a quit refuses every later start/install ────────────────────
+  // The startup chain keeps running after the user quits. Before close(), a
+  // start that resumed after the quit's `flow stop` launched `flow start` anyway,
+  // and its detached monitor + server outlived the app.
+  {
+    const m = new UvManager(silentLog);
+    m._flowBin = '/nonexistent/flow';
+    let probed = false;
+    m._probeFlowBinOnce = async () => { probed = true; };
+    m.close();
+    eq(m.isClosed(), true, 'close() marks the manager closed');
+    const err = await m.start().then(() => null, (e) => e);
+    ok(err && err.quitInProgress, 'start() after close() is refused with a QuitInProgressError');
+    eq(probed, false, 'a refused start does no work at all');
+    eq(m.hasLaunchedBackend(), false, 'nothing was launched');
+  }
+  {
+    // The quit lands while start() is between its awaits: the spawn must still not happen.
+    const m = new UvManager(silentLog);
+    m._flowBin = '/nonexistent/flow';
+    m._probeFlowBinOnce = async () => {};
+    m.ensurePortFree = async () => { m.close(); };
+    m._loadSodKey = async () => null;
+    const err = await m.start().then(() => null, (e) => e);
+    ok(err && err.quitInProgress, 'a quit during start() refuses the spawn that follows it');
+    eq(m.hasLaunchedBackend(), false, 'no flow start was spawned after the quit');
+  }
+  {
+    const m = new UvManager(silentLog);
+    let attempted = false;
+    m._uvToolInstallForceAttempts = async () => { attempted = true; };
+    m.close();
+    const err = await m._uvToolInstallForce(['tool', 'install', 'flowpad']).then(() => null, (e) => e);
+    ok(err && err.quitInProgress, 'an install after close() is refused');
+    eq(attempted, false, 'the refused install never reached uv');
+    eq(m.isInstalling(), false, 'a refused install does not mark the manager as installing');
+  }
+  {
+    // close() during an install aborts it (the same abort the old "Quit anyway" ran).
+    const m = new UvManager(silentLog);
+    m._installing = true;
+    m.close();
+    eq(m._installAborted, true, 'close() aborts a running install');
+  }
+  if (!IS_WIN) {
+    // The stop signals a still-running `flow start` BEFORE `flow stop` runs, so a
+    // monitor it spawned is already there for flow stop's monitor scan.
+    const { spawn } = require('child_process');
+    const m = new UvManager(silentLog);
+    const child = spawn('sleep', ['30'], { stdio: 'ignore' });
+    await new Promise((r) => child.once('spawn', r));
+    m._backendProcess = child;
+    let signalledBeforeFlowStop = null;
+    m._flowStop = async () => { signalledBeforeFlowStop = child.killed; };
+    m._killPort = async () => {};
+    await m.stop();
+    eq(signalledBeforeFlowStop, true, 'flow start is signalled before flow stop runs');
+    try { child.kill('SIGKILL'); } catch { /* already gone */ }
   }
 
   console.log(`uv-manager.test.js: ${passed} assertions passed`);

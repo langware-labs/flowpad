@@ -163,6 +163,21 @@ describe('FundingChip', () => {
     );
   });
 
+  it('flashes a red background only when no LLM source funds the harness', async () => {
+    h.status.mockReturnValue(statusWith(null) as never);
+    renderChip();
+    const chip = await screen.findByTestId('funding-chip-trigger');
+    expect(chip.getAttribute('data-unfunded')).toBe('true');
+    expect(chip.className).toContain('animate-unfunded-flash');
+
+    cleanup();
+    h.status.mockReturnValue(statusWith(KEY) as never);
+    renderChip();
+    const funded = await screen.findByTestId('funding-chip-trigger');
+    expect(funded.getAttribute('data-unfunded')).toBeNull();
+    expect(funded.className).not.toContain('animate-unfunded-flash');
+  });
+
   it('holds its place while the box has not answered yet, without claiming a kind', async () => {
     // The two nulls are different. A slow read must not make the chip pop in late and shove
     // the version chip sideways, but it must also not name a funding kind nobody has stated.

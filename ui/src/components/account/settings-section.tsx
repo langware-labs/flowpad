@@ -1,6 +1,7 @@
-import { ActionInfo, dataContext, dataManager, QueryRequest, Wizard, type WizardResult } from '@sdk';
+import { ActionInfo, dataContext, dataManager, type WizardResult } from '@sdk';
 import apiClient from '@sdk/client';
 import { SettingsCard, SettingRow } from '@src/components/settings/settings-card';
+import { openSetupWizard } from '@src/components/setup-incomplete/open-setup-wizard';
 import { Button } from '@src/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Switch } from '@src/components/ui/switch';
@@ -9,9 +10,6 @@ import { notify } from '@src/notifications';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-
-/** The shipped wizard that first-run setup runs (its `name`, see `LLM_SETUP_WIZARD` on the backend). */
-const FIRST_RUN_WIZARD = 'llm-setup';
 
 // Per-user UI preferences (show system skills, terminal, sound, …) now live in
 // the dedicated Preferences screen (ViewType.PREFERENCES, registry-driven). This
@@ -50,12 +48,7 @@ export function SettingsSection() {
     setRunningSetup(true);
     window.dispatchEvent(new Event('close-account-dialog'));
     try {
-      // The shipped first-run wizard, found by its name; its `open` action shows the popup blank.
-      const [setup] = await dataManager.query<Wizard>(
-        new QueryRequest({ type: Wizard.type, query: { name: FIRST_RUN_WIZARD } }),
-      );
-      if (!setup) throw new Error(t`The setup wizard is not installed.`);
-      await setup.open();
+      if (!(await openSetupWizard())) throw new Error(t`The setup wizard is not installed.`);
     } catch (err) {
       notify.error({
         title: t`Could not open setup`,

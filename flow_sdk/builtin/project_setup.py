@@ -346,7 +346,7 @@ def _own_check(command: str) -> Optional[tuple[str, str, str]]:
 
 async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, extra_env: Optional[dict] = None,
                        platform: str = "", stop: Optional[asyncio.Event] = None, on_output=None,
-                       fresh: bool = False, inner=None):
+                       on_spawn=None, fresh: bool = False, inner=None):
     """The setup's shell: its own credential checks answered here, everything else run as usual.
 
     Every step checks its goal before it asks, and ``flow credentials check`` as a process imports
@@ -365,7 +365,7 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
     if own is None:
         return await (inner or run_shell)(command, timeout_seconds=timeout_seconds, workdir=workdir,
                                           extra_env=extra_env, platform=platform, stop=stop,
-                                          on_output=on_output, fresh=fresh)
+                                          on_output=on_output, on_spawn=on_spawn, fresh=fresh)
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode  # noqa: PLC0415
