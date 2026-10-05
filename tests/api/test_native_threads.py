@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import pytest
 
+from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.builtin.message_thread import MessageThread
 from flow_sdk.stream_inbox.native_threads import NATIVE_CHANNEL
+from tests.utils.send_gate import logged_out
 
 pytestmark = pytest.mark.asyncio
 
@@ -30,13 +32,6 @@ async def _make_conversation(client) -> str:
     return resp.json()["data"]["conversation_id"]
 
 
-def _logged_out(monkeypatch) -> None:
-    # Deterministic local send (pending_send): no hub involved, the thread is local work.
-    monkeypatch.setattr("flow_sdk.instance_settings.privacy_mode.is_local_mode", lambda: False)
-    monkeypatch.setattr("flow_sdk.cli.auth.hub_login.is_logged_in", lambda: False)
-    monkeypatch.setattr("flow_sdk.app.actions.notification_action.is_logged_in", lambda: False)
-
-
 async def _send(client, conv_id: str, text: str, reply_to: str | None = None) -> dict:
     body = {"text": text, **({"reply_to_id": reply_to} if reply_to else {})}
     resp = await client.post(f"/api/v1/graph/conversation/{conv_id}/add_message", json=body)
@@ -48,7 +43,7 @@ async def _send(client, conv_id: str, text: str, reply_to: str | None = None) ->
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_reply_opens_a_thread_rooted_at_the_answered_message(bootstrapped_client, user, monkeypatch):
-    _logged_out(monkeypatch)
+    logged_out(monkeypatch)
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     root = await _send(client, conv_id, "Please add the founding number")
@@ -69,7 +64,7 @@ async def test_reply_opens_a_thread_rooted_at_the_answered_message(bootstrapped_
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_reply_to_a_reply_stays_in_the_roots_thread(bootstrapped_client, user, monkeypatch):
-    _logged_out(monkeypatch)
+    logged_out(monkeypatch)
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     root = await _send(client, conv_id, "root")
@@ -86,7 +81,7 @@ async def test_a_reply_to_a_reply_stays_in_the_roots_thread(bootstrapped_client,
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_reply_to_a_message_of_another_conversation_is_refused(bootstrapped_client, user, monkeypatch):
-    _logged_out(monkeypatch)
+    logged_out(monkeypatch)
     client = bootstrapped_client
     conv_a = await _make_conversation(client)
     conv_b = await _make_conversation(client)
@@ -102,7 +97,7 @@ async def test_reply_to_a_message_of_another_conversation_is_refused(bootstrappe
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_transcript_filters_to_one_thread_and_names_it(bootstrapped_client, user, monkeypatch):
-    _logged_out(monkeypatch)
+    logged_out(monkeypatch)
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     root = await _send(client, conv_id, "snapshot request")
@@ -138,9 +133,7 @@ async def _arrive(conv_id: str, fm_id: str, text: str, **fields) -> FlowMessage:
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_receiver_resolves_the_wire_root_to_its_own_thread(bootstrapped_client, user, monkeypatch):
-    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
-
-    _logged_out(monkeypatch)
+    logged_out(monkeypatch)
     conv_id = await _make_conversation(bootstrapped_client)
     root_id, reply_id = mint_uuid(), mint_uuid()
     await _arrive(conv_id, root_id, "Take snapshot from the home list")
@@ -156,9 +149,7 @@ async def test_receiver_resolves_the_wire_root_to_its_own_thread(bootstrapped_cl
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_a_root_that_lands_after_its_reply_joins_the_thread(bootstrapped_client, user, monkeypatch):
-    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
-
-    _logged_out(monkeypatch)
+    logged_out(monkeypatch)
     conv_id = await _make_conversation(bootstrapped_client)
     root_id, reply_id = mint_uuid(), mint_uuid()
     await _arrive(conv_id, reply_id, "late answer", reply_to_id=root_id, thread_root_id=root_id)
@@ -174,7 +165,7 @@ async def test_a_root_that_lands_after_its_reply_joins_the_thread(bootstrapped_c
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_writing_into_an_open_thread_joins_it_without_quoting(bootstrapped_client, user, monkeypatch):
-    _logged_out(monkeypatch)
+    logged_out(monkeypatch)
     client = bootstrapped_client
     conv_id = await _make_conversation(client)
     root = await _send(client, conv_id, "root")

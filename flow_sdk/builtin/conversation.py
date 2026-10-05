@@ -358,38 +358,29 @@ class Conversation(ProjectedFields, Entity):
         return await send_to(str(self.id), target, body, files=outgoing_files(target, files), quote=reply_id is not None)
 
     async def _thread_of(self, ref) -> "MessageThread":
-        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
-
-        thread_id = await self.resolve_thread_id(str(getattr(ref, "id", ref) or ""))
-        thread = await MessageThread.get_one({"id": thread_id}) if thread_id else None
+        thread = await self.resolve_thread(ref)
         if thread is None:
             raise ValueError(f"no thread {ref!r} in this conversation")
         return thread
 
     async def _send_native(self, body: str, *, reply_to_id: Optional[str], thread_root_id: Optional[str]):
-        """Flowpad's own chat: the same handler the composer's send reaches (``add_message``),
-        queued as ``pending_send`` while there is no cloud login, refused in Local mode."""
+        """Flowpad's own chat: the same handler and gate the composer's send reaches
+        (``add_message``) — queued as ``pending_send`` without cloud login, refused in Local mode."""
         from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-        from flow_sdk.app.actions.share_action import (  # noqa: PLC0415
-            LOCAL_MODE_SHARE_MESSAGE,
-            _local_mode_share_blocked,
-        )
+        from flow_sdk.app.actions.share_action import add_message_gate  # noqa: PLC0415
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-        from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
-        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
-        if _local_mode_share_blocked():
-            raise PermissionError(LOCAL_MODE_SHARE_MESSAGE)
         request: dict = {"conversation_id": str(self.id), "text": body}
         if reply_to_id:
             request["reply_to_id"] = reply_to_id
         elif thread_root_id:
             request["thread_root_id"] = thread_root_id
-        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
-
+        blocked, pending_send = add_message_gate(request)
+        if blocked:
+            raise PermissionError(blocked)
         me = await get_or_create_local_user()
-        someone = str(TypeId(type="user", id=me.id))
-        response = await handle_add_message(request, someone, pending_send=not is_logged_in())
+        response = await handle_add_message(request, str(me.typeid), pending_send=pending_send)
         if getattr(response, "status", "") != "SUCCESS":
             raise ValueError(getattr(response, "message", None) or "send refused")
         return await FlowMessage.get_one({"id": response.data["flow_message_id"]})
@@ -398,13 +389,14 @@ class Conversation(ProjectedFields, Entity):
         """This conversation's messages, oldest first — only one thread's with ``thread`` (a
         ``MessageThread`` or its id, or a message in it)."""
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
         match: dict = {"conversation_id": str(self.id)}
         if thread is not None:
-            thread_id = await self.resolve_thread_id(str(getattr(thread, "id", thread) or ""))
-            if thread_id is None:
+            resolved = thread if isinstance(thread, MessageThread) else await self.resolve_thread(thread)
+            if resolved is None:
                 return []
-            match["thread_id"] = thread_id
+            match["thread_id"] = resolved.id
         rows = await FlowMessage.get_all({"match": match})
         # Event time first (a backfill lands in message time), then arrival.
         return sorted(rows, key=lambda m: str(m.sent_at or m.created_date or ""))
@@ -1003,20 +995,27 @@ class Conversation(ProjectedFields, Entity):
         rows = await MessageThread.get_all({"match": {"conversation_id": self.id}})
         return sorted(rows, key=lambda t: str(t.created_date or ""))
 
-    async def resolve_thread_id(self, ref: str) -> Optional[str]:
-        """The id of the thread ``ref`` names in this conversation: a thread id, or the id of a
-        message in it (its root, for a native thread). None when neither."""
+    async def resolve_thread(self, ref) -> Optional["MessageThread"]:
+        """The thread ``ref`` names in this conversation: a thread (or its id), or a message in
+        it (its root, for a native thread). None when neither."""
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
-        ref = (ref or "").strip()
+        ref = str(getattr(ref, "id", ref) or "").strip()
         if not ref:
             return None
-        if any(t.id == ref for t in await self.threads()):
-            return ref
+        thread = await MessageThread.get_one({"id": ref, "conversation_id": str(self.id)})
+        if thread is not None:
+            return thread
         fm = await FlowMessage.get_one({"id": ref})
-        if fm is not None and fm.conversation_id == self.id and fm.thread_id:
-            return fm.thread_id
-        return None
+        if fm is None or fm.conversation_id != self.id or not fm.thread_id:
+            return None
+        return await MessageThread.get_one({"id": fm.thread_id})
+
+    async def resolve_thread_id(self, ref: str) -> Optional[str]:
+        """The id of the thread ``ref`` names in this conversation (``resolve_thread``)."""
+        thread = await self.resolve_thread(ref)
+        return thread.id if thread else None
 
     async def transcript(
         self,
@@ -1031,7 +1030,9 @@ class Conversation(ProjectedFields, Entity):
         ``thread_id`` keeps one thread; ``since`` keeps messages at/after that instant;
         ``last`` then keeps the newest N. Local reads only — the same residence ``summary`` reads."""
         if thread_id:
-            msgs = [m for m in await self._messages_oldest_first(since=since) if m.thread_id == thread_id]
+            msgs = await self.messages(thread=thread_id)
+            if since is not None:
+                msgs = [m for m in msgs if (m.sent_at or m.created_date) and (m.sent_at or m.created_date) >= since]
             if last is not None:
                 msgs = msgs[-last:] if last > 0 else []
         else:

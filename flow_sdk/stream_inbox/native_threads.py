@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 NATIVE_CHANNEL = "flowpad"
 #: A native thread is read by no data source: the empty account half of the natural key.
 _NO_SOURCE = ""
-_TITLE_CHARS = 80
 #: A thread born before its root reached this machine is titled this until the root lands.
 _UNTITLED = "Thread"
 
@@ -41,20 +40,10 @@ async def thread_root_for_reply(conversation_id: str, reply_to_id: str) -> Optio
     return parent.thread_root_id or parent.id
 
 
-async def _local_owner() -> Optional[str]:
-    """The owner half of a native thread's key: the local user, as channel threads key theirs."""
-    from flow_sdk.builtin.user import User  # noqa: PLC0415
-    from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
-
-    user = await User.get_local()
-    return str(TypeId(type="user", id=user.id)) if user and user.id else None
-
-
 def _title_of(root: Optional["FlowMessage"]) -> str:
-    text = " ".join(((root.text if root else "") or "").split())
-    if not text:
-        return _UNTITLED
-    return text if len(text) <= _TITLE_CHARS else text[: _TITLE_CHARS - 1].rstrip() + "…"
+    from flow_sdk.stream_inbox.projection import opening_title  # noqa: PLC0415
+
+    return opening_title(root.text if root else "") or _UNTITLED
 
 
 async def project_native_thread(fm: "FlowMessage", *, notify: bool = True) -> Optional["MessageThread"]:
@@ -64,25 +53,35 @@ async def project_native_thread(fm: "FlowMessage", *, notify: bool = True) -> Op
     ends: the sender after saving a reply, the receiver after materializing one. Idempotent: a
     re-delivered message finds the row, re-stamps nothing that is already right, and the count
     is recomputed from the messages themselves. The root carries no ``thread_root_id`` of its
-    own, so it is placed from here, by its replies; one that lands after them joins through
-    ``heal_thread_root``.
+    own: it is placed when its thread is born (its first reply), or — landing after its
+    replies — through ``heal_thread_root``. A thread that already exists needs only ``fm``.
     """
     root_id = (fm.thread_root_id or "").strip()
     if not root_id or not fm.conversation_id:
         return None
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-    from flow_sdk.stream_inbox.projection import recompute_thread_projection, resolve_thread  # noqa: PLC0415
-
-    root = fm if fm.id == root_id else await FlowMessage.get_one({"id": root_id})
-    thread = await resolve_thread(
-        NATIVE_CHANNEL,
-        root_id,
-        await _local_owner(),
-        data_source_id=_NO_SOURCE,
-        title=_title_of(root),
-        conversation_id=fm.conversation_id,
+    from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import (  # noqa: PLC0415
+        default_owner,
+        recompute_thread_projection,
+        resolve_thread,
     )
-    for member in (root, fm):
+
+    owner = await default_owner()
+    thread = await MessageThread.find_existing(NATIVE_CHANNEL, root_id, owner, _NO_SOURCE)
+    members = [fm]
+    if thread is None:
+        root = fm if fm.id == root_id else await FlowMessage.get_one({"id": root_id})
+        thread = await resolve_thread(
+            NATIVE_CHANNEL,
+            root_id,
+            owner,
+            data_source_id=_NO_SOURCE,
+            title=_title_of(root),
+            conversation_id=fm.conversation_id,
+        )
+        members.insert(0, root)
+    for member in members:
         if member is not None and member.thread_id != thread.id:
             member.thread_id = thread.id
             await member.save(notify=notify)
@@ -97,15 +96,16 @@ async def heal_thread_root(fm: "FlowMessage", *, notify: bool = True) -> None:
     if fm.thread_root_id or fm.thread_id or not fm.id or not fm.conversation_id:
         return
     from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
-    from flow_sdk.stream_inbox.projection import recompute_thread_projection  # noqa: PLC0415
+    from flow_sdk.stream_inbox.projection import default_owner, recompute_thread_projection  # noqa: PLC0415
 
-    thread = await MessageThread.find_existing(NATIVE_CHANNEL, fm.id, await _local_owner(), _NO_SOURCE)
+    thread = await MessageThread.find_existing(NATIVE_CHANNEL, fm.id, await default_owner(), _NO_SOURCE)
     if thread is None:
         return
     fm.thread_id = thread.id
     await fm.save(notify=notify)
-    if thread.title == _UNTITLED and _title_of(fm) != _UNTITLED:
-        thread.title = thread.name = _title_of(fm)
+    title = _title_of(fm)
+    if thread.title == _UNTITLED and title != _UNTITLED:
+        thread.title = thread.name = title
         await thread.save(notify=notify)
     await recompute_thread_projection(thread.id, thread=thread, notify=notify)
 

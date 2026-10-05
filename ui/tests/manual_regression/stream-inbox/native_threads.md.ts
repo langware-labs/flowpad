@@ -7,6 +7,7 @@
  * The hub must mirror `reply_to_id` / `thread_root_id` (FlowPad 9e28d65fc).
  */
 import { expect, request, test, type APIRequestContext, type Browser, type Page } from '@playwright/test';
+import { graphCall, messageBubble, sendButton, skipLlmSetup } from '../_shared/conversation';
 
 const A = {
   ui: `http://localhost:${process.env.THREADS_A_UI || '5022'}`,
@@ -24,26 +25,15 @@ let conversationId = '';
 let rootId = '';
 const nonce = Math.random().toString(36).slice(2, 8);
 
-async function call<T = Record<string, unknown>>(api: APIRequestContext, method: 'get' | 'post', route: string, data?: unknown): Promise<T> {
-  const res = await api[method](`/api/v1${route}`, data === undefined ? undefined : { data });
-  const json = await res.json();
-  expect(res.ok() && json.status === 'SUCCESS', `${method} ${route}: ${JSON.stringify(json).slice(0, 300)}`).toBeTruthy();
-  return json.data as T;
-}
+const call = graphCall;
 
 async function page(browser: Browser, ui: string): Promise<Page> {
   const ctx = await browser.newContext({ baseURL: ui });
-  await ctx.addInitScript(() => {
-    try {
-      localStorage.setItem('llm-setup-modal-seen', 'true');
-    } catch {
-      /* sandboxed frame */
-    }
-  });
+  await skipLlmSetup(ctx);
   return ctx.newPage();
 }
 
-const bubble = (p: Page, text: string) => p.locator('[data-testid^="message-bubble-"]', { hasText: text }).first();
+const bubble = messageBubble;
 
 async function openConversation(p: Page) {
   // From the base stream inbox: Flowpad's own chat is listed there beside every channel's.
@@ -104,7 +94,7 @@ test("B answers A's message with Reply; A sees the thread and the quote; A write
   await b.getByTestId('message-reply').click();
   await expect(b.getByTestId('composer-reply-banner')).toContainText(`root ${nonce}`);
   await b.getByRole('textbox').last().fill(`which home ${nonce}?`);
-  await b.locator('button[title="Send"]:not([data-testid])').click();
+  await sendButton(b).click();
   // B's own view: the root and its reply pack into one thread.
   await expect(b.getByTestId('thread-stack-open')).toContainText('1 earlier in this thread', { timeout: 20_000 });
   if (shots) await b.screenshot({ path: `${shots}/native-1-b-replied.png`, fullPage: true });
@@ -122,7 +112,7 @@ test("B answers A's message with Reply; A sees the thread and the quote; A write
   // ── A: write into the open thread (no quote) ──
   await expect(a.getByTestId('composer-thread-banner')).toContainText(`root ${nonce}`);
   await a.getByRole('textbox').last().fill(`43 ${nonce}`);
-  await a.locator('button[title="Send"]:not([data-testid])').click();
+  await sendButton(a).click();
   await expect(a.getByTestId('thread-header-count')).toContainText('3 messages', { timeout: 20_000 });
   await expect(bubble(a, `43 ${nonce}`).getByTestId('message-quote')).toHaveCount(0);
 

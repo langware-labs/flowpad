@@ -14,6 +14,7 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { REPO_ROOT, apiContext, apiOrigin, configuredFileEnv } from '../_shared/api';
+import { graphCall, sendButton, skipLlmSetup } from '../_shared/conversation';
 
 const INSTANCE = process.env.FLOW_INSTANCE || '';
 
@@ -63,12 +64,8 @@ async function controlJson<T>(method: 'GET' | 'POST', route: string, body?: unkn
   return (await res.json()) as T;
 }
 
-async function graph<T = Record<string, unknown>>(method: 'get' | 'post' | 'delete', route: string, data?: unknown): Promise<T> {
-  const res = await api[method](`/api/v1${route}`, data === undefined ? undefined : { data });
-  const json = await res.json();
-  expect(res.ok() && json.status === 'SUCCESS', `${method} ${route}: ${JSON.stringify(json).slice(0, 300)}`).toBeTruthy();
-  return json.data as T;
-}
+const graph = <T = Record<string, unknown>>(method: 'get' | 'post' | 'delete', route: string, data?: unknown) =>
+  graphCall<T>(api, method, route, data);
 
 test.describe.configure({ mode: 'serial' });
 
@@ -136,13 +133,7 @@ test.afterAll(async () => {
 });
 
 async function open(page: Page, route: string) {
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('llm-setup-modal-seen', 'true');
-    } catch {
-      /* sandboxed frame */
-    }
-  });
+  await skipLlmSetup(page);
   await page.goto(route);
 }
 
@@ -229,7 +220,7 @@ for (const [i, channel] of WANTED.entries()) {
     await expect(page.getByTestId('composer-thread-banner')).toBeVisible();
     const composer = page.getByPlaceholder(/^Reply in /);
     await composer.fill(`in thread ${nonce}`);
-    await page.locator('button[title="Send"]:not([data-testid])').click();
+    await sendButton(page).click();
     const intoThread = await sentWith(channel, `in thread ${nonce}`);
     // The ids that place a provider message in this thread: its key, its root, its newest message.
     const inThread = (m: Record<string, unknown>) =>
@@ -249,7 +240,7 @@ for (const [i, channel] of WANTED.entries()) {
     await page.getByTestId('message-reply').click();
     await expect(page.getByTestId('composer-reply-banner')).toContainText(`root ${nonce}`);
     await composer.fill(`answer ${nonce}`);
-    await page.locator('button[title="Send"]:not([data-testid])').click();
+    await sendButton(page).click();
     const answering = await sentWith(channel, `answer ${nonce}`);
     const namesRoot = [root.external_id, root.thread].filter(Boolean).some((id) => JSON.stringify(answering).includes(bare(id!)));
     expect(namesRoot, `${channel}: the reply does not name the root: ${JSON.stringify(answering)}`).toBe(true);
