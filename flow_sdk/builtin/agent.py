@@ -585,6 +585,7 @@ class Agent(Entity):
         if project is None:
             return None
         roots = project.direct_context_roots()
+        await project.index_auto_loaded()
 
         def age_key(agent: "Agent") -> tuple[str, str, str]:
             created = agent.created_date.isoformat() if agent.created_date else ""

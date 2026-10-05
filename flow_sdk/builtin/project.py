@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import json
 import logging
 import ntpath
 import os
@@ -690,9 +691,67 @@ class Project(Entity):
             return None
         return asset
 
+    async def index_auto_loaded(self) -> None:
+        """Index what opening this project loads by itself — its declared home page and
+        its ``auto_launch`` agents — when their rows do not exist yet.
+
+        A project's first index runs detached (``activate``), so on the first open of a
+        folder both decisions (``open_home_page``, ``Agent.auto_launch_for``) would look
+        before those rows exist and land on the project page. Only those folders are
+        indexed, and only when missing: a project that declares nothing, or one already
+        indexed, waits for nothing. Never raises — the open goes on without them.
+        """
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.special_folders import IndexDecision, gate_root  # noqa: PLC0415
+        from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        home = self.home_page_typeid()
+        home_id = TypeId(home) if home else None
+        if home_id is not None and await Entity.get_by_typeid(home) is not None:
+            home_id = None
+        types = {"agent"} | ({home_id.type} if home_id is not None else set())
+
+        def auto_loaded(type_name: str, entity_id: str, body: Path | None) -> bool:
+            if home_id is not None and (type_name, entity_id) == (home_id.type, home_id.id):
+                return True
+            if type_name != "agent" or body is None:
+                return False
+            try:
+                return json.loads(Path(body).read_text(encoding="utf-8")).get("auto_launch") is True
+            except (OSError, ValueError, AttributeError):
+                return False
+
+        borrowed = await Folder.borrowed_checkout_paths()
+        for root in self.direct_context_roots():
+            # The walk's own two rules: a protected folder only on consent (an open is a
+            # foreground ask), and a borrowed checkout read-only, so the id is the one the
+            # walk will reach too.
+            if gate_root(root, foreground=True) is not IndexDecision.WALK:
+                continue
+            write = root not in borrowed
+            for type_name in types:
+                subdir = SchemaRegistry.get(type_name).main_subdir
+                folder = Path(root) / subdir if subdir else None
+                if folder is None or not folder.is_dir():
+                    continue
+                for child in sorted(folder.iterdir()):
+                    try:
+                        found = await resolve_asset(str(child), write=False, known_unowned=True)
+                        if not auto_loaded(found.type_name, found.id, found.body):
+                            continue
+                        if await Entity.get_by_typeid(f"{found.type_name}-{found.id}") is not None:
+                            continue
+                        await index_one(await resolve_asset(str(child), write=write, known_unowned=True), notify=True)
+                    except NotAnAsset:
+                        continue
+                    except Exception:  # noqa: BLE001 — an asset that cannot index never blocks the open
+                        log.warning("auto-loaded asset %s could not be indexed", child, exc_info=True)
+
     async def open_home_page(self) -> dict[str, Any]:
         """The declared home page's ``{asset, type}``, only if it is this project's own
         (a cloned manifest must not point Home at another project's asset); else nulls."""
+        await self.index_auto_loaded()
         typeid = self.home_page_typeid()
         asset = await self._own_asset(typeid) if typeid else None
         if asset is None:
