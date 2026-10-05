@@ -86,6 +86,24 @@ def target_matches(pattern: str, target: str) -> bool:
     return False
 
 
+def explain_subscription_match(pattern: str, tag: str, target: str, *,
+                               target_filter: Optional[str] = None,
+                               scope_filter: Optional[list[str]] = None,
+                               scope: Optional[list[str]] = None) -> dict[str, bool]:
+    """Would a subscription ``(pattern, target_filter, scope_filter)`` receive this
+    event — answered PER FIELD, so a person can be told which part did not match.
+
+    The same predicate the bus applies (``TagEventBus._sub_matches`` for pattern
+    and target, then ``emit``'s scope check), off the hot path: the bus keeps its
+    own pre-split copy because emit runs per event. Every key is True when the
+    event would be delivered."""
+    return {
+        "tag": pattern == "*" or _segments_match(pattern.split("."), tag.split(".")),
+        "target": target_filter in (None, "") or target_matches(target_filter, target),
+        "scope": not scope_filter or any(s in (scope or []) for s in scope_filter),
+    }
+
+
 class _Subscription:
     __slots__ = ("pattern", "segments", "handler", "target", "scope")
 

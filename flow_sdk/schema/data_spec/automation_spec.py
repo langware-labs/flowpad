@@ -192,3 +192,35 @@ class AutomationSummary(DataSpec):
     read_only: bool = False
     #: The rule is a file asset; edits write its trigger.json.
     asset_ref: Optional[str] = None
+
+
+# ── Check (a dry run) ─────────────────────────────────────────────────────────
+
+
+class CheckFinding(DataSpec):
+    """One thing Check found: what it looked at, whether it is fine, in words."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.check.finding"
+
+    #: when | event | then | state
+    area: str
+    ok: bool
+    message: str
+
+
+class AutomationCheck(DataSpec):
+    """What *Check* answers — "would this run, and what would it do" — with no side effects."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.check"
+
+    #: Every finding is fine (an event given matched, nothing blocks, every step can run).
+    ok: bool
+    #: For an event automation checked against an event: would that event start it.
+    would_fire: Optional[bool] = None
+    findings: list[CheckFinding] = Field(default_factory=list)
+    when: Optional[WhenPart] = None
+    then: list[ThenPart] = Field(default_factory=list)
+    #: ISO times, for a schedule.
+    next_runs: list[str] = Field(default_factory=list)
