@@ -276,7 +276,7 @@ class HubWsBridge:
         self._installed = True
 
     async def _on_source_nudge(self, message: dict) -> None:
-        """The hub holds something new for a driver's sources here (a message waiting in its inbox): poll
+        """The hub holds something new for a driver's sources here (a message waiting for them): poll
         them now instead of on the next cadence tick. Names the DRIVER as data, so no driver is known here."""
         from flow_sdk.builtin.data_source import DataSource  # noqa: PLC0415
 

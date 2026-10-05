@@ -51,6 +51,33 @@ async def _cloud_place(agent: Agent, node: str = "compute_node-11111111-2222-433
     return deployment
 
 
+async def _publish_into_hub_repo(tmp_path: Path, monkeypatch, agent: Agent):
+    """What ``publish_git_asset`` does, against a local bare repo: push the folder, record this desk's sync
+    ledger, and point the row (in memory) at the published tree. Returns the sync result."""
+    from flow_sdk.assets import hub_repo_sync
+    from flow_sdk.assets.git_publish import GitAuthor
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
+
+    monkeypatch.setattr(hub_repo_sync, "mirror_root", lambda repo_id: tmp_path / "mirrors" / repo_id)
+    hub = tmp_path / "hub.git"
+    subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main", str(hub)], check=True)
+    folder = Path(agent.asset_ref)
+    rel = f"agentic-assets/agent/{folder.name}"
+    repo = HubRepoOrigin(repo="git_repo-" + uuid.uuid4().hex)
+    mirror = hub_repo_sync.HubRepoMirror(
+        root=hub_repo_sync.mirror_root(repo.repo_id), clone_url=str(hub), branch="main", token="hub-token"
+    )
+    synced = await hub_repo_sync.sync_asset_with_hub(
+        mirror=mirror, asset_root=folder, rel_path=rel, is_file=False, last_tree=None,
+        author=GitAuthor(name="t", email="t@t"), asset_typeid=str(agent.typeid),
+    )
+    hub_repo_sync.remember_sync(repo.repo_id, repo=repo.repo, rel_path=rel, tree=synced.tree,
+                                head_commit=synced.head_commit, local_path=str(folder.resolve()))
+    agent.remote = True
+    agent.origin = HubRepoOrigin(repo=repo.repo, rel_path=rel, head_commit=synced.head_commit, tree=synced.tree)
+    return synced
+
+
 def test_a_place_spec_says_only_what_it_overrides():
     place = AgentPlaceSpec(deployment_id="d1", model="sonnet", mcp_servers=["zendesk"])
     assert place.overrides() == {"model": "sonnet", "mcp_servers": ["zendesk"]}
@@ -242,26 +269,9 @@ async def test_version_counts_what_is_not_published(tmp_path):
 async def test_version_of_an_agent_published_into_its_hub_repo(tmp_path, monkeypatch):
     """Once published into the project's hub repo, the version compares the folder
     with the published tree — the project folder itself is not a git repository."""
-    from flow_sdk.assets import hub_repo_sync
-    from flow_sdk.assets.git_publish import GitAuthor
-    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
-
-    monkeypatch.setattr(hub_repo_sync, "mirror_root", lambda repo_id: tmp_path / "mirrors" / repo_id)
-    hub = tmp_path / "hub.git"
-    subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main", str(hub)], check=True)
     agent = await _agent(tmp_path, "places-hub-version")
     folder = Path(agent.asset_ref)
-    rel = "agentic-assets/agent/places-hub-version"
-    repo = HubRepoOrigin(repo="git_repo-" + uuid.uuid4().hex)
-    mirror = hub_repo_sync.HubRepoMirror(
-        root=hub_repo_sync.mirror_root(repo.repo_id), clone_url=str(hub), branch="main", token="hub-token"
-    )
-    synced = await hub_repo_sync.sync_asset_with_hub(
-        mirror=mirror, asset_root=folder, rel_path=rel, is_file=False, last_tree=None,
-        author=GitAuthor(name="t", email="t@t"), asset_typeid=str(agent.typeid),
-    )
-    agent.remote = True
-    agent.origin = HubRepoOrigin(repo=repo.repo, rel_path=rel, head_commit=synced.head_commit, tree=synced.tree)
+    synced = await _publish_into_hub_repo(tmp_path, monkeypatch, agent)
 
     state = version_state(agent)
     assert not (folder.parents[2] / ".git").exists()
@@ -277,36 +287,13 @@ async def test_the_hubs_echo_of_a_published_agent_leaves_its_file_and_version(tm
     carrying the HUB's row — its defaults (``machine_size: sm``) included. That echo is not an edit: a
     hub-repo asset's definition travels through the repo. Saving it printed the hub's copy into the file,
     so an agent published a second ago read "1 change not published"."""
-    from flow_sdk.assets import hub_repo_sync
-    from flow_sdk.assets.git_publish import GitAuthor
-    from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE
-    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
+    from flow_sdk.core.entity.entity_model import suppress_store
 
-    monkeypatch.setattr(hub_repo_sync, "mirror_root", lambda repo_id: tmp_path / "mirrors" / repo_id)
-    hub = tmp_path / "hub.git"
-    subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main", str(hub)], check=True)
     agent = await _agent(tmp_path, "places-hub-echo")
     folder = Path(agent.asset_ref)
-    rel = "agentic-assets/agent/places-hub-echo"
-    repo = HubRepoOrigin(repo="git_repo-" + uuid.uuid4().hex)
-    mirror = hub_repo_sync.HubRepoMirror(
-        root=hub_repo_sync.mirror_root(repo.repo_id), clone_url=str(hub), branch="main", token="hub-token"
-    )
-    synced = await hub_repo_sync.sync_asset_with_hub(
-        mirror=mirror, asset_root=folder, rel_path=rel, is_file=False, last_tree=None,
-        author=GitAuthor(name="t", email="t@t"), asset_typeid=str(agent.typeid),
-    )
-    # What publish keeps (``publish_git_asset``): this desk's sync ledger, and the row learns where it
-    # went — with the file left as it is.
-    hub_repo_sync.remember_sync(repo.repo_id, repo=repo.repo, rel_path=rel, tree=synced.tree,
-                                head_commit=synced.head_commit, local_path=str(folder.resolve()))
-    agent.remote = True
-    agent.origin = HubRepoOrigin(repo=repo.repo, rel_path=rel, head_commit=synced.head_commit, tree=synced.tree)
-    token = _SUPPRESS_STORE.set(True)
-    try:
+    await _publish_into_hub_repo(tmp_path, monkeypatch, agent)
+    with suppress_store():  # what publish keeps: the row learns where it went, the file is left as it is
         await agent.save(notify=False)
-    finally:
-        _SUPPRESS_STORE.reset(token)
     before = (folder / "agent.json").read_bytes()
 
     hub_row = {**agent.model_dump(mode="json"), "machine_size": "sm", "description": "the hub's copy", "intro": ""}

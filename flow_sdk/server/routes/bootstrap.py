@@ -438,6 +438,7 @@ def build_app_paths() -> AppPaths:
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     root = get_os_root_path()
@@ -469,7 +470,7 @@ def build_app_paths() -> AppPaths:
     home = _vfs_relative(str(get_instance_settings().user_home))
     # This instance's workspace, not prod's: ``~/Flowpad workspace`` belongs to prod, every other instance has
     # ``~/Flowpad workspaces/<name>`` (``workspace_root``). The UI places new projects and session cwds here.
-    workspace = _vfs_relative(str(get_instance_settings().workspace_root))
+    workspace = _vfs_relative(str(agent_workspace_root()))
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
     user_agents = f"{home}/.claude/agents"
