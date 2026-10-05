@@ -17,6 +17,17 @@ export async function hubLoggedInSetup(signupInfo: unknown, testName: string): P
   expect(dataContext.cloudLoginAvailable, 'needs a hub-logged-in backend (FLOW_INSTANCE=…)').toBe(true);
 }
 
+/** `hubLoggedInSetup` for a file that runs wherever a hub is reachable: on a backend with no hub
+ *  login (the CI tier's) the test is skipped, not failed. */
+export async function hubLoggedInSetupOrSkip(
+  signupInfo: unknown,
+  ctx: { task: { name: string }; skip: (note?: string) => never },
+): Promise<void> {
+  await apiTestSetup(signupInfo, ctx.task.name);
+  await cloudManager.refreshStatus();
+  if (!dataContext.cloudLoginAvailable) ctx.skip('needs a hub-logged-in backend (FLOW_INSTANCE=…)');
+}
+
 /** A PNG-signed file of `size` bytes. */
 export function png(name: string, size: number): File {
   const bytes = new Uint8Array(size);
