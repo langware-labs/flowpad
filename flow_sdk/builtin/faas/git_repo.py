@@ -1050,6 +1050,17 @@ class GitRepo:
                 branch=branch,
                 message=combined or "Pull failed",
             )
+        # Re-applying the autostash can conflict, and git still exits 0 — the
+        # pull "worked" but the user's own edits are now conflicted.
+        unmerged = (await self._git("ls-files", "--unmerged")).stdout
+        if unmerged.strip():
+            files = self._summarize_unmerged(unmerged)
+            return GitPullResult(
+                ok=False,
+                kind="conflict",
+                branch=branch,
+                message=f"Your unsaved edits conflict with the pulled changes. Conflicted: {files or 'see git status'}",
+            )
         after = (await self._git("rev-parse", "HEAD")).stdout.strip()
         if before == after:
             return GitPullResult(ok=True, kind="nothing", branch=branch, message="Already up to date")

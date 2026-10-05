@@ -90,9 +90,10 @@ describe('pullToastCopy — Standard never leaks git jargon', () => {
     });
   }
 
-  it('conflict is resolvable in Advanced only', () => {
-    expect(pullToastCopy('conflict', ViewMode.Standard).resolvable).toBe(false);
-    expect(pullToastCopy('conflict', ViewMode.Advanced).resolvable).toBe(true);
+  it('conflict offers the resolver in every view', () => {
+    for (const mode of [ViewMode.Standard, ViewMode.Advanced]) {
+      expect(pullToastCopy('conflict', mode).resolvable).toBe(true);
+    }
   });
 
   it('pulled/nothing are successes, the rest errors', () => {

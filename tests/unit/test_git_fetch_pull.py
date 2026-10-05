@@ -105,3 +105,15 @@ async def test_a_conflicting_pull_is_left_for_the_resolver(clones):
     result = await GitRepo(str(mine), LocalNode()).pull()
     assert not result.ok and result.kind == "conflict"
     assert "README.md" in result.message
+
+
+async def test_unsaved_edits_that_clash_with_the_pull_are_a_conflict_not_a_success(clones):
+    """``pull --autostash`` exits 0 when re-applying the stash conflicts."""
+    mine, theirs = clones
+    _commit(theirs, "README.md", "theirs\n")
+    _git(theirs, "push", "-q")
+    (mine / "README.md").write_text("mine, unsaved\n")
+
+    result = await GitRepo(str(mine), LocalNode()).pull()
+    assert not result.ok and result.kind == "conflict"
+    assert "README.md" in result.message

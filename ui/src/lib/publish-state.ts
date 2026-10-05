@@ -187,6 +187,8 @@ export function pullToastCopy(
         message: t`There is nothing new in the cloud.`,
         resolvable: false,
       };
+    // Unlike push, the resolver is offered in every view: a pull conflict leaves
+    // the project mid-rebase, and "switch views" is no way out of that.
     case 'conflict':
       return advanced
         ? {
@@ -198,8 +200,8 @@ export function pullToastCopy(
         : {
             level: 'error',
             title: t`Couldn't update`,
-            message: t`Someone else changed this too. Switch to Advanced view to merge.`,
-            resolvable: false,
+            message: t`Someone else changed the same thing. Let the assistant merge the two versions.`,
+            resolvable: true,
           };
     case 'network':
       return {
