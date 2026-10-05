@@ -46,6 +46,8 @@ Three properties the tests pin:
 
 from __future__ import annotations
 
+import json
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -557,6 +559,39 @@ async def _cli(
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
 
 
+#: ``{{name}}`` / ``{{name.key}}`` in a question's words — a value the run already has.
+_PLACEHOLDER = re.compile(r"\{\{\s*([A-Za-z0-9_]+)((?:\.[A-Za-z0-9_]+)*)\s*\}\}")
+
+
+def fill(text: str, env: Optional[dict]) -> str:
+    """``text`` with each ``{{name}}`` (or ``{{name.key}}`` into a JSON value) replaced by the run's value of
+    that name — what a question SHOWS (a link to tap, a code to send). Display only: it never reaches a
+    command line. A name the run does not have is left as written."""
+    from flow_sdk.core.wizard.state import input_env  # noqa: PLC0415 — the one spelling of a value's env name
+
+    if not text or "{{" not in text:
+        return text
+    env = env or {}
+
+    def one(match: "re.Match[str]") -> str:
+        (key,) = input_env({match.group(1): ""})
+        if key not in env:
+            return match.group(0)
+        value: Any = env[key]
+        for part in [p for p in match.group(2).split(".") if p]:
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    return match.group(0)
+            if not isinstance(value, dict) or part not in value:
+                return match.group(0)
+            value = value[part]
+        return value if isinstance(value, str) else json.dumps(value)
+
+    return _PLACEHOLDER.sub(one, text)
+
+
 async def _ask(
     spec: ComputeOpSpec,
     *,
@@ -564,6 +599,9 @@ async def _ask(
     say: Callable[[str], None],
     workdir: Path,
     wizard_id: str = "",
+    env: Optional[dict] = None,
+    platform: str = "",
+    shell: Shell = run_shell,
     **_: Any,
 ) -> AskResult:
     """Put the op's declared output to a person and wait for the answer.
@@ -588,19 +626,41 @@ async def _ask(
         timeout = spec.exe_data.timeout()
     say(f"{spec.display_label}: waiting for you…")
     ask = ask_person if served_here() else ask_through_backend
+    detail = fill(spec.exe_data.detail, env)
+    while True:
+        answered = await _ask_once(ask, spec, env, timeout=timeout, detail=detail, wizard_id=wizard_id,
+                                   workdir=workdir, say=say)
+        if not (spec.exe_data.recheck and spec.completion_check is not None) or not answered.ok:
+            return answered
+        # The gate: the answer is not the proof. Check the goal; while it does not hold, ask again with
+        # the check's own reason under the question.
+        said = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
+        if said is not None and said.exit_code is ExitCode.OK:
+            return answered
+        reason = _last_line(said.stderr if said is not None else "") or "Not done yet."
+        detail = f"{fill(spec.exe_data.detail, env)}\n\n**{reason}**".strip()
+
+
+def _last_line(text: str) -> str:
+    lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    return lines[-1] if lines else ""
+
+
+async def _ask_once(ask, spec: ComputeOpSpec, env: Optional[dict], *, timeout, detail: str, wizard_id: str,
+                    workdir: Path, say: Callable[[str], None]) -> AskResult:
     return await ask(
         spec.name or "op",
-        spec.exe_data.prompt or spec.display_label,
+        fill(spec.exe_data.prompt or spec.display_label, env),
         spec.output_spec_kind,
         timeout=timeout,
         label=spec.display_label,
-        detail=spec.exe_data.detail,
+        detail=detail,
         submit_label=spec.exe_data.submit_label,
         cancel_label=spec.exe_data.cancel_label,
         secret=spec.exe_data.secret,
         file=spec.exe_data.file,
         wizard_id=wizard_id,
-        guide=spec.setup or "",
+        guide=fill(spec.setup or "", env),
         # AI Assist: the agent follows the same guide, for the setup's own span once started.
         assist_agent=spec.exe_data.assist_agent,
         setup_timeout=spec.setup_timeout(),

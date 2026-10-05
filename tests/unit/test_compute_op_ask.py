@@ -453,3 +453,41 @@ async def test_an_ask_whose_goal_already_holds_asks_nobody_even_when_its_check_p
     said = await _run(spec, tmp_path)
     assert said.ok is True and said.ran is False and said.value is None
     assert open_questions() == []
+
+
+def test_a_questions_words_show_values_the_run_already_has():
+    """``{{name}}`` / ``{{name.key}}`` — what a question shows (a link to tap, a code to send). Display only."""
+    from flow_sdk.core.compute_op.runner import fill
+
+    env = {"FLOWPAD_WIZARD_INPUT_CONNECT": '{"link": "https://wa.me/1555?text=link%20AB12CD", "code": "AB12CD"}'}
+    assert fill("Send `link {{connect.code}}` — [open]({{ connect.link }})", env) == \
+        "Send `link AB12CD` — [open](https://wa.me/1555?text=link%20AB12CD)"
+    assert fill("{{missing}} and {{connect.nope}}", env) == "{{missing}} and {{connect.nope}}", "unknown stays as written"
+
+
+async def test_a_rechecked_question_stays_open_until_its_goal_holds(tmp_path):
+    """The gate: pressing Send is not the proof. Until the check holds, the question comes back with the
+    check's own reason under it; once it holds, the op is done."""
+    marker = tmp_path / "connected"
+    check = f"test -f {marker} || (echo 'Not connected yet — send the message from your phone first.' >&2; exit 1)"
+    spec = _spec(tmp_path, exe_data={"prompt": "Connect WhatsApp", "recheck": True},
+                 completion_check={"commands": {sys.platform: check}}, output_spec_kind="string")
+    run = asyncio.create_task(_run(spec, tmp_path, timeout=5))
+
+    async def next_question(previous=None):
+        for _ in range(300):
+            open_ = [q for q in open_questions() if q.id != previous]
+            if open_:
+                return open_[0]
+            await asyncio.sleep(0.01)
+        raise AssertionError("no question")
+
+    first = await next_question()
+    answer(first.id, "ok")                       # pressed Continue before connecting
+    second = await next_question(first.id)
+    assert "Not connected yet" in second.to_payload().get("detail", "") and not run.done()
+
+    marker.write_text("1")
+    answer(second.id, "ok")
+    said = await run
+    assert said.ok and open_questions() == []

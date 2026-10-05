@@ -216,6 +216,10 @@ class AskOp(ExeData):
     #: question nobody could be shown is abandoned at once instead: without
     #: that, a headless instance would wait forever holding the wizard's slot.
     until_answered: bool = False
+    #: The person's answer is not the proof: on Send the op's completion check runs, and while it does
+    #: not hold the question stays open with the check's own reason under it ("not connected yet —
+    #: send the message from your phone first"). A gate a person cannot click past.
+    recheck: bool = False
 
     @model_validator(mode="after")
     def _no_deadline_means_no_deadline(self) -> "AskOp":
