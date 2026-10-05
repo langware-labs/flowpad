@@ -272,6 +272,52 @@ async def test_version_of_an_agent_published_into_its_hub_repo(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
+async def test_the_hubs_echo_of_a_published_agent_leaves_its_file_and_version(tmp_path, monkeypatch):
+    """Right after a publish the hub announces the agent back (``hub_bridge`` → ``upsert_from_hub_child``)
+    carrying the HUB's row — its defaults (``machine_size: sm``) included. That echo is not an edit: a
+    hub-repo asset's definition travels through the repo. Saving it printed the hub's copy into the file,
+    so an agent published a second ago read "1 change not published"."""
+    from flow_sdk.assets import hub_repo_sync
+    from flow_sdk.assets.git_publish import GitAuthor
+    from flow_sdk.core.entity.entity_model import _SUPPRESS_STORE
+    from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin
+
+    monkeypatch.setattr(hub_repo_sync, "mirror_root", lambda repo_id: tmp_path / "mirrors" / repo_id)
+    hub = tmp_path / "hub.git"
+    subprocess.run(["git", "init", "-q", "--bare", "--initial-branch=main", str(hub)], check=True)
+    agent = await _agent(tmp_path, "places-hub-echo")
+    folder = Path(agent.asset_ref)
+    rel = "agentic-assets/agent/places-hub-echo"
+    repo = HubRepoOrigin(repo="git_repo-" + uuid.uuid4().hex)
+    mirror = hub_repo_sync.HubRepoMirror(
+        root=hub_repo_sync.mirror_root(repo.repo_id), clone_url=str(hub), branch="main", token="hub-token"
+    )
+    synced = await hub_repo_sync.sync_asset_with_hub(
+        mirror=mirror, asset_root=folder, rel_path=rel, is_file=False, last_tree=None,
+        author=GitAuthor(name="t", email="t@t"), asset_typeid=str(agent.typeid),
+    )
+    # What publish keeps (``publish_git_asset``): this desk's sync ledger, and the row learns where it
+    # went — with the file left as it is.
+    hub_repo_sync.remember_sync(repo.repo_id, repo=repo.repo, rel_path=rel, tree=synced.tree,
+                                head_commit=synced.head_commit, local_path=str(folder.resolve()))
+    agent.remote = True
+    agent.origin = HubRepoOrigin(repo=repo.repo, rel_path=rel, head_commit=synced.head_commit, tree=synced.tree)
+    token = _SUPPRESS_STORE.set(True)
+    try:
+        await agent.save(notify=False)
+    finally:
+        _SUPPRESS_STORE.reset(token)
+    before = (folder / "agent.json").read_bytes()
+
+    hub_row = {**agent.model_dump(mode="json"), "machine_size": "sm", "description": "the hub's copy", "intro": ""}
+    echoed = await Agent.upsert_from_hub_child(hub_row, None, notify=False)
+
+    assert (folder / "agent.json").read_bytes() == before
+    assert echoed.remote is True
+    assert version_state(await Agent.get_by_id(agent.id))["pending_changes"] == 0
+
+
+@pytest.mark.asyncio
 async def test_publish_force_republishes_an_agent_already_on_the_hub(tmp_path, monkeypatch):
     from flow_sdk.builtin import asset_publishing
     from flow_sdk.fs_store.origin.hub_repo_origin import HubRepoOrigin

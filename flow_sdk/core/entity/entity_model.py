@@ -2481,16 +2481,21 @@ class Entity(DBEntity):
             if pid and "parent_type_id" in cls.model_fields:
                 sanitized["parent_type_id"] = pid
         existing = await cls.get_one({"id": sanitized["id"]}) if sanitized.get("id") else None
-        if existing is not None:
-            # Same LWW refresh the FlowMessage catch-up uses (see
-            # ``flow_message_action`` → ``merge_hub_payload``): hub-owned fields
-            # move, locally-authoritative ones stay.
-            sanitized = cls.merge_hub_payload(existing, sanitized)
-        with lenient_entity_load():
-            ent = cls.model_validate(sanitized)
-        if "remote" in cls.model_fields:
-            ent.remote = True
-        await ent.save(someone_typeid, notify=notify)
+        if existing is not None and _definition_travels_by_repo(existing):
+            # An asset published into its project's hub repo gets its definition back through that repo
+            # (pull → index), never through this row: the hub's copy carries the hub's defaults, and saving it
+            # printed them into the author's file — a just-published agent read "1 change not published".
+            # The echo only says what is true here: the row has a hub counterpart, under its parent.
+            if "remote" in cls.model_fields and not existing.remote:
+                existing.remote = True
+                token = _SUPPRESS_STORE.set(True)
+                try:
+                    await existing.save(someone_typeid, notify=notify)
+                finally:
+                    _SUPPRESS_STORE.reset(token)
+            ent = existing
+        else:
+            ent = await cls._save_hub_child(existing, sanitized, someone_typeid, notify)
         # Receiver contract: replication replays the ORIGIN's write, not a weaker
         # one. The sender's create ran `add_child` → a local `is_child` role edge;
         # role-walk scope queries (e.g. the doc-comment gutter) resolve through
@@ -2505,6 +2510,23 @@ class Entity(DBEntity):
             logging.getLogger(__name__).warning(
                 "upsert_from_hub_child: edge recreation failed for %s: %s", ent.typeid, e
             )
+        return ent
+
+    @classmethod
+    async def _save_hub_child(
+        cls, existing: Optional["Entity"], sanitized: dict, someone_typeid: Optional[str], notify: bool
+    ) -> "Entity":
+        """The hub payload as the local row: merged over ``existing`` (hub-owned fields move), then saved."""
+        if existing is not None:
+            # Same LWW refresh the FlowMessage catch-up uses (see
+            # ``flow_message_action`` → ``merge_hub_payload``): hub-owned fields
+            # move, locally-authoritative ones stay.
+            sanitized = cls.merge_hub_payload(existing, sanitized)
+        with lenient_entity_load():
+            ent = cls.model_validate(sanitized)
+        if "remote" in cls.model_fields:
+            ent.remote = True
+        await ent.save(someone_typeid, notify=notify)
         return ent
 
     async def ensure_child_edge(self) -> bool:
@@ -3931,6 +3953,21 @@ _action_registry.register(
     methods="post",
     types="all",
 )
+
+
+def _definition_travels_by_repo(entity) -> bool:
+    """Is ``entity`` a file-backed asset published into its project's hub repo? Then the repo carries its
+    definition both ways, and a hub row echo is not an edit of it."""
+    ar = getattr(entity, "asset_ref", None)
+    path = getattr(ar, "path", ar)  # the row holds the path; an FSRef carries it
+    if not path:
+        return False
+    try:
+        from flow_sdk.assets.hub_repo_sync import hub_origin_of  # noqa: PLC0415 — circular at module level
+
+        return hub_origin_of(entity, Path(path)) is not None
+    except Exception:  # noqa: BLE001 — unknown means "not published": the echo takes the old path
+        return False
 
 
 async def _asset_ref_is_borrowed(record) -> bool:
