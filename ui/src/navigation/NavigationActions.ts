@@ -172,9 +172,10 @@ function hostOfWorkspaceAnchor(dock: DockPointer): string | null {
 
 const isWebUrl = (link: string) => /^https?:\/\//i.test(link);
 
-/** A link that cannot be opened says why — the backend's sentence, not the HTTP status. */
+/** A link that cannot be opened says why — the backend's sentence, not the HTTP status — once,
+ *  as a toast that times out. It is about this click, so it never becomes a standing warning. */
 function notifyLinkError(error: unknown): void {
-  notify.error({ title: t`Could not open link`, message: errorMessage(error, t`Unknown error`), forceToast: true });
+  notify.error({ title: t`Could not open link`, message: errorMessage(error, t`Unknown error`), transient: true });
 }
 
 /**

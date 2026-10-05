@@ -29,6 +29,9 @@ import { useCenterStore } from './center-store';
  * for the case where the alert is the only feedback that an action the user just
  * took did nothing — a silent no-op reads as a broken button. Don't reach for it
  * to make an alert louder; that is how everyone ends up drowning again.
+ *
+ * `transient` is for an alert about one click rather than a standing condition:
+ * it toasts once in every mode, times out, and never enters the warnings log.
  */
 
 const DEFAULT_DURATION_MS: Record<NotificationLevel, number | null> = {
@@ -37,6 +40,9 @@ const DEFAULT_DURATION_MS: Record<NotificationLevel, number | null> = {
   warning: 8000,
   error: null, // sticky until dismissed/replaced
 };
+
+/** A `transient` alert never sticks — not even an error — since it is never logged either. */
+const TRANSIENT_DURATION_MS = 8000;
 
 /** Tiny synchronous string hash (djb2) for auto-derived ids. */
 function djb2(s: string): string {
@@ -71,7 +77,7 @@ function dispatch(input: NotificationInput): string {
   // commonly REPLACES a sticky `notify.busy` toast under the same id (see
   // AssetManagerPopover), so silently skipping the emit would leave that
   // spinner running forever.
-  if (isAlertLevel(data.level)) {
+  if (isAlertLevel(data.level) && !data.transient) {
     useAlertStore.getState().push(data);
     if (!data.forceToast && getEffectiveViewMode() !== ViewMode.Dev) {
       sonnerToast.dismiss(id);
@@ -80,7 +86,13 @@ function dispatch(input: NotificationInput): string {
   }
 
   // Transient toast via sonner.
-  const ms = data.busy ? Infinity : data.durationMs === undefined ? DEFAULT_DURATION_MS[data.level] : data.durationMs;
+  const ms = data.busy
+    ? Infinity
+    : data.durationMs !== undefined
+      ? data.durationMs
+      : data.transient
+        ? TRANSIENT_DURATION_MS
+        : DEFAULT_DURATION_MS[data.level];
   sonnerToast.custom((toastId) => renderToast(data, String(toastId)), {
     id,
     duration: ms === null ? Infinity : ms,
