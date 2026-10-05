@@ -105,7 +105,7 @@ async def summarize(trigger: Any, runs: list[AutomationRun], *, names: Any = Non
 
 
 async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]:
-    """Every automation, newest activity first within the order the screen groups them."""
+    """Every automation, by name (the screen groups them)."""
     from flow_sdk.automations.describe import _Names, event_catalog  # noqa: PLC0415
     from flow_sdk.automations.runs import RowIndex, fold, join_processes  # noqa: PLC0415
     from flow_sdk.builtin.trigger import Trigger  # noqa: PLC0415
@@ -126,5 +126,7 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
     for trigger, runs in folded:
         out.append(await summarize(trigger, runs, names=names, workflows=flows.get(str(trigger.id)),
                                    catalog=catalog, last_joined=joined.get(runs[0].id) if runs else None))
-    out.sort(key=lambda s: (s.last_run.ts if s.last_run else ""), reverse=True)
+    # A stable order: rows must not jump while someone aims at one (the list
+    # polls, and ordering by last run moved them every few seconds under load).
+    out.sort(key=lambda s: (s.name.casefold(), s.id))
     return out
