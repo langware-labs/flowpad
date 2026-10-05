@@ -18,6 +18,7 @@ def test_env_loader(tmp_path, monkeypatch):
     env_file.write_text("FOO=BAR\n")
 
     monkeypatch.delenv("FOO", raising=False)
+    monkeypatch.delenv("FLOWPAD_SKIP_DOTENV", raising=False)
 
     # Verify FOO is not set before loading
     assert os.environ.get('FOO') is None, "FOO should not be set before cli_init"
@@ -35,3 +36,15 @@ def test_env_loader(tmp_path, monkeypatch):
     print(f"✅ Environment variable loaded: FOO={os.environ.get('FOO')}")
 
 
+def test_a_process_handed_its_environment_reads_no_dotenv(tmp_path, monkeypatch):
+    """A hub's local node runs the checkout's ``flow``: the checkout's .env.local must not fill in what
+    its launcher left out (it handed the node the developer's cloud login and channel tokens)."""
+    env_file = tmp_path / ".env.local"
+    env_file.write_text("FOO=BAR\n")
+    monkeypatch.delenv("FOO", raising=False)
+    monkeypatch.setenv("FLOWPAD_SKIP_DOTENV", "true")
+    monkeypatch.setattr("flow_sdk.cli.env_loader.find_dotenv", lambda *a, **kw: str(env_file))
+
+    cli_init()
+
+    assert os.environ.get("FOO") is None
