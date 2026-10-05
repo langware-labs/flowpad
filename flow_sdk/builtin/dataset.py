@@ -246,6 +246,115 @@ class Dataset(Entity):
         payload = gold.model_dump(mode="json") if hasattr(gold, "model_dump") else gold
         dataset_layout_for(self.data_layout).annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
 
+    @property
+    def row_type(self) -> Any:
+        """The ``ExampleSpec`` every row of this dataset is -- typed when ``spec`` names its slots."""
+        return self._example_type().example_type()
+
+    def _typed_rows_or_raise(self) -> Any:
+        row = self.row_type
+        if row.input_type() is None:
+            raise ValueError("this dataset declares no row shape (`spec`), so a row cannot be checked")
+        if self.data_layout != DataLayoutEnum.IO_FOLDER:
+            raise ValueError("typed rows are io_folder only")
+        return row
+
+    async def append(self, rows: list[dict]) -> list[str]:
+        """Typed rows in -- ``{input, context?, ground_truth?, output?, kind?, data?}`` each, checked
+        against the declared row shape BEFORE anything is written (one bad row writes nothing).
+
+        The counterpart of ``promote`` for a dataset whose input is not a source item: a request, a
+        prompt, anything the dataset's own spec defines. Returns the new example ids."""
+        from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
+
+        row_type = self._typed_rows_or_raise()
+        allowed = {"input", "context", "ground_truth", "output", "kind", "data"}
+        examples = []
+        for n, raw in enumerate(rows, 1):
+            if not isinstance(raw, dict) or "input" not in raw:
+                raise ValueError(f"row {n}: an object with an `input` is required")
+            unknown = set(raw) - allowed
+            if unknown:
+                raise ValueError(f"row {n}: unknown keys {sorted(unknown)}")
+            examples.append((row_type.model_validate(raw), None))
+        return dataset_layout_for(self.data_layout).append_many(self._folder(), examples, dataset_id=self.id)
+
+    def example(self, example_id: str) -> Optional[dict]:
+        """One example with its slots' VALUES (not paths) -- what an editor shows. None if absent."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout  # noqa: PLC0415
+
+        row_type = self._typed_rows_or_raise()
+        layout = FolderLayout()
+        ex_dir = layout.example_dir(self._folder(), example_id, dataset_id=self.id)
+        if ex_dir is None:
+            return None
+        row = layout.read_typed(ex_dir, row_type, dataset_id=self.id)
+        return None if row is None else row.model_dump(mode="json")
+
+    def validate_rows(self) -> list[dict]:
+        """Every row read as the declared shape: ``[{example_id, error}]`` for the rows that do not
+        fit. Indexing reads rows as artifacts on purpose (fast, never fatal); this is the check."""
+        from flow_sdk.schema.data_spec.layout import FolderLayout, _example_dirs, example_id  # noqa: PLC0415
+
+        row_type = self._typed_rows_or_raise()
+        layout, problems = FolderLayout(), []
+        for ex_dir in _example_dirs(self._folder()):
+            try:
+                layout.read_typed(ex_dir, row_type, dataset_id=self.id)
+            except ValidationError as exc:
+                first = exc.errors(include_url=False)[0]
+                where = ".".join(str(p) for p in first.get("loc", ()))
+                problems.append({"example_id": example_id(self.id, ex_dir.name), "error": f"{where}: {first.get('msg')}"})
+        return problems
+
+    @action.post(action_name="append")
+    async def append_action(self):
+        """``{"rows": [...]}`` → ``{"example_ids", "num_examples"}``; a row that does not fit is a 400
+        naming it, and nothing is written."""
+        body = await read_json_body(get_current_request_info())
+        if isinstance(body, ApiFailResponse):
+            return body
+        rows = body.get("rows")
+        if not isinstance(rows, list) or not rows:
+            return ApiFailResponse(message="rows: a non-empty list is required", status_code=400)
+        try:
+            ids = await self.append(rows)
+        except ValidationError as exc:
+            return ApiFailResponse(message="a row does not match the dataset's shape", status_code=400,
+                                   data={"errors": exc.errors(include_url=False)})
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        fresh = await self._counts_from_disk()
+        return ApiSuccessResponse(data={"example_ids": ids, "num_examples": fresh.num_examples})
+
+    @action.get(action_name="example")
+    async def example_action(self):
+        """``GET example/<example_id>`` → the example with its slots' values."""
+        request_info = get_current_request_info()
+        example_id = ((request_info.sub_path or "") if request_info else "").strip("/")
+        if not example_id:
+            return ApiFailResponse(message="example id required: example/<example_id>", status_code=400)
+        try:
+            found = self.example(example_id)
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        except ValidationError as exc:
+            return ApiFailResponse(message="the example does not match the dataset's shape", status_code=422,
+                                   data={"errors": exc.errors(include_url=False)})
+        if found is None:
+            return ApiFailResponse(message=f"no example {example_id}", status_code=404)
+        return ApiSuccessResponse(data=found)
+
+    @action.post(action_name="validate")
+    async def validate_action(self):
+        """Every row checked against the declared shape → ``{"checked", "problems": [...]}``."""
+        try:
+            problems = self.validate_rows()
+        except ValueError as exc:
+            return ApiFailResponse(message=str(exc), status_code=400)
+        fresh = await self._counts_from_disk()
+        return ApiSuccessResponse(data={"checked": fresh.num_examples, "problems": problems})
+
     @action.post(action_name="promote")
     async def promote_action(self):
         """``{"source_item_ids": [...]}`` → ``{"example_ids": [...], "num_examples"}``."""

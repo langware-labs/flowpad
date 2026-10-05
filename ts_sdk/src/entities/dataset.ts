@@ -16,7 +16,11 @@ export type DatasetFieldKind = (typeof DATASET_FIELD_KINDS)[number] | [(typeof D
  *  the authoring form. Same job the backend's `FieldHints.coerce` does for
  *  a source's config; this one is for a dataset's output shape. */
 export function coerceToKind(kind: unknown, text: string): unknown {
-  if (Array.isArray(kind)) return text.split(',').map((s) => s.trim()).filter(Boolean);
+  if (Array.isArray(kind))
+    return text
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   if (kind === 'int') return parseInt(text, 10);
   if (kind === 'float') return Number(text);
   if (kind === 'bool') return text === 'true';
@@ -28,6 +32,27 @@ export interface DatasetAuthoringSpec {
   examples: [{ input: unknown; output?: unknown; ground_truth?: unknown; context?: unknown }];
 }
 
+/** What `spec` holds: the inline form, or the NAME of a registered dataset kind
+ *  (`navigator.dataset`, `--acme--.orders.dataset`) — typically one a `data_spec` folder defines. */
+export type DatasetSpecForm = DatasetAuthoringSpec | string;
+
+/** One row going in: `input` required, the other slots and the row's role optional. */
+export interface DatasetRowInput {
+  input: unknown;
+  context?: unknown;
+  ground_truth?: unknown;
+  output?: unknown;
+  kind?: 'train' | 'eval' | 'test';
+  data?: Record<string, unknown>;
+}
+
+/** One row read back with its slots' VALUES (`GET example/<id>`). */
+export interface DatasetRow extends DatasetRowInput {
+  id: string;
+  kind: 'train' | 'eval' | 'test';
+  metadata: Record<string, unknown>;
+}
+
 export interface IDataset extends IEntity {
   title?: string;
   description?: string | null;
@@ -35,7 +60,7 @@ export interface IDataset extends IEntity {
   data_layout?: 'csv' | 'io_folder';
   field_spec?: Record<string, string>;
   delimiter?: string;
-  spec?: DatasetAuthoringSpec | null;
+  spec?: DatasetSpecForm | null;
   num_examples?: number;
   kind_counts?: Record<string, number>;
   num_annotated?: number;
@@ -58,7 +83,7 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
   data_layout: 'csv' | 'io_folder' = 'csv';
   field_spec: Record<string, string> = {};
   delimiter: string = ',';
-  spec: DatasetAuthoringSpec | null = null;
+  spec: DatasetSpecForm | null = null;
   num_examples: number = 0;
   kind_counts: Record<string, number> = {};
   num_annotated: number = 0;
@@ -92,19 +117,42 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     });
   }
 
-  /** The output shape of one row, in authoring form (`{field: kind}`), or null. */
+  /** The output shape of one row, in authoring form (`{field: kind}`), or null — null too when
+   *  `spec` NAMES a kind: that shape lives in the kind (see `GET /api/v1/agent/kind/<kind>`). */
   get outputShape(): unknown {
-    return this.spec?.examples?.[0]?.output ?? null;
+    return typeof this.spec === 'string' ? null : (this.spec?.examples?.[0]?.output ?? null);
+  }
+
+  /** The registered kind every row is, when `spec` names one; else null. */
+  get specKind(): string | null {
+    return typeof this.spec === 'string' ? this.spec : null;
   }
 
   /** The rows as the disk holds them: which item each came from, and whether it carries gold. */
-  async examples(): Promise<{ examples: { example_id: string; item_id: string | null; kind: string; annotated: boolean }[] }> {
+  async examples(): Promise<{
+    examples: { example_id: string; item_id: string | null; kind: string; annotated: boolean }[];
+  }> {
     return this.get('examples');
   }
 
   /** Items → examples. Returns the new example ids. */
   async promote(sourceItemIds: string[]): Promise<{ example_ids: string[]; num_examples: number }> {
     return this.post('promote', { source_item_ids: sourceItemIds });
+  }
+
+  /** Typed rows in — each checked against the declared shape; one bad row writes nothing. */
+  async append(rows: DatasetRowInput[]): Promise<{ example_ids: string[]; num_examples: number }> {
+    return this.post('append', { rows });
+  }
+
+  /** One example with its slots' values. */
+  async example(exampleId: string): Promise<DatasetRow> {
+    return this.get(`example/${encodeURIComponent(exampleId)}`);
+  }
+
+  /** Every row checked against the declared shape; `problems` names the rows that do not fit. */
+  async validate(): Promise<{ checked: number; problems: { example_id: string; error: string }[] }> {
+    return this.post('validate', {});
   }
 
   /** Write one example's gold label (validated against the output shape). */
