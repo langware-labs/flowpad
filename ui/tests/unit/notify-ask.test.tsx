@@ -1,6 +1,6 @@
 /**
  * `askNotification`: a sticky toast that asks, and resolves with the answer. The "Don't ask
- * again" box rides the clicked button's command args; closing the toast — its ×, or
+ * again" box rides the clicked button's command args; closing it — however the toast goes, or
  * `notify.dismiss` — resolves with no answer, so a caller holding a request never hangs.
  */
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -61,9 +61,10 @@ describe('askNotification', () => {
     await expect(answer).resolves.toEqual({ value: 'login', remember: true });
   });
 
-  it('resolves with no answer when the × closes it', async () => {
+  it('resolves with no answer however the toast goes (×, swipe, timer: sonner onDismiss)', async () => {
     const answer = askNotification(QUESTION);
-    fireEvent.click(lastToast().querySelector('[aria-label="Dismiss notification"]')!);
+    const { onDismiss } = custom.mock.calls.at(-1)![1] as { onDismiss: () => void };
+    onDismiss();
     await expect(answer).resolves.toEqual({ value: null, remember: false });
   });
 

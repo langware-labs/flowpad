@@ -5,6 +5,7 @@ import { useTheme } from 'next-themes';
 import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, X, type LucideIcon } from 'lucide-react';
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { cn } from '@src/lib/utils';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import {
@@ -15,8 +16,7 @@ import {
 } from '@src/components/ui/alert-dialog';
 import { notificationText, type NotificationData, type NotificationLevel } from './types';
 import { runAction } from './commands';
-import { settleAsk } from './pending-asks';
-import { isAlertLevel, notify } from './notify';
+import { closeShown, isAlertLevel } from './notify';
 import { useCenterStore } from './center-store';
 import { DiagnoseIconButton } from './diagnose/DiagnoseIconButton';
 import { NotificationProcessLine } from './NotificationProcessLine';
@@ -61,7 +61,7 @@ const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} bg-muted text-muted-foreground 
  * component (not inline in `renderToast`) because the box is state: its value rides the clicked
  * action's args as `remember`.
  */
-function ToastActions({ data, close }: { data: NotificationData; close: () => void }) {
+function ToastActions({ data }: { data: NotificationData }) {
   const [remember, setRemember] = useState(false);
   return (
     <div className="mt-2 flex flex-col gap-2">
@@ -72,7 +72,7 @@ function ToastActions({ data, close }: { data: NotificationData; close: () => vo
             data-testid={`notification-action-${i}`}
             onClick={() => {
               runAction(action, data.id, data.remember ? { remember } : undefined);
-              if (action.href) close();
+              if (action.href) closeShown(data.id);
             }}
             className={i === 0 ? ACTION_BTN_PRIMARY : ACTION_BTN_SECONDARY}
           >
@@ -97,6 +97,46 @@ function ToastActions({ data, close }: { data: NotificationData; close: () => vo
 }
 
 /**
+ * What a notification says and offers — glyph, title, message, process line, actions — shared by
+ * the corner toast and the centered dialog, which differ only in their frame (and the dialog's
+ * title/description are its accessible name).
+ */
+function NotificationContent({ data, centered = false }: { data: NotificationData; centered?: boolean }) {
+  const Title = centered ? AlertDialogTitle : 'div';
+  const Description = centered ? AlertDialogDescription : 'div';
+  return (
+    <>
+      <div className="mt-0.5 flex-shrink-0">
+        <NotificationGlyph data={data} size={centered ? 18 : 16} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <Title className={centered ? 'text-base' : 'text-sm font-medium text-foreground'}>{data.title}</Title>
+        {data.message && (
+          <Description
+            className={cn('whitespace-pre-line', centered ? 'mt-1' : 'mt-0.5 text-xs text-muted-foreground')}
+          >
+            {data.message}
+          </Description>
+        )}
+        <NotificationProcessLine data={data} />
+        {data.actions && data.actions.length > 0 ? (
+          <ToastActions data={data} />
+        ) : (
+          // A centered notification with nothing to answer with must still let the person out.
+          centered && (
+            <div className="mt-3">
+              <button onClick={() => closeShown(data.id)} className={ACTION_BTN_PRIMARY}>
+                {t`OK`}
+              </button>
+            </div>
+          )
+        )}
+      </div>
+    </>
+  );
+}
+
+/**
  * The body of a single toast. Rendered by `notify()` via `sonner.toast.custom`,
  * so the same component handles entity icon, pre-line message, and serializable
  * actions. (The feed renders badges separately — see `feed/`.)
@@ -104,17 +144,7 @@ function ToastActions({ data, close }: { data: NotificationData; close: () => vo
 export function renderToast(data: NotificationData, toastId: string) {
   return (
     <div className="flex w-full items-start gap-3 rounded-lg border border-border bg-background p-4 shadow-lg">
-      <div className="mt-0.5 flex-shrink-0">
-        <NotificationGlyph data={data} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-foreground">{data.title}</div>
-        {data.message && <div className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{data.message}</div>}
-        <NotificationProcessLine data={data} />
-        {data.actions && data.actions.length > 0 && (
-          <ToastActions data={data} close={() => sonnerToast.dismiss(toastId)} />
-        )}
-      </div>
+      <NotificationContent data={data} />
       <div className="flex flex-shrink-0 items-center gap-0.5">
         {/* A failure is the one notification people need to paste into an issue
             or a chat, and it is also the one that disappears on a timer. The
@@ -132,10 +162,7 @@ export function renderToast(data: NotificationData, toastId: string) {
         )}
         <DiagnoseIconButton subject={data} />
         <button
-          onClick={() => {
-            settleAsk(data.id); // closing a question answers it with "no answer"
-            sonnerToast.dismiss(toastId);
-          }}
+          onClick={() => sonnerToast.dismiss(toastId)}
           aria-label={t`Dismiss notification`}
           className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
         >
@@ -153,7 +180,6 @@ export function renderToast(data: NotificationData, toastId: string) {
  */
 export function CenterNotification() {
   const data = useCenterStore((s) => s.queue[0] ?? null);
-  const close = () => data && useCenterStore.getState().remove(data.id);
   return (
     <AlertDialog open={data !== null}>
       {data && (
@@ -163,26 +189,7 @@ export function CenterNotification() {
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
           <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex-shrink-0">
-              <NotificationGlyph data={data} size={18} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <AlertDialogTitle className="text-base">{data.title}</AlertDialogTitle>
-              {data.message && (
-                <AlertDialogDescription className="mt-1 whitespace-pre-line">{data.message}</AlertDialogDescription>
-              )}
-              <NotificationProcessLine data={data} />
-              {data.actions && data.actions.length > 0 ? (
-                <ToastActions data={data} close={close} />
-              ) : (
-                // Nothing to answer with: forcing an action would trap the person.
-                <div className="mt-3">
-                  <button onClick={() => notify.dismiss(data.id)} className={ACTION_BTN_PRIMARY}>
-                    {t`OK`}
-                  </button>
-                </div>
-              )}
-            </div>
+            <NotificationContent data={data} centered />
           </div>
         </AlertDialogContent>
       )}

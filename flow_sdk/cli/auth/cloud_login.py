@@ -354,6 +354,8 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     from flow_sdk.cli.auth.credentials import clear_credentials
     from flow_sdk.cloud_client.auth_state import set_connection_status, set_login_status
     from flow_sdk.cloud_client.auth_status import HubConnectionStatus, HubLoginStatus
+    from flow_sdk.instance_settings.api_endpoint import invalidate_api_endpoint_listing
+    from flow_sdk.instance_settings.llm_endpoint import invalidate_endpoint_listing
     from flow_sdk.server import state
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
@@ -373,6 +375,10 @@ async def clear_cloud_credentials(reason: str | None = None) -> None:
     state.login_result = None
     state.login_received.clear()
     invalidate_bootstrap_cache()
+    # What the hub listed was what THAT login may call. Kept, a signed-out box would go on
+    # offering it -- the readers fall back to their last listing while signed out.
+    invalidate_api_endpoint_listing()
+    invalidate_endpoint_listing()
 
     await set_login_status(HubLoginStatus.LOGGED_OUT, reason=reason)
     await set_connection_status(HubConnectionStatus.DISCONNECTED)
