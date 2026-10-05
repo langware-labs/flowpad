@@ -1,6 +1,7 @@
 """Filesystem candidate walks and diagnostics, without index scheduling or records."""
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,6 +10,8 @@ from typing import TYPE_CHECKING
 from flow_sdk.assets.layout import File, Folder, Layout, LayoutKind
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches, scan_mounts
 from flow_sdk.schema.data_spec import DataSpec
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from flow_sdk.assets.asset import Asset
@@ -92,12 +95,25 @@ def first_seen(seen: set[str], path: Path, *, resolve: bool = False) -> bool:
 
 
 def directory_candidates(mount: Path, shape: File | Folder, *, recursive: bool) -> list[Path]:
+    """The entries a scan considers under *mount*.
+
+    Listed through the extended-length form (a no-op off Windows): a shipped asset nested deep inside the
+    install (the smart-navigator dataset's data_specs) passes Windows' 260-char MAX_PATH, and ``listdir``
+    fails there although ``is_dir`` succeeds. A folder that still cannot be read is skipped, not raised:
+    one unreadable folder used to abort the whole system-assets index, so no data driver loaded at all.
+    """
+    from flow_sdk.assets.materialize import extended_length_path  # noqa: PLC0415
+
     if not mount.is_dir():
         return []
-    if recursive:
-        pattern = f"*{shape.ext}" if isinstance(shape, File) else "*"
-        return sorted(mount.rglob(pattern))
-    return sorted(mount.iterdir())
+    try:
+        if recursive:
+            pattern = f"*{shape.ext}" if isinstance(shape, File) else "*"
+            return sorted(mount.rglob(pattern))
+        return sorted(mount / name for name in os.listdir(extended_length_path(mount)))
+    except OSError as exc:
+        logger.warning("asset scan: cannot read %s, skipping it: %s", mount, exc)
+        return []
 
 
 def scan_declared(info: TypeInfo, root: Path, root_type: str) -> AssetScanResult:
