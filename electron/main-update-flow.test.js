@@ -71,7 +71,7 @@ function load(opts = {}) {
   const uv = { calls: [], deferred: [], upgrades: [], checks: 0 };
   class FakeUv {
     constructor() { Object.assign(this, { _isInstalling: false }); uv.instance = this; }
-    getInstalledFlowBin() { return '/fake/bin/flow'; }
+    getInstalledFlowBin() { return opts.installed === false ? null : '/fake/bin/flow'; }
     hadInterruptedInstall() { return false; }
     getInstalledVersionSync() { return opts.engine || '0.2.168'; }
     async _pypiUpdateStatus() { return opts.engineStatus === undefined ? { currentVersion: '0.2.168', latestVersion: '0.2.180', required: true } : opts.engineStatus; }
@@ -184,6 +184,17 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     await env.t.checkPackageUpdateInBackground();
     eq(env.uv.checks, 0, 'no separate engine dialog while the desktop update is pending');
     ok(env.logLines.some((l) => /package check skipped: desktop 0\.2\.48 is pending/.test(l)), 'and it says why');
+  }
+
+  // ── nothing installed: no "update" ──────────────────────────────────────
+  {
+    const env = load({ installed: false });
+    await env.t.checkPackageUpdateInBackground();
+    eq(env.uv.checks, 0, 'flowpad is not installed (first-time setup failed): the periodic check offers no update');
+    ok(env.logLines.some((l) => /package check skipped: flowpad is not installed/.test(l)), 'and it says why');
+    const installed = load({});
+    await installed.t.checkPackageUpdateInBackground();
+    eq(installed.uv.checks, 1, 'an installed flowpad is still checked');
   }
 
   // ── desktop only ────────────────────────────────────────────────────────

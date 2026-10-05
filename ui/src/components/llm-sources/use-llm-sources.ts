@@ -24,7 +24,7 @@ import {
 import { i18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { notify } from '@src/notifications';
 
@@ -64,6 +64,10 @@ export function useLlmSources() {
   // inventory fan-out, and that is fixed at the source instead (`_overlay` / `picker_view_for`
   // in `cli_drivers/llm_source.py` read the inventory once).
   const { data, isLoading } = useLazyAsset(LazyAsset.LlmFunding, useFundingParams());
+  // A device login finishing, a vendor sign-out or a key change all reach the UI as a
+  // capability change, but none of them touch this asset. Without the re-read, whatever
+  // reads it (the footer chip's no-source alert) keeps its old answer until a reload.
+  useEffect(() => capabilityManager.subscribe(() => void lazyAssets.invalidate(LazyAsset.LlmFunding)), []);
   return { status: data ?? null, isLoading };
 }
 
