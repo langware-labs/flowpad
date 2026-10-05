@@ -1,8 +1,8 @@
 """A project's invite conversation names its sender from the first save.
 
-The row reaches the inbox while ``Conversation.share`` is still talking to the
+The row reaches the stream inbox while ``Conversation.share`` is still talking to the
 hub — before the hub roster or the invite message exists — and with neither the
-inbox's From cell read "Unknown". Only the network hops are stubbed.
+stream inbox's From cell read "Unknown". Only the network hops are stubbed.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ async def test_invite_conversation_is_saved_with_the_sharer_before_it_is_shared(
         return dict(SHARER)
 
     async def fake_share(self, **_admit):
-        # What the inbox renders during share(): the row as it is stored now.
+        # What the stream inbox renders during share(): the row as it is stored now.
         stored = await Conversation.get_one({"id": self.id})
         seen_at_share.append(list(stored.members or []))
 
