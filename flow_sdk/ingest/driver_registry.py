@@ -259,6 +259,11 @@ def load_namespace_value_kinds(ns: str) -> None:
 
     root = namespace_roots.claim_unloaded(ns)
     if root is not None:
+        # ONE claim for the namespace's whole root: the claim is one-shot, so the kinds its
+        # data spec FOLDERS define load here too -- first, since a driver's code may name them.
+        from flow_sdk.schema.data_spec import declared  # noqa: PLC0415
+
+        declared.load_root(root)
         _register_folders(DRIVERS, root / AGENTIC_ASSETS_DIR / "data_driver", "authored")
 
 
