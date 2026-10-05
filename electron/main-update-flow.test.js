@@ -20,11 +20,12 @@ const { EventEmitter } = require('events');
 const MAIN = path.join(__dirname, 'main.js');
 const EXPOSE = `
 module.exports.__t = {
-  offerDesktopUpdate, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground,
+  offerDesktopUpdate, offerPostponedRestartPrompt, showDesktopReadyPrompt, installAndStartBackend, showStartupErrorPanel, reportStartupCrash, checkPackageUpdateInBackground,
   setupElectronAutoUpdater, readyReminder, pendingEngineStore, restartApplier,
   getState: () => ({ pendingDesktopVersion, offeredDesktopVersion, desktopDownloadedVersion, deferredDesktopVersion,
                      desktopRestartPromptOpen, packageUpdateInFlight }),
   setMainWindow: (w) => { mainWindow = w; },
+  setBackendReady: (v) => { backendReady = v; },
   setUvManager: (u) => { uvManager = u; },
   getUvManager: () => uvManager,
 };`;
@@ -114,6 +115,7 @@ function load(opts = {}) {
   const win = { isDestroyed: () => false, isMinimized: () => false, webContents: { send(ch, d) { win.sent.push([ch, d]); } }, sent: [], loadFile: async () => {}, loadURL() {}, show() {}, hide() {}, focus() {} };
   t.setMainWindow(win);
   t.setUvManager(new FakeUv());
+  t.setBackendReady(opts.backendReady !== false); // the app is up unless a test says it is still starting
   return { t, processHandlers, sent: win.sent, releaseDialog: () => releaseDialog(), autoUpdater, dialogCalls, intervals, uv, logLines, userData, statePath: path.join(userData, 'pending-engine.json'), readState: () => { try { return JSON.parse(fs.readFileSync(path.join(userData, 'pending-engine.json'), 'utf8')); } catch { return null; } } };
 }
 
@@ -144,6 +146,19 @@ const reminderTimer = (env) => env.intervals.find((i) => i.ms === REMINDER_MS);
     eq(env.readState().consented, true, '"Restart now" = agreement to install the saved engine version');
     eq(env.autoUpdater.quits, [[true, true]], 'quitAndInstall(silent, relaunch)');
     eq(env.uv.stopped, 1, 'the backend was stopped first');
+  }
+
+  // ── download finishes while FlowPad is still starting: no restart prompt until the app is up ──
+  {
+    const env = load({ backendReady: false, dialogResponses: [0 /* Update now */, 0 /* Restart now */] });
+    env.t.setupElectronAutoUpdater();
+    await env.t.offerDesktopUpdate('0.2.48');
+    env.autoUpdater.emit('update-downloaded', { version: '0.2.48' }); await tick();
+    eq(env.dialogCalls.length, 1, 'still starting: the "Restart now" prompt is held back');
+    eq(env.autoUpdater.quits, [], 'and nothing restarts');
+    env.t.setBackendReady(true); env.t.offerPostponedRestartPrompt(); await tick(); await tick(); await tick();
+    eq(env.dialogCalls.length, 2, 'once the app is up the prompt appears');
+    eq(env.autoUpdater.quits, [[true, true]], 'and "Restart now" installs');
   }
 
   // ── desktop + engine, "Later" → reminders every 90 minutes ───────────────
