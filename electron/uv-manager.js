@@ -359,6 +359,15 @@ function splitLines(onLine) {
   };
 }
 
+/** Thrown by a start or install asked for after the app began quitting (UvManager.close()). */
+class QuitInProgressError extends Error {
+  constructor(what) {
+    super(`not starting: the app is quitting (${what})`);
+    this.name = 'QuitInProgressError';
+    this.quitInProgress = true;
+  }
+}
+
 class UvManager {
   constructor(log, { stateDir = null } = {}) {
     this.log = log;
@@ -387,6 +396,10 @@ class UvManager {
     this._toolInstallCapMs = 240 * 1000;
     this._uvDirsPromise = null;
     this.isShuttingDown = false;
+    // Set once by close() when the app quits, and never cleared: from then on
+    // nothing new is spawned. Separate from isShuttingDown, which start() resets
+    // for a restart/retry.
+    this._closed = false;
     this._flowBin = null;
     // Set to true when the uv-generated flow.exe shim is blocked by Windows
     // Device Guard / WDAC. We then route every flow invocation through
@@ -776,6 +789,7 @@ class UvManager {
     const [cmd, args, shell] = IS_WIN
       ? ['powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', UV_INSTALL_PS1], false]
       : ['sh', ['-c', UV_INSTALL_SH], undefined];
+    this._assertOpen('install uv');
     this._installing = true;
     this._installAborted = false;
     const startedAt = Date.now();
@@ -833,7 +847,7 @@ class UvManager {
         if (capTimer && capTimer.unref) capTimer.unref();
       }
       // An abort asked for while the temp dir was being verified (before any child exists) must still stop us.
-      if (this._installAborted) throw new Error('install aborted before the uv download started');
+      if (this._installAborted || this._closed) throw new Error('install aborted before the uv download started');
       await this._runStreaming(cmd, args, {
         shell,
         env: tmpEnv,
@@ -1187,6 +1201,7 @@ class UvManager {
    *     so it survives for diagnosis) and retry, which rebuilds the env clean.
    */
   async _uvToolInstallForce(installArgs, { onProgress } = {}) {
+    this._assertOpen('install flowpad');
     this._installing = true;
     this._installAborted = false;
     this._keepMarker = false;
@@ -1227,7 +1242,7 @@ class UvManager {
       : [...installArgs, '--compile-bytecode'];
     for (let attempt = 1; ; attempt++) {
       await this._drainVenvProcesses();
-      if (this._installAborted) throw new Error('install aborted before uv started');
+      if (this._installAborted || this._closed) throw new Error('install aborted before uv started');
       try {
         // No wall-clock cap while it makes progress — see _runToolInstallGuarded. Progress lines go
         // to the caller (the loading window) so a long slow install is visibly alive.
@@ -1435,8 +1450,39 @@ class UvManager {
     return true;
   }
 
+  /**
+   * The app is quitting: refuse every later start/install and abort a running
+   * install. Never undone — a quit does not come back. The startup chain keeps
+   * running after the user quits (it is a chain of awaits nobody cancels); this
+   * is what stops it from launching `flow start` after the backend stop has
+   * already run, which left a detached monitor and server behind the app.
+   */
+  close() {
+    if (this._closed) return;
+    this._closed = true;
+    this.log.info('[uv] closed — nothing new will be started');
+    this.abortInstall();
+  }
+
+  isClosed() {
+    return this._closed;
+  }
+
+  _assertOpen(what) {
+    if (this._closed) throw new QuitInProgressError(what);
+  }
+
   /** Signal an install child and its tree. No waiting: it is signalled and we move on. */
   _killInstallChild(child, why) {
+    this._killChildTree(child, why);
+  }
+
+  /**
+   * Signal a child we spawned, with its whole tree on Windows: a child started
+   * through cmd.exe (shell:true) is the shell, and killing only that leaves the
+   * real process running. No waiting: it is signalled and we move on.
+   */
+  _killChildTree(child, why) {
     if (!child || child.exitCode !== null || !child.pid) return;
     this.log.warn(`[uv] ${why} (pid ${child.pid})`);
     try {
@@ -1446,7 +1492,7 @@ class UvManager {
         child.kill('SIGTERM');
       }
     } catch (err) {
-      this.log.warn(`[uv] could not signal the install child: ${err.message}`);
+      this.log.warn(`[uv] could not signal pid ${child.pid}: ${err.message}`);
     }
   }
 
@@ -1585,6 +1631,7 @@ class UvManager {
         throw new Error('flow binary not set — call startWithBin() or installLatest() first');
       }
 
+      this._assertOpen('start the backend');
       this.isShuttingDown = false;
       this.log.info('[uv] Starting backend via flow start...');
 
@@ -1652,6 +1699,9 @@ class UvManager {
       } catch (e) {
         this.log.warn(`[uv] could not create backend cwd ${BACKEND_CWD}: ${e.message}`);
       }
+      // Every await above is a point where the user may have quit and the stop
+      // may already have run: a `flow start` launched now would outlive the app.
+      this._assertOpen('start the backend');
       const child = spawn(cmdToRun, flowArgs, {
         env,
         cwd: BACKEND_CWD,
@@ -1747,14 +1797,10 @@ class UvManager {
     async _doStop() {
       this.log.info('[uv] Stopping backend...');
 
-      // Kill the flow start CLI process if still running
-      if (this._backendProcess && !this._backendProcess.killed) {
-        try {
-          this._backendProcess.kill('SIGTERM');
-        } catch (e) {
-          this.log.warn(`[uv] Failed to SIGTERM backend: ${e.message}`);
-        }
-      }
+      // Kill the flow start CLI process (and, on Windows, its tree) if still
+      // running — BEFORE `flow stop`, so a monitor it managed to spawn is
+      // already there for flow stop's monitor scan to find.
+      this._killChildTree(this._backendProcess, 'stopping the running flow start');
 
       // 1. Run flow stop
       await this._flowStop();
@@ -2413,6 +2459,7 @@ const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
 
 module.exports = UvManager;
 module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
+module.exports.QuitInProgressError = QuitInProgressError;
 // PyPI package + pinned interpreter, exported so main.js can surface the exact
 // `uv tool install` command to the user in the startup-timeout dialog.
 module.exports.PYPI_PACKAGE = PYPI_PACKAGE;
