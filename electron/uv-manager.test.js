@@ -1129,6 +1129,10 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     // The samplers themselves.
     {
       const d = path3.join(tmpBase, 'fp'); fs3.mkdirSync(path3.join(d, 'archive-v0', 'pkg'), { recursive: true }); fs3.mkdirSync(path3.join(d, '.tmpA'), { recursive: true });
+      // The fingerprint reads a dir's mtime to the millisecond; created and then written into within
+      // the same millisecond (a fast runner), it would not move. Start it a day back, so the new entry
+      // below always does.
+      const dayAgo = new Date(Date.now() - 86_400_000); fs3.utimesSync(path3.join(d, 'archive-v0'), dayAgo, dayAgo);
       const { topFingerprintAsync: fp, dirSizeBytesAsync: sz } = UvManager;
       const a = await fp(d);
       fs3.appendFileSync(path3.join(d, '.tmpA', 'download'), Buffer.alloc(100));
