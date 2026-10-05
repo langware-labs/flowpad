@@ -118,3 +118,14 @@ async def test_failures_are_counted_over_recent_real_runs():
     summary = await _summary(trigger)
     assert (summary.recent_failures, summary.recent_runs) == (2, 2)
     assert summary.last_run.status == "failed" and "nope" in summary.last_run.error
+
+
+@async_context
+async def test_a_builtin_step_says_what_it_does():
+    @trigger_callbacks.register("test_overview_described", meaning="Re-reads the toplog filter and tells the UI.")
+    async def _described(trigger, changes):
+        return None
+
+    (part,) = await describe_then(rule(TriggerType.TAG, actions=[
+        TriggerAction(action_type=ActionType.CALLBACK, callback_name="test_overview_described")]))
+    assert part.kind == "builtin_step" and part.detail == "Re-reads the toplog filter and tells the UI."

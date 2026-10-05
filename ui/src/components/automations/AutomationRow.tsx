@@ -13,6 +13,7 @@ import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
 import { cn } from '@src/lib/utils';
 import { sentenceOf, useAutomationWords } from './automation-words';
+import { KindBadge } from './KindBadge';
 import { RunStatusPill } from './RunStatusPill';
 
 export interface AutomationRowProps {
@@ -65,6 +66,7 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
           <span className="min-w-0 break-words">{sentence.then}</span>
         </div>
         <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+          <KindBadge kind={a.kind} />
           <span className="truncate">{a.name}</span>
           {problem && (
             <span

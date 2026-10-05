@@ -1023,10 +1023,12 @@ class Trigger(Entity):
 
     @core_action.get(action_name="runs")
     async def runs_action(cls, request: Request) -> ApiResponse:
-        """GET /api/v1/graph/trigger/runs?trigger_id=&status=&include_tests=true&limit=200
+        """GET /api/v1/graph/trigger/runs?trigger_id=&status=&include_tests=true&include_builtin=true&limit=200
 
         Runs newest first — one automation's when ``trigger_id`` is given, else
-        every automation's. Each launched agent run is asked how it ended."""
+        every automation's. ``include_builtin=false`` leaves out Flowpad's own (a
+        transcript watcher fires on every step of an agent's work and would bury
+        everything else). Each launched agent run is asked how it ended."""
         from flow_sdk.automations.runs import fold, join_processes, rows_for  # noqa: PLC0415
         from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
 
@@ -1039,6 +1041,10 @@ class Trigger(Entity):
             row = await cls.get_by_id(trigger_id)
             rows = rows_for(trigger_id, row.name if row else None,
                             discover(None, limit=10_000, per_rule=limit * 2))
+        elif str(params.get("include_builtin", "true")).lower() == "false":
+            builtin = {str(t.id) for t in await cls.get_all({}) if t.is_builtin}
+            rows = [r for r in discover(None, limit=10_000, per_rule=limit * 2)
+                    if r.get("trigger_id") not in builtin][: limit * 2]
         else:
             rows = discover(None, limit=limit * 2)
         runs = fold(rows)

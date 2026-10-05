@@ -6,6 +6,7 @@ import { Trans } from '@lingui/react/macro';
 import type { AutomationRun } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { useAutomationWords } from './automation-words';
+import { KindBadge } from './KindBadge';
 import { RunStatusDot } from './RunStatusPill';
 
 export interface RunsListProps {
@@ -60,13 +61,14 @@ export function RunsList({ runs, selectedId, onSelect, hideName, emptyText }: Ru
               onClick={() => onSelect(run)}
               aria-current={selectedId === run.id}
               className={cn(
-                'grid w-full grid-cols-[auto_3.5rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-2 text-left text-sm hover:bg-accent/50',
+                'grid w-full grid-cols-[auto_3.5rem_4.5rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-2 text-left text-sm hover:bg-accent/50',
                 selectedId === run.id && 'bg-accent',
                 run.status === 'failed' && 'border-l-2 border-l-red-500/70',
               )}
             >
               <RunStatusDot status={run.status} />
               <span className="text-xs tabular-nums text-muted-foreground">{clock(run.ts)}</span>
+              {run.kind ? <KindBadge kind={run.kind} /> : <span />}
               <span className="min-w-0">
                 {!hideName && <span className="block truncate font-medium">{run.automation_name}</span>}
                 <span className="block truncate text-xs text-muted-foreground">

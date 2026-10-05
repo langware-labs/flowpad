@@ -30,7 +30,7 @@ const automationKeys = {
   all: ['automations'] as const,
   overview: () => ['automations', 'overview'] as const,
   runs: (q: RunsQuery) =>
-    ['automations', 'runs', q.triggerId ?? null, q.status ?? null, q.includeTests ?? true, q.limit ?? null] as const,
+    ['automations', 'runs', q.triggerId ?? null, q.status ?? null, q.includeTests ?? true, q.includeBuiltin ?? true, q.limit ?? null] as const,
   run: (id: string | null) => ['automations', 'run', id] as const,
   nextRuns: (expr: string, kind: string, tz: string, n: number) => ['automations', 'next', expr, kind, tz, n] as const,
 };

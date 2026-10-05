@@ -244,6 +244,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     if (query.triggerId) params.trigger_id = query.triggerId;
     if (query.status) params.status = query.status;
     if (query.includeTests === false) params.include_tests = 'false';
+    if (query.includeBuiltin === false) params.include_builtin = 'false';
     if (query.limit) params.limit = String(query.limit);
     action.queryParameters = params;
     return ((await dataManager.callAction<undefined, AutomationRun[]>(action)) as AutomationRun[]) ?? [];

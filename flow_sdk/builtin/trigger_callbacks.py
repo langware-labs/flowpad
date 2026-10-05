@@ -49,6 +49,12 @@ def get(name: str) -> Optional[Callable[..., Any]]:
     return entry.fn if entry else None
 
 
+def meaning(name: str) -> Optional[str]:
+    """What a registered handler does, in words — None when unknown or undescribed."""
+    entry = _handlers.get(name)
+    return entry.meaning if entry else None
+
+
 def list_registered() -> list[dict[str, Any]]:
     """Snapshot of registered handlers — feeds the UI autocomplete dropdown."""
     return [

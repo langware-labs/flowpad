@@ -8,12 +8,14 @@ import type { AutomationRun } from '@sdk';
 import { ExternalLink, RotateCcw, Settings2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@src/components/ui/button';
-import { useAutomationRun, useRunOnce } from '@src/hooks/automations/useAutomations';
+import { useAutomation, useAutomationRun, useRunOnce } from '@src/hooks/automations/useAutomations';
 import { errorMessage } from '@src/lib/error-message';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAutomationWords } from './automation-words';
+import { KindBadge } from './KindBadge';
 import { RunStatusPill } from './RunStatusPill';
+import { ThenSteps } from './ThenSteps';
 
 export function RunDetail({ runId, fallback }: { runId: string; fallback?: AutomationRun | null }) {
   const { t } = useLingui();
@@ -21,6 +23,8 @@ export function RunDetail({ runId, fallback }: { runId: string; fallback?: Autom
   const { navigation } = useDockNavigation();
   // A polling list that already holds this run is its source; ask only when it does not.
   const { data, error } = useAutomationRun(runId, { enabled: !fallback });
+  // The automation as it is now — its steps, named and openable.
+  const { automation } = useAutomation((fallback ?? data)?.trigger_id);
   const run = fallback ?? data ?? null;
   const replay = useRunOnce();
   const [raw, setRaw] = useState(false);
@@ -50,6 +54,7 @@ export function RunDetail({ runId, fallback }: { runId: string; fallback?: Autom
     <div className="flex flex-col gap-5 p-5" data-testid="run-detail" data-status={run.status}>
       <header className="flex flex-wrap items-center gap-3">
         <RunStatusPill status={run.status} />
+        {run.kind && <KindBadge kind={run.kind} />}
         <button
           type="button"
           className="font-medium hover:underline"
@@ -178,32 +183,37 @@ export function RunDetail({ runId, fallback }: { runId: string; fallback?: Autom
             <Trans>Nothing. It was skipped, for the reason above.</Trans>
           </p>
         ) : (
-          <ul className="flex flex-col gap-1 text-sm">
-            {run.actions.length === 0 && (
-              <li className="text-muted-foreground">
-                <Trans>No steps; it started the workflows that listen for it.</Trans>
-              </li>
+          <div className="flex flex-col gap-2">
+            {automation ? (
+              <ThenSteps steps={automation.then} />
+            ) : (
+              <ul className="flex flex-col gap-1 text-sm">
+                {run.actions.map((a, i) => (
+                  <li key={i}>
+                    <code className="rounded bg-muted px-1.5 font-mono text-xs">{a}</code>
+                  </li>
+                ))}
+              </ul>
             )}
-            {run.actions.map((a, i) => (
-              <li key={i} className="flex items-center gap-2">
-                <code className="rounded bg-muted px-1.5 font-mono text-xs">{a}</code>
-              </li>
-            ))}
-            {run.agentic_process_id && (
-              <li>
-                <button
-                  type="button"
-                  onClick={openProcess}
-                  className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline"
-                  data-testid="run-detail-open-process"
-                >
-                  <ExternalLink className="size-3.5" aria-hidden />
-                  <Trans>Open the agent run</Trans>
-                  {run.process_status && <span className="text-xs text-muted-foreground">({run.process_status})</span>}
-                </button>
-              </li>
-            )}
-          </ul>
+            <ul className="flex flex-col gap-1 text-sm">
+              {run.agentic_process_id && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={openProcess}
+                    className="inline-flex items-center gap-1 text-sm underline-offset-2 hover:underline"
+                    data-testid="run-detail-open-process"
+                  >
+                    <ExternalLink className="size-3.5" aria-hidden />
+                    <Trans>Open the agent run</Trans>
+                    {run.process_status && (
+                      <span className="text-xs text-muted-foreground">({run.process_status})</span>
+                    )}
+                  </button>
+                </li>
+              )}
+            </ul>
+          </div>
         )}
       </section>
 

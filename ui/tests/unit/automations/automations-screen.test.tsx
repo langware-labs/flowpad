@@ -309,3 +309,45 @@ describe('a run', () => {
     expect(screen.getByTestId('run-row-s1').textContent).toContain('fired too often');
   });
 });
+
+describe('what ran, and what it did', () => {
+  it('each run says its kind', () => {
+    state.runs = [run({ id: 'k1', kind: 'file', why: 'x', changed_path: '/w/a.md' })];
+    dock.current = { pointer: 'runs' };
+    render(<AutomationsView />);
+    expect(screen.getByTestId('run-row-k1').querySelector('[data-kind="file"]')?.textContent).toContain('File');
+  });
+
+  it('a run shows its steps in words, and an agent step can be opened', () => {
+    state.automations = [
+      automation({
+        id: 't1',
+        then: [
+          {
+            kind: 'run_agent',
+            text: 'Run Chief of Staff',
+            target: 'agent-550e8400-e29b-41d4-a716-446655440000',
+            target_name: 'Chief of Staff',
+            prompt: 'Summarize',
+          },
+          {
+            kind: 'builtin_step',
+            text: 'Run transcript streamer route',
+            target_name: 'transcript streamer route',
+            detail: 'Routes a transcript change to its streamer.',
+          },
+        ],
+      }),
+    ];
+    state.run = run({ id: 'r5', trigger_id: 't1', kind: 'schedule', actions: ['run_agent', 'callback'] });
+    state.runs = [state.run];
+    dock.current = { pointer: 'runs', options: { run: 'r5' } };
+    render(<AutomationsView />);
+    const steps = screen.getByTestId('then-steps');
+    expect(steps.textContent).toContain('Chief of Staff');
+    expect(steps.textContent).toContain('Routes a transcript change to its streamer.');
+    expect(steps.textContent).not.toContain('callback');
+    fireEvent.click(screen.getByTestId('then-step-open-0'));
+    expect(nav.openDock.mock.calls.at(-1)?.[0].viewType).toBe('assets');
+  });
+});
