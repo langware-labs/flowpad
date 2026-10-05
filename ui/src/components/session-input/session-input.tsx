@@ -9,7 +9,7 @@ import {
 } from '@src/components/conversation/FileAttachmentPicker';
 import { cn } from '@src/lib/utils';
 import { Send } from 'lucide-react';
-import React, { useCallback, useState, type ReactNode } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 interface SessionInputProps {
   placeholder?: string;
@@ -50,6 +50,15 @@ export function SessionInput({
     [controlled, onChange],
   );
 
+  // Grow with the text so a long prompt stays readable; past the max-height cap it scrolls.
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [message]);
+
   const picker = usePickedFiles({ enabled: allowAttachments, disabled });
   const files = picker.files;
 
@@ -86,12 +95,27 @@ export function SessionInput({
     setText: applyToMessage,
   });
 
+  const hasFooterControls = allowAttachments || Boolean(footerSlot);
+  const sendButton = (
+    <Button
+      type="submit"
+      disabled={!canSubmit || disabled}
+      className={cn(
+        'shrink-0 rounded-full bg-gradient-to-r from-primary to-primary/80 text-white',
+        !hasFooterControls && 'absolute bottom-1 end-1',
+      )}
+      data-testid="session-input-submit"
+    >
+      <Send className="h-4 w-4 rtl:-scale-x-100" />
+    </Button>
+  );
+
   return (
     <form
       onSubmit={handleSubmit}
       {...picker.dragProps}
       className={cn(
-        'flex w-full flex-col gap-2 rounded-md border bg-accent/50 p-1 shadow-sm ring-offset-background focus-within:outline-none focus-within:ring-1 focus-within:ring-ring',
+        'flex min-h-0 w-full !shrink flex-col gap-2 rounded-md border bg-accent/50 p-1 shadow-sm ring-offset-background focus-within:outline-none focus-within:ring-1 focus-within:ring-ring',
         picker.dragging && 'border-primary ring-1 ring-primary',
       )}
     >
@@ -100,23 +124,32 @@ export function SessionInput({
         rejected={picker.rejected}
         disabled={disabled}
         onRemoveAt={picker.removeAt}
-        className="px-1 pt-1"
+        className="shrink-0 px-1 pt-1"
       />
-      <Textarea
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        placeholder={picker.dragging ? undefined : placeholder}
-        aria-label={placeholder || 'Session input'}
-        className="min-h-[40px] flex-1 resize-none border-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
-        disabled={disabled}
-        rows={1}
-      />
-      <div
-        className={cn('flex items-center gap-2', allowAttachments || footerSlot ? 'justify-between' : 'justify-end')}
-      >
-        {(allowAttachments || footerSlot) && (
+      {/* Without footer controls the send button sits in the text's bottom corner,
+          so the box doesn't reserve an empty row just for it. The textarea is the
+          one part that yields: in a flex column it shrinks (down to min-h) and
+          scrolls, so a long prompt never pushes the controls below off screen. */}
+      <div className="relative flex min-h-0 flex-col">
+        <Textarea
+          ref={textareaRef}
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          placeholder={picker.dragging ? undefined : placeholder}
+          aria-label={placeholder || 'Session input'}
+          className={cn(
+            'max-h-[50vh] min-h-[40px] resize-none overflow-y-auto border-none shadow-none focus-visible:ring-0 focus-visible:ring-offset-0',
+            !hasFooterControls && 'pe-14',
+          )}
+          disabled={disabled}
+          rows={1}
+        />
+        {!hasFooterControls && sendButton}
+      </div>
+      {hasFooterControls && (
+        <div className="flex shrink-0 items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
             {allowAttachments && (
               <AttachFilesButton
@@ -129,16 +162,9 @@ export function SessionInput({
             )}
             {footerSlot}
           </div>
-        )}
-        <Button
-          type="submit"
-          disabled={!canSubmit || disabled}
-          className="rounded-full bg-gradient-to-r from-primary to-primary/80 text-white"
-          data-testid="session-input-submit"
-        >
-          <Send className="h-4 w-4 rtl:-scale-x-100" />
-        </Button>
-      </div>
+          {sendButton}
+        </div>
+      )}
     </form>
   );
 }
