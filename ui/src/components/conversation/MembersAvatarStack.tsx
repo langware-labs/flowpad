@@ -82,8 +82,10 @@ interface MembersAvatarStackProps {
   showInviteButton?: boolean;
   /** Optional entity-specific prerequisite, asked when the invite pane is about
    *  to open. Returning false keeps it closed — the caller shows its own UI
-   *  instead (a Project that isn't published yet shows its publish popup). */
-  beforeInvite?: () => boolean;
+   *  instead (a Project that isn't published yet shows its publish popup) and
+   *  calls ``proceed`` once the prerequisite is met, so the invite the person
+   *  set out to make carries on instead of ending at the prerequisite. */
+  beforeInvite?: (proceed: () => void) => boolean;
   /** Roles the invite form may grant, e.g. ``['member', 'admin']`` for a
    *  project. Omitted = no picker, and the entity's own default role applies. */
   inviteRoles?: readonly string[];
@@ -583,14 +585,14 @@ export function MembersAvatarStack({
       });
       return;
     }
-    if (next && beforeInvite && !beforeInvite()) return;
+    if (next && beforeInvite && !beforeInvite(() => setOpen(true))) return;
     setOpen(next);
     if (!next) {
       // Reset transient state so reopening the popover doesn't show a stale
-      // selection or error from a previous attempt.
+      // selection or error from a previous attempt. The people and teams on
+      // the list are NOT transient: they are an invite not sent yet, and only
+      // Apply sends it — dropping them here silently loses the invite.
       clearDraft();
-      setPending([]);
-      setPendingTeams([]);
       setShareOutcome(null);
       setMemberError(null);
       setInviteRole('member');
@@ -614,6 +616,14 @@ export function MembersAvatarStack({
           >
             <UserPlus className="h-3.5 w-3.5" />
             <Trans>Invite</Trans>
+            {!open && listed > 0 && (
+              <span
+                className="rounded bg-brand-foreground/20 px-1 text-[10px] font-medium"
+                data-testid="members-invite-unsent"
+              >
+                <Trans>{listed} not sent</Trans>
+              </span>
+            )}
           </button>
         )}
         <Popover open={open} onOpenChange={handleOpenChange}>
