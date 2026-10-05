@@ -5,13 +5,13 @@ to the local hub (`:8093`) that offers a decision API (an APIEndpoint with `kind
 Jev).
 
 1. **Off by default.** In the magic line ("What do you want to do?") type `open data sources` →
-   Data sources opens, and nothing is added to SmartNavigationData.
+   Data sources opens, and nothing is added to SmartNavigationLog.
 2. **Turn it on.** Preferences → Advanced → **Smart navigation log**.
 3. **Use it.**
    - `open data sources` → Data sources opens;
    - `summarize the README` → the assistant opens with that prompt;
    - `take me to preferences` → Preferences opens.
-4. **The log.** SmartNavigationData (Assets / `GET /api/v1/graph/dataset?filter={"name":"SmartNavigationData"}`)
+4. **The log.** SmartNavigationLog (Assets / `GET /api/v1/graph/dataset?filter={"name":"SmartNavigationLog"}`)
    has 3 new `train` rows: each with `input.here`, the decision as `output`, what was done in `data`
    (`address` or `prompt`), no gold. Validate reports no problems.
 5. **Review.** Open its editor (`/dock/app/<editor>?subject=dataset-<id>`). Filter **needs label**,

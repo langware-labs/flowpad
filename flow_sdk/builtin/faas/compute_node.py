@@ -1649,7 +1649,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         active tab is -- its own ``browser_context`` -- so the UI sends only what was typed.
         Never fails: anything missing or unsure is the prompt, and with no decision API on the
         hub that is every answer. With SmartNavigationLog on, the decision is appended to the
-        SmartNavigationData dataset AFTER this answers (``flow_sdk.core.navigation_log``)."""
+        SmartNavigationLog dataset AFTER this answers (``flow_sdk.core.navigation_log``)."""
         from flow_sdk.core.navigation import here_from  # noqa: PLC0415
         from flow_sdk.core.navigation_decision import decide_run  # noqa: PLC0415
         from flow_sdk.core.navigation_log import log_soon  # noqa: PLC0415

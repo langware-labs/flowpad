@@ -29,6 +29,15 @@ HERE = {"view": "home", "address": "/dock/home"}
 
 
 @pytest.fixture
+def log_temp(tmp_path, monkeypatch):
+    """Flowpad's temp folder for this test -- where the log lives."""
+    from flow_sdk import config
+
+    monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path / "flowpad_temp"))
+    return tmp_path / "flowpad_temp"
+
+
+@pytest.fixture
 def hub(monkeypatch):
     state = {"endpoints": [JEV], "answer": ("agentic", 0.99)}
 
@@ -102,12 +111,20 @@ async def _decide_and_log(utterance: str) -> None:
     await navigation_log.drain()
 
 
-async def test_the_log_is_off_by_default_and_writes_nothing(hub, fresh_user_scope):
+async def test_the_log_is_off_by_default_and_writes_nothing(hub, log_temp):
     await _decide_and_log("open data sources")
     assert not navigation_log.folder().exists()
 
 
-async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, fresh_user_scope):
+def test_the_log_lives_in_flowpads_temp_folder_per_instance(log_temp):
+    """Temp on purpose: the OS clears it now and then, so the log never grows without bound."""
+    from flow_sdk.instance_settings import get_instance_settings
+
+    instance = get_instance_settings().instance_name
+    assert navigation_log.folder() == log_temp / instance / "agentic-assets" / "dataset" / "smart-navigation-log"
+
+
+async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, log_temp):
     write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
     try:
         await _decide_and_log("open data sources")
@@ -115,7 +132,7 @@ async def test_with_the_log_on_every_decision_is_a_row_of_one_training_set(hub, 
         ds = Dataset.at(navigation_log.folder())
         assert (ds.spec, ds.title, ds.num_examples, ds.kind_counts) == (
             "navigator.dataset",
-            "SmartNavigationData",
+            "SmartNavigationLog",
             4,
             {"train": 4},
         )

@@ -74,7 +74,7 @@ const PREF_DESCRIPTIONS: Partial<Record<PrefKey, MessageDescriptor>> = {
   [PrefKey.SOUND_KEY]: msg`Plays each time an agentic process becomes ready for your input.`,
   [PrefKey.SHARE_MESSAGE_STATUS]: msg`Let other participants see when messages are delivered or read.`,
   [PrefKey.SMART_NAVIGATION_SIGNIN]: msg`When you are signed out, ask whether to sign in so the search line can open screens directly.`,
-  [PrefKey.SMART_NAVIGATION_LOG]: msg`Collect every smart-navigation decision (what you typed, where, what opened) as a row of your SmartNavigationData dataset, to review and train on.`,
+  [PrefKey.SMART_NAVIGATION_LOG]: msg`Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then.`,
   [PrefKey.SCROLLBACK_LINES]: msg`How many lines of terminal output to retain in the scrollback buffer.`,
   [PrefKey.EXPERIMENTAL_FLAGS]: msg`Free-form JSON for experimental feature toggles. Invalid JSON is not saved.`,
   [PrefKey.INDEXER_BACKEND]: msg`Which engine runs filesystem indexing: the built-in Python FSIndexer, or the external Rust indexer (requires FLOWPAD_RS_INDEXER_BIN on the server; silently falls back to Python when unavailable). Takes effect on the next index run.`,
