@@ -83,6 +83,16 @@ export interface SetupStageState {
   detail: string;
 }
 
+/** What one way of connecting looks like right now (a group member's card): `Source.profile()`. */
+export interface DriverProfile {
+  name?: string;
+  description?: string;
+  avatar?: string | null;
+  number?: string;
+  available?: boolean;
+  detail?: string;
+}
+
 export interface IDataDriver extends IEntity {
   /** The definition's folder on this machine. */
   asset_ref?: string;
@@ -94,6 +104,9 @@ export interface IDataDriver extends IEntity {
   setup_wiki?: string;
   /** The wizards a source of this driver is set up with, in order (test, then production…). */
   setup_wizards?: SetupStage[];
+  /** One choice to a person, several ways to it ("WhatsApp"): one tile per group, a card per member. */
+  group?: string;
+  group_order?: number;
   /** The record kind a source row carries (`datasource.api.slack`). */
   kind?: string;
   /** Always `source`: the folder's own `source.py`. */
@@ -155,6 +168,8 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   channel_icon_names: Record<string, string> = {};
   setup_wiki: string = '';
   setup_wizards: SetupStage[] = [];
+  group: string = '';
+  group_order: number = 0;
   kind: string = '';
   runtime: string = 'source';
   load_error: string = '';
@@ -194,5 +209,10 @@ export class DataDriver extends APIEntity<DataDriver> implements IDataDriver {
   constructor(json: IDataDriver | undefined = undefined) {
     super(json as never);
     if (json) dataManager.deepAssign(this, json);
+  }
+
+  /** This way of connecting as a card, right now (a group's setup phase). `{}` when the driver has none. */
+  async profile(): Promise<DriverProfile> {
+    return this.get('profile');
   }
 }

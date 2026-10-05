@@ -30,6 +30,7 @@ import { Label } from '@src/components/ui/label';
 import { Switch } from '@src/components/ui/switch';
 import { Textarea } from '@src/components/ui/textarea';
 import { SetupWizardDialog } from '@src/components/setup-wizard/SetupWizardDialog';
+import { GroupChoice } from './GroupChoice';
 import {
   accountKeyFor,
   buildConfig,
@@ -127,6 +128,8 @@ export function DataSourceDialog({
   const specs = only ? offered.filter(only) : offered;
   const [draft, setDraft] = useState<SourceDraft>(() => emptyDraft());
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // A driver group being chosen ("WhatsApp"): its setup phase shows a card per way to connect.
+  const [group, setGroup] = useState('');
   // Nothing is wrong with a form nobody has filled in yet. Problems are shown once the person
   // asks to add the source — before that the red box reads as a broken dialog, not as guidance.
   const [tried, setTried] = useState(false);
@@ -143,11 +146,14 @@ export function DataSourceDialog({
   useEffect(() => {
     if (!open) return;
     setDraft(editing ? draftFrom(editing, seedRef.current(editing.provider)) : emptyDraft());
+    setGroup('');
     setShowAdvanced(false);
     setTried(false);
   }, [open, editing]);
 
   const spec = specFor(draft.provider);
+  // One tile per driver group (its first member stands for it), one per ungrouped driver.
+  const tiles = specs.filter((p) => !p.group || groupMembers(specs, p.group)[0]?.name === p.name);
   // The agent the cloud creates this account for — no form, nothing to validate. The
   // picker only offers a provisioned provider with an agent owner, so this is that agent.
   const provisioned = !editing && spec?.provisioned ? ownerAgentId : null;
@@ -328,9 +334,16 @@ export function DataSourceDialog({
         }}
       >
         <DialogHeader>
-          <DialogTitle>{editing ? t`Edit data source` : t`Add a data source`}</DialogTitle>
+          <DialogTitle>{editing ? t`Edit data source` : only ? t`Add a channel` : t`Add a data source`}</DialogTitle>
           <DialogDescription>
-            <Trans>A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the heartbeat.</Trans>
+            {only ? (
+              <Trans>Where people reach this agent — one number, mailbox or chat per channel.</Trans>
+            ) : (
+              <Trans>
+                A source is one remote stream — one feed, channel, drive or mailbox. The poller syncs it on the
+                heartbeat.
+              </Trans>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -342,23 +355,26 @@ export function DataSourceDialog({
                   <Trans>No installed provider can carry a channel.</Trans>
                 </p>
               )}
-              {specs.map((p) => {
+              {tiles.map((p) => {
                 // Through the one source→glyph rule, so the tile a person picks and the
                 // card it becomes cannot disagree. No channel here: a provider is being
                 // chosen, not one of a multi-channel transport's channels.
                 const Glyph = lucideByName(sourceIconName(p, null));
-                const label = p.title || p.name || '';
+                const label = p.group || p.title || p.name || '';
+                const chosen = p.group ? group === p.group : draft.provider === p.name;
                 return (
                   <Tooltip key={p.name} delayDuration={TILE_TIP_DELAY}>
                     <TooltipTrigger asChild>
                       <DesktopTile
-                        data-testid={`provider-${p.name}`}
+                        data-testid={p.group ? `provider-group-${p.group}` : `provider-${p.name}`}
                         Icon={Glyph}
                         label={label}
-                        onClick={() => setDraft(emptyDraft(p))}
-                        className={cn(
-                          draft.provider === p.name && 'border-primary bg-accent text-foreground ring-1 ring-primary',
-                        )}
+                        onClick={() => {
+                          // A group's tile opens its setup phase; the way to connect is chosen there.
+                          setGroup(p.group || '');
+                          setDraft(p.group ? emptyDraft() : emptyDraft(p));
+                        }}
+                        className={cn(chosen && 'border-primary bg-accent text-foreground ring-1 ring-primary')}
                       />
                     </TooltipTrigger>
                     {/* What the tile used to spell out underneath. A 10px line
@@ -374,6 +390,16 @@ export function DataSourceDialog({
                 );
               })}
             </TileSection>
+          )}
+
+          {!editing && group && (
+            <GroupChoice
+              group={group}
+              members={groupMembers(specs, group)}
+              selected={draft.provider}
+              // The channel is named for what the person chose ("WhatsApp"); they can rename it.
+              onPick={(m) => setDraft({ ...emptyDraft(m), name: group })}
+            />
           )}
 
           {!editing && !draft.provider ? null : provisioned ? (
@@ -466,7 +492,8 @@ export function DataSourceDialog({
                       onChange={(e) =>
                         setDraft((d) => ({
                           ...d,
-                          thread_timeout_seconds: e.target.value === '' ? null : Math.round(Number(e.target.value) * 60),
+                          thread_timeout_seconds:
+                            e.target.value === '' ? null : Math.round(Number(e.target.value) * 60),
                         }))
                       }
                     />
@@ -510,19 +537,34 @@ export function DataSourceDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             <Trans>Cancel</Trans>
           </Button>
-          <Button onClick={() => { setTried(true); void submit(); }} disabled={busy}>
+          <Button
+            onClick={() => {
+              setTried(true);
+              void submit();
+            }}
+            disabled={busy}
+          >
             {busy
               ? '…'
               : editing
                 ? t`Save`
                 : provisioned
                   ? t`Create ${spec?.title}`
-                  : byWizard
-                    ? t`Add and set up`
-                    : t`Add source`}
+                  : byWizard && group
+                    ? t`Connect ${group}`
+                    : byWizard
+                      ? t`Add and set up`
+                      : t`Add source`}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
+}
+
+/** A group's members, in their declared order (``group_order``, then title). */
+function groupMembers(specs: DataDriver[], group: string): DataDriver[] {
+  return specs
+    .filter((s) => s.group === group)
+    .sort((a, b) => (a.group_order ?? 0) - (b.group_order ?? 0) || (a.title || '').localeCompare(b.title || ''));
 }

@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "name": "flow_whatsapp",
+  "title": "Flow — no setup",
+  "icon_name": "WhatsApp",
+  "description": "Talk to Flow, Flowpad's own assistant, on WhatsApp. Nothing to set up at Meta — link your phone once and Flow answers, acting on your Flowpad.",
+  "kind": "datasource.cloud.whatsapp",
+  "group": "WhatsApp",
+  "group_order": 0,
+  "config": {
+    "link_id": {
+      "type": "text",
+      "advanced": true,
+      "label": "Link",
+      "hint": "Made when you press Connect WhatsApp."
+    },
+    "wa_id": {
+      "type": "text",
+      "advanced": true,
+      "label": "Your phone",
+      "account_key": true,
+      "hint": "The phone that sent the Connect code — the only one Flow answers here."
+    }
+  },
+  "setup_wizards": [
+    {
+      "stage": "connect",
+      "label": "Connect",
+      "wizard": "flow-whatsapp-connect"
+    }
+  ]
+}

@@ -766,6 +766,25 @@ class DataSource(Entity):
             note_attention(str(self.id), cadence)
         return cadence or None
 
+    @classmethod
+    async def nudge(cls, provider: str) -> int:
+        """Every healthy source of ``provider`` polls on the next tick — the hub said something waits for
+        them. The same gates as ``request_poll`` (a parked or disabled source stays put). How many woke."""
+        from flow_sdk.ingest.poller import wake_attention_lane  # noqa: PLC0415
+
+        woke = 0
+        for row in await cls.get_all({"provider": provider}) or []:
+            if row.poll_refusal():
+                continue
+            if row.next_poll_at is not None:
+                row.next_poll_at = None
+                await row.save_runtime()
+            row.note_attention()
+            woke += 1
+        if woke:
+            wake_attention_lane()
+        return woke
+
     @core_action.post(action_name="request_poll")
     async def request_poll_action(self) -> ApiResponse:
         """POST /api/v1/graph/data_source/{id}/request_poll — attention.
@@ -1432,11 +1451,13 @@ class DataSource(Entity):
 
     async def _keep(self, driver, update) -> None:
         """Store what a setup step learned: config on the file, senders on the row, secrets in the credential."""
-        if update.config or update.allowed_senders is not None:
+        if update.config or update.allowed_senders is not None or update.owner:
             if update.config:
                 self.config = {**(self.config or {}), **update.config}
             if update.allowed_senders is not None:
                 self.allowed_senders = list(update.allowed_senders)
+            if update.owner:
+                self.owner = TypeId._pydantic_validate(update.owner)
             await self.save()
         if update.secrets:
             from flow_sdk.builtin.credential_service import set_credential_by_name  # noqa: PLC0415
