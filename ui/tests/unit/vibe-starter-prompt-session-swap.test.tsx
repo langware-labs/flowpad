@@ -102,7 +102,7 @@ vi.mock('@src/components/entity-execution-panel', () => ({
 }));
 
 // Heavy display children the empty state never mounts.
-vi.mock('@src/pages/flow-page/VibeAssignTaskButton', () => ({ VibeAssignTaskButton: () => null }));
+vi.mock('@src/components/help/AskForHelpButton', () => ({ AskForHelpButton: () => null }));
 vi.mock('@src/pages/flow-page/workspace-child-strip', () => ({ WorkspaceChildStrip: () => null }));
 vi.mock('@src/pages/flow-page/content-panel/content-panel', () => ({ ContentPanel: () => null }));
 vi.mock('@src/pages/flow-page/display-history-button', () => ({ DisplayHistoryButton: () => null }));
