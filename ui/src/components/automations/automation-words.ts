@@ -13,6 +13,8 @@ import type { AutomationKind, AutomationRun, RunStatus, ScheduleWhen, ThenPart, 
 export interface AutomationWords {
   kind: (kind: AutomationKind) => string;
   kindPlural: (kind: AutomationKind) => string;
+  /** One word: Schedule, Event, File, Agent. */
+  kindShort: (kind: AutomationKind) => string;
   when: (when: WhenPart) => string;
   schedule: (schedule: ScheduleWhen) => string;
   then: (part: ThenPart) => string;
@@ -212,7 +214,15 @@ export function useAutomationWords(): AutomationWords {
         agent_hook: t`When an agent does something`,
       })[k];
 
-    return { kind, kindPlural, when, schedule, then, status, why, at, duration };
+    const kindShort = (k: AutomationKind): string =>
+      ({
+        schedule: t`Schedule`,
+        event: t`Event`,
+        file: t`File`,
+        agent_hook: t`Agent`,
+      })[k];
+
+    return { kind, kindPlural, kindShort, when, schedule, then, status, why, at, duration };
   }, [t, i18n.locale]);
 }
 

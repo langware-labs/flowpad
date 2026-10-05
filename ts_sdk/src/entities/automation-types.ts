@@ -56,6 +56,8 @@ export interface ThenPart {
   target?: string | null;
   target_name?: string | null;
   prompt?: string | null;
+  /** What a built-in step does, in words. */
+  detail?: string | null;
   /** The step cannot run as configured; says why. */
   problem?: string | null;
 }
@@ -131,6 +133,8 @@ export interface RunsQuery {
   triggerId?: string | null;
   status?: RunStatus | null;
   includeTests?: boolean;
+  /** Flowpad's own automations' runs (default true). */
+  includeBuiltin?: boolean;
   limit?: number;
 }
 

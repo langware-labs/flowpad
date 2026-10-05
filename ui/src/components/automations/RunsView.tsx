@@ -21,6 +21,8 @@ export function RunsView({ route }: { route: AutomationsRoute }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
   const [hideTests, setHideTests] = useState(false);
+  // Flowpad's own (transcript watchers, the heartbeat) fire constantly; simple first means yours.
+  const [showBuiltin, setShowBuiltin] = useState(false);
   const {
     data: runs = [],
     error,
@@ -29,6 +31,7 @@ export function RunsView({ route }: { route: AutomationsRoute }) {
     triggerId: route.trigger,
     status: route.status,
     includeTests: !hideTests,
+    includeBuiltin: showBuiltin || !!route.trigger,
     limit: 300,
   });
   // Names for the filter only: shares the list's cache without polling it again.
@@ -79,6 +82,15 @@ export function RunsView({ route }: { route: AutomationsRoute }) {
             data-testid="runs-hide-tests"
           />
           <Trans>Hide test runs</Trans>
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={showBuiltin}
+            onChange={(e) => setShowBuiltin(e.target.checked)}
+            data-testid="runs-show-builtin"
+          />
+          <Trans>Include Flowpad's own</Trans>
         </label>
       </header>
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(18rem,2fr)_3fr]">

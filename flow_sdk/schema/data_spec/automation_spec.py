@@ -120,6 +120,8 @@ class ThenPart(DataSpec):
     #: Its name, resolved for display ("LLM setup", "Chief of Staff").
     target_name: Optional[str] = None
     prompt: Optional[str] = None
+    #: What a built-in step does, in words (the callback's registered meaning).
+    detail: Optional[str] = None
     #: Step that cannot run as configured (a callback nobody registered, a missing script).
     problem: Optional[str] = None
 

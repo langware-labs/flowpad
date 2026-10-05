@@ -128,7 +128,8 @@ async def describe_then(trigger: Any, *, names: Optional[_Names] = None,
             else:
                 problem = None if trigger_callbacks.get(cb) else f"Nothing is registered under the name {cb!r}."
                 label = cb.removeprefix("builtin_").replace("_", " ") or "a built-in step"
-                parts.append(ThenPart(kind="builtin_step", text=f"Run {label}", target_name=label, problem=problem))
+                parts.append(ThenPart(kind="builtin_step", text=f"Run {label}", target_name=label,
+                                      detail=trigger_callbacks.meaning(cb), problem=problem))
         elif atype == ActionType.RUN_SCRIPT.value:
             script = action.script_path or action.script_filename or ""
             parts.append(ThenPart(kind="run_script", text=f"Run script {script.rsplit('/', 1)[-1] or ''}".strip(),

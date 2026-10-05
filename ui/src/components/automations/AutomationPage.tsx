@@ -42,6 +42,7 @@ import { Advanced, Block, WhenBlock } from './blocks/WhenBlock';
 import { RunDetail } from './RunDetail';
 import { RunsList } from './RunsList';
 import { TestPanel } from './TestPanel';
+import { ThenSteps } from './ThenSteps';
 
 export function AutomationPage({ route }: { route: AutomationsRoute }) {
   const { t } = useLingui();
@@ -303,6 +304,11 @@ export function AutomationPage({ route }: { route: AutomationsRoute }) {
               <WhenBlock draft={draft} onChange={setDraft} readOnly={readOnly || isRuleFolder} />
               {isRuleFolder ? (
                 <RuleCodeBlock triggerId={triggerId as string} />
+              ) : readOnly && automation ? (
+                // Nothing to edit: say what it does, and let each step be opened.
+                <Block testId="automation-then" title={<Trans>Then</Trans>}>
+                  <ThenSteps steps={automation.then} />
+                </Block>
               ) : (
                 <ThenBlock draft={draft} onChange={setDraft} readOnly={readOnly} savedThen={automation?.then} />
               )}

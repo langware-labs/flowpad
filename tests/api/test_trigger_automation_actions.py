@@ -193,3 +193,19 @@ async def test_bus_map_lists_event_types(bootstrapped_client):
     data = resp.json()["data"]
     assert any(e["name"] == "app.ready" for e in data["event_types"])
     assert "app.ready" in data["forwarded_patterns"]
+
+
+async def test_runs_can_leave_out_flowpads_own(bootstrapped_client):
+    from tests.unit.automations._helpers import settle
+
+    client = bootstrapped_client
+    mine = await _create(client, trigger_type="tag", tag_pattern="apimine.*")
+    builtin = await _create(client, trigger_type="tag", tag_pattern="apibuiltin2.*", scope="system")
+    for row in (mine, builtin):
+        await client.post(f"/api/v1/graph/trigger/{row['id']}/test", json={})
+    await settle()
+    every = {r["trigger_id"] for r in (await client.get("/api/v1/graph/trigger/runs")).json()["data"]}
+    yours = {r["trigger_id"] for r in (await client.get("/api/v1/graph/trigger/runs",
+                                                        params={"include_builtin": "false"})).json()["data"]}
+    assert {mine["id"], builtin["id"]} <= every
+    assert mine["id"] in yours and builtin["id"] not in yours

@@ -7,9 +7,10 @@
  */
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { AutomationKind } from '@sdk';
-import { Bot, CalendarClock, FileText, Radio, Sparkles } from 'lucide-react';
+import { Sparkles } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 import { AUTOMATION_RECIPES } from './automation-recipes';
+import { KIND_ICON } from './KindBadge';
 
 export interface KindGalleryProps {
   onPick: (kind: AutomationKind, recipe?: string) => void;
@@ -19,28 +20,24 @@ export interface KindGalleryProps {
 
 export function KindGallery({ onPick, compact }: KindGalleryProps) {
   const { t } = useLingui();
-  const kinds: Array<{ kind: AutomationKind; icon: typeof Radio; title: string; body: string; advanced?: boolean }> = [
+  const kinds: Array<{ kind: AutomationKind; title: string; body: string; advanced?: boolean }> = [
     {
       kind: 'schedule',
-      icon: CalendarClock,
       title: t`On a schedule`,
       body: t`Every weekday at 9, every hour, once next Tuesday.`,
     },
     {
       kind: 'event',
-      icon: Radio,
       title: t`When something happens in Flowpad`,
       body: t`A task is assigned, the app opens, an agent finishes.`,
     },
     {
       kind: 'file',
-      icon: FileText,
       title: t`When a file changes`,
       body: t`A document is saved, a folder gets a new file.`,
     },
     {
       kind: 'agent_hook',
-      icon: Bot,
       title: t`When an agent does something`,
       body: t`Before a tool runs, when a turn ends. Written as code.`,
       advanced: true,
@@ -65,28 +62,31 @@ export function KindGallery({ onPick, compact }: KindGalleryProps) {
           <Trans>What should start it?</Trans>
         </h3>
         <div className="grid gap-3 sm:grid-cols-2">
-          {kinds.map(({ kind, icon: Icon, title, body, advanced }) => (
-            <button
-              key={kind}
-              type="button"
-              data-testid={`automation-kind-${kind}`}
-              onClick={() => onPick(kind)}
-              className="flex items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-primary/60 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="min-w-0">
-                <span className="flex items-center gap-2 text-sm font-medium">
-                  {title}
-                  {advanced && (
-                    <span className="rounded border border-border px-1.5 text-[10px] font-normal text-muted-foreground">
-                      <Trans>Advanced</Trans>
-                    </span>
-                  )}
+          {kinds.map(({ kind, title, body, advanced }) => {
+            const Icon = KIND_ICON[kind];
+            return (
+              <button
+                key={kind}
+                type="button"
+                data-testid={`automation-kind-${kind}`}
+                onClick={() => onPick(kind)}
+                className="flex items-start gap-3 rounded-lg border border-border p-4 text-left transition-colors hover:border-primary/60 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Icon className="mt-0.5 size-5 shrink-0 text-muted-foreground" aria-hidden />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    {title}
+                    {advanced && (
+                      <span className="rounded border border-border px-1.5 text-[10px] font-normal text-muted-foreground">
+                        <Trans>Advanced</Trans>
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">{body}</span>
                 </span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">{body}</span>
-              </span>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
       </div>
       <div>
