@@ -8,6 +8,7 @@ Offline by construction: the source is handed a fake hub. What is pinned:
 """
 from __future__ import annotations
 
+import base64
 import time
 
 import pytest
@@ -70,6 +71,8 @@ async def test_connect_shows_flow_the_code_and_the_link_that_sends_it():
     shown = update.shown
     assert (shown.name, shown.number, shown.code) == ("Flow", "+1 555 0100", "AB2CD3")
     assert shown.link == "https://wa.me/15550100?text=link%20AB2CD3" and shown.qr.startswith("data:image/svg+xml;base64,")
+    svg = base64.b64decode(shown.qr.split(",", 1)[1]).decode()
+    assert 'xmlns="http://www.w3.org/2000/svg"' in svg, "an <img> renders an SVG only with its namespace"
 
     # Read back later (a resumed wizard), the link carries only its code — the link is rebuilt from Flow's number.
     again = await _source(hub, link_id="L1")._connect(check=True, values={})
