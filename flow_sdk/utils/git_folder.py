@@ -48,6 +48,14 @@ if TYPE_CHECKING:
 # only this NAME; the value lives solely in the child env.
 GIT_TOKEN_ENV = "FLOWPAD_GIT_TOKEN"
 CREDENTIAL_HELPER = f'!f() {{ echo username=x-access-token; echo "password=${GIT_TOKEN_ENV}"; }}; f'
+#: The token helper ALONE. A ``-c credential.helper`` APPENDS to the helpers git config
+#: already lists, and Git for Windows lists Git Credential Manager: it runs first, waits for
+#: a sign-in nobody sees, and stores our token in the OS credential store. The empty value
+#: resets that list (``hub_repo_sync._git_env`` does the same through GIT_CONFIG_*).
+CREDENTIAL_HELPER_ARGS = ("-c", "credential.helper=", "-c", f"credential.helper={CREDENTIAL_HELPER}")
+#: No credential prompt, ever. ``GIT_TERMINAL_PROMPT`` stops git's own; Git Credential
+#: Manager ignores it and needs its own switch — a token-less call still reaches it.
+NO_PROMPT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never"}
 
 #: Empty directories cannot be represented in git; this marker stands in for one.
 KEEP_FILE = ".flowpad-vfs-keep"
@@ -194,11 +202,11 @@ class GitFolder:
             current = current.parent
 
     def _auth(self, use_token: bool) -> tuple[list[str], dict[str, str]]:
-        """``(extra argv, env overlay)``. ``GIT_TERMINAL_PROMPT=0`` always, so a
-        missing or bad credential fails fast instead of hanging on a prompt."""
-        env = {"GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C"}
+        """``(extra argv, env overlay)``. ``NO_PROMPT_ENV`` always, so a missing or
+        bad credential fails fast instead of hanging on a prompt."""
+        env = {**NO_PROMPT_ENV, "LC_ALL": "C"}
         if use_token and self._token:
-            return ["-c", f"credential.helper={CREDENTIAL_HELPER}"], {**env, GIT_TOKEN_ENV: self._token}
+            return list(CREDENTIAL_HELPER_ARGS), {**env, GIT_TOKEN_ENV: self._token}
         return [], env
 
     async def git(
