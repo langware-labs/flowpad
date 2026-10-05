@@ -983,7 +983,7 @@ class HubWsBridge:
 
         Drops projection-guarded fields (``message_count``, ``message_ids``)
         before save — those are owned by ``ConversationRecord.sync_to_db``."""
-        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.conversation import Conversation, conversation_row_lock
         from flow_sdk.builtin.user import User
 
         local_user = await User.get_local()
@@ -1026,48 +1026,50 @@ class HubWsBridge:
 
         self.remember_hub_conversation(conv_id)
 
-        existing = await Conversation.get_one({"id": conv_id})
-        if existing is None:
-            # Identity mirror — a remote row is a pure reflection of the hub
-            # row. The hub's owner field (``initiated_by``) is the only
-            # legitimate creator; when the hub doesn't carry one, fall back to
-            # the neutral 'system' sentinel — NEVER the local user (the driver
-            # would otherwise stamp the request-context user, surfacing
-            # received conversations as created by the recipient).
-            clean["created_by"] = data.get("initiated_by") or data.get("created_by") or "system"
-            try:
-                new_conv = Conversation.model_validate(clean)
-            except Exception:
-                logger.exception("hub_bridge: conversation validate failed conv=%s data=%s", conv_id, clean)
+        # One writer at a time per row — see ``conversation_row_lock``.
+        async with conversation_row_lock(conv_id):
+            existing = await Conversation.get_one({"id": conv_id})
+            if existing is None:
+                # Identity mirror — a remote row is a pure reflection of the hub
+                # row. The hub's owner field (``initiated_by``) is the only
+                # legitimate creator; when the hub doesn't carry one, fall back to
+                # the neutral 'system' sentinel — NEVER the local user (the driver
+                # would otherwise stamp the request-context user, surfacing
+                # received conversations as created by the recipient).
+                clean["created_by"] = data.get("initiated_by") or data.get("created_by") or "system"
+                try:
+                    new_conv = Conversation.model_validate(clean)
+                except Exception:
+                    logger.exception("hub_bridge: conversation validate failed conv=%s data=%s", conv_id, clean)
+                    return
+                if not new_conv.id:
+                    new_conv.id = conv_id
+                await new_conv.save(someone_typeid, notify=True)
                 return
-            if not new_conv.id:
-                new_conv.id = conv_id
-            await new_conv.save(someone_typeid, notify=True)
-            return
 
-        for field in (
-            "title",
-            "status",
-            "git_sharing_enabled",
-            "members",
-            "remote_project_id",
-            "remote_project_name",
-            "shared_context_entities",
-        ):
-            # A hub ``None`` is "the hub has nothing", not "clear it": a guest
-            # ticket carries no title on the hub while the local row titles it
-            # from the opening line. Same rule as the HTTP twin
-            # (``_upsert_hub_conversation_metadata``'s update path).
-            if field in clean and clean[field] is not None:
-                setattr(existing, field, clean[field])
-        existing.remote = True
-        # Adopt the hub's owner when it carries one — keeps the local mirror
-        # converged with the hub row (same rule as the HTTP sync path in
-        # ``_upsert_hub_conversation_metadata``).
-        hub_owner = data.get("initiated_by")
-        if hub_owner and existing.created_by != hub_owner:
-            existing.created_by = hub_owner
-        await existing.save(someone_typeid, notify=True)
+            for field in (
+                "title",
+                "status",
+                "git_sharing_enabled",
+                "members",
+                "remote_project_id",
+                "remote_project_name",
+                "shared_context_entities",
+            ):
+                # A hub ``None`` is "the hub has nothing", not "clear it": a guest
+                # ticket carries no title on the hub while the local row titles it
+                # from the opening line. Same rule as the HTTP twin
+                # (``_upsert_hub_conversation_metadata``'s update path).
+                if field in clean and clean[field] is not None:
+                    setattr(existing, field, clean[field])
+            existing.remote = True
+            # Adopt the hub's owner when it carries one — keeps the local mirror
+            # converged with the hub row (same rule as the HTTP sync path in
+            # ``_upsert_hub_conversation_metadata``).
+            hub_owner = data.get("initiated_by")
+            if hub_owner and existing.created_by != hub_owner:
+                existing.created_by = hub_owner
+            await existing.save(someone_typeid, notify=True)
 
     async def _handle_llm_endpoint_op(self, op: str, eid: str, data: dict) -> None:
         """A budget this user holds a role on changed on the hub.
