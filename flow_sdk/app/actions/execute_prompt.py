@@ -560,7 +560,8 @@ async def resolve_or_mint_session(
       guest minted it with uuid4). An invalid/foreign id is ignored.
     - Without a usable id, the prompt is looked up as a STARTING message
       (``starting_message_id == fm.id``) so a re-delivered op finds the row it
-      already created; only then is a fresh uuid4 minted. Never a deterministic
+      already created, then joins the conversation's OPEN session (one per
+      conversation); only then is a fresh uuid4 minted. Never a deterministic
       id — idempotency is the natural-key lookup.
     - A missing row materializes at PENDING with the guest's opening proposal
       (``session_start`` marker → ``reply_policy``); a DRAFT row that landed
@@ -576,7 +577,10 @@ async def resolve_or_mint_session(
         sid = None
     session = await RemoteWorkerSession.resolve_state(sid) if sid else None
     if session is None and not sid:
+        # A re-delivered opening prompt finds its own row; any other unstamped
+        # prompt joins the conversation's open session — one per conversation.
         session = await RemoteWorkerSession.get_one({"starting_message_id": fm.id})
+        session = session or await RemoteWorkerSession.open_for_conversation(conv.id)
         sid = session.id if session else mint_uuid()
     start = session_start_settings(fm)
     changed = session is None
@@ -804,6 +808,14 @@ async def run_session_turn(
                 }
             )
         except Exception as e:  # noqa: BLE001
+            # A failed prompt is answered by its failure line, even one that failed
+            # before the consume (no project folder): left queued, the next drain
+            # would run it again on top of the guest's Retry — one prompt, two runs.
+            if not getattr(fm, "prompt_auto_handled", False):
+                try:
+                    await consume_prompt(fm, someone_typeid)
+                except Exception:  # noqa: BLE001 — reporting the failure comes first
+                    logger.warning("[session] could not consume the failed prompt fm=%s", fm.id, exc_info=True)
             return await _fail_turn(session, e, someone_typeid)
 
 
@@ -817,7 +829,7 @@ async def _fail_turn(session: "RemoteWorkerSession", err: Exception, someone_typ
     The guest has no clock: a turn that fails only on the host leaves the guest's
     mirror on ``running`` with a reply that is never coming. The event carries the
     session snapshot, so the guest's mirror flips to ``error`` with it. ERROR is
-    runnable — the guest's next prompt is the retry.
+    runnable — the guest's Retry re-sends the failed prompt as a new turn.
     """
     from flow_sdk.builtin.remote_worker_session import RemoteWorkerSessionStatus  # noqa: PLC0415
 

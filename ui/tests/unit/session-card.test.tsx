@@ -6,7 +6,13 @@ import { SessionCard } from '@src/components/conversation/SessionCard';
 const SID = 'a1a1a1a1-0000-4000-8000-000000000001';
 
 function session(status: string, over: Partial<RemoteWorkerSession> = {}) {
-  return new RemoteWorkerSession({ id: SID, status, host_name: 'Sam', guest_name: 'Dana', ...over } as Partial<RemoteWorkerSession>);
+  return new RemoteWorkerSession({
+    id: SID,
+    status,
+    host_name: 'Sam',
+    guest_name: 'Dana',
+    ...over,
+  } as Partial<RemoteWorkerSession>);
 }
 
 function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
@@ -21,6 +27,8 @@ function renderCard(props: Partial<Parameters<typeof SessionCard>[0]> = {}) {
       onOpen={props.onOpen ?? onOpen}
       onApprove={props.onApprove}
       onDecline={props.onDecline}
+      lastPromptFailed={props.lastPromptFailed}
+      onRetry={props.onRetry}
     />,
   );
   return { onOpen };
@@ -73,6 +81,29 @@ describe('SessionCard', () => {
     fireEvent.click(screen.getByTestId('session-card-open'));
     expect(onOpen).toHaveBeenCalledTimes(1);
     expect(window.location.href).toBe(before);
+  });
+
+  it('a failed last prompt keeps the session live and offers the guest Retry, once', async () => {
+    const onRetry = vi.fn().mockResolvedValue(undefined);
+    const { onOpen } = renderCard({
+      session: session(RemoteWorkerSessionStatus.ERROR),
+      lastPromptFailed: true,
+      onRetry,
+    });
+    expect(screen.getByTestId('session-card').getAttribute('data-status')).toBe('active');
+    expect(screen.getByText("Live on Sam's machine")).toBeTruthy();
+    expect(screen.getByTestId('session-card-failed').textContent).toBe('Last prompt failed');
+    fireEvent.click(screen.getByTestId('session-card-retry'));
+    expect(onOpen).not.toHaveBeenCalled(); // Retry does not open the session
+    expect((screen.getByTestId('session-card-retry') as HTMLButtonElement).disabled).toBe(true); // busy guard
+    await Promise.resolve();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("the host sees the failure but no Retry (it is the guest's prompt)", () => {
+    renderCard({ session: session(RemoteWorkerSessionStatus.ERROR), role: 'host', lastPromptFailed: true });
+    expect(screen.getByTestId('session-card-failed')).toBeTruthy();
+    expect(screen.queryByTestId('session-card-retry')).toBeNull();
   });
 
   it('null session renders "requesting"', () => {

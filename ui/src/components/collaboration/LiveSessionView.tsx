@@ -32,6 +32,8 @@ import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { truncate } from '@src/components/hooks/event-summaries';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { useApproveLiveSession } from './useApproveLiveSession';
+import { failedPromptOf, promptTextOf, resultTextOf, sessionEventOf } from '@src/components/conversation/session-turns';
+import { useRetryFailedPrompt } from '@src/components/conversation/useRetryFailedPrompt';
 
 /**
  * Client-side resolver seam for the live-session state: today it's the watched
@@ -49,27 +51,6 @@ export function useLiveSession(sessionId: string) {
   return useEntity<RemoteWorkerSession>(sessionTypeId, { watch: true });
 }
 
-function promptTextOf(fm: FlowMessage): string {
-  for (const a of fm.attachment ?? []) {
-    if (a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt-') && a.prompt_preview) {
-      return a.prompt_preview;
-    }
-    if (a?.attachment_type === 'prompt' && a.data && !a.data.startsWith('prompt/')) {
-      return a.data;
-    }
-  }
-  return fm.text ?? '';
-}
-
-function resultTextOf(fm: FlowMessage): string | null {
-  for (const a of fm.attachment ?? []) {
-    if (a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt_completion-')) {
-      return a.prompt_preview ?? fm.text ?? '';
-    }
-  }
-  return null;
-}
-
 /** Guest-facing status line per lifecycle state. */
 function statusLine(status: string | undefined, hostName: string): ReactNode {
   switch (status) {
@@ -81,6 +62,8 @@ function statusLine(status: string | undefined, hostName: string): ReactNode {
       return <Trans>Working on {hostName}'s machine…</Trans>;
     case RemoteWorkerSessionStatus.IDLE:
       return <Trans>Connected to {hostName}'s machine.</Trans>;
+    case RemoteWorkerSessionStatus.ERROR:
+      return <Trans>Connected to {hostName}'s machine — the last prompt failed.</Trans>;
     case RemoteWorkerSessionStatus.PAUSED:
       return <Trans>{hostName} paused the live session.</Trans>;
     case RemoteWorkerSessionStatus.DECLINED:
@@ -203,6 +186,13 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   );
 
   const { approve, picker: approvePicker } = useApproveLiveSession();
+  const retryFailedPrompt = useRetryFailedPrompt();
+  // The prompt the host failed to run and nothing answered since — its failed line offers Retry.
+  const failed = useMemo(() => failedPromptOf(messages), [messages]);
+  const lastFailedLine = useMemo(
+    () => [...messages].reverse().find((m) => sessionEventOf(m) === 'failed') ?? null,
+    [messages],
+  );
 
   const runAction = useCallback(
     async (verb: string, fn: () => Promise<void>) => {
@@ -410,7 +400,13 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
           <div className="flex flex-col gap-2">
             {messages.map((fm) => {
               if (fm.kind === FlowMessageKind.SESSION_EVENT) {
-                return <SessionEventLine key={fm.id} text={fm.text ?? ''} />;
+                const retry =
+                  !isHost && failed && conversationId && sessionEventOf(fm) === 'failed' && fm === lastFailedLine
+                    ? () => void runAction('retry', () => retryFailedPrompt(conversationId, sessionId, failed.text))
+                    : undefined;
+                return (
+                  <SessionEventLine key={fm.id} text={fm.text ?? ''} onRetry={retry} retrying={busy === 'retry'} />
+                );
               }
               const result = resultTextOf(fm);
               if (result !== null) {
