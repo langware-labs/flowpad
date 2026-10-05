@@ -2731,6 +2731,15 @@ msgstr "Approval failed"
 msgid "Approve"
 msgstr "Approve"
 
+#: src/components/collaboration/LiveSessionView.tsx
+#: src/components/conversation/SessionCard.tsx
+msgid "Approve once"
+msgstr "Approve once"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Approve, and let {guestName} start sessions without asking"
+msgstr "Approve, and let {guestName} start sessions without asking"
+
 #: src/components/hub/AddMachineDialog.tsx
 msgid "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
 msgstr "Approving lets this machine act as you on FlowPad. Only approve a code you generated yourself."
@@ -14653,7 +14662,6 @@ msgstr "No process ID specified"
 msgid "No process selected."
 msgstr "No process selected."
 
-#: src/components/collaboration/useApproveLiveSession.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "No project"
 msgstr "No project"
@@ -19299,6 +19307,10 @@ msgstr "Rules"
 msgid "Run"
 msgstr "Run"
 
+#: src/components/collaboration/useApproveLiveSession.tsx
+msgid "Run (Skip project)"
+msgstr "Run (Skip project)"
+
 #. placeholder {0}: selectedRunId?.slice(0, 8) ?? ''
 #: src/components/graph-workflows/panels/RunsPanel.tsx
 msgid "Run {0}"
@@ -19393,12 +19405,16 @@ msgid "Run it"
 msgstr "Run it"
 
 #: src/components/collaboration/useApproveLiveSession.tsx
-msgid "Run it in this machine's live-session temp folder — always the same folder"
-msgstr "Run it in this machine's live-session temp folder — always the same folder"
+#~ msgid "Run it in this machine's live-session temp folder — always the same folder"
+#~ msgstr "Run it in this machine's live-session temp folder — always the same folder"
 
 #: src/components/automations/AutomationRow.tsx
 msgid "Run it once now, even if it is off. It shows up in Runs as a test."
 msgstr "Run it once now, even if it is off. It shows up in Runs as a test."
+
+#: src/components/collaboration/useApproveLiveSession.tsx
+msgid "Run it without a project, in this machine's live-session temp folder — always the same folder"
+msgstr "Run it without a project, in this machine's live-session temp folder — always the same folder"
 
 #: src/components/assets/editor/agent-profile/AgentScheduleSection.tsx
 #: src/components/automations/AutomationRow.tsx
