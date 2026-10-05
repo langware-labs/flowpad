@@ -9,7 +9,7 @@ inverts the order, so the message is still local when ``share()`` runs. Before
 the fix, ``share()`` pushed only the conversation shell + invitation and never
 the pending message — the recipient opened an empty conversation.
 
-The on/off switch is the ``await self.deliver_pending_messages()`` call in
+The on/off switch is the ``await self.deliver(...)`` call in
 ``Conversation.share()``: with it, the pending message is pushed through the
 normal send pipeline (``_send_conversation_message_header``); without it, it is
 not. This test drives ``share()`` at the unit layer (hub I/O neutralized) and
@@ -51,6 +51,7 @@ async def test_share_delivers_offline_composed_message_to_hub():
         conversation_id=conv_id,
         sender_id="local-user",
         sender_name="Ami Levy",
+        outbound=True,  # as the flow-diagnose report writes it
     )
     await msg.save()
     rec = from_jsonl(default_jsonl_path(conv_id), conv_id, conv_id, parent_type=RecordType.PROJECT)
@@ -70,7 +71,7 @@ async def test_share_delivers_offline_composed_message_to_hub():
         client.post = AsyncMock(return_value={})
         yield client
 
-    header = AsyncMock(return_value=True)
+    header = AsyncMock(return_value=None)  # None = the hub has it
 
     with (
         patch.object(Entity, "share", new=AsyncMock(return_value=None)),
@@ -84,7 +85,7 @@ async def test_share_delivers_offline_composed_message_to_hub():
     ):
         await conv.share(recipients=["gadi@langware.ai"])
 
-    # The bug's switch: with deliver_pending_messages() in share(), the pending
+    # The bug's switch: with deliver() in share(), the pending
     # offline message is pushed through the normal send pipeline. Without it,
     # this is never awaited and the recipient gets an empty conversation.
     header.assert_awaited_once()
@@ -118,13 +119,14 @@ async def test_share_joins_before_any_fallible_post_create_work():
     async def _link():
         events.append("link")
 
-    async def _deliver():
+    async def _deliver(**_kwargs):
         events.append("deliver")
 
     with (
         patch.object(Entity, "share", new=AsyncMock(return_value=None)),
         patch.object(Conversation, "_link_context_to_conversation", side_effect=_link),
-        patch.object(Conversation, "deliver_pending_messages", side_effect=_deliver),
+        patch.object(Conversation, "deliver", side_effect=_deliver),
+        patch.object(Conversation, "kick_delivery", new=lambda *_a, **_k: None),
         patch.object(Conversation, "_share_hostable_assets", new=AsyncMock(return_value=[])),
         patch("flow_sdk.cli.auth.credentials.load_credentials", return_value=creds),
         patch("flow_sdk.cloud_client.client.FlowpadClient", side_effect=_fake_client),

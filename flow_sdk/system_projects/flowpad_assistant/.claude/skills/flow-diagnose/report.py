@@ -214,6 +214,8 @@ async def create_support_conversation(
         attachment=(
             [Attachment(attachment_type=AttachmentType.TYPE_ID, data=attachment_type_id)] if attachment_type_id else []
         ),
+        # Written here to be sent when "Report issue" shares the conversation: the outbox's "mine".
+        outbound=True,
     )
     msg = await msg.save(owner)
 

@@ -243,9 +243,19 @@ async def _catch_up_after_reconnect() -> None:
     check able to fire at all: that check needs a listing NEWER than the binding before it
     will treat an absence as an answer, and on a fresh process there is none.
 
+    The socket coming back is also a moment the hub became reachable, so what this machine still
+    owes it goes out first (``catchup.flush_pending_outbox``).
+
     Best-effort: a catch-up hiccup must never take down the connection that just
-    came back. Each half is guarded separately so one failing does not skip the other.
+    came back. Each part is guarded separately so one failing does not skip the others.
     """
+    try:
+        from flow_sdk.stream_inbox.catchup import flush_pending_outbox
+
+        await flush_pending_outbox("ws reconnect")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("hub WS reconnect outbox flush failed (non-fatal): %s", e)
+
     try:
         from flow_sdk.app.actions.flow_message_action import handle_conversation_list
         from flow_sdk.builtin.user import User

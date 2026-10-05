@@ -740,7 +740,7 @@ class HubWsBridge:
                     # deferring on the frame's stale "uploading" stranded the prompt.
                     if _has_prompt_attachment(payload.get("attachment")):
                         row = await FlowMessage.get_one({"id": fm_id})
-                        if getattr(row, "body_status", None) == "uploading":  # a str-Enum; equal to its value
+                        if getattr(row, "body_status", None) in ("uploading", "failed"):  # str-Enum values
                             logger.info(
                                 "[bridge] prompt body still uploading — deferring auto-run until READY fm=%s",
                                 fm_id,
