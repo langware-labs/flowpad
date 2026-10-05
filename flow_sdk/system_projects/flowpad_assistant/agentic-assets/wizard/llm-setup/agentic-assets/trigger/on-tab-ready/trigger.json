@@ -1,6 +1,6 @@
 {
-  "name": "LLM setup (app.tab.ready)",
-  "description": "Runs once, the first time you open Flowpad: it makes sure an AI model is connected and checks the tools agents need (Claude Code, Python, Git, Node.js), asking before it installs anything. To run it again: Settings → General → Run setup again.",
+  "name": "First-time setup",
+  "description": "Helps you set up Flowpad the first time you open it. It asks before installing anything.",
   "tag": {
     "on": "app.tab.ready"
   },
