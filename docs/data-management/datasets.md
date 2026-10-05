@@ -382,3 +382,34 @@ follows the highest existing `NNNN`, never the count, so a gap is preserved. The
 editor webapp nested in every shipped source definition carries the pane that
 drives them; the `connect-data-source` skill's `define` mode drives them for an
 agent.
+
+## Typed rows — a spec that NAMES a kind
+
+`spec` may be the name of a registered dataset kind (`"navigator.dataset"`), typically one a
+`data_spec` folder defines — nested in the dataset itself, so the dataset carries its own
+definitions (see [data-spec](data-spec.md#kinds-defined-by-a-folder)). Then every slot is a typed
+value, written by the generic walker as `«slot»/<last kind segment>.json` (`input/request.json`,
+`ground_truth/decision.json`), several gold answers as `ground_truth-1/`, `ground_truth-2/` — any
+one is right.
+
+| verb | what |
+|---|---|
+| `POST append {rows}` | typed rows in; every row is checked first, one bad row writes nothing |
+| `GET example/<id>` | one example's slot VALUES (an editor's read) |
+| `POST annotate {example_id, ground_truth}` | REPLACES the gold with the shape's own document (a list → `ground_truth-N/`) |
+| `POST validate` | every row read as the declared shape; names each row that does not fit, with its slot (`ground_truth.route`) |
+| `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
+
+Indexing still reads rows as artifacts (fast, never fatal); `validate` is the check.
+
+## Editors
+
+A dataset opens in the app that edits it (`flow_sdk/assets/editors.py`, `GET /api/v1/editors/<typeid>`):
+its own nested editor (`<dataset>/agentic-assets/webapp/<name>/`, kind `application.web.editor`),
+else an editor whose `webapp.json` `edits` names the dataset's kind or an ancestor of it (most
+specific first), else one that edits the `dataset` type — the shipped generic editor. The SDK app
+behind them is `mountDatasetEditor`: it builds every form from the declared kinds
+(`GET /api/v1/kinds/<kind>`), so one editor serves every typed dataset.
+
+The shipped example is `flowpad_assistant/agentic-assets/dataset/smart-navigator/` — the navigator's
+eval set, its row kinds nested beside it, its editor nested in it.
