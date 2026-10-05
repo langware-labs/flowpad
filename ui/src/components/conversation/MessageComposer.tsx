@@ -345,7 +345,7 @@ export function MessageComposer({
           files: files.length > 0 ? files : undefined,
         });
         onChannelSent?.(messageBody || files.map((f) => f.name).join(', '));
-        onClearReply?.();
+        if (replyTo) onClearReply?.();
       } else {
         // Cloud reply needs an authenticated hub token; otherwise the hub POST
         // 401s and the send fails silently. Route through OAuth first.
@@ -380,7 +380,7 @@ export function MessageComposer({
             outgoingFiles,
             Object.keys(extras).length > 0 ? extras : undefined,
           );
-          if (answering) onClearReply?.();
+          if (replyTo) onClearReply?.();
           if (taskItOn && sent.id && !isPromptSend) {
             onTaskIt?.({
               id: sent.id,

@@ -243,12 +243,18 @@ def is_message(item) -> bool:
 
 
 def _thread_title(item) -> str:
-    """A chat thread's display title: the root message's opening line.
+    """A chat thread's display title: the root message's opening line."""
+    return opening_title(getattr(item, "body", "") or "")
+
+
+def opening_title(body: str) -> str:
+    """A thread's title from its root message: the opening line.
 
     First line only, bounded, ellipsized on a word where possible. Empty when
-    the item has no body — the caller then falls back to the thread key.
+    there is no text — the caller then falls back. Channel and native threads
+    title alike through here.
     """
-    opening = (getattr(item, "body", "") or "").strip().splitlines()[0:1]
+    opening = (body or "").strip().splitlines()[0:1]
     text = opening[0].strip() if opening else ""
     if len(text) <= 60:
         return text
@@ -638,7 +644,7 @@ async def _place_message(
         notify=notify,
     )
     if first_placement and item.external_id:
-        await _heal_replies_to(item, fm_id, thread_id, notify=notify)
+        await _heal_replies_to(item, fm_id, notify=notify)
     if recount:
         await recompute_thread_projection(thread_id, thread=thread, notify=notify)
     if announce and first_placement:
@@ -648,33 +654,25 @@ async def _place_message(
     return fm_id, thread_id
 
 
-async def _heal_replies_to(item, fm_id: str, thread_id: str, *, notify: bool) -> None:
+async def _heal_replies_to(item, fm_id: str, *, notify: bool) -> None:
     """Link the replies that were projected BEFORE this message (it arrived late — a backfill
     page out of order, a webhook that beat the poll) to it: the quote their projection could not
-    resolve then. Scoped to this message's thread, where its replies live, and to messages that
-    still have no ``reply_to_id`` — one thread query plus one bulk item lookup, the same order of
-    work as the thread recount that follows."""
+    resolve then. Starts from the replies' items — on this source, answering this message — so
+    the usual case (nothing answered it yet) is one query and no message is read."""
     from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
     from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
     from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-    orphans = [
-        fm
-        for fm in await FlowMessage.get_all({"match": {"thread_id": thread_id}})
-        if fm.id != fm_id and not fm.reply_to_id and fm.source_item_id
-    ]
-    if not orphans:
-        return
-    items = await SourceItem.get_all(
-        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", [fm.source_item_id for fm in orphans]]))
+    replies = await SourceItem.get_all(
+        {"match": {"data_source_id": item.data_source_id, "reply_to_external_id": item.external_id}}
     )
-    answering = {
-        str(i.id)
-        for i in items
-        if i.reply_to_external_id == item.external_id and i.data_source_id == item.data_source_id
-    }
-    for fm in orphans:
-        if fm.source_item_id in answering:
+    if not replies:
+        return
+    unlinked = await FlowMessage.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["source_item_id", [str(r.id) for r in replies]]))
+    )
+    for fm in unlinked:
+        if not fm.reply_to_id and fm.id != fm_id:
             fm.reply_to_id = fm_id
             await fm.save(notify=notify)
 
@@ -868,7 +866,7 @@ async def recompute_thread_projection(thread_id: str, *, thread=None, notify: bo
         thread = await MessageThread.get_one({"id": thread_id})
     if thread is None:
         return
-    count = len(await FlowMessage.get_all({"match": {"thread_id": thread_id}}))
+    count = len(await FlowMessage.get_all({"match": {"thread_id": thread_id}}, hydrate=False))  # ids only
     if not count or thread.message_count == count:
         return  # idempotent early-out — no save, no broadcast
     thread._set_projection("message_count", count, PROJECTION_SENTINEL)
