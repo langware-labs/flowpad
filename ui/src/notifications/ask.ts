@@ -1,6 +1,7 @@
 import { notify } from './notify';
 import { registerCommand } from './commands';
 import { holdAsk, settleAsk, type AskAnswer } from './pending-asks';
+import type { NotificationLocation } from './types';
 
 /**
  * A notification that asks: a sticky toast with one button per choice and, optionally, a
@@ -20,6 +21,8 @@ export interface AskInput {
   choices: { value: string; label: string }[];
   /** Present → the toast shows this checkbox (unticked). */
   remember?: { label: string };
+  /** `center` when the question must be answered before anything goes on (default `corner`). */
+  location?: NotificationLocation;
 }
 
 export function askNotification(input: AskInput): Promise<AskAnswer> {
@@ -30,6 +33,7 @@ export function askNotification(input: AskInput): Promise<AskAnswer> {
       title: input.title,
       message: input.message,
       remember: input.remember,
+      location: input.location,
       durationMs: null,
       actions: input.choices.map((c) => ({
         label: c.label,

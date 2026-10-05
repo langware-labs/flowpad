@@ -7,10 +7,17 @@ import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { CopyButton } from '@src/components/ui/copy-button';
 import { Checkbox } from '@src/components/ui/checkbox';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+} from '@src/components/ui/alert-dialog';
 import { notificationText, type NotificationData, type NotificationLevel } from './types';
 import { runAction } from './commands';
 import { settleAsk } from './pending-asks';
-import { isAlertLevel } from './notify';
+import { isAlertLevel, notify } from './notify';
+import { useCenterStore } from './center-store';
 import { DiagnoseIconButton } from './diagnose/DiagnoseIconButton';
 import { NotificationProcessLine } from './NotificationProcessLine';
 
@@ -54,7 +61,7 @@ const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} bg-muted text-muted-foreground 
  * component (not inline in `renderToast`) because the box is state: its value rides the clicked
  * action's args as `remember`.
  */
-function ToastActions({ data, toastId }: { data: NotificationData; toastId: string }) {
+function ToastActions({ data, close }: { data: NotificationData; close: () => void }) {
   const [remember, setRemember] = useState(false);
   return (
     <div className="mt-2 flex flex-col gap-2">
@@ -65,7 +72,7 @@ function ToastActions({ data, toastId }: { data: NotificationData; toastId: stri
             data-testid={`notification-action-${i}`}
             onClick={() => {
               runAction(action, data.id, data.remember ? { remember } : undefined);
-              if (action.href) sonnerToast.dismiss(toastId);
+              if (action.href) close();
             }}
             className={i === 0 ? ACTION_BTN_PRIMARY : ACTION_BTN_SECONDARY}
           >
@@ -77,6 +84,7 @@ function ToastActions({ data, toastId }: { data: NotificationData; toastId: stri
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
           <Checkbox
             data-testid="notification-remember"
+            aria-label={data.remember.label}
             checked={remember}
             onCheckedChange={(v) => setRemember(v === true)}
             className="h-3.5 w-3.5"
@@ -103,7 +111,9 @@ export function renderToast(data: NotificationData, toastId: string) {
         <div className="text-sm font-medium text-foreground">{data.title}</div>
         {data.message && <div className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{data.message}</div>}
         <NotificationProcessLine data={data} />
-        {data.actions && data.actions.length > 0 && <ToastActions data={data} toastId={toastId} />}
+        {data.actions && data.actions.length > 0 && (
+          <ToastActions data={data} close={() => sonnerToast.dismiss(toastId)} />
+        )}
       </div>
       <div className="flex flex-shrink-0 items-center gap-0.5">
         {/* A failure is the one notification people need to paste into an issue
@@ -137,16 +147,64 @@ export function renderToast(data: NotificationData, toastId: string) {
 }
 
 /**
- * The single app-level toast renderer. Mount once (in App). Backed by sonner;
- * our toasts are `toast.custom`, so styling lives in `renderToast`.
+ * A `location: 'center'` notification: a blocking dialog the person has to answer. No ×, and
+ * neither Escape nor a click outside closes it — the only way out is one of its actions (or the
+ * caller's own `notify.dismiss`). One at a time; the next in the queue follows.
+ */
+export function CenterNotification() {
+  const data = useCenterStore((s) => s.queue[0] ?? null);
+  const close = () => data && useCenterStore.getState().remove(data.id);
+  return (
+    <AlertDialog open={data !== null}>
+      {data && (
+        <AlertDialogContent
+          data-testid="notification-center"
+          className="max-w-md"
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex-shrink-0">
+              <NotificationGlyph data={data} size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <AlertDialogTitle className="text-base">{data.title}</AlertDialogTitle>
+              {data.message && (
+                <AlertDialogDescription className="mt-1 whitespace-pre-line">{data.message}</AlertDialogDescription>
+              )}
+              <NotificationProcessLine data={data} />
+              {data.actions && data.actions.length > 0 ? (
+                <ToastActions data={data} close={close} />
+              ) : (
+                // Nothing to answer with: forcing an action would trap the person.
+                <div className="mt-3">
+                  <button onClick={() => notify.dismiss(data.id)} className={ACTION_BTN_PRIMARY}>
+                    {t`OK`}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </AlertDialogContent>
+      )}
+    </AlertDialog>
+  );
+}
+
+/**
+ * The single app-level notification renderer. Mount once (in App). Corner
+ * notifications are sonner `toast.custom` (styling lives in `renderToast`);
+ * centered ones are `CenterNotification`.
  */
 export function NotificationOutlet() {
   const { theme = 'system' } = useTheme();
   return (
-    <Sonner
-      theme={theme as React.ComponentProps<typeof Sonner>['theme']}
-      position="bottom-right"
-      className="toaster group"
-    />
+    <>
+      <Sonner
+        theme={theme as React.ComponentProps<typeof Sonner>['theme']}
+        position="bottom-right"
+        className="toaster group"
+      />
+      <CenterNotification />
+    </>
   );
 }

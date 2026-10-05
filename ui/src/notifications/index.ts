@@ -9,5 +9,11 @@ export { NotificationFeed } from './feed';
 export { registerCommand, runCommand, runAction, registerNavigate, navigateTo } from './commands';
 export { useBadgeStore } from './store';
 export { useAlertStore } from './alerts-store';
-export type { NotificationData, NotificationInput, NotificationAction, NotificationLevel } from './types';
+export type {
+  NotificationData,
+  NotificationInput,
+  NotificationAction,
+  NotificationLevel,
+  NotificationLocation,
+} from './types';
 export { notificationText } from './types';

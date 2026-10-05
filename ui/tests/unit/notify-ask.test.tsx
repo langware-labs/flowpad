@@ -3,7 +3,7 @@
  * again" box rides the clicked button's command args; closing the toast — its ×, or
  * `notify.dismiss` — resolves with no answer, so a caller holding a request never hangs.
  */
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const custom = vi.hoisted(() => vi.fn());
@@ -14,6 +14,8 @@ vi.mock('sonner', () => ({
 
 const { askNotification } = await import('@src/notifications/ask');
 const { notify } = await import('@src/notifications/notify');
+const { CenterNotification } = await import('@src/notifications/NotificationOutlet');
+const { useCenterStore } = await import('@src/notifications/center-store');
 
 const QUESTION = {
   id: 'q1',
@@ -71,5 +73,37 @@ describe('askNotification', () => {
     await expect(first).resolves.toEqual({ value: null, remember: false });
     notify.dismiss('q1');
     await expect(second).resolves.toEqual({ value: null, remember: false });
+  });
+});
+
+describe("location: 'center'", () => {
+  beforeEach(() => {
+    custom.mockClear();
+    useCenterStore.setState({ queue: [] });
+  });
+
+  it('is a blocking dialog, not a toast: no ×, and Escape does not close it', async () => {
+    render(<CenterNotification />);
+    const answer = askNotification({ ...QUESTION, location: 'center' });
+    expect(custom).not.toHaveBeenCalled();
+    const dialog = await screen.findByTestId('notification-center');
+    expect(dialog.textContent).toContain('Smart navigation requires sign-in');
+    expect(screen.queryByLabelText('Dismiss notification')).toBeNull();
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    expect(screen.getByTestId('notification-center')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('notification-remember'));
+    fireEvent.click(screen.getByTestId('notification-action-1'));
+    await expect(answer).resolves.toEqual({ value: 'continue', remember: true });
+    expect(screen.queryByTestId('notification-center')).toBeNull();
+  });
+
+  it('notify.dismiss closes it and answers "no answer"', async () => {
+    render(<CenterNotification />);
+    const answer = askNotification({ ...QUESTION, location: 'center' });
+    await screen.findByTestId('notification-center');
+    act(() => notify.dismiss('q1'));
+    await expect(answer).resolves.toEqual({ value: null, remember: false });
+    expect(screen.queryByTestId('notification-center')).toBeNull();
   });
 });
