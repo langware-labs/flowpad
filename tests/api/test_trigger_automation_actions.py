@@ -161,3 +161,27 @@ async def test_samples_of_an_unarmed_rule_is_an_empty_list(bootstrapped_client):
     row = await _create(client, trigger_type="tag", tag_pattern="apisample.*", enabled=False)
     resp = await client.get(f"/api/v1/graph/trigger/{row['id']}/samples")
     assert resp.status_code == 200 and resp.json()["data"] == []
+
+
+async def test_builtin_automations_cannot_be_changed_or_deleted(bootstrapped_client):
+    client = bootstrapped_client
+    row = await _create(client, trigger_type="tag", tag_pattern="apibuiltin.*", scope="system")
+    upd = await client.patch(f"/api/v1/graph/trigger/{row['id']}/update", json={"tag_pattern": "x.*"})
+    assert upd.status_code == 409 and "built into Flowpad" in upd.json()["message"]
+    gone = await client.delete(f"/api/v1/graph/trigger/{row['id']}/delete")
+    assert gone.status_code == 409
+
+
+async def test_updating_a_file_defined_automation_writes_its_file(bootstrapped_client, tmp_path):
+    import json
+
+    from flow_sdk.builtin.agent_schedule import _index
+
+    folder = tmp_path / "agentic-assets" / "trigger" / "api-file"
+    folder.mkdir(parents=True)
+    (folder / "trigger.json").write_text(json.dumps({"name": "On ready", "tag": {"on": "app.ready"}}))
+    row = await _index(folder)
+    resp = await bootstrapped_client.patch(f"/api/v1/graph/trigger/{row.id}/update", json={"tag_pattern": "app.tab.ready"})
+    assert resp.status_code == 200, resp.text
+    assert json.loads((folder / "trigger.json").read_text())["tag"]["on"] == "app.tab.ready"
+    assert resp.json()["data"]["tag_pattern"] == "app.tab.ready"
