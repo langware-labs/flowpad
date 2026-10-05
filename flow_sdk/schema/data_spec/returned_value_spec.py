@@ -308,6 +308,32 @@ class AskResult(ReturnedValue):
     cancelled: bool = False
 
 
+class NavigateResult(ReturnedValue):
+    """What showing a place did: where it went, and whether it can be used there.
+
+    ``exit_code`` is the verdict: ``OK``; ``NOT_YET`` — resolved but not usable yet
+    (nothing answers, it errors, or no browser is open to show it in);
+    ``NOT_FOUND`` — it does not resolve on this machine; ``REFUSED`` — the page
+    refuses to be shown inside Flowpad. Only ``NOT_YET`` is worth a repair.
+
+    The browser's own rendering is NOT part of it: a call never waits for the UI
+    to acknowledge. ``delivered`` means "handed to a live session or browser tab".
+    """
+
+    spec_kind: ClassVar[str] = "compute.returned.navigate"
+
+    #: The ``Tab.pointer`` JSON as delivered — resolved for THIS machine, so a file
+    #: names its local path (which a declared, travelling pointer must not).
+    pointer: str = ""
+    #: The browser tab it was sent to; ``None`` when it went to a session display.
+    connection_id: Optional[str] = None
+    delivered: bool = False
+    #: Why, in the display's own vocabulary (``ui/src/components/webapp-display/classify.ts``):
+    #: ``ok`` · ``not_running`` · ``hung`` · ``server_error`` · ``redirect_loop`` · ``not_http`` ·
+    #: ``not_found`` · ``frame_blocked`` · ``no_browser``. ``None`` when nothing was checked.
+    verdict: Optional[str] = None
+
+
 class WizardResult(ReturnedValue):
     """A wizard's answer: its own verdict, and each step's answer as the step's
     OWN result — a ``CliResult``, a ``PromptResult``, a nested ``WizardResult``.
