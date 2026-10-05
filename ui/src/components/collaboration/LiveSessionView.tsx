@@ -302,12 +302,23 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
               <>
                 <Button
                   size="sm"
-                  onClick={() => void runAction('approve', () => approve(session))}
+                  className="bg-blue-600 text-white hover:bg-blue-500"
+                  onClick={() => void runAction('approve', () => approve(session, { remember: 'everywhere' }))}
                   disabled={!!busy}
+                  title={t`Approve, and let ${guestName} start sessions without asking`}
                   data-testid="live-session-approve"
                 >
                   <CircleCheck className="me-1.5 h-4 w-4" />
                   <Trans>Approve</Trans>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void runAction('approve', () => approve(session))}
+                  disabled={!!busy}
+                  data-testid="live-session-approve-once"
+                >
+                  <Trans>Approve once</Trans>
                 </Button>
                 <Button
                   size="sm"

@@ -16,8 +16,10 @@ export interface SessionCardProps {
   replyCount: number;
   /** URL-first: the caller navigates (`openDock(DockPointer.forLiveSession)`). */
   onOpen: () => void;
-  /** Host + pending only. */
+  /** Host + pending only: approve and remember this guest (later sessions start without asking). */
   onApprove?: () => Promise<void>;
+  /** Host + pending only: approve this session only. */
+  onApproveOnce?: () => Promise<void>;
   onDecline?: () => Promise<void>;
   /** Either side, while live: end the session. */
   onDisconnect?: () => Promise<void>;
@@ -63,7 +65,8 @@ function SinceApproved({ approvedAt }: { approvedAt: string }) {
 /**
  * A live session's ONE line in the conversation: `Live session · <other side>`
  * and its status. The whole line opens the session view, where the turns live.
- * The host answers a request here once (Approve / Decline); once it is live the
+ * The host answers a request here once (Approve — and remember this guest —,
+ * Approve once, or Decline); once it is live the
  * line carries the message count, the time since approval, and a red Disconnect.
  */
 export function SessionCard({
@@ -74,13 +77,14 @@ export function SessionCard({
   replyCount,
   onOpen,
   onApprove,
+  onApproveOnce,
   onDecline,
   onDisconnect,
   lastPromptFailed,
   onRetry,
 }: SessionCardProps) {
   const { t } = useLingui();
-  const [busy, setBusy] = useState<'approve' | 'decline' | 'disconnect' | 'retry' | null>(null);
+  const [busy, setBusy] = useState<'approve' | 'approve-once' | 'decline' | 'disconnect' | 'retry' | null>(null);
   const state = sessionCardState(session?.status);
   const running = session?.status === RemoteWorkerSessionStatus.RUNNING;
   const host = session?.host_name?.trim() || t`the host`;
@@ -180,11 +184,14 @@ export function SessionCard({
           button('retry', onRetry, 'border border-border text-foreground hover:bg-muted', <Trans>Retry</Trans>)}
         {role === 'host' &&
           state === 'pending' &&
+          button('approve', onApprove, 'bg-blue-600 text-white hover:bg-blue-500', <Trans>Approve</Trans>)}
+        {role === 'host' &&
+          state === 'pending' &&
           button(
-            'approve',
-            onApprove,
-            'bg-primary text-primary-foreground hover:bg-primary/90',
-            <Trans>Approve</Trans>,
+            'approve-once',
+            onApproveOnce,
+            'border border-border text-foreground hover:bg-muted',
+            <Trans>Approve once</Trans>,
           )}
         {role === 'host' &&
           state === 'pending' &&
