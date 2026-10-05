@@ -69,7 +69,7 @@ export function summarize(value: unknown): string {
   if (Array.isArray(value)) return value.map(summarize).join('  |  ');
   if (typeof value !== 'object') return String(value);
   const v = value as Record<string, any>;
-  if (typeof v.utterance === 'string') return v.utterance;
+  if (typeof v.utterance === 'string') return v.here?.view ? `${v.utterance}  — on ${v.here.view}` : v.utterance;
   if (v.route)
     return v.target
       ? `${v.route} → ${v.target.kind}:${v.target.value}${v.verb && v.verb !== 'show' ? ` (${v.verb})` : ''}`
@@ -188,7 +188,7 @@ async function run($: (id: string) => HTMLElement): Promise<void> {
   const goldKind = typeof form?.slots?.output === 'string' ? (form.slots.output as string) : '';
   const gold = goldKind ? await kindForm(goldKind) : null;
 
-  const { rows } = await dataset.rows(); // every example with its values, in one request
+  const { rows }: { rows: any[] } = await dataset.rows(); // every example with its values, in one request
   const counts = () => `${rows.length} examples · ${rows.filter((r) => r.ground_truth != null).length} labelled`;
   $('counts').textContent = counts();
 

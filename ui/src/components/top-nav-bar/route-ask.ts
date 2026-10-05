@@ -45,19 +45,10 @@ export function dockForTarget(target: NavigationTarget): DockPointer | null {
 
 export async function askOrOpen(
   text: string,
-  {
-    page,
-    projectTypeId,
-    open,
-    fallback,
-  }: {
-    page: string;
-    projectTypeId?: string | null;
-    open: (dock: DockPointer) => void;
-    fallback: () => void;
-  },
+  { open, fallback }: { open: (dock: DockPointer) => void; fallback: () => void },
 ): Promise<'opened' | 'asked'> {
-  const answer = await navigatorRoute(text, { page, context: { CurrentProjectTypeId: projectTypeId } });
+  // Where the person is comes from this tab's own browser context, on the backend.
+  const answer = await navigatorRoute(text);
   const dock = answer.route === 'quick' && answer.target ? dockForTarget(answer.target) : null;
   if (dock) {
     open(dock);

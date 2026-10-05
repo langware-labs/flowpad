@@ -33,15 +33,18 @@ const AGENTIC: NavigatorRoute = {
   latency_ms: 0,
 };
 
+/**
+ * `here` (a `navigation.here`) defaults to where the active tab is: the backend reads that tab's
+ * own browser context, so a caller in the UI sends only what was typed.
+ */
 export async function navigatorRoute(
   utterance: string,
-  options: { page?: string; context?: Record<string, string | null | undefined> } = {},
+  options: { here?: Record<string, unknown> } = {},
 ): Promise<NavigatorRoute> {
   try {
     const answer = await apiClient.post<NavigatorRoute>('/api/v1/graph/compute_node/@local/navigator-route', {
       utterance,
-      page: options.page ?? '',
-      context: options.context ?? {},
+      ...(options.here ? { here: options.here } : {}),
     });
     return answer ?? AGENTIC;
   } catch {
