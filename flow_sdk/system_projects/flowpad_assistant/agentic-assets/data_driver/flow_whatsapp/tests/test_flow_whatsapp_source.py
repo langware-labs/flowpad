@@ -4,7 +4,7 @@ Offline by construction: the source is handed a fake hub. What is pinned:
 
 * Connect shows Flow's card, the code and the link that sends it — and refuses when the hub has no Flow;
 * the gate (``connected``) passes ONLY once the hub validated the code, and says why not until then;
-* the inbox is read after the cursor, and an answer goes to the person's own phone, quoting what it answers.
+* what the phone sent is read after the cursor, and an answer goes to the person's own phone, quoting what it answers.
 """
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ class _Hub:
     async def link(self, link_id):
         return dict(self.links[link_id]) if link_id in self.links else None
 
-    async def inbox(self, since):
+    async def received(self, since):
         return [m for m in self.messages if m["at"] > since]
 
     async def send(self, wa_id, text, reply_to):
@@ -99,7 +99,7 @@ async def test_the_gate_passes_only_once_the_hub_validated_the_phone():
     assert (await _source(hub, link_id="L1", wa_id=PHONE)._connected(check=True, values={})).ok
 
 
-async def test_the_inbox_is_read_after_the_cursor():
+async def test_what_the_phone_sent_is_read_after_the_cursor():
     hub = _Hub()
     hub.messages = [
         {"wamid": "wamid.IN1", "wa_id": PHONE, "direction": "in", "text": "hi", "profile_name": "Dana", "at": 100.0},

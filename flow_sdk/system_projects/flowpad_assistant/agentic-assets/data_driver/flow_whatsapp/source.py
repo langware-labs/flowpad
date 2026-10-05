@@ -36,7 +36,7 @@ CHANNEL = "whatsapp"
 MESSAGES_STREAM = "messages"
 #: The agent this driver ships (``agentic-assets/agent/flow``): who answers.
 FLOW_AGENT = "flow"
-#: The hub's own page size for an inbox read.
+#: The hub's own page size for one read of what the phone sent.
 HUB_PAGE = 200
 
 
@@ -47,7 +47,7 @@ class HubTransport(Protocol):
 
     async def link(self, link_id: str) -> Optional[dict]: ...
 
-    async def inbox(self, since: float) -> list[dict]: ...
+    async def received(self, since: float) -> list[dict]: ...
 
     async def send(self, wa_id: str, text: str, reply_to: str) -> dict: ...
 
@@ -71,7 +71,7 @@ class AppHub:
         found = await hub_get("whatsapp_link", link_id)
         return dict(found) if isinstance(found, dict) else None
 
-    async def inbox(self, since: float) -> list[dict]:
+    async def received(self, since: float) -> list[dict]:
         from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
 
         body = await hub_get("whatsapp_link", None, "inbox", params={"since": repr(since)}) or {}
@@ -209,9 +209,9 @@ class FlowWhatsAppSource(MessageSource):
         self._require_open()
         query = self.effective_query(narrow)
         if query.conversation is not None:
-            raise Unsupported("Flow's inbox is read whole")
+            raise Unsupported("what the phone sent Flow is read whole")
         since = _float(cursor) if cursor else (query.since.timestamp() if query.since else 0.0)
-        rows = await self.hub.inbox(since)
+        rows = await self.hub.received(since)
         items = [item for item in (self._item(r) for r in rows) if item is not None]
         last = max([_float(r.get("at")) for r in rows] or [since])
         token = repr(last) if rows else cursor
@@ -246,6 +246,18 @@ class FlowWhatsAppSource(MessageSource):
             in_reply_to=self.message_origin(quoted, wa_id) if quoted else None,
         )
         return MessageItem(origin=self.message_origin(wamid, wa_id), data=data)
+
+    def message_for(self, *, thread_key: str, to: str, text: str, subject: str = "", in_reply_to: str = "", conversation_id: str = ""):
+        """As the WhatsApp source addresses a send: the person IS the conversation (their wa_id), and
+        ``in_reply_to`` quotes their message. Flow answers only the linked phone, so that phone is the
+        default recipient. A subject has no equivalent."""
+        wa_id = _digits(to) or _digits(thread_key) or _digits(str(self.config.get("wa_id") or ""))
+        if not wa_id:
+            raise ValueError("a Flow on WhatsApp send needs the linked phone's wa_id")
+        quoted = str(in_reply_to or "").strip()
+        if quoted:
+            return MessageData(text=text), self.message_origin(quoted, wa_id)
+        return MessageData(text=text, conversation=self.conversation_origin(wa_id)), None
 
     # ── send ────────────────────────────────────────────────────────────────
     async def send(self, data: MessageData) -> MessageItem:
