@@ -128,16 +128,18 @@ async def test_add_message_git_share_config_reaches_background_upload(
         tasks.append(task)
         return task
 
+    # The header answers ``HubFailure | None``: None is "the hub has it".
     monkeypatch.setattr(
         "flow_sdk.app.actions.notification_action._send_conversation_message_header",
-        AsyncMock(return_value=True),
+        AsyncMock(return_value=None),
     )
     monkeypatch.setattr(
         "flow_sdk.app.actions.notification_action._upload_body_and_finalize",
         fake_upload,
     )
     monkeypatch.setattr(
-        "flow_sdk.app.actions.notification_action.asyncio.create_task",
+        # ``Conversation.kick_delivery`` schedules the body off the request.
+        "flow_sdk.builtin.conversation.asyncio.create_task",
         capture_task,
     )
 
