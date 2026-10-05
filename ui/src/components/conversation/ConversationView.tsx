@@ -62,6 +62,7 @@ import { useApproveLiveSession } from '@src/components/collaboration/useApproveL
 import { failedPromptOf } from './session-turns';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { notify } from '@src/notifications';
 
 interface ConversationViewProps {
   conversationId: string;
