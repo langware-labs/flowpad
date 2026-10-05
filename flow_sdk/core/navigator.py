@@ -226,6 +226,13 @@ def options_for(here: Any, candidates: list[dict[str, str]]) -> dict[str, str]:
 # ── the route ────────────────────────────────────────────────────────────────
 
 
+def _offered(answer: NavigatorRoute, candidates: list[dict[str, str]]) -> NavigatorRoute:
+    """Keep the search matches the decision was offered on the answer (``answer.offered``), so a
+    caller can record exactly what was on the table. Run detail, not part of the answer's shape."""
+    answer._offered = list(candidates)
+    return answer
+
+
 async def route(
     utterance: str,
     *,
@@ -269,22 +276,27 @@ async def route(
     try:
         result = await decide(spec)
     except DecisionError as exc:
-        return NavigatorRoute(route="agentic", reason=exc.reason)
+        return _offered(NavigatorRoute(route="agentic", reason=exc.reason), candidates)
     key = result.pick("target", min=MIN_CONFIDENCE)
     answer = result.answers.get("target")
     confidence = float(getattr(answer, "confidence", 0.0))
     if key is None:
-        return NavigatorRoute(route="agentic", reason="unsure", confidence=confidence, latency_ms=result.latency_ms)
+        answer = NavigatorRoute(route="agentic", reason="unsure", confidence=confidence, latency_ms=result.latency_ms)
+        return _offered(answer, candidates)
     if key == "agentic":
-        return NavigatorRoute(route="agentic", reason="agentic", confidence=confidence, latency_ms=result.latency_ms)
+        answer = NavigatorRoute(route="agentic", reason="agentic", confidence=confidence, latency_ms=result.latency_ms)
+        return _offered(answer, candidates)
     verb = result.pick("verb") or "show"
-    return NavigatorRoute(
-        route="quick",
-        target=_target_of(key),
-        verb="navigate" if verb == "navigate" else "show",
-        confidence=confidence,
-        reason="decision",
-        latency_ms=result.latency_ms,
+    return _offered(
+        NavigatorRoute(
+            route="quick",
+            target=_target_of(key),
+            verb="navigate" if verb == "navigate" else "show",
+            confidence=confidence,
+            reason="decision",
+            latency_ms=result.latency_ms,
+        ),
+        candidates,
     )
 
 

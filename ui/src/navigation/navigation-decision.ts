@@ -1,17 +1,19 @@
 /**
- * The magic line's fast path: open what was asked for, or hand it to the assistant as today.
+ * NavigationDecision in the UI: what was typed → a DockPointer to navigate, OR a prompt to ask.
  *
- * The backend navigator decides (`flow_sdk/core/navigator.py`); this file only turns its target
- * into a dock and opens it through `navigation` — the one sanctioned way to change what is
- * shown. Nothing here writes context; the loader does that when the URL changes.
+ * The backend decides (`flow_sdk/core/navigation_decision.py`) and, for every target it can
+ * address, already answers the dock address. This file only turns the answer into a
+ * `DockPointer` — building it here for the file / URL / web-app targets whose vfs and
+ * editor-for-path rules are TypeScript's — and its callers open it through `navigation`, the one
+ * sanctioned way to change what is shown. Nothing here writes context; the loader does that when
+ * the URL changes.
  *
- * Every path that is not a confident, openable target falls through to `fallback` (today's
- * ask). That includes a box with no decision API: there the navigator answers `agentic` for
- * every request, so the magic line behaves exactly as it did before this existed.
+ * Every answer that is not an openable dock is the prompt (today's ask). That includes a box with
+ * no decision API: there every answer is the prompt, so the magic line behaves exactly as before.
  */
 
 import { TypeId } from '@sdk';
-import { navigatorRoute, type NavigationTarget } from '@sdk/decision';
+import { navigationDecision, type NavigationTarget } from '@sdk/decision';
 
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
@@ -43,17 +45,28 @@ export function dockForTarget(target: NavigationTarget): DockPointer | null {
   }
 }
 
+export type NavigationDecision = { dock: DockPointer; prompt?: undefined } | { dock?: undefined; prompt: string };
+
+/** What to do with `text`: a dock to navigate, or the prompt for the assistant. Never throws. */
+export async function decideNavigation(text: string): Promise<NavigationDecision> {
+  // Where the person is comes from this tab's own browser context, on the backend.
+  const outcome = await navigationDecision(text);
+  const dock =
+    (outcome.address ? tryParseDock(outcome.address) : null) ??
+    (outcome.decision.route === 'quick' && outcome.decision.target ? dockForTarget(outcome.decision.target) : null);
+  return dock ? { dock } : { prompt: outcome.prompt ?? text };
+}
+
+/** The magic line: navigate to the decided dock, else ask the assistant the prompt. */
 export async function askOrOpen(
   text: string,
-  { open, fallback }: { open: (dock: DockPointer) => void; fallback: () => void },
+  { open, ask }: { open: (dock: DockPointer) => void; ask: (prompt: string) => void },
 ): Promise<'opened' | 'asked'> {
-  // Where the person is comes from this tab's own browser context, on the backend.
-  const answer = await navigatorRoute(text);
-  const dock = answer.route === 'quick' && answer.target ? dockForTarget(answer.target) : null;
-  if (dock) {
-    open(dock);
+  const decision = await decideNavigation(text);
+  if (decision.dock) {
+    open(decision.dock);
     return 'opened';
   }
-  fallback();
+  ask(decision.prompt);
   return 'asked';
 }

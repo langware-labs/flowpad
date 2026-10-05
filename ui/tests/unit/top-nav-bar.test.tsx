@@ -27,19 +27,12 @@ const setContext = vi.hoisted(() => vi.fn());
 const routerNavigate = vi.hoisted(() => vi.fn());
 
 vi.mock('@src/navigation/use-history-nav', () => ({ useHistoryNav: () => nav }));
-// The magic line asks the backend navigator first; by default it answers like a box with no
-// decision API -- `agentic` -- so every ask below is today's ask.
-const navigatorRoute = vi.hoisted(() =>
-  vi.fn(async () => ({
-    route: 'agentic',
-    target: null,
-    verb: 'show',
-    confidence: 0,
-    reason: 'no_endpoint',
-    latency_ms: 0,
-  })),
+// The magic line asks NavigationDecision first; by default it answers like a box with no
+// decision API -- the prompt, unchanged -- so every ask below is today's ask.
+const navigationDecision = vi.hoisted(() =>
+  vi.fn(async (utterance: string) => ({ decision: { route: 'agentic' }, candidates: [], prompt: utterance })),
 );
-vi.mock('@sdk/decision', () => ({ navigatorRoute }));
+vi.mock('@sdk/decision', () => ({ navigationDecision }));
 // The bar's Home falls back to the app root through the router.
 vi.mock('react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('react-router')>()),
@@ -492,20 +485,17 @@ describe('the navigation bar', () => {
 
       await user.type(input, 'tidy the docs{Enter}');
       await waitFor(() => expect(assistant.current!.ask).toHaveBeenCalledWith('tidy the docs', expect.anything()));
-      expect(navigatorRoute).toHaveBeenCalledWith('tidy the docs');
+      expect(navigationDecision).toHaveBeenCalledWith('tidy the docs');
       expect(openDock).not.toHaveBeenCalled();
       expect(screen.getByTestId('top-nav-address')).toBeTruthy();
     });
 
     it('opens a plain request without an assistant turn when the navigator is sure', async () => {
-      navigatorRoute.mockResolvedValueOnce({
-        route: 'quick',
-        target: { kind: 'view', value: 'data-sources' },
-        verb: 'show',
-        confidence: 1,
-        reason: 'rule',
-        latency_ms: 0,
-      });
+      navigationDecision.mockResolvedValueOnce({
+        decision: { route: 'quick', target: { kind: 'view', value: 'data-sources' } },
+        candidates: [],
+        address: '/dock/data-sources',
+      } as never);
       const user = userEvent.setup();
       renderBar();
 
@@ -517,14 +507,10 @@ describe('the navigation bar', () => {
     });
 
     it('asks as today when the target opens nothing here', async () => {
-      navigatorRoute.mockResolvedValueOnce({
-        route: 'quick',
-        target: { kind: 'view', value: 'no-such-screen' },
-        verb: 'show',
-        confidence: 0.99,
-        reason: 'decision',
-        latency_ms: 0,
-      });
+      navigationDecision.mockResolvedValueOnce({
+        decision: { route: 'quick', target: { kind: 'view', value: 'no-such-screen' } },
+        candidates: [],
+      } as never);
       const user = userEvent.setup();
       renderBar();
 

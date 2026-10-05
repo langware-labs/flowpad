@@ -45,9 +45,32 @@ slots outlive the screen that set them (open an asset, go to Events, and
 
 `GET /api/v1/agent/context` and `flow context list` return `here` beside the raw slots.
 
-## Where to go
+## Where to go — NavigationDecision
 
-The magic line posts only the utterance to `compute_node/@local/navigator-route`; the action
-builds `here` from the active tab. The navigator offers every place on the map that needs no
-pointer, their subplaces, the screens an entity in `here` or in the search matches `opens`, and
-`agentic`. See `docs/snippets/decisions.md` §7 for the cascade and its numbers.
+`flow_sdk.core.navigation_decision.decide(request)` takes the request (`navigator.request`: the
+utterance and `here`) and answers `navigation.outcome`: **a dock to navigate** (`address`, query
+included, and `dock`, the tab) **OR a `prompt`** for the assistant — never both.
+
+* The engine is `navigator.route`: rules, then one decision over every place on the map that
+  needs no pointer, their subplaces, the screens an entity in `here` or in the search matches
+  `opens`, and `agentic`; acted on at ≥ 0.85. Anything answering `NavigatorRoute` can replace it.
+* The backend builds the dock for a screen, an entity (its asset editor, else the screen named
+  after its type) and an app. A file / URL / web-app target leaves the dock to the UI
+  (`ui/src/navigation/navigation-decision.ts`, whose `dockForTarget` owns those rules).
+* Everything else — agentic, unsure, no decision API, a target nothing opens — is the prompt:
+  the utterance, unchanged.
+
+The magic line posts only the utterance to `compute_node/@local/navigation-decision` (the action
+builds `here` from the active tab), then navigates the dock or asks the assistant the prompt.
+See `docs/snippets/decisions.md` §7 for the cascade and its numbers.
+
+## The log — SmartNavigationLog → SmartNavigationData
+
+An instance preference, **off by default** (`preferences.advanced.smart_navigation_log`,
+Preferences → Advanced). When on, every decision is appended — after the answer has gone out —
+to the user's **SmartNavigationData** dataset (`flow_sdk/core/navigation_log.py`): a `train` row
+of the same `navigator.dataset` kind as the shipped eval set, with the request as `input`, the
+offered candidates as `context`, the decision as `output` and what was done in `data`. A person
+reviews it in the dataset editor (**Correct**, or edit the label; the **needs label** filter),
+and `navigator_eval.evaluate(dataset, kinds=("train",))` scores the navigator on the reviewed
+rows. See `docs/snippets/datasets.md` §6.

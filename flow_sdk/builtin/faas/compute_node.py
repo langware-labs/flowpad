@@ -1642,15 +1642,17 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return ApiFailResponse(message=exc.message, status_code=status, data={"reason": exc.reason})
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
-    @action.all(action_name="navigator-route", methods=["post"])
-    async def _navigator_route_action(self) -> ApiResponse:
-        """``POST {utterance, here?}`` -> ``NavigatorRoute``: open something now, or hand the
-        request to the assistant. ``here`` defaults to where the active tab is -- its own
-        ``browser_context`` (``navigation.here_from``), so the UI sends only what was typed.
-        Never fails: anything missing or unsure is ``route: "agentic"``, and with no decision
-        API on the hub that is every answer."""
+    @action.all(action_name="navigation-decision", methods=["post"])
+    async def _navigation_decision_action(self) -> ApiResponse:
+        """``POST {utterance, here?}`` -> ``navigation.outcome``: a dock to navigate, OR a prompt
+        for the assistant (``flow_sdk.core.navigation_decision``). ``here`` defaults to where the
+        active tab is -- its own ``browser_context`` -- so the UI sends only what was typed.
+        Never fails: anything missing or unsure is the prompt, and with no decision API on the
+        hub that is every answer. With SmartNavigationLog on, the decision is appended to the
+        SmartNavigationData dataset AFTER this answers (``flow_sdk.core.navigation_log``)."""
         from flow_sdk.core.navigation import here_from  # noqa: PLC0415
-        from flow_sdk.core.navigator import route  # noqa: PLC0415
+        from flow_sdk.core.navigation_decision import decide_run  # noqa: PLC0415
+        from flow_sdk.core.navigation_log import log_soon  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import get_active_connection_info  # noqa: PLC0415
 
         request_info = get_current_request_info()
@@ -1658,9 +1660,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         here = body.get("here") if isinstance(body.get("here"), dict) else None
         if here is None:
             active = get_active_connection_info()
-            here = await here_from(active[1].browser_context if active else {})
-        answer = await route(str(body.get("utterance") or ""), here=here)
-        return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+            here = (await here_from(active[1].browser_context if active else {})).model_dump(
+                mode="json", exclude_none=True
+            )
+        request = {"utterance": str(body.get("utterance") or ""), "here": here}
+        outcome, answer = await decide_run(request)
+        log_soon(request, outcome, answer)
+        return ApiSuccessResponse(data=outcome.model_dump(mode="json", exclude_none=True))
 
     @action.all(action_name="llm-endpoint", methods=["get", "post", "delete"])
     async def _llm_endpoint_action(self) -> ApiResponse:
