@@ -43,6 +43,14 @@ def read_schedule(expr: str, sched_type: Optional[str] = None, tz: Optional[str]
     if len(parts) != 5:
         return ScheduleWhen(preset="cron", **base)
     minute, hour, dom, month, dow = parts
+    if hour == "*" and dom == "*" and month == "*" and dow == "*":
+        # "* * * * *", "*/15 * * * *", "0 * * * *" — a plain interval, said as one.
+        if minute == "*":
+            return ScheduleWhen(preset="every", interval_seconds=60, **base)
+        if minute.startswith("*/") and minute[2:].isdigit():
+            return ScheduleWhen(preset="every", interval_seconds=int(minute[2:]) * 60, **base)
+        if minute == "0":
+            return ScheduleWhen(preset="every", interval_seconds=3600, **base)
     time = _hhmm(minute, hour)
     if time is None or month != "*":
         return ScheduleWhen(preset="cron", **base)
