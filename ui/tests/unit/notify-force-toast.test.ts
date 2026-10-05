@@ -55,4 +55,13 @@ describe('notify — forceToast opts a single alert back into toasting', () => {
 
     expect(sonnerToast.custom).not.toHaveBeenCalled();
   });
+
+  it('a transient error toasts once outside Dev, times out, and is never logged', () => {
+    notify.error({ title: 'Could not open link', message: 'File not found', transient: true });
+
+    expect(sonnerToast.custom).toHaveBeenCalledTimes(1);
+    const opts = vi.mocked(sonnerToast.custom).mock.calls[0][1] as { duration: number };
+    expect(Number.isFinite(opts.duration)).toBe(true);
+    expect(useAlertStore.getState().alerts).toEqual([]);
+  });
 });
