@@ -3,7 +3,7 @@
 It used to post to ``get_instance_settings().port``: the port an instance BINDS to
 (``LOCAL_SERVER_PORT``, else prod's 9007), not the one a running instance wrote to its
 ``server.json``. So ``FLOW_INSTANCE=sn-1 flow auth logout`` signed out prod, and the
-logout's inbox purge took prod's stream inbox with it.
+logout's stream inbox purge took prod's stream inbox with it.
 
 Two real HTTP servers stand in for the two backends: a decoy on the bind-port setting
 and the instance's own on its ``server.json`` port. Nothing here can reach a real 9007.

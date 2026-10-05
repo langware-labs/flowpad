@@ -103,7 +103,7 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   // Ungated, like every slot: it used to need "a conversation exists", but a
   // logout purges the hub's conversations — so the icon vanished in exactly the
   // state where its screen says "Login required", the only way back in. An
-  // empty or signed-out inbox is a state the screen renders, not a missing room.
+  // empty or signed-out stream inbox is a state the screen renders, not a missing room.
   { id: 'stream_inbox', from: ViewMode.Vibe, placement: 'top' },
   // Vibe, beside the stream inbox rather than down with `hooks` and `llm-sources`:
   // connecting Gmail or Slack is what makes a source or an agent work at all, so
