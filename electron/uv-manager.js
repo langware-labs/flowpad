@@ -1106,11 +1106,15 @@ class UvManager {
     if (IS_WIN) {
       try {
         const escaped = venvDir.replace(/'/g, "''");
+        // Get-Process, not Get-CimInstance: the WMI scan of every process took >8s cold on a busy
+        // machine (log 2026-10-05 22:23: the drain timed out, nothing was killed, and uv then hit
+        // "failed to remove directory …\Scripts: Access is denied"). Get-Process reads the same
+        // Path without the WMI service; both returned identical pids on a real Windows (VM-verified).
         const { stdout } = await execFileAsync('powershell.exe', [
           '-NoProfile', '-Command',
-          `Get-CimInstance Win32_Process | ` +
-          `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
-          `Select-Object -ExpandProperty ProcessId`,
+          `Get-Process | ` +
+          `Where-Object { $_.Path -like '${escaped}\\*' } | ` +
+          `Select-Object -ExpandProperty Id`,
         ], { timeout: 8000, windowsHide: true, env: { ...process.env, PSModulePath: windowsPowerShellModulePath() } });
         const pids = stdout.split(/\r?\n/)
           .map((s) => parseInt(s.trim(), 10))
