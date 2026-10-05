@@ -150,8 +150,9 @@ export function VibeAssignTaskDialog({
 
       // The notification message must stand on its own: the title IS the issue,
       // so it leads even when the (optional) notes are empty — otherwise the
-      // recipient gets a bare chip with no text.
-      const message = [title.trim(), notes.trim()].filter(Boolean).join('\n\n');
+      // recipient gets a bare chip with no text. The task's own title, which may
+      // be the next free one ("… (2)"), so the message names the task it carries.
+      const message = [task.title || title.trim(), notes.trim()].filter(Boolean).join('\n\n');
 
       await task.assign(person, {
         message,

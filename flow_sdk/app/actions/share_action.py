@@ -276,17 +276,19 @@ async def share_entity() -> ApiResponse:
 
     # Persist ``remote=True`` on other local rows so downstream consumers
     # (notably ``handle_add_message``'s ``is_remote_send`` gate) treat the
-    # entity as hub-bound.
+    # entity as hub-bound. Unconditional, like the Project save above:
+    # ``Entity.share()`` already flips ``remote`` in memory, so checking it first
+    # skipped the write, and the row only turned remote when the hub's WS echo
+    # landed — a first message sent before that never reached the hub.
     elif "remote" in entity_model.model_fields:
-        if getattr(entity, "remote", None) is not True:
-            entity.remote = True
-            try:
-                await entity.save(request_info.someone_typeid)
-            except Exception as e:  # noqa: BLE001
-                logger.warning(
-                    "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
-                    target.type, target.id, e,
-                )
+        entity.remote = True
+        try:
+            await entity.save(request_info.someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
+                target.type, target.id, e,
+            )
     return ApiSuccessResponse(data=entity)
 
 
