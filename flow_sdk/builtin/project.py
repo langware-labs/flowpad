@@ -1661,7 +1661,7 @@ class Project(Entity):
 
         local = await User.get_local()
         someone_typeid = str(local.typeid) if local else None
-        # The sharer is on the roster from the first save: the row reaches the inbox
+        # The sharer is on the roster from the first save: the row reaches the stream inbox
         # seconds before the hub roster or the invite message, and with neither it
         # read "Unknown". The hub never receives this list (``_hub_body`` drops it).
         sharer = await User.current_sender_participant()

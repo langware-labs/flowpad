@@ -150,6 +150,11 @@ const POLICY_BLOCK_TEXT =
   /Device Guard|Application Control|blocked by (your organization|group policy|an administrator|your administrator)|os error 4551|policy has blocked|administrator has blocked|This program is blocked/i;
 
 /** True when `err` (from execFile/spawn) reads as an application-control block. */
+/** `flow stop` said the instance is temporarily owned (a monitor is mid-start): `service_busy` on stderr. */
+function isInstanceBusyError(err) {
+  return /service_busy/.test(String((err && (err.stderr || err.stdout || err.message)) || ''));
+}
+
 function isPolicyBlockError(err) {
   if (!err) return false;
   const text = [err.stderr, err.stdout, err.message].filter(Boolean).map(String).join('\n');
@@ -1803,16 +1808,26 @@ class UvManager {
       this._killChildTree(this._backendProcess, 'stopping the running flow start');
 
       // 1. Run flow stop
-      await this._flowStop();
+      const flowStop = await this._flowStop();
 
       // 2. Kill any remaining processes on port 9007
       await this._killPort(9007);
+
+      // 3. `flow stop` refused because the instance is owned by a monitor that is still BOOTING (service_busy):
+      // nothing listens on the port yet, so step 2 found nothing and the monitor goes on to start its server
+      // under us — alive through the installer or a restart, holding the venv open. The monitor and the server
+      // it spawns live under the tool venv: end them the way an upgrade does.
+      if (flowStop && flowStop.busy) {
+        this.log.warn('[uv] flow stop found the instance still starting — ending the monitor and server by their venv');
+        await this._drainVenvProcesses();
+      }
 
       this._backendProcess = null;
     }
 
   /**
-   * Run `flow stop`. Swallows errors.
+   * Run `flow stop`. Swallows errors; reports `{ busy }` — true when it was refused because the instance is
+   * owned by a monitor that is still starting (`service_busy`).
    */
   /** True once start() has spawned `flow start` — before that there is nothing of ours to stop. */
   hasLaunchedBackend() {
@@ -1826,8 +1841,10 @@ class UvManager {
     try {
       await this._run(cmd, args, { timeout: 10000, ...(shell === undefined ? {} : { shell }) });
       this.log.info('[uv] flow stop completed');
+      return { busy: false };
     } catch (error) {
       this.log.warn(`[uv] flow stop failed: ${error.message}`);
+      return { busy: isInstanceBusyError(error) };
     }
   }
 
@@ -2478,6 +2495,7 @@ module.exports.UV_INSTALL_PS1 = UV_INSTALL_PS1;
 module.exports.installFailure = installFailure;
 module.exports.cleanPythonEnv = cleanPythonEnv;
 module.exports.isPolicyBlockError = isPolicyBlockError;
+module.exports.isInstanceBusyError = isInstanceBusyError;
 module.exports.PY_FLOW_ENTRY = PY_FLOW_ENTRY;
 module.exports.policyBlockedError = policyBlockedError;
 module.exports.maxPythonVersion = maxPythonVersion;
