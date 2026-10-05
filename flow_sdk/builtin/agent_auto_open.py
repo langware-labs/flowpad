@@ -145,6 +145,9 @@ class AutoOpenPlan:
     places: list[DockPointerSpec] = field(default_factory=list)
     runs: list[AutoOpenRun] = field(default_factory=list)
     missing: list[dict] = field(default_factory=list)
+    #: Where an op's calls run — the agent's project folder. A repair agent started
+    #: anywhere else (the backend's own cwd) would fix the wrong checkout.
+    workdir: Optional[Path] = None
 
 
 def _record(entry: str, answer: "ReturnedValue") -> dict:
@@ -182,7 +185,9 @@ async def plan_auto_open(entries: list, *, roots: list[str], project: Optional["
     from flow_sdk.schema.data_spec.compute_op_spec import NavigateOp  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import NavigateResult  # noqa: PLC0415
 
-    plan = AutoOpenPlan()
+    plan = AutoOpenPlan(
+        workdir=Path(project.fs_storage_mount_path) if project is not None and project.fs_storage_mount_path else None
+    )
     for entry in entries or []:
         if isinstance(entry, DockPointerSpec):
             plan.places.append(entry)
@@ -225,7 +230,7 @@ async def run_auto_open(process: "AgenticProcess", plan: AutoOpenPlan) -> list[d
     for run in plan.runs:
         try:
             if run.op is not None:
-                answer = await run.op.run(subject=subject, approved=True)
+                answer = await run.op.run(subject=subject, approved=True, workdir=plan.workdir)
             elif run.wizard is not None:
                 answer = await run.wizard.run(approved=True, unattended=True, target=subject)
             else:

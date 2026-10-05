@@ -74,7 +74,8 @@ async def test_a_dead_server_is_started_by_the_op_and_opened(bootstrapped_client
         "for fd in (0, 1, 2):\n    os.dup2(null, fd)\n"
         "server.serve_forever()\n"
     )
-    repair = f"{sys.executable} {serve}"
+    ran_in = tmp_path / "ran-in.txt"
+    repair = f"pwd > {ran_in} && {sys.executable} {serve}"
     root = tmp_path / "proj"
     project = await seed_project(root)
     _write_op(root, "open-admin", url, repair)
@@ -91,6 +92,8 @@ async def test_a_dead_server_is_started_by_the_op_and_opened(bootstrapped_client
         assert result["entry"] == "op:open-admin"
         assert result["exit_code"] == ExitCode.OK and result["verdict"] == "ok", result
         assert "after the cli attempt" in result["detail"]
+        # The repair ran in the agent's project, not wherever the backend was started.
+        assert ran_in.read_text().strip() == str(root.resolve())
     finally:
         if pidfile.exists():
             os.kill(int(pidfile.read_text().strip()), signal.SIGTERM)
