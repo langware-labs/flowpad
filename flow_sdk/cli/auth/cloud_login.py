@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import webbrowser
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import httpx
@@ -28,6 +28,9 @@ from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, 
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.cloud_client.api.auth import LoginData
 from flow_sdk.instance_settings import get_instance_settings
+
+if TYPE_CHECKING:
+    from flow_sdk.core.browser_profiles import ProfileChoice
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +49,10 @@ def _classify_hub(api_base_url: str | None) -> str:
     return "unsupported"
 
 
-async def cloud_login() -> dict[str, Any]:
+async def cloud_login(profile: ProfileChoice | None = None) -> dict[str, Any]:
     """Route by hub URL: flowpad.ai → browser/Auth0, localhost → env-mode creds, else error.
+
+    ``profile`` opens the browser sign-in in that browser profile instead of the system default.
 
     Returns ``{status: "logged_in", user}`` (local) or ``{status: "started", url}`` (cloud).
     Browser-mode result arrives later via OAuthMessage WS broadcast.
@@ -72,7 +77,7 @@ async def cloud_login() -> dict[str, Any]:
             # Browser-mode: success/failure arrives later via the OAuth WS
             # callback. LOGGED_IN / LOGIN_FAILED are emitted from there
             # (_finalize_login on success, _broadcast_oauth_error on error).
-            return await _login_by_window(settings.cloud_login_timeout_seconds)
+            return await _login_by_window(settings.cloud_login_timeout_seconds, profile)
 
         if kind == "local":
             has_email = bool(settings.cloud_user_email)
@@ -116,7 +121,7 @@ async def _login_local() -> dict[str, Any]:
 _window_attempt = 0
 
 
-async def _login_by_window(timeout: float) -> dict[str, Any]:
+async def _login_by_window(timeout: float, profile: ProfileChoice | None = None) -> dict[str, Any]:
     # Race window: the cloud could redirect-back before this function returns,
     # so reset the waiter state BEFORE opening the browser.
     from flow_sdk.server import state
@@ -128,7 +133,13 @@ async def _login_by_window(timeout: float) -> dict[str, Any]:
     asyncio.create_task(_wait_or_timeout(timeout, _window_attempt))
 
     url = get_login_url(desktop_login_callback_url())
-    await asyncio.to_thread(webbrowser.open, url)
+    if profile is None:
+        await asyncio.to_thread(webbrowser.open, url)
+    else:
+        from flow_sdk.core.browser_profiles import OpenInProfileRequest, open_in_profile
+
+        req = OpenInProfileRequest(browser=profile.browser, profile=profile.profile, url=url)
+        await asyncio.to_thread(open_in_profile, req)
     return {"status": "started", "url": url}
 
 
