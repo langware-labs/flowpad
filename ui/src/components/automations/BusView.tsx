@@ -18,7 +18,7 @@ import {
 } from '@sdk';
 import { useOnTag } from '@sdk/react/hooks';
 import type { FlowEvent } from '@sdk/tags/EventBus';
-import { ArrowRight, Pause, Play, Plus, Search, Send } from 'lucide-react';
+import { ArrowRight, Pause, Play, Plus, Search, Send, Zap } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -92,7 +92,7 @@ export function BusView({ route }: { route: AutomationsRoute }) {
           {errorMessage(error, t`Could not load the bus`)}
         </p>
       )}
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(16rem,1fr)_2fr]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(22rem,1fr)_2fr]">
         <div className="flex min-h-0 flex-col border-r border-border">
           <div className="relative p-3">
             <Search className="absolute left-5 top-5 size-4 text-muted-foreground" aria-hidden />
@@ -105,6 +105,21 @@ export function BusView({ route }: { route: AutomationsRoute }) {
             />
           </div>
           <div className="min-h-0 flex-1 overflow-auto" data-testid="bus-catalog">
+            {/* Column headings: the two numbers mean nothing without them. */}
+            <div
+              className="sticky top-0 z-10 grid grid-cols-[minmax(0,1fr)_3.5rem_5.5rem] items-end gap-2 border-b border-border bg-background px-3 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+              data-testid="bus-catalog-headings"
+            >
+              <span>
+                <Trans>Event</Trans>
+              </span>
+              <span className="text-right" title={t`Times this event happened since Flowpad started`}>
+                <Trans>Seen</Trans>
+              </span>
+              <span className="text-right" title={t`Automations that run when this event happens`}>
+                <Trans>Automations</Trans>
+              </span>
+            </div>
             {types.map((e) => (
               <button
                 key={e.name}
@@ -112,7 +127,7 @@ export function BusView({ route }: { route: AutomationsRoute }) {
                 data-testid={`bus-type-${e.name}`}
                 onClick={() => go({ tag: route.tag === e.name ? null : e.name })}
                 className={cn(
-                  'grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 border-t border-border px-3 py-1.5 text-left text-xs hover:bg-accent/50',
+                  'grid w-full grid-cols-[minmax(0,1fr)_3.5rem_5.5rem] items-center gap-2 border-t border-border px-3 py-1.5 text-left text-xs hover:bg-accent/50',
                   route.tag === e.name && 'bg-accent',
                 )}
               >
@@ -120,17 +135,25 @@ export function BusView({ route }: { route: AutomationsRoute }) {
                   <code className="block truncate font-mono">{e.name}</code>
                   {e.title && <span className="block truncate text-muted-foreground">{e.title}</span>}
                 </span>
-                <span className="tabular-nums text-muted-foreground" title={t`Times seen since the app started`}>
-                  {e.pattern_only ? '—' : e.count}
-                </span>
                 <span
-                  className={cn(
-                    'rounded px-1.5 tabular-nums',
-                    e.listeners.length ? 'bg-primary/10 text-foreground' : 'text-muted-foreground',
-                  )}
-                  title={t`Automations listening`}
+                  className="text-right tabular-nums text-muted-foreground"
+                  title={
+                    e.pattern_only
+                      ? t`No event like this has happened yet`
+                      : t`Seen ${e.count} times since Flowpad started`
+                  }
                 >
-                  {e.listeners.length}
+                  {e.pattern_only || e.count === 0 ? t`never` : `${e.count}×`}
+                </span>
+                <span className="flex justify-end" title={t`Automations that run when this event happens`}>
+                  {e.listeners.length > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 tabular-nums text-foreground">
+                      <Zap className="size-3" aria-hidden />
+                      {e.listeners.length}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </span>
               </button>
             ))}
