@@ -365,7 +365,7 @@ describe('browsing what an automation is made of', () => {
     automation({
       id: 'w',
       kind: 'file',
-      name: 'Claude transcript watcher',
+      name: 'Claude Code chats',
       when: { kind: 'file', text: '', file: { path: '/Users/me/.claude/projects', glob: '*.jsonl', recursive: true, is_folder: true } },
     });
 
