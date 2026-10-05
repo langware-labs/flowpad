@@ -24,7 +24,6 @@ SKIP = ("server/static/", "rust/tests/")
 #: file → number of unscoped ``get_all()`` / ``get_all({})`` calls it may carry.
 ALLOWLIST: dict[str, int] = {
     "app/actions/address_book_action.py": 1,
-    "app/actions/execute_prompt.py": 1,
     "app/actions/flow_message_action.py": 7,
     "app/actions/workers.py": 1,
     "app/helpdesk_resolver.py": 1,
