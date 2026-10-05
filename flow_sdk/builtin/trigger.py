@@ -768,6 +768,20 @@ class Trigger(Entity):
             return ApiFailResponse(message="Request body required", status_code=422)
 
         from flow_sdk.automations.check import SPEC_FIELDS  # noqa: PLC0415
+        from flow_sdk.automations.overview import group_of  # noqa: PLC0415
+        from flow_sdk.automations.spec_file import SpecFileError, document_path, rewrite  # noqa: PLC0415
+
+        if group_of(self) == "builtin" and set(body) - {"log_mode"}:
+            return ApiFailResponse(message="This automation is built into Flowpad and can't be changed here.",
+                                   status_code=409)
+        if document_path(self) is not None:
+            # Defined in a trigger.json: the FILE is the truth and the row its
+            # index, so a row-only write would be reverted by the next re-index.
+            try:
+                fresh = await rewrite(self, {k: body[k] for k in SPEC_FIELDS if k in body})
+            except SpecFileError as exc:
+                return ApiFailResponse(message=str(exc), status_code=exc.status_code)
+            return ApiSuccessResponse(data=fresh)
 
         for field in SPEC_FIELDS | {"scope", "log_mode"}:
             if field in body:
@@ -818,11 +832,27 @@ class Trigger(Entity):
 
     @core_action.delete(action_name="delete")
     async def delete_action(self, request: Request) -> ApiResponse:
-        """DELETE /api/v1/graph/trigger/{id}"""
+        """DELETE /api/v1/graph/trigger/{id}
+
+        A file-defined automation goes with its folder — disarm, folder, row, in
+        that order, or the indexer resurrects a row whose folder is still on
+        disk. Flowpad's own are refused."""
+        from flow_sdk.automations.overview import group_of  # noqa: PLC0415
+        from flow_sdk.automations.spec_file import document_path  # noqa: PLC0415
+
+        if group_of(self) == "builtin":
+            return ApiFailResponse(message="This automation is built into Flowpad and can't be deleted.",
+                                   status_code=409)
         if self.id:
             from flow_sdk.builtin.trigger_arming import disarm_trigger
 
             await disarm_trigger(self.id)
+        document = document_path(self)
+        if document is not None:
+            import asyncio  # noqa: PLC0415
+            import shutil  # noqa: PLC0415
+
+            await asyncio.to_thread(shutil.rmtree, document.parent)
 
         await self.delete()
         return ApiSuccessResponse(data={"deleted": True})
