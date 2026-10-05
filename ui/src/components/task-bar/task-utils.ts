@@ -1,5 +1,6 @@
 import { t } from '@lingui/core/macro';
-import { dataContext, type Task, VFSPath } from '@sdk';
+import { dataContext, type Task, TaskKind, VFSPath } from '@sdk';
+import { isTaskArchived } from '@src/components/task-bar/constants';
 import { DockPointer } from '@src/navigation/DockPointer';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { SkillsScope } from '@src/components/assets/editor/skill/skillEditorUtils';
@@ -40,6 +41,21 @@ const STATUS_FAMILY: Record<string, TaskStatusFamily> = {
 /** The bucket a status belongs to; an unknown (or legacy `open`) one reads as New. */
 export function statusFamily(status?: string | null): TaskStatusFamily {
   return STATUS_FAMILY[status ?? ''] ?? TaskStatus.TO_DO;
+}
+
+/** Still to do: not in the Done bucket (Done / Failed / Canceled) and not archived. */
+export function isOpenTask(task: Pick<Task, 'status' | 'archived_at'>): boolean {
+  return statusFamily(task.status) !== TaskStatus.DONE && !isTaskArchived(task);
+}
+
+/** Who owns a task, as the task page names it: a group task's group, else its assignee. */
+export function taskOwner(task: Pick<Task, 'kind' | 'group_name' | 'assignee'>): string | null {
+  return (task.kind === TaskKind.GROUP && task.group_name) || task.assignee || null;
+}
+
+/** Newest first — by when the task was created. */
+export function byNewestTask(a: Pick<Task, 'created_date'>, b: Pick<Task, 'created_date'>): number {
+  return new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime();
 }
 
 /** The bucket statuses — what a person sets by hand. */

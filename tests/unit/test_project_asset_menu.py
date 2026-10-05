@@ -26,7 +26,7 @@ Layout::
   <tmp>/C1     Project, ctx=[C2]          .claude/skills/c1_skill/    skill
   <tmp>/C2     Project, ctx=[C3]          docs/c2.md                  markdown
   <tmp>/C3     Project, no ctx            .claude/agents/c3.md        agent
-  <tmp>/plain  NOT a Project              notes/plain.md              markdown
+  <tmp>/plain  NOT a Project              docs/plain.md               markdown
 """
 
 from __future__ import annotations
@@ -84,7 +84,7 @@ async def nested(tmp_path: Path, monkeypatch):
         "c1_skill": dirs["C1"] / ".claude" / "skills" / "c1_skill",
         "c2_doc": dirs["C2"] / "docs" / "c2.md",
         "c3_agent": dirs["C3"] / ".claude" / "agents" / "c3.md",
-        "plain_doc": dirs["plain"] / "notes" / "plain.md",
+        "plain_doc": dirs["plain"] / "docs" / "plain.md",
     }
     for p in assets.values():
         if p.suffix == ".md":

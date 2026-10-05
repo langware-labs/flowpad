@@ -124,6 +124,12 @@ before a cli rung, two cli rungs can differ by platform fallback, or several
 agents can chain. The answer is the last rung's own (`PromptResult` once an
 agent ran), its `detail` saying what the attempt before it said.
 
+A run's checks and commands share ONE shell: a wizard or `flow op` run opens it, every
+nested wizard and op reuses it, so on Windows PowerShell starts once per run, not once per
+check. An op that must not share sets `"isolated_shell": true` and gets a shell of its own for
+its own steps. An install (the op's `cli` call) always runs in a fresh process with a closed
+stdin, so an installer that asks a question fails instead of waiting.
+
 `retries` on an agent rung is further turns in its own session, not new
 processes: the prompt carries only the check's command, exit code and output
 tail — the task is already in the session. A turn that ran out of time is

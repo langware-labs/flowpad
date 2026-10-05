@@ -33,22 +33,21 @@ export async function submitDisplayAnnotation(
   context: DisplayAnnotationContext,
 ): Promise<boolean> {
   const file = await captureElementAsImageFile(target, displayAnnotationImageName(context));
-  // `annotateImage` resolves the flattened File on Save and null on Cancel; the
+  // `annotateImage` resolves `{ file, caption }` on Save and null on Cancel; the
   // contract here is the submitted/cancelled bit, so collapse it.
   const result = await annotateImage(file, {
     submitLabel: t`Submit`,
-    onSubmit: async (annotated) => {
+    onSubmit: async (annotated, caption) => {
       const dir = await resolveProcessInputDir(process.id);
       if (!dir) throw new Error('Could not resolve the chat input directory');
-      const uploads = await fsStore
-        .getState()
-        .uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, [annotated]);
+      const uploads = await fsStore.getState().uploadFiles(new TypeId(dir.compute_node_id), dir.abs_path, [annotated]);
       await Promise.all(uploads.map((upload) => upload.waitForCompletion()));
       await process.prompt(
         buildDisplayAnnotationPrompt({
           fileName: annotated.name,
           filePath: `${dir.abs_path}/${annotated.name}`,
           context,
+          note: caption,
         }),
       );
     },

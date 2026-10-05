@@ -31,6 +31,15 @@ describe('display annotation prompts', () => {
     expect(prompt).toContain('File path: /tmp/agent-input/website-annotation.png');
   });
 
+  it("carries the user's caption as a note, and leaves it out when there is none", () => {
+    const context = displayAnnotationContextForPath('/Users/test/project/docs/overview.md');
+    const args = { fileName: 'a.png', filePath: '/tmp/agent-input/a.png', context };
+    expect(buildDisplayAnnotationPrompt({ ...args, note: 'make the title bigger' })).toContain(
+      'User note: make the title bigger',
+    );
+    expect(buildDisplayAnnotationPrompt({ ...args, note: '' })).not.toContain('User note');
+  });
+
   it('builds a Markdown document instruction for the active agent', () => {
     const context = displayAnnotationContextForPath('/Users/test/project/docs/overview.md');
     const prompt = buildDisplayAnnotationPrompt({

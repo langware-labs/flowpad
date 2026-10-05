@@ -63,11 +63,10 @@ async def test_create_project_from_git_happy_path(bootstrapped_client):
     project = payload["data"]["project"]
     assert project["fs_storage_mount_path"].endswith("/Hello-World")
     assert target.exists()
-    # The index stamps the markdown's identity as frontmatter ``id:`` (it used
-    # to append a capsule); the cloned body itself is untouched.
+    # A root README is not a document (only docs/ .md is, ``is_in_doc_dir``): the index leaves
+    # it exactly as cloned, with no frontmatter ``id:`` stamped on it.
     readme = (target / "README.md").read_text()
-    assert "cloned from https://github.com/octocat/Hello-World.git" in readme
-    assert readme.startswith("---\nid: ")
+    assert readme == "cloned from https://github.com/octocat/Hello-World.git"
 
 
 # do not increase timeout without approval

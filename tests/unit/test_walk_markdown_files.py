@@ -1,11 +1,14 @@
 """Unit tests for ``walk_markdown_files`` — the gitignore-aware project walk
 that powers the Markdown asset menu.
 
-Covers the bug it was written for (a project-ROOT ``.md`` was invisible because
-the menu only walked ``docs/`` vault roots) plus the full gitignore matcher
+Covers the doc-folder scope (only ``.md`` inside a ``docs``/``doc`` folder is a
+document — a project-root README is not) plus the full gitignore matcher
 contract: ``_WALK_IGNORED`` fast-path, ``.claude/`` force-include, file- and
 dir-pattern ``.gitignore`` rules, nested ``.gitignore`` last-match-wins, symlink
 non-following, and non-``.md`` exclusion.
+
+The matcher tests walk a root that is itself a ``docs`` folder, so every file
+under it is in scope and only the gitignore rules decide.
 
 Real filesystem trees in ``tmp_path`` — no mocks. Fast.
 """
@@ -13,7 +16,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from flow_sdk.fs_store.operations.markdown_dirs import walk_markdown_files
+
+
+@pytest.fixture
+def docs_root(tmp_path: Path) -> Path:
+    root = tmp_path / "docs"
+    root.mkdir()
+    return root
 
 
 def _touch(p: Path, text: str = "x") -> None:
@@ -21,87 +33,94 @@ def _touch(p: Path, text: str = "x") -> None:
     p.write_text(text, encoding="utf-8")
 
 
-def test_root_level_md_is_found(tmp_path: Path) -> None:
-    """The regression: a ``.md`` at the project root must be walked, not only
-    files under a ``docs/`` subfolder."""
+def test_only_doc_folders_are_walked(tmp_path: Path) -> None:
+    """Markdown outside a ``docs``/``doc`` folder — a root README, notes in
+    ``src/`` — is not a document."""
+    _touch(tmp_path / "README.md")
     _touch(tmp_path / "streams_sdk.md")
+    _touch(tmp_path / "src" / "notes.md")
     _touch(tmp_path / "docs" / "STREAMS-ANALYSIS.md")
-    assert walk_markdown_files(tmp_path) == [
-        "docs/STREAMS-ANALYSIS.md",
-        "streams_sdk.md",
-    ]
+    assert walk_markdown_files(tmp_path) == ["docs/STREAMS-ANALYSIS.md"]
 
 
-def test_walks_entire_tree_sorted(tmp_path: Path) -> None:
+def test_doc_and_docs_at_any_depth(tmp_path: Path) -> None:
     _touch(tmp_path / "a.md")
     _touch(tmp_path / "docs" / "b.md")
     _touch(tmp_path / "docs" / "nested" / "deep" / "c.md")
+    _touch(tmp_path / "pkg" / "doc" / "d.md")
+    _touch(tmp_path / ".claude" / "docs" / "e.md")
     _touch(tmp_path / "experiments" / "x" / "README.md")
     assert walk_markdown_files(tmp_path) == [
-        "a.md",
+        ".claude/docs/e.md",
         "docs/b.md",
         "docs/nested/deep/c.md",
-        "experiments/x/README.md",
+        "pkg/doc/d.md",
     ]
 
 
-def test_only_md_files(tmp_path: Path) -> None:
-    _touch(tmp_path / "keep.md")
-    _touch(tmp_path / "skip.txt")
-    _touch(tmp_path / "skip.py")
-    _touch(tmp_path / "README.MD")  # case-insensitive extension
-    assert walk_markdown_files(tmp_path) == ["README.MD", "keep.md"]
+def test_root_that_is_a_doc_folder_walks_everything(tmp_path: Path) -> None:
+    _touch(tmp_path / "docs" / "top.md")
+    _touch(tmp_path / "docs" / "guides" / "g.md")
+    assert walk_markdown_files(tmp_path / "docs") == ["guides/g.md", "top.md"]
 
 
-def test_walk_ignored_dirs_pruned(tmp_path: Path) -> None:
+def test_only_md_files(docs_root: Path) -> None:
+    _touch(docs_root / "keep.md")
+    _touch(docs_root / "skip.txt")
+    _touch(docs_root / "skip.py")
+    _touch(docs_root / "README.MD")  # case-insensitive extension
+    assert walk_markdown_files(docs_root) == ["README.MD", "keep.md"]
+
+
+def test_walk_ignored_dirs_pruned(docs_root: Path) -> None:
     """Hardcoded denylist (node_modules/.git/etc.) is pruned without a
     .gitignore present."""
-    _touch(tmp_path / "keep.md")
-    _touch(tmp_path / "node_modules" / "pkg" / "readme.md")
-    _touch(tmp_path / ".git" / "notes.md")
-    _touch(tmp_path / "__pycache__" / "x.md")
-    assert walk_markdown_files(tmp_path) == ["keep.md"]
+    _touch(docs_root / "keep.md")
+    _touch(docs_root / "node_modules" / "pkg" / "readme.md")
+    _touch(docs_root / ".git" / "notes.md")
+    _touch(docs_root / "__pycache__" / "x.md")
+    assert walk_markdown_files(docs_root) == ["keep.md"]
 
 
-def test_gitignore_file_pattern(tmp_path: Path) -> None:
-    _touch(tmp_path / ".gitignore", "secret.md\n")
-    _touch(tmp_path / "keep.md")
-    _touch(tmp_path / "secret.md")
-    assert walk_markdown_files(tmp_path) == ["keep.md"]
+def test_gitignore_file_pattern(docs_root: Path) -> None:
+    _touch(docs_root / ".gitignore", "secret.md\n")
+    _touch(docs_root / "keep.md")
+    _touch(docs_root / "secret.md")
+    assert walk_markdown_files(docs_root) == ["keep.md"]
 
 
-def test_gitignore_dir_pattern(tmp_path: Path) -> None:
-    _touch(tmp_path / ".gitignore", "build/\n")
-    _touch(tmp_path / "keep.md")
-    _touch(tmp_path / "build" / "out.md")
-    _touch(tmp_path / "build" / "sub" / "deep.md")
-    assert walk_markdown_files(tmp_path) == ["keep.md"]
+def test_gitignore_dir_pattern(docs_root: Path) -> None:
+    _touch(docs_root / ".gitignore", "build/\n")
+    _touch(docs_root / "keep.md")
+    _touch(docs_root / "build" / "out.md")
+    _touch(docs_root / "build" / "sub" / "deep.md")
+    assert walk_markdown_files(docs_root) == ["keep.md"]
 
 
-def test_gitignore_glob_pattern(tmp_path: Path) -> None:
-    _touch(tmp_path / ".gitignore", "*.draft.md\n")
-    _touch(tmp_path / "final.md")
-    _touch(tmp_path / "notes.draft.md")
-    assert walk_markdown_files(tmp_path) == ["final.md"]
+def test_gitignore_glob_pattern(docs_root: Path) -> None:
+    _touch(docs_root / ".gitignore", "*.draft.md\n")
+    _touch(docs_root / "final.md")
+    _touch(docs_root / "notes.draft.md")
+    assert walk_markdown_files(docs_root) == ["final.md"]
 
 
-def test_single_spec_negation_reincludes(tmp_path: Path) -> None:
+def test_single_spec_negation_reincludes(docs_root: Path) -> None:
     """Within one ``.gitignore``, a ``!`` negation re-includes a file the same
     file's earlier glob ignored (the common ``ignore-all-but-one`` pattern)."""
-    _touch(tmp_path / ".gitignore", "*.md\n!keep.md\n")
-    _touch(tmp_path / "keep.md")
-    _touch(tmp_path / "drop.md")
-    assert walk_markdown_files(tmp_path) == ["keep.md"]
+    _touch(docs_root / ".gitignore", "*.md\n!keep.md\n")
+    _touch(docs_root / "keep.md")
+    _touch(docs_root / "drop.md")
+    assert walk_markdown_files(docs_root) == ["keep.md"]
 
 
-def test_nested_gitignore_adds_ignore(tmp_path: Path) -> None:
+def test_nested_gitignore_adds_ignore(docs_root: Path) -> None:
     """A nested ``.gitignore`` adds its own ignore on top of the parent's; the
     parent's surviving files are unaffected."""
-    _touch(tmp_path / "root.md")
-    _touch(tmp_path / "sub" / ".gitignore", "local.md\n")
-    _touch(tmp_path / "sub" / "shared.md")
-    _touch(tmp_path / "sub" / "local.md")  # ignored by sub/.gitignore
-    assert walk_markdown_files(tmp_path) == ["root.md", "sub/shared.md"]
+    _touch(docs_root / "root.md")
+    _touch(docs_root / "sub" / ".gitignore", "local.md\n")
+    _touch(docs_root / "sub" / "shared.md")
+    _touch(docs_root / "sub" / "local.md")  # ignored by sub/.gitignore
+    assert walk_markdown_files(docs_root) == ["root.md", "sub/shared.md"]
 
 
 def test_root_pattern_prunes_deep_subfolder(tmp_path: Path) -> None:
@@ -114,13 +133,13 @@ def test_root_pattern_prunes_deep_subfolder(tmp_path: Path) -> None:
     assert walk_markdown_files(tmp_path) == ["docs/ok.md"]
 
 
-def test_dir_name_pattern_pruned_at_any_depth(tmp_path: Path) -> None:
+def test_dir_name_pattern_pruned_at_any_depth(docs_root: Path) -> None:
     """A bare ``build/`` pattern prunes a ``build`` dir wherever it appears."""
-    _touch(tmp_path / ".gitignore", "build/\n")
-    _touch(tmp_path / "a" / "keep.md")
-    _touch(tmp_path / "a" / "build" / "x.md")
-    _touch(tmp_path / "build" / "root.md")
-    assert walk_markdown_files(tmp_path) == ["a/keep.md"]
+    _touch(docs_root / ".gitignore", "build/\n")
+    _touch(docs_root / "a" / "keep.md")
+    _touch(docs_root / "a" / "build" / "x.md")
+    _touch(docs_root / "build" / "root.md")
+    assert walk_markdown_files(docs_root) == ["a/keep.md"]
 
 
 def test_glob_pattern_matches_at_depth(tmp_path: Path) -> None:
@@ -130,49 +149,49 @@ def test_glob_pattern_matches_at_depth(tmp_path: Path) -> None:
     assert walk_markdown_files(tmp_path) == ["docs/keep.md"]
 
 
-def test_nested_gitignore_prunes_sub_subfolder(tmp_path: Path) -> None:
+def test_nested_gitignore_prunes_sub_subfolder(docs_root: Path) -> None:
     """A ``.gitignore`` inside a subfolder prunes a sub-subfolder directory and
     everything beneath it, without touching siblings."""
-    _touch(tmp_path / "src" / ".gitignore", "vendor/\n")
-    _touch(tmp_path / "src" / "app.md")
-    _touch(tmp_path / "src" / "vendor" / "lib.md")
-    _touch(tmp_path / "src" / "vendor" / "deep" / "x.md")
-    _touch(tmp_path / "other" / "keep.md")  # sibling tree unaffected
-    assert walk_markdown_files(tmp_path) == ["other/keep.md", "src/app.md"]
+    _touch(docs_root / "src" / ".gitignore", "vendor/\n")
+    _touch(docs_root / "src" / "app.md")
+    _touch(docs_root / "src" / "vendor" / "lib.md")
+    _touch(docs_root / "src" / "vendor" / "deep" / "x.md")
+    _touch(docs_root / "other" / "keep.md")  # sibling tree unaffected
+    assert walk_markdown_files(docs_root) == ["other/keep.md", "src/app.md"]
 
 
-def test_claude_force_include(tmp_path: Path) -> None:
+def test_claude_force_include(docs_root: Path) -> None:
     """``.claude/`` survives even when the root .gitignore ignores it."""
-    _touch(tmp_path / ".gitignore", ".claude/\n")
-    _touch(tmp_path / "keep.md")
-    _touch(tmp_path / ".claude" / "skills" / "thing.md")
-    assert walk_markdown_files(tmp_path) == [
+    _touch(docs_root / ".gitignore", ".claude/\n")
+    _touch(docs_root / "keep.md")
+    _touch(docs_root / ".claude" / "skills" / "thing.md")
+    assert walk_markdown_files(docs_root) == [
         ".claude/skills/thing.md",
         "keep.md",
     ]
 
 
-def test_claude_worktrees_excluded(tmp_path: Path) -> None:
+def test_claude_worktrees_excluded(docs_root: Path) -> None:
     """``.claude/worktrees`` (agent git-worktrees, full repo copies) is skipped
     even though ``.claude/`` is otherwise force-included — otherwise a single
     discover walks every worktree's tree (tens of thousands of files)."""
-    _touch(tmp_path / "keep.md")
-    _touch(tmp_path / ".claude" / "skills" / "thing.md")  # still indexed
-    _touch(tmp_path / ".claude" / "worktrees" / "agent-x" / "ui" / "buried.md")  # skipped
-    assert walk_markdown_files(tmp_path) == [
+    _touch(docs_root / "keep.md")
+    _touch(docs_root / ".claude" / "skills" / "thing.md")  # still indexed
+    _touch(docs_root / ".claude" / "worktrees" / "agent-x" / "ui" / "buried.md")  # skipped
+    assert walk_markdown_files(docs_root) == [
         ".claude/skills/thing.md",
         "keep.md",
     ]
 
 
-def test_symlinked_dir_not_followed(tmp_path: Path) -> None:
-    real = tmp_path / "real"
+def test_symlinked_dir_not_followed(docs_root: Path) -> None:
+    real = docs_root / "real"
     _touch(real / "inside.md")
-    _touch(tmp_path / "top.md")
-    link = tmp_path / "link"
+    _touch(docs_root / "top.md")
+    link = docs_root / "link"
     link.symlink_to(real, target_is_directory=True)
     # 'top.md' + 'real/inside.md' only; the symlink 'link/' is not descended.
-    assert walk_markdown_files(tmp_path) == ["real/inside.md", "top.md"]
+    assert walk_markdown_files(docs_root) == ["real/inside.md", "top.md"]
 
 
 def test_missing_or_file_root_returns_empty(tmp_path: Path) -> None:

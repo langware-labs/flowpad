@@ -1,5 +1,5 @@
 import { registerTerminalLinks } from './terminal-links';
-import { useTerminalLinks } from './TerminalLinkMenu';
+import { useLinks } from '@src/components/links/LinkMenu';
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
@@ -43,7 +43,7 @@ export const ShellTerminal = forwardRef<ShellTerminalHandle, ShellTerminalProps>
   const { shell } = useShell(shellId);
   const shellRef = useRef(shell);
   shellRef.current = shell;
-  const terminalLinks = useTerminalLinks(shellRef);
+  const terminalLinks = useLinks(shellRef);
 
   useImperativeHandle(ref, () => ({ clear: () => term?.reset(), focus: () => term?.focus() }), [term]);
 

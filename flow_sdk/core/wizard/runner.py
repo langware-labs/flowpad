@@ -34,8 +34,8 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
 
 from flow_sdk.core.compute.declared_value import DeclaredShapeError, to_declared
-from flow_sdk.core.compute.exec import run_shell
 from flow_sdk.core.compute.process_step import launch_step_process
+from flow_sdk.core.compute.shared_shell import shell_for
 from flow_sdk.core.compute_op.runner import Launch, Shell, run_op
 from flow_sdk.core.wizard.state import input_env
 from flow_sdk.schema.data_spec.returned_value_spec import ExitCode, ReturnedValue, WizardResult
@@ -147,7 +147,7 @@ async def run_wizard(
     trusted: bool = False,
     workdir: Optional[Path] = None,
     inputs: Optional[dict] = None,
-    shell: Shell = run_shell,
+    shell: Optional[Shell] = None,
     launch: Launch = launch_step_process,
     resolve_op: Optional[OpResolver] = None,
     resolve_wizard: Optional[WizardResolver] = None,
@@ -170,52 +170,57 @@ async def run_wizard(
     after each TOP-LEVEL step settles. Not threaded into ``_call_wizard``'s
     own recursive call, so it fires once per top-level step, never once per
     nested ask/install micro-step.
+
+    ``shell`` is the run's: given none, this wizard IS the run and opens one for every step
+    (``SharedShell``); asked for its own (``isolated_shell``), it opens one for its subtree.
+    Nested wizards and ops are handed the shell they run in, so they reuse it.
     """
-    if not trusted:
-        return wizard_refused(spec.name)
+    async with shell_for(spec.isolated_shell, shell) as shell:
+        if not trusted:
+            return wizard_refused(spec.name)
 
-    from flow_sdk.activity import Activity  # noqa: PLC0415 — keeps this module entity-free at import
+        from flow_sdk.activity import Activity  # noqa: PLC0415 — keeps this module entity-free at import
 
-    platform = platform or sys.platform
-    workdir = Path(workdir) if workdir else Path.cwd()
-    workdir.mkdir(parents=True, exist_ok=True)
+        platform = platform or sys.platform
+        workdir = Path(workdir) if workdir else Path.cwd()
+        workdir.mkdir(parents=True, exist_ok=True)
 
-    run = _Run(
-        spec=spec,
-        values=dict(inputs or {}),
-        workdir=workdir,
-        platform=platform,
-        subject_entity=subject_entity,
-        shell=shell,
-        launch=launch,
-        resolve_op=resolve_op,
-        resolve_wizard=resolve_wizard,
-        approved=approved,
-        chain=chain,
-        wizard_id=wizard_id,
-        check_only=check_only,
-        on_step=on_step,
-    )
+        run = _Run(
+            spec=spec,
+            values=dict(inputs or {}),
+            workdir=workdir,
+            platform=platform,
+            subject_entity=subject_entity,
+            shell=shell,
+            launch=launch,
+            resolve_op=resolve_op,
+            resolve_wizard=resolve_wizard,
+            approved=approved,
+            chain=chain,
+            wizard_id=wizard_id,
+            check_only=check_only,
+            on_step=on_step,
+        )
 
-    # A nested run reports INTO the caller's node, so the tree is one tree. Only
-    # a top-level run claims an address — and the address IS the slot, which is
-    # why a nested one must never claim its own.
-    if parent is not None:
-        return await _steps(run, parent)
-    claimed = False
-    try:
-        async with Activity.claim(activity_path, subject_entity=subject_entity, queue=False) as root:
-            claimed = True
-            root.label(spec.name or activity_path).icon(spec.icon).total(len(spec.steps))
-            result = await _steps(run, root)
-            if not result.ok:
-                root.fail(result.detail)  # sticky: wins over the claim's exit done()
-            return result
-    except RuntimeError as busy:
-        if claimed:
-            raise
-        # The address is a slot, and another run holds it: nothing ran, try later.
-        return WizardResult.held(f"{spec.name or activity_path} is already running: {busy}")
+        # A nested run reports INTO the caller's node, so the tree is one tree. Only
+        # a top-level run claims an address — and the address IS the slot, which is
+        # why a nested one must never claim its own.
+        if parent is not None:
+            return await _steps(run, parent)
+        claimed = False
+        try:
+            async with Activity.claim(activity_path, subject_entity=subject_entity, queue=False) as root:
+                claimed = True
+                root.label(spec.name or activity_path).icon(spec.icon).total(len(spec.steps))
+                result = await _steps(run, root)
+                if not result.ok:
+                    root.fail(result.detail)  # sticky: wins over the claim's exit done()
+                return result
+        except RuntimeError as busy:
+            if claimed:
+                raise
+            # The address is a slot, and another run holds it: nothing ran, try later.
+            return WizardResult.held(f"{spec.name or activity_path} is already running: {busy}")
 
 
 async def _steps(run: _Run, root: Any) -> WizardResult:
