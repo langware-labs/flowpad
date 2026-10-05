@@ -530,6 +530,26 @@ function isTeardownError(err: unknown): boolean {
   return err instanceof TypeError && isNetworkErrorMessage(err.message);
 }
 
+/**
+ * The time to stamp a just-submitted prompt's optimistic echo with.
+ *
+ * The stream is ordered by timestamp, and every other row in it carries the WORKER HOST's
+ * clock. The browser's clock is a different machine's whenever the pane is not on the host
+ * (a VM, a connected machine, a hub-served page): stamped with it, a browser running ahead
+ * sorted the prompt AFTER the reply it caused. So the echo takes the host's own latest time —
+ * the newest row already shown, or the process's creation (stamped by the backend just
+ * before a first prompt) — which keeps it after everything before it (equal times keep
+ * insertion order) and before the reply the same host stamps later.
+ */
+export function echoTimestamp(shown: readonly { timestamp: string }[], createdDate?: Date | string | null): string {
+  let latest = createdDate ? Date.parse(String(createdDate)) : NaN;
+  for (const item of shown) {
+    const t = Date.parse(item.timestamp);
+    if (!Number.isNaN(t) && !(t <= latest)) latest = t;
+  }
+  return Number.isNaN(latest) ? new Date().toISOString() : new Date(latest).toISOString();
+}
+
 // Deliberately no `implements IAgenticProcess`: that interface is the WIRE
 // shape, and this class stores the four `*_folder` fields hydrated (`FSRef`,
 // parsed from the wire's `FSRefJson`). Every other member is still checked
@@ -2027,13 +2047,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       if (item.isOptimisticEcho && item.content === trimmed) return;
     }
 
-    const timestamp = new Date().toISOString();
+    const timestamp = echoTimestamp(this.flowDataStream.items, this.created_date);
     const userFlowData = FlowDataFactory.fromElementType(
       FlowElementTypes.USER_MESSAGE,
       trimmed,
       {
         role: 'user',
         t: timestamp,
+        // The browser's own clock, for what is measured against the browser's "now" (the
+        // turn's elapsed clock) — `t` is the host's, for ordering. Mixing them showed a
+        // turn on a host 2.6 min behind as "3:08" the moment it started.
+        'submitted-at': new Date().toISOString(),
         // A placeholder, not an observation — see `FlowData.isOptimisticEcho`.
         [FlowDataAttribute.OPTIMISTIC_ECHO]: 'true',
       },
