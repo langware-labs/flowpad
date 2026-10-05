@@ -3922,6 +3922,10 @@ msgstr "Choose a document from the sidebar to view its contents"
 msgid "Choose a file instead"
 msgstr "Choose a file instead"
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Choose a model…"
+msgstr "Choose a model…"
+
 #: src/components/install/AddAssetDialog.tsx
 msgid "Choose a project"
 msgstr "Choose a project"
@@ -9197,6 +9201,7 @@ msgstr "Filter files"
 msgid "Filter logs..."
 msgstr "Filter logs..."
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "Filter models…"
 msgstr "Filter models…"
@@ -12070,6 +12075,10 @@ msgstr "Loading message…"
 msgid "Loading metrics..."
 msgstr "Loading metrics..."
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
+msgid "Loading models…"
+msgstr "Loading models…"
+
 #: src/components/organization/organization-page.tsx
 msgid "Loading organizations…"
 msgstr "Loading organizations…"
@@ -12797,6 +12806,7 @@ msgid "model"
 msgstr "model"
 
 #: src/components/assets/editor/agent-profile/AgentPlaceConfig.tsx
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -13931,6 +13941,7 @@ msgstr "No messages yet."
 msgid "No metrics data available"
 msgstr "No metrics data available"
 
+#: src/components/assets/editor/agent-profile/TokenAllocationField.tsx
 #: src/components/llm-endpoints/ModelsList.tsx
 msgid "No models."
 msgstr "No models."
