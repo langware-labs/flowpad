@@ -213,9 +213,12 @@ export interface IFlowMessage extends IEntity {
   /** The MessageThread this belongs to. Null = ungrouped, i.e. flat rendering
    *  (every message that predates threading). */
   thread_id?: string | null;
-  /** Local id of the message this replies to — provenance for quoting, NOT how
-   *  threading is decided. */
+  /** Id of the message this replies to — the quote. On Flowpad's own chat it is the hub id, so it
+   *  names the same message on every member's machine. */
   reply_to_id?: string | null;
+  /** Flowpad's own chat: the message whose thread this one is in (the native thread's wire fact;
+   *  the backend resolves it to `thread_id`). Null on channel messages. */
+  thread_root_id?: string | null;
   /** Set on a REFERENCE row: the SourceItem whose body this message renders.
    *  The stored row's `text` is always empty; reads arrive hydrated. */
   source_item_id?: string | null;
@@ -272,6 +275,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   envelope?: IMessageEnvelope | null;
   thread_id?: string | null;
   reply_to_id?: string | null;
+  thread_root_id?: string | null;
   source_item_id?: string | null;
   reactions?: IMessageReaction[];
   static type: string = 'flow_message';
@@ -308,6 +312,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.envelope = entity.envelope ?? null;
     this.thread_id = entity.thread_id ?? null;
     this.reply_to_id = entity.reply_to_id ?? null;
+    this.thread_root_id = entity.thread_root_id ?? null;
     this.source_item_id = entity.source_item_id ?? null;
     this.reactions = entity.reactions ?? [];
   }

@@ -25,7 +25,12 @@ import shlex
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
-from flow_sdk.builtin.agentic_process.model_tiers import is_family_model, resolve_family_tier, resolve_model_tier
+from flow_sdk.builtin.agentic_process.model_tiers import (
+    is_family_model,
+    is_model_tier,
+    resolve_family_tier,
+    resolve_model_tier,
+)
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.flowpad_types.vendors import vendor_or_none
 
@@ -585,23 +590,23 @@ async def binding_for_candidate(worker_type: str, candidate, *, tier: str | None
     except ValueError as exc:
         raise WorkerSpawnError(worker_type, str(exc)) from exc
     if family_slug:
-        # The caller named the model, so an endpoint that refuses it refuses it -- the
-        # models_allow fallback below is for a CODE default, and would quietly run a different
-        # model than the one asked for.
         slug = f"{spec.slug_prefix}{family_slug}"
-        allowed_slug = slug
     else:
         slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"
-        allowed_slug = _model_within_allowance(slug, endpoint.filters.models_allow)
-    if allowed_slug != slug:
-        logger.info(
-            "%s: tier slug %r isn't in endpoint %s's models_allow; using %r instead",
-            worker_type,
-            slug,
-            source.endpoint_typeid or "(box binding)",
-            allowed_slug,
-        )
-        slug = allowed_slug
+        # Only a SIZE is ours to re-pick: no model, or sm/md/lg, names the tier map's code default.
+        # A named model -- a family, "haiku", "anthropic/claude-haiku-4.5" -- is the caller's, and
+        # an endpoint that refuses it refuses it in words rather than quietly running another.
+        if not tier or is_model_tier(tier):
+            allowed_slug = _model_within_allowance(slug, endpoint.filters.models_allow)
+            if allowed_slug != slug:
+                logger.info(
+                    "%s: tier slug %r isn't in endpoint %s's models_allow; using %r instead",
+                    worker_type,
+                    slug,
+                    source.endpoint_typeid or "(box binding)",
+                    allowed_slug,
+                )
+                slug = allowed_slug
     env = {**binding.base_env, binding.token_env_var: key}
     if spec.max_output_env_var:
         env[spec.max_output_env_var] = str(FUNDED_MAX_OUTPUT_TOKENS)

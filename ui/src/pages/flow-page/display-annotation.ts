@@ -19,7 +19,6 @@ export interface DisplayAnnotationContext {
   viewType?: string;
 }
 
-
 function slug(value: string): string {
   return value
     .toLowerCase()
@@ -163,10 +162,13 @@ export function buildDisplayAnnotationPrompt({
   fileName,
   filePath,
   context,
+  note,
 }: {
   fileName: string;
   filePath: string;
   context: DisplayAnnotationContext;
+  /** The caption the user typed under the screenshot — their words for the change. */
+  note?: string;
 }): string {
   const lines = [
     'The user annotated the active display view.',
@@ -187,6 +189,7 @@ export function buildDisplayAnnotationPrompt({
   if (context.typeid) lines.push(`Target typeid: ${context.typeid}`);
   if (context.viewType) lines.push(`Target view: ${context.viewType}`);
 
+  if (note) lines.push('', `User note: ${note}`);
   lines.push('', `Annotated screenshot: ${fileName}`, `File path: ${filePath}`);
   return lines.join('\n');
 }

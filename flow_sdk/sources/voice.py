@@ -56,6 +56,8 @@ class VoiceChannel(MessageSource):
     origin_kind: ClassVar[str] = VOICE
     #: What ``send`` returns is the only copy of it: speech is not echoed back as a record.
     echoes_sends: ClassVar[bool] = False
+    #: A call is spoken to the person, not an answer to one of their messages.
+    replies: ClassVar[bool] = False
     #: Calls on the line in this process, by (driver, person): the session ``say_to`` speaks into, and the
     #: call's conversation key.
     _live: ClassVar[dict[tuple[str, str], tuple[Any, str]]] = {}

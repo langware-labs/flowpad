@@ -1,0 +1,47 @@
+{
+  "name": "browser-setup",
+  "label": "Set up the agent browser",
+  "description": "Gets this computer ready for agents to drive and debug a real browser: Node.js and npm, the chrome-devtools CLI, and Chrome or Edge. Checks what is already there and only asks before installing anything that's missing.",
+  "version": 1,
+  "enabled": true,
+  "icon": "Wand2",
+  "success_message": "The agent browser is ready.",
+  "failure_message": "The agent browser isn't set up yet.",
+  "steps": [
+    {
+      "id": "node",
+      "label": "Node.js",
+      "kind": "wizard",
+      "ref": "llm-setup-node",
+      "on_fail": "abort"
+    },
+    {
+      "id": "ask_cli",
+      "label": "Install the chrome-devtools CLI?",
+      "kind": "compute",
+      "ref": "ask-install-chrome-devtools",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install_cli",
+      "label": "chrome-devtools CLI",
+      "kind": "compute",
+      "ref": "chrome-devtools-on-path",
+      "on_fail": "abort"
+    },
+    {
+      "id": "ask_browser",
+      "label": "Install Google Chrome?",
+      "kind": "compute",
+      "ref": "ask-install-browser",
+      "on_fail": "abort"
+    },
+    {
+      "id": "install_browser",
+      "label": "Chrome or Edge",
+      "kind": "compute",
+      "ref": "browser-on-path",
+      "on_fail": "abort"
+    }
+  ]
+}

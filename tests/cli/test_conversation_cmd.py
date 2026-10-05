@@ -194,3 +194,92 @@ def test_reply_with_only_a_file_reaches_the_channel_check(conv_cli, tmp_path):
 def test_react_on_an_unknown_message_is_refused(conv_cli):
     result = conv_cli.invoke(["conversation", "react", "00000000-0000-4000-8000-000000000000", "👍"])
     assert result.exit_code == 7 and "not found" in result.output.lower()
+
+
+_LONG = "Please add the home founding number to this screen as well, next to the address and the device count."
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_show_prints_every_message_in_full_oldest_first(conv_cli):
+    conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "first"])
+    conv_cli.invoke(["conversation", "send", conv_cli.conv_id, _LONG])
+    result = conv_cli.invoke(["conversation", "show", conv_cli.conv_id])
+    assert result.exit_code == 0, result.output
+    out = result.stdout
+    assert _LONG in out  # not cut at 80 chars like `summary`
+    assert out.index("first") < out.index(_LONG)
+    assert "(you)" in out and "msg " in out
+    assert "showing 2 of 2" in out
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_show_accepts_the_typeid_forms_the_ui_pastes(conv_cli):
+    conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "hi"])
+    for form in (f"conversation-{conv_cli.conv_id}", f"conversation/{conv_cli.conv_id}"):
+        payload = conv_cli.ok_payload(conv_cli.invoke(["conversation", "show", form, "--json"]))
+        assert payload["id"] == conv_cli.conv_id
+        assert [m["text"] for m in payload["messages"]] == ["hi"]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_show_last_keeps_the_newest(conv_cli):
+    for text in ("one", "two", "three"):
+        conv_cli.invoke(["conversation", "send", conv_cli.conv_id, text])
+    payload = conv_cli.ok_payload(conv_cli.invoke(["conversation", "show", conv_cli.conv_id, "--last", "2", "--json"]))
+    assert [m["text"] for m in payload["messages"]] == ["two", "three"]
+    assert payload["message_count"] == 3
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_show_refuses_a_typeid_of_another_type(conv_cli):
+    result = conv_cli.invoke(["conversation", "show", "task-6f1c2b0e-7a51-4c3e-9d0e-2b8f4a1c9e77"])
+    assert result.exit_code == 2
+    assert "must be a conversation" in result.output
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_message_reads_one_message_in_full(conv_cli):
+    sent = conv_cli.ok_payload(conv_cli.invoke(["conversation", "send", conv_cli.conv_id, _LONG]))
+    mid = sent["flow_message_id"]
+    result = conv_cli.invoke(["conversation", "message", f"flow_message-{mid}"])
+    assert result.exit_code == 0, result.output
+    assert _LONG in result.stdout
+    assert f"conversation-{conv_cli.conv_id}" in result.stdout
+    payload = conv_cli.ok_payload(conv_cli.invoke(["conversation", "message", mid, "--json"]))
+    assert payload["text"] == _LONG and payload["from"] == "you"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_message_unknown_id_is_not_found(conv_cli):
+    result = conv_cli.invoke(["conversation", "message", "6f1c2b0e-7a51-4c3e-9d0e-2b8f4a1c9e77"])
+    assert result.exit_code == 4
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_send_reply_to_threads_and_show_reads_one_thread(conv_cli):
+    root = conv_cli.ok_payload(conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "snapshot request"]))
+    conv_cli.invoke(["conversation", "send", conv_cli.conv_id, "unrelated"])
+    reply = conv_cli.ok_payload(
+        conv_cli.invoke(
+            ["conversation", "send", conv_cli.conv_id, "done", "--reply-to", f"flow_message-{root['flow_message_id']}"]
+        )
+    )
+    assert reply["reply_to_id"] == root["flow_message_id"] and reply["thread_id"]
+
+    result = conv_cli.invoke(["conversation", "show", conv_cli.conv_id, "--thread", root["flow_message_id"]])
+    assert result.exit_code == 0, result.output
+    out = result.stdout
+    assert "snapshot request" in out and "done" in out and "unrelated" not in out
+    assert "🧵 snapshot request" in out and "in this thread" in out
+
+    by_thread_id = conv_cli.ok_payload(
+        conv_cli.invoke(["conversation", "show", conv_cli.conv_id, "--thread", reply["thread_id"], "--json"])
+    )
+    assert [m["text"] for m in by_thread_id["messages"]] == ["snapshot request", "done"]
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_show_unknown_thread_fails(conv_cli):
+    result = conv_cli.invoke(["conversation", "show", conv_cli.conv_id, "--thread", "6f1c2b0e-7a51-4c3e-9d0e-2b8f4a1c9e77"])
+    assert result.exit_code != 0
+    assert "no thread" in result.output

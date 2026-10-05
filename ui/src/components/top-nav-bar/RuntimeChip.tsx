@@ -165,9 +165,11 @@ export function RuntimeChip({ kind, project }: RuntimeChipProps) {
                   >
                     <ProjectIcon className="h-4 w-4 shrink-0" />
                     {/* A word, not just a glyph: an icon alone on a tinted pill
-                        reads as decoration. Narrow windows drop it, like the name. */}
+                        reads as decoration. "Project", not "Home" — the bar's own
+                        Home button is the app home, and two "Home"s read as one.
+                        Narrow windows drop it, like the name. */}
                     <span className="hidden sm:inline">
-                      <Trans>Home</Trans>
+                      <Trans>Project</Trans>
                     </span>
                   </button>
                 </TooltipTrigger>

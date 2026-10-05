@@ -199,6 +199,11 @@ class BaseInstanceSettings:
     # bootstrap.sniffer_hook payload (null when disabled). ----
     sniffer_enabled: bool = False
 
+    # ---- Where this instance's USER-scope repo assets (``agentic-assets/<family>``)
+    # live. ``None`` means ``user_home`` — prod, and any settings a test builds
+    # around a temporary home. Read it through ``user_asset_root``. ----
+    user_asset_home: Path | None = None
+
     # ---- External-worker scan: opt-in gate for the (deferred) OS-cmdline
     # scanner that surfaces workers running outside the app in the footer's
     # advanced "external" execution-mode bucket. Default off; the /workers
@@ -308,6 +313,13 @@ class BaseInstanceSettings:
             # it in the user's real vault, where prod lists it as theirs (906 test
             # files had piled up there by 2026-09-28). Same rule as ``workspace_root``.
             user_docs_dir=(Path.home() / "docs") if instance_name == "prod" else instance_dir / "docs",
+            # ``~/agentic-assets`` is prod's, for the same reason as ``~/docs``: the
+            # hub tiers run on ``dev-1``/``dev-2`` and saved their user-scope specs,
+            # agents and prompts there, and every run that died before teardown
+            # left them for prod to list (188 by 2026-10-04, 67 of them unreadable).
+            # Not under the instance dir: nothing under ``flow_home`` is user
+            # content, so an asset there could never be deleted (``is_protected_path``).
+            user_asset_home=None if instance_name == "prod" else Path.home() / "Flowpad workspaces" / ".home" / instance_name,
             claude_tasks_dir=claude_home / "tasks",
             claude_history_path=claude_home / "history.jsonl",
             claude_mcp_json_path=claude_home / "mcp.json",
@@ -516,6 +528,13 @@ class BaseInstanceSettings:
     def instance_dir(self) -> Path:
         """``<flow_home>/instances/<instance_name>`` — per-instance canonical root."""
         return self.instances_root / self.instance_name
+
+    @property
+    def user_asset_root(self) -> Path:
+        """The USER scope root for repo assets — ``<it>/agentic-assets/<family>``.
+        ``user_home`` for prod; another instance's own folder otherwise. Harness
+        dirs (``~/.claude/skills``) stay under ``user_home`` for every instance."""
+        return self.user_asset_home or self.user_home
 
     @property
     def workspace_root(self) -> Path:

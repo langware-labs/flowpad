@@ -1561,7 +1561,9 @@ class Entity(DBEntity):
                 return None
         return None
 
-    async def _resolve_scope_root(self, scope_project: "Entity | None" = None) -> "Path | None":
+    async def _resolve_scope_root(
+        self, scope_project: "Entity | None" = None, *, asset_class=None
+    ) -> "Path | None":
         """Resolve filesystem scope root from request_context.
 
         Project context (POST /api/v1/graph/project/<id>/<type>) →
@@ -1582,7 +1584,7 @@ class Entity(DBEntity):
         mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
         if mount:
             return root_for_scope(Scope.PROJECT, project_mount=mount)
-        return root_for_scope(Scope.USER)
+        return root_for_scope(Scope.USER, asset_class=asset_class)
 
     def is_file_backed(self) -> bool:
         """Does THIS ROW live in a file on disk?
@@ -2842,7 +2844,7 @@ class Entity(DBEntity):
         # the scope root — ``compute_asset_ref`` then appends ``agentic-assets/…``.
         if scope_root is None:
             scope_root = await self._resolve_repo_parent_container(info)
-        scope_root = scope_root or await self._resolve_scope_root(scope_proj)
+        scope_root = scope_root or await self._resolve_scope_root(scope_proj, asset_class=info._resolved_layout[0])
         if scope_root is None:
             return
         # The machine's canonical harness picks the family prefix (.claude/… vs

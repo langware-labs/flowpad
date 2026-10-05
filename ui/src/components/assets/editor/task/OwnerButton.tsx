@@ -10,6 +10,7 @@ import { notify } from '@src/notifications';
 import { User as UserIcon, Users } from 'lucide-react';
 import { useState } from 'react';
 import { GroupTaskDialog } from './GroupTaskDialog';
+import { taskOwner } from '@src/components/task-bar/task-utils';
 
 interface OwnerButtonProps {
   task: Task;
@@ -38,7 +39,7 @@ export function OwnerButton({ task }: OwnerButtonProps) {
   const isGroup = task.kind === TaskKind.GROUP;
   // `group_name` is only ever set by the contacts-group fan-out; a task handed
   // to one person carries the person on `assignee`.
-  const assigned = (isGroup && task.group_name) || task.assignee;
+  const assigned = taskOwner(task);
   const label = assigned ? `Owner: ${assigned}` : 'Owner';
   const Icon = isGroup ? Users : UserIcon;
 

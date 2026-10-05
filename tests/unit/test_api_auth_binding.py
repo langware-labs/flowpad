@@ -69,14 +69,13 @@ async def _reset_harness_auth_mode():
 @pytest.fixture(autouse=True)
 def _status_facts(monkeypatch):
     """The STATUS facts funding reads, made deterministic (see test_llm_source_resolution):
-    every CLI installed, the hub signed in exactly when a hub key is stored, no spawn probe."""
+    every CLI installed, a hub budget spendable exactly when a hub key is stored (the real rule,
+    not faked), no spawn probe."""
     from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
     from flow_sdk.core import status
     from flow_sdk.core.status import InstallState
 
     monkeypatch.setattr(status, "harness_install", lambda worker: InstallState.INSTALLED)
-    monkeypatch.setattr(llm_source, "_hub_signed_in", lambda: bool(resolve_hub_api_key()))
 
     async def no_probe(worker_type):
         return None
@@ -600,20 +599,16 @@ def test_the_deepagents_model_sends_the_cap_its_binding_set(monkeypatch) -> None
     assert models.openai_wire_model("z-ai/glm-5").max_tokens is None
 
 
-async def test_deepagents_falls_back_to_a_models_allow_slug(env) -> None:
-    """A hub endpoint's ``filters.models_allow`` can rule out the tier's default slug — a team
-    scoped to one Anthropic model while deepagents' ``sm`` tier names a z-ai one. The binding
-    must fall back to a model that endpoint actually permits, rather than hand the worker a
-    slug the endpoint is guaranteed to refuse at call time ("model not allowed by endpoint")."""
-    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+def _hub_candidate(key: str, name: str, models_allow: list[str]):
+    """A hub endpoint narrowed to *models_allow*, already chosen to fund the spawn."""
     from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
     from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMFilters
     from flow_sdk.cli.auth.hub_login import set_api_key
     from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
 
     set_api_key("fp-hub-key")
-    endpoint = LLMEndpoint.projection("hub", "course-ep", name="AI Course budget", provider="openrouter")
-    endpoint.filters = LLMFilters(models_allow=["anthropic/claude-haiku-4.5"])
+    endpoint = LLMEndpoint.projection("hub", key, name=name, provider="openrouter")
+    endpoint.filters = LLMFilters(models_allow=models_allow)
     source = LLMSource(
         endpoint_typeid=str(endpoint.typeid),
         name=endpoint.name,
@@ -622,8 +617,19 @@ async def test_deepagents_falls_back_to_a_models_allow_slug(env) -> None:
         auto=True,
         authority=LLMSourceAuthority.CACHED,
     )
+    return Candidate(endpoint, source)
 
-    auth = await binding_for_candidate("deepagents", Candidate(endpoint, source), tier="sm")
+
+async def test_deepagents_falls_back_to_a_models_allow_slug(env) -> None:
+    """A hub endpoint's ``filters.models_allow`` can rule out the tier's default slug — a team
+    scoped to one Anthropic model while deepagents' ``sm`` tier names a z-ai one. The binding
+    must fall back to a model that endpoint actually permits, rather than hand the worker a
+    slug the endpoint is guaranteed to refuse at call time ("model not allowed by endpoint")."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+
+    candidate = _hub_candidate("course-ep", "AI Course budget", ["anthropic/claude-haiku-4.5"])
+
+    auth = await binding_for_candidate("deepagents", candidate, tier="sm")
     assert auth is not None
     assert auth.model_slug == "anthropic/claude-haiku-4.5"
 
@@ -632,24 +638,10 @@ async def test_deepagents_keeps_its_tier_slug_when_a_wildcard_allows_it(env) -> 
     """A glob allow-pattern that already covers the tier's default must not trigger the
     fallback — only a slug the endpoint actually refuses should be swapped out."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMFilters
-    from flow_sdk.cli.auth.hub_login import set_api_key
-    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
 
-    set_api_key("fp-hub-key")
-    endpoint = LLMEndpoint.projection("hub", "wide-ep", name="wide budget", provider="openrouter")
-    endpoint.filters = LLMFilters(models_allow=["z-ai/*"])
-    source = LLMSource(
-        endpoint_typeid=str(endpoint.typeid),
-        name=endpoint.name,
-        rank=0,
-        eligible=True,
-        auto=True,
-        authority=LLMSourceAuthority.CACHED,
-    )
+    candidate = _hub_candidate("wide-ep", "wide budget", ["z-ai/*"])
 
-    auth = await binding_for_candidate("deepagents", Candidate(endpoint, source), tier="sm")
+    auth = await binding_for_candidate("deepagents", candidate, tier="sm")
     assert auth is not None
     assert auth.model_slug == "z-ai/glm-5.3-flash"
 
@@ -778,25 +770,33 @@ async def test_a_family_model_is_not_swapped_for_a_models_allow_default(env) -> 
     """The models_allow fallback rescues a CODE default; a model the caller named is the
     caller's choice, and an endpoint that refuses it should say so rather than run another."""
     from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
-    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import Candidate
-    from flow_sdk.builtin.llm_endpoint import LLMEndpoint, LLMFilters
-    from flow_sdk.cli.auth.hub_login import set_api_key
-    from flow_sdk.schema.data_spec.llm_source_spec import LLMSource, LLMSourceAuthority
 
-    set_api_key("fp-hub-key")
-    endpoint = LLMEndpoint.projection("hub", "course-ep", name="AI Course budget", provider="openrouter")
-    endpoint.filters = LLMFilters(models_allow=["anthropic/claude-haiku-4.5"])
-    source = LLMSource(
-        endpoint_typeid=str(endpoint.typeid),
-        name=endpoint.name,
-        rank=0,
-        eligible=True,
-        auto=True,
-        authority=LLMSourceAuthority.CACHED,
-    )
+    candidate = _hub_candidate("course-ep", "AI Course budget", ["anthropic/claude-haiku-4.5"])
 
-    auth = await binding_for_candidate("deepagents", Candidate(endpoint, source), tier="glm:sm")
+    auth = await binding_for_candidate("deepagents", candidate, tier="glm:sm")
     assert auth is not None and auth.model_slug == "z-ai/glm-4.7"
+
+
+@pytest.mark.parametrize(
+    ("tier", "expected"),
+    [
+        # The caller's model -- a name or a literal slug -- is kept, so the endpoint can refuse it.
+        ("haiku", "haiku"),
+        ("anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
+        # A size, or no model at all, is the tier map's code default: still re-picked.
+        ("sm", "z-ai/glm-5.3"),
+        (None, "z-ai/glm-5.3"),
+    ],
+)
+async def test_a_named_model_is_not_swapped_for_a_models_allow_default(env, tier, expected) -> None:
+    """A GLM-only allowance asked for haiku must not quietly run GLM: the turn would answer, bill
+    the allowance, and the caller would never learn their model was refused."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import binding_for_candidate
+
+    candidate = _hub_candidate("glm-ep", "GLM 5.3 only", ["z-ai/glm-5.3"])
+
+    auth = await binding_for_candidate("claude_code", candidate, tier=tier)
+    assert auth is not None and auth.model_slug == expected
 
 
 async def test_a_family_model_with_a_bad_size_fails_the_spawn_with_the_sizes(env, monkeypatch) -> None:

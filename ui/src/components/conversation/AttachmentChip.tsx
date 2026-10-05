@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   Download,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@src/lib/utils';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { AssetEditor, editorForPath } from '@src/navigation/asset-doc-types';
 import { isImagePath } from '@sdk';
 import { MediaLightbox, isVideoPath, videoSource } from '@src/components/ui/media-lightbox';
@@ -136,21 +137,9 @@ export function AttachmentChip({
   onRevealInFolder,
 }: AttachmentChipProps) {
   const { t } = useLingui();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
   const [lightbox, setLightbox] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onDocMouseDown = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDocMouseDown);
-    return () => document.removeEventListener('mousedown', onDocMouseDown);
-  }, [menuOpen]);
-
   // UPLOADING / READY / UNAVAILABLE: the bytes aren't on this machine, so there
   // is no live URL to link or inline-render. Render a status row instead —
   // greyed + inert for UPLOADING, dashed + clickable (→ download) for READY,
@@ -208,7 +197,6 @@ export function AttachmentChip({
     } catch {
       // ignore — clipboard may be blocked outside secure context
     }
-    setMenuOpen(false);
   };
 
   const overlay = (
@@ -237,80 +225,50 @@ export function AttachmentChip({
             <FolderOpen className="h-3.5 w-3.5" />
           </button>
         )}
-        <button
-          type="button"
-          title={t`More actions`}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setMenuOpen((v) => !v);
-          }}
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <MoreVertical className="h-3.5 w-3.5" />
-        </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              title={t`More actions`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <MoreVertical className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          {/* Portaled, but React events still bubble to the chip's host — stop them here. */}
+          <DropdownMenuContent align="end" className="min-w-[160px]" onClick={(e) => e.stopPropagation()}>
+            {onOpenInEditor && (
+              <DropdownMenuItem className="text-xs" onSelect={onOpenInEditor}>
+                <FileText className="text-muted-foreground" />
+                {editorForPath(filename) === AssetEditor.ARCHIVE ? <Trans>Preview contents</Trans> : <Trans>Open in editor</Trans>}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem className="text-xs" asChild>
+              <a href={url} target="_blank" rel="noreferrer">
+                <ExternalLink className="text-muted-foreground" />
+                <Trans>Open in new tab</Trans>
+              </a>
+            </DropdownMenuItem>
+            {onRevealInFolder && (
+              <DropdownMenuItem className="text-xs" onSelect={onRevealInFolder}>
+                <FolderOpen className="text-muted-foreground" />
+                <Trans>Reveal in folder</Trans>
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem className="text-xs" onSelect={() => void handleCopyLink()}>
+              <LinkIcon className="text-muted-foreground" />
+              <Trans>Copy link</Trans>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-xs" asChild>
+              <a href={url} download={filename}>
+                <Download className="text-muted-foreground" />
+                <Trans>Download</Trans>
+              </a>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
-      {menuOpen && (
-        <div
-          role="menu"
-          className="absolute right-0 top-full mt-1 min-w-[160px] rounded-md border border-border bg-popover p-1 text-xs shadow-md"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {onOpenInEditor && (
-            <button
-              type="button"
-              onClick={() => {
-                setMenuOpen(false);
-                onOpenInEditor();
-              }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
-            >
-              <FileText className="h-3 w-3 text-muted-foreground" />
-              {editorForPath(filename) === AssetEditor.ARCHIVE ? <Trans>Preview contents</Trans> : <Trans>Open in editor</Trans>}
-            </button>
-          )}
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => setMenuOpen(false)}
-            className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground transition-colors hover:bg-muted"
-          >
-            <ExternalLink className="h-3 w-3 text-muted-foreground" />
-            <Trans>Open in new tab</Trans>
-          </a>
-          {onRevealInFolder && (
-            <button
-              type="button"
-              onClick={() => {
-                setMenuOpen(false);
-                onRevealInFolder();
-              }}
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
-            >
-              <FolderOpen className="h-3 w-3 text-muted-foreground" />
-              <Trans>Reveal in folder</Trans>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void handleCopyLink()}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-start text-foreground transition-colors hover:bg-muted"
-          >
-            <LinkIcon className="h-3 w-3 text-muted-foreground" />
-            <Trans>Copy link</Trans>
-          </button>
-          <a
-            href={url}
-            download={filename}
-            onClick={() => setMenuOpen(false)}
-            className="flex items-center gap-2 rounded px-2 py-1.5 text-foreground transition-colors hover:bg-muted"
-          >
-            <Download className="h-3 w-3 text-muted-foreground" />
-            <Trans>Download</Trans>
-          </a>
-        </div>
-      )}
     </div>
   );
 
@@ -318,7 +276,7 @@ export function AttachmentChip({
 
   if (isImagePath(filename) && !imgFailed) {
     return (
-      <div ref={containerRef} className="group relative inline-block">
+      <div className="group relative inline-block">
         {/* Primary click previews the image in-app (lightbox), not a browser
             tab. Download / open-in-new-tab / reveal stay in the overlay menu. */}
         <button
@@ -342,7 +300,7 @@ export function AttachmentChip({
 
   if (isVideoPath(filename) && !videoFailed) {
     return (
-      <div ref={containerRef} className="group relative inline-block">
+      <div className="group relative inline-block">
         <div className="block max-w-[360px] overflow-hidden rounded-lg border border-border bg-black" title={filename}>
           <video
             controls
@@ -391,7 +349,7 @@ export function AttachmentChip({
     'flex w-full items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-start transition-colors hover:bg-muted/40';
 
   return (
-    <div ref={containerRef} className="group relative max-w-[360px]">
+    <div className="group relative max-w-[360px]">
       {/* Primary click opens the file in the editor (standard file dock
           pointer) when the host wires it; otherwise the card is the raw
           download link. Either way the overlay keeps Download + open-in-tab. */}

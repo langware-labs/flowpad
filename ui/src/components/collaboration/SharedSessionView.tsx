@@ -6,6 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { ConversationView } from '@src/components/conversation/ConversationView';
 import { useAuth } from '@src/hooks/useAuth';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
+import { LatestScroll } from '@src/components/conversation/LatestScroll';
 
 interface Props {
   sessionId: string;
@@ -74,15 +75,15 @@ export function SharedSessionView({ sessionId }: Props) {
           <Trans>Running on the host's machine · status: {session.status}</Trans>
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {conversationId ? (
+      {conversationId ? (
+        <LatestScroll>
           <ConversationView conversationId={conversationId} />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            <Trans>This session has no bound conversation.</Trans>
-          </div>
-        )}
-      </div>
+        </LatestScroll>
+      ) : (
+        <div className="flex min-h-0 flex-1 items-center justify-center text-sm text-muted-foreground">
+          <Trans>This session has no bound conversation.</Trans>
+        </div>
+      )}
     </div>
   );
 }

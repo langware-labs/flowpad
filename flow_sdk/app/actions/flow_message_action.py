@@ -54,6 +54,7 @@ from flow_sdk.stream_inbox.agent_scope import (
 )
 from flow_sdk.stream_inbox.hub_clock import adopt_hub_created_date, hub_created_drift
 from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post
+from flow_sdk.utils.serialization import iso_to_utc
 
 logger = logging.getLogger(__name__)
 
@@ -4421,6 +4422,66 @@ async def conversation_summary() -> ApiResponse:
         return ApiSuccessResponse(data={"conversation_id": conv_id, "summary": await conv.summary()})
     except Exception as e:
         logger.error("[flow_message_action] conversation-summary error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.post(action_name="conversation-transcript", types=None)
+async def conversation_transcript() -> ApiResponse:
+    """Unabridged read of one conversation — ``Conversation.transcript()``:
+    full text, timestamps, message ids, you/them, threads, attachments with
+    their local paths. ``thread`` (a thread id, or a message in it), ``last``
+    and ``since`` (ISO) narrow it. Same row gate as
+    ``conversation-summary``; local reads only."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        if not conv_id:
+            return ApiFailResponse(message="conversation_id required")
+        raw_since = str(body.get("since") or "").strip()
+        since = iso_to_utc(raw_since) if raw_since else None
+        if raw_since and since is None:
+            return ApiFailResponse(message=f"since is not an ISO-8601 datetime: {raw_since!r}")
+        last = body.get("last")
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None:
+            return ApiFailResponse(message="conversation not found", status_code=404)
+        thread_ref = str(body.get("thread") or "").strip()
+        thread_id = await conv.resolve_thread_id(thread_ref) if thread_ref else None
+        if thread_ref and thread_id is None:
+            return ApiFailResponse(message=f"no thread {thread_ref!r} in this conversation", status_code=400)
+        data = await conv.transcript(
+            self_ids=await User.self_ids(),
+            last=int(last) if last is not None else None,
+            since=since,
+            thread_id=thread_id,
+        )
+        return ApiSuccessResponse(data=data)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-transcript error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.post(action_name="conversation-message-read", types=None)
+async def conversation_message_read() -> ApiResponse:
+    """Unabridged read of ONE message — ``FlowMessage.read_entry()`` plus the
+    files of its unpacked body, when it has been pulled. Local reads only."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        msg_id = (body.get("message_id") or "").strip()
+        if not msg_id:
+            return ApiFailResponse(message="message_id required")
+        fm = await FlowMessage.get_one({"id": msg_id})
+        if fm is None:
+            return ApiFailResponse(message="message not found", status_code=404)
+        return ApiSuccessResponse(data=fm.read_entry(await User.self_ids(), list_body=True))
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-message-read error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 
