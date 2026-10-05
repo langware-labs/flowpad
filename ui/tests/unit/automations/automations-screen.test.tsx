@@ -10,7 +10,7 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import type { AutomationRun, AutomationSummary } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const nav = vi.hoisted(() => ({ openDock: vi.fn() }));
+const nav = vi.hoisted(() => ({ openDock: vi.fn(), openFolder: vi.fn(), openMachinePath: vi.fn() }));
 const dock = vi.hoisted(() => ({ current: null as null | { pointer?: string; options?: Record<string, string> } }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: nav, currentDock: dock.current }),
@@ -357,5 +357,32 @@ describe('what ran, and what it did', () => {
     expect(steps.textContent).not.toContain('callback');
     fireEvent.click(screen.getByTestId('then-step-open-0'));
     expect(nav.openDock.mock.calls.at(-1)?.[0].viewType).toBe('assets');
+  });
+});
+
+describe('browsing what an automation is made of', () => {
+  const watcher = () =>
+    automation({
+      id: 'w',
+      kind: 'file',
+      name: 'Claude transcript watcher',
+      when: { kind: 'file', text: '', file: { path: '/Users/me/.claude/projects', glob: '*.jsonl', recursive: true, is_folder: true } },
+    });
+
+  it('the watched folder can be browsed from the list, without opening the automation', () => {
+    state.automations = [watcher()];
+    render(<AutomationsView />);
+    fireEvent.click(screen.getByTestId('automation-browse-w'));
+    expect(nav.openFolder).toHaveBeenCalledWith('/Users/me/.claude/projects');
+    expect(nav.openDock).not.toHaveBeenCalled();
+  });
+
+  it('the name opens the trigger.json it is defined in, else its page', () => {
+    state.automations = [automation({ id: 'f', asset_ref: '/w/agentic-assets/trigger/morning' }), watcher()];
+    render(<AutomationsView />);
+    fireEvent.click(screen.getByTestId('automation-name-f'));
+    expect(nav.openMachinePath.mock.calls[0][0]).toBe('/w/agentic-assets/trigger/morning/trigger.json');
+    fireEvent.click(screen.getByTestId('automation-name-w'));
+    expect(nav.openDock.mock.calls[0][0].options).toEqual({ trigger: 'w' });
   });
 });

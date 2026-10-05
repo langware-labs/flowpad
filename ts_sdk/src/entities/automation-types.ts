@@ -35,6 +35,8 @@ export interface FileWhen {
   path: string;
   glob?: string | null;
   recursive: boolean;
+  /** The path is a folder (browse it) rather than one file (open it). */
+  is_folder?: boolean;
 }
 
 export interface HookWhen {

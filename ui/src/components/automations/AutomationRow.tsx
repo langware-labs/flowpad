@@ -8,12 +8,13 @@
  */
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { AutomationSummary } from '@sdk';
-import { AlertTriangle, ArrowRight, FlaskConical, Play } from 'lucide-react';
+import { AlertTriangle, ArrowRight, FlaskConical, FolderOpen, Play } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
 import { cn } from '@src/lib/utils';
 import { sentenceOf, useAutomationWords } from './automation-words';
 import { KindBadge } from './KindBadge';
+import { useAutomationOpen } from './use-automation-open';
 import { RunStatusPill } from './RunStatusPill';
 
 export interface AutomationRowProps {
@@ -30,6 +31,7 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
   const sentence = sentenceOf(words, a.when, a.then);
   const problem = a.then.find((p) => p.problem)?.problem;
   const flaky = a.recent_failures > 0 && a.recent_runs > 0;
+  const open = useAutomationOpen();
 
   return (
     <div
@@ -68,7 +70,33 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
         </div>
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <KindBadge kind={a.kind} />
-          <span className="max-w-[16rem] truncate">{a.name}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              open.openDefinition(a);
+            }}
+            className="max-w-[16rem] truncate underline-offset-2 hover:text-foreground hover:underline"
+            title={a.asset_ref ? t`Open its definition (trigger.json)` : t`Open this automation`}
+            data-testid={`automation-name-${a.id}`}
+          >
+            {a.name}
+          </button>
+          {a.kind === 'file' && a.when.file?.path && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                open.browseWatched(a);
+              }}
+              className="inline-flex items-center gap-1 underline-offset-2 hover:text-foreground hover:underline"
+              title={a.when.file.path}
+              data-testid={`automation-browse-${a.id}`}
+            >
+              <FolderOpen className="size-3" aria-hidden />
+              {a.when.file.is_folder ? <Trans>Browse folder</Trans> : <Trans>Open file</Trans>}
+            </button>
+          )}
           <span className="inline-flex items-center gap-1.5" data-testid={`automation-last-${a.id}`}>
             {a.last_run ? (
               <>

@@ -11,7 +11,7 @@
  */
 import { Trans, useLingui } from '@lingui/react/macro';
 import type { AutomationKind, ITrigger } from '@sdk';
-import { ArrowLeft, CheckCircle2, FlaskConical, Lock, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, FileJson, FlaskConical, FolderOpen, Lock, Save, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -42,6 +42,7 @@ import { Advanced, Block, WhenBlock } from './blocks/WhenBlock';
 import { RunDetail } from './RunDetail';
 import { RunsList } from './RunsList';
 import { TestPanel } from './TestPanel';
+import { definitionFile, useAutomationOpen } from './use-automation-open';
 import { ThenSteps } from './ThenSteps';
 
 export function AutomationPage({ route }: { route: AutomationsRoute }) {
@@ -55,6 +56,7 @@ export function AutomationPage({ route }: { route: AutomationsRoute }) {
   const save = useSaveAutomation();
   const remove = useDeleteAutomation();
   const setEnabled = useSetAutomationEnabled();
+  const open = useAutomationOpen();
 
   // The draft is loaded ONCE per automation (or per new kind + starter): the list
   // polls, and re-seeding on every poll would wipe what the person is typing.
@@ -230,6 +232,38 @@ export function AutomationPage({ route }: { route: AutomationsRoute }) {
           <p className="text-sm text-muted-foreground" data-testid="automation-sentence">
             {sentenceText(words, automation.when, automation.then)}
           </p>
+        )}
+        {!isNew && automation && (
+          // What it is made of, one click away: its file, and what it watches.
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {definitionFile(automation) && (
+              <button
+                type="button"
+                onClick={() => open.openDefinition(automation)}
+                className="inline-flex items-center gap-1 underline-offset-2 hover:text-foreground hover:underline"
+                data-testid="automation-open-definition"
+              >
+                <FileJson className="size-3.5" aria-hidden />
+                <Trans>Open trigger.json</Trans>
+              </button>
+            )}
+            {automation.kind === 'file' && automation.when.file?.path && (
+              <button
+                type="button"
+                onClick={() => open.browseWatched(automation)}
+                className="inline-flex items-center gap-1 underline-offset-2 hover:text-foreground hover:underline"
+                title={automation.when.file.path}
+                data-testid="automation-browse-watched"
+              >
+                <FolderOpen className="size-3.5" aria-hidden />
+                {automation.when.file.is_folder ? (
+                  <Trans>Browse the watched folder</Trans>
+                ) : (
+                  <Trans>Open the watched file</Trans>
+                )}
+              </button>
+            )}
+          </div>
         )}
         {!isNew && (
           <div className="flex gap-4 text-sm" role="tablist">
