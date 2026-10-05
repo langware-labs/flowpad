@@ -41,13 +41,14 @@ from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.schema.data_spec._form import ShapeForm
-from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec
+from flow_sdk.schema.data_spec.agent_spec import AgentPlaceSpec, AgentSpec
 from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.phone_spec import PhoneNumberSpec
 from flow_sdk.schema.data_spec.requirement_spec import RequirementSpec
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.assets.scanning import AssetCandidate
     from flow_sdk.blocks import MessageBlock
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgentOptions
@@ -85,6 +86,19 @@ def worker_type_value(worker: str | None) -> str:
 #: One lock per project so concurrent auto-launch calls (two tabs, a reload
 #: storm) select-and-mark exactly once.
 _AUTO_LAUNCH_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+
+
+def _launches_on_open(candidate: "AssetCandidate") -> bool:
+    """Whether an agent folder on disk sets ``auto_launch`` — read through ``AgentSpec``,
+    as the index reads it, so this picks exactly what ``auto_launch_for`` will match."""
+    from flow_sdk.assets.entity_document import read_entity_document  # noqa: PLC0415
+
+    try:
+        fields = read_entity_document(candidate.layout.body).fields
+        spec = AgentSpec.model_validate({k: v for k, v in fields.items() if k in AgentSpec.model_fields})
+    except (OSError, ValueError):
+        return False
+    return spec.auto_launch is True
 
 #: Key in the project's device state (``flow_sdk.project_device_state``) holding
 #: the agent ids whose auto-launch already fired, or was cancelled, here.
@@ -585,7 +599,7 @@ class Agent(Entity):
         if project is None:
             return None
         roots = project.direct_context_roots()
-        await project.index_auto_loaded()
+        await project.index_missing_assets("auto_launch", {"agent"}, _launches_on_open)
 
         def age_key(agent: "Agent") -> tuple[str, str, str]:
             created = agent.created_date.isoformat() if agent.created_date else ""

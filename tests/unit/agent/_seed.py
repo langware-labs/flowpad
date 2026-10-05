@@ -5,6 +5,8 @@ The entity OWNS its carrier, so naming the folder is enough — ``save()`` rende
 """
 from __future__ import annotations
 
+import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -26,3 +28,13 @@ async def seed_agent(root: Path, name: str, *, when: datetime | None = None, **f
         agent.created_date = when  # preserved by the driver: only None is stamped
     await agent.save()
     return agent
+
+
+def checkout_agent(root: Path, name: str, *, auto_launch: bool = False) -> str:
+    """An agent folder as a fresh checkout brings it — files on disk, no row yet; its TypeId."""
+    folder = root / "agentic-assets" / "agent" / name
+    folder.mkdir(parents=True)
+    agent_id = str(uuid.uuid4())
+    document = {"title": name, "id": agent_id, **({"auto_launch": True} if auto_launch else {})}
+    (folder / "agent.json").write_text(json.dumps(document), encoding="utf-8")
+    return f"agent-{agent_id}"
