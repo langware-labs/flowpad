@@ -303,7 +303,7 @@ describe('a popup wizard', () => {
   };
   const popupWizard = () => ({ ...wizard({}), popup: true, label: 'Finish setting up Flowpad' }) as never;
 
-  it('a run that fell short says so, and offers Restart setup beside a plain Go to homepage', async () => {
+  it('a run that fell short says so, and offers Restart setup beside a plain Skip', async () => {
     const short = {
       result: { exit_code: ExitCode.NOT_YET, detail: 'Claude Code: cancelled.', ran: true, steps: {} },
     };
@@ -319,15 +319,16 @@ describe('a popup wizard', () => {
     expect(screen.getByTestId('wizard-not-finished').textContent).toContain('It stopped.');
     expect(screen.getByTestId('wizard-restart').textContent).toBe('Restart setup');
     expect(screen.queryByTestId('wizard-finished')).toBeNull();
+    expect(screen.getByTestId('wizard-skip').textContent).toBe('Skip');
 
-    fireEvent.click(screen.getByTestId('wizard-go-home'));
+    fireEvent.click(screen.getByTestId('wizard-skip'));
     expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });
 
     fireEvent.click(screen.getByTestId('wizard-restart'));
     await waitFor(() => expect(h.start).toHaveBeenCalledTimes(1));
   });
 
-  it('Go to homepage from the popup closes it, not only the page behind it', async () => {
+  it('Skip from the popup closes it, not only the page behind it', async () => {
     // The popup sits OVER the page: navigating alone changed the page underneath and left the
     // dialog in front, so the click looked like it did nothing.
     const short = { result: { exit_code: ExitCode.NOT_YET, detail: 'x', ran: true, steps: {} } };
@@ -340,7 +341,7 @@ describe('a popup wizard', () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId('wizard-go-home'));
+    fireEvent.click(screen.getByTestId('wizard-skip'));
 
     expect(useWizardPopupStore.getState().open).toBe(false);
     expect(nav.goHome).toHaveBeenCalledWith({ homePage: true });

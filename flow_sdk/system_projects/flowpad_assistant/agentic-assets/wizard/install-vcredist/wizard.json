@@ -1,6 +1,6 @@
 {
   "name": "install-vcredist",
-  "description": "Windows only: asks whether to install the Microsoft Visual C++ Runtime when it is missing, and installs it only if the person agrees. Search (RAG) needs it — its vector index is native code that links MSVCP140.dll, which Python does not bundle and a clean Windows does not ship. Run by the RAG pass the first time it finds the runtime missing; not part of first-run setup, so a person who never uses search is never asked.",
+  "description": "Windows only: asks whether to install the Microsoft Visual C++ Runtime when it is missing, and installs it only if the person agrees. Search (RAG) needs it — its vector index is native code that links MSVCP140.dll, which Python does not bundle and a clean Windows does not ship. Run by the RAG pass the first time it finds the runtime missing; not part of first-run setup, so a person who never uses search is never asked. Search first tries the copy of that DLL Flowpad ships (rag/vcruntime/), which needs no install and no prompt; this wizard only runs when that did not work, because installing the redistributable is machine-wide and always opens a Windows permission prompt.",
   "version": 1,
   "enabled": true,
   "icon": "Wand2",

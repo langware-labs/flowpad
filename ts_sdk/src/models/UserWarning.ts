@@ -44,6 +44,8 @@ export interface UserWarning {
   wikiPage?: string;
   /** Optional callback to execute when the warning is clicked (in addition to navigation) */
   onClick?: () => void;
+  /** Optional button drawn inside the warning, for the one thing a person can do about it. */
+  action?: { label: string; onClick: () => void };
 }
 
 /**
@@ -63,6 +65,7 @@ export const WARNING_IDS = {
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
   EMPTY_PROJECTS: 'empty-projects',
   PROJECT_SETUP_REQUIRED: 'project-setup-required',
+  SETUP_INCOMPLETE: 'setup-incomplete',
 } as const;
 
 /**
