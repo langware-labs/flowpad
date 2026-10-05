@@ -83,6 +83,24 @@ export interface GitPushResult {
   message: string;
 }
 
+/** Typed pull outcome — mirror of `PullKind` in git_repo.py. */
+export type PullKind =
+  | 'pulled'
+  | 'nothing'
+  | 'conflict'
+  | 'permission'
+  | 'no_remote'
+  | 'network'
+  | 'no_repo'
+  | 'generic';
+
+export interface GitPullResult {
+  ok: boolean;
+  kind: PullKind;
+  branch: string | null;
+  message: string;
+}
+
 /**
  * Thin client-side wrapper for git operations on a specific working directory.
  *
@@ -216,6 +234,20 @@ export class GitWorkdir {
   /** Greedy "non-tech" publish: stage-all → commit → pull --rebase → push. */
   async push(): Promise<GitPushResult> {
     return this._post<GitPushResult>('push');
+  }
+
+  /**
+   * Fetch the upstream's remote, then the status — the one call that refreshes
+   * `behind` (`getStatus` never touches the network). A failed fetch still
+   * answers, with `behind` as of the previous fetch.
+   */
+  async fetch(): Promise<GitStatus> {
+    return this._post<GitStatus>('fetch');
+  }
+
+  /** Bring the upstream's commits in: `pull --rebase --autostash`. */
+  async pull(): Promise<GitPullResult> {
+    return this._post<GitPullResult>('pull');
   }
 
   /** Check out an asset at a past revision (working-tree mutation). */
