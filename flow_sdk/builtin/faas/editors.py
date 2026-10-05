@@ -48,7 +48,8 @@ async def editors_for(subject: Any) -> list[dict]:
     from flow_sdk.builtin.faas.micro_app import WebApp  # noqa: PLC0415
 
     ranked = sorted(
-        ((r, app) for app in await WebApp.get_all({}) if (r := rank(app, subject)) is not None),
+        # Scoped to editor apps: an editor declares exactly ``EDITOR_KIND`` (``rank`` still checks it).
+        ((r, app) for app in await WebApp.get_all({"kind": EDITOR_KIND}) if (r := rank(app, subject)) is not None),
         key=lambda pair: (pair[0], str(pair[1].name)),
     )
     return [
