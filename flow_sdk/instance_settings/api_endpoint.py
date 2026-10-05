@@ -63,11 +63,16 @@ async def fetch_hub_api_endpoints(*, cached_only: bool = False) -> list[APIEndpo
     from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
 
     name = get_instance_settings().instance_name
+    # Signed out, nothing on the hub is this box's to call -- including what it listed before
+    # signing out, which the stale fallback below would otherwise hand back with no expiry.
+    if not hub_auth_available():
+        _list_cache.pop(name, None)
+        return []
     cached = _list_cache.get(name)
     stale = cached[1] if cached is not None else []
     if cached is not None and (time.monotonic() - cached[0]) < _LIST_TTL_SECONDS:
         return stale
-    if cached_only or not hub_auth_available():
+    if cached_only:
         return stale
 
     rows = _rows(await hub_get("api_endpoint"))

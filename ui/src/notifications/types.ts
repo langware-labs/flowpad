@@ -34,6 +34,9 @@ export interface NotificationData {
   icon?: string;
   /** 0–2 CTAs. */
   actions?: NotificationAction[];
+  /** A "Don't ask again" checkbox under the actions; its state rides each action's args as
+   *  `remember`. Set by `askNotification` (`ask.ts`). */
+  remember?: { label: string };
   /** Auto-dismiss after N ms. `null` = sticky. Omitted = per-level default. */
   durationMs?: number | null;
   /** Spinner + no auto-dismiss (loading / in-flight). */

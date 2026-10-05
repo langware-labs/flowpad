@@ -4,6 +4,7 @@ import type { NotificationData, NotificationInput, NotificationLevel } from './t
 import { useAlertStore } from './alerts-store';
 import { useBadgeStore } from './store';
 import { renderToast } from './NotificationOutlet';
+import { settleAsk } from './pending-asks';
 
 /**
  * The single notification dispatcher for the whole UI.
@@ -81,6 +82,7 @@ function dispatch(input: NotificationInput): string {
 }
 
 function dismiss(id: string): void {
+  settleAsk(id); // a question closed without an answer resolves, never hangs
   sonnerToast.dismiss(id);
   useBadgeStore.getState().remove(id);
   useAlertStore.getState().dismiss(id);

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { t } from '@lingui/core/macro';
 import { toast as sonnerToast, Toaster as Sonner } from 'sonner';
 import { useTheme } from 'next-themes';
@@ -5,8 +6,10 @@ import { AlertCircle, AlertTriangle, CheckCircle2, Info, Loader2, X, type Lucide
 import { EntityIcon } from '@src/components/graph-view/ui/EntityIcon';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { CopyButton } from '@src/components/ui/copy-button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { notificationText, type NotificationData, type NotificationLevel } from './types';
 import { runAction } from './commands';
+import { settleAsk } from './pending-asks';
 import { isAlertLevel } from './notify';
 import { DiagnoseIconButton } from './diagnose/DiagnoseIconButton';
 import { NotificationProcessLine } from './NotificationProcessLine';
@@ -47,6 +50,45 @@ const ACTION_BTN_PRIMARY = `${ACTION_BTN_BASE} bg-primary text-primary-foregroun
 const ACTION_BTN_SECONDARY = `${ACTION_BTN_BASE} bg-muted text-muted-foreground hover:bg-muted/80`;
 
 /**
+ * The toast's buttons, and the "Don't ask again" box when the notification carries one. A
+ * component (not inline in `renderToast`) because the box is state: its value rides the clicked
+ * action's args as `remember`.
+ */
+function ToastActions({ data, toastId }: { data: NotificationData; toastId: string }) {
+  const [remember, setRemember] = useState(false);
+  return (
+    <div className="mt-2 flex flex-col gap-2">
+      <div className="flex flex-wrap gap-2">
+        {data.actions!.map((action, i) => (
+          <button
+            key={i}
+            data-testid={`notification-action-${i}`}
+            onClick={() => {
+              runAction(action, data.id, data.remember ? { remember } : undefined);
+              if (action.href) sonnerToast.dismiss(toastId);
+            }}
+            className={i === 0 ? ACTION_BTN_PRIMARY : ACTION_BTN_SECONDARY}
+          >
+            {action.label}
+          </button>
+        ))}
+      </div>
+      {data.remember && (
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+          <Checkbox
+            data-testid="notification-remember"
+            checked={remember}
+            onCheckedChange={(v) => setRemember(v === true)}
+            className="h-3.5 w-3.5"
+          />
+          {data.remember.label}
+        </label>
+      )}
+    </div>
+  );
+}
+
+/**
  * The body of a single toast. Rendered by `notify()` via `sonner.toast.custom`,
  * so the same component handles entity icon, pre-line message, and serializable
  * actions. (The feed renders badges separately — see `feed/`.)
@@ -61,22 +103,7 @@ export function renderToast(data: NotificationData, toastId: string) {
         <div className="text-sm font-medium text-foreground">{data.title}</div>
         {data.message && <div className="mt-0.5 whitespace-pre-line text-xs text-muted-foreground">{data.message}</div>}
         <NotificationProcessLine data={data} />
-        {data.actions && data.actions.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-2">
-            {data.actions.map((action, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  runAction(action, data.id);
-                  if (action.href) sonnerToast.dismiss(toastId);
-                }}
-                className={i === 0 ? ACTION_BTN_PRIMARY : ACTION_BTN_SECONDARY}
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {data.actions && data.actions.length > 0 && <ToastActions data={data} toastId={toastId} />}
       </div>
       <div className="flex flex-shrink-0 items-center gap-0.5">
         {/* A failure is the one notification people need to paste into an issue
@@ -95,7 +122,10 @@ export function renderToast(data: NotificationData, toastId: string) {
         )}
         <DiagnoseIconButton subject={data} />
         <button
-          onClick={() => sonnerToast.dismiss(toastId)}
+          onClick={() => {
+            settleAsk(data.id); // closing a question answers it with "no answer"
+            sonnerToast.dismiss(toastId);
+          }}
           aria-label={t`Dismiss notification`}
           className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
         >

@@ -1,4 +1,5 @@
 export { notify, dismiss } from './notify';
+export { askNotification, type AskInput, type AskAnswer } from './ask';
 export { NotificationOutlet } from './NotificationOutlet';
 export { NotificationCommandBridge } from './command-bridge';
 export { DiagnoseErrorModal } from './diagnose/DiagnoseErrorModal';

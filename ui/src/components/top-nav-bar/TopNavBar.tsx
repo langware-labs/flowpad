@@ -6,7 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
-import { askOrOpen } from '@src/navigation/navigation-decision';
+import { smartAskOrOpen } from '@src/navigation/smart-ask';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useHistoryNav } from '@src/navigation/use-history-nav';
@@ -103,8 +103,9 @@ export function TopNavBar() {
         <AddressAskField
           onAsk={(text, rect) =>
             // A plain "open X" opens X with no assistant turn when the hub has a decision API;
-            // anything else -- or no decision API at all -- is today's ask, unchanged.
-            void askOrOpen(text, {
+            // anything else -- or no decision API at all -- is today's ask, unchanged. Signed
+            // out, the session's first request asks whether to sign in first (smart-ask.ts).
+            void smartAskOrOpen(text, {
               open: (dock) => navigation.openDock(dock),
               ask: (prompt) =>
                 assistant.ask(prompt, {
