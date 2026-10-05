@@ -1029,6 +1029,14 @@ class Trigger(Entity):
             return ApiSuccessResponse(data=[])
         return ApiSuccessResponse(data=forwarded_matching(pattern, str(params.get("target") or "") or None))
 
+    @core_action.get(action_name="bus_map")
+    async def bus_map_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/bus_map — every event type, how often it happened since the
+        app started, which automations listen, and what they do."""
+        from flow_sdk.automations.bus_map import bus_map  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=(await bus_map()).model_dump(mode="json"))
+
     @core_action.post(action_name="match_pattern")
     async def match_pattern_action(cls, request: Request) -> ApiResponse:
         """POST /api/v1/graph/trigger/match_pattern — the pattern sandbox.

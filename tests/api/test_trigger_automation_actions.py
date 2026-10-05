@@ -185,3 +185,11 @@ async def test_updating_a_file_defined_automation_writes_its_file(bootstrapped_c
     assert resp.status_code == 200, resp.text
     assert json.loads((folder / "trigger.json").read_text())["tag"]["on"] == "app.tab.ready"
     assert resp.json()["data"]["tag_pattern"] == "app.tab.ready"
+
+
+async def test_bus_map_lists_event_types(bootstrapped_client):
+    resp = await bootstrapped_client.get("/api/v1/graph/trigger/bus_map")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert any(e["name"] == "app.ready" for e in data["event_types"])
+    assert "app.ready" in data["forwarded_patterns"]
