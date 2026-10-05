@@ -23,7 +23,7 @@ export function useRetryFailedPrompt(): (conversationId: string, sessionId: stri
         { conversationId },
         '',
         undefined,
-        buildSessionStartExtras({ text, files: [], sessionId, replyPolicy: null }),
+        buildSessionStartExtras({ text, files: [], sessionId }),
       );
     },
     [ensureCloudLogin],
