@@ -100,7 +100,7 @@ describe('the Auto Index section', () => {
   it('ships the defaults the backend also hard-codes', () => {
     expect(PREF_REGISTRY[PrefKey.AUTO_INDEX_ENABLED].defaultValue).toBe(true);
     expect(PREF_REGISTRY[PrefKey.AUTO_INDEX_TYPE].defaultValue).toBe('fast');
-    expect(PREF_REGISTRY[PrefKey.AUTO_INDEX_TRIGGER].defaultValue).toBe('first_selection');
+    expect(PREF_REGISTRY[PrefKey.AUTO_INDEX_TRIGGER].defaultValue).toBe('every_selection');
     expect(PREF_REGISTRY[PrefKey.AUTO_INDEX_FUNCTION].defaultValue).toBe('subprocess');
   });
 

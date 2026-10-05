@@ -356,8 +356,13 @@ Auto-indexing on project selection is **on by default** and controlled by the fo
 |---|---|---|
 | `enabled` | bool | `true` |
 | `index_type` | `fast` (skip-fresh delta) \| `full` (`force=true`) | `fast` |
-| `index_trigger` | `project_create` \| `first_selection` \| `every_selection` | `first_selection` |
+| `index_trigger` | `project_create` \| `first_selection` \| `every_selection` | `every_selection` |
 | `index_function` | `subprocess` \| `thread` | `subprocess` |
+
+A *selection* is every switch into a project, and app startup too: restoring the last
+project on load funnels through the same `setContextEntityTypeId` → `project.activate`.
+The run is detached and skip-fresh, so with `every_selection` a `git pull`'s new assets
+land on the next open or switch without the user asking.
 
 `first_selection` is tracked by an `auto_index_at` marker in the project record's shadow
 `metadata.json` — deliberately **not** `indexed_at` (project create stamps that sentinel,
