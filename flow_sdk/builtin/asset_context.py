@@ -67,7 +67,9 @@ def collect_base_source_dirs(project) -> tuple[list[tuple[str, AssetSource]], se
 
     pairs: list[tuple[str, AssetSource]] = []
     seen: set[str] = set()
-    add_source_dir(pairs, seen, get_instance_settings().user_home, AssetSource.USER_DIR)
+    settings = get_instance_settings()
+    add_source_dir(pairs, seen, settings.user_home, AssetSource.USER_DIR)
+    add_source_dir(pairs, seen, settings.user_asset_root, AssetSource.USER_DIR)
     if project is not None:
         add_source_dir(
             pairs,

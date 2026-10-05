@@ -27,6 +27,7 @@ import {
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { TabTooltipName } from '@src/components/tabs/TabTooltipName';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { animateGlow } from '@src/lib/animate-glow';
 import { consumeTabHighlight, TAB_HIGHLIGHT_MS, useTabHighlights } from '@src/tabs/tab-highlight';
@@ -552,7 +553,9 @@ export const TabStrip: React.FC<TabStripProps> = ({
               ) : isDisabled && item.statusReason ? (
                 <TooltipContent side="bottom">{item.statusReason}</TooltipContent>
               ) : item.title ? (
-                <TooltipContent side="bottom">{item.title}</TooltipContent>
+                <TooltipContent side="bottom">
+                  <TabTooltipName name={item.title} className="font-normal" />
+                </TooltipContent>
               ) : null}
             </Tooltip>
           </TooltipProvider>

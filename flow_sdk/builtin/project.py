@@ -64,6 +64,7 @@ from flow_sdk.schema.data_spec.share_result_spec import (
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
+    from flow_sdk.schema.data_spec.git_share_spec import GitShare
     from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec
     from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
@@ -1397,13 +1398,82 @@ class Project(Entity):
         if not repo or not repo.get("repo"):
             raise RuntimeError("The hub has no repository for this project")
         origin = HubRepoOrigin(repo=repo["repo"], rel_path=".")
+        token = resolve_hub_api_key(require_live=True)
+        if not token:
+            raise RuntimeError("Cloud login required to share through the hub repository")
         await HubRepoCheckout(
             root=mount,
+            # This desktop's own hub URL, not the hub's ``clone_url``: the hub spells it
+            # with ITS external host, which a box behind a proxy (Docker) cannot reach.
             clone_url=hub_graph_url("git_repo", origin.repo_id, "git"),
             branch=repo.get("default_branch") or "main",
-            token=resolve_hub_api_key(require_live=True) or "",
+            token=token,
         ).push_head()
         await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
+        return origin
+
+    # ── git share: members use the project's private GitHub repo through the hub ──
+
+    async def git_share(self) -> "GitShare":
+        """Whether this project's git is shared with its members, as the hub reports it."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_get  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.git_share_spec import GitShare  # noqa: PLC0415
+
+        if not self.remote:
+            return GitShare()
+        return GitShare.from_hub(await hub_get(BuiltinEntityType.PROJECT, str(self.id), action="git_share"))
+
+    async def share_git(self) -> "GitShare":
+        """Let this project's members clone and push its private GitHub repo through the hub.
+
+        Their project role decides how: readers pull, editors push. The hub links the
+        repo under the project and relays git with a token the Flowpad GitHub App mints
+        per request for that one repo — nothing long-lived is stored, and the GitHub repo
+        itself is never changed. When GitHub needs a step first the answer says which
+        (``install_required`` with ``install_url``, or ``github_connect_required``); take
+        it and call again. Once shared, the hub row's git origin becomes the hub's, so a
+        member who accepts the project clones it through the hub.
+        """
+        from flow_sdk.cloud_client.transport.hub_http import hub_post, hub_put  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.git_share_spec import GitShare, GitShareError  # noqa: PLC0415
+
+        origin = await self._github_origin()
+        data = await hub_post(
+            BuiltinEntityType.PROJECT, {"repo": f"{origin.owner}/{origin.name}"}, str(self.id), action="git_share"
+        )
+        share = GitShare.from_hub(data)
+        if share.shared:
+            if not share.git_repo:
+                raise GitShareError("The hub shared the repo but did not say where it serves it")
+            served = HubRepoOrigin(repo=share.git_repo, rel_path=".")
+            await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": served.model_dump(mode="json")})
+        return share
+
+    async def unshare_git(self) -> "GitShare":
+        """Stop sharing this project's git: members can no longer fetch or push through the
+        hub. Their clones keep what they have, and the GitHub repo is untouched."""
+        from flow_sdk.cloud_client.transport.hub_http import hub_delete, hub_put  # noqa: PLC0415
+        from flow_sdk.schema.data_spec.git_share_spec import GitShare  # noqa: PLC0415
+
+        origin = await self._github_origin()
+        share = GitShare.from_hub(await hub_delete(BuiltinEntityType.PROJECT, str(self.id), action="git_share"))
+        # Members who accept the project from now on are pointed at GitHub again.
+        await hub_put(BuiltinEntityType.PROJECT, str(self.id), {"git_origin": origin.model_dump(mode="json")})
+        return share
+
+    async def _github_origin(self) -> GitOrigin:
+        """This project's GitHub origin — what a git share is OF; ``GitShareError`` when there is none to share."""
+        from flow_sdk.schema.data_spec.git_share_spec import GitShareError  # noqa: PLC0415
+
+        if not self.remote:
+            raise GitShareError("Link the project to the cloud first: its members are the hub project's members")
+        origin = (
+            await asyncio.to_thread(GitOrigin.for_asset_path, self.fs_storage_mount_path)
+            if self.fs_storage_mount_path
+            else None
+        )
+        if origin is None or origin.provider != "github" or not origin.owner or not origin.name:
+            raise GitShareError("This project's folder has no GitHub origin to share")
         return origin
 
     async def invite(
@@ -1673,19 +1743,20 @@ class Project(Entity):
         from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
         from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
 
-        driver = get_origin_driver(origin.kind)
+        # The hub-hosted copy is read with the HUB token (its driver resolves it — a
+        # GitHub token must never be offered to the hub) into this project's own
+        # workspace slot, as a working checkout rather than the asset cache. A git
+        # origin keeps the git driver's own placement and the user's GitHub token.
+        token, slot = None, None
         if isinstance(origin, HubRepoOrigin):
-            # The hub-hosted copy: read with the HUB token (the driver resolves it —
-            # a GitHub token must never be offered to the hub), into this project's
-            # own workspace slot as a working checkout, not the asset cache.
             mount = Path(self.fs_storage_mount_path) if self.fs_storage_mount_path else None
-            slot = mount if mount and (mount / ".git").is_dir() else await asyncio.to_thread(
-                fresh_clone_slot, self.name or "project")
-            root, _ = await driver.materialize(origin, preferred_root=slot, preferred_project_id=str(self.id))
+            reuse = mount is not None and (mount / ".git").is_dir()
+            slot = mount if reuse else await asyncio.to_thread(fresh_clone_slot, self.name or "project")
         else:
-            root, _ = await driver.materialize(
-                origin, preferred_project_id=str(self.id), token=await _get_github_token_for_current_user()
-            )
+            token = await _get_github_token_for_current_user()
+        root, _ = await get_origin_driver(origin.kind).materialize(
+            origin, preferred_root=slot, preferred_project_id=str(self.id), token=token
+        )
         target_dir = str(root)
         self.fs_storage_mount_path = canonical_posix_path(target_dir)
         # Keep the name the sender shared; the folder leaf is only a fallback.

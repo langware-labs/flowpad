@@ -132,6 +132,8 @@ class WizardSpec(DataSpec):
     #: run. For a wizard whose agent fallbacks need one; its plain commands never do, so a source
     #: that cannot be settled does not stop the run.
     requires_llm_source: bool = False
+    #: Run this wizard's steps in a shell of their own instead of the run's shared one (see ``SharedShell``).
+    isolated_shell: bool = False
     #: Said under the steps when a run passes, beside a "Go to homepage" button. Empty says nothing.
     success_message: str = ""
     #: Said when a run ended short (a step failed, or the person declined one), beside a restart

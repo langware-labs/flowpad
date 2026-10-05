@@ -299,7 +299,7 @@ def test_golden_placement_contract(type_name, expected, tmp_path):
     if asset_class == AssetClass.INTERNAL:
         assert user_dest is None
     else:
-        assert user_dest == root_for_scope(Scope.USER) / subdir
+        assert user_dest == root_for_scope(Scope.USER, asset_class=asset_class) / subdir
 
 
 def test_only_skills_and_agents_fan_out():
@@ -409,7 +409,7 @@ def test_repo_resolve_destination_anchors_under_agentic_assets(scope, tmp_path):
         dest = resolve_destination(
             "repo_fixture", scope, default_worker="claude", project_mount=tmp_path
         )
-        expected_root = tmp_path if scope == Scope.PROJECT else root_for_scope(Scope.USER)
+        expected_root = tmp_path if scope == Scope.PROJECT else root_for_scope(Scope.USER, asset_class=AssetClass.REPO)
         assert dest == expected_root / "agentic-assets" / "repo_fixture"
     finally:
         SchemaRegistry._types.pop("repo_fixture", None)

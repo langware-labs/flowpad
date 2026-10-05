@@ -279,7 +279,7 @@ vi.mock('@src/notifications/notify', () => ({
   notify: { error: () => {}, success: () => {}, info: () => {}, warning: () => {} },
 }));
 vi.mock('@src/components/image-annotator/annotate-files', () => ({
-  annotateImageFiles: (files: File[]) => Promise.resolve(files),
+  annotateImageFiles: (files: File[]) => Promise.resolve({ files, caption: '' }),
 }));
 
 import InteractiveTerminal from '@src/components/terminal/interactive-terminal/InteractiveTerminal';

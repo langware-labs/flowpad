@@ -12,7 +12,7 @@ from flow_sdk.assets.asset import Asset, NotAnAsset, entry_path
 from flow_sdk.assets.identity_carrier import Absent
 from flow_sdk.assets.layout import Folder
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR, mount_matches
-from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult
+from flow_sdk.assets.scanning import AssetCandidate, AssetScanIssue, AssetScanResult, is_in_doc_dir
 from flow_sdk.fs_store.gitignore import is_ignored, load_gitignore_stack, push_gitignore
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.data_spec.spec import DataSpec
@@ -182,9 +182,18 @@ class AssetFolder(DataSpec):
                     issue(candidate, str(error))
                     asset = None
                 collected[candidate] = asset
-            if asset is not None and (not allowed or asset.typeid.type in allowed):
+            if asset is not None and (not allowed or asset.typeid.type in allowed) and not _loose_markdown(asset):
                 found.setdefault(asset.path, asset)
             return asset
+
+        def _loose_markdown(asset: Asset) -> bool:
+            # A directory scan lists markdown only from a docs/doc folder — the
+            # same rule the indexer applies; a root README is not a document.
+            return (
+                str(asset.typeid.type) == "markdown"
+                and self.path.is_dir()
+                and not is_in_doc_dir(asset.path.parent, self.path)
+            )
 
         def walk(directory: Path, recursive: bool, ancestors: frozenset[Path], allowed: frozenset[str] = frozenset()) -> None:
             resolved = directory.resolve()

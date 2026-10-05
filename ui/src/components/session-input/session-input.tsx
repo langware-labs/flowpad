@@ -1,7 +1,12 @@
 import { t } from '@lingui/core/macro';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
-import { AttachFilesButton, PickedFileList, useAnnotatedImagePaste, usePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
+import {
+  AttachFilesButton,
+  PickedFileList,
+  useAnnotatedImagePaste,
+  usePickedFiles,
+} from '@src/components/conversation/FileAttachmentPicker';
 import { cn } from '@src/lib/utils';
 import { Send } from 'lucide-react';
 import React, { useCallback, useState, type ReactNode } from 'react';
@@ -69,8 +74,17 @@ export function SessionInput({
     }
   };
 
-  // Image paste: annotated, then chips (uploaded on submit).
-  const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: allowAttachments && !disabled });
+  // Image paste: annotated, then chips (uploaded on submit); the caption joins the message.
+  // The parent owns `message` through a plain-string onChange, so the update is applied here;
+  // the annotator is modal, so `message` can't change under it.
+  const applyToMessage = useCallback(
+    (update: (prev: string) => string) => setMessage(update(message)),
+    [message, setMessage],
+  );
+  const handlePaste = useAnnotatedImagePaste(picker.addFiles, {
+    enabled: allowAttachments && !disabled,
+    setText: applyToMessage,
+  });
 
   return (
     <form

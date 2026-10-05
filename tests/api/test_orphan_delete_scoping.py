@@ -73,7 +73,8 @@ async def test_orphan_delete_keeps_live_project_markdown(bootstrapped_client, tm
     # A real project tree (sibling of records_root / fake_home) with one live md.
     proj_dir = tmp_path / "workspace" / "projA"
     proj_dir.mkdir(parents=True)
-    (proj_dir / "doc.md").write_text("# live doc\n\nbody\n", encoding="utf-8")
+    (proj_dir / "docs").mkdir()
+    (proj_dir / "docs" / "doc.md").write_text("# live doc\n\nbody\n", encoding="utf-8")  # only docs/ .md is a document
 
     # Register the project so get_all_scope_filter resolves its REAL_PROJECT_CWD root.
     proj = Project.model_validate({"fs_storage_mount_path": str(proj_dir), "name": "projA"})

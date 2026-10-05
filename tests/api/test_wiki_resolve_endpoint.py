@@ -42,8 +42,10 @@ pytestmark = pytest.mark.asyncio
 
 
 def _write_markdown(root: Path, name: str) -> None:
-    """Drop a markdown file under ``root/<name>.md`` with frontmatter."""
-    (root / f"{name}.md").write_text(
+    """Drop a markdown file under ``root/docs/<name>.md`` with frontmatter (only a docs/ .md is
+    a document — ``is_in_doc_dir``)."""
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / f"{name}.md").write_text(
         f"---\ntitle: {name}\n---\n\n# {name}\n\nBody.\n",
         encoding="utf-8",
     )

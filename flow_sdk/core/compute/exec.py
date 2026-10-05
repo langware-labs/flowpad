@@ -95,6 +95,15 @@ async def _drain(stream: asyncio.StreamReader, on_output: Optional[Callable[[], 
                 logger.debug("shell output observer failed", exc_info=True)
 
 
+def command_env(extra_env: Optional[dict] = None) -> dict[str, str]:
+    """The env one command runs with: this process's, plus the run's identity, plus the caller's.
+
+    Unbuffered Python: stdout is a pipe here, so Python block-buffers it, and the kill on a
+    timeout drops the buffer -- a step that printed and then hung would report nothing at all.
+    The caller's env still wins."""
+    return {**os.environ, "PYTHONUNBUFFERED": "1", **flow_env(), **(extra_env or {})}
+
+
 async def run_shell(
     command: str,
     *,
@@ -105,6 +114,7 @@ async def run_shell(
     stop: Optional[asyncio.Event] = None,
     on_output: Optional[Callable[[], None]] = None,
     on_spawn: Optional[Callable[[int], None]] = None,
+    fresh: bool = False,  # noqa: ARG001 -- every command here IS a fresh process (see ``SharedShell``)
 ) -> CliResult:
     """Run one shell one-liner. Never raises — a failure IS the result.
 
@@ -117,15 +127,15 @@ async def run_shell(
     question must fail on a closed stdin rather than block a headless run
     forever waiting for an answer nobody is there to give.
 
+    ``fresh`` asks for a process of its own, closed stdin and all -- what an installer needs. Every
+    command here already is one; a shell that shares one process across commands honours it.
+
     Setting *stop* ends the run early, the same way a timeout does: the whole
     process group is killed and what it printed is kept. Cancelling the call
     kills the process group too — a cancelled caller must not leave it running.
     """
     platform = platform or sys.platform
-    # Unbuffered Python: stdout is a pipe here, so Python block-buffers it, and
-    # the kill on a timeout drops the buffer — a step that printed and then hung
-    # would report nothing at all. The caller's env still wins.
-    env = {**os.environ, "PYTHONUNBUFFERED": "1", **flow_env(), **(extra_env or {})}
+    env = command_env(extra_env)
     t0 = time.monotonic()
     try:
         proc = await _spawn(command, cwd=str(workdir), env=env, platform=platform)

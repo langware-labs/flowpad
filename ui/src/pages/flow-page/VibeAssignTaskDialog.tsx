@@ -74,7 +74,7 @@ export function VibeAssignTaskDialog({
   // with "+", or dropped. They are stored IN the task's folder, so the
   // assignment's .flowmsg carries them.
   const picker = usePickedFiles({ enabled: true, disabled: busy });
-  const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy });
+  const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: !busy, setText: setNotes });
 
   const person = picked[0] ?? null;
   const canSubmit = !!person && !!title.trim() && !busy;

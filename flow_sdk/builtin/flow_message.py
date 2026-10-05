@@ -337,15 +337,25 @@ def derive_session_fields(fm: "FlowMessage") -> None:
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
     """Sync disk probe: is the entity referenced by a TYPE_ID attachment
-    locally present — either STAGED under the owning message's unpacked/ dir,
-    or materialized as a record folder (pre-staging installs / DB-record types)?
+    locally present? See ``_type_id_attachment_path`` for where it looks.
+    References that never materialize (and unparseable ones) count as present."""
+    etype, eid = parse_target(data)
+    if not etype or not eid or etype in _NON_MATERIALIZING_TYPE_IDS:
+        return True
+    return _type_id_attachment_path(fm_id, data) is not None
 
-    The staged check comes first: since reception stages file-backed assets
-    instead of materializing them, a staged entry counts as "downloaded" (the
-    catch-up loop must NOT re-pull the bundle forever waiting for a record
-    folder that install — a user choice — may never create). The record-folder
-    check is kept as an OR so pre-staging messages whose assets were already
-    materialized into a project still count without a data migration.
+
+def _type_id_attachment_path(fm_id: "str | None", data: str) -> "Path | None":
+    """Where the entity a TYPE_ID attachment references lives on this machine:
+    its record folder, or its entry STAGED under the owning message's
+    unpacked/ dir — else None.
+
+    Staged entries count: since reception stages file-backed assets instead of
+    materializing them, a staged entry is "downloaded" (the catch-up loop must
+    NOT re-pull the bundle forever waiting for a record folder that install — a
+    user choice — may never create). The record folder still counts so
+    pre-staging messages whose assets were already materialized into a project
+    resolve without a data migration.
 
     Body-bearing types (spec/markdown/plan) additionally require their
     ``asset_ref`` source file to exist on the record-folder path — a
@@ -353,34 +363,34 @@ def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
     instead of being stranded blank."""
     etype, eid = parse_target(data)
     if not etype or not eid:
-        return True
-    if etype in _NON_MATERIALIZING_TYPE_IDS:
-        return True
+        return None
     try:
         # Record-folder (installed / pre-staging) check FIRST: for an installed
         # asset it short-circuits without paying the staged-dir stat — this
         # runs per TYPE_ID attachment on every serialize (hot path).
         from flow_sdk.fs_store.record_paths import record_stem, shadow_dir_for
 
-        meta = shadow_dir_for(etype, eid) / "metadata.json"
+        folder = shadow_dir_for(etype, eid)
+        meta = folder / "metadata.json"
         if meta.exists():
             if etype not in _BODY_BEARING_TYPE_IDS:
-                return True
+                return folder
             import json  # noqa: PLC0415
 
             # A metadata-only stub has no resolvable asset_ref → fall through
             # to the staged check (a staged body still counts as downloaded).
             asset_ref = (json.loads(meta.read_text(encoding="utf-8")) or {}).get("asset_ref")
             if asset_ref and Path(asset_ref).exists():
-                return True
+                return folder
         if fm_id:
             from flow_sdk.fs_store.operations.flow_message import staged_entry_dir
 
-            if staged_entry_dir(fm_id, record_stem(etype, eid)).exists():
-                return True
-        return False
+            staged = staged_entry_dir(fm_id, record_stem(etype, eid))
+            if staged.exists():
+                return staged
+        return None
     except Exception:
-        return False
+        return None
 
 
 class Attachment(BaseModel):
@@ -899,14 +909,78 @@ class FlowMessage(Entity):
         text = " ".join((self.text or "").split())
         preview = text if len(text) <= 80 else text[:77] + "..."
         sender = self.sender_name or self.sender_id or "unknown"
-        structural = {f"conversation-{self.conversation_id}", f"flow_message-{self.id}"}
-        n = sum(
-            1
-            for a in (self.attachment or [])
-            if not (a.attachment_type == AttachmentType.TYPE_ID and a.data in structural)
-        )
+        n = len(self._user_attachments())
         suffix = f" (+{n} attachment{'s' if n != 1 else ''})" if n else ""
         return f"[{self.delivery_status}] {sender}: {preview}{suffix}"
+
+    def _user_attachments(self) -> list[Attachment]:
+        """The message's attachments minus the two structural self-pointers
+        every message carries (``conversation-<id>`` / ``flow_message-<id>``)."""
+        structural = {f"conversation-{self.conversation_id}", f"flow_message-{self.id}"}
+        return [
+            a
+            for a in (self.attachment or [])
+            if not (a.attachment_type == AttachmentType.TYPE_ID and a.data in structural)
+        ]
+
+    def read_entry(self, self_ids: "frozenset[str] | set[str]" = frozenset(), *, list_body: bool = False) -> dict[str, Any]:
+        """The unabridged read of this message — what ``flow conversation show``
+        and ``flow conversation message`` print. Full text, who sent it relative
+        to the reader (``you`` when ``sender_id`` is one of ``self_ids``, see
+        ``User.self_ids``), and per attachment where its bytes are on THIS
+        machine, or that they are not (a body not pulled yet is reported, never
+        guessed at). ``list_body`` adds a shallow listing of the unpacked
+        bundle. Pure local reads, no hub calls."""
+        from flow_sdk.fs_store.operations.flow_message import staged_attachments_dir, unpacked_dir  # noqa: PLC0415
+
+        atts = [a.model_dump(mode="json") for a in self._user_attachments()]
+        # No attachments of its own → nothing to probe on disk.
+        state = (
+            self._body_download_state(atts)  # stamps local_path on FILE entries
+            if atts
+            else {"body_downloaded": True, "body_unpacked": False, "body_missing_attachments": []}
+        )
+        missing = {(m["attachment_type"], m["data"]) for m in state["body_missing_attachments"]}
+        out_atts: list[dict[str, Any]] = []
+        for a in atts:
+            atype = a["attachment_type"]
+            entry = {"type": atype, "data": a.get("data") or ""}
+            if a.get("prompt_preview"):
+                entry["prompt_preview"] = a["prompt_preview"]
+            path = a.get("local_path")
+            if atype == AttachmentType.TYPE_ID.value:
+                found = _type_id_attachment_path(self.id, entry["data"])
+                path = str(found) if found else None
+            if path:
+                entry["local_path"] = path
+            entry["available"] = (atype, entry["data"]) not in missing
+            out_atts.append(entry)
+        unpacked = unpacked_dir(self.id) if state["body_unpacked"] else None
+        ts = self.sent_at or self.created_date
+        out = {
+            "id": self.id,
+            "conversation_id": self.conversation_id,
+            "ts": ts.isoformat() if ts else None,
+            "sender": self.sender_name or self.sender_id or "unknown",
+            "from": "you" if self.sender_id and self.sender_id in self_ids else "them",
+            "delivery_status": self.delivery_status,
+            "is_read": self.is_read,
+            "reply_to_id": self.reply_to_id,
+            "text": self.text or "",
+            "attachments": out_atts,
+            "body_downloaded": state["body_downloaded"],
+            "unpacked_dir": str(unpacked) if unpacked else None,
+        }
+        if list_body and unpacked:
+            # Two shallow listings, not a walk: the bundle's top level and one
+            # line per attachment entry — the paths a reader opens next.
+            staged = staged_attachments_dir(self.id)
+            entries = [p for p in unpacked.iterdir() if p != staged]
+            entries += list(staged.iterdir()) if staged.is_dir() else []
+            out["unpacked_files"] = sorted(
+                str(p.relative_to(unpacked)) + ("/" if p.is_dir() else "") for p in entries
+            )[:200]
+        return out
 
     def clone_for_forward(
         self,

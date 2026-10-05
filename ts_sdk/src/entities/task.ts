@@ -292,11 +292,13 @@ export class Task extends APIEntity<Task> implements ITask {
   // now" — reintroduce in Python's ``get_implicit_private_context_entities``
   // override on Task if there's a confirmed UX need.
 
-  // TODO: Remove getter and setter for descriptionPlainText when task is created with lexical description
   get descriptionPlainText(): string {
     if (!this.description || this.description === '') {
       return '';
     }
+    // A plain or markdown body (task.md, "Task it", the help dialog) IS the text; only the legacy
+    // Lexical JSON needs unwrapping — parsing every body logged an error per plain one.
+    if (!this.description.trimStart().startsWith('{')) return this.description;
     try {
       const root = JSON.parse(this.description).root;
       const lines: string[] = (root.children || []).map((paragraph: any) =>
@@ -309,28 +311,10 @@ export class Task extends APIEntity<Task> implements ITask {
     }
   }
 
+  /** The description is stored as written — plain or markdown, the task.md body. Reading still
+   *  unwraps a legacy Lexical JSON body; writing never produces one. */
   set descriptionPlainText(text: string) {
-    this.description = text
-      ? JSON.stringify({
-          root: {
-            children: [
-              {
-                children: [
-                  {
-                    text,
-                    type: 'text',
-                    version: 1,
-                  },
-                ],
-                type: 'paragraph',
-                version: 1,
-              },
-            ],
-            type: 'root',
-            version: 1,
-          },
-        })
-      : '';
+    this.description = text;
   }
 
   /**
