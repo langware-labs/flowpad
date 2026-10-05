@@ -290,6 +290,26 @@ async def share_entity() -> ApiResponse:
     return ApiSuccessResponse(data=entity)
 
 
+@action.post(action_name="live-session", types=["conversation"])
+async def conversation_start_live_session() -> ApiResponse:
+    """``POST /graph/conversation/<id>/live-session`` — open (or answer) the
+    conversation's live session before any prompt. Body: ``{reply_policy?}``."""
+    from flow_sdk.app.actions.notification_action import handle_start_live_session  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail="live-session: target conversation typeid required")
+    if request_info.target_entity_typeid.type != "conversation":
+        raise HTTPException(status_code=400, detail="live-session: target must be a conversation")
+    if not request_info.someone_typeid:
+        return ApiFailResponse(message="No authenticated user in request context")
+    try:
+        body = await request_info.get_post_data() or {}
+    except JSONDecodeError:
+        body = {}
+    return await handle_start_live_session(request_info.target_entity_typeid.id, body, request_info.someone_typeid)
+
+
 @action.post(action_name="add_message", types=["conversation"])
 async def conversation_add_message() -> ApiResponse:
     """``POST /graph/conversation/<id>/add_message`` — the single endpoint for

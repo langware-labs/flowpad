@@ -108,16 +108,11 @@ export function buildConversationItems(
 
 function messageHasPromptCompletion(fm: FlowMessage): boolean {
   return (fm.attachment ?? []).some(
-    (a) =>
-      a?.attachment_type === AttachmentType.TYPE_ID &&
-      (a.data ?? '').startsWith('prompt_completion-'),
+    (a) => a?.attachment_type === AttachmentType.TYPE_ID && (a.data ?? '').startsWith('prompt_completion-'),
   );
 }
 
-function itemFlowMessage(
-  item: ConversationItem,
-  getFm: (id: string) => FlowMessage | null,
-): FlowMessage | null {
+function itemFlowMessage(item: ConversationItem, getFm: (id: string) => FlowMessage | null): FlowMessage | null {
   if (item.kind === ConversationItemKind.DRAFT) return item.draft;
   if (item.kind === ConversationItemKind.POINTER) return getFm(item.messageId);
   return null;
@@ -134,12 +129,13 @@ export type SessionAnchorIndex = ReadonlyMap<string, string | null>;
  * Contract:
  *  1. A row with no session id, or whose body has not resolved (`getFm` →
  *     null), passes through unchanged, in place.
- *  2. `SESSION_EVENT` lines are dropped from the feed.
+ *  2. `SESSION_EVENT` lines are dropped from the feed — unless one is the
+ *     anchor: a session opened before any prompt starts with its `requested` line.
  *  3. `prompt_completion` replies are dropped; they count toward `replyCount`.
  *  4. The anchor is the message whose id is the session's
- *     `starting_message_id`; when the session row is unknown (or its
- *     starting id is null) the EARLIEST prompt-bearing message of that
- *     session stands in, so the card shows while the row is still syncing.
+ *     `starting_message_id` (a prompt, or the `requested` line); when the
+ *     session row is unknown (or its starting id is null) the EARLIEST message
+ *     of that session stands in, so the card shows while the row is still syncing.
  *  5. Every other session message (follow-up prompts, host draft replies) is
  *     dropped; prompt-bearing ones count toward `promptCount`.
  *  6. Output preserves timeline order: a session contributes exactly one row
@@ -162,17 +158,17 @@ export function anchorSessionItems(
       entry = { anchor: null, promptCount: 0, replyCount: 0 };
       sessions.set(sid, entry);
     }
+    const startingId = anchors.get(sid) ?? null;
+    if (startingId) {
+      if (fm.id === startingId) entry.anchor = item;
+    } else if (entry.anchor === null) {
+      entry.anchor = item; // items arrive oldest-first: the session's first message wins
+    }
     if (fm.kind === FlowMessageKind.SESSION_EVENT) continue;
     const isReply = messageHasPromptCompletion(fm);
     const isPrompt = !isReply && promptAttachmentsOf(fm).length > 0;
     if (isReply) entry.replyCount += 1;
     if (isPrompt) entry.promptCount += 1;
-    const startingId = anchors.get(sid) ?? null;
-    if (startingId) {
-      if (fm.id === startingId) entry.anchor = item;
-    } else if (isPrompt && entry.anchor === null) {
-      entry.anchor = item; // items arrive oldest-first: first prompt wins
-    }
   }
   // pass 2 — emit rows; the anchor becomes the session row, the rest vanish.
   const out: GroupedConversationItem[] = [];
@@ -199,10 +195,7 @@ export function anchorSessionItems(
 }
 
 /** The thread a feed row belongs to, or null when it has none / isn't loaded. */
-export function itemThreadId(
-  item: ConversationItem,
-  getFm: (id: string) => FlowMessage | null,
-): string | null {
+export function itemThreadId(item: ConversationItem, getFm: (id: string) => FlowMessage | null): string | null {
   return itemFlowMessage(item, getFm)?.thread_id ?? null;
 }
 

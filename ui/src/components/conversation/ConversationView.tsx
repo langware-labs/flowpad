@@ -17,6 +17,7 @@ import {
   latestPointer,
   ChannelTransport,
   isSessionTerminal,
+  RemoteWorkerSession,
   toplog,
 } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
@@ -60,6 +61,7 @@ import { conversationMessagesRequest } from './conversation-messages-query';
 import { useApproveLiveSession } from '@src/components/collaboration/useApproveLiveSession';
 import { failedPromptOf } from './session-turns';
 import { useRetryFailedPrompt } from './useRetryFailedPrompt';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -741,6 +743,23 @@ export function ConversationView({
     },
     [dockNavigation],
   );
+  // The composer's live-session icon: open the conversation's session — the backend
+  // starts one (and asks the host) when none is open — and land in its view.
+  const ensureCloudLogin = useCloudLoginGate();
+  const startLiveSession = useCallback(async () => {
+    if (!conversationId) return;
+    const gate = await ensureCloudLogin();
+    if (!gate.ok) {
+      notify.error({ title: gate.error, forceToast: true });
+      return;
+    }
+    try {
+      const session = await RemoteWorkerSession.start(conversationId);
+      openLiveSession(session.id);
+    } catch (e) {
+      notify.error({ title: t`Could not start the live session`, message: String(e), forceToast: true });
+    }
+  }, [conversationId, ensureCloudLogin, openLiveSession, t]);
 
   // Affordance only — the hub's `_set_settlement` is the authority on who may
   // settle. Mirrors `canPickup` below. Note this is NARROWER than the server
@@ -843,8 +862,9 @@ export function ConversationView({
               const session = sessionsById.get(item.sessionId) ?? null;
               const role = sessionRole(session, cloudUserId);
               return (
-                <div key={item.key} className="flex flex-col gap-1" data-testid="session-anchor">
-                  {renderConversationItem(item.anchor)}
+                // The session's ONE line — its opening prompt (or request) is not
+                // drawn as a bubble; the turns live in the session view.
+                <div key={item.key} data-testid="session-anchor">
                   <SessionCard
                     sessionId={item.sessionId}
                     session={session}
@@ -854,6 +874,7 @@ export function ConversationView({
                     onOpen={() => openLiveSession(item.sessionId)}
                     onApprove={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
+                    onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
                     lastPromptFailed={!!failedPromptBySession.get(item.sessionId)}
                     onRetry={
                       role === 'guest' && failedPromptBySession.get(item.sessionId) && conversationId
@@ -907,6 +928,7 @@ export function ConversationView({
         placeholder={channelSpec && !channelSpec.home ? t`Reply in ${channelSpec.title}` : undefined}
         agentId={agentId ?? undefined}
         sessionHost={channelSpec && !channelSpec.hosts_sessions ? null : sessionHost}
+        onStartLiveSession={() => void startLiveSession()}
         channelAcceptsFiles={!!channelSpec?.accepts_attachments}
         replyTo={
           replyTo

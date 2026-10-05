@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, ClassVar, Optional
 
 from flow_sdk._compat import StrEnum
@@ -47,6 +48,17 @@ class ReplyPolicy(StrEnum):
     prompt, host-authoritative afterwards, editable in the session view."""
     AUTO = "auto"      # send as soon as captured
     REVIEW = "review"  # save as a host draft inside the session
+
+
+def scratch_workdir() -> "Path":
+    """The folder a "No project" live session runs in — one per instance, always
+    the same. Under the instance's own data folder (never machine-wide), which is
+    a protected path, so running there never mints a Project for it."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    folder = get_instance_settings().instance_dir / "live-session-scratch"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
 
 
 # The approve refusal for a session with nowhere to run — the UI answers it with a project picker.
@@ -177,6 +189,12 @@ class RemoteWorkerSession(Entity):
         sharing=Sharing.PRIVATE,
         default=None, description="Host project/workdir the worker runs in (host only)."
     )
+    # "No project" at approval: the session runs in this folder instead — the
+    # instance's one live-session temp folder (``scratch_workdir``). Host only.
+    workdir: Optional[str] = APIField(
+        sharing=Sharing.PRIVATE,
+        default=None, description="Folder the worker runs in when the host chose no project (host only)."
+    )
 
     # The main-thread prompt that OPENED this session. The thread renders the
     # session card under it and hides every other message stamped with this
@@ -252,7 +270,8 @@ class RemoteWorkerSession(Entity):
         - No local row → materialize one from the snapshot fields verbatim.
         - Local is the HOST → the host is authoritative; only fill-merge
           identity fields the host row is missing (guest_name/guest_user_id
-          from a guest-minted DRAFT). Never adopt status/clock from a snapshot.
+          from a guest-minted DRAFT). Never adopt status/clock from a snapshot —
+          except ENDED: either side may end the session, and ENDED absorbs.
         - Local is the GUEST → adopt the host-authoritative fields only when
           the snapshot's ``last_activity_at`` is strictly newer (ISO-UTC
           strings compare lexicographically); an older/equal snapshot never
@@ -265,6 +284,10 @@ class RemoteWorkerSession(Entity):
             return cls.model_validate({**data, "type": cls.get_type()})
 
         if local_is_host:
+            # Either side may end a session, and ENDED absorbs: the guest leaving
+            # is the one state the host takes from a guest's snapshot.
+            if data.get("status") == RemoteWorkerSessionStatus.ENDED and local.status != RemoteWorkerSessionStatus.ENDED:
+                local.mark_activity(RemoteWorkerSessionStatus.ENDED)
             # host_user_id/host_name included: a first carrier packed before the
             # guest's roster resolved the peer stamps host_user_id=None, and the
             # host row materialized from it could otherwise never acquire its own
@@ -455,11 +478,13 @@ class RemoteWorkerSession(Entity):
         immediately; ``prompt_auto_handled``-before-run keeps the re-drive
         idempotent against concurrently arriving prompts.
 
-        Body: ``{remember?: "project" | "everywhere", project_id?}``.
+        Body: ``{remember?: "project" | "everywhere", project_id?, scratch?}``.
         ``remember`` also writes the standing grant for this guest;
         ``project_id`` is where the session runs, required when neither the
         session nor its conversation has a project — refused (409, session left
-        PENDING) rather than approved into a turn that can only fail."""
+        PENDING) rather than approved into a turn that can only fail.
+        ``scratch: true`` is the host's "No project": the session runs in the
+        instance's one temp folder (``scratch_workdir``)."""
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         ri = get_current_request_info()
@@ -467,13 +492,19 @@ class RemoteWorkerSession(Entity):
         remember = str(body.get("remember") or "").strip()
         if remember and remember not in ("project", "everywhere"):
             return ApiFailResponse(message="remember must be 'project' or 'everywhere'", status_code=400)
-        requested = str(body.get("project_id") or "").strip() or None
-        project_id = await self.run_project_id(requested)
-        if project_id is None:
-            if requested:
-                return ApiFailResponse(message="that project has no folder to run in", status_code=400)
-            return ApiFailResponse(message=NEEDS_PROJECT_MESSAGE, status_code=409)
-        self.project_id = project_id
+        if body.get("scratch") in (True, "true", "1"):
+            if remember == "project":
+                # A grant scoped to no project would read as "everywhere".
+                return ApiFailResponse(message="a temp-folder session has no project to remember", status_code=400)
+            self.workdir = str(scratch_workdir())
+        else:
+            requested = str(body.get("project_id") or "").strip() or None
+            project_id = await self.run_project_id(requested)
+            if project_id is None:
+                if requested:
+                    return ApiFailResponse(message="that project has no folder to run in", status_code=400)
+                return ApiFailResponse(message=NEEDS_PROJECT_MESSAGE, status_code=409)
+            self.project_id = project_id
         if not await self.approve(via=ApprovedVia.MANUAL):
             return ApiFailResponse(message=f"illegal live-session transition: {self.status} → idle")
         if remember:
@@ -526,9 +557,10 @@ class RemoteWorkerSession(Entity):
 
     @action.post(action_name="disconnect")
     async def _http_disconnect(self) -> ApiResponse:
-        """End this shared session — the host cutting off remote access to their
-        machine. Marks the session ENDED and best-effort stops the host worker so
-        no further guest prompts run. Idempotent."""
+        """End this shared session — either side may: the host cutting off remote
+        access to their machine, or the guest leaving. Marks the session ENDED
+        (the other side adopts it from the line's snapshot) and best-effort stops
+        the host worker so no further guest prompts run. Idempotent."""
         already_ended = self.status == RemoteWorkerSessionStatus.ENDED
         self.mark_activity(RemoteWorkerSessionStatus.ENDED)
         await self.save()
@@ -543,5 +575,9 @@ class RemoteWorkerSession(Entity):
             except Exception as e:  # noqa: BLE001
                 logger.warning("[remote_worker_session] disconnect: host worker stop failed: %s", e)
         if not already_ended:
-            await self._emit_event("ended")
+            # Either side may end it: the line names whoever did (this machine's user).
+            from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+            who = (await User.current_sender_participant()).get("name") or None
+            await self._emit_event("ended", text=f"{who} ended the live session" if who else None)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))

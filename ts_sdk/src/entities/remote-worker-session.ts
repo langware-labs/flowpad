@@ -61,6 +61,8 @@ export interface IRemoteWorkerSession extends IEntity {
   /** Host only — null on the guest's mirror. */
   host_process_id?: string | null;
   project_id?: string | null;
+  /** Host only: the folder a "No project" session runs in. */
+  workdir?: string | null;
   status?: string;
   last_activity_at?: string | null;
   started_at?: string | null;
@@ -85,6 +87,7 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
   guest_name: string | null = null;
   host_process_id: string | null = null;
   project_id: string | null = null;
+  workdir: string | null = null;
   status: string = 'idle';
   last_activity_at: string | null = null;
   started_at: string | null = null;
@@ -139,18 +142,32 @@ export class RemoteWorkerSession extends APIEntity<RemoteWorkerSession> implemen
    *  `remember` also writes the standing grant for this guest. `projectId` is
    *  where the session runs — required when neither the session nor its
    *  conversation has a project (a person-to-person chat has none by design);
-   *  without it the host refuses (409) and the session stays pending. */
-  public approve(remember?: SessionRememberScope, projectId?: string): Promise<void> {
+   *  without it the host refuses (409) and the session stays pending.
+   *  `scratch` is the host's "No project": the instance's one temp folder. */
+  public approve(
+    remember?: SessionRememberScope,
+    projectId?: string,
+    options: { scratch?: boolean } = {},
+  ): Promise<void> {
     const body: Record<string, unknown> = {};
     if (remember) body.remember = remember;
-    if (projectId) body.project_id = projectId;
+    if (options.scratch) body.scratch = true;
+    else if (projectId) body.project_id = projectId;
     return this.lifecycleAction('approve', RemoteWorkerSessionStatus.IDLE, Object.keys(body).length ? body : undefined);
   }
 
-  /** Host only: does approving need the host to pick a project first? True when
-   *  neither this session nor its conversation names one. */
+  /** Open the conversation's live session before any prompt — or answer the one
+   *  already open (one open session per conversation). The host is asked to approve. */
+  public static async start(conversationId: string): Promise<RemoteWorkerSession> {
+    const info = new ActionInfo('live-session', Conversation.type, conversationId, 'POST');
+    const data = await dataManager.callAction<Record<string, unknown>, Partial<IRemoteWorkerSession>>(info);
+    return new RemoteWorkerSession(data);
+  }
+
+  /** Host only: does approving need the host to pick where it runs first? True
+   *  when neither this session nor its conversation names a project or folder. */
   public async needsProjectToApprove(): Promise<boolean> {
-    if (this.project_id) return false;
+    if (this.project_id || this.workdir) return false;
     if (!this.conversation_id) return true;
     const conversation = await dataManager.getByTypeId<Conversation>(
       new TypeId(Conversation.type, this.conversation_id),

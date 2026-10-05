@@ -185,6 +185,10 @@ function viewLabel(dock: DockPointer | null): string {
   return tab?.name?.trim() || labelForType(dock.viewType ?? '') || i18n._(HOME_CRUMB_LABEL);
 }
 
+// Type names only (the crumb needs no entity class): a live session and the conversation it sits in.
+const LIVE_SESSION_TYPE = 'remote_worker_session';
+const CONVERSATION_TYPE = 'conversation';
+
 export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumbs {
   const { project, activeEntity, activeEntityTypeId } = useContext();
   const { projectPath } = useProjectLocation();
@@ -268,6 +272,21 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       live = false;
     };
   }, [scopedAgentTypeId?.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A live session lives IN its conversation: the address reads `<conversation> › Live session`.
+  // Not a `parent_type_id` — that link drives sharing; this is only where the session sits.
+  const liveSessionConvId =
+    resolved.typeId?.type === LIVE_SESSION_TYPE
+      ? ((resolved.entity as { conversation_id?: string | null } | null)?.conversation_id ?? null)
+      : null;
+  const liveSessionConvTypeId = useMemo(() => {
+    try {
+      return liveSessionConvId ? new TypeId(CONVERSATION_TYPE, liveSessionConvId) : null;
+    } catch {
+      return null;
+    }
+  }, [liveSessionConvId]);
+  const { data: liveSessionConv } = useEntity<AnyEntity>(liveSessionConvTypeId);
 
   // The session whose display is showing this dock: the middle segment of
   // `project › process › file`. The host is the process's own typeid
@@ -457,6 +476,16 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
       });
     }
 
+    if (liveSessionConvTypeId) {
+      out.push({
+        key: liveSessionConvTypeId.toString(),
+        label: liveSessionConv ? entityLabel(liveSessionConv, liveSessionConvTypeId) : labelForType(CONVERSATION_TYPE),
+        Icon: iconForType(CONVERSATION_TYPE),
+        pointer: DockPointer.forConversation(liveSessionConvTypeId.id),
+        kind: 'ancestor',
+      });
+    }
+
     if (isAgentScoped && scopedAgentId && scopedAgentTypeId) {
       const agentEntity = scopedAgent ?? (isAgentStreamInbox ? (resolved.entity as Agent | null) : null);
       out.push({
@@ -639,6 +668,8 @@ export function useEntityBreadcrumbs(dock: DockPointer | null): EntityBreadcrumb
     scopedAgent,
     hostProcessTypeId,
     hostProcess,
+    liveSessionConvTypeId,
+    liveSessionConv,
     dock,
     ancestors,
     wikiCrumb,

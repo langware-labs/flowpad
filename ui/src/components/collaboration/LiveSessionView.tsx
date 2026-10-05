@@ -32,7 +32,13 @@ import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { truncate } from '@src/components/hooks/event-summaries';
 import { LatestScroll } from '@src/components/conversation/LatestScroll';
 import { useApproveLiveSession } from './useApproveLiveSession';
-import { failedPromptOf, promptTextOf, resultTextOf, sessionEventOf } from '@src/components/conversation/session-turns';
+import {
+  carriesPrompt,
+  failedPromptOf,
+  promptTextOf,
+  resultTextOf,
+  sessionEventOf,
+} from '@src/components/conversation/session-turns';
 import { useRetryFailedPrompt } from '@src/components/conversation/useRetryFailedPrompt';
 
 /**
@@ -177,13 +183,10 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
     enabled: !!sessionId,
   });
 
-  // The session is named after the prompt that opened it. Memoized: the
-  // fallback scans every message's attachments, on a list that grows.
-  const startingMessageId = session?.starting_message_id;
-  const starting = useMemo(
-    () => messages.find((m) => m.id === startingMessageId) ?? messages.find((m) => !!promptTextOf(m)),
-    [messages, startingMessageId],
-  );
+  // The session is named after its first prompt (a session opened before any
+  // prompt starts with its `requested` line, which names nothing). Memoized: the
+  // scan reads every message's attachments, on a list that grows.
+  const firstPrompt = useMemo(() => messages.find((m) => carriesPrompt(m)) ?? null, [messages]);
 
   const { approve, picker: approvePicker } = useApproveLiveSession();
   const retryFailedPrompt = useRetryFailedPrompt();
@@ -222,7 +225,12 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
   const guestName = session.guest_name ?? session.guest_user_id ?? 'the guest';
   const guestContact: ContactKey = { userId: session.guest_user_id ?? null, email: null };
 
-  const title = starting ? sessionTitle(promptTextOf(starting)) : (session.getDisplayName() ?? '');
+  // Local vs remote, from where this machine sits: the guest's prompts are local
+  // to the guest and run remotely, on the host's Claude Code; the host sees both flipped.
+  const otherName = isHost ? guestName : hostName;
+  const promptAuthor = isHost ? guestName : t`you`;
+  const replyAuthor = isHost ? t`your Claude Code` : t`${hostName}'s Claude Code`;
+  const title = firstPrompt ? sessionTitle(promptTextOf(firstPrompt)) : t`Live session with ${otherName}`;
 
   const onSent = () => void refetch?.();
 
@@ -383,7 +391,25 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                 )}
               </p>
             ) : conversationId ? (
-              <MessageComposer conversationId={conversationId} liveSessionId={sessionId} onSent={onSent} />
+              <div className="flex flex-col gap-1">
+                <p className="text-[11px] text-muted-foreground" data-testid="live-session-input-caption">
+                  {isHost ? (
+                    <Trans>Runs on your machine, in your Claude Code · Enter to send</Trans>
+                  ) : (
+                    <Trans>Runs on {hostName}'s machine, in their Claude Code · Enter to send</Trans>
+                  )}
+                </p>
+                <MessageComposer
+                  conversationId={conversationId}
+                  liveSessionId={sessionId}
+                  onSent={onSent}
+                  variant="terminal"
+                  autoFocus
+                  placeholder={
+                    isHost ? t`Prompt for your Claude Code…` : t`Prompt for Claude Code on ${hostName}'s machine…`
+                  }
+                />
+              </div>
             ) : (
               <p className="text-center text-[11px] italic text-muted-foreground/70">
                 <Trans>This session has no bound conversation.</Trans>
@@ -393,8 +419,12 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
         }
       >
         {messages.length === 0 ? (
-          <p className="text-muted-foreground/70">
-            <Trans>No turns yet — send a prompt below to start working on {hostName}'s machine.</Trans>
+          <p className="text-muted-foreground/70" data-testid="live-session-empty">
+            {isHost ? (
+              <Trans>No prompts yet — {guestName}'s prompts will run here, in your Claude Code.</Trans>
+            ) : (
+              <Trans>No prompts yet — type one below; it runs in Claude Code on {hostName}'s machine.</Trans>
+            )}
           </p>
         ) : (
           <div className="flex flex-col gap-2">
@@ -423,16 +453,32 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
                   );
                 }
                 return (
-                  <pre key={fm.id} className="whitespace-pre-wrap text-foreground/90" data-testid="live-session-reply">
-                    {result}
-                  </pre>
+                  <div
+                    key={fm.id}
+                    data-testid="live-session-reply"
+                    data-side={isHost ? 'local' : 'remote'}
+                    className="flex flex-col gap-0.5 border-s-2 border-sky-500/60 ps-3"
+                  >
+                    <span className="select-none font-sans text-[10.5px] font-medium uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                      {replyAuthor}
+                      <span className="ms-1.5 normal-case tracking-normal text-muted-foreground">
+                        {isHost ? <Trans>· local</Trans> : <Trans>· remote</Trans>}
+                      </span>
+                    </span>
+                    <pre className="whitespace-pre-wrap text-foreground/90">{result}</pre>
+                  </div>
                 );
               }
               const prompt = promptTextOf(fm);
               if (!prompt) return null;
               return (
-                <div key={fm.id} className="flex gap-2">
-                  <span className="select-none text-emerald-600 dark:text-emerald-400">❯</span>
+                <div
+                  key={fm.id}
+                  className="flex gap-2"
+                  data-testid="live-session-prompt"
+                  data-side={isHost ? 'remote' : 'local'}
+                >
+                  <span className="shrink-0 select-none text-emerald-600 dark:text-emerald-400">{promptAuthor} ❯</span>
                   <pre className="whitespace-pre-wrap">{prompt}</pre>
                 </div>
               );
