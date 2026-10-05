@@ -9,11 +9,15 @@ import { useMyVibeTasks, type VibeTaskRow } from '@src/hooks/use-my-vibe-tasks';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
-import { workspaceToolbarButton } from './workspace-toolbar-button';
+import { AskForHelpDialog } from './AskForHelpDialog';
+
+/** The chat-header icon-button look, shared with its neighbours there. */
+const toolbarButton =
+  'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
 
 /**
- * "Count me in" — the vibe workspace's SINGLE get-help affordance, marked by
+ * "Count me in" — a chat header's SINGLE get-help affordance (the Vibe build
+ * chat, the Flowpad Assistant), marked by
  * the raised-hand figure (the collaborate glyph this replaces; there is no
  * second button beside it). One click, one simple dialog: it creates a TASK,
  * assigns it (so the work lands on the other person's board), and sends them a
@@ -24,16 +28,16 @@ import { workspaceToolbarButton } from './workspace-toolbar-button';
  * asked in — with "New request" beside them, and the icon counts the messages
  * waiting across them. The open tasks are the button's whole state.
  */
-export function VibeAssignTaskButton({
+export function AskForHelpButton({
   projectId,
   sessionTypeId,
-  origin = 'vibe',
+  origin,
 }: {
   projectId: string | null;
-  /** Active vibe session — supplies the optional transcript. */
+  /** The chat on screen — supplies the optional transcript. */
   sessionTypeId: TypeId | null;
-  /** Where the ask is made from — the Flowpad Assistant reuses this button. */
-  origin?: HelpOrigin;
+  /** Where the ask is made from. */
+  origin: HelpOrigin;
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -46,7 +50,7 @@ export function VibeAssignTaskButton({
       type="button"
       onClick={rows.length ? undefined : () => setDialogOpen(true)}
       title={rows.length ? t`Your help requests` : t`Ask someone for help`}
-      className={cn(workspaceToolbarButton, 'relative', rows.length > 0 && 'text-primary')}
+      className={cn(toolbarButton, 'relative', rows.length > 0 && 'text-primary')}
       data-testid="vibe-assign-task"
       data-open-tasks={rows.length}
     >
