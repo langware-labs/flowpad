@@ -87,12 +87,11 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = [
         dict(
             uname="builtin_toplog_watcher",
-            name="Toplog filter watcher",
+            name="Log settings",
             # Dev: watches the per-instance toplog.json; re-applies the filter to
             # the tag loggers and broadcasts the state to every UI.
-            description="Keeps Flowpad's diagnostic logging in step with its settings: when the "
-            "logging settings file changes, the new settings take effect at once. It watches only "
-            "that one Flowpad settings file.",
+            description="Applies changes to Flowpad's log settings right away. "
+            "It only touches Flowpad's own settings.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.toplog_config_path),
             recursive=False,
@@ -105,11 +104,11 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
         ),
         dict(
             uname="builtin_daily_usage_analysis",
-            name="Last day usage analysis",
+            name="Daily usage summary",
             # Dev: when enabled, fires the daily-analysis flow (analyze function →
             # publish) every day at 07:00 local; no direct action, the flow routes it.
-            description="Off unless you turn it on. Each morning at 7 it writes a short report on how "
-            "Flowpad was used the day before and posts it to your Home feed, on this computer.",
+            description="Off unless you turn it on: a short daily summary of how you used Flowpad, "
+            "on your Home page. It stays on this computer.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="0 7 * * *",
@@ -124,12 +123,11 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
         ),
         dict(
             uname="builtin_system_heartbeat",
-            name="System heartbeat",
+            name="Background upkeep",
             # Dev: fires every minute; tasks register via @register_heartbeat_task and
             # the dispatch callback fans out and isolates per-task failures.
-            description="Flowpad's once-a-minute tick. It checks the data sources you connected for "
-            "anything new, keeps search up to date for the folders you chose to index, and clears out "
-            "old records. It works only with what you set up.",
+            description="Keeps Flowpad up to date in the background, using only the sources "
+            "and folders you set up.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="* * * * *",
