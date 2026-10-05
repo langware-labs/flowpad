@@ -322,7 +322,6 @@ export function UserDropdown() {
     return () => window.removeEventListener('close-account-dialog', handler);
   }, []);
 
-
   const handleSaveRules = useCallback(
     (newRules: string) => {
       if (!user || !isOwner || !agent) {
@@ -404,7 +403,7 @@ export function UserDropdown() {
               <Trans>Configure your account, app preferences, and notifications</Trans>
             </DialogDescription>
           </DialogHeader>
-          {currentUser && <AccountInfo user={currentUser} />}
+          {currentUser && <AccountInfo user={currentUser} onNavigate={() => setIsAccountDialogOpen(false)} />}
         </DialogContent>
       </Dialog>
 
