@@ -95,7 +95,59 @@ def _parse_trigger(sched_trigger_type: str, expr: str, tz: Optional[str] = None)
         return DateTrigger(run_date=run_date, timezone=tz)
     else:
         from apscheduler.triggers.cron import CronTrigger
+        fields = expr.split()
+        if len(fields) == 5:
+            # APScheduler 3.x passes the day-of-week field through with ITS
+            # numbering (0 = Monday), so the crontab "1-5" every builder writes
+            # fired Tuesday to Saturday. Spell the days out by name instead.
+            fields[4] = crontab_weekdays_as_names(fields[4])
+            expr = " ".join(fields)
         return CronTrigger.from_crontab(expr, timezone=tz)
+
+
+_CRONTAB_DAY_NAMES = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
+
+
+def crontab_weekdays_as_names(field: str) -> str:
+    """A crontab day-of-week field (0 or 7 = Sunday) as an explicit list of day names.
+
+    Expanded, never translated range for range: a crontab range that starts on
+    Sunday ("0-3") would become "sun-wed", which APScheduler (Sunday last)
+    rejects as backwards. ``*`` stays ``*``; a field that does not parse is
+    returned unchanged so APScheduler reports the error."""
+    if field == "*":
+        return field
+    days: set[int] = set()
+    try:
+        for part in field.lower().split(","):
+            step = 1
+            if "/" in part:
+                part, step_text = part.split("/", 1)
+                step = int(step_text)
+            if part in ("*", ""):
+                lo, hi = 0, 6
+            elif "-" in part:
+                a, b = part.split("-", 1)
+                lo, hi = _crontab_day(a), _crontab_day(b)
+                if hi == 0:
+                    hi = 7  # "5-7"/"5-0": Friday through Sunday
+            else:
+                lo = hi = _crontab_day(part)
+                if step != 1:
+                    hi = 6
+            days.update(d % 7 for d in range(lo, hi + 1, step))
+    except ValueError:
+        return field
+    return ",".join(_CRONTAB_DAY_NAMES[d] for d in sorted(days))
+
+
+def _crontab_day(token: str) -> int:
+    if token in _CRONTAB_DAY_NAMES:
+        return _CRONTAB_DAY_NAMES.index(token)
+    day = int(token)
+    if not 0 <= day <= 7:
+        raise ValueError(token)
+    return day
 
 
 def _parse_interval_expr(expr: str) -> int:
@@ -838,6 +890,86 @@ class Trigger(Entity):
         from flow_sdk.fs_store.operations.trigger_log import discover as _discover_trigger_log
 
         return ApiSuccessResponse(data=_discover_trigger_log(None, limit=limit))
+
+    # ── Automations (docs/automations.md) ─────────────────────────────────────
+    # Thin doors over ``flow_sdk/automations``; every answer is an
+    # ``automation.*`` DataSpec, dumped. The UI reaches these only through the
+    # TS SDK's ``Trigger`` methods.
+
+    @core_action.get(action_name="overview")
+    async def overview_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/overview — every automation as a sentence with its health.
+
+        ``?include_inactive=true`` also lists copies under other installs (never armed)."""
+        from flow_sdk.automations.overview import overview  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        include_inactive = str(params.get("include_inactive", "false")).lower() == "true"
+        rows = await overview(include_inactive=include_inactive)
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in rows])
+
+    @core_action.get(action_name="next_runs")
+    async def next_runs_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/next_runs?expr=&sched_trigger_type=&timezone=&n=5
+
+        When a schedule — saved or still being edited — fires next, plus how it
+        reads. A bad expression is a 422 that says what is wrong."""
+        from flow_sdk.automations.schedule import next_fire_times, read_schedule, schedule_text  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        expr = str(params.get("expr") or "").strip()
+        kind = str(params.get("sched_trigger_type") or "cron")
+        tz = str(params.get("timezone") or "") or None
+        try:
+            count = max(1, min(20, int(params.get("n", 5))))
+            times = next_fire_times(expr, kind, tz, count)
+        except (ValueError, KeyError, TypeError) as exc:
+            return ApiFailResponse(message=f"That schedule can't be read: {exc}", status_code=422)
+        schedule = read_schedule(expr, kind, tz)
+        return ApiSuccessResponse(data={
+            "times": [t.isoformat() for t in times],
+            "schedule": schedule.model_dump(mode="json"),
+            "text": schedule_text(schedule),
+        })
+
+    @core_action.get(action_name="runs")
+    async def runs_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/runs?trigger_id=&status=&include_tests=true&limit=200
+
+        Runs newest first — one automation's when ``trigger_id`` is given, else
+        every automation's. Each launched agent run is asked how it ended."""
+        from flow_sdk.automations.runs import fold, join_processes, rows_for  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        limit = max(1, min(1000, int(params.get("limit", 200))))
+        trigger_id = str(params.get("trigger_id") or "") or None
+        rows = discover(None, limit=max(limit * 2, 400))
+        if trigger_id:
+            row = await cls.get_by_id(trigger_id)
+            rows = rows_for(trigger_id, row.name if row else None, rows)
+        runs = fold(rows)
+        if str(params.get("include_tests", "true")).lower() == "false":
+            runs = [r for r in runs if not r.is_test]
+        runs = await join_processes(runs[:limit])
+        status = str(params.get("status") or "")
+        if status:
+            runs = [r for r in runs if r.status == status]
+        return ApiSuccessResponse(data=[r.model_dump(mode="json") for r in runs])
+
+    @core_action.get(action_name="run")
+    async def run_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/run?id=<log row id> — one run, with its agent run's outcome."""
+        from flow_sdk.automations.runs import fold, join_processes  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        run_id = str(params.get("id") or "")
+        for run in fold(discover(None, limit=5000)):
+            if run.id == run_id:
+                (joined,) = await join_processes([run])
+                return ApiSuccessResponse(data=joined.model_dump(mode="json"))
+        return ApiFailResponse(message="That run is no longer in the history.", status_code=404)
 
     @core_action.get(action_name="discover")
     async def discover_action(cls, request: Request) -> ApiResponse:

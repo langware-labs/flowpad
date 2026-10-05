@@ -36,3 +36,159 @@ class RunOnceStarted(DataSpec):
     background: bool = True
     error: Optional[str] = None
     detail: dict[str, Any] = Field(default_factory=dict)
+
+
+# ── The sentence ──────────────────────────────────────────────────────────────
+#
+# Structured, so each surface renders it in its own language; ``text`` is the
+# English rendering for the CLI and agents. The UI never parses ``text``.
+
+
+class ScheduleWhen(DataSpec):
+    """A schedule read back the way a person chose it."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.when.schedule"
+
+    #: daily | weekdays | weekly | monthly | every | once | cron
+    preset: str
+    expr: str
+    sched_type: str = "cron"
+    #: ``HH:MM`` for the time-of-day presets.
+    time: Optional[str] = None
+    #: 0=Sunday … 6=Saturday, for ``weekly``.
+    weekday: Optional[int] = None
+    month_day: Optional[int] = None
+    #: Seconds, for ``every``.
+    interval_seconds: Optional[int] = None
+    timezone: Optional[str] = None
+
+
+class EventWhen(DataSpec):
+    """A bus subscription, named the way the event catalog names it."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.when.event"
+
+    pattern: str
+    #: The catalog title ("App ready") when the pattern names one event; else empty.
+    title: str = ""
+    description: str = ""
+    target: Optional[str] = None
+
+
+class FileWhen(DataSpec):
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.when.file"
+
+    path: str
+    glob: Optional[str] = None
+    recursive: bool = False
+
+
+class HookWhen(DataSpec):
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.when.hook"
+
+    events: list[str] = Field(default_factory=list)
+
+
+class WhenPart(DataSpec):
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.when"
+
+    kind: AutomationKind
+    text: str
+    schedule: Optional[ScheduleWhen] = None
+    event: Optional[EventWhen] = None
+    file: Optional[FileWhen] = None
+    hook: Optional[HookWhen] = None
+
+
+#: What a step does, in plain words.
+ThenKind = Literal["run_agent", "run_script", "open_wizard", "builtin_step", "notify", "workflow", "nothing"]
+
+
+class ThenPart(DataSpec):
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.then"
+
+    kind: ThenKind
+    text: str
+    #: The thing acted on, as a TypeId (``wizard-<uuid>``) when there is one.
+    target: Optional[str] = None
+    #: Its name, resolved for display ("LLM setup", "Chief of Staff").
+    target_name: Optional[str] = None
+    prompt: Optional[str] = None
+    #: Step that cannot run as configured (a callback nobody registered, a missing script).
+    problem: Optional[str] = None
+
+
+# ── Runs ──────────────────────────────────────────────────────────────────────
+
+
+class AutomationRun(DataSpec):
+    """One fire of one automation — a history row (or a start+done pair) read as a run."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.run"
+
+    #: The log row id (the start row's, for an event fire).
+    id: str
+    trigger_id: Optional[str] = None
+    automation_name: str = ""
+    kind: Optional[AutomationKind] = None
+    ts: str
+    status: RunStatus
+    is_test: bool = False
+    #: Why it ran, in words: "Scheduled", "A file changed: docs/a.md", "App ready".
+    why: str = ""
+    #: For a skip: storm | confirm_failed | disabled | self_loop | already_fired.
+    reason_code: Optional[str] = None
+    error: Optional[str] = None
+    duration_ms: Optional[int] = None
+    agentic_process_id: Optional[str] = None
+    #: What the agent run says about itself, when there is one.
+    process_status: Optional[str] = None
+    event_id: Optional[str] = None
+    cause_event_id: Optional[str] = None
+    cause_tag: Optional[str] = None
+    cause_target: Optional[str] = None
+    cause_data: Any = None
+    changed_path: Optional[str] = None
+    changes_total: Optional[int] = None
+    actions: list[str] = Field(default_factory=list)
+    spec_hash: Optional[str] = None
+
+
+# ── The list ──────────────────────────────────────────────────────────────────
+
+
+class AutomationSummary(DataSpec):
+    """One row of the Automations list: what it is, what it does, how it is doing."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.summary"
+
+    id: str
+    name: str
+    description: str = ""
+    kind: AutomationKind
+    group: AutomationGroup
+    project_id: Optional[str] = None
+    enabled: bool = True
+    when: WhenPart
+    then: list[ThenPart] = Field(default_factory=list)
+    #: The newest run, or None when it never ran.
+    last_run: Optional[AutomationRun] = None
+    #: Failures among the last five real runs.
+    recent_failures: int = 0
+    recent_runs: int = 0
+    next_run: Optional[str] = None
+    fires: int = 0
+    #: A test run or a successful real run exercised the rule as it is now.
+    tested: bool = False
+    #: Read-only here: Flowpad's own, or defined in a file another tool owns.
+    read_only: bool = False
+    #: The rule is a file asset; edits write its trigger.json.
+    asset_ref: Optional[str] = None

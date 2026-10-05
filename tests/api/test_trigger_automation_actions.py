@@ -59,3 +59,48 @@ async def test_run_once_refusal_is_422_with_the_fix(bootstrapped_client):
     resp = await client.post(f"/api/v1/graph/trigger/{row['id']}/test", json={})
     assert resp.status_code == 422
     assert "watches no file" in resp.json()["message"]
+
+
+async def test_overview_lists_a_rule_as_a_sentence(bootstrapped_client):
+    client = bootstrapped_client
+    row = await _create(client, trigger_type="schedule", expr="0 9 * * 1-5", sched_trigger_type="cron")
+    resp = await client.get("/api/v1/graph/trigger/overview")
+    assert resp.status_code == 200, resp.text
+    summary = next(s for s in resp.json()["data"] if s["id"] == row["id"])
+    assert summary["kind"] == "schedule" and summary["group"] == "mine"
+    assert summary["when"]["text"] == "Every weekday at 09:00"
+    assert summary["when"]["schedule"]["preset"] == "weekdays"
+    assert summary["tested"] is False and summary["last_run"] is None
+
+
+async def test_next_runs_previews_an_unsaved_schedule(bootstrapped_client):
+    resp = await bootstrapped_client.get("/api/v1/graph/trigger/next_runs",
+                                         params={"expr": "0 9 * * 1-5", "timezone": "UTC", "n": 3})
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert len(data["times"]) == 3 and data["text"] == "Every weekday at 09:00 (UTC)"
+
+
+async def test_next_runs_rejects_a_bad_expression_with_422(bootstrapped_client):
+    resp = await bootstrapped_client.get("/api/v1/graph/trigger/next_runs", params={"expr": "nope"})
+    assert resp.status_code == 422 and "can't be read" in resp.json()["message"]
+
+
+async def test_runs_show_a_test_run_and_run_reads_it_back(bootstrapped_client):
+    client = bootstrapped_client
+    row = await _create(client, trigger_type="tag", tag_pattern="apiruns.*")
+    await client.post(f"/api/v1/graph/trigger/{row['id']}/test", json={})
+    from tests.unit.automations._helpers import settle
+
+    await settle()
+    resp = await client.get("/api/v1/graph/trigger/runs", params={"trigger_id": row["id"]})
+    assert resp.status_code == 200, resp.text
+    (run,) = resp.json()["data"]
+    assert run["is_test"] and run["status"] == "succeeded" and run["kind"] == "event"
+    one = await client.get("/api/v1/graph/trigger/run", params={"id": run["id"]})
+    assert one.status_code == 200 and one.json()["data"]["id"] == run["id"]
+
+
+async def test_a_missing_run_is_404(bootstrapped_client):
+    resp = await bootstrapped_client.get("/api/v1/graph/trigger/run", params={"id": "no-such-run"})
+    assert resp.status_code == 404
