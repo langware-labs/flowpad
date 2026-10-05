@@ -22,6 +22,7 @@ import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-
 import { useAuth, useEntitiesQuery, useEntity, useOnTag, useProject } from '@sdk/react/hooks';
 import type { ITask, TaskableMessage } from '@sdk/entities/task';
 import { isClosedConversation, isHelpdeskKind } from '@sdk/entities/conversation';
+import { ThreadHeader } from './ThreadHeader';
 import { ThreadStack } from './ThreadStack';
 import { useAttentionPolling } from '@src/components/data-sources/useAttentionPolling';
 import { syncConversationMessages, updateMessage } from '@src/components/stream-inbox-view/stream-inbox-api';
@@ -54,11 +55,7 @@ import { mostRecentProcess } from '@src/utils/process-recency';
 import { sessionRole, useConversationSessions } from '@src/hooks/useConversationSessions';
 import { useMyEmail } from '@src/hooks/use-my-email';
 import { taskIt, useMessageTasks } from './task-it';
-
-// Cap the initial messages window so long conversations don't fetch + watch
-// every FlowMessage they've ever held. Newest-first so the visible window is
-// always at the bottom of the conversation; older messages load on demand.
-const CONVERSATION_MESSAGES_WINDOW = 500;
+import { conversationMessagesRequest } from './conversation-messages-query';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -195,23 +192,7 @@ export function ConversationView({
   // CONVERSATION_MESSAGES_WINDOW newest rows so long-running conversations
   // don't fetch + watch O(total) entities on every open; older messages
   // load on demand via a `created_date $LT` cursor extension here.
-  const messagesRequest = useMemo(
-    () =>
-      new QueryRequest({
-        type: FlowMessage.type,
-        scope: [],
-        name: `messages:${conversationId}`,
-        query: new QueryFilter({
-          match: {
-            op: '$AND',
-            operands: [{ op: '$EQ', operands: ['conversation_id', conversationId] }],
-          } as Record<string, unknown>,
-          limit: CONVERSATION_MESSAGES_WINDOW,
-          order_by: { created_date: 'desc' },
-        }),
-      }),
-    [conversationId],
-  );
+  const messagesRequest = useMemo(() => conversationMessagesRequest(conversationId), [conversationId]);
   const {
     data: conversationMessages = [],
     refetch: refetchConversationMessages,
@@ -317,10 +298,27 @@ export function ConversationView({
   // differently; the next send quotes it).
   const [replyTo, setReplyTo] = useState<FlowMessage | null>(null);
   useEffect(() => setReplyTo(null), [conversationId]);
-  const channelTraits = channel ? { quotes: !!channelSpec?.quotes, reacts: !!channelSpec?.reacts } : null;
+  // What the channel lets a person do to one message. Reply is the channel's `replies` trait —
+  // Flowpad's own chat included; React needs a source to carry it.
+  const channelTraits = channelSpec
+    ? { quotes: !!channelSpec.quotes, reacts: !!(channel && channelSpec.reacts), native: !channel }
+    : null;
   const quotedFor = (fm: FlowMessage | null) => {
-    const parent = fm?.reply_to_id ? messagesById.get(fm.reply_to_id) : undefined;
-    if (!parent) return null;
+    if (!fm?.reply_to_id) return null;
+    const parent = messagesById.get(fm.reply_to_id);
+    if (!parent) {
+      // Outside the loaded window (or not here yet): still say it is a reply, and open the
+      // conversation on that message — a navigation, so the loader resolves it.
+      const parentId = fm.reply_to_id;
+      return {
+        sender: t`Earlier message`,
+        text: t`Open the message this replies to`,
+        onJump: () =>
+          dockNavigation.openDock(
+            DockPointer.forConversation(conversationId, { messageId: parentId, agentId: agentId ?? null }),
+          ),
+      };
+    }
     const jump = () =>
       document.querySelector(`[data-testid="message-bubble-${parent.id}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
     return { ...messageSummary(parent, t`Someone`), onJump: jump };
@@ -380,11 +378,11 @@ export function ConversationView({
     }),
     [conversationId],
   );
-  // Only the packed view reads these counts, so a thread-filtered view opens
-  // no subscription at all.
+  // The packed view reads the counts; a thread-filtered view reads its own row for the header.
   const { data: threads = [] } = useEntitiesQuery<MessageThread>(threadsRequest, {
-    enabled: !!conversationId && !threadId,
+    enabled: !!conversationId,
   });
+  const currentThread = threadId ? (threads.find((th) => th.id === threadId) ?? null) : null;
   const threadCounts = useMemo(
     () => new Map(threads.filter((th) => !agentId || agentScope?.thread_ids.includes(th.id ?? '')).map((th) => [th.id ?? '', th.message_count ?? 0])),
     [agentId, agentScope?.thread_ids, threads],
@@ -415,6 +413,21 @@ export function ConversationView({
       ...anchorSessionItems(plain, getFm, sessionAnchors),
     ].sort((a, b) => a.sortAt - b.sortAt);
   }, [orderedItems, messagesById, threadId, threadCounts, sessionAnchors]);
+
+  // Where the composer of an open thread writes: a native thread joins its root; a channel whose
+  // replies only thread (email, Slack) answers the thread's newest message; a quoting channel's
+  // thread is the chat itself, so a plain send already lands in it.
+  const threadTarget = useMemo(() => {
+    if (!threadId) return null;
+    const title = currentThread?.title ?? '';
+    if (!channel) return { title, rootId: currentThread?.thread_key || null };
+    if (channelSpec?.quotes) return { title };
+    const getFm = (id: string) => messagesById.get(id) ?? null;
+    const newest = [...orderedItems]
+      .reverse()
+      .find((it) => it.kind === ConversationItemKind.POINTER && itemThreadId(it, getFm) === threadId);
+    return { title, answerId: newest?.kind === ConversationItemKind.POINTER ? newest.messageId : null };
+  }, [threadId, currentThread, channel, channelSpec?.quotes, orderedItems, messagesById]);
 
   // One row of the feed — a normal bubble or a draft bubble. A stray
   // kind=session_event row (a lifecycle line whose session the feed could not
@@ -456,7 +469,7 @@ export function ConversationView({
           showEmailHeaders={!!agentId}
           channelTraits={channelTraits}
           quoted={quotedFor(fm)}
-          onReply={channel ? setReplyTo : undefined}
+          onReply={channelSpec?.replies ? setReplyTo : undefined}
           messageTask={messageTasks.get(id) ?? null}
           onTaskIt={handleTaskIt}
         />
@@ -755,6 +768,13 @@ export function ConversationView({
           <RefreshCw className={`h-3.5 w-3.5 ${hubSyncing ? 'animate-spin' : ''}`} />
         </button>
       </div>
+      {threadId && (
+        <ThreadHeader
+          title={currentThread?.title ?? ''}
+          messageCount={currentThread?.message_count ?? null}
+          onShowAll={onThreadNavigate ? () => onThreadNavigate(null) : undefined}
+        />
+      )}
       {orderedItems.length === 0 ? (
         <p className="text-xs italic text-muted-foreground/60">
           <Trans>No messages yet.</Trans>
@@ -835,6 +855,7 @@ export function ConversationView({
         channelAcceptsFiles={!!channelSpec?.accepts_attachments}
         replyTo={replyTo ? { id: replyTo.id ?? '', ...messageSummary(replyTo, t`Someone`), inThread: !channelSpec?.quotes } : null}
         onClearReply={() => setReplyTo(null)}
+        threadTarget={threadTarget}
         onTaskIt={handleTaskIt}
       />
     </div>

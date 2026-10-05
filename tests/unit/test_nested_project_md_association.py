@@ -50,7 +50,8 @@ async def test_md_in_nested_project_is_associated_with_inner_project(tmp_path: P
     outer = await _make_project(tmp_path / "workspace", "workspace-umbrella", system=True)
     inner = await _make_project(tmp_path / "workspace" / "sapak", "sapak")
 
-    md_path = tmp_path / "workspace" / "sapak" / "SPEC.md"
+    md_path = tmp_path / "workspace" / "sapak" / "docs" / "SPEC.md"
+    md_path.parent.mkdir()
     md_path.write_text(
         f'---\nid: {MD_ID}\ntitle: "Spec"\n---\n# Spec\n\nnested-project association\n',
         encoding="utf-8",

@@ -422,3 +422,28 @@ def test_only_prod_keeps_user_docs_in_the_users_home(tmp_path, monkeypatch):
         settings = BaseInstanceSettings.from_env(name)
         assert settings.user_docs_dir == tmp_path / ".flow" / "instances" / name / "docs"
         assert tmp_path / "docs" not in (settings.user_docs_dir, *settings.user_docs_dir.parents)
+
+
+def test_only_prod_keeps_repo_assets_in_the_users_home(tmp_path, monkeypatch):
+    """``~/agentic-assets`` is prod's. Any other instance keeps its user-scope repo
+    assets in its own folder — the hub tiers on ``dev-1``/``dev-2`` had left 188
+    test specs, agents and prompts there for prod to list. Not under ``flow_home``,
+    where nothing may be deleted (``is_protected_path``)."""
+    from flow_sdk.fs_store.path_utils import is_protected_path
+    from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
+    from flow_sdk.instance_settings.base_settings import ENV_FLOW_HOME, BaseInstanceSettings
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setenv(ENV_FLOW_HOME, str(tmp_path / ".flow"))
+
+    assert BaseInstanceSettings.from_env("prod").user_asset_root == tmp_path
+    for name in ("oss", "dev-1", "test-4f2a"):
+        settings = BaseInstanceSettings.from_env(name)
+        own = settings.user_asset_root
+        assert own == tmp_path / "Flowpad workspaces" / ".home" / name
+        assert settings.user_home == tmp_path  # harness dirs stay shared
+        assert settings.flow_home not in own.parents
+        monkeypatch.setattr("flow_sdk.instance_settings.get_instance_settings", lambda s=settings: s)
+        assert not is_protected_path(own / "agentic-assets" / "spec" / "x")
+    reset_instance_settings()
+    get_instance_settings()

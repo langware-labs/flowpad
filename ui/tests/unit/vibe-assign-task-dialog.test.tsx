@@ -31,7 +31,7 @@ vi.mock('@src/hooks/use-cloud-login-gate', () => ({ useCloudLoginGate: () => () 
 vi.mock('@src/services/privacy-guard', () => ({ guardCloudAction: () => true }));
 // The annotator is a popup; markup is its own concern — here it hands the image back as-is.
 vi.mock('@src/components/image-annotator/annotate-files', () => ({
-  annotateImageFiles: (files: File[]) => Promise.resolve(files),
+  annotateImageFiles: (files: File[]) => Promise.resolve({ files, caption: '' }),
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: h.openDock }, currentDock: null }),

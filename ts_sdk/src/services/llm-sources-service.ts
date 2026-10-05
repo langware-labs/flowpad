@@ -109,6 +109,24 @@ export interface LLMFundingStatus {
   active_for: string[];
   /** Is the box SET UP — decided once, in Python (`DefaultFundingSpec`). */
   default: DefaultFunding;
+  /** The decision API (box-wide) — what answers a fast decision, or why nothing does. */
+  decision: DecisionApi;
+}
+
+/**
+ * Can this box take fast decisions: a hub APIEndpoint marked `decision` — mirrors
+ * `DecisionApiSpec`. When it is not available the navigator is off and every ask takes the
+ * ordinary agent path, so `reason` is a fact to show, never an error.
+ */
+export interface DecisionApi {
+  available: boolean;
+  /** The endpoint `decide()` would use, as `api_endpoint-<id>`. */
+  endpoint: string;
+  name: string;
+  /** The vendor host it fronts (`api.typesafe.ai`). */
+  host: string;
+  /** Why not, when `available` is false. */
+  reason: string;
 }
 
 /**

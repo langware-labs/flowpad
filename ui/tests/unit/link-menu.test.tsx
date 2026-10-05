@@ -1,5 +1,5 @@
 /**
- * The terminal link menu's "Open in ▸ browser / profile" submenu, and the loader behind it.
+ * The shared link menu's (terminal and message alike) "Open in ▸ browser / profile" submenu, and the loader behind it.
  *
  * `apiClient` is stubbed at the transport edge; what the backend lists and launches
  * on each OS is pinned in `tests/unit/test_browser_profiles.py`, and the real
@@ -37,7 +37,7 @@ vi.mock('@src/navigation', () => ({
   }),
 }));
 
-const { useTerminalLinks, lightboxMediaName } = await import('@src/components/terminal/interactive-terminal/TerminalLinkMenu');
+const { useLinks, lightboxMediaName } = await import('@src/components/links/LinkMenu');
 const { fetchBrowserProfiles } = await import('@src/lib/browser-profiles');
 
 const BROWSERS = [
@@ -56,13 +56,13 @@ const LINK = 'https://example.test/a?b=1';
 
 /** A terminal's worth of the hook: the menu rendered, and a right-click on `link` once mounted. */
 function Harness({ link }: { link: string }) {
-  const { handlers, menu } = useTerminalLinks({ current: null });
+  const { handlers, menu } = useLinks({ current: null });
   useEffect(() => handlers.openMenu(link, 10, 10), [handlers, link]);
   return <>{menu}</>;
 }
 
 async function openSubmenu(): Promise<void> {
-  const trigger = await screen.findByTestId('terminal-link-menu-open-in');
+  const trigger = await screen.findByTestId('link-menu-open-in');
   act(() => {
     trigger.focus();
   });
@@ -86,27 +86,27 @@ describe('Open in ▸ submenu', () => {
 
     expect(await screen.findByRole('group', { name: 'Google Chrome' })).toBeTruthy();
     expect(screen.getByRole('group', { name: 'Firefox' })).toBeTruthy();
-    expect(screen.getByTestId('terminal-link-menu-profile-chrome-Default').textContent).toBe('Personal — me@home.test');
-    expect(screen.getByTestId('terminal-link-menu-profile-chrome-Profile 3').textContent).toBe('Work');
+    expect(screen.getByTestId('link-menu-profile-chrome-Default').textContent).toBe('Personal — me@home.test');
+    expect(screen.getByTestId('link-menu-profile-chrome-Profile 3').textContent).toBe('Work');
 
-    fireEvent.click(screen.getByTestId('terminal-link-menu-profile-chrome-Profile 3'));
+    fireEvent.click(screen.getByTestId('link-menu-profile-chrome-Profile 3'));
     expect(mocks.openLinkInBrowserProfile).toHaveBeenCalledWith(LINK, null, 'chrome', 'Profile 3');
   });
 
   it('is absent when no browser profile was found', async () => {
     mocks.get.mockResolvedValue({ browsers: [] });
     render(<Harness link={LINK} />);
-    await screen.findByTestId('terminal-link-menu');
+    await screen.findByTestId('link-menu');
     await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(1));
-    expect(screen.queryByTestId('terminal-link-menu-open-in')).toBeNull();
+    expect(screen.queryByTestId('link-menu-open-in')).toBeNull();
     expect(screen.getByText('Open in browser')).toBeTruthy();
   });
 
   it('is absent off the user machine, without asking the backend', async () => {
     mocks.runtimeKind = 'sandbox';
     render(<Harness link={LINK} />);
-    await screen.findByTestId('terminal-link-menu');
-    expect(screen.queryByTestId('terminal-link-menu-open-in')).toBeNull();
+    await screen.findByTestId('link-menu');
+    expect(screen.queryByTestId('link-menu-open-in')).toBeNull();
     expect(mocks.get).not.toHaveBeenCalled();
   });
 });
@@ -146,7 +146,7 @@ describe('click: media previews in place, the rest opens as a tab', () => {
   });
 
   function ClickHarness({ link, shell }: { link: string; shell: unknown }) {
-    const { handlers, menu } = useTerminalLinks({ current: shell as never });
+    const { handlers, menu } = useLinks({ current: shell as never });
     useEffect(() => handlers.activate(new MouseEvent('mouseup'), link), [handlers, link]);
     return <>{menu}</>;
   }
@@ -178,5 +178,15 @@ describe('click: media previews in place, the rest opens as a tab', () => {
     render(<ClickHarness link="missing.png" shell={shell} />);
     await waitFor(() => expect(mocks.openLink).toHaveBeenCalledWith('missing.png', shell));
     expect(screen.queryByTestId('media-lightbox')).toBeNull();
+  });
+
+  it('a message (no compute node) previews a web image, and opens a file image as a tab', async () => {
+    const message = { resolveDisplayTarget: vi.fn() };
+    const { unmount } = render(<ClickHarness link="https://x.test/pic.png" shell={message} />);
+    expect((await screen.findByRole('img', { name: 'pic.png' })).getAttribute('src')).toBe('https://x.test/pic.png');
+    unmount();
+    render(<ClickHarness link="out/chart.png" shell={message} />);
+    await waitFor(() => expect(mocks.openLink).toHaveBeenCalledWith('out/chart.png', message));
+    expect(message.resolveDisplayTarget).not.toHaveBeenCalled();
   });
 });

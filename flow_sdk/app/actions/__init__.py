@@ -19,6 +19,7 @@ from . import (  # noqa: F401
     message_attachment_action,
     notification_action,
     open_action,
+    project_git_share_action,
     prompt_pin_action,
     rag_index_action,
     report_action,

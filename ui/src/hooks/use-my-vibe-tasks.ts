@@ -2,8 +2,7 @@ import { useMemo } from 'react';
 import { Conversation, normalizeEmail, QueryRequest, Task, TaskKind } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useEntityBatch } from '@src/components/entity-batch/EntityBatchHydrator';
-import { isTaskArchived } from '@src/components/task-bar/constants';
-import { statusFamily, TaskStatus } from '@src/components/task-bar/task-utils';
+import { byNewestTask, isOpenTask } from '@src/components/task-bar/task-utils';
 import { useMyEmail } from '@src/hooks/use-my-email';
 
 export interface VibeTaskRow {
@@ -22,14 +21,8 @@ export interface VibeTaskRow {
  */
 export function openHelpTasks(tasks: Task[], myEmail: string | null): Task[] {
   return tasks
-    .filter(
-      (task) =>
-        !!myEmail &&
-        normalizeEmail(task.reporter) === myEmail &&
-        statusFamily(task.status) !== TaskStatus.DONE &&
-        !isTaskArchived(task),
-    )
-    .sort((a, b) => String(b.created_date ?? '').localeCompare(String(a.created_date ?? '')));
+    .filter((task) => !!myEmail && normalizeEmail(task.reporter) === myEmail && isOpenTask(task))
+    .sort(byNewestTask);
 }
 
 /** Each open task with its conversation's waiting messages, and the total — what the button shows. */

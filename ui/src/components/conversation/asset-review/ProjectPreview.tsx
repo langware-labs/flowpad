@@ -1,6 +1,5 @@
 import type { Project } from '@sdk';
-import { gitOriginCloneUrl } from '@sdk/models/GitOrigin';
-import { formatFSOrigin, isGitOrigin, projectOriginOf } from '@sdk/models/FSOrigin';
+import { projectOriginOf, projectSourceLabel } from '@sdk/models/FSOrigin';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /**
@@ -16,7 +15,7 @@ export function ProjectPreview({ project, fallbackName }: { project?: Project | 
   // A project arrives from its git repo or from its hub-hosted copy (a share made
   // `via: hub_repo`), which has no clone URL of its own to show.
   const origin = projectOriginOf(project);
-  const gitUrl = origin ? (isGitOrigin(origin) ? gitOriginCloneUrl(origin) : formatFSOrigin(origin)) : null;
+  const gitUrl = origin ? projectSourceLabel(origin) : null;
   return (
     <dl
       className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded border border-border p-3 text-[12px]"

@@ -6,7 +6,7 @@ import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { cn } from '@src/lib/utils';
 import { topmost } from '@src/lib/topmost';
 import { GENIE_DURATION_MS, GENIE_EASING, GENIE_SMALL_OPACITY, genieTransform } from '@src/lib/minimize-to-element';
-import { useFloatingChat } from './FloatingChatContext';
+import { useFloatingChat, type TriggerRect } from './FloatingChatContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import type { DockPointer } from '@src/navigation/DockPointer';
@@ -29,6 +29,16 @@ const DEFAULT_H = 660;
 const MARGIN = 16;
 
 type Phase = 'closed' | 'opening' | 'open' | 'closing';
+
+/** The assistant button the chat minimizes into: the first one actually laid out. */
+function assistantButtonRect(): TriggerRect | null {
+  if (typeof document === 'undefined') return null;
+  for (const el of document.querySelectorAll<HTMLElement>('[data-minimize-anchor="assistant-button"]')) {
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) return { x: r.left, y: r.top, width: r.width, height: r.height };
+  }
+  return null;
+}
 
 function loadBounds(): Bounds | null {
   try {
@@ -76,8 +86,9 @@ function clampToViewport(b: Bounds): Bounds {
  *
  * Open/close is animated: on open, the window scales up from the trigger
  * button's on-screen rect into its centered position; on close, it scales
- * back into the button. The transform-origin / starting transform are derived
- * from the `triggerRect` captured at click time.
+ * into the assistant button, however it was opened. The entrance transform is
+ * derived from the `triggerRect` captured at click time; the exit one from the
+ * assistant button's rect read at close time.
  */
 export function FloatingChatWindow() {
   const { currentDock } = useDockNavigation();
@@ -116,6 +127,7 @@ function FloatingChatWindowInner() {
   // open), start in the resting `open` phase and skip the entrance animation
   // — there's no triggerRect to animate from after a refresh.
   const [phase, setPhase] = useState<Phase>(() => (restoredFromStorage && open ? 'open' : 'closed'));
+  const [exitRect, setExitRect] = useState<TriggerRect | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -132,6 +144,10 @@ function FloatingChatWindowInner() {
       return () => cancelAnimationFrame(id);
     }
     // Close: only run the closing transition if we were actually mounted.
+    // Wherever the chat came from (the address bar's ask, a page's request
+    // line), it minimizes into the assistant button — the one click that
+    // brings it back — read where that button is NOW, not at open time.
+    setExitRect(assistantButtonRect());
     setPhase((prev) => (prev === 'closed' ? 'closed' : 'closing'));
   }, [open]);
 
@@ -224,7 +240,7 @@ function FloatingChatWindowInner() {
   // Compute the entrance/exit transform that starts at the trigger button's
   // rect and ends at identity (the centered window position).
   const isAtRest = phase === 'open';
-  const buttonRect = triggerRect;
+  const buttonRect = phase === 'closing' ? (exitRect ?? triggerRect) : triggerRect;
   // Maximize-from: the window grows out of the button the way a minimize
   // flies into it — the same flight, timing and small-end opacity, played
   // backwards. Without a rect (opened from code) it grows from its own center.

@@ -48,7 +48,9 @@ def _make_portal(root: Path, *, name: str = "acme", remote: str = "https://githu
     desk = root / "agentic-assets" / "helpdesk" / name
     desk.mkdir(parents=True)
     (desk / "helpdesk.json").write_text(json.dumps(MANIFEST), encoding="utf-8")
-    (root / "guide.md").write_text("# Getting started\n", encoding="utf-8")
+    # Guides live in ``docs/``: project markdown is only indexed inside a doc folder.
+    (root / "docs").mkdir()
+    (root / "docs" / "guide.md").write_text("# Getting started\n", encoding="utf-8")
     _git(root, "init", "-q")
     _git(root, "add", "-A")
     subprocess.run(
@@ -154,7 +156,7 @@ async def test_indexing_a_portal_read_only_leaves_the_checkout_clean(tmp_path: P
     next ``git pull`` — silently, until a user tries to update their guides.
     """
     desk = _make_portal(tmp_path)
-    guide_before = (tmp_path / "guide.md").read_text(encoding="utf-8")
+    guide_before = (tmp_path / "docs" / "guide.md").read_text(encoding="utf-8")
     assert _tracked_changes(tmp_path) == [], "fixture should start clean"
 
     await _index_additional_dir(str(tmp_path), read_only=True)
@@ -165,7 +167,7 @@ async def test_indexing_a_portal_read_only_leaves_the_checkout_clean(tmp_path: P
     # Byte-identical: no id stamped into the manifest, no capsule appended to
     # the guide — the two files the identity backends would otherwise claim.
     assert json.loads((desk / "helpdesk.json").read_text(encoding="utf-8")) == MANIFEST
-    assert (tmp_path / "guide.md").read_text(encoding="utf-8") == guide_before
+    assert (tmp_path / "docs" / "guide.md").read_text(encoding="utf-8") == guide_before
 
 
 @pytest.mark.asyncio

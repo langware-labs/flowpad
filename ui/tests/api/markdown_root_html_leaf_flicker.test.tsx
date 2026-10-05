@@ -3,8 +3,8 @@
  * "Loading…" while a NON-markdown file of that folder is open ("open the html
  * in sapora, the side menu flickers", 2026-10-02).
  *
- * Real path, no mocks: a real Project over a fresh directory holding one `.md`
- * and one `.html`, the backend's own asset catalog vaults (`/assets/types`), the
+ * Real path, no mocks: a real Project over a fresh directory whose `docs/` holds
+ * one `.md` and one `.html` (only markdown inside docs/ or doc/ is a document), the backend's own asset catalog vaults (`/assets/types`), the
  * real Markdown root (`markdownFolderRoot`, which lists the vault through the
  * backend's `/assets/markdown-files` walk) and the real tree hook
  * (`useBrowseableTree`). `BrowseableTree` re-runs `expandParentsForPointer` for
@@ -26,8 +26,9 @@ import { apiTestSetup, getTestSignupInfo, trackCreatedRows } from '../utils/test
 describe('the Documents tree with a non-markdown file open', () => {
   const signupInfo = getTestSignupInfo();
   const projectDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'mdhtmlleaf'));
-  fs.writeFileSync(path.join(projectDir, 'README.md'), '# readme\n');
-  fs.writeFileSync(path.join(projectDir, 'report.html'), '<!doctype html><title>r</title>');
+  fs.mkdirSync(path.join(projectDir, 'docs'));
+  fs.writeFileSync(path.join(projectDir, 'docs', 'README.md'), '# readme\n');
+  fs.writeFileSync(path.join(projectDir, 'docs', 'report.html'), '<!doctype html><title>r</title>');
   const { created: cleanupProjects } = trackCreatedRows(Project.type);
 
   beforeEach(async (ctx: any) => {
@@ -79,10 +80,10 @@ describe('the Documents tree with a non-markdown file open', () => {
   }
 
   it('does not re-list the expanded vault while an .html file is open', async () => {
-    expect(await relistsOnReRun('report.html'), 'vault re-listed on a re-run').toBe(0);
+    expect(await relistsOnReRun('docs/report.html'), 'vault re-listed on a re-run').toBe(0);
   });
 
   it('control: does not re-list the expanded vault while an .md file is open', async () => {
-    expect(await relistsOnReRun('README.md'), 'vault re-listed on a re-run').toBe(0);
+    expect(await relistsOnReRun('docs/README.md'), 'vault re-listed on a re-run').toBe(0);
   });
 });

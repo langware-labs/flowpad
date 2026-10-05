@@ -83,8 +83,17 @@ export function SessionInput({
     }
   };
 
-  // Image paste: annotated, then chips (uploaded on submit).
-  const handlePaste = useAnnotatedImagePaste(picker.addFiles, { enabled: allowAttachments && !disabled });
+  // Image paste: annotated, then chips (uploaded on submit); the caption joins the message.
+  // The parent owns `message` through a plain-string onChange, so the update is applied here;
+  // the annotator is modal, so `message` can't change under it.
+  const applyToMessage = useCallback(
+    (update: (prev: string) => string) => setMessage(update(message)),
+    [message, setMessage],
+  );
+  const handlePaste = useAnnotatedImagePaste(picker.addFiles, {
+    enabled: allowAttachments && !disabled,
+    setText: applyToMessage,
+  });
 
   const hasFooterControls = allowAttachments || Boolean(footerSlot);
   const sendButton = (

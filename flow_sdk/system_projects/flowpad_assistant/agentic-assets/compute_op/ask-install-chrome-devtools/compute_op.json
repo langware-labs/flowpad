@@ -1,0 +1,24 @@
+{
+  "type": "compute_op",
+  "id": "d89e8795-859c-4b39-bbe8-44e090ddac51",
+  "name": "ask-install-chrome-devtools",
+  "label": "Install the chrome-devtools CLI?",
+  "description": "Asks the person whether to install the chrome-devtools CLI, only when it is missing.",
+  "subkind": "ask",
+  "exe_data": {
+    "prompt": "The chrome-devtools CLI is required to continue",
+    "detail": "It lets agents drive and debug a real browser window on this computer. It doesn't appear to be installed. Would you like to install it now?",
+    "submit_label": "Install",
+    "cancel_label": "Skip",
+    "until_answered": true
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "chrome-devtools --version >/dev/null 2>&1 && echo '{}'",
+      "linux": "chrome-devtools --version >/dev/null 2>&1 && echo '{}'",
+      "win32": "$env:Path += ';' + [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User'); chrome-devtools.cmd --version *> $null; if ($LASTEXITCODE -eq 0) { '{}'; exit 0 } else { exit 1 }"
+    },
+    "timeout_seconds": 30
+  },
+  "output_spec_kind": "confirm"
+}

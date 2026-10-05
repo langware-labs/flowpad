@@ -136,6 +136,8 @@ class AgentSource(MessageSource):
     #: The receipt's high-water is the only thing that says where the worker stopped.
     durable_cursor = True
     sends_may_draft: ClassVar[bool] = True
+    #: ``reply`` is unsupported: the worker writes into the thread; a send goes to the conversation.
+    replies: ClassVar[bool] = False
 
     def __init__(self, binding: SourceBinding, worker: Optional[WorkerTransport] = None) -> None:
         super().__init__(binding)

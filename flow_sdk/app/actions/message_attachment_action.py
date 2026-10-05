@@ -66,7 +66,7 @@ def _entry_dir_for(ma: MessageAttachment) -> Path | None:
     return candidate
 
 
-def _user_scope_root() -> Path:
+def _user_scope_root(asset_class=None) -> Path:
     """Root that user-scope installs copy under — delegates to the single
     ``placement.root_for_scope`` authority (shared with the create path), so the
     two can't diverge on what "user root" means. Kept as a named seam because
@@ -74,7 +74,7 @@ def _user_scope_root() -> Path:
     from flow_sdk.assets.placement import Scope
     from flow_sdk.builtin.asset_placement import root_for_scope
 
-    return root_for_scope(Scope.USER)
+    return root_for_scope(Scope.USER, asset_class=asset_class)
 
 
 async def _load_ma(attachment_id: str) -> MessageAttachment | None:
@@ -589,7 +589,7 @@ async def handle_attachment_install(
                     message=f"type {ma.asset_type!r} is project-scoped; install into a project instead",
                     status_code=400,
                 )
-            root = _user_scope_root()
+            root = _user_scope_root(asset_class)
 
     entry_key = record_stem(ma.asset_type, ma.asset_id)
     if is_raw_file:

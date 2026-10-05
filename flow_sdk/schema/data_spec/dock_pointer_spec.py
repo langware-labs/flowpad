@@ -7,7 +7,8 @@ can declare — an agent's ``auto_open`` is a list of these.
 A declared pointer travels (git, a share), so it must not name a machine: a vfs
 rooted at a compute node (``vfs/compute_node-…/Users/…``) is refused. A file is
 named relative to its project instead — ``vfs/project-<id>/<rel>`` — and
-rebased onto the local machine when it is opened (``Agent.rebase_auto_open``).
+rebased onto the local machine when it is opened
+(``flow_sdk.builtin.agent_auto_open.rebase_auto_open``).
 """
 
 from __future__ import annotations
@@ -24,6 +25,12 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 MACHINE_VFS = re.compile(r"(^|/)vfs/compute_node-[^/]+/")
 #: A vfs segment rooted at a project: ``vfs/project-<id>/<rel>``.
 PROJECT_VFS = re.compile(r"(^|/)vfs/project-(?P<project>[^/]+)/(?P<rel>.+)$")
+
+
+def tab_pointer_json(view_type: str, pointer: str) -> str:
+    """THE ``Tab.pointer`` string for a plain dock — ``DockPointer.toJSON()``'s default
+    arm. ``Tab.id`` hashes these exact bytes, so every backend writer goes through here."""
+    return json.dumps({"viewType": view_type, "pointer": pointer}, separators=(",", ":"))
 
 
 class DockPointerSpec(DataSpec):
@@ -57,4 +64,4 @@ class DockPointerSpec(DataSpec):
 
     def to_json(self) -> str:
         """The ``Tab.pointer`` string (``DockPointer.toJSON()``'s plain form)."""
-        return json.dumps({"viewType": self.viewType, "pointer": self.pointer}, separators=(",", ":"))
+        return tab_pointer_json(self.viewType, self.pointer)

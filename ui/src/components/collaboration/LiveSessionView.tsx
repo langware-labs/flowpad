@@ -30,6 +30,7 @@ import {
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { truncate } from '@src/components/hooks/event-summaries';
+import { LatestScroll } from '@src/components/conversation/LatestScroll';
 
 /**
  * Client-side resolver seam for the live-session state: today it's the watched
@@ -373,8 +374,30 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* ── terminal-style exchange ───────────────────────────────────── */}
-      <div className="min-h-0 flex-1 overflow-y-auto bg-zinc-950/[.03] px-4 py-3 font-mono text-[12.5px] leading-relaxed dark:bg-zinc-50/[.03]">
+      {/* ── terminal-style exchange, latest-first; the composer below rides its context ── */}
+      <LatestScroll
+        className="bg-zinc-950/[.03] px-4 py-3 font-mono text-[12.5px] leading-relaxed dark:bg-zinc-50/[.03]"
+        after={
+          /* ── composer (guest drives; host may also type) ── */
+          <div className="flex-shrink-0 border-t px-3 py-2">
+            {terminal ? (
+              <p className="text-center text-[11px] italic text-muted-foreground/70">
+                {status === RemoteWorkerSessionStatus.DECLINED ? (
+                  <Trans>This live session was declined.</Trans>
+                ) : (
+                  <Trans>This live session has ended.</Trans>
+                )}
+              </p>
+            ) : conversationId ? (
+              <MessageComposer conversationId={conversationId} liveSessionId={sessionId} onSent={onSent} />
+            ) : (
+              <p className="text-center text-[11px] italic text-muted-foreground/70">
+                <Trans>This session has no bound conversation.</Trans>
+              </p>
+            )}
+          </div>
+        }
+      >
         {messages.length === 0 ? (
           <p className="text-muted-foreground/70">
             <Trans>No turns yet — send a prompt below to start working on {hostName}'s machine.</Trans>
@@ -416,26 +439,7 @@ export function LiveSessionView({ sessionId }: { sessionId: string }) {
             })}
           </div>
         )}
-      </div>
-
-      {/* ── composer (guest drives; host may also type) ───────────────── */}
-      <div className="flex-shrink-0 border-t px-3 py-2">
-        {terminal ? (
-          <p className="text-center text-[11px] italic text-muted-foreground/70">
-            {status === RemoteWorkerSessionStatus.DECLINED ? (
-              <Trans>This live session was declined.</Trans>
-            ) : (
-              <Trans>This live session has ended.</Trans>
-            )}
-          </p>
-        ) : conversationId ? (
-          <MessageComposer conversationId={conversationId} liveSessionId={sessionId} onSent={onSent} />
-        ) : (
-          <p className="text-center text-[11px] italic text-muted-foreground/70">
-            <Trans>This session has no bound conversation.</Trans>
-          </p>
-        )}
-      </div>
+      </LatestScroll>
     </div>
   );
 }

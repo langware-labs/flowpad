@@ -1,12 +1,10 @@
 /**
  * What a channel message can carry beyond its words: the message it quotes, the reactions on it, and
- * the two things a person can do to it (Reply, React). Every one is gated by the conversation's
+ * the two things a person can do to it (Reply, React — items of the message's ⋮ menu). Every one is gated by the conversation's
  * `ChannelSpec` traits (`quotes`, `reacts`) — never by a channel's name.
  */
-import { Reply, SmilePlus } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { attachmentDataString, type FlowMessage, type IMessageReaction } from '@sdk/entities/flow-message';
-import { EmojiPicker } from './EmojiPicker';
 import { attachmentSummary } from './useAttachments';
 
 /** A FILE attachment's name — its `data/<name>` subpath, last segment. */
@@ -75,49 +73,5 @@ export function ReactionChips({
         </button>
       ))}
     </div>
-  );
-}
-
-/** Reply and React on a channel message — shown when the bubble is hovered or focused. */
-export function ChannelMessageActions({
-  onReply,
-  replyInThread,
-  onReact,
-}: {
-  onReply?: () => void;
-  /** The channel's replies only thread (email, Slack): say so. */
-  replyInThread?: boolean;
-  onReact?: (emoji: string) => void;
-}) {
-  const { t } = useLingui();
-  const replyLabel = replyInThread ? t`Reply in thread` : t`Reply`;
-  const cls =
-    'text-muted-foreground/60 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100';
-  return (
-    <>
-      {onReply && (
-        <button
-          type="button"
-          onClick={onReply}
-          className={cls}
-          title={replyLabel}
-          aria-label={replyLabel}
-          data-testid="message-reply"
-        >
-          <Reply className="h-3 w-3" />
-        </button>
-      )}
-      {onReact && (
-        <EmojiPicker
-          side="bottom"
-          onPick={onReact}
-          trigger={
-            <button type="button" className={cls} title={t`React`} aria-label={t`React`} data-testid="message-react">
-              <SmilePlus className="h-3 w-3" />
-            </button>
-          }
-        />
-      )}
-    </>
   );
 }
