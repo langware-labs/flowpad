@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Settings2 } from 'lucide-react';
-import { Deployment, TypeId, type Agent, type DeploymentThread } from '@sdk';
+import { ArrowUpRight, Settings2 } from 'lucide-react';
+import { cloudManager, ComputeNode, Deployment, TypeId, type Agent, type DeploymentThread } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { TRANSCRIPT_TIME_PARAM } from '@src/navigation/DockPointer';
@@ -61,10 +61,32 @@ export function AgentDeploymentPage({ agent, deploymentId }: { agent: Agent; dep
 
   const label = place ? display(place).label : (deployment?.name ?? '');
   const active = (threads ?? []).filter((th) => th.status === 'live' || th.status === 'working').length;
+  // The hub's `/compute_node/<id>` page: it resumes or launches the machine, then lands in its workspace.
+  // `TypeId` throws on a malformed id, and a link is not worth the page — so the prefix is cut by hand.
+  const nodePrefix = `${ComputeNode.type}${TypeId.DELIMITER}`;
+  const nodeTypeId = deployment?.computeNodeTypeId;
+  const hubUrl = cloudManager.cloudAppUrl;
+  const workspaceUrl =
+    nodeTypeId?.startsWith(nodePrefix) && hubUrl && deployment?.target.provider !== 'local'
+      ? `${hubUrl.replace(/\/+$/, '')}/compute_node/${encodeURIComponent(nodeTypeId.slice(nodePrefix.length))}`
+      : null;
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="agent-deployment-page">
       <header className="flex flex-wrap items-center gap-3 border-b px-6 py-3.5">
         <h1 className="text-lg font-semibold">{label}</h1>
+        {workspaceUrl && (
+          <a
+            href={workspaceUrl}
+            target="_blank"
+            rel="noreferrer"
+            title={t`Open this deployment's workspace in a new tab`}
+            aria-label={t`Open this deployment's workspace in a new tab`}
+            className="-ms-2 rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            data-testid="deployment-open-workspace"
+          >
+            <ArrowUpRight className="h-4 w-4" />
+          </a>
+        )}
         {place && (
           <span
             className={
