@@ -26,6 +26,7 @@ function harness({ stop, quitAndInstall } = {}) {
     setQuitting: (v) => { h.quitting = v; calls.push(`quitting=${v}`); },
     hideWindow: () => calls.push('hide'),
     showWindow: () => calls.push('show'),
+    notifyInstalling: () => calls.push('notify'),
     onFailure: (e) => { h.failures.push(e.message); calls.push('onFailure'); },
     log: silentLog,
   });
@@ -37,7 +38,7 @@ function harness({ stop, quitAndInstall } = {}) {
   {
     const h = harness();
     eq(await h.applier.apply(), true, 'apply runs');
-    eq(h.calls, ['quitting=true', 'hide', 'stop', 'quitAndInstall(true,true)'], 'order: flag, hide, stop the backend, then quitAndInstall(silent, relaunch)');
+    eq(h.calls, ['quitting=true', 'hide', 'notify', 'stop', 'quitAndInstall(true,true)'], 'order: flag, hide, tell the user, stop the backend, then quitAndInstall(silent, relaunch)');
     eq(h.applier.busy, true, 'busy until the app actually quits');
   }
 
