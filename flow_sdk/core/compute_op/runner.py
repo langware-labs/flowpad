@@ -46,11 +46,16 @@ Three properties the tests pin:
 
 from __future__ import annotations
 
+import asyncio
+import os
+import shutil
 import sys
+import tempfile
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
 from flow_sdk.core.compute.declared_value import (
     DeclaredShapeError,
@@ -59,7 +64,7 @@ from flow_sdk.core.compute.declared_value import (
     value_from_stdout,
 )
 from flow_sdk.core.compute.exec import run_shell
-from flow_sdk.core.compute.process_step import launch_step_process
+from flow_sdk.core.compute.process_step import NO_USABLE_LLM_SOURCE, launch_step_process
 from flow_sdk.core.compute.receipt import clear_receipt, read_step_result, receipt_path, result_contract
 from flow_sdk.core.compute.shared_shell import shell_for
 from flow_sdk.schema.data_spec.compute_op_spec import (
@@ -241,10 +246,11 @@ async def run_op(
         # already found out.
         history = [f"{tried_as}: {answer.detail}"]
         for rung in spec.attempts:
-            if answer.exit_code is not ExitCode.NOT_YET or _check_ran_out(answer):
+            if answer.exit_code is not ExitCode.NOT_YET or _check_ran_out(answer) or _declined(answer):
                 # A check that ran out of time gave no verdict: the goal may well hold already, and a
                 # costlier rung cannot make a slow machine answer faster — it would change a machine
-                # that may be fine. The timeout is the report.
+                # that may be fine. The timeout is the report. A person who declined the Windows permission
+                # prompt has answered: an agent that goes on to try the same thing another way is asking again.
                 break
             # The rung before this one did not reach the goal: this one takes the SAME
             # goal, with the same check as its verdict — never the caller's executor,
@@ -256,9 +262,16 @@ async def run_op(
             promoted = spec.model_copy(update={"subkind": rung.subkind, "exe_data": exe_data, "attempts": []})
             rescued = await _attempt(promoted, answer.check or before, executor=None, seams=seams)
             prior_detail = answer.detail
-            answer = rescued.model_copy(
-                update={"detail": f"{rescued.detail} (after the {tried_as} attempt: {prior_detail})"}
-            )
+            if not rescued.ran and NO_USABLE_LLM_SOURCE in rescued.detail:
+                # The rung that could have tried another way had nobody to run it. "claude_code has no usable
+                # LLM source: …" is a fact about the machine, not about what the person can do next.
+                detail = (
+                    f"{spec.display_label} wasn't installed: the automatic install didn't work, and no assistant is "
+                    f"signed in to try another way. Sign in to an assistant, then run setup again. ({prior_detail})"
+                )
+            else:
+                detail = f"{rescued.detail} (after the {tried_as} attempt: {prior_detail})"
+            answer = rescued.model_copy(update={"detail": detail})
             tried_as = rung.subkind
             # The RAW detail, not the chain-wrapped one above — history entries stay
             # one line each rather than nesting a "(after ...)" inside a "(after ...)".
@@ -283,6 +296,18 @@ def _adopt_installed_path() -> None:
             adopt_path(terminal)
     except Exception:  # noqa: BLE001 — a PATH refresh is a courtesy to later spawns, never a verdict
         pass
+
+
+#: What a command's exit code says when the person declined the Windows permission prompt or cancelled the
+#: installer (winget answers both the same way): winget's INSTALL_CANCELLED_BY_USER (0x8A15010C) and Windows' own ERROR_CANCELLED (1223, or
+#: 0x800704C7 as an HRESULT). A process exit code is a DWORD, so it is compared unsigned.
+_DECLINED_EXIT_CODES = frozenset({0x8A15010C, 1223, 0x800704C7})
+
+
+def _declined(answer: ReturnedValue) -> bool:
+    """The call ran and its exit code says the person said no — an answer, not a failure to retry another way."""
+    code = getattr(answer, "returncode", None)
+    return bool(answer.ran and code is not None and (code & 0xFFFFFFFF) in _DECLINED_EXIT_CODES)
 
 
 def _check_ran_out(answer: ReturnedValue) -> bool:
@@ -393,7 +418,12 @@ async def _call_and_check(
         )
         return _with_value(spec, done, said=after)
     reason = _reason(call)
-    if after.timed_out:
+    if _declined(call):
+        detail = (
+            f"{spec.display_label} wasn't installed: the installation was cancelled (the Windows permission "
+            "prompt or the installer was declined). Run setup again when you are ready."
+        )
+    elif after.timed_out:
         budget = spec.completion_check.timeout(CHECK_TIMEOUT) if spec.completion_check else CHECK_TIMEOUT
         detail = (
             f"{spec.display_label}: the {spec.subkind} call ran, but its check did not answer within "
@@ -541,20 +571,203 @@ async def _cli(
     command = spec.exe_data.command_for(platform)
     if not command:
         return CliResult.not_applicable(f"{spec.display_label}: no command for this platform.")
-    # Each write to stdout/stderr re-says the rung: the one real sign of life a command gives, so a
-    # long quiet install is told apart from a hung one by the row's own last update. ``fresh``: an
-    # installer runs in a process of its own with a closed stdin even when the checks share one
-    # shell -- one that asks a question must fail, never read the next command.
-    said = await shell(
-        command,
-        timeout_seconds=spec.exe_data.timeout(),
-        workdir=workdir,
-        extra_env=env or {},
-        platform=platform,
-        on_output=lambda: say(f"{spec.display_label}: {spec.subkind}"),
-        fresh=True,
-    )
+    running = f"{spec.display_label}: {spec.subkind}"
+    command_pid: dict[str, int] = {}
+    async with _permission_prompt_watch(spec.display_label, platform, say, running, command_pid) as report:
+        async with _install_progress(lambda: report(running)) as temp_env:
+            # Each write to stdout/stderr re-says the rung: the one real sign of life a command gives, so a
+            # long quiet install is told apart from a hung one by the row's own last update. A silent one
+            # shows life by what it writes into its private temp folder (see `_install_progress`).
+            # ``fresh``: an installer runs in a process of its own with a closed stdin even when the checks
+            # share one shell -- one that asks a question must fail, never read the next command.
+            said = await shell(
+                command,
+                timeout_seconds=spec.exe_data.timeout(),
+                workdir=workdir,
+                extra_env={**temp_env, **(env or {})},
+                platform=platform,
+                on_output=lambda: report(running),
+                on_spawn=lambda pid: command_pid.update(pid=pid),
+                fresh=True,
+            )
     return said.model_copy(update={"value": value_from_stdout(said.stdout)})
+
+
+#: How often a Windows call checks for an open permission prompt or installer window.
+_PERMISSION_PROMPT_POLL_SECONDS = 2.0
+
+#: How often a running call's private temp folder is looked at for growth.
+_PROGRESS_POLL_SECONDS = 5.0
+
+
+def _folder_bytes(folder: str) -> int:
+    """Bytes under *folder*. A file that vanishes mid-scan (an installer cleaning up) counts as 0."""
+    total = 0
+    stack = [folder]
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as entries:
+                for entry in entries:
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(entry.path)
+                        else:
+                            total += entry.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return total
+
+
+@asynccontextmanager
+async def _install_progress(on_progress: Callable[[], None]) -> AsyncIterator[dict]:
+    """A private temp folder for one command, and a sign of life whenever it grows.
+
+    A silent install (winget, an MSI) prints nothing for minutes, yet it is busy downloading and
+    unpacking — into the temp folder. Handing the command its OWN folder (``TEMP`` / ``TMP`` /
+    ``TMPDIR``) makes that growth the one place to look: no guessing which folders an installer
+    uses, and nothing outside the person's own temp folder that could be unreadable to them.
+    Growth calls ``on_progress`` (which re-says the rung, as output does); silence says nothing, so
+    a hung command still reads as stuck. Yields the environment that points the command at it.
+
+    Never fails the call: when the folder cannot be made the command runs with the machine's own
+    temp folder, unwatched.
+    """
+    try:
+        folder = tempfile.mkdtemp(prefix="flowpad-op-")
+    except OSError:
+        yield {}
+        return
+
+    async def watch() -> None:
+        last = 0
+        while True:
+            await asyncio.sleep(_PROGRESS_POLL_SECONDS)
+            size = await asyncio.to_thread(_folder_bytes, folder)
+            if size != last:
+                last = size
+                on_progress()
+
+    watcher = asyncio.create_task(watch())
+    try:
+        yield {"TEMP": folder, "TMP": folder, "TMPDIR": folder}
+    finally:
+        watcher.cancel()
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+@asynccontextmanager
+async def _permission_prompt_watch(
+    label: str,
+    platform: str,
+    say: Callable[[str], None],
+    running: str,
+    command_pid: Optional[dict] = None,
+) -> AsyncIterator[Callable[[str], None]]:
+    """While a Windows call runs, say "waiting for you" for as long as it needs the person.
+
+    Two things need them: a permission prompt (UAC), and a window the command itself opened — an
+    installer asking something. Both leave the installer blocked and silent, which looks exactly like
+    a hang. ``command_pid`` (filled by the caller once the command exists) names the command whose
+    windows count; without it only a permission prompt is looked for.
+
+    Yields the call's own reporter: what the call says passes through, except while the person is
+    needed — then the row keeps saying so, and goes back to the call's latest line once they have
+    answered. Off Windows it is ``say`` itself and nothing is watched.
+    """
+    if (platform or sys.platform) != "win32":
+        yield say
+        return
+    state: dict = {"cause": None, "last": running}
+    waiting = {
+        "prompt": f"{label}: waiting for you — approve the Windows permission prompt…",
+        "window": f"{label}: waiting for you — a window opened by the installer needs your answer (look for it in the taskbar)…",
+    }
+
+    def report(text: str) -> None:
+        if text:
+            state["last"] = text
+        if state["cause"]:
+            say(waiting[state["cause"]])
+        elif text:
+            say(text)
+
+    async def watch() -> None:
+        while True:
+            cause = None
+            if await asyncio.to_thread(_permission_prompt_open):
+                cause = "prompt"
+            elif command_pid and await asyncio.to_thread(_command_window_open, command_pid.get("pid")):
+                cause = "window"
+            if cause != state["cause"]:
+                state["cause"] = cause
+                say(waiting[cause] if cause else state["last"])
+            await asyncio.sleep(_PERMISSION_PROMPT_POLL_SECONDS)
+
+    watcher = asyncio.create_task(watch())
+    try:
+        yield report
+    finally:
+        watcher.cancel()
+
+
+def _permission_prompt_open() -> bool:
+    """Whether a Windows permission prompt (UAC, drawn by ``consent.exe``) is open.
+
+    A machine-wide installer blocks on it and prints nothing — the same silence as a hang — so
+    while it is open the row says the person has to act ("waiting for you"), not that the step
+    may be stuck. Any prompt counts: during a setup run it is almost always the install's own.
+    """
+    import psutil  # noqa: PLC0415
+
+    try:
+        return any((p.info.get("name") or "").lower() == "consent.exe" for p in psutil.process_iter(["name"]))
+    except Exception:  # noqa: BLE001 — a failed probe is "no prompt", never a failed install
+        return False
+
+
+#: Window classes that are a console, not something a person answers.
+_CONSOLE_WINDOW_CLASSES = frozenset({"ConsoleWindowClass", "CASCADIA_HOSTING_WINDOW_CLASS"})
+
+
+def _command_window_open(pid: Optional[int]) -> bool:
+    """Whether the command *pid*, or anything it started, has a window on screen that has a title.
+
+    Only the command's own windows: an unrelated program's window is nothing this step waits for.
+    The command's own console is not one either. Windows only; anything unexpected is "no window".
+    """
+    if sys.platform != "win32" or not pid:
+        return False
+    try:
+        import ctypes  # noqa: PLC0415
+        from ctypes import wintypes  # noqa: PLC0415
+
+        import psutil  # noqa: PLC0415
+
+        tree = {pid, *(child.pid for child in psutil.Process(pid).children(recursive=True))}
+        user32 = ctypes.windll.user32  # type: ignore[attr-defined]
+        found: list[int] = []
+
+        @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)  # type: ignore[attr-defined]
+        def visit(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            owner = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if owner.value not in tree or user32.GetWindowTextLengthW(hwnd) == 0:
+                return True
+            window_class = ctypes.create_unicode_buffer(256)
+            user32.GetClassNameW(hwnd, window_class, 256)
+            if window_class.value in _CONSOLE_WINDOW_CLASSES:
+                return True
+            found.append(hwnd)
+            return False
+
+        user32.EnumWindows(visit, 0)
+        return bool(found)
+    except Exception:  # noqa: BLE001 — a failed probe is "no window", never a failed install
+        return False
 
 
 async def _ask(
@@ -676,17 +889,19 @@ async def _agent(
     prompt = spec.exe_data.prompt if executor else _prompt_for(spec, platform=platform, workdir=workdir)
     if spec.output_spec_kind is not None:
         prompt += result_contract(path, VALUE_KEY, fields_of_kind(spec.output_spec_kind))
-    said = await launch(
-        agent=spec.exe_data.agent,
-        prompt=prompt,
-        name=spec.display_label,
-        workdir=workdir,
-        context_data={"compute_op": spec.name},
-        target_typeid_str=subject,
-        timeout_seconds=spec.exe_data.timeout(),
-        on_status=lambda progress: say(getattr(progress, "text", "") or ""),
-        executor=executor,
-    )
+    # An agent that runs a machine-wide installer blocks on the same permission prompt a command does.
+    async with _permission_prompt_watch(spec.display_label, platform, say, f"{spec.display_label}: agent") as report:
+        said = await launch(
+            agent=spec.exe_data.agent,
+            prompt=prompt,
+            name=spec.display_label,
+            workdir=workdir,
+            context_data={"compute_op": spec.name},
+            target_typeid_str=subject,
+            timeout_seconds=spec.exe_data.timeout(),
+            on_status=lambda progress: report(getattr(progress, "text", "") or ""),
+            executor=executor,
+        )
     if spec.output_spec_kind is None or not said.ok:
         return said
     receipt = read_step_result(path, output=VALUE_KEY)
