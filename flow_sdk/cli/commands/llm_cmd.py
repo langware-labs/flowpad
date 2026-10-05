@@ -870,9 +870,9 @@ def _steer_open_app(port: int) -> bool:
     an explicit "take me there". This IS that: the user just typed a command whose entire
     purpose is to be taken to the chooser.
 
-    Never fatal. Every failure -- no tab (``NO_ACTIVE_TAB``), an older server with no such
-    route, a refusal -- means the same thing to this caller: nobody is listening, open a
-    browser. ``_op``/``_call`` answer refusals by EXITING, which is right for a user-invoked
+    Never fatal. Every failure -- no tab (a ``NavigateResult`` that is not delivered), an older
+    server with no such route, a refusal -- means the same thing to this caller: nobody is
+    listening, open a browser. ``_op``/``_call`` answer refusals by EXITING, which is right for a user-invoked
     action and wrong for a question we asked on our own initiative.
     """
     try:
@@ -881,7 +881,8 @@ def _steer_open_app(port: int) -> bool:
             json={"view": _CHOOSER_PATH.rsplit("/", 1)[-1]},
             timeout=5,
         )
-        if resp.status_code == 200 and (resp.json() or {}).get("ok"):
+        answer = (resp.json() or {}).get("data") or {} if resp.status_code == 200 else {}
+        if answer.get("delivered"):
             typer.echo("Opened the LLM setup in Flowpad.", err=True)
             return True
     except Exception:  # noqa: BLE001 -- any failure means "nobody is listening"

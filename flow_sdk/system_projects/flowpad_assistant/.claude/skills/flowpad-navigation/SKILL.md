@@ -50,7 +50,7 @@ indexing needed:
 flow show file <absolute-path>
 ```
 
-Exit 0 = shown, done.
+Exit 0 = shown, done. Exit 1 with `verdict: not_running` = shown, but its server is down — start it, then show it again.
 
 "Navigate to it" / "take me to it" → the file needs an entity first. Two commands,
 no research:
@@ -246,16 +246,18 @@ Do not invent a TypeId and do not ask the user — that is what those actions ar
 
 ## Exit codes
 
-On success the CLI prints one JSON line to stdout and exits 0:
+`flow show` and `flow navigate` print one JSON line to stdout — the answer, with
+`exit_code`, `verdict` and `detail` — and exit with that `exit_code`:
 
 ```json
-{"ok": true, "connection_id": "...", "type": "...", "id": "..."}
+{"ok": false, "exit_code": 1, "verdict": "not_running", "detail": "Nothing is answering at localhost:3000.", "delivered": true}
 ```
 
 | Exit | Meaning |
 | ---- | ------- |
-| `0`  | Done. Stop — no verification, no summary. |
+| `0`  | Shown, and it can be used. Stop — no verification, no summary. |
+| `1`  | Not yet. `verdict` says why: `no_browser` — no Flowpad tab is open (`flow navigate`); tell the user to open Flowpad. `not_running` / `hung` / `server_error` — it IS shown, but the server behind it is down or failing: start or fix it, then show it again. |
 | `2`  | Bad argument (invalid TypeId, unknown view, or a view missing its pointer). Fix the argument. |
-| `3`  | No active browser tab (`flow navigate` only). Tell the user to open Flowpad. |
-| `4`  | Entity or pointer not found — well-formed but does not exist. Tell the user. |
+| `4`  | Not found — the entity, file or pointer does not exist here. Tell the user. |
 | `5`  | Cannot reach the Flowpad server. Tell the user the server is down. |
+| `7`  | Refused — the page does not allow being shown inside Flowpad. Offer to open it in the browser. |
