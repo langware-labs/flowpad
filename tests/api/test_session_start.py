@@ -67,7 +67,7 @@ async def test_the_button_opens_a_pending_session_and_asks_the_host(bootstrapped
     session = await RemoteWorkerSession.get_one({"id": data["id"]})
     assert session.status == S.PENDING.value
     assert session.host_user_id == "host-remote" and session.host_name == "Nir Levy"
-    line = await FlowMessage.get_one({"id": session.starting_message_id})
+    [line] = [m for m in await FlowMessage.get_all({"conversation_id": conv_id}) if m.kind == "session_event"]
     assert line.kind == FlowMessageKind.SESSION_EVENT.value
     assert line.text.endswith("asks Nir Levy for a live session")  # reads right on both sides
     assert line.remote_worker_session_id == session.id
