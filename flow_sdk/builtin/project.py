@@ -35,6 +35,7 @@ from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
+from flow_sdk.core.urls.service_urls import build_hub_url
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
 from flow_sdk.fs_store.origin.field import as_project_origin
@@ -288,9 +289,7 @@ def _merge_share_people(people: list[_SharePerson]) -> list[_SharePerson]:
     by_user_id: dict[str, _SharePerson] = {}
     by_email: dict[str, _SharePerson] = {}
     for person in people:
-        found = (person.user_id and by_user_id.get(person.user_id)) or (
-            person.email and by_email.get(person.email)
-        )
+        found = (person.user_id and by_user_id.get(person.user_id)) or (person.email and by_email.get(person.email))
         if not found:
             found = _SharePerson(**person.identity(), role=person.role)
             merged.append(found)
@@ -327,9 +326,7 @@ def _invite_credentials(invitees: Optional[List["ShareInvitee"]]):
 
     for inv in invitees or []:
         if inv.role is not None and inv.role not in PROJECT_INVITE_ROLES:
-            raise ProjectInviteRoleError(
-                f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.role!r}"
-            )
+            raise ProjectInviteRoleError(f"Project invite role must be one of {PROJECT_INVITE_ROLES}, got {inv.role!r}")
     creds = load_credentials()
     if not creds or not creds.api_key:
         raise RuntimeError("Cloud login required")
@@ -1030,7 +1027,11 @@ class Project(Entity):
         matches = await cls.get_all(
             QueryFilter(match=ExpressionNode(op=QueryOp.EQ, operands=["fs_storage_mount_path", canonical]))
         )
-        return [p for p in matches if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)]
+        return [
+            p
+            for p in matches
+            if p.fs_storage_mount_path and is_valid_project_cwd(p.fs_storage_mount_path, include_temp=True)
+        ]
 
     async def find_existing_for_create(self) -> "Project | None":
         """A folder is one project: a create for an owned mount resolves to its owner.
@@ -1283,7 +1284,6 @@ class Project(Entity):
         "not yours", so this reports only what is certain — publishing from here
         cannot work — and does not diagnose which.
         """
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         try:
             await client.get(build_hub_url(self))
@@ -1333,7 +1333,6 @@ class Project(Entity):
         """
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
         from flow_sdk.core.entity.parent_share import parent_share_typeid  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         creds = _invite_credentials(invitees)
 
@@ -1343,7 +1342,7 @@ class Project(Entity):
         if self.fs_storage_mount_path:
             origin = await asyncio.to_thread(GitOrigin.for_asset_path, self.fs_storage_mount_path)
             if origin is not None:
-                self.origin = origin   # SHARED: the body carries it under its hub name
+                self.origin = origin  # SHARED: the body carries it under its hub name
         body = self._hub_body()
         shared_context_origins = await self._shared_context_origin_payload()
         invalid_shared_folders = [
@@ -1542,9 +1541,7 @@ class Project(Entity):
         skipped: list[ShareSkippedSpec] = []
         to_send: list[_SharePerson] = []
         for person in people:
-            if (sharer_id and person.user_id == sharer_id) or (
-                sharer_email and person.email == sharer_email
-            ):
+            if (sharer_id and person.user_id == sharer_id) or (sharer_email and person.email == sharer_email):
                 skipped.append(ShareSkippedSpec(**person.identity(), reason="self"))
                 continue
             status = roster.get(person.user_id or "") or roster.get(person.email or "")
@@ -1594,7 +1591,7 @@ class Project(Entity):
                 if note and note.strip():
                     request["message"] = note.strip()
                 try:
-                    await client.post(f"/graph/project/{self.id}/members", request)
+                    await client.post(build_hub_url(self, action="members"), request)
                 except ValueError as exc:  # any non-200 (``FlowpadClient._unwrap``)
                     return ShareFailedSpec(**person.identity(), status=_hub_status_of(exc), message=str(exc))
                 conversation_id = await self._invite_conversation(
@@ -1603,18 +1600,23 @@ class Project(Entity):
                 return ShareInvitedSpec(**person.identity(), conversation_id=conversation_id)
 
         async def grant_team(team_ref: str):
+            # The hub emails each person in the team the same invite a person gets,
+            # so the link and note ride on the project grant, as in ``send_person``.
+            request = {
+                "principal": team_ref,
+                "invitation_targets": [{"typeid": project_ref, "role": PROJECT_DEFAULT_INVITE_ROLE}],
+                "callback_override": project_share_landing_path(self.id),
+            }
+            if note and note.strip():
+                request["message"] = note.strip()
             try:
-                await client.post(
-                    f"/graph/project/{self.id}/members",
-                    {
-                        "principal": team_ref,
-                        "invitation_targets": [{"typeid": project_ref, "role": PROJECT_DEFAULT_INVITE_ROLE}],
-                    },
-                )
+                await client.post(build_hub_url(self, action="members"), request)
             except ValueError as exc:
                 return ShareFailedTeamSpec(team=team_ref, status=_hub_status_of(exc), message=str(exc))
             # The grant landed; the conversation only delivers the invite message.
-            conversation_id = await self._invite_conversation(client, project_name, message_text, principals=[team_ref])
+            conversation_id = await self._invite_conversation(
+                client, project_name, message_text, notify_by_email=False, principals=[team_ref]
+            )
             return ShareGrantedTeamSpec(team=team_ref, conversation_id=conversation_id)
 
         person_outcomes = await asyncio.gather(*(send_person(p) for p in to_send))
@@ -1649,7 +1651,11 @@ class Project(Entity):
 
         local = await User.get_local()
         someone_typeid = str(local.typeid) if local else None
-        conversation = Conversation.model_validate({"title": title, "status": "open"})
+        # The sharer is on the roster from the first save: the row reaches the inbox
+        # seconds before the hub roster or the invite message, and with neither it
+        # read "Unknown". The hub never receives this list (``_hub_body`` drops it).
+        sharer = await User.current_sender_participant()
+        conversation = Conversation.model_validate({"title": title, "status": "open", "members": [sharer]})
         conversation.id = Conversation.allocate_id(conversation.model_dump())
         try:
             await conversation.save(someone_typeid)
@@ -1686,7 +1692,7 @@ class Project(Entity):
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
 
         try:
-            rows = await client.get(f"/graph/project/{self.id}/members")
+            rows = await client.get(build_hub_url(self, action="members"))
         except Exception:  # noqa: BLE001 — degrade to the old invite-everyone path
             logging.warning("[project.share] roster read failed for %s; inviting all", self.id)
             return {}, {}
@@ -2089,12 +2095,16 @@ class Project(Entity):
         want_assets = browsing is None or browsing.assets
         sources, _seen = collect_base_source_dirs(self)
 
-        catalog = await scan_path_asset_descriptors(
-            sources,
-            own_project_id=str(self.id),
-            types=requested,
-            limit=limit,
-        ) if want_assets else None
+        catalog = (
+            await scan_path_asset_descriptors(
+                sources,
+                own_project_id=str(self.id),
+                types=requested,
+                limit=limit,
+            )
+            if want_assets
+            else None
+        )
 
         descriptors = catalog.assets if catalog else []
         descriptors = await hydrate_asset_descriptor_remote(descriptors)
@@ -2240,13 +2250,15 @@ class Project(Entity):
 
         # Names are stored as typed; LIKE (case-insensitive) with the separators widened
         # to "%" narrows to the candidates, and the key decides.
-        candidates = await type(self).get_all(QueryFilter(
-            match=ExpressionNode(op=QueryOp.LIKE, operands=["name", key.replace("-", "%")])))
+        candidates = await type(self).get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["name", key.replace("-", "%")]))
+        )
         for other in candidates:
             if str(other.id) != str(self.id) and other._visible() and project_name_key(other.name) == key:
                 raise DuplicateProjectNameError(
                     f"a project named {other.name!r} already exists ({other.fs_storage_mount_path}); "
-                    "project names must be unique")
+                    "project names must be unique"
+                )
 
     # -- Git-reference reception (``TypeInfo.receive_transfer``): an invite
     # message carries the project as its row + GitOrigin; installing it clones.
@@ -2364,16 +2376,18 @@ class Project(Entity):
                 if _counts(owner):
                     raise NestedProjectError(
                         f"{mount} is inside project {owner.name!r} ({owner.fs_storage_mount_path}); "
-                        "projects do not nest")
+                        "projects do not nest"
+                    )
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
 
-        below = await type(self).get_all(QueryFilter(
-            match=ExpressionNode(op=QueryOp.LIKE, operands=["fs_storage_mount_path", f"{mount}/%"])))
+        below = await type(self).get_all(
+            QueryFilter(match=ExpressionNode(op=QueryOp.LIKE, operands=["fs_storage_mount_path", f"{mount}/%"]))
+        )
         for inner in below:
             if (inner.fs_storage_mount_path or "").startswith(f"{mount}/") and _counts(inner):
                 raise NestedProjectError(
-                    f"{mount} contains project {inner.name!r} ({inner.fs_storage_mount_path}); "
-                    "projects do not nest")
+                    f"{mount} contains project {inner.name!r} ({inner.fs_storage_mount_path}); projects do not nest"
+                )
 
     async def _warn_if_mount_owned_elsewhere(self) -> None:
         """Log (never raise) when a brand-new project lands on a folder another
@@ -3222,7 +3236,11 @@ class Project(Entity):
         return ApiSuccessResponse(data={"ok": updated, "presence": self.presence})
 
     async def _delete_with_children(
-        self, *, folder: str = "rmtree", delete_chats: bool = True, harness_index: "HarnessIndex | None" = None,
+        self,
+        *,
+        folder: str = "rmtree",
+        delete_chats: bool = True,
+        harness_index: "HarnessIndex | None" = None,
     ) -> dict:
         """Permanently delete this project and everything that belongs to it.
 
@@ -3347,7 +3365,9 @@ class Project(Entity):
         if delete_chats and self.fs_storage_mount_path:
             index = harness_index or await asyncio.to_thread(HarnessIndex.build)
             chat_cleanup = await asyncio.to_thread(
-                clear_harness_state, {"cwd": self.fs_storage_mount_path}, index,
+                clear_harness_state,
+                {"cwd": self.fs_storage_mount_path},
+                index,
             )
 
         # 2. Destroy each child record.
