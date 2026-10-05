@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { ConversationParticipant, normalizeEmail, Task, TaskKind, type TaskAssignOptions, TypeId } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
+import { errorMessage } from '@src/lib/error-message';
 import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
@@ -70,6 +71,9 @@ export function VibeAssignTaskDialog({
   const [attachTranscript, setAttachTranscript] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The task an earlier Assign of THIS dialog created. A retry continues with it instead of
+  // creating a second one — which would also collide on the title (a 409).
+  const created = useRef<Task | null>(null);
   // Screenshots / files for the task — pasted (through the annotator), picked
   // with "+", or dropped. They are stored IN the task's folder, so the
   // assignment's .flowmsg carries them.
@@ -121,20 +125,27 @@ export function VibeAssignTaskDialog({
       // /api/v1/graph/project/<project_id>/task instead". Scoping the save is
       // the same shape `useClaudeErrorRecords` already uses.
       // `kind: vibe` is what the button lists: this project's open help tasks, opened here.
-      const task = await new Task({
-        title: title.trim(),
-        description: notes.trim() || undefined,
-        kind: TaskKind.VIBE,
-      }).save(projectId ? [new TypeId('project', projectId)] : []);
+      // A title already taken in this project (asked before, or a task of that name) gets the
+      // next free one ("… (2)").
+      const task =
+        created.current ??
+        (created.current = await Task.createWithFreeTitle(
+          { title: title.trim(), description: notes.trim() || undefined, kind: TaskKind.VIBE },
+          projectId ? [new TypeId('project', projectId)] : [],
+        ));
 
       // Before assign: the assignment packs the task folder, so the files must
-      // already be in it — and no field save may follow the assign.
+      // already be in it — and no field save may follow the assign. Files a
+      // failed earlier Assign already put there are skipped.
       if (picker.files.length) {
         const failed: string[] = [];
-        const entries = await uploadFilesToTask(task.typeId, picker.files, [], (f) => failed.push(f.name));
+        const existing = task.artifacts ?? [];
+        const entries = await uploadFilesToTask(task.typeId, picker.files, existing, (f) => failed.push(f.name));
         if (failed.length) throw new Error(t`Could not attach: ${failed.join(', ')}`);
-        task.artifacts = entries;
-        await task.save();
+        if (entries.length) {
+          task.artifacts = [...existing, ...entries];
+          await task.save();
+        }
       }
 
       // The notification message must stand on its own: the title IS the issue,
@@ -155,7 +166,7 @@ export function VibeAssignTaskDialog({
       onAssigned?.(task.id);
       onOpenChange(false);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e, t`Could not assign the task.`));
     } finally {
       setBusy(false);
     }
