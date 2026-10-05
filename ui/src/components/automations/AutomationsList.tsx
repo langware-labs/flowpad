@@ -112,6 +112,39 @@ export function AutomationsList() {
 
   const empty = !isLoading && yours.length === 0;
 
+  // Flowpad's own, folded into one line — shown whether or not you have any yet.
+  const builtinSection =
+    groups.builtin.length > 0 ? (
+      <section data-testid="automations-group-builtin" className="border-t border-border">
+        <button
+          type="button"
+          onClick={() => setShowBuiltin((s) => !s)}
+          data-testid="automations-builtin-toggle"
+          className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs text-muted-foreground hover:bg-accent/40"
+          aria-expanded={showBuiltin}
+        >
+          {showBuiltin ? (
+            <ChevronDown className="size-3.5" aria-hidden />
+          ) : (
+            <ChevronRight className="size-3.5" aria-hidden />
+          )}
+          <span className="font-medium text-foreground">
+            <Trans>Built into Flowpad</Trans>
+          </span>
+          <span>{groups.builtin.length}</span>
+          <span
+            className={cn(
+              'ml-auto',
+              builtinFailing.length && 'rounded border border-red-500/60 bg-red-500/10 px-1.5 text-foreground',
+            )}
+          >
+            {builtinFailing.length ? <Trans>{builtinFailing[0].name} failed</Trans> : <Trans>All healthy</Trans>}
+          </span>
+        </button>
+        {showBuiltin && rows(groups.builtin)}
+      </section>
+    ) : null;
+
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="automations-list">
       <header className="flex flex-wrap items-center justify-between gap-3 px-6 pb-3 pt-6">
@@ -160,6 +193,7 @@ export function AutomationsList() {
           <div className="mx-auto max-w-3xl">
             <IfThenGraphic />
             <KindGallery onPick={(k, r) => create(k, r)} />
+            {builtinSection && <div className="overflow-hidden rounded-lg border border-border">{builtinSection}</div>}
           </div>
         ) : (
           <>
@@ -193,41 +227,7 @@ export function AutomationsList() {
               {group('project', t`This project`, groups.project)}
               {group('mine', t`Mine, everywhere`, groups.mine)}
               {group('other', t`Other projects`, groups.otherProjects)}
-              {groups.builtin.length > 0 && (
-                <section data-testid="automations-group-builtin" className="border-t border-border">
-                  <button
-                    type="button"
-                    onClick={() => setShowBuiltin((s) => !s)}
-                    data-testid="automations-builtin-toggle"
-                    className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-xs text-muted-foreground hover:bg-accent/40"
-                    aria-expanded={showBuiltin}
-                  >
-                    {showBuiltin ? (
-                      <ChevronDown className="size-3.5" aria-hidden />
-                    ) : (
-                      <ChevronRight className="size-3.5" aria-hidden />
-                    )}
-                    <span className="font-medium text-foreground">
-                      <Trans>Built into Flowpad</Trans>
-                    </span>
-                    <span>{groups.builtin.length}</span>
-                    <span
-                      className={cn(
-                        'ml-auto',
-                        builtinFailing.length &&
-                          'rounded border border-red-500/60 bg-red-500/10 px-1.5 text-foreground',
-                      )}
-                    >
-                      {builtinFailing.length ? (
-                        <Trans>{builtinFailing[0].name} failed</Trans>
-                      ) : (
-                        <Trans>All healthy</Trans>
-                      )}
-                    </span>
-                  </button>
-                  {showBuiltin && rows(groups.builtin)}
-                </section>
-              )}
+              {builtinSection}
             </div>
             {visible.length === 0 && (
               <p className="px-4 py-6 text-sm text-muted-foreground">
