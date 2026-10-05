@@ -93,6 +93,9 @@ Navigate = Callable[..., Awaitable[NavigateResult]]
 
 #: The wizard input a target-less ``navigate`` op opens (``input_env``'s name for ``pointer``).
 POINTER_INPUT_ENV = "FLOWPAD_WIZARD_INPUT_POINTER"
+#: The session whose display a ``navigate`` op shows its place in, when a wizard says so
+#: (``input_env``'s name for ``display``) — a wizard step's own subject is the wizard's.
+DISPLAY_INPUT_ENV = "FLOWPAD_WIZARD_INPUT_DISPLAY"
 
 
 async def navigate_for_subject(target: DockPointerSpec, *, subject: str = "", show: bool = True) -> NavigateResult:
@@ -214,7 +217,7 @@ async def run_op(
     ask_timeout: Optional[float] = None,
     shell: Optional[Shell] = None,
     launch: Launch = launch_step_process,
-    navigate: Navigate = navigate_for_subject,
+    navigate: Optional[Navigate] = None,
     on_status: Optional[Callable[[str], None]] = None,
     wizard_id: str = "",
     #: Report the goal's current state and stop — never ask, never run a
@@ -240,7 +243,9 @@ async def run_op(
                 workdir=workdir, platform=platform, env=env, subject=subject, ask_timeout=ask_timeout,
                 shell=shell, launch=launch, say=say, wizard_id=wizard_id,
             )
-            return await _run_navigate(spec, seams=seams, navigate=navigate, check_only=check_only)
+            return await _run_navigate(
+                spec, seams=seams, navigate=navigate or navigate_for_subject, check_only=check_only
+            )
 
         say(f"checking {spec.display_label}")
         before = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
@@ -351,8 +356,10 @@ async def _run_navigate(
     if isinstance(target, NavigateResult):
         return target
 
+    shown_in = (seams.env or {}).get(DISPLAY_INPUT_ENV) or seams.subject
+
     async def go() -> NavigateResult:
-        return await navigate(target, subject=seams.subject, show=not check_only)
+        return await navigate(target, subject=shown_in, show=not check_only)
 
     seams.say(f"{label}: navigate")
     answer = await go()
@@ -360,7 +367,9 @@ async def _run_navigate(
         return answer
     history = [f"navigate: {answer.detail or answer.verdict}"]
     for rung in spec.attempts:
-        if answer.exit_code is not ExitCode.NOT_YET:
+        # Only a target that is not usable is a repair's business. Nothing delivered
+        # (no browser open: ``ran`` False) is not something an agent can fix.
+        if answer.exit_code is not ExitCode.NOT_YET or not answer.ran:
             break
         seams.say(f"{label}: {rung.subkind}")
         rung_exe = rung.exe_data
