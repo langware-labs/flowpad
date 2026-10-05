@@ -1,3 +1,4 @@
+import { lazyAssets, LazyAsset } from '@sdk/lazy';
 import { usePrimaryContentReady } from '@sdk/react/primary-content';
 import { i18n } from '@lingui/core';
 import type { MessageDescriptor } from '@lingui/core';
@@ -655,6 +656,7 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
       setValue('');
       setValidity((v) => ({ ...v, [provider]: { valid: res.valid, message: res.message } }));
       await refreshKeys();
+      void lazyAssets.invalidate(LazyAsset.LlmFunding);
       if (res.valid) notify.success({ title: t`Key saved & valid`, message: providerLabel(provider) });
       else notify.error({ title: t`Key saved but invalid`, message: res.message ?? providerLabel(provider) });
     } catch (error) {
@@ -680,6 +682,7 @@ function LlmKeysSection({ keys, refreshKeys }: { keys: LmApiKeySummary[]; refres
     await lmKeysService.deleteLmApi(p as LMApiProvider);
     setValidity((v) => ({ ...v, [p]: undefined }));
     await refreshKeys();
+    void lazyAssets.invalidate(LazyAsset.LlmFunding);
   };
 
   return (
