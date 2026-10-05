@@ -3427,9 +3427,17 @@ msgstr "Browse"
 msgid "Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <0>index.md</0> files over a docs root."
 msgstr "Browse and run LLM-generated folder indexes (MarkdownIndex entities). Each indexer (re)builds a Merkle tree of <0>index.md</0> files over a docs root."
 
+#: src/components/automations/AutomationRow.tsx
+msgid "Browse folder"
+msgstr "Browse folder"
+
 #: src/pages/hub-home/NewSandboxDialog.tsx
 msgid "Browse GitHub"
 msgstr "Browse GitHub"
+
+#: src/components/automations/AutomationPage.tsx
+msgid "Browse the watched folder"
+msgstr "Browse the watched folder"
 
 #: src/components/terminal/interactive-terminal/side-windows/SideWindowTypes.ts
 msgid "Browse the working directory"
@@ -15792,6 +15800,10 @@ msgstr ""
 msgid "Open externally: {childPath}"
 msgstr "Open externally: {childPath}"
 
+#: src/components/automations/AutomationRow.tsx
+msgid "Open file"
+msgstr "Open file"
+
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Open Flowpad Cloud"
 msgstr "Open Flowpad Cloud"
@@ -15947,6 +15959,10 @@ msgstr "Open it"
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Open it now"
 msgstr "Open it now"
+
+#: src/components/automations/AutomationRow.tsx
+msgid "Open its definition (trigger.json)"
+msgstr "Open its definition (trigger.json)"
 
 #: src/components/browseable-tree/adapters/markdownFolderRoot.tsx
 msgid "Open knowledge browser"
@@ -16185,6 +16201,10 @@ msgstr "Open the spec/plan in the Milkdown editor"
 msgid "Open the transcript analysis session"
 msgstr "Open the transcript analysis session"
 
+#: src/components/automations/AutomationPage.tsx
+msgid "Open the watched file"
+msgstr "Open the watched file"
+
 #: src/components/conversation/attachment-actions/registry.ts
 msgid "Open the worker session already started for this spec/plan in this conversation"
 msgstr "Open the worker session already started for this spec/plan in this conversation"
@@ -16192,6 +16212,10 @@ msgstr "Open the worker session already started for this spec/plan in this conve
 #: src/components/lens-viewer/shared/transcript-features/OperationRow.tsx
 msgid "Open this agent's transcript"
 msgstr "Open this agent's transcript"
+
+#: src/components/automations/AutomationRow.tsx
+msgid "Open this automation"
+msgstr "Open this automation"
 
 #: src/components/llm-sources/LlmSourcesView.tsx
 msgid "Open this endpoint on the hub"
@@ -16220,6 +16244,10 @@ msgstr "Open transcript"
 #: src/components/assets/editor/wizard/WizardForm.tsx
 msgid "Open trigger"
 msgstr "Open trigger"
+
+#: src/components/automations/AutomationPage.tsx
+msgid "Open trigger.json"
+msgstr "Open trigger.json"
 
 #: src/pages/entry/ProjectShareLanding.tsx
 msgid "Open with your favorite coding agent"
@@ -21457,6 +21485,10 @@ msgstr "Small"
 #: src/i18n/pref-labels.ts
 msgid "Smart navigation log"
 msgstr "Smart navigation log"
+
+#: src/components/account/logs-section.tsx
+msgid "Smart Navigation Log"
+msgstr "Smart Navigation Log"
 
 #: src/navigation/smart-ask.ts
 msgid "Smart navigation requires sign-in"
