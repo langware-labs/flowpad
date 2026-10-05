@@ -706,8 +706,10 @@ function WizardViewerBody({
             <Button onClick={() => void startWizard()} data-testid="wizard-restart">
               {wizard.restart_label ? bt(wizard.restart_label) : <Trans>Restart</Trans>}
             </Button>
-            <Button variant="ghost" onClick={goHome} data-testid="wizard-go-home">
-              <Trans>Go to homepage</Trans>
+            {/* Leaves setup unfinished on purpose: the footer keeps a warning with the same "run it
+                again" button, so a skip is never the end of the road. */}
+            <Button variant="ghost" onClick={goHome} data-testid="wizard-skip">
+              <Trans>Skip</Trans>
             </Button>
           </div>
         </section>
