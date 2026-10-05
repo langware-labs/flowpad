@@ -1176,19 +1176,20 @@ async def _standing_grant(conv: "Conversation", host_id: Optional[str], sender_i
 
 
 async def _approve_by_standing_grant(session: "RemoteWorkerSession", someone_typeid: str) -> bool:
-    """Approve on the standing grant — when the session has a place to run.
+    """Approve on the standing grant — the host said "always" for this guest.
 
-    A grant pre-approves the GUEST, not a place to run: with no folder chosen and
-    no project anywhere the session waits for the host to pick one (or a temp folder).
+    It runs where the conversation's project is; with no project anywhere it runs
+    in the instance's temp folder — the host's own "Run (Skip project)" — so a
+    remembered guest really starts without asking, even in a person-to-person chat.
     """
-    from flow_sdk.builtin.remote_worker_session import ApprovedVia  # noqa: PLC0415
+    from flow_sdk.builtin.remote_worker_session import ApprovedVia, scratch_workdir  # noqa: PLC0415
 
     if not session.workdir:
         project_id = await session.run_project_id()
         if project_id is None:
-            logger.info("[session] standing grant but nowhere to run session=%s → pending", session.id)
-            return False
-        session.project_id = project_id
+            session.workdir = str(scratch_workdir())
+        else:
+            session.project_id = project_id
     return await session.approve(via=ApprovedVia.STANDING_GRANT, someone_typeid=someone_typeid)
 
 

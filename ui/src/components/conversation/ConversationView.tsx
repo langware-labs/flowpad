@@ -873,7 +873,10 @@ export function ConversationView({
                     promptCount={item.promptCount}
                     replyCount={item.replyCount}
                     onOpen={() => openLiveSession(item.sessionId)}
-                    onApprove={role === 'host' && session ? () => approveSession(session) : undefined}
+                    onApprove={
+                      role === 'host' && session ? () => approveSession(session, { remember: 'everywhere' }) : undefined
+                    }
+                    onApproveOnce={role === 'host' && session ? () => approveSession(session) : undefined}
                     onDecline={role === 'host' && session ? () => session.decline() : undefined}
                     onDisconnect={role !== 'observer' && session ? () => session.disconnect() : undefined}
                     lastPromptFailed={!!failedPromptBySession.get(item.sessionId)}

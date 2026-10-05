@@ -189,3 +189,34 @@ async def test_a_session_in_another_folder_gets_its_own_process(bootstrapped_cli
     b = await ep._reuse_or_spawn_headless(target, "/tmp/scratch-b")
     assert a1.id == a2.id
     assert b.id != a1.id and b.workdir == "/tmp/scratch-b"
+
+
+async def test_approve_remembers_the_guest_who_then_starts_without_asking(bootstrapped_client, user):
+    """ "Approve" (not "Approve once") with "Run (Skip project)": an everywhere grant,
+    and the guest's next request in this project-less chat runs at once, in the
+    same temp folder — no host click."""
+    first_conv = await make_conversation(bootstrapped_client)
+    rws = await make_session(first_conv, S.PENDING.value, guest_user_id="guest-remembered")
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/remote_worker_session/{rws.id}/approve", json={"scratch": True, "remember": "everywhere"}
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    grants = await ContactPermission.get_all({"contact_user_id": "guest-remembered"})
+    try:
+        assert len(grants) == 1 and grants[0].project_id is None
+
+        conv = await Conversation.get_one({"id": first_conv})
+        conv.project_id = None  # a person-to-person chat: no project anywhere
+        await conv.save()
+        sid = str(uuid.uuid4())
+        fm = _inbound_request(first_conv, sid)
+        fm.sender_id = "guest-remembered"
+        await fm.save(notify=False)
+        await ep.process_session_request(fm.id, first_conv)
+
+        later = await RemoteWorkerSession.get_one({"id": sid})
+        assert later.status == S.IDLE.value and later.approved_via == "standing_grant"
+        assert later.workdir == str(scratch_workdir())
+    finally:
+        for g in await ContactPermission.get_all({"contact_user_id": "guest-remembered"}):
+            await g.delete()
