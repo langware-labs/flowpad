@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import shlex
+from pathlib import Path
 
 import pytest
 import typer
@@ -340,6 +341,27 @@ def test_user_use_posts_select_once_per_harness(recorder):
     assert [call[1] for call in posts] == ["/graph/compute_node/@local/llm-endpoint/select"] * 2
     assert [call[2]["harness"] for call in posts] == ["claude", "codex"]
     assert posts[0][2] == {"harness": "claude", "kind": "endpoint", "scope": "user", "endpoint_typeid": EP}
+
+
+def test_user_use_never_touches_the_machines_harness_configs(recorder, tmp_path, monkeypatch):
+    """The selection lives in THIS instance and funds the workers it spawns. ``~/.claude/settings.json``
+    and friends belong to the machine: every instance and every terminal reads them, and a live
+    ``claude`` re-reads its settings -- writing them from a test instance re-routed the user's own
+    sessions to that instance's endpoint. So even when a spec says where it would go, nothing lands."""
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    recorder.data = {
+        "harnesses": {
+            "claude": {"user": {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}}},
+            "codex": {"user": {"fmt": "block", "path": ".codex/config.toml", "lines": ["model = 'x'"]}},
+        }
+    }
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(llm_cmd, "_status", lambda project_id="": STATUS)
+        result = runner.invoke(app, ["llm", "user", "use", "1"])
+
+    assert result.exit_code == 0, result.output
+    assert list(tmp_path.rglob("*")) == []
+    assert not [call for call in recorder.calls if call[1].endswith("/binding")]
 
 
 def test_user_use_narrowed_to_one_harness_writes_once(recorder):

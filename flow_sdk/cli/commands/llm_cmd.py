@@ -82,7 +82,7 @@ llm_app = typer.Typer(
     help="List the LLM sources this box can spend, and choose which one funds your harnesses.",
     add_completion=False,
 )
-user_app = typer.Typer(name="user", help="Apply the choice to this box (same as the UI's Use button).")
+user_app = typer.Typer(name="user", help="Apply the choice to this instance's workers (same as the UI's Use button).")
 project_app = typer.Typer(name="project", help="Pin an endpoint for every worker in a project.")
 llm_app.add_typer(user_app, name="user")
 llm_app.add_typer(project_app, name="project")
@@ -587,7 +587,7 @@ def _use_box(
     ] = "",
 ) -> None:
     # `flow llm user set auto`: make sure the box HAS a source (opening the chooser if it has
-    # none), then apply that source box-wide -- the same write the picker's Use button makes.
+    # none), then select that source for this instance -- the same write the picker's Use button makes.
     # Falls through into the normal path with a concrete row, so there is one writer either way.
     if _is_auto(ref):
         ref = _resolve_or_choose(no_browser=no_browser).typeid
@@ -625,13 +625,12 @@ def _use_box(
             payload.update(name=row.name, public=True, hub_origin=row.public_hub)
         _op("select", payload)
         typer.echo(f"  {worker} -> {row.name}")
-    # ...and write it where each harness looks by DEFAULT, so a bare `claude` / `codex` /
-    # `opencode` in any terminal is funded too. The selection above is what OUR workers read;
-    # on a box whose only consumer is a person at a prompt it would otherwise fund nothing.
-    binding = _op("binding", {"endpoint_typeid": row.typeid, "harness": harness})
-    for worker in workers:
-        spec = ((binding.get("harnesses") or {}).get(worker) or {}).get("user") or {}
-        typer.echo(_write_user_config(worker, spec))
+    # The selection is the whole effect: it lives in THIS instance and funds the workers this
+    # instance spawns. Nothing is written where a harness looks by default (~/.claude/settings.json,
+    # ~/.codex/config.toml, the shell profile, opencode.json) -- those files belong to the machine,
+    # every instance and every terminal reads them, and a running `claude` re-reads its settings
+    # live. Writing them from a test instance re-routed the user's own sessions to that instance's
+    # endpoint (2026-10-05). A terminal that wants this source asks for it: eval "$(flow llm use N)".
 
 
 @user_app.command("clear", help="Drop this box's endpoint binding.")
@@ -643,8 +642,9 @@ def _clear_box() -> None:
 
     data = _op("unbind")
     typer.echo("binding dropped" if data.get("was_bound") else "no binding was set")
-    # Take the box-wide config back out too, or a bare CLI keeps spending an endpoint the box no
-    # longer claims. Only our managed region / our own leaves are removed.
+    # `use` no longer writes the machine's harness configs, but older versions did: take any such
+    # write back out, or a bare CLI keeps spending an endpoint the box no longer claims. Only our
+    # managed region / our own leaves are removed.
     for worker, entry in specs.items():
         spec = (entry or {}).get("user") or {}
         if spec.get("path"):
