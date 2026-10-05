@@ -67,8 +67,10 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     """Arm (or re-arm, replacing) the bus subscription for one TAG trigger."""
     from flow_sdk.tags import event_bus
 
+    from flow_sdk.builtin.trigger_arming import trigger_runs_here
+
     unregister_tag_trigger(trigger.id)
-    if not trigger.enabled:
+    if not trigger.enabled or not trigger_runs_here(trigger):
         return
     problem = validate_tag_trigger(trigger.tag_pattern)
     if problem:
@@ -211,11 +213,7 @@ async def _fire_tag_trigger(trigger_id: str, event: "FlowEvent") -> None:
 
 
 async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
-    from flow_sdk.builtin.trigger import (
-        Trigger,
-        activate_flows_for_trigger,
-        dispatch_trigger_actions,
-    )
+    from flow_sdk.builtin.trigger import Trigger
     from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
     from flow_sdk.tags.envelope import target_of
 
@@ -290,21 +288,98 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # run — a wizard action runs an agent for MINUTES — and lost entirely if they
     # hang or the process dies. The counter said 1 while the log said nothing had
     # ever fired, which is the one question this row exists to answer.
-    _append_log(trigger.name or trigger_id, {
-        "hook_event": "tag_fire",
-        "trigger": True,
-        "reason": f"Tag {event.tag} on {event.target}",
+    await _run_tag_fire(trigger, event, event_id, is_test=False)
+
+
+async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str],
+                        *, is_test: bool) -> dict[str, Any]:
+    """Log, activate, dispatch, log the outcome — shared by a real fire and *Run once now*.
+
+    TWO rows per fire, joined on ``event_id``. The ``tag_fire`` row is written
+    BEFORE the work, for the same reason ``trigger.fired`` is emitted before it:
+    it means "this rule matched this envelope and dispatch has begun". Written
+    afterwards, the causal join is invisible for as long as the actions run — a
+    wizard action runs an agent for MINUTES — and lost entirely if they hang or
+    the process dies. The ``tag_fire_done`` row is the outcome: the run it
+    started, the error, how long it took. A run with no done row is still running
+    (or died with the process), which is itself the answer.
+    """
+    from flow_sdk.automations.fingerprint import spec_hash
+    from flow_sdk.builtin.trigger import activate_flows_for_trigger, run_trigger_actions
+    from flow_sdk.fs_store.operations.trigger_log import cap_cause_data
+
+    trigger_id = trigger.id or ""
+    name = trigger.name or trigger_id
+    common = {
         "rule_name": trigger.name,
         "trigger_id": trigger_id,
         "trigger_type": str(trigger.trigger_type),
         "event_id": event_id,
+        "is_test": is_test,
+        "spec_hash": spec_hash(trigger),
         **_cause_keys(event),
+    }
+    _append_log(name, {
+        "hook_event": "tag_fire",
+        "trigger": True,
+        "reason": f"Tag {event.tag} on {event.target}",
+        "cause_data": cap_cause_data(event.data or None),
         "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
+        **common,
     })
 
-    await activate_flows_for_trigger(trigger_id, trigger.name or trigger_id,
-                                     envelope=event, trigger=trigger)
-    await dispatch_trigger_actions(trigger, changes=[])
+    flow_error = await activate_flows_for_trigger(trigger_id, name, envelope=event, trigger=trigger)
+    outcome = await run_trigger_actions(trigger, changes=[])
+    error = "; ".join(e for e in (flow_error, outcome.error) if e) or None
+    _append_log(name, {
+        "hook_event": "tag_fire_done",
+        "trigger": True,
+        "reason": "Failed" if error else "Done",
+        "agentic_process_id": outcome.process_id,
+        "error": error,
+        "duration_ms": outcome.duration_ms,
+        **common,
+    })
+    return {"event_id": event_id, "agentic_process_id": outcome.process_id,
+            "error": error, "duration_ms": outcome.duration_ms}
+
+
+#: Test runs in flight — held so the loop cannot collect a task mid-run.
+_test_runs: set["asyncio.Task[Any]"] = set()
+
+
+def start_tag_trigger_once(trigger: "Trigger", event: "FlowEvent") -> Optional[str]:
+    """*Run once now* for a TAG rule: the real fire path with every guard off.
+
+    A test runs even when the rule is switched off and never spends what a real
+    fire spends — no counter bump (so ``fire_once`` stays unspent), no storm
+    budget, no confirm query. It takes the same per-trigger lock, so it cannot
+    interleave with a real fire's counter write.
+
+    Returns the ``trigger.fired`` envelope id at once and runs the work as a
+    task: a wizard action runs for minutes, and the person watching follows the
+    run on the Runs screen rather than a request that hangs.
+    """
+    from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
+
+    event_id = emit_trigger_fired(
+        trigger.id or "", str(trigger.trigger_type), trigger.name or trigger.id or "",
+        counter=trigger.counter,
+        action_types=[str(a.action_type) for a in trigger.actions],
+        detail={"cause_tag": event.tag, "cause_target": event.target},
+        project_id=trigger.project_id,
+        cause=event,
+        is_test=True,
+    )
+
+    async def _locked() -> None:
+        async with _locks.setdefault(trigger.id or "", asyncio.Lock()):
+            await _run_tag_fire(trigger, event, event_id, is_test=True)
+
+    task = asyncio.get_running_loop().create_task(_locked(), name=f"trigger-test:{trigger.id}")
+    _test_runs.add(task)
+    task.add_done_callback(_test_runs.discard)
+    return event_id
 
 
 def _append_log(trigger_name: str, entry: dict[str, Any]) -> None:
