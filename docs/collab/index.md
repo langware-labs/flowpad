@@ -81,6 +81,10 @@ skill, …) are anchored to the conversation and recursively auto-share.
    model: every prompt is a session, the session-start marker and turn
    markers, the session gate and snapshot header, and the delivery ledger
    of what is built phase by phase.
+8. **[Ask for help](./ask-for-help.md)** — PLAN: the one design for asking a
+   person or a desk for help that never fails — capture locally first, one
+   `ask-for-help` action, one `Conversation.deliver()` outbox, one hub-failure
+   vocabulary, idempotent hub writes — and the phased plan to get there.
 
 ## Glossary
 
