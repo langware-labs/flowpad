@@ -242,9 +242,19 @@ class Dataset(Entity):
 
         from flow_sdk.schema.data_spec.layout import dataset_layout_for  # noqa: PLC0415
 
-        gold = TypeAdapter(self.output_shape).validate_python(ground_truth)
-        payload = gold.model_dump(mode="json") if hasattr(gold, "model_dump") else gold
-        dataset_layout_for(self.data_layout).annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
+        shape = self.output_shape
+        golds = ground_truth if isinstance(ground_truth, list) else None
+        checked = [TypeAdapter(shape).validate_python(g) for g in golds] if golds is not None else TypeAdapter(shape).validate_python(ground_truth)
+        dump = lambda g: g.model_dump(mode="json") if hasattr(g, "model_dump") else g  # noqa: E731
+        payload = [dump(g) for g in checked] if golds is not None else dump(checked)
+        layout = dataset_layout_for(self.data_layout)
+        if getattr(shape, "spec_kind", "") and hasattr(layout, "annotate"):
+            from flow_sdk.schema.data_spec.layout import _main_document  # noqa: PLC0415
+
+            # A named shape: write its own main document, so the gold reads back as written.
+            layout.annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by, main=_main_document(shape))
+        else:
+            layout.annotate(self._folder(), example_id, payload, dataset_id=self.id, by=by)
 
     @property
     def row_type(self) -> Any:

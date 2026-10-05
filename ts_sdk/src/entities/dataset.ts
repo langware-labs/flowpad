@@ -128,8 +128,10 @@ export class Dataset extends APIEntity<Dataset> implements IDataset {
     return typeof this.spec === 'string' ? this.spec : null;
   }
 
-  /** The rows as the disk holds them: which item each came from, and whether it carries gold. */
-  async examples(): Promise<{
+  /** The rows as the disk holds them: which item each came from, and whether it carries gold.
+   *  NOT named `examples`: a dataset read by id carries an `examples` FIELD on the wire, and
+   *  assigning it onto the instance hid a method of that name ("examples is not a function"). */
+  async listExamples(): Promise<{
     examples: { example_id: string; item_id: string | null; kind: string; annotated: boolean }[];
   }> {
     return this.get('examples');

@@ -41,7 +41,9 @@ export async function resolveAppHost(): Promise<AppHost> {
   const webappId = (endpoint as { webapp_id?: string | null }).webapp_id;
   const app = webappId ? await dataManager.getByTypeId(new TypeId('micro_app', webappId)) : endpoint;
   if (!app) throw new Error(`no micro_app-${webappId}`);
-  const parent = (app as any).parent_type_id;
+  // Nested: the subject is what CONTAINS the app. Matched by kind (an editor that ships on its
+  // own and edits any `navigator.dataset`): the host names the subject in `?subject=<typeid>`.
+  const parent = (app as any).parent_type_id ?? appOption('subject');
   const subject = parent ? await dataManager.getByTypeId(new TypeId(parent)) : null;
   return { app, subject };
 }
@@ -69,8 +71,7 @@ export function applyHostTheme(): 'light' | 'dark' {
   // the OS there rather than forcing light, so a standalone page on a dark
   // desktop does not glare.
   const param = appOption('theme');
-  const prefersDark =
-    typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
+  const prefersDark = typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches;
   const theme = (param ? param === 'dark' : prefersDark) ? 'dark' : 'light';
   applyHostSkin(theme, appOption('view'), appOption('primary'), appOption('primaryInk'));
   // The URL carries the skin for the FIRST paint only — it is frozen there,
@@ -78,9 +79,13 @@ export function applyHostTheme(): 'light' | 'dark' {
   // reload the whole app to recolour it. Later changes arrive as a message, and
   // recolouring is a class flip.
   window.addEventListener('message', (event) => {
-    const data = event.data as
-      | { type?: string; theme?: string; view?: string; primary?: string; primaryInk?: string }
-      | null;
+    const data = event.data as {
+      type?: string;
+      theme?: string;
+      view?: string;
+      primary?: string;
+      primaryInk?: string;
+    } | null;
     if (data?.type !== 'flowpad:theme') return;
     applyHostSkin(data.theme === 'dark' ? 'dark' : 'light', data.view ?? null, data.primary, data.primaryInk);
   });

@@ -70,6 +70,7 @@ from .routes import (
     hooks_router,
     ingest_router,
     journeys_router,
+    kinds_router,
     markdown_index_router,
     navigate_router,
     privacy_router,
@@ -870,6 +871,7 @@ server.add_router(activity_router)
 server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
+server.add_router(kinds_router)
 server.add_router(toplog_router)
 server.add_router(graph_workflows_router)
 server.add_router(agents_router)

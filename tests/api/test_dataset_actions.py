@@ -240,6 +240,8 @@ async def test_typed_rows_append_read_annotate_and_validate(bootstrapped_client,
     checked = (await client.post(f"{base}/validate")).json()["data"]
     assert checked == {"checked": 2, "problems": []}, checked
     # A hand-edited row that no longer fits is named, not fatal.
-    (Path(ds["asset_ref"]) / "examples" / "0002" / "ground_truth" / "label.json").write_text('{"route": "sideways"}')
+    gold = Path(ds["asset_ref"]) / "examples" / "0002" / "ground_truth" / "decision.json"
+    assert gold.is_file(), "annotate writes the typed gold as the shape's own document"
+    gold.write_text('{"route": "sideways"}')
     problems = (await client.post(f"{base}/validate")).json()["data"]["problems"]
     assert [p["example_id"] for p in problems] == [second] and "ground_truth" in problems[0]["error"], problems

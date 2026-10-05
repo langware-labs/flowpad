@@ -71,3 +71,29 @@ def test_an_annotated_gold_reads_back_typed(tmp_path):
     assert (tmp_path / "examples/0001/ground_truth/label.json").is_file()
     (back,) = FolderLayout().read(tmp_path, Row, dataset_id="ds")
     assert back.ground_truth == Verdict(route="agentic")
+
+
+def _typed_dataset(tmp_path):
+    from flow_sdk.builtin.dataset import Dataset
+
+    return Dataset(id="5c8d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f", name="x", asset_ref=str(tmp_path),
+                   data_layout="io_folder", spec="unittest.typedrows.dataset")
+
+
+async def test_relabelling_a_typed_gold_replaces_it(tmp_path):
+    """The editor's Save: an example that already carries a typed gold (``ground_truth/verdict.json``)
+    is labelled again. The label used to land BESIDE the old gold as ``label.json`` and the reader,
+    preferring the main document, kept answering the old one -- found in the browser."""
+    d = _typed_dataset(tmp_path)
+    (eid,) = await d.append([{"input": {"utterance": "open it"}, "ground_truth": {"route": "quick", "target": "a"}}])
+    await d.annotate(eid, {"route": "quick", "target": "b"})
+    assert d.example(eid)["ground_truth"] == {"route": "quick", "target": "b"}
+    assert sorted(p.name for p in (tmp_path / "examples/0001/ground_truth").iterdir()) == ["verdict.json"]
+
+
+async def test_relabelling_with_several_answers_replaces_a_single_gold(tmp_path):
+    d = _typed_dataset(tmp_path)
+    (eid,) = await d.append([{"input": {"utterance": "open it"}, "ground_truth": {"route": "agentic"}}])
+    await d.annotate(eid, [{"route": "quick", "target": "a"}, {"route": "quick", "target": "b"}])
+    assert d.example(eid)["ground_truth"] == [{"route": "quick", "target": "a"}, {"route": "quick", "target": "b"}]
+    assert not (tmp_path / "examples/0001/ground_truth").exists()

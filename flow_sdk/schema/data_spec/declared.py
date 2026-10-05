@@ -49,6 +49,12 @@ _OWNER: dict[str, Path] = {}
 #: folder -> why it did not register ("" when it did, or when it is a documentation node).
 _ERRORS: dict[Path, str] = {}
 _BUILDING: set[str] = set()
+#: folder -> (the document it was built from, the class built). Building an UNCHANGED folder again
+#: returns the class it already registered: indexing reaches one definition several ways (the
+#: dataset's own read, each data spec folder, the miss loader), and a rebuild REPLACES the
+#: registered class while classes built earlier keep pointing at the old one -- which then has no
+#: kind, so a typed read looks for ``declared_navigator_request.json`` instead of ``request.json``.
+_BUILT: dict[Path, tuple[str, type]] = {}
 _shipped_loaded = False
 
 
@@ -181,6 +187,10 @@ def _field(form: Any, description: str) -> tuple:
 
 def _build(folder: Path) -> Optional[type]:
     """Compile and register ONE folder; dependencies first. Raises ``DeclareError``."""
+    source = (folder / MAIN).read_text(encoding="utf-8") if (folder / MAIN).is_file() else ""
+    built = _BUILT.get(folder)
+    if built is not None and built[0] == source:
+        return built[1]
     doc = _read(folder)
     subkind = doc.resolved_subkind
     if subkind is None:
@@ -219,6 +229,10 @@ def _build(folder: Path) -> Optional[type]:
                     __module__=__name__,
                     __doc__=str(doc.description or "") or None,
                     spec_kind=(ClassVar[str], kind),
+                    # The forms the author WROTE (``enum:quick|agentic``, ``?string``): a form
+                    # builder reads these, since rendering a field back from its Python type
+                    # keeps only the base shape (an enum renders as ``string``).
+                    __field_forms__=(ClassVar[dict], forms),
                     **fields,
                 )
             else:
@@ -243,6 +257,7 @@ def _build(folder: Path) -> Optional[type]:
     finally:
         _BUILDING.discard(tag)
     _OWNER[tag] = folder
+    _BUILT[folder] = (source, cls)
     return cls
 
 
