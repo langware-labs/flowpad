@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ViewMode } from '@src/components/view-mode';
-import {
-  derivePublishState,
-  publishCopy,
-  pushToastCopy,
-  type PushKind,
-} from '@src/lib/publish-state';
+import { derivePublishState, publishCopy, pullToastCopy, pushToastCopy, type PushKind } from '@src/lib/publish-state';
 
 describe('derivePublishState', () => {
   it('no repo → hidden', () => {
@@ -50,7 +45,16 @@ describe('publishCopy — count is Advanced-only', () => {
 
 describe('pushToastCopy — Standard never leaks git jargon', () => {
   const GIT_TERMS = /\b(push|pushed|branch|commit|rebase|remote|upstream|git)\b/i;
-  const KINDS: PushKind[] = ['pushed', 'nothing', 'conflict', 'permission', 'no_remote', 'network', 'no_repo', 'generic'];
+  const KINDS: PushKind[] = [
+    'pushed',
+    'nothing',
+    'conflict',
+    'permission',
+    'no_remote',
+    'network',
+    'no_repo',
+    'generic',
+  ];
 
   for (const kind of KINDS) {
     it(`Standard '${kind}' has no git terms`, () => {
@@ -72,5 +76,28 @@ describe('pushToastCopy — Standard never leaks git jargon', () => {
   it('pushed/nothing are successes', () => {
     expect(pushToastCopy('pushed', ViewMode.Standard).level).toBe('success');
     expect(pushToastCopy('nothing', ViewMode.Standard).level).toBe('success');
+  });
+});
+
+describe('pullToastCopy — Standard never leaks git jargon', () => {
+  const GIT_TERMS = /\b(pull|pulled|branch|commit|rebase|remote|upstream|git)\b/i;
+  const KINDS = ['pulled', 'nothing', 'conflict', 'permission', 'no_remote', 'network', 'no_repo', 'generic'] as const;
+
+  for (const kind of KINDS) {
+    it(`Standard '${kind}' has no git terms`, () => {
+      const c = pullToastCopy(kind, ViewMode.Standard, { branch: 'main', message: 'fatal: could not read' });
+      expect(`${c.title} ${c.message}`).not.toMatch(GIT_TERMS);
+    });
+  }
+
+  it('conflict is resolvable in Advanced only', () => {
+    expect(pullToastCopy('conflict', ViewMode.Standard).resolvable).toBe(false);
+    expect(pullToastCopy('conflict', ViewMode.Advanced).resolvable).toBe(true);
+  });
+
+  it('pulled/nothing are successes, the rest errors', () => {
+    expect(pullToastCopy('pulled', ViewMode.Standard).level).toBe('success');
+    expect(pullToastCopy('nothing', ViewMode.Standard).level).toBe('success');
+    expect(pullToastCopy('network', ViewMode.Standard).level).toBe('error');
   });
 });

@@ -160,6 +160,26 @@ class GitPushResult(_CamelModel):
     message: str
 
 
+# Typed pull outcome — mirrored by ``PullKind`` in ts_sdk git-workdir.ts.
+PullKind = Literal[
+    "pulled",
+    "nothing",
+    "conflict",
+    "permission",
+    "no_remote",
+    "network",
+    "no_repo",
+    "generic",
+]
+
+
+class GitPullResult(_CamelModel):
+    ok: bool
+    kind: PullKind
+    branch: str | None
+    message: str
+
+
 # Config a fresh Flowpad repo gets at init time. Single source shared by
 # GitRepo.init() and ComputeSourceControl._init_git_repository so the two init
 # surfaces can never drift.
@@ -979,6 +999,63 @@ class GitRepo:
         return self._push_result(branch, "Pushed", ok=True)
 
     # ------------------------------------------------------------------
+    # Remote side: fetch (refresh `behind`) and pull
+    # ------------------------------------------------------------------
+
+    async def fetch(self) -> GitStatus:
+        """Fetch the upstream's remote, then answer with the status.
+
+        ``get_status`` never touches the network, so its ``behind`` is only as
+        fresh as the last fetch. This is the one call that refreshes it. A
+        failed fetch (offline, no access) is not an error here — the status
+        still answers, with ``behind`` as of the previous fetch.
+        """
+        if (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok:
+            fetched = await self._git("fetch", "--quiet")
+            if not fetched.ok:
+                logger.debug("git fetch failed in %s: %s", self.work_dir, _said(fetched))
+        return await self.get_status()
+
+    async def pull(self) -> GitPullResult:
+        """Bring the upstream's commits in: ``pull --rebase --autostash``.
+
+        Uncommitted work is stashed around the rebase and put back, so a pull
+        never asks the user to commit first. A rebase conflict is left in place
+        for the resolve agent, exactly as ``push`` leaves one.
+        """
+        if not await self.is_init():
+            return GitPullResult(ok=False, kind="no_repo", branch=None, message="Not a git repository")
+        branch = await self.get_branch()
+        if not (await self._git("rev-parse", "--abbrev-ref", "@{u}")).ok:
+            return GitPullResult(
+                ok=False, kind="no_remote", branch=branch, message="No upstream is configured for this branch"
+            )
+        before = (await self._git("rev-parse", "HEAD")).stdout.strip()
+        pulled = await self._git("pull", "--rebase", "--autostash")
+        if not pulled.ok:
+            combined = _said(pulled)
+            unmerged = (await self._git("ls-files", "--unmerged")).stdout
+            if unmerged.strip():
+                files = self._summarize_unmerged(unmerged)
+                return GitPullResult(
+                    ok=False,
+                    kind="conflict",
+                    branch=branch,
+                    message=f"Merge conflict while pulling. Conflicted: {files or 'see git status'}",
+                )
+            kind = self._classify_push_error(combined)
+            return GitPullResult(
+                ok=False,
+                kind="generic" if kind == "conflict" else kind,
+                branch=branch,
+                message=combined or "Pull failed",
+            )
+        after = (await self._git("rev-parse", "HEAD")).stdout.strip()
+        if before == after:
+            return GitPullResult(ok=True, kind="nothing", branch=branch, message="Already up to date")
+        return GitPullResult(ok=True, kind="pulled", branch=branch, message="Pulled")
+
+    # ------------------------------------------------------------------
     # Dispatch — routes git-ops sub-paths to the appropriate operation
     # ------------------------------------------------------------------
 
@@ -996,6 +1073,8 @@ class GitRepo:
             has-commit          → has_commit()           → {hasCommit}
             diff                → get_file_diff()        → {diff}  (requires ?file=&status=)
             push  (POST)        → push()                 → GitPushResult {ok, conflict, nothing, kind, branch, message}
+            fetch (POST)        → fetch()                → GitStatus with a fresh ``behind``
+            pull  (POST)        → pull()                 → GitPullResult {ok, kind, branch, message}
             init  (POST)        → init()                 → {ok, message}  (idempotent)
             discard-file (POST) → discard_file()         → {ok, message}  (requires ?file=&status=)
             stage-file   (POST) → stage_file()           → {ok, message}  (requires ?file=)
@@ -1009,6 +1088,14 @@ class GitRepo:
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/push requires POST", status_code=405)
             return ApiSuccessResponse(data=(await self.push()).model_dump(by_alias=True))
+        if sub == "fetch":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/fetch requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.fetch()).model_dump(by_alias=True))
+        if sub == "pull":
+            if method.upper() != "POST":
+                return ApiFailResponse(message="git-ops/pull requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.pull()).model_dump(by_alias=True))
         if sub == "init":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/init requires POST", status_code=405)
