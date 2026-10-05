@@ -49,6 +49,10 @@ class ReplyPolicy(StrEnum):
     REVIEW = "review"  # save as a host draft inside the session
 
 
+# The approve refusal for a session with nowhere to run — the UI answers it with a project picker.
+NEEDS_PROJECT_MESSAGE = "pick the project this live session runs in"
+
+
 class ApprovedVia(StrEnum):
     MANUAL = "manual"                  # the host clicked Approve
     STANDING_GRANT = "standing_grant"  # a ContactPermission pre-approved it
@@ -390,6 +394,27 @@ class RemoteWorkerSession(Entity):
         await self._emit_event("approved", someone_typeid=someone_typeid)
         return True
 
+    async def run_project_id(self, requested: str | None = None) -> str | None:
+        """Where this session's turns run on the host: the project the host
+        picks at approval (``requested`` — checked: it must exist and have a
+        folder), else the one already chosen for the session, else the
+        conversation's. None = the host still has to pick.
+
+        A person-to-person chat is project-less by design (``Conversation.
+        resolve_project_id``), so for a live session started in one, approval is
+        where the project gets chosen — never later, in a turn that can only fail.
+        """
+        from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+        if requested:
+            project = await Project.get_one({"id": requested})
+            return requested if project is not None and getattr(project, "fs_storage_mount_path", None) else None
+        if self.project_id:
+            return self.project_id
+        conv = await Conversation.get_one({"id": self.conversation_id}) if self.conversation_id else None
+        return getattr(conv, "project_id", None) or None
+
     async def remember_guest(self, scope: str) -> None:
         """Standing grant: future sessions from this guest start approved.
         ``scope``: ``project`` (this session's project) or ``everywhere``."""
@@ -413,8 +438,11 @@ class RemoteWorkerSession(Entity):
         immediately; ``prompt_auto_handled``-before-run keeps the re-drive
         idempotent against concurrently arriving prompts.
 
-        Body: ``{remember?: "project" | "everywhere"}`` also writes the
-        standing grant for this guest."""
+        Body: ``{remember?: "project" | "everywhere", project_id?}``.
+        ``remember`` also writes the standing grant for this guest;
+        ``project_id`` is where the session runs, required when neither the
+        session nor its conversation has a project — refused (409, session left
+        PENDING) rather than approved into a turn that can only fail."""
         from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
 
         ri = get_current_request_info()
@@ -422,6 +450,13 @@ class RemoteWorkerSession(Entity):
         remember = str(body.get("remember") or "").strip()
         if remember and remember not in ("project", "everywhere"):
             return ApiFailResponse(message="remember must be 'project' or 'everywhere'", status_code=400)
+        requested = str(body.get("project_id") or "").strip() or None
+        project_id = await self.run_project_id(requested)
+        if project_id is None:
+            if requested:
+                return ApiFailResponse(message="that project has no folder to run in", status_code=400)
+            return ApiFailResponse(message=NEEDS_PROJECT_MESSAGE, status_code=409)
+        self.project_id = project_id
         if not await self.approve(via=ApprovedVia.MANUAL):
             return ApiFailResponse(message=f"illegal live-session transition: {self.status} → idle")
         if remember:
