@@ -370,7 +370,7 @@ Two actions move data along that seam (`flow_sdk/builtin/dataset.py`), both
 | Action | Body | Writes |
 | --- | --- | --- |
 | `POST /graph/dataset/<id>/promote` | `{"source_item_ids": [...]}` | `examples/NNNN/input/item.json` (the envelope) + `example.json` with `metadata.source` provenance; replies `{example_ids, num_examples}`. A dataset whose `input` shape is not `ingest.source_item` refuses (400); an item from another source refuses; an unknown item is 404 |
-| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json`, validated against the output shape (a mismatch is a 400 carrying the output JSON schema); `metadata.annotations += {by, at}`; replies `{example_id, num_annotated}` |
+| `POST /graph/dataset/<id>/annotate` | `{"example_id", "ground_truth"}` | `examples/NNNN/ground_truth/label.json` (replacing any earlier gold), validated against the output shape (a mismatch is a 400 carrying the output JSON schema); `metadata.annotations += {by, at}`; replies `{example_id, num_annotated}` |
 | `GET /graph/dataset/<id>/examples` | — | `{"examples": [{example_id, item_id, kind, annotated}]}` read from the folder |
 
 Both are per-example writes (`FolderLayout.append_many` / `annotate`) — the
@@ -396,7 +396,8 @@ one is right.
 |---|---|
 | `POST append {rows}` | typed rows in; every row is checked first, one bad row writes nothing |
 | `GET example/<id>` | one example's slot VALUES (an editor's read) |
-| `POST annotate {example_id, ground_truth}` | REPLACES the gold with the shape's own document (a list → `ground_truth-N/`) |
+| `POST annotate {example_id, ground_truth}` | REPLACES the gold: a named output kind is written as its own document (`ground_truth/decision.json`; a list → `ground_truth-N/`), an inline shape as `ground_truth/label.json` |
+| `GET rows` | every example with its slot values, in one read (what the editor loads) |
 | `POST validate` | every row read as the declared shape; names each row that does not fit, with its slot (`ground_truth.route`) |
 | `POST score` | each recorded `output` against its gold: a gold field left empty constrains nothing; several golds mean any one is right (`flow_sdk/datasets/score.py`) |
 
