@@ -840,6 +840,10 @@ msgid "{left} of {limit} requests left {windowText}"
 msgstr "{left} of {limit} requests left {windowText}"
 
 #: src/components/conversation/MembersAvatarStack.tsx
+msgid "{listed} not sent"
+msgstr "{listed} not sent"
+
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "{listed} to invite"
 msgstr "{listed} to invite"
 
@@ -2823,7 +2827,7 @@ msgstr "Ask for help"
 #~ msgid "Ask it to"
 #~ msgstr "Ask it to"
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Ask someone for help"
 msgstr "Ask someone for help"
 
@@ -13733,12 +13737,10 @@ msgid "New bookmark folder"
 msgstr "New bookmark folder"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "New build"
 msgstr "New build"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
-#: src/components/floating-chat/AssistantChat.tsx
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "New chat"
@@ -13859,7 +13861,7 @@ msgstr "New reply"
 msgid "New repo"
 msgstr "New repo"
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "New request"
 msgstr "New request"
 
@@ -19385,6 +19387,10 @@ msgstr "Run this agent on its own, at a time you pick. Runs are headless and sho
 #~ msgid "Run this as a prompt on {hostName}'s machine"
 #~ msgstr "Run this as a prompt on {hostName}'s machine"
 
+#: src/components/collaboration/useApproveLiveSession.tsx
+msgid "Run this live session in which project?"
+msgstr "Run this live session in which project?"
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
@@ -24588,7 +24594,7 @@ msgstr "unsure"
 msgid "Unsure"
 msgstr "Unsure"
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Untitled request"
 msgstr "Untitled request"
 
@@ -25901,6 +25907,14 @@ msgstr "You can change this later inside the session."
 msgid "You can close this window."
 msgstr "You can close this window."
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "You can't invite people here — ask {ownerName}."
+msgstr "You can't invite people here — ask {ownerName}."
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "You can't invite people here."
+msgstr "You can't invite people here."
+
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
@@ -26037,8 +26051,8 @@ msgstr "Your display name"
 #~ msgid "Your FlowPad account"
 #~ msgstr "Your FlowPad account"
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Your help requests"
 msgstr "Your help requests"
 

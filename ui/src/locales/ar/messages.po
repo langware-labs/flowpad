@@ -840,6 +840,10 @@ msgid "{left} of {limit} requests left {windowText}"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
+msgid "{listed} not sent"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "{listed} to invite"
 msgstr ""
 
@@ -2823,7 +2827,7 @@ msgstr "طلب المساعدة"
 #~ msgid "Ask it to"
 #~ msgstr ""
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Ask someone for help"
 msgstr "طلب المساعدة من شخص آخر"
 
@@ -13733,12 +13737,10 @@ msgid "New bookmark folder"
 msgstr "مجلد إشارات مرجعية جديد"
 
 #: src/pages/flow-page/vibe-chat-pane.tsx
-#: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "New build"
 msgstr "إصدار جديد"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
-#: src/components/floating-chat/AssistantChat.tsx
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "محادثة جديدة"
@@ -13859,7 +13861,7 @@ msgstr "رد جديد"
 msgid "New repo"
 msgstr "مستودع جديد"
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "New request"
 msgstr ""
 
@@ -19385,6 +19387,10 @@ msgstr ""
 #~ msgid "Run this as a prompt on {hostName}'s machine"
 #~ msgstr ""
 
+#: src/components/collaboration/useApproveLiveSession.tsx
+msgid "Run this live session in which project?"
+msgstr ""
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
@@ -24588,7 +24594,7 @@ msgstr "غير مؤكد"
 msgid "Unsure"
 msgstr "غير مؤكد"
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Untitled request"
 msgstr ""
 
@@ -25901,6 +25907,14 @@ msgstr ""
 msgid "You can close this window."
 msgstr "يمكن الآن إغلاق هذه النافذة."
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "You can't invite people here — ask {ownerName}."
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "You can't invite people here."
+msgstr ""
+
 #: src/components/account/organization-panel.tsx
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "لم تتم إضافتك بعد إلى أي منظمة. تُنشأ المنظمات في Flowpad Cloud؛ وبمجرد إضافتك إليها، ستظهر منظمتك وأعضاؤها هنا."
@@ -26037,8 +26051,8 @@ msgstr "اسمك المعروض"
 #~ msgid "Your FlowPad account"
 #~ msgstr ""
 
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
-#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/components/help/AskForHelpButton.tsx
+#: src/components/help/AskForHelpButton.tsx
 msgid "Your help requests"
 msgstr ""
 
