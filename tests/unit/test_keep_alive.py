@@ -24,6 +24,7 @@ NODE = f"compute_node-{NODE_ID}"
 @pytest.fixture(autouse=True)
 def _fresh(monkeypatch):
     monkeypatch.setattr(keep_alive, "_last_user_activity", None)
+    monkeypatch.setattr(keep_alive, "_cpu_at_last_tick", {})
     monkeypatch.setattr(agentic_process, "_PROMPT_ADMISSIONS", {})
     monkeypatch.setattr(agentic_process, "_PROMPT_WORKERS", {})
     monkeypatch.setattr(agentic_process, "_PROMPT_LOCKS", {})
@@ -115,3 +116,83 @@ def test_the_assigned_node_round_trips(monkeypatch):
     runtime.set_assigned_compute_node(NODE)
 
     assert runtime.get_assigned_compute_node() == NODE
+
+
+async def test_a_deployment_process_reports_its_own_turns(monkeypatch):
+    """A local agent deployment runs its turns in its own process (``agent_loop``), out of the
+    app's sight -- so that process runs the keep-alive loop for as long as it runs, and stops it after."""
+    import asyncio
+
+    from flow_sdk.builtin import agent_loop
+
+    ran: list[str] = []
+
+    async def _loop():
+        ran.append("started")
+        try:
+            await asyncio.Event().wait()
+        finally:
+            ran.append("stopped")
+
+    async def _no_longer_served(deployment_id):
+        await asyncio.sleep(0)  # let the reporter start before the loop ends
+        return None
+
+    monkeypatch.setattr(keep_alive, "run_keep_alive_loop", _loop)
+    monkeypatch.setattr(agent_loop, "_state", _no_longer_served)
+
+    await agent_loop.run("deployment-1")
+    await asyncio.sleep(0)
+
+    assert ran == ["started", "stopped"]
+
+
+def _detached(code: str):
+    """A process started the way an agent detaches a job (``setsid nohup``): its own session,
+    outside any turn's process tree."""
+    import subprocess
+    import sys
+
+    return subprocess.Popen(
+        [sys.executable, "-c", code], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+
+
+def _look_at(job):
+    """Only *job* -- whatever else this machine is doing must not decide the answer."""
+    import psutil
+
+    return lambda: keep_alive.detached_work_running(min_cpu_seconds=0.1, processes=[psutil.Process(job.pid)])
+
+
+def test_a_detached_job_keeping_a_core_busy_counts_as_work():
+    """A test run an agent launched with ``setsid nohup`` belongs to no turn -- its CPU is the signal."""
+    job = _detached("while True: pass")
+    sample = _look_at(job)
+    try:
+        assert sample() is False, "the first call is the baseline"
+        time.sleep(0.4)
+        assert sample() is True
+    finally:
+        job.kill()
+        job.wait()
+
+
+def test_a_detached_process_that_only_waits_is_not_work():
+    """A dev server or a shell sitting idle must not hold the box up."""
+    job = _detached("import time; time.sleep(30)")
+    sample = _look_at(job)
+    try:
+        sample()
+        time.sleep(0.4)
+        assert sample() is False
+    finally:
+        job.kill()
+        job.wait()
+
+
+async def test_detached_work_keeps_the_machine_alive(hub, monkeypatch):
+    monkeypatch.setattr(keep_alive, "detached_work_running", lambda: True)
+
+    assert await keep_alive.send_keep_alive_if_in_use() is True
+    assert hub == [("compute_node", NODE_ID, "keep-alive")]

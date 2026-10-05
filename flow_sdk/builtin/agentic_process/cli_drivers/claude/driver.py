@@ -78,6 +78,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: ``claude -p`` ends background tasks (a Monitor, a background shell) this many ms after the
+#: answer; ``0`` waits for them. Must ride the turn's own env: the inherited ``CLAUDE_CODE_*``
+#: variables are stripped from the spawn env (``claude_env.without_inherited_claude_session``).
+BACKGROUND_WAIT_ENV = "CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"
+
 _PROCESS_HOOK_PLUGIN = Path(".flowpad/plugins/claude/flowpad-process-hooks")
 _CANONICAL_FIELDS = (
     "hook_event_name",
@@ -412,6 +417,12 @@ class ClaudeDriver:
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow record``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
+        if getattr(process, "deployment_id", None):
+            # A deployment's agent works unattended: it starts a long job, arms a Monitor on it
+            # and ends its turn. ``-p`` kills background tasks 10 minutes after the answer, so the
+            # agent would never hear the job finish. Its turns wait for them instead (the keep-alive
+            # counts the wait); a deployment that set its own ceiling keeps it.
+            env_vars.setdefault(BACKGROUND_WAIT_ENV, "0")
         try:
             await apply_worker_secret_env(env_vars, process)
             setup_error = None
