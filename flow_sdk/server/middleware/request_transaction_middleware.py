@@ -82,6 +82,11 @@ class RequestTransactionMiddleware:
                         target_entity = await _try_self_heal_missing_entity(
                             req_info.request, req_info
                         )
+                    if target_entity is None and entity_model._hub_only and req_info.hub_reflect:
+                        # A hub-only type has no local row by design: the hub answers for it.
+                        from flow_sdk.cloud_client.transport import CloudProxy  # noqa: PLC0415
+
+                        return await CloudProxy()(req_info.request)
                     if target_entity is None:
                         # A small set of actions owns missing-target recovery
                         # (for example, wiki/reindex can index a supplied body

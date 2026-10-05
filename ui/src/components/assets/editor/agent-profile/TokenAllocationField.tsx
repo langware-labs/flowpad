@@ -1,14 +1,18 @@
-import type { Agent, AgentTokenAllocation } from '@sdk';
+import { TypeId, type Agent, type AgentTokenAllocation } from '@sdk';
+import { useDebounceCallback } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo, useState } from 'react';
-import { Info, Loader2, Settings2 } from 'lucide-react';
+import { Check, ChevronsUpDown, Info, Loader2, Settings2 } from 'lucide-react';
 
 import { errorMessage } from '@src/lib/error-message';
+import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@src/components/ui/command';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { endpointTypeId, openLlmEndpoint } from '@src/components/llm-endpoints/llm-endpoints-pointer';
 import { useLlmEndpointModels } from '@src/components/llm-endpoints/use-llm-endpoints';
@@ -17,6 +21,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /** What a new cloud deployment gets per day when nobody changes it. */
 const DEFAULT_COST_USD_PER_DAY = 5;
+/** How long typing must pause before the model list is filtered. */
+const MODEL_FILTER_DEBOUNCE_MS = 120;
 
 export interface TokenAllocationFieldProps {
   agent: Agent;
@@ -141,7 +147,7 @@ export function TokenAllocationField({ agent, environment, value, onChange, disa
   );
 }
 
-/** The one model: free text, suggested from the models the chosen source offers. */
+/** The one model: picked from the models the chosen source offers, as the hub lists them. */
 function ModelField({
   value,
   onChange,
@@ -152,25 +158,86 @@ function ModelField({
   disabled?: boolean;
 }) {
   const { t } = useLingui();
-  const models = useLlmEndpointModels(value.source || undefined);
-  return (
-    <>
+  const [open, setOpen] = useState(false);
+  // What is typed, and what the list is filtered by once typing pauses.
+  const [typed, setTyped] = useState('');
+  const [needle, setNeedle] = useState('');
+  const filterBy = useDebounceCallback(setNeedle, MODEL_FILTER_DEBOUNCE_MS, []);
+  const models = useLlmEndpointModels(value.source ? new TypeId(value.source).id : undefined);
+  const ids = useMemo(() => [...new Set((models.data ?? []).map((m) => m.id))].sort(), [models.data]);
+  // The only model the source offers: nothing to choose, so it is the one.
+  useEffect(() => {
+    if (ids.length === 1 && value.model !== ids[0]) onChange({ ...value, model: ids[0] });
+  }, [ids, value, onChange]);
+  // Until the source's models are known (none picked, loading, or the hub refused), the model is typed.
+  if (ids.length === 0) {
+    return (
       <Input
         className="h-8 min-w-0 flex-1 font-mono text-xs"
-        list="token-allocation-models"
         value={value.model}
-        placeholder={t`Model`}
+        placeholder={models.isLoading ? t`Loading models…` : t`Model`}
         disabled={disabled}
         onChange={(e) => onChange({ ...value, model: e.target.value.trim() })}
         aria-label={t`Model`}
         data-testid="token-allocation-model"
       />
-      <datalist id="token-allocation-models">
-        {(models.data ?? []).map((m) => (
-          <option key={m.id} value={m.id} />
-        ))}
-      </datalist>
-    </>
+    );
+  }
+  // The agent's own model, kept selectable when the source does not list it under that name.
+  const offered = value.model && !ids.includes(value.model) ? [value.model, ...ids] : ids;
+  const q = needle.trim().toLowerCase();
+  const rows = q ? offered.filter((id) => id.toLowerCase().includes(q)) : offered;
+  return (
+    // Modal: it opens over a dialog, whose scroll lock otherwise swallows the wheel on this portaled list.
+    <Popover open={open} onOpenChange={setOpen} modal>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          aria-label={t`Model`}
+          disabled={disabled}
+          className="h-8 min-w-0 flex-1 justify-between px-2 font-mono text-xs font-normal"
+          data-testid="token-allocation-model"
+        >
+          <span className={cn('truncate', !value.model && 'text-muted-foreground')}>
+            {value.model || t`Choose a model…`}
+          </span>
+          <ChevronsUpDown className="ms-1 h-3.5 w-3.5 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-0" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder={t`Filter models…`}
+            value={typed}
+            onValueChange={(next) => {
+              setTyped(next);
+              filterBy(next);
+            }}
+          />
+          <CommandList>
+            <CommandEmpty>
+              <Trans>No models.</Trans>
+            </CommandEmpty>
+            {rows.map((id) => (
+              <CommandItem
+                key={id}
+                value={id}
+                onSelect={() => {
+                  onChange({ ...value, model: id });
+                  setOpen(false);
+                }}
+                data-testid={`token-allocation-model-${id}`}
+              >
+                <Check className={cn('me-2 h-3.5 w-3.5', value.model === id ? 'opacity-100' : 'opacity-0')} />
+                <span className="truncate font-mono text-xs">{id}</span>
+              </CommandItem>
+            ))}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 }
 
