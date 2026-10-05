@@ -162,6 +162,8 @@ MINI_TRIGGER_SPEC: dict = {
     "trigger_type": "schedule",
     "sched_trigger_type": "interval",
     "expr": "24h",
+    # Off until the person turns it on, like every other optional built-in.
+    "enabled": False,
 }
 
 
@@ -176,7 +178,8 @@ async def _mini_trigger():
         for legacy_name in ("Mini analyzer (manual)", MINI_TRIGGER_SPEC["name"]):
             existing = await Trigger.get_one({"name": legacy_name})
             if existing is not None and not existing.uname:
-                existing.uname = uname
+                # Seeded on before anyone could choose; it starts off like a new one.
+                existing.uname, existing.enabled = uname, False
                 break
             existing = None
     await _upsert_one(MINI_TRIGGER_SPEC, existing=existing)
