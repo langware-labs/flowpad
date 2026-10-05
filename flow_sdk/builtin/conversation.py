@@ -233,6 +233,12 @@ class Conversation(ProjectedFields, Entity):
     ended_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
+    # A conversation written here FOR the hub, not there yet — an ask for help captured before
+    # delivery (``ask-for-help``). ``Conversation.deliver`` creates it there first, then clears this.
+    # And the project the person was in when they asked, so the ask lists with it (a ticket lives
+    # under the desk's project, not theirs). Both PRIVATE: this machine's bookkeeping.
+    awaits_hub: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    origin_project_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
     # The roster's hub WIRE key is ``participants`` (hub contract); the local
     # read cache is the generic ``members``. Declared once here so every
@@ -515,6 +521,7 @@ class Conversation(ProjectedFields, Entity):
         *,
         principals: Optional[List[str]] = None,
         notify_by_email: bool = True,
+        deliver_messages: bool = True,
     ) -> "Conversation":
         """Push to hub + admit people via the standard hub pattern.
 
@@ -590,8 +597,10 @@ class Conversation(ProjectedFields, Entity):
             # local. Flush them through the same send pipeline a normal reply
             # uses, BEFORE inviting, so the invitation's callback_override and
             # the recipient's first fetch resolve.
-            await self.deliver(bodies=False)
-            self.kick_delivery()
+            # (``deliver_messages=False`` when ``deliver`` itself is opening this conversation.)
+            if deliver_messages:
+                await self.deliver(bodies=False)
+                self.kick_delivery()
 
             # Post-accept landing: point at the conversation's first FlowMessage
             # on the hub. Falls back to None (hub default = entity URL) when the
@@ -750,7 +759,7 @@ class Conversation(ProjectedFields, Entity):
     @property
     def hub_bound(self) -> bool:
         """Whether this conversation's messages are meant for the hub (so the outbox delivers them)."""
-        return bool(self.remote)
+        return bool(self.remote or self.awaits_hub)
 
     async def deliver(self, *, bodies: bool = True, force: bool = False, **upload_options) -> None:
         """Hand the hub every message of mine this conversation still owes it — in order.
@@ -777,6 +786,8 @@ class Conversation(ProjectedFields, Entity):
 
         owed_bodies = []
         async with keyed_loop_lock(_DELIVERY_LOCKS, self.id):
+            if self.awaits_hub and not await self._open_on_hub(force=force):
+                return
             for fm in await self._owed_messages(force=force):
                 if delivery_rank(fm.delivery_status) < delivery_rank(DeliveryStatus.SENT):
                     # Announce a body bundle so the hub expects the upload that follows.
@@ -792,6 +803,20 @@ class Conversation(ProjectedFields, Entity):
         if bodies:
             for fm in owed_bodies:
                 await _upload_body_and_finalize(fm, self.id, **upload_options)
+
+    async def _open_on_hub(self, *, force: bool) -> bool:
+        """Stage 0: a conversation captured here for the hub (an ask for help) is created there
+        first. False when it could not be — the reason is on its opening message."""
+        from flow_sdk.app.actions.ask_for_help_action import open_on_hub  # noqa: PLC0415
+
+        owed = await self._owed_messages(force=force)
+        if not owed:
+            return False
+        failure = await open_on_hub(self, owed[0])
+        if failure is not None:
+            await owed[0].record_delivery_failure(failure)
+            return False
+        return True
 
     def kick_delivery(self, **upload_options) -> None:
         """``deliver()`` off the caller's path. Losing this task loses nothing: what is owed is on
