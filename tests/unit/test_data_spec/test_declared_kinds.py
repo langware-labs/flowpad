@@ -150,3 +150,29 @@ def test_a_dataset_keeps_the_spec_its_own_nested_definitions_define(tmp_path):
     _nav_tree(ds, ns)
     record = read_asset_data(ds, SchemaRegistry.get("dataset"), identity="9a7b2a8e-6f1d-4c3b-8a2e-0f1e2d3c4b5a")
     assert record.meta_dict().get("spec") == f"--{ns}--.nav.dataset"
+
+
+def test_indexing_a_definition_again_keeps_the_classes_rows_were_written_with(tmp_path):
+    """Indexing reaches one definition several ways (the dataset's own read, each data spec folder,
+    the miss loader). A rebuild REPLACED the registered class while the dataset kind kept the old
+    one, which then had no kind -- so typed reads looked for ``declared_nav_request.json`` and every
+    row failed. Found in the browser on a live instance; proven by an on/off lever."""
+    from flow_sdk.assets.serialization import read_asset_data
+    from flow_sdk.builtin.dataset import Dataset
+    from flow_sdk.schema.data_spec.dataset_spec import ExampleKind
+    from flow_sdk.schema.data_spec.layout import FolderLayout
+
+    ns = _ns()
+    ds = tmp_path / "agentic-assets" / "dataset" / "nav"
+    ds.mkdir(parents=True)
+    (ds / "dataset.json").write_text(json.dumps({"metadata": {"data_layout": "io_folder", "spec": f"--{ns}--.nav.dataset"}, "data": {}}))
+    _nav_tree(ds, ns)
+    read_asset_data(ds, SchemaRegistry.get("dataset"), identity="0b7c3a2e-6f1d-4c3b-8a2e-0f1e2d3c4b5a")
+    d = Dataset(id="0b7c3a2e-6f1d-4c3b-8a2e-0f1e2d3c4b5a", name="nav", asset_ref=str(ds), data_layout="io_folder", spec=f"--{ns}--.nav.dataset")
+    row = d.row_type
+    FolderLayout().append_many(ds, [(row(kind=ExampleKind.EVAL, input={"utterance": "hi"}, context={"candidates": []},
+                                        ground_truth={"route": "agentic"}), None)], dataset_id=d.id)
+    for folder in declared.data_spec_folders(ds):  # the indexer reaching every definition again
+        declared.register_folder(folder)
+    assert d.validate_rows() == []
+    assert (ds / "examples/0001/input/request.json").is_file()
