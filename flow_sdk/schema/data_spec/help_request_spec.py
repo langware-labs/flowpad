@@ -31,6 +31,7 @@ class HelpOrigin(str, Enum):
     PORTAL = "portal"
     PORTAL_AGENT_CHAT = "portal_agent_chat"
     LOAD_FAILURE = "load_failure"
+    ASSISTANT = "assistant"
 
 
 class HelpRecipient(DataSpec):

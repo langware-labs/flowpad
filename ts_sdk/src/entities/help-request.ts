@@ -10,7 +10,7 @@ import { ActionInfo } from '../models/ActionInfo';
  */
 
 export type HelpRecipientKind = 'person' | 'desk';
-export type HelpOrigin = 'vibe' | 'footer' | 'portal' | 'portal_agent_chat' | 'load_failure';
+export type HelpOrigin = 'vibe' | 'footer' | 'portal' | 'portal_agent_chat' | 'load_failure' | 'assistant';
 
 export type HelpRecipient = {
   kind: HelpRecipientKind;

@@ -1,4 +1,5 @@
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
+import { NewSessionPill } from '@src/components/entity-execution-panel/NewSessionPill';
 import { VibeAssignTaskButton } from './VibeAssignTaskButton';
 import {
   continueVibeSessionForProject,
@@ -16,7 +17,6 @@ import { normalizeWorkerType, type WorkerType } from '@src/components/workers/wo
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { AgenticProcess, ProcessKind, toplog } from '@sdk';
 import { claimTabSwitchReady, sinceTabSwitch } from '@src/navigation/tab-switch-state';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import type { AssetWorkContext } from './asset-work-context';
@@ -246,17 +246,11 @@ export function VibeChatPane({
         allowAttachments
         composerDisabled={startingNewSession}
         leadingSlot={({ startNewSession }) => (
-          <button
-            type="button"
+          <NewSessionPill
             onClick={() => void handleNewSession(startNewSession)}
             disabled={startingNewSession}
             title={t`New build`}
-            data-testid="entity-execution-new"
-            className="inline-flex h-6 items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 text-xs font-medium text-green-600 transition-colors hover:bg-green-500/20 hover:text-green-700 disabled:cursor-not-allowed disabled:opacity-60 dark:text-green-400 dark:hover:text-green-300"
-          >
-            <Plus className="h-3 w-3" />
-            {t`New`}
-          </button>
+          />
         )}
         emptyStateText={t`What do you want to work on`}
         newSessionLabel={t`New build`}
