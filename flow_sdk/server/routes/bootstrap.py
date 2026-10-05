@@ -467,7 +467,9 @@ def build_app_paths() -> AppPaths:
         return norm.lstrip("/")
 
     home = _vfs_relative(str(get_instance_settings().user_home))
-    workspace = f"{home}/Flowpad workspace"
+    # This instance's workspace, not prod's: ``~/Flowpad workspace`` belongs to prod, every other instance has
+    # ``~/Flowpad workspaces/<name>`` (``workspace_root``). The UI places new projects and session cwds here.
+    workspace = _vfs_relative(str(get_instance_settings().workspace_root))
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
     user_agents = f"{home}/.claude/agents"
