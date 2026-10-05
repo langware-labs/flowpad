@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import weakref
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
 
@@ -17,6 +16,7 @@ from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, Projected
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.schema.data_spec.channel_spec import ChannelSpec
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.tags.envelope import parse_target
 
 
@@ -150,22 +150,18 @@ def _coerce_context_typeid(ref) -> Optional[TypeId]:
     return None
 
 
-_ROW_LOCKS: "weakref.WeakValueDictionary[str, asyncio.Lock]" = weakref.WeakValueDictionary()
+_ROW_LOCKS = new_registry()
 
 
 def conversation_row_lock(conversation_id: str) -> asyncio.Lock:
     """The lock every create-or-merge of one conversation's local row holds.
 
     Two writers materialize the same row: a ticket opened HERE (``ensure_conversation_entity``)
-    and the hub's push of it back (``hub_bridge._handle_conversation_op``). Each reads "no row"
-    and saves a whole new one; the later save wins, so the hub's untitled row overwrote the
-    local title. Held across the read and the save, the second writer sees the first's row
-    and merges into it.
+    and the hub's push of it back (``hub_bridge._handle_conversation_op``). Each read "no row"
+    and saved a whole new one, the later save winning — the hub's untitled row over the local
+    title. Held across the read and the save, the second writer sees the first's row and merges.
     """
-    lock = _ROW_LOCKS.get(conversation_id)
-    if lock is None:
-        lock = _ROW_LOCKS[conversation_id] = asyncio.Lock()
-    return lock
+    return keyed_loop_lock(_ROW_LOCKS, conversation_id)
 
 
 class Conversation(ProjectedFields, Entity):

@@ -127,12 +127,10 @@ export function VibeAssignTaskDialog({
       // `kind: vibe` is what the button lists: this project's open help tasks, opened here.
       // A title already taken in this project (asked before, or a task of that name) gets the
       // next free one ("… (2)").
-      const task =
-        created.current ??
-        (created.current = await Task.createWithFreeTitle(
-          { title: title.trim(), description: notes.trim() || undefined, kind: TaskKind.VIBE },
-          projectId ? [new TypeId('project', projectId)] : [],
-        ));
+      const task = (created.current ??= await Task.createWithFreeTitle(
+        { title: title.trim(), description: notes.trim() || undefined, kind: TaskKind.VIBE },
+        projectId ? [new TypeId('project', projectId)] : [],
+      ));
 
       // Before assign: the assignment packs the task folder, so the files must
       // already be in it — and no field save may follow the assign. Files a

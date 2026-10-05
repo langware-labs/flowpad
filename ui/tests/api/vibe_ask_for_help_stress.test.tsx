@@ -1,33 +1,70 @@
 /**
- * Stress: "Ask someone for help" with images, through the real dialog on a real hub-logged-in
- * backend. Every ask is recorded (title asked, task id, error, ms) to STRESS_OUT so the
- * recipient side can be checked against it.
+ * Stress HARNESS (records, does not assert): "Ask someone for help" with images, through the
+ * real dialog on a real hub-logged-in backend. Every ask is recorded (title, task id, error,
+ * ms) to STRESS_OUT so the recipient side can be checked against it. Skipped unless both env
+ * vars are set.
  *
- * Run: FLOW_INSTANCE=<sender> ASK_TO=<recipient email> STRESS_OUT=<file> vitest --project api <this>
+ * Run: FLOW_INSTANCE=<sender> ASK_TO=<recipient email> [ASK_SELF=<sender email>]
+ *      STRESS_OUT=<file> vitest --project api <this>
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react';
-import { dataContext, Project } from '@sdk';
-import { cloudManager } from '@sdk/services/cloud_login';
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { VibeAssignTaskDialog } from '@src/pages/flow-page/VibeAssignTaskDialog';
-import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
+import { cleanup } from '@testing-library/react';
+import { Project } from '@sdk';
+import { afterAll, afterEach, beforeEach, describe, it } from 'vitest';
+import { type AskOutcome, askForHelp, hubLoggedInSetup, png } from '../utils/ask-for-help';
+import { getTestSignupInfo } from '../utils/test-utils';
 
 const TO = process.env.ASK_TO ?? '';
+const SELF = process.env.ASK_SELF ?? '';
 const OUT = process.env.STRESS_OUT ?? '';
 
-type Outcome = { scenario: string; title: string; to: string; files: { name: string; size: number }[]; taskId?: string; error?: string; ms: number };
+type Ask = { title: string; files: File[] };
+type Outcome = AskOutcome & { scenario: string; title: string; to: string; files: { name: string; size: number }[] };
 const outcomes: Outcome[] = [];
+const stamp = Date.now();
 
-function png(name: string, size: number): File {
-  const bytes = new Uint8Array(size);
-  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  for (let i = 8; i < size; i += 65536) crypto.getRandomValues(bytes.subarray(i, Math.min(size, i + 65536)));
-  return new File([bytes], name, { type: 'image/png' });
-}
+/** Each scenario: how many asks, at once or one after another, and what each one sends. */
+const SCENARIOS: [name: string, asks: number, concurrent: boolean, ask: (i: number) => Ask][] = [
+  ['S1 one image', 1, false, () => ({ title: `S1 one image ${stamp}`, files: [png('shot-1.png', 165_000)] })],
+  [
+    'S2 three images',
+    1,
+    false,
+    () => ({
+      title: `S2 three images ${stamp}`,
+      files: [png('a.png', 50_000), png('b.png', 120_000), png('c.png', 300_000)],
+    }),
+  ],
+  ['S3 large image 8MB', 1, false, () => ({ title: `S3 large ${stamp}`, files: [png('large.png', 8_000_000)] })],
+  [
+    'S4 unicode + spaces filename',
+    1,
+    false,
+    () => ({ title: `S4 unicode ${stamp}`, files: [png('צילום מסך 2026-10-05 ב-10.38.png', 90_000)] }),
+  ],
+  [
+    'S5 two files, same name',
+    1,
+    false,
+    () => ({ title: `S5 same name ${stamp}`, files: [png('dup.png', 10_000), png('dup.png', 20_000)] }),
+  ],
+  ['S6 no image', 1, false, () => ({ title: `S6 no image ${stamp}`, files: [] })],
+  [
+    'S7 same title x5, sequential',
+    5,
+    false,
+    (i) => ({ title: `S7 same title ${stamp}`, files: [png(`s7-${i}.png`, 40_000)] }),
+  ],
+  [
+    'S8 same title x4, concurrent',
+    4,
+    true,
+    (i) => ({ title: `S8 concurrent ${stamp}`, files: [png(`s8-${i}.png`, 40_000)] }),
+  ],
+];
 
 describe.skipIf(!TO || !OUT)('Ask someone for help — stress', () => {
   const signupInfo = getTestSignupInfo();
@@ -35,9 +72,7 @@ describe.skipIf(!TO || !OUT)('Ask someone for help — stress', () => {
   let projectId = '';
 
   beforeEach(async (ctx: { task: { name: string } }) => {
-    await apiTestSetup(signupInfo, ctx.task.name);
-    await cloudManager.refreshStatus();
-    expect(dataContext.cloudLoginAvailable, 'needs a hub-logged-in backend').toBe(true);
+    await hubLoggedInSetup(signupInfo, ctx.task.name);
     if (!projectId) projectId = (await new Project({ name: projectDir }).save([])).id;
   });
   afterEach(() => cleanup());
@@ -45,69 +80,19 @@ describe.skipIf(!TO || !OUT)('Ask someone for help — stress', () => {
     if (OUT) fs.writeFileSync(OUT, JSON.stringify({ projectId, outcomes }, null, 2));
   });
 
-  async function ask(scenario: string, title: string, files: File[], to = TO): Promise<Outcome> {
-    const onAssigned = vi.fn();
-    const { container, unmount } = render(
-      <VibeAssignTaskDialog open onOpenChange={() => {}} projectId={projectId} sessionTypeId={null} onAssigned={onAssigned} />,
-    );
-    // Radix portals the dialog to body; scope to THIS dialog's content.
-    const dialogs = container.ownerDocument.querySelectorAll('[role="dialog"]');
-    const dialog = dialogs[dialogs.length - 1] as HTMLElement;
-    const q = within(dialog);
-    const person = q.getByTestId('vibe-assign-person');
-    fireEvent.change(person, { target: { value: to } });
-    fireEvent.blur(person);
-    fireEvent.change(q.getByTestId('vibe-assign-title'), { target: { value: title } });
-    if (files.length) {
-      fireEvent.change(dialog.querySelector('input[type="file"]')!, { target: { files } });
-      await waitFor(() => expect(q.getAllByText(files[files.length - 1].name).length).toBeGreaterThan(0));
-    }
-    const started = performance.now();
-    fireEvent.click(q.getByTestId('vibe-assign-submit'));
-    const errorRow = () => dialog.querySelector('p.border-destructive\\/60');
-    await waitFor(() => expect(onAssigned.mock.calls.length > 0 || errorRow() !== null).toBe(true), { timeout: 15000 }); // the tier's own test cap; slower is a finding
-    const outcome: Outcome = {
-      scenario,
-      title,
-      to,
-      files: files.map((f) => ({ name: f.name, size: f.size })),
-      taskId: onAssigned.mock.calls[0]?.[0],
-      error: errorRow()?.textContent ?? undefined,
-      ms: Math.round(performance.now() - started),
-    };
-    outcomes.push(outcome);
-    unmount();
-    return outcome;
+  async function record(scenario: string, to: string, ask: Ask): Promise<void> {
+    const outcome = await askForHelp({ projectId, to, ...ask });
+    const files = ask.files.map((f) => ({ name: f.name, size: f.size }));
+    outcomes.push({ scenario: scenario.split(' ')[0], to, title: ask.title, files, ...outcome });
   }
 
-  const stamp = Date.now();
+  it.each(SCENARIOS)('%s', async (scenario, asks, concurrent, ask) => {
+    const run = (i: number) => record(scenario, TO, ask(i));
+    if (concurrent) await Promise.all(Array.from({ length: asks }, (_, i) => run(i)));
+    else for (let i = 0; i < asks; i++) await run(i);
+  });
 
-  it('S1 one image', async () => {
-    await ask('S1', `S1 one image ${stamp}`, [png('shot-1.png', 165_000)]);
-  });
-  it('S2 three images', async () => {
-    await ask('S2', `S2 three images ${stamp}`, [png('a.png', 50_000), png('b.png', 120_000), png('c.png', 300_000)]);
-  });
-  it('S3 large image 8MB', async () => {
-    await ask('S3', `S3 large ${stamp}`, [png('large.png', 8_000_000)]);
-  });
-  it('S4 unicode + spaces filename', async () => {
-    await ask('S4', `S4 unicode ${stamp}`, [png('צילום מסך 2026-10-05 ב-10.38.png', 90_000)]);
-  });
-  it('S5 two files, same name', async () => {
-    await ask('S5', `S5 same name ${stamp}`, [png('dup.png', 10_000), png('dup.png', 20_000)]);
-  });
-  it('S6 no image', async () => {
-    await ask('S6', `S6 no image ${stamp}`, []);
-  });
-  it('S7 same title x5, sequential', async () => {
-    for (let i = 0; i < 5; i++) await ask('S7', `S7 same title ${stamp}`, [png(`s7-${i}.png`, 40_000)]);
-  });
-  it('S8 same title x4, concurrent', async () => {
-    await Promise.all([0, 1, 2, 3].map((i) => ask('S8', `S8 concurrent ${stamp}`, [png(`s8-${i}.png`, 40_000)])));
-  });
-  it('S9 ask yourself, with image', async () => {
-    const me = (dataContext as unknown as { cloudUser?: { email?: string } }).cloudUser?.email ?? process.env.ASK_SELF ?? '';
-    if (me) await ask('S9', `S9 self ${stamp}`, [png('self.png', 30_000)], me);
+  it.skipIf(!SELF)('S9 ask yourself, with image', async () => {
+    await record('S9', SELF, { title: `S9 self ${stamp}`, files: [png('self.png', 30_000)] });
   });
 });

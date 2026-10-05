@@ -1,6 +1,7 @@
 /**
- * Stress: opening support tickets, through the call the Help desk dialog makes
- * (`startHelpdeskTicket(text, project.id)`), on a real hub-logged-in backend. Every open is
+ * Stress HARNESS (records, does not assert): opening support tickets, through the call the
+ * Help desk dialog makes (`startHelpdeskTicket(text, project.id)`), on a real hub-logged-in
+ * backend. Every open is
  * recorded (text, project, returned conversation + desk, error, ms) to STRESS_OUT so the
  * requester's local rows and the desk's queue can be checked against it.
  *
@@ -8,11 +9,11 @@
  *      vitest --project api <this>
  */
 import fs from 'node:fs';
-import { dataContext, startHelpdeskTicket } from '@sdk';
-import { cloudManager } from '@sdk/services/cloud_login';
-import { afterAll, beforeEach, describe, expect, it } from 'vitest';
+import { startHelpdeskTicket } from '@sdk';
+import { afterAll, beforeEach, describe, it } from 'vitest';
 import { errorMessage } from '@src/lib/error-message';
-import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
+import { hubLoggedInSetup } from '../utils/ask-for-help';
+import { getTestSignupInfo } from '../utils/test-utils';
 
 const PROJECT = process.env.TICKET_PROJECT ?? '';
 const OUT = process.env.STRESS_OUT ?? '';
@@ -48,9 +49,7 @@ describe.skipIf(!PROJECT || !OUT)('Support tickets — opening, stress', () => {
   const stamp = Date.now();
 
   beforeEach(async (ctx: { task: { name: string } }) => {
-    await apiTestSetup(signupInfo, ctx.task.name);
-    await cloudManager.refreshStatus();
-    expect(dataContext.cloudLoginAvailable, 'needs a hub-logged-in backend').toBe(true);
+    await hubLoggedInSetup(signupInfo, ctx.task.name);
   });
   afterAll(() => {
     if (OUT) fs.writeFileSync(OUT, JSON.stringify({ outcomes }, null, 2));
@@ -66,7 +65,10 @@ describe.skipIf(!PROJECT || !OUT)('Support tickets — opening, stress', () => {
     await open('O3', `הסוכן נתקע ${stamp} 🚀 — 日本語 — Ünïcödé`);
   });
   it('O4 markdown, code, HTML', async () => {
-    await open('O4', `Error ${stamp}:\n\n\`\`\`ts\nconst x = <T,>(a: T) => a;\n\`\`\`\n<script>alert(1)</script> **bold** & "quotes"`);
+    await open(
+      'O4',
+      `Error ${stamp}:\n\n\`\`\`ts\nconst x = <T,>(a: T) => a;\n\`\`\`\n<script>alert(1)</script> **bold** & "quotes"`,
+    );
   });
   it('O5 whitespace only is refused', async () => {
     await open('O5', '   \n\t ');
