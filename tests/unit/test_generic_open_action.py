@@ -205,3 +205,66 @@ async def test_a_project_link_says_why_it_cannot_open(project_hub, hub_answer, e
     params = _redirect_params(await _call_local("GET", f"project/{pid}/open"))
 
     assert params["project_id"] == [pid] and params["project_error"] == [error]
+
+
+# -- project: shared while this desktop had no FlowPad -------------------------
+
+
+@pytest.fixture
+def project_list_hub(monkeypatch):
+    """The hub's project list for the signed-in user: ``rows``, signed in."""
+    from flow_sdk.cli.auth import hub_login
+    from flow_sdk.cloud_client.transport import hub_http
+
+    rows: list[dict] = []
+
+    async def _hub_get(entity_type, entity_id=None, *args, **kwargs):
+        assert getattr(entity_type, "value", entity_type) == BuiltinEntityType.PROJECT.value and entity_id is None
+        return rows
+
+    monkeypatch.setattr(hub_http, "hub_get", _hub_get)
+    monkeypatch.setattr(hub_login, "hub_auth_available", lambda: True)
+    return rows
+
+
+async def _new_cloud_projects() -> list[dict]:
+    resp = await _call_local("POST", "new-cloud-projects")
+    assert resp.status_code == 200, resp.text
+    return resp.json()["data"]["projects"]
+
+
+@pytest.mark.asyncio
+async def test_a_hub_project_this_desktop_never_saw_is_offered_for_set_up(project_list_hub):
+    from flow_sdk.builtin.project import Project
+
+    pid = str(uuid4())
+    project_list_hub.append(_hub_project(pid))
+
+    [link] = await _new_cloud_projects()
+
+    assert link["project_id"] == pid and link["setup_git"] == "1" and link["title"] == f"course-{pid[:8]}"
+    assert '"owner": "langware-labs"' in link["git_origin"]
+    row = await Project.get_one({"id": pid})
+    assert row is not None and row.remote and not row.fs_storage_mount_path, "mirrored file-less, ready to set up"
+    assert await _new_cloud_projects() == [], "offered once: the mirrored row is no longer new"
+
+
+@pytest.mark.asyncio
+async def test_a_hub_project_already_here_or_without_an_origin_is_not_offered(project_list_hub, tmp_path):
+    from flow_sdk.builtin.project import Project
+
+    held, no_origin = str(uuid4()), str(uuid4())
+    await Project(id=held, name="mine", fs_storage_mount_path=str(tmp_path)).save(notify=False)
+    project_list_hub.extend([_hub_project(held), {"type": "project", "id": no_origin, "name": "bare"}])
+
+    assert await _new_cloud_projects() == []
+
+
+@pytest.mark.asyncio
+async def test_signed_out_asks_the_hub_nothing(project_list_hub, monkeypatch):
+    from flow_sdk.cli.auth import hub_login
+
+    monkeypatch.setattr(hub_login, "hub_auth_available", lambda: False)
+    project_list_hub.append(_hub_project(str(uuid4())))
+
+    assert await _new_cloud_projects() == []

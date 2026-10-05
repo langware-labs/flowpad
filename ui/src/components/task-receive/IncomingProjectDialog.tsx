@@ -139,8 +139,19 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
   }, [projectId, runClone, runInstallShared]);
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose(); }}>
-      <DialogContent className="max-w-lg" data-testid="incoming-project-dialog">
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) handleClose();
+      }}
+    >
+      {/* Only its own buttons close it: another dialog opening over it (the first-run setup
+          wizard) counts as a click outside, and would otherwise dismiss it unseen. */}
+      <DialogContent
+        className="max-w-lg"
+        data-testid="incoming-project-dialog"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         {/* Confirm — "would you like to set up X" */}
         {step === 'confirm' && (
           <>
@@ -152,14 +163,17 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
               </DialogTitle>
               <DialogDescription>
                 <Trans>
-                  Set up <em>{projectName}</em> in this workspace. We'll clone the repo and index it so it's ready to use.
+                  Set up <em>{projectName}</em> in this workspace. We'll clone the repo and index it so it's ready to
+                  use.
                 </Trans>
               </DialogDescription>
             </DialogHeader>
-            <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1">
+            <div className="space-y-1 rounded-md border bg-muted/40 p-3 text-sm">
               {originLabel && (
                 <div className="flex items-center gap-2 text-muted-foreground">
-                  <span className="shrink-0"><Trans>Repo:</Trans></span>
+                  <span className="shrink-0">
+                    <Trans>Repo:</Trans>
+                  </span>
                   <code className="truncate text-foreground">{originLabel}</code>
                 </div>
               )}
@@ -171,7 +185,9 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
               )}
             </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}><Trans>Cancel</Trans></Button>
+              <Button variant="ghost" onClick={handleClose}>
+                <Trans>Cancel</Trans>
+              </Button>
               <Button onClick={handleConfirm} data-testid="incoming-project-install">
                 <Trans>Set up project</Trans>
               </Button>
@@ -183,7 +199,9 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
         {step === 'cloning' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>Setting up your project…</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>Setting up your project…</Trans>
+              </DialogTitle>
               <DialogDescription>
                 <Trans>Cloning the repo and indexing it.</Trans>
               </DialogDescription>
@@ -198,7 +216,9 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
         {step === 'collision' && (
           <>
             <DialogHeader>
-              <DialogTitle><Trans>A project with that name exists</Trans></DialogTitle>
+              <DialogTitle>
+                <Trans>A project with that name exists</Trans>
+              </DialogTitle>
               <DialogDescription>
                 <Trans>
                   <code>{attemptedName}</code> already exists in this workspace. Choose a different folder name.
@@ -212,7 +232,9 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
               className="text-sm"
             />
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}><Trans>Cancel</Trans></Button>
+              <Button variant="ghost" onClick={handleClose}>
+                <Trans>Cancel</Trans>
+              </Button>
               <Button
                 onClick={() => void runClone(nameOverride.trim() || suggestedName)}
                 disabled={!nameOverride.trim() && !suggestedName}
@@ -230,7 +252,9 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
               <CheckCircle2 className="h-5 w-5 text-emerald-500" />
               <Trans>Ready!</Trans>
             </DialogTitle>
-            <DialogDescription><Trans>Opening your project…</Trans></DialogDescription>
+            <DialogDescription>
+              <Trans>Opening your project…</Trans>
+            </DialogDescription>
           </DialogHeader>
         )}
 
@@ -244,14 +268,16 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
               </DialogTitle>
               <DialogDescription asChild>
                 <div>
-                  <pre className="mt-2 max-h-32 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">
+                  <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-muted px-3 py-2 text-xs text-foreground">
                     {errorMsg}
                   </pre>
                 </div>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button variant="ghost" onClick={handleClose}><Trans>Close</Trans></Button>
+              <Button variant="ghost" onClick={handleClose}>
+                <Trans>Close</Trans>
+              </Button>
               <Button
                 onClick={() => {
                   // Retry must take the SAME branch the confirm took. Calling
