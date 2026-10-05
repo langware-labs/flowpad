@@ -154,6 +154,14 @@ export default {
               '0 0 0 1px hsl(var(--primary) / 0.65), 0 0 8px 0 hsl(var(--primary) / 0.50)',
           },
         },
+        'unfunded-flash': {
+          '0%, 100%': {
+            backgroundColor: 'rgb(248 113 113 / 0.10)',
+          },
+          '50%': {
+            backgroundColor: 'rgb(248 113 113 / 0.45)',
+          },
+        },
         'pending-glow-once': {
           '0%': {
             boxShadow:
@@ -179,6 +187,7 @@ export default {
         'float-background': 'float-background 15s ease infinite',
         'pending-glow': 'pending-glow 3.6s ease-in-out infinite',
         'pending-glow-once': 'pending-glow-once 3s ease-in-out 1 forwards',
+        'unfunded-flash': 'unfunded-flash 1.4s ease-in-out infinite',
       },
     },
   },

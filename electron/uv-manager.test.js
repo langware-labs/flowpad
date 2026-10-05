@@ -437,6 +437,8 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
     const mk = () => {
       const m = new UvManager(silentLog, { stateDir: dir });
       m._drainVenvProcesses = async () => {};
+      // ensureUv probes the real `uv`: present on a developer machine, absent on CI — which then tried the installer.
+      m.ensureUv = async () => {};
       return m;
     };
     try {
@@ -482,7 +484,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       // repairIfInterrupted: reinstalls once and clears the marker.
       let reinstalls = 0;
       m = mk();
-      m.ensureUv = async () => {};
       m.reinstall = async () => { reinstalls++; };
       eq(await m.repairIfInterrupted(), true, 'repairIfInterrupted: repairs when the marker exists');
       eq(reinstalls, 1, 'repairIfInterrupted: reinstall ran once');
@@ -549,7 +550,6 @@ ok(!mgr.isToolDirLockedError(null), 'null error → not a lock (no throw)');
       // A successful repair through the REAL reinstall/_uvToolInstallForce clears the marker.
       fs.writeFileSync(marker, JSON.stringify({ pid: 999999999 }));
       m = mk();
-      m.ensureUv = async () => {};
       m._getLatestPypiInfo = async () => null;
       m._ensureShimOnPath = async () => {};
       m._resolveFlowBin = async () => null;
