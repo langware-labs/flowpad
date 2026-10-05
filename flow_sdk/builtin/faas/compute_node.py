@@ -1616,6 +1616,45 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         logging.info(f"[provisioning] next bootstrap will open project {project_id}")
         return ApiSuccessResponse(data={"project_id": project_id})
 
+    @action.all(action_name="decision", methods=["get", "post"])
+    async def _decision_action(self) -> ApiResponse:
+        """``GET decision/endpoints`` lists the hub decision APIs this user may call; ``POST
+        decision`` takes one decision (``{spec, endpoint?}``) and answers a ``DecisionResult``.
+
+        The desk's only way in, for the reason ``llm-endpoint/test`` is: the box holds no
+        ``api_endpoint`` rows and the browser holds no hub key. A failure is a 4xx/5xx whose
+        ``data.reason`` is the closed ``DecisionError.reason`` -- the caller branches on it and falls
+        back, so a missing decision API is never an error the UI has to explain."""
+        from flow_sdk.decision import DecisionError, decide, decision_endpoints  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        method = (request_info.request.method if request_info and request_info.request else "GET").upper()
+        if method == "GET":
+            offers = await decision_endpoints()
+            return ApiSuccessResponse(data=[o.model_dump(mode="json") for o in offers])
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        try:
+            result = await decide(body.get("spec") or {}, endpoint=body.get("endpoint") or None)
+        except DecisionError as exc:
+            # Never 401 or 502: the desk's client alerts on a 401 and silently retries a 502
+            # (it reads one as a sandbox waking up), and a decision must fail fast and quietly.
+            status = {"invalid_spec": 400, "no_endpoint": 404, "rate_limited": 429, "auth": 403}.get(exc.reason, 503)
+            return ApiFailResponse(message=exc.message, status_code=status, data={"reason": exc.reason})
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @action.all(action_name="navigator-route", methods=["post"])
+    async def _navigator_route_action(self) -> ApiResponse:
+        """``POST {utterance, page?, context?}`` -> ``NavigatorRoute``: open something now, or
+        hand the request to the assistant. Never fails: anything missing or unsure is
+        ``route: "agentic"``, and with no decision API on the hub that is every answer."""
+        from flow_sdk.core.navigator import route  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else {}) or {}
+        context = body.get("context") if isinstance(body.get("context"), dict) else {}
+        answer = await route(str(body.get("utterance") or ""), page=str(body.get("page") or ""), context=context)
+        return ApiSuccessResponse(data=answer.model_dump(mode="json"))
+
     @action.all(action_name="llm-endpoint", methods=["get", "post", "delete"])
     async def _llm_endpoint_action(self) -> ApiResponse:
         """GET status / POST bind / DELETE unbind of the hub ``LLMEndpoint`` this box's

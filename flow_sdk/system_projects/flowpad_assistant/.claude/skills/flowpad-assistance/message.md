@@ -47,6 +47,15 @@ then its **full** text, then one `📎` line per attachment with its local path,
 messages from X. (`flow conversation summary` is the one-line-per-message skim, cut to 80
 chars — don't answer from it.)
 
+**Threads.** A conversation can hold several threads (an email thread, a Slack thread, a reply
+chain in Flowpad's own chat). The header lists them (`🧵 <title> · N messages · thread <id>`),
+every message in one carries `🧵 <title>`, and a reply shows `reply to <msg-id>` (the quote).
+Read one thread with:
+
+```bash
+flow conversation show <conversation> --thread <thread-id | any message id in it>
+```
+
 ## Read — Step 3: open one message and its attachments
 
 ```bash
@@ -128,6 +137,12 @@ One endpoint carries every kind of send; pick the payload keys for what you are 
 | `asset_references` | a Flowpad entity, referenced not uploaded | its TypeId, e.g. `markdown-<uuid>` |
 | `prompt_text` | a runnable prompt for the recipient | minted as a real `Prompt` entity, attached as a `type_id` with an inline `prompt_preview` |
 | `prompt_files` | prompt bodies read from files | text files become `Prompt` entities; images stay raw |
+| `reply_to_id` | the message this answers | quotes it and joins the thread rooted at it; must be a message of this conversation |
+| `thread_root_id` | a message whose thread to write into | joins that thread without quoting; ignored when `reply_to_id` is set |
+
+Text-only replies have a CLI form: `flow conversation send <conversation> "<text>" --reply-to <msg-id>`.
+On a source channel (email, Slack, WhatsApp …) answer through the channel instead:
+`flow conversation reply <conversation> "<text>" --reply-to <msg-id>`.
 
 Multipart when the send uploads files:
 

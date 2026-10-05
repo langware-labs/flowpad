@@ -40,6 +40,9 @@ class ChannelSpec(DataSpec):
     home: bool = False
     transport: ChannelTransport = ChannelTransport.SOURCE
     accepts_attachments: bool = False
+    #: A person can answer ONE message here (the surface offers Reply). ``False`` for channels that
+    #: only speak (a phone line) or only record (a task ledger, a harness transcript).
+    replies: bool = False
     #: A reply to one message quotes it where the recipient reads (WhatsApp, Telegram); ``False``
     #: means it only lands in that message's thread (email, Slack) — the surface says "Reply in thread".
     quotes: bool = False

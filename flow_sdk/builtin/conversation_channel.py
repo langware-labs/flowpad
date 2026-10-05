@@ -18,6 +18,9 @@ FLOWPAD = ChannelSpec(
     home=True,
     transport=ChannelTransport.FLOWPAD,
     accepts_attachments=True,
+    # A native reply quotes the message it answers AND joins the thread rooted at it.
+    replies=True,
+    quotes=True,
     needs_cloud_login=True,
     hosts_sessions=True,
 )
@@ -30,7 +33,7 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
     driver behind it — ``provider`` when the conversation names one (two drivers can speak one
     channel), else the driver registered under the channel's name (``DataDriver.loaded`` is a
     registry lookup — safe on a serialization path), else a bare source channel titled from its
-    name. What the channel can do — files, quotes, reactions — is read off the driver's class."""
+    name. What the channel can do — files, replies, quotes, reactions — is read off the driver's class."""
     key = (name or "").strip() or HOME_CHANNEL
     if key == HOME_CHANNEL:
         return FLOWPAD
@@ -45,6 +48,7 @@ def channel_spec(name: str | None, provider: str | None = None) -> ChannelSpec:
         title=str(getattr(driver, "title", "") or "") or humanize_type(key),
         icon_name=str(getattr(driver, "icon_name", "") or ""),
         accepts_attachments=bool(getattr(files, "kinds", None)),
+        replies=bool(getattr(cls, "replies", False)),
         quotes=bool(getattr(cls, "quotes", False)),
         reacts=isinstance(cls, type) and issubclass(cls, Reacting),
     )

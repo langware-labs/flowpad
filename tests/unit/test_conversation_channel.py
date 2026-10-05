@@ -70,3 +70,33 @@ def test_a_source_channel_wears_a_chip_and_replies_through_its_source():
     assert (spec.chip, spec.transport, spec.home) == (True, "source", False)
     # What it can do is the driver's: Slack takes files and reactions, and its replies thread.
     assert (spec.accepts_attachments, spec.reacts, spec.quotes) == (True, True, False)
+
+
+def test_flowpads_own_chat_replies_by_quoting_and_threading():
+    spec = Conversation(title="hi").channel_spec
+    assert (spec.replies, spec.quotes) == (True, True)
+
+
+@pytest.mark.parametrize(
+    "channel, replies, quotes",
+    [
+        ("gmail", True, False),
+        ("slack", True, False),
+        ("telegram", True, True),
+        ("whatsapp", True, True),
+        ("cloud_email", True, False),
+        ("agentmail", True, False),
+        ("teams", True, False),
+        ("helpdesk", True, False),
+        ("http_chat", True, False),
+        ("task_manager", True, False),
+        # A call speaks to the person; the harness writes into the thread itself.
+        ("voice_phone", False, False),
+        ("voice_browser", False, False),
+        ("voice_file", False, False),
+        ("agent", False, False),
+    ],
+)
+def test_whether_a_channel_offers_reply_is_the_drivers(channel, replies, quotes):
+    spec = Conversation(title="t", channel=channel).channel_spec
+    assert (spec.replies, spec.quotes) == (replies, quotes)

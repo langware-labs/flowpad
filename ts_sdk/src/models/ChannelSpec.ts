@@ -21,6 +21,9 @@ export interface IChannelSpec {
   home: boolean;
   transport: ChannelTransport;
   accepts_attachments: boolean;
+  /** A person can answer ONE message here (the surface offers Reply). False for a channel that
+   *  only speaks (a phone line) or only records (a harness transcript). */
+  replies?: boolean;
   /** A reply to one message quotes it where the recipient reads (WhatsApp, Telegram); false: the
    *  reply only lands in that message's thread (email, Slack) — say "Reply in thread". */
   quotes?: boolean;

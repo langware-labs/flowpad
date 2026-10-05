@@ -618,9 +618,7 @@ async def _place_message(
         # Two lookups, no derivation: the parent item by its natural key, then
         # its message row by the reference column. A parent that has not
         # arrived — or arrived but is not yet projected — yields no
-        # `reply_to_id`. Accepted loss vs the derived form: a child projected
-        # before its parent keeps a null `reply_to_id` (nothing heals it
-        # later); both lanes project oldest-first, which covers the normal case.
+        # `reply_to_id` here; `_heal_replies_to` links it when the parent lands.
         own = _origin_of(item, source)
         parent = await SourceItem.find_existing(
             item.data_source_id, own.model_copy(update={"key": item.reply_to_external_id, "url": None})
@@ -639,6 +637,8 @@ async def _place_message(
         bundle_ts=(item.occurred_at or None),
         notify=notify,
     )
+    if first_placement and item.external_id:
+        await _heal_replies_to(item, fm_id, thread_id, notify=notify)
     if recount:
         await recompute_thread_projection(thread_id, thread=thread, notify=notify)
     if announce and first_placement:
@@ -646,6 +646,37 @@ async def _place_message(
 
         emit_projected_tag(item)
     return fm_id, thread_id
+
+
+async def _heal_replies_to(item, fm_id: str, thread_id: str, *, notify: bool) -> None:
+    """Link the replies that were projected BEFORE this message (it arrived late — a backfill
+    page out of order, a webhook that beat the poll) to it: the quote their projection could not
+    resolve then. Scoped to this message's thread, where its replies live, and to messages that
+    still have no ``reply_to_id`` — one thread query plus one bulk item lookup, the same order of
+    work as the thread recount that follows."""
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.source_item import SourceItem  # noqa: PLC0415
+    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+
+    orphans = [
+        fm
+        for fm in await FlowMessage.get_all({"match": {"thread_id": thread_id}})
+        if fm.id != fm_id and not fm.reply_to_id and fm.source_item_id
+    ]
+    if not orphans:
+        return
+    items = await SourceItem.get_all(
+        QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", [fm.source_item_id for fm in orphans]]))
+    )
+    answering = {
+        str(i.id)
+        for i in items
+        if i.reply_to_external_id == item.external_id and i.data_source_id == item.data_source_id
+    }
+    for fm in orphans:
+        if fm.source_item_id in answering:
+            fm.reply_to_id = fm_id
+            await fm.save(notify=notify)
 
 
 def self_addresses(source) -> set[str]:

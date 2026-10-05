@@ -25,6 +25,12 @@ export interface SendReplyExtras {
   /** Session settings, honored only on the prompt that OPENS a session
    *  (a prompt send without `remoteWorkerSessionId`). */
   replyPolicy?: 'auto' | 'review';
+  /** The message this send answers: it quotes it and joins the thread rooted at it
+   *  (the backend derives the thread root). Must be a message of the same conversation. */
+  replyToId?: string | null;
+  /** Write into the thread of this message (an open thread's root) without quoting anyone.
+   *  Ignored when `replyToId` is set — the answered message decides the thread then. */
+  threadRootId?: string | null;
 }
 
 /** Serialize shareConfig to the backend's snake_case share_config shape.
@@ -89,6 +95,8 @@ export async function sendReply(
       form.append('remote_worker_session_id', extras.remoteWorkerSessionId);
     }
     if (extras?.replyPolicy) form.append('reply_policy', extras.replyPolicy);
+    if (extras?.replyToId) form.append('reply_to_id', extras.replyToId);
+    if (extras?.threadRootId) form.append('thread_root_id', extras.threadRootId);
     action.bodyParameters = form;
     // File sends are multipart — binary bodies only travel over REST.
     return sentReply(await dataManager.callAction(action));
@@ -99,6 +107,8 @@ export async function sendReply(
     if (extras?.shareConfig) body.share_config = serializeShareConfig(extras.shareConfig);
     if (extras?.remoteWorkerSessionId) body.remote_worker_session_id = extras.remoteWorkerSessionId;
     if (extras?.replyPolicy) body.reply_policy = extras.replyPolicy;
+    if (extras?.replyToId) body.reply_to_id = extras.replyToId;
+    if (extras?.threadRootId) body.thread_root_id = extras.threadRootId;
     action.bodyParameters = body;
     // Text-only send: prefer the WebSocket hop when the socket is open
     // (skips an HTTP round-trip), fall back to REST otherwise.
