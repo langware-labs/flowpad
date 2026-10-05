@@ -21,6 +21,7 @@ import { notify } from '@src/notifications';
 import { useAutomationWords } from './automation-words';
 import { AutomationRow } from './AutomationRow';
 import { KindGallery } from './KindGallery';
+import { IfThenGraphic } from './IfThenGraphic';
 import { Pills } from './Pills';
 
 const KIND_ORDER: AutomationKind[] = ['schedule', 'event', 'file', 'agent_hook'];
@@ -113,15 +114,8 @@ export function AutomationsList() {
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="automations-list">
-      <header className="flex flex-wrap items-start justify-between gap-3 px-6 pb-3 pt-6">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold">
-            <Trans>Automations</Trans>
-          </h2>
-          <p className="mt-0.5 max-w-2xl text-sm text-muted-foreground">
-            <Trans>When something happens, Flowpad does something for you. Each line reads as the rule it is.</Trans>
-          </p>
-        </div>
+      <header className="flex flex-wrap items-center justify-between gap-3 px-6 pb-3 pt-6">
+        {!empty && <IfThenGraphic />}
         {!empty && (
           <Button className="gap-1.5" onClick={() => setChoosing((c) => !c)} data-testid="automation-new">
             <Plus className="size-4" aria-hidden />
@@ -164,11 +158,7 @@ export function AutomationsList() {
           </div>
         ) : empty ? (
           <div className="mx-auto max-w-3xl">
-            <p className="text-sm text-muted-foreground">
-              <Trans>
-                You have no automations yet. Pick what should start one; you can test it before it ever runs on its own.
-              </Trans>
-            </p>
+            <IfThenGraphic />
             <KindGallery onPick={(k, r) => create(k, r)} />
           </div>
         ) : (
