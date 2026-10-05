@@ -145,7 +145,7 @@ Screens are addressed by **view name**, optionally plus `/pointer` and `?opts` �
 same string the URL bar carries after `/dock/`. Not by TypeId:
 
 ```bash
-flow show view events                       # presenting it — the default
+flow show view automations                  # presenting it — the default
 flow show view assets/list/skill
 flow show view "search?q=widget"            # quote anything containing a ?
 flow navigate view preferences/appearance   # only on an explicit "take me there"
@@ -167,6 +167,7 @@ opens a different screen and reports success.
 | Asset list | `asset-list` | counter assets |
 | Assets | `assets` | library, docs tree |
 | Assistance | `assistance` | expert assistance |
+| Automations | `automations` | events, triggers, rules, schedules, scheduled jobs, cron, trigger history |
 | Capabilities | `capabilities` | checks, system checks |
 | Code Editor | `editor` | edit file |
 | Collaboration | `project` | room |
@@ -174,7 +175,6 @@ opens a different screen and reports success.
 | Data sources | `data-sources` | connectors, integrations, ingestion, sources |
 | Desktop | `desktop` | favorites |
 | Docs | `docs` | documentation |
-| Events | `events` | rules, event bus, triggers, signals, cron |
 | Files | `explorer` | file tree, folders |
 | Flowpad Assistant | `assistant` | assistant chat, help chat |
 | Graph Workflows | `graph-workflows` | workflows |
@@ -233,7 +233,7 @@ A screen marked *(hub)* lives on the hub surface — address it as `hub/<view>`.
 
 `flow schema views` is the same table, live, with each view's pointer rule. Reach for it
 only if the ask matches nothing above. Screens are **not** TypeIds: `flow navigate entity
-events` is wrong and will fail.
+automations` is wrong and will fail.
 
 ## You have no path and no id
 

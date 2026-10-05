@@ -37,9 +37,6 @@ CANDIDATE_LIMIT = 5
 
 # ── the label space ──────────────────────────────────────────────────────────
 
-# Events has four slugs for one screen; offering all four asks the model to choose between
-# identical screens.
-_EVENT_TWINS = {"triggers", "signals", "cron"}
 _SKIP = {"assistant"}  # the assistant is where the request was typed
 AGENTIC = (
     "Not a plain open: the request needs reasoning, an answer or explanation, creating / changing / "
@@ -68,12 +65,8 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
     subplaces, and ``{name: key}`` for the rules."""
     options: dict[str, str] = {}
     names: dict[str, str] = {}
-    event_aliases: list[str] = []
     for place in navigation_map().places:
         if place.pointer == "required" or place.view in _SKIP:
-            continue
-        if place.view in _EVENT_TWINS or place.view == "events":
-            event_aliases += [place.view, *place.aliases]
             continue
         key = f"view:{_address(place)}"
         aka = ", ".join(place.aliases)
@@ -82,9 +75,6 @@ def _static_options() -> tuple[dict[str, str], dict[str, str]]:
             names.setdefault(name.lower(), key)
         for sub in place.subplaces:
             options[f"view:{_address(place, sub.pointer)}"] = f"Screen '{sub.label}'"
-    options["view:events"] = "Screen 'Events' (also called: " + ", ".join(dict.fromkeys(event_aliases)) + ")"
-    for name in ("events", *event_aliases):
-        names.setdefault(name.lower(), "view:events")
     return options, names
 
 

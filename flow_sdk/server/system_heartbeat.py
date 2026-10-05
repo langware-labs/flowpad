@@ -6,7 +6,7 @@ tick. Failure-isolated and time-bounded — one slow or raising task can't break
 the others.
 
 The trigger itself is installed by ``set_service_triggers()`` at server boot
-(see ``flow_sdk/server/builtin_triggers.py``). Visible in ``/dock/triggers``
+(see ``flow_sdk/server/builtin_triggers.py``). Visible in ``/dock/automations``
 like any other system trigger; counter ticks each minute.
 
 Contract for tasks:

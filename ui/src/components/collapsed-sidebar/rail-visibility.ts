@@ -38,8 +38,8 @@ export type RailItemId =
   /** OAuth connections, API-key credentials and the FlowPad login — one screen. */
   | 'credentials'
   | 'discover'
-  /** Rules and the events they fire on — replaced `triggers` + `signals`. */
-  | 'events'
+  /** Automations — "when X, do Y": the list, their runs, the event bus. Was `events`. */
+  | 'automations'
   | 'hooks'
   | 'llm-sources'
   | 'capabilities'
@@ -128,11 +128,10 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'rag', from: ViewMode.Advanced, placement: 'top' },
   { id: 'discover', from: ViewMode.Dev, placement: 'top' },
   { id: 'graph-workflows', from: ViewMode.Dev, placement: 'top' },
-  // Rules and the events they fire on, merged. Took BOTH the old `signals`
-  // (Dev/top) and `triggers` (Advanced/overflow) slots: Advanced because
-  // dropping to Dev would have removed rules from a mode that already had
-  // them, top because a screen you operate does not belong behind a chevron.
-  { id: 'events', from: ViewMode.Advanced, placement: 'top' },
+  // Automations (was Events, which took the old `signals` and `triggers` slots):
+  // Advanced because dropping to Dev would remove rules from a mode that already
+  // had them, top because a screen you operate does not belong behind a chevron.
+  { id: 'automations', from: ViewMode.Advanced, placement: 'top' },
   // Advanced, not Dev: 'what did my agent produce' is an ordinary question,
   // and the answer was previously unreachable for any run without a
   // spawning entity to browse to.

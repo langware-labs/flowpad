@@ -205,7 +205,7 @@ async def activate_flows_for_trigger(trigger_id: str, trigger_name: str,
         logger.exception("Trigger %s: flow activation failed", trigger_name)
         # `trigger.failed` is emitted HERE, not at a call site: this except is
         # where the failure is actually caught, and it is the one outcome the
-        # events screen exists to show that has no natural home above.
+        # Automations runs exist to show that has no natural home above.
         emit_trigger_failed(
             trigger_id, str(trigger.trigger_type) if trigger else "", trigger_name,
             stage="flow_activation", error=str(exc),
@@ -271,11 +271,6 @@ async def run_trigger_actions(trigger: "Trigger", changes: list) -> DispatchOutc
                 project_id=trigger.project_id,
             )
     return DispatchOutcome(results, errors, int((time.monotonic() - started) * 1000))
-
-
-async def dispatch_trigger_actions(trigger: "Trigger", changes: list) -> list[Any]:
-    """``run_trigger_actions`` for callers that only want the handler answers."""
-    return (await run_trigger_actions(trigger, changes)).results
 
 
 async def _fire_schedule_job(trigger_id: str) -> None:
@@ -414,6 +409,19 @@ class Trigger(Entity):
     def is_file_backed(self) -> bool:
         """Only triggers adopted from a document have a filesystem asset."""
         return bool(self.asset_ref)
+
+    @property
+    def is_builtin(self) -> bool:
+        """Flowpad's own: seeded (``builtin_*``), system-scoped, or shipped in the
+        running install. Read-only to people — the screen lists it under "Built
+        into Flowpad", and update/delete refuse it."""
+        if str(self.scope or "") == "system" or str(getattr(self, "uname", "") or "").startswith("builtin_"):
+            return True
+        if self.asset_ref:
+            from flow_sdk.config import is_running_install_path  # noqa: PLC0415
+
+            return is_running_install_path(self.asset_ref)
+        return False
 
     #: RUNTIME STATE. `Persist.TRUE` puts these in the SHADOW record (under flow
     #: home, never the asset folder, never git) rather than leaving them to the
@@ -593,29 +601,6 @@ class Trigger(Entity):
             run_date, last_run = run_date.replace(tzinfo=None), last_run.replace(tzinfo=None)
         return last_run >= run_date
 
-    async def _reschedule_job(self) -> None:
-        """Reschedule an existing APScheduler job after update."""
-        if not self.id or not self.expr:
-            return
-        try:
-            from flow_sdk.server.scheduler import _job_registration_lock
-
-            scheduler = _get_scheduler()
-            if scheduler:
-                async with _job_registration_lock:
-                    trigger = _parse_trigger(self.sched_trigger_type or "cron", self.expr, self.timezone)
-                    job = scheduler.reschedule_job(self.id, trigger=trigger)
-                    if job:
-                        if self.enabled:
-                            job.resume()
-                        else:
-                            job.pause()
-                        if job.next_run_time:
-                            self.next_run = job.next_run_time
-                            await self.update()
-        except Exception as e:
-            logger.warning(f"Failed to reschedule trigger {self.id}: {e}")
-
     # ── Hook trigger logic ────────────────────────────────────────────────────
 
     def match(self, hook_data: HookEventData) -> bool:
@@ -741,18 +726,12 @@ class Trigger(Entity):
         except ValueError as exc:  # pydantic ValidationError is a ValueError
             return ApiFailResponse(message=f"That automation can't be saved: {exc}", status_code=422)
         await entity.save()
+        # The one arming seam: it also applies the "runs here" gates (another
+        # install's copy, a schedule placed on another machine) the indexer path
+        # gets — a rule made here must not be armed by a different rule.
+        from flow_sdk.builtin.trigger_arming import arm_trigger  # noqa: PLC0415
 
-        if trigger_type == "schedule":
-            await entity._register_schedule_job()
-        elif trigger_type == "fsop":
-            # Mirror the schedule pattern: hand the freshly-saved trigger to
-            # the FSOp watcher so its awatch task is spawned immediately
-            # (without waiting for the next server boot).
-            from flow_sdk.server.fsop_watcher import fsop_watcher
-            await fsop_watcher.on_trigger_saved(entity)
-        elif trigger_type == "tag":
-            from flow_sdk.builtin.tag_triggers import register_tag_trigger
-            register_tag_trigger(entity)
+        await arm_trigger(entity, replace=True)
 
         return ApiSuccessResponse(data=entity)
 
@@ -768,10 +747,9 @@ class Trigger(Entity):
             return ApiFailResponse(message="Request body required", status_code=422)
 
         from flow_sdk.automations.check import SPEC_FIELDS  # noqa: PLC0415
-        from flow_sdk.automations.overview import group_of  # noqa: PLC0415
         from flow_sdk.automations.spec_file import SpecFileError, document_path, rewrite  # noqa: PLC0415
 
-        if group_of(self) == "builtin" and set(body) - {"log_mode"}:
+        if self.is_builtin and set(body) - {"log_mode"}:
             return ApiFailResponse(message="This automation is built into Flowpad and can't be changed here.",
                                    status_code=409)
         if document_path(self) is not None:
@@ -814,19 +792,9 @@ class Trigger(Entity):
                 return ApiFailResponse(message=problem, status_code=422)
 
         await self.update()
+        from flow_sdk.builtin.trigger_arming import arm_trigger  # noqa: PLC0415
 
-        if self.trigger_type == "schedule":
-            await self._reschedule_job()
-        elif self.trigger_type == "fsop":
-            # Re-spawn the watcher's task — config (watch_path / recursive /
-            # glob / actions) may have changed; on_trigger_saved cancels the
-            # existing task and starts a fresh one.
-            from flow_sdk.server.fsop_watcher import fsop_watcher
-            await fsop_watcher.on_trigger_saved(self)
-        elif self.trigger_type == "tag":
-            # Re-arm (replace) — pattern/filters/enabled may have changed.
-            from flow_sdk.builtin.tag_triggers import register_tag_trigger
-            register_tag_trigger(self)
+        await arm_trigger(self, replace=True)  # re-arm: pattern / schedule / watch may have changed
 
         return ApiSuccessResponse(data=self)
 
@@ -837,10 +805,9 @@ class Trigger(Entity):
         A file-defined automation goes with its folder — disarm, folder, row, in
         that order, or the indexer resurrects a row whose folder is still on
         disk. Flowpad's own are refused."""
-        from flow_sdk.automations.overview import group_of  # noqa: PLC0415
         from flow_sdk.automations.spec_file import document_path  # noqa: PLC0415
 
-        if group_of(self) == "builtin":
+        if self.is_builtin:
             return ApiFailResponse(message="This automation is built into Flowpad and can't be deleted.",
                                    status_code=409)
         if self.id:
@@ -915,13 +882,9 @@ class Trigger(Entity):
     @core_action.get(action_name="fires")
     async def fires_action(cls, request: Request) -> ApiResponse:
         """
-        GET /api/v1/graph/trigger/fires — recent outcomes across ALL rules,
-        newest first.
-
-        The per-rule ``{id}/log`` action answers "what did THIS rule do"; the
-        events screen asks "what has been happening", which would otherwise cost
-        one request per rule on every poll. ``discover(None)`` already reads
-        across rules — this just exposes it and sorts.
+        GET /api/v1/graph/trigger/fires — raw history rows across ALL rules,
+        newest first. Scripts and tests read these; the Automations screen
+        reads ``runs``, which folds the same rows into runs.
 
         Rows are the durable half of a fire; the matching ``trigger.*`` envelope
         is the live half, joined by ``event_id``. They are read separately
@@ -1070,10 +1033,14 @@ class Trigger(Entity):
         params = get_current_request_info().request_parameters or {}
         limit = max(1, min(1000, int(params.get("limit", 200))))
         trigger_id = str(params.get("trigger_id") or "") or None
-        rows = discover(None, limit=max(limit * 2, 400))
         if trigger_id:
+            # Every file is read (a renamed rule's old rows sit under its old name),
+            # but only this rule's recent rows from each.
             row = await cls.get_by_id(trigger_id)
-            rows = rows_for(trigger_id, row.name if row else None, rows)
+            rows = rows_for(trigger_id, row.name if row else None,
+                            discover(None, limit=10_000, per_rule=limit * 2))
+        else:
+            rows = discover(None, limit=limit * 2)
         runs = fold(rows)
         if str(params.get("include_tests", "true")).lower() == "false":
             runs = [r for r in runs if not r.is_test]
@@ -1124,15 +1091,6 @@ class Trigger(Entity):
             triggers.append(existing)
         return ApiSuccessResponse(data=triggers)
 
-    @core_action.post(action_name="fire")
-    async def fire_action(self, request: Request) -> ApiResponse:
-        """Alias for ``/test`` — POST /api/v1/graph/trigger/{id}/fire fires
-        the trigger immediately. Same body+response shape as ``test_action``.
-        Kept because the natural verb for a trigger is "fire"; the original
-        endpoint was named "test" before that distinction mattered.
-        """
-        return await self.test_action(request)
-
     @core_action.post(action_name="test")
     async def test_action(self, request: Request) -> ApiResponse:
         """
@@ -1143,7 +1101,6 @@ class Trigger(Entity):
         Optional body ``{"event": {tag, target?, data?}}`` picks the envelope an
         event rule runs with. Answers ``automation.run_once`` at once; the work
         continues in the background and shows up in the automation's runs.
-        Also reachable as POST /api/v1/graph/trigger/{id}/fire.
         """
         from flow_sdk.automations.run_once import RunOnceRefused, run_once  # noqa: PLC0415
 
@@ -1230,21 +1187,3 @@ class Trigger(Entity):
                 except Exception:
                     pass
         return ApiSuccessResponse(data={"log_mode": log_mode})
-
-    @core_action.get(action_name="sync_schedule")
-    async def sync_schedule_action(self, request: Request) -> ApiResponse:
-        """
-        GET /api/v1/graph/trigger/{id}/sync_schedule — sync next_run from APScheduler.
-        """
-        if self.trigger_type != "schedule":
-            return ApiFailResponse(message="sync_schedule is only for schedule triggers", status_code=422)
-        try:
-            scheduler = _get_scheduler()
-            if scheduler and self.id:
-                job = scheduler.get_job(self.id)
-                if job and job.next_run_time != self.next_run:
-                    self.next_run = job.next_run_time
-                    await self.update()
-        except Exception as e:
-            logger.debug(f"Scheduler sync error for {self.id}: {e}")
-        return ApiSuccessResponse(data=self)

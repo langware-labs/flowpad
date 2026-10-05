@@ -59,10 +59,11 @@ _locks: dict[str, "asyncio.Lock"] = {}
 _storm_guard = FixedWindowStormGuard()
 #: How many recent matching envelopes each armed rule remembers.
 RECENT_MATCHES_PER_TRIGGER = 5
-# trigger id → its last matching envelopes, trimmed (newest last). What *Run once
-# now* offers to test with: a real event, not a sample. In memory only — the bus
-# keeps no history, and this is a convenience, never a record.
-_recent_matches: dict[str, "deque[dict[str, Any]]"] = {}
+# trigger id → its last matching envelopes (newest last). What *Run once now*
+# offers to test with: a real event, not a sample. In memory only — the bus keeps
+# no history, and this is a convenience, never a record. The envelope itself is
+# kept and serialized only when read: the fire path does no extra work.
+_recent_matches: dict[str, "deque[FlowEvent]"] = {}
 
 
 def validate_tag_trigger(pattern: Optional[str]) -> Optional[str]:
@@ -86,9 +87,7 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     trigger_id = trigger.id
 
     async def _handler(event: "FlowEvent") -> None:
-        from flow_sdk.tags.ws_forward import _retainable
-
-        _recent_matches.setdefault(trigger_id, deque(maxlen=RECENT_MATCHES_PER_TRIGGER)).append(_retainable(event))
+        _recent_matches.setdefault(trigger_id, deque(maxlen=RECENT_MATCHES_PER_TRIGGER)).append(event)
         await _fire_tag_trigger(trigger_id, event)
 
     _subscriptions[trigger_id] = event_bus.on(
@@ -102,8 +101,10 @@ def register_tag_trigger(trigger: "Trigger") -> None:
 
 
 def recent_matches(trigger_id: str) -> list[dict[str, Any]]:
-    """The last envelopes that matched this ARMED rule, newest first."""
-    return list(reversed(_recent_matches.get(trigger_id, ())))
+    """The last envelopes that matched this ARMED rule, newest first, trimmed like the ws ring."""
+    from flow_sdk.tags.ws_forward import _retainable
+
+    return [_retainable(e) for e in reversed(_recent_matches.get(trigger_id, ()))]
 
 
 def unregister_tag_trigger(trigger_id: Optional[str]) -> None:
@@ -245,7 +246,7 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # storm guard because a spent trigger should not consume a fire budget, and
     # recorded rather than silently dropped: "the rule is armed, the event
     # matched, and nothing happened" is the single most confusing non-fire in
-    # the design, which is exactly what the events screen exists to explain.
+    # the design, which is exactly what Automations › Runs exists to explain.
     if trigger.fire_once and trigger.counter >= 1:
         _suppressed(trigger, "already_fired",
                     f"rule is fire-once and already fired at {trigger.last_run}", event)
@@ -264,7 +265,7 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     if target_of("trigger", trigger_id) in event.ctx.scope:
         # Recorded, not merely logged: a self-loop drop is the most confusing
         # silent non-fire in the design — the rule looks armed, the event
-        # matched, and nothing happened. That is exactly what the events screen
+        # matched, and nothing happened. That is exactly what Automations › Runs
         # exists to explain, so it gets a row like every other declined fire.
         _suppressed(trigger, "self_loop",
                     f"{event.tag} already carries this rule in its scope chain "
@@ -359,42 +360,18 @@ async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Option
             "error": error, "duration_ms": outcome.duration_ms}
 
 
-#: Test runs in flight — held so the loop cannot collect a task mid-run.
-_test_runs: set["asyncio.Task[Any]"] = set()
-
-
-def start_tag_trigger_once(trigger: "Trigger", event: "FlowEvent") -> Optional[str]:
+async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str]) -> None:
     """*Run once now* for a TAG rule: the real fire path with every guard off.
 
     A test runs even when the rule is switched off and never spends what a real
     fire spends — no counter bump (so ``fire_once`` stays unspent), no storm
     budget, no confirm query. It takes the same per-trigger lock, so it cannot
-    interleave with a real fire's counter write.
-
-    Returns the ``trigger.fired`` envelope id at once and runs the work as a
-    task: a wizard action runs for minutes, and the person watching follows the
-    run on the Runs screen rather than a request that hangs.
+    interleave with a real fire's counter write. The caller emits the
+    ``trigger.fired`` envelope and passes its id; ``automations.run_once`` runs
+    this as a background task.
     """
-    from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
-
-    event_id = emit_trigger_fired(
-        trigger.id or "", str(trigger.trigger_type), trigger.name or trigger.id or "",
-        counter=trigger.counter,
-        action_types=[str(a.action_type) for a in trigger.actions],
-        detail={"cause_tag": event.tag, "cause_target": event.target},
-        project_id=trigger.project_id,
-        cause=event,
-        is_test=True,
-    )
-
-    async def _locked() -> None:
-        async with _locks.setdefault(trigger.id or "", asyncio.Lock()):
-            await _run_tag_fire(trigger, event, event_id, is_test=True)
-
-    task = asyncio.get_running_loop().create_task(_locked(), name=f"trigger-test:{trigger.id}")
-    _test_runs.add(task)
-    task.add_done_callback(_test_runs.discard)
-    return event_id
+    async with _locks.setdefault(trigger.id or "", asyncio.Lock()):
+        await _run_tag_fire(trigger, event, event_id, is_test=True)
 
 
 def _append_log(trigger_name: str, entry: dict[str, Any]) -> None:

@@ -22,6 +22,14 @@ export const RETIRED_DOCK_VIEWS: Partial<Record<ViewType, { viewType: ViewType; 
   // Skills folded into the Assets browser; `/dock/skills` otherwise rendered
   // nothing (no registry entry) and fell through to Home.
   [ViewType.SKILLS]: { viewType: ViewType.ASSETS, pointer: 'list/skill' },
+  // The Events screen and its three aliases became Automations. Their selection
+  // (`?trigger=`, `?creating=`, `?target=`) rides in OPTIONS, which the URL
+  // redirect carries over, so a sent rule link still opens that rule. The old
+  // global bus monitor (`signals`) lands on the bus, where its tools now live.
+  [ViewType.EVENTS]: { viewType: ViewType.AUTOMATIONS, pointer: '' },
+  [ViewType.TRIGGERS]: { viewType: ViewType.AUTOMATIONS, pointer: '' },
+  [ViewType.CRON]: { viewType: ViewType.AUTOMATIONS, pointer: '' },
+  [ViewType.SIGNALS]: { viewType: ViewType.AUTOMATIONS, pointer: 'bus' },
 };
 
 /**

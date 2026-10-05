@@ -54,7 +54,7 @@ function places(w: World): { name: string; address: string; path: string }[] {
     },
     { name: 'the project page', address: `project/${w.projectId}`, path: `/project/${w.projectId}` },
     { name: 'the assets browser', address: 'assets/list/skill', path: '/assets/list/skill' },
-    { name: 'the events screen', address: 'events', path: '/events' },
+    { name: 'the automations screen', address: 'automations', path: '/automations' },
     { name: 'the explorer', address: 'explorer', path: '/explorer' },
     { name: 'the desktop', address: 'desktop', path: '/desktop' },
   ];

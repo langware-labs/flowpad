@@ -135,20 +135,20 @@ class ViewType(StrEnum):
     PREFERENCES = "preferences"  # User preferences screen (category tabs)
     AGENTIC_PROCESS = "agentic_process"  # Process terminal view
     SEARCH = "search"  # Record semantic search view
-    # The merged rules+events screen. TRIGGERS / SIGNALS / CRON are kept as
-    # ALIASES onto it (same body, same navigator) rather than redirects, so
-    # every bookmarked URL keeps working.
-    EVENTS = "events"  # Rules and the events they fire on
-    TRIGGERS = "triggers"  # Alias of EVENTS
+    # Automations — "when X, do Y": the list, the runs (/runs), the event bus (/bus).
+    AUTOMATIONS = "automations"
+    # RETIRED onto AUTOMATIONS — decodable because saved tabs and links name them.
+    EVENTS = "events"  # Retired → automations
+    TRIGGERS = "triggers"  # Retired → automations
     CAPABILITIES = "capabilities"  # System capability checks/install/test
     GRAPH_WORKFLOWS = "graph-workflows"  # Flow-graph editor/observatory — dev mode
-    SIGNALS = "signals"  # Alias of EVENTS
+    SIGNALS = "signals"  # Retired → automations/bus
     DATA_SOURCES = "data-sources"  # Configured ingestion sources
     RAG = "rag"  # Search indexes and the folders they cover
     ASSET_LIST = "asset-list"  # One home counter's assets as a table — ?group=<g>&counter=<c>
     PROCESS_RUNS = "process-runs"  # AgenticProcess execution history
     PLAN = "plan"  # Plan viewer with Milkdown editor
-    CRON = "cron"  # Alias of EVENTS (scheduled jobs)
+    CRON = "cron"  # Retired → automations
     ASSETS = "assets"  # Unified docs/skills/workflows tree
     PROJECT = "project"  # Collaboration on a project
     AGENT = "agent"  # Agent-owned surfaces — /dock/agent/<agent-id>/stream_inbox
@@ -271,6 +271,12 @@ RETIRED_DOCK_VIEWS: Mapping[ViewType, RetiredTarget] = {
         "list/skill",
         accepts_direct_address=False,
     ),
+    # The Events screen and its aliases became Automations; their selection rides
+    # in options, which the redirect keeps. The old bus monitor lands on the bus.
+    ViewType.EVENTS: RetiredTarget(ViewType.AUTOMATIONS, ""),
+    ViewType.TRIGGERS: RetiredTarget(ViewType.AUTOMATIONS, ""),
+    ViewType.CRON: RetiredTarget(ViewType.AUTOMATIONS, ""),
+    ViewType.SIGNALS: RetiredTarget(ViewType.AUTOMATIONS, "bus"),
 }
 
 
@@ -438,11 +444,23 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.PREFERENCES: _m(_OPT, folds_pointer=True, label="Preferences", aliases=("my preferences", "appearance")),
     ViewType.AGENTIC_PROCESS: _m(_REQ, label="Process", provides=("entity", "process"), opens=("agentic_process",)),
     ViewType.SEARCH: _m(_NONE, label="Search", aliases=("find",)),
-    ViewType.EVENTS: _m(_NONE, label="Events", aliases=("rules", "event bus")),
-    ViewType.TRIGGERS: _m(_NONE, label="Events"),
+    # Pointer `[runs|bus]`: the list, every run, the event bus — one tab chip
+    # (ui/src/components/automations/automations-pointer.ts). Selection rides in options.
+    ViewType.AUTOMATIONS: _m(
+        _OPT,
+        folds_pointer=True,
+        label="Automations",
+        aliases=("events", "triggers", "rules", "schedules", "scheduled jobs", "cron", "trigger history"),
+        subplaces=(
+            ("runs", "Automations > Runs (every time one fired, with errors)"),
+            ("bus", "Automations > Event bus (events, who listens, live stream)"),
+        ),
+    ),
+    ViewType.EVENTS: _m(_NONE, addressable=False),
+    ViewType.TRIGGERS: _m(_NONE, addressable=False),
     ViewType.CAPABILITIES: _m(_NONE, label="Capabilities", aliases=("checks", "system checks")),
     ViewType.GRAPH_WORKFLOWS: _m(_OPT, label="Graph Workflows", aliases=("workflows",)),
-    ViewType.SIGNALS: _m(_NONE, label="Events"),
+    ViewType.SIGNALS: _m(_NONE, addressable=False),
     # Pointer `[drivers[/<driverName>]]`: the drivers live UNDER the sources, and all
     # three levels fold into one tab chip (ui/src/components/data-sources/data-sources-pointer.ts).
     ViewType.DATA_SOURCES: _m(
@@ -461,7 +479,7 @@ VIEW_META: Mapping[ViewType, ViewMeta] = {
     ViewType.ASSET_LIST: _m(_NONE, label="Asset list", aliases=("counter assets",)),
     ViewType.PROCESS_RUNS: _m(_OPT, label="Runs", aliases=("history",)),
     ViewType.PLAN: _m(_REQ, label="Plan"),
-    ViewType.CRON: _m(_NONE, label="Events", aliases=("schedule", "scheduled jobs")),
+    ViewType.CRON: _m(_NONE, addressable=False),
     # OPTIONAL, not REQUIRED: `/dock/assets` already renders — `AssetsPage` takes no
     # pointer prop and tab identity is the SCOPE (scope_keyed), not the pointer. The
     # REQUIRED it carried meant the URL worked in a browser while `flow show view

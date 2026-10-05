@@ -122,7 +122,7 @@ def show_file(
     # NB: no square brackets in help strings — Rich parses them as markup tags.
     help=(
         "Show a SCREEN by dock address, 'viewType' plus an optional "
-        "'/pointer' and '?opts'. Examples: 'events', 'assets/list/skill', "
+        "'/pointer' and '?opts'. Examples: 'automations', 'assets/list/skill', "
         "'preferences/appearance'. Run `flow schema views` for the list."
     ),
 )
@@ -130,7 +130,7 @@ def show_view(
     address: Annotated[
         str,
         typer.Argument(
-            help="Dock address, e.g. 'events' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."
+            help="Dock address, e.g. 'automations' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."
         ),
     ],
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,

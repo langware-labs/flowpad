@@ -115,3 +115,23 @@ def test_matched_hook_fire_writes_a_row():
     assert row["hook_event"] == "hook_fire" and row["event_kind"] == "PostToolUse"
     assert row["trigger_id"] == "hook-rule-1" and row["event_id"] == "evt-1"
     assert row["cause_data"]["session_id"] == "sess-1"
+
+
+def test_log_appends_in_place_and_still_caps(monkeypatch):
+    from flow_sdk.fs_store.operations import trigger_log
+
+    monkeypatch.setattr(trigger_log, "MAX_ENTRIES", 10)
+    monkeypatch.setattr(trigger_log, "DROP_COUNT", 4)
+    for i in range(14):
+        trigger_log.append_entry("cap-rule", {"reason": str(i)})
+    rows = trigger_log.discover("cap-rule", limit=100)
+    # 10 rows, then a trim to 6 + 1, then 3 more appends.
+    assert [r["reason"] for r in rows][::-1] == [str(i) for i in range(4, 14)]
+
+
+def test_row_index_groups_like_rows_for():
+    from flow_sdk.automations.runs import RowIndex, rows_for
+
+    rows = [{"id": "a", "ts": "3", "trigger_id": "t1"}, {"id": "b", "ts": "2", "trigger_id": "t2"},
+            {"id": "c", "ts": "1", "rule_name": "Morning"}]
+    assert [r["id"] for r in RowIndex(rows).rows_for("t1", "Morning")] == [r["id"] for r in rows_for("t1", "Morning", rows)]

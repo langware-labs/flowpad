@@ -43,9 +43,9 @@ def _ctx(url: str, **slots: str) -> dict:
 async def test_here_keeps_the_open_entity_only_where_the_screen_provides_one():
     on_asset = await here_from(_ctx(f"/dock/assets/{ASSET}", CurrentActiveEntityTypeId=ASSET))
     assert (on_asset.view, on_asset.entity.typeid, on_asset.project.typeid) == ("assets", ASSET, PROJECT)
-    on_events = await here_from(_ctx("/dock/events?scope=project", CurrentActiveEntityTypeId=ASSET))
-    assert (on_events.view, on_events.entity, on_events.project.typeid) == ("events", None, PROJECT)
-    assert on_events.address == "/dock/events?scope=project", "the query rides along"
+    on_events = await here_from(_ctx("/dock/automations?scope=project", CurrentActiveEntityTypeId=ASSET))
+    assert (on_events.view, on_events.entity, on_events.project.typeid) == ("automations", None, PROJECT)
+    assert on_events.address == "/dock/automations?scope=project", "the query rides along"
 
 
 async def test_here_keeps_the_session_only_on_a_session_screen():

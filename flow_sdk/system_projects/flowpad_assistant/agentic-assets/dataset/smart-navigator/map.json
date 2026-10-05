@@ -495,33 +495,34 @@
       "subplaces": []
     },
     {
-      "view": "events",
-      "label": "Events",
+      "view": "automations",
+      "label": "Automations",
       "aliases": [
+        "events",
+        "triggers",
         "rules",
-        "event bus"
+        "schedules",
+        "scheduled jobs",
+        "cron",
+        "trigger history"
       ],
       "pages": [
         "desk"
       ],
-      "pointer": "none",
-      "pointer_form": null,
+      "pointer": "optional",
+      "pointer_form": "<id>",
       "provides": [],
       "opens": [],
-      "subplaces": []
-    },
-    {
-      "view": "triggers",
-      "label": "Events",
-      "aliases": [],
-      "pages": [
-        "desk"
-      ],
-      "pointer": "none",
-      "pointer_form": null,
-      "provides": [],
-      "opens": [],
-      "subplaces": []
+      "subplaces": [
+        {
+          "pointer": "runs",
+          "label": "Automations > Runs (every time one fired, with errors)"
+        },
+        {
+          "pointer": "bus",
+          "label": "Automations > Event bus (events, who listens, live stream)"
+        }
+      ]
     },
     {
       "view": "capabilities",
@@ -550,19 +551,6 @@
       ],
       "pointer": "optional",
       "pointer_form": "<id>",
-      "provides": [],
-      "opens": [],
-      "subplaces": []
-    },
-    {
-      "view": "signals",
-      "label": "Events",
-      "aliases": [],
-      "pages": [
-        "desk"
-      ],
-      "pointer": "none",
-      "pointer_form": null,
       "provides": [],
       "opens": [],
       "subplaces": []
@@ -641,22 +629,6 @@
       ],
       "pointer": "required",
       "pointer_form": "<id>",
-      "provides": [],
-      "opens": [],
-      "subplaces": []
-    },
-    {
-      "view": "cron",
-      "label": "Events",
-      "aliases": [
-        "schedule",
-        "scheduled jobs"
-      ],
-      "pages": [
-        "desk"
-      ],
-      "pointer": "none",
-      "pointer_form": null,
       "provides": [],
       "opens": [],
       "subplaces": []

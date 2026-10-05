@@ -16,8 +16,6 @@ from typing import Any
 
 from flow_sdk.schema.data_spec.trigger_spec import TriggerSpec
 
-#: Callbacks that are really "open this wizard" — written back as ``run_wizard``.
-_WIZARD_CALLBACKS = frozenset({"builtin_run_wizard"})
 
 
 class SpecFileError(ValueError):
@@ -53,7 +51,7 @@ def _action_doc(action: dict[str, Any], parent_type_id: str) -> dict[str, Any]:
         return {"notify_entity": target}
     if kind == "callback":
         name = str(action.get("callback_name") or "")
-        if name in _WIZARD_CALLBACKS:
+        if name == "builtin_run_wizard":  # "open this wizard", the document's run_wizard verb
             return {"run_wizard": "" if target == parent_type_id else target}
         return {"callback": name}
     raise SpecFileError(f"An automation file cannot hold a {kind or 'blank'} step.")

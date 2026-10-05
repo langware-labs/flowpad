@@ -2,7 +2,7 @@
   "route": "quick",
   "target": {
     "kind": "view",
-    "value": "events"
+    "value": "automations"
   },
   "verb": "show",
   "confidence": null

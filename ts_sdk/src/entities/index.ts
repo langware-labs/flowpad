@@ -68,6 +68,7 @@ export * from './flowpad-diagnosis';
 export * from './task';
 export * from './cron-event';
 export * from './trigger';
+export * from './automation-types';
 export * from './user';
 export * from './visitor';
 export * from './web-domain';

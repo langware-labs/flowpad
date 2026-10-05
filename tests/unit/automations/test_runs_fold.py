@@ -58,9 +58,10 @@ def test_file_change_names_the_file():
     assert run.why == "A file changed: /w/docs/a.md" and run.status == "succeeded"
 
 
-def test_test_runs_say_so():
+def test_test_runs_are_flagged_not_reworded():
+    # `is_test` is the fact; each surface words it (the UI says "Test run").
     (run,) = fold([_row(hook_event="schedule_fire", is_test=True)], CATALOG)
-    assert run.is_test and run.why == "Test run: Scheduled"
+    assert run.is_test and run.why == "Scheduled"
 
 
 def test_rows_match_by_id_and_legacy_rows_by_name():

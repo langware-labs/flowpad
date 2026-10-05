@@ -29,7 +29,7 @@ async def run_triggers_for_hook(hook, webhook_data: AgentHookData) -> WebhookHan
       emitted even when nothing matched, because a webhook that matches NOTHING
       is the common case and is otherwise invisible in the product.
     * ONE ``trigger.fired`` per MATCHED trigger, so a hook rule reads the same as
-      a schedule or fsop rule on the events screen.
+      a schedule or fsop rule in Automations › Runs.
 
     No ``actor`` is stamped: a global hook is harness-wide, so the process that
     happened to fire it is not a meaningful principal.

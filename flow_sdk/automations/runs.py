@@ -49,29 +49,44 @@ def rows_for(trigger_id: Optional[str], name: Optional[str], rows: Iterable[dict
     return out
 
 
+class RowIndex:
+    """History rows grouped once by ``trigger_id`` (and by name for legacy rows) —
+    so the list looks each automation up instead of scanning every row per automation."""
+
+    def __init__(self, rows: Iterable[dict[str, Any]]) -> None:
+        self._by_id: dict[str, list[dict[str, Any]]] = {}
+        self._by_name: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            if row.get("trigger_id"):
+                self._by_id.setdefault(row["trigger_id"], []).append(row)
+            elif row.get("rule_name"):
+                self._by_name.setdefault(row["rule_name"], []).append(row)
+
+    def rows_for(self, trigger_id: Optional[str], name: Optional[str]) -> list[dict[str, Any]]:
+        """Same answer as the module-level ``rows_for``, newest first."""
+        found = self._by_id.get(trigger_id or "", []) + self._by_name.get(name or "", [])
+        return sorted(found, key=lambda r: str(r.get("ts") or ""), reverse=True)
+
+
 def _why(row: dict[str, Any], catalog: dict[str, tuple[str, str]]) -> str:
+    """Why it ran, in English — for the CLI and agents. The UI renders its own
+    words from the structured fields (``reason_code``, ``kind``, ``cause_*``,
+    ``is_test``), so nothing here is meant to be parsed."""
     event = row.get("hook_event") or ""
     if row.get("reason_code"):
         return SKIP_WORDS.get(row["reason_code"], row.get("reason") or "Skipped")
-    if row.get("is_test"):
-        prefix = "Test run"
-    else:
-        prefix = ""
     if event == "schedule_fire":
-        text = "Scheduled"
-    elif event in ("tag_fire", "tag_fire_done"):
+        return "Scheduled"
+    if event in ("tag_fire", "tag_fire_done"):
         tag = row.get("cause_tag") or ""
-        title = catalog.get(tag, ("", ""))[0]
-        text = title or (f"Event {tag}" if tag else "An event")
-    elif event == "file_change":
+        return catalog.get(tag, ("", ""))[0] or (f"Event {tag}" if tag else "An event")
+    if event == "file_change":
         path = row.get("changed_path") or ""
         total = row.get("changes_total") or 1
-        text = f"A file changed: {path}" if total == 1 else f"{total} files changed, first {path}"
-    elif event == "hook_fire":
-        text = f"Agent hook {row.get('event_kind') or ''}".strip()
-    else:
-        text = row.get("reason") or event or "Fired"
-    return f"{prefix}: {text}" if prefix else text
+        return f"A file changed: {path}" if total == 1 else f"{total} files changed, first {path}"
+    if event == "hook_fire":
+        return f"Agent hook {row.get('event_kind') or ''}".strip()
+    return row.get("reason") or event or "Fired"
 
 
 def _status(row: dict[str, Any], done: Optional[dict[str, Any]]) -> RunStatus:
@@ -143,23 +158,43 @@ def process_outcome(status: Optional[str], exit_code: Optional[int]) -> tuple[Ru
     return "launched", None
 
 
-async def join_processes(runs: list[AutomationRun]) -> list[AutomationRun]:
-    """Replace ``launched`` with how the agent run actually ended. One lookup per run."""
+#: Agent runs that have ended, by id → (status, exit_code). An ended run never
+#: changes, so the screen's 5-second polls ask the database for each one once.
+_ended: dict[str, tuple[str, Optional[int]]] = {}
+_ENDED_CAP = 5000
+
+
+async def _process_state(pid: str) -> Optional[tuple[str, Optional[int]]]:
+    if pid in _ended:
+        return _ended[pid]
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
 
+    try:
+        proc = await AgenticProcess.get_by_id(pid)
+    except Exception:  # noqa: BLE001 — a missing run reads as "launched", never an error
+        return None
+    if proc is None:
+        return None
+    state = (str(proc.status or ""), proc.exit_code)
+    if state[0] in ("stopped", "failed"):
+        if len(_ended) >= _ENDED_CAP:
+            _ended.clear()
+        _ended[pid] = state
+    return state
+
+
+async def join_processes(runs: list[AutomationRun]) -> list[AutomationRun]:
+    """Replace ``launched`` with how the agent run actually ended — looked up together."""
+    import asyncio  # noqa: PLC0415
+
+    pids = sorted({r.agentic_process_id for r in runs if r.status == "launched" and r.agentic_process_id})
+    states = dict(zip(pids, await asyncio.gather(*(_process_state(p) for p in pids))))
     out: list[AutomationRun] = []
     for run in runs:
-        if run.status != "launched" or not run.agentic_process_id:
+        state = states.get(run.agentic_process_id or "") if run.status == "launched" else None
+        if state is None:
             out.append(run)
             continue
-        try:
-            proc = await AgenticProcess.get_by_id(run.agentic_process_id)
-        except Exception:  # noqa: BLE001 — a missing run reads as "launched", never an error
-            proc = None
-        if proc is None:
-            out.append(run)
-            continue
-        status, error = process_outcome(str(proc.status or ""), proc.exit_code)
-        out.append(run.model_copy(update={"status": status, "error": run.error or error,
-                                          "process_status": str(proc.status or "")}))
+        status, error = process_outcome(*state)
+        out.append(run.model_copy(update={"status": status, "error": run.error or error, "process_status": state[0]}))
     return out

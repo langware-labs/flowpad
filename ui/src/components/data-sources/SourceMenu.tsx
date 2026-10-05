@@ -97,9 +97,11 @@ export function SourceMenu({ source, spec, onToggleEnabled, onEdit, onReplay, on
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
-          onSelect={() => navigation.openDock(DockPointer.forEvents(undefined, { target: `data_source:${source.id}` }))}
+          onSelect={() =>
+            navigation.openDock(DockPointer.forAutomations({ place: 'bus', target: `data_source:${source.id}` }))
+          }
         >
-          <RadioTower className="size-3.5" /> {t`Events`}
+          <RadioTower className="size-3.5" /> {t`Events on the bus`}
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => navigation.openDock(DockPointer.forProcessRuns({ data_source_id: source.id }))}

@@ -46,12 +46,14 @@ def trigger_runs_here(entity: Any) -> bool:
     return not is_foreign_copy(str(getattr(entity, "asset_ref", "") or ""))
 
 
-async def arm_trigger(entity: Any) -> None:
+async def arm_trigger(entity: Any, *, replace: bool = False) -> None:
     """Subscribe this trigger to whatever fires it. Idempotent.
 
     Safe to call again on every re-index: ``register_tag_trigger``
     unregisters-then-registers, the FSOp arm is guarded on the watcher's task
-    table, and a schedule job is replaced by id.
+    table, and a schedule job is replaced by id. ``replace=True`` (a create or
+    an edit) restarts an FSOp watch even when one is running — its path or
+    pattern may have changed.
     """
     from flow_sdk.schema.data_spec.trigger_types import TriggerType
 
@@ -66,7 +68,7 @@ async def arm_trigger(entity: Any) -> None:
             # starts; this covers one that arrives after.
             from flow_sdk.server.fsop_watcher import fsop_watcher  # noqa: PLC0415
 
-            if len(fsop_watcher) and entity.id not in fsop_watcher._tasks:
+            if replace or (len(fsop_watcher) and entity.id not in fsop_watcher._tasks):
                 await fsop_watcher.on_trigger_saved(entity)
         elif entity.trigger_type == TriggerType.TAG:
             from flow_sdk.builtin.tag_triggers import register_tag_trigger  # noqa: PLC0415

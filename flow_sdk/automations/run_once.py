@@ -77,10 +77,19 @@ async def run_once(trigger: "Trigger", event: Optional[dict[str, Any]] = None) -
     tid = trigger.id or ""
 
     if kind == TriggerType.TAG:
-        from flow_sdk.builtin.tag_triggers import start_tag_trigger_once  # noqa: PLC0415
+        from flow_sdk.builtin.tag_triggers import run_tag_test  # noqa: PLC0415
 
         envelope = test_event(trigger, event)
-        event_id = start_tag_trigger_once(trigger, envelope)
+        event_id = emit_trigger_fired(
+            tid, str(trigger.trigger_type), trigger.name or tid,
+            counter=trigger.counter,
+            action_types=[str(a.action_type) for a in trigger.actions],
+            detail={"cause_tag": envelope.tag, "cause_target": envelope.target},
+            project_id=trigger.project_id,
+            cause=envelope,
+            is_test=True,
+        )
+        _spawn(run_tag_test(trigger, envelope, event_id), f"trigger-test:{tid}")
         return RunOnceStarted(trigger_id=tid, event_id=event_id,
                               detail={"tag": envelope.tag, "target": envelope.target})
 

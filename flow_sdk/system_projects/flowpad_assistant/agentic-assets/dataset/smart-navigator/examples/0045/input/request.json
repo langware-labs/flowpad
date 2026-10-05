@@ -1,10 +1,10 @@
 {
   "utterance": "add a cron trigger every morning at 9",
   "here": {
-    "view": "events",
+    "view": "automations",
     "pointer": null,
     "page": "desk",
-    "address": "/dock/events",
+    "address": "/dock/automations",
     "project": {
       "typeid": "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
       "title": "flowpad-oss",

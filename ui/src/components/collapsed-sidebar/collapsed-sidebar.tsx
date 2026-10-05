@@ -8,7 +8,7 @@ import { resolveRail, type RailGate, type RailItemId, type RailSpec } from './ra
 import { Button } from '@src/components/ui/button';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { EVENTS_VIEW_TYPES, ViewType } from '@src/types/ViewType';
+import { ViewType } from '@src/types/ViewType';
 import { useStreamInboxManager } from '@src/hooks/useStreamInboxManager';
 import {
   Sidebar,
@@ -34,7 +34,7 @@ import { tagAttrs } from '@src/tags/tag-attrs';
  * the Vibe-mode spacer that reserves this footprint (flow-page.tsx) can't drift.
  */
 export const RAIL_WIDTH_CLASS = 'w-[50px]';
-import { BadgeCheck, Bug, ChevronDown, Compass, History, Mail, Plug, RadioTower, Sparkles, Webhook, Workflow } from 'lucide-react';
+import { BadgeCheck, Bug, ChevronDown, Compass, History, Mail, Plug, Sparkles, Webhook, Workflow, Zap } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
@@ -91,10 +91,10 @@ export function CollapsedSidebar() {
     // `Plug`, not the screen's own `KeyRound` (VIEWER_REGISTRY): a connection is
     // more than a key, and the rail reads better with a glyph per job. A literal is right here —
     // the CLAUDE.md registry rule governs per-ENTITY-TYPE icons, and this slot is
-    // a screen, like `stream_inbox` and `events` beside it.
+    // a screen, like `stream_inbox` and `automations` beside it.
     credentials: { title: t`Connections`, icon: Plug, viewType: ViewType.CREDENTIALS },
     discover: { title: t`Discover`, icon: Compass, viewType: null },
-    events: { title: t`Events`, icon: RadioTower, viewType: ViewType.EVENTS },
+    automations: { title: t`Automations`, icon: Zap, viewType: ViewType.AUTOMATIONS },
     hooks: { title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
     capabilities: { title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
     'llm-sources': { title: t`LLM sources`, icon: Sparkles, viewType: ViewType.LLM_SOURCES },
@@ -179,11 +179,6 @@ export function CollapsedSidebar() {
     switch (id) {
       case 'discover':
         return onDiscover;
-      // One rail item, four URLs: the merged screen answers to its own view
-      // plus the three aliases it absorbed, so an old bookmark still lights the
-      // icon it belongs to instead of leaving the rail looking unselected.
-      case 'events':
-        return EVENTS_VIEW_TYPES.has(currentView as ViewType);
       default:
         return currentView === navMeta[id]?.viewType;
     }
