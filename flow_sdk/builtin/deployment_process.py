@@ -69,17 +69,54 @@ def _lock_path(deployment_id: str) -> Path:
     return _home() / f"{deployment_id}.lock"
 
 
-def hold(deployment_id: str) -> Optional[IO[str]]:
-    """Take *deployment_id*'s lock for this process's lifetime (keep the returned file open), with
-    this pid written in it; ``None`` when another process holds it."""
+# The lock byte sits far past the pid text: Windows locks are mandatory, and a reader of the pid must not trip on it.
+_LOCK_OFFSET = 1 << 20
+
+
+def _try_lock(fh: IO[str]) -> bool:
+    """Take an exclusive, non-blocking lock on *fh*; ``False`` when another process holds it."""
+    if sys.platform == "win32":
+        import msvcrt  # noqa: PLC0415
+
+        fh.seek(_LOCK_OFFSET)
+        try:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            return False
+        finally:
+            fh.seek(0)
+        return True
     import fcntl  # noqa: PLC0415
 
-    path = _lock_path(deployment_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fh = open(path, "a+", encoding="utf-8")  # noqa: SIM115 — held open on purpose: the lock is the fd
     try:
         fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
+        return False
+    return True
+
+
+def _unlock(fh: IO[str]) -> None:
+    if sys.platform == "win32":
+        import msvcrt  # noqa: PLC0415
+
+        fh.seek(_LOCK_OFFSET)
+        try:
+            msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        finally:
+            fh.seek(0)
+        return
+    import fcntl  # noqa: PLC0415
+
+    fcntl.flock(fh, fcntl.LOCK_UN)
+
+
+def hold(deployment_id: str) -> Optional[IO[str]]:
+    """Take *deployment_id*'s lock for this process's lifetime (keep the returned file open), with
+    this pid written in it; ``None`` when another process holds it."""
+    path = _lock_path(deployment_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(path, "a+", encoding="utf-8")  # noqa: SIM115 — held open on purpose: the lock is the fd
+    if not _try_lock(fh):
         fh.close()
         return None
     fh.seek(0)
@@ -92,19 +129,16 @@ def hold(deployment_id: str) -> Optional[IO[str]]:
 def pid_of(deployment) -> Optional[int]:
     """The pid of the process running *deployment* — the lock's holder, else one started for it and
     not yet holding it — or ``None`` when none runs."""
-    import fcntl  # noqa: PLC0415
-
     path = _lock_path(str(deployment.id))
     if path.is_file():
-        with open(path, encoding="utf-8") as fh:
-            try:
-                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
+        with open(path, "a+", encoding="utf-8") as fh:
+            if _try_lock(fh):
+                _unlock(fh)
+            else:
+                fh.seek(0)
                 text = fh.read().strip()
                 if text.isdigit():
                     return int(text)
-            else:
-                fcntl.flock(fh, fcntl.LOCK_UN)
     return _starting(deployment)
 
 
@@ -125,16 +159,12 @@ def _starting(deployment) -> Optional[int]:
 def loop_state(deployment) -> tuple[str, str]:
     """The answering loop's health: ``alive`` while it holds its lock, ``starting`` while the process
     typed for it is still importing, else ``failing``. The lock is the truth — no heartbeat involved."""
-    import fcntl  # noqa: PLC0415
-
     path = _lock_path(str(deployment.id))
     if path.is_file():
-        with open(path, encoding="utf-8") as fh:
-            try:
-                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
+        with open(path, "a+", encoding="utf-8") as fh:
+            if not _try_lock(fh):
                 return "alive", ""
-            fcntl.flock(fh, fcntl.LOCK_UN)
+            _unlock(fh)
     if _starting(deployment) is not None:
         return "starting", "the loop's process is starting"
     return "failing", "no process runs this deployment's loop"

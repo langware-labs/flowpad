@@ -19,7 +19,9 @@ import pytest
 from flow_sdk.assets import project_manifest as manifest
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.schema.data_spec.project_manifest_spec import ProjectManifestSpec
-from tests.unit.agent._seed import checkout_agent, seed_agent as _agent, seed_project as _project
+from tests.unit.agent._seed import checkout_agent
+from tests.unit.agent._seed import seed_agent as _agent
+from tests.unit.agent._seed import seed_project as _project
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
@@ -151,6 +153,23 @@ async def test_the_set_action_writes_the_manifest_and_refuses_a_foreign_asset(tm
     cleared = await project.set_home_page_action(typeid="")
     assert isinstance(cleared, ApiSuccessResponse) and cleared.data == {"home_page": None}
 
+
+async def test_the_set_action_updates_the_indexed_manifest_row(tmp_path):
+    """The UI reads the home page off the indexed ``ProjectManifest`` row, not the
+    file: a set that only wrote the file left the picker showing the default home."""
+    from flow_sdk.builtin.project_manifest import ProjectManifest
+
+    root = tmp_path / "owner"
+    project = await _project(root)
+    agent = await _agent(root, "intake")
+
+    await project.set_home_page_action(typeid=str(agent.typeid))
+    row = await ProjectManifest.get_one({"project_id": str(project.id)})
+    assert row is not None and row.home_page == str(agent.typeid)
+
+    await project.set_home_page_action(typeid="")
+    row = await ProjectManifest.get_one({"project_id": str(project.id)})
+    assert row.home_page is None
 
 
 # ── first open: the home page is indexed before it is looked up ─────────────
