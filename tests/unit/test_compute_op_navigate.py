@@ -148,3 +148,53 @@ def test_a_target_less_op_with_no_input_is_not_found():
     answer = _run(_op(target=None), Site(up=True))
 
     assert answer.exit_code is ExitCode.NOT_FOUND
+
+
+def test_no_browser_to_show_it_in_starts_no_agent():
+    """`flow op run` with no Flowpad tab open: nothing was delivered, and no repair can change that."""
+    class NoBrowser(Site):
+        async def navigate(self, target, *, subject="", show=True):
+            self.navigations.append({"target": target, "show": show, "subject": subject})
+            return NavigateResult.not_yet("No Flowpad tab is open to show it in.", ran=False, verdict="no_browser")
+
+    site = NoBrowser()
+    answer = _run(_op(_agent()), site)
+
+    assert answer.verdict == "no_browser" and site.turns == []
+
+
+# ── inside a wizard ───────────────────────────────────────────────────────────
+
+
+async def test_a_wizard_step_navigates_repairs_and_shows_it_in_the_session_display(monkeypatch, tmp_path):
+    """A wizard step names a target-less navigate op: the pointer and the session's
+    display come in as wizard inputs; the op's agent rung repairs; it opens again."""
+    from flow_sdk.core.compute_op import runner
+    from flow_sdk.core.wizard.runner import Resolved, run_wizard
+    from flow_sdk.schema.data_spec.wizard_spec import WizardSpec
+
+    site = Site(starts_on_turn=1)
+    monkeypatch.setattr(runner, "navigate_for_subject", site.navigate)
+    op = _op(_agent(), target=None)
+
+    async def resolve_op(name):
+        return Resolved(op, True) if name == op.name else None
+
+    wizard = WizardSpec.model_validate(
+        {"name": "open-admin-wizard", "steps": [{"id": "open", "kind": "compute", "ref": op.name}]}
+    )
+    result = await run_wizard(
+        wizard,
+        trusted=True,
+        platform="linux",
+        workdir=tmp_path,
+        launch=site.launch,
+        resolve_op=resolve_op,
+        activity_path=f"wz/{tmp_path.name}",
+        inputs={"pointer": ADMIN, "display": "agentic_process-session"},
+    )
+
+    assert result.ok, result.detail
+    assert [n["subject"] for n in site.navigations] == ["agentic_process-session"] * 2
+    assert site.navigations[0]["target"].pointer == ADMIN["pointer"]
+    assert len(site.turns) == 1

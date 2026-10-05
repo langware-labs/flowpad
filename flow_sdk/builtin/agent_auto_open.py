@@ -232,7 +232,9 @@ async def run_auto_open(process: "AgenticProcess", plan: AutoOpenPlan) -> list[d
             if run.op is not None:
                 answer = await run.op.run(subject=subject, approved=True, workdir=plan.workdir)
             elif run.wizard is not None:
-                answer = await run.wizard.run(approved=True, unattended=True, target=subject)
+                # ``display``: a navigate step shows its place in THIS session, not wherever
+                # the wizard's own subject would send it.
+                answer = await run.wizard.run(approved=True, unattended=True, target=subject, inputs={"display": subject})
             else:
                 answer = await navigate(run.place, process=process, show=False)
         except Exception as exc:  # noqa: BLE001 -- one entry cannot stop the others
