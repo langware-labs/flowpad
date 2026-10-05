@@ -174,12 +174,46 @@ def _literal(utterance: str) -> Optional[NavigationTarget]:
     return None
 
 
+#: How far a typed screen name may be from a real one and still open it: one keyboard slip -- a
+#: letter missing, extra, wrong, or two swapped ("connecitons" -> connections). Similarity ratios
+#: could not tell that from a near-name: "connectors" (Data sources) scored 0.857 beside 0.909.
+TYPO_EDITS = 1
+
+
+def _slips(a: str, b: str) -> int:
+    """Edits from ``a`` to ``b`` counting an adjacent swap as one (optimal string alignment)."""
+    if abs(len(a) - len(b)) > TYPO_EDITS:
+        return TYPO_EDITS + 1
+    prev2, prev = None, list(range(len(b) + 1))
+    for i in range(1, len(a) + 1):
+        cur = [i] + [0] * len(b)
+        for j in range(1, len(b) + 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] != b[j - 1]))
+            if prev2 is not None and i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                cur[j] = min(cur[j], prev2[j - 2] + 1)
+        prev2, prev = prev, cur
+    return prev[-1]
+
+
+def _screen_named(core: str) -> Optional[str]:
+    """The option key ``core`` names: exactly, else as one slip from exactly one screen's name.
+    Short words never count as typos -- "tags" is one slip from "tasks"."""
+    names = static_options()[1]
+    if key := names.get(core):
+        return key
+    if len(core) < 6:
+        return None
+    keys = {key for name, key in names.items() if _slips(core, name) <= TYPO_EDITS}
+    return keys.pop() if len(keys) == 1 else None
+
+
 def rule_hit(utterance: str) -> Optional[NavigationTarget]:
-    """A literal, or an exact screen name / alias once the leading verb is stripped."""
+    """A literal, or a screen name / alias once the leading verb is stripped -- exact, or a typo of
+    exactly one name (live: "open connecitons" went to the model at 0.63 and on to the assistant)."""
     if literal := _literal(utterance):
         return literal
     core = _LEAD.sub("", utterance.strip().rstrip("!?.").lower()).strip()
-    key = static_options()[1].get(core)
+    key = _screen_named(core) if core else None
     return NavigationTarget(kind="view", value=key[len("view:") :]) if key else None
 
 

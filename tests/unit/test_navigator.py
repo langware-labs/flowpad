@@ -70,6 +70,8 @@ async def test_without_a_decision_api_every_ask_is_todays_even_an_exact_screen_n
         ("open the app on port 5173", "webapp", "5173", "show"),
         ("search for widget", "view", "search?q=widget", "show"),
         ("open ~/notes/plan.md", "file", "~/notes/plan.md", "show"),
+        ("open connecitons", "view", "credentials", "show"),  # a typo of one name (logged live)
+        ("show me prefrences", "view", "preferences", "show"),
     ],
 )
 async def test_a_rule_answers_before_the_model(hub, utterance, kind, value, verb):
@@ -131,3 +133,11 @@ def test_a_screen_an_entity_opens_is_offered_in_the_words_people_use():
     here = navigation.kind("navigation.here").model_validate({"process": {"typeid": proc, "title": "refactor"}})
     lens = navigator.options_for(here, [])[f"view:lens/{proc.split('-', 1)[1]}"]
     assert "transcript" in lens and "'refactor'" in lens
+
+
+@pytest.mark.parametrize("utterance", ["open tags", "open tasks", "open agentz stuff", "open the thing"])
+def test_a_typo_rule_never_turns_one_screen_into_another(utterance):
+    """Look-alike screens (tasks / tags ~0.67) and loose phrases stay below the typo bar."""
+    hit = navigator.rule_hit(utterance)
+    core = utterance.split(" ", 1)[1]
+    assert hit is None or hit.value.split("/")[0].replace("-", " ") in (core, core.rstrip("s")), hit
