@@ -102,6 +102,16 @@ def hub_origin_of(entity, folder: Path | None):
     return hub_origin_for_path(folder) if folder is not None else None
 
 
+def published_origin(entity):
+    """An asset's hub-repo origin once it has been published into its project's repo, else None — whatever
+    form its row holds the asset at (the folder for most types, the main file for some)."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(entity.get_type())
+    ref = getattr(entity, "asset_ref", None)
+    return hub_origin_of(entity, info.storage_root_for(Path(str(ref))) if info is not None and ref else None)
+
+
 def local_tree(mirror: Path, worktree: Path, rel_path: str) -> str | None:
     """The git object id ``worktree/rel_path`` would have — computed in a throwaway index
     against ``mirror``'s object store, so the project folder never needs to be a repo."""

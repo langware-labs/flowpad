@@ -68,7 +68,8 @@ def test_an_owned_rerender_keeps_the_id_and_the_authored_version(tmp_path):
     write_asset_tree(note.model_copy(update={"title": "Changed"}), INFO, root)
     doc = json.loads(main.read_text())
     assert (doc["id"], doc["version"], doc["title"]) == (note.id, 3, "Changed")
-    assert list(doc)[:4] == ["type", "id", "name", "version"]
+    # The file is the author's: a save patches the key it changes and keeps their order.
+    assert list(doc)[-1] == "version"
 
 
 def test_an_empty_body_is_still_a_file(tmp_path):

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -56,6 +57,13 @@ _subscriptions: dict[str, Callable[[], None]] = {}
 _locks: dict[str, "asyncio.Lock"] = {}
 # Per-trigger fire cap — the shared tags-owned guard shape.
 _storm_guard = FixedWindowStormGuard()
+#: How many recent matching envelopes each armed rule remembers.
+RECENT_MATCHES_PER_TRIGGER = 5
+# trigger id → its last matching envelopes (newest last). What *Run once now*
+# offers to test with: a real event, not a sample. In memory only — the bus keeps
+# no history, and this is a convenience, never a record. The envelope itself is
+# kept and serialized only when read: the fire path does no extra work.
+_recent_matches: dict[str, "deque[FlowEvent]"] = {}
 
 
 def validate_tag_trigger(pattern: Optional[str]) -> Optional[str]:
@@ -67,8 +75,10 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     """Arm (or re-arm, replacing) the bus subscription for one TAG trigger."""
     from flow_sdk.tags import event_bus
 
+    from flow_sdk.builtin.trigger_arming import trigger_runs_here
+
     unregister_tag_trigger(trigger.id)
-    if not trigger.enabled:
+    if not trigger.enabled or not trigger_runs_here(trigger):
         return
     problem = validate_tag_trigger(trigger.tag_pattern)
     if problem:
@@ -77,6 +87,7 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     trigger_id = trigger.id
 
     async def _handler(event: "FlowEvent") -> None:
+        _recent_matches.setdefault(trigger_id, deque(maxlen=RECENT_MATCHES_PER_TRIGGER)).append(event)
         await _fire_tag_trigger(trigger_id, event)
 
     _subscriptions[trigger_id] = event_bus.on(
@@ -87,6 +98,13 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     )
     logger.info("TAG trigger %s armed: %s target=%s",
                 trigger.name, trigger.tag_pattern, trigger.tag_target or "*")
+
+
+def recent_matches(trigger_id: str) -> list[dict[str, Any]]:
+    """The last envelopes that matched this ARMED rule, newest first, trimmed like the ws ring."""
+    from flow_sdk.tags.ws_forward import _retainable
+
+    return [_retainable(e) for e in reversed(_recent_matches.get(trigger_id, ()))]
 
 
 def unregister_tag_trigger(trigger_id: Optional[str]) -> None:
@@ -211,11 +229,7 @@ async def _fire_tag_trigger(trigger_id: str, event: "FlowEvent") -> None:
 
 
 async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
-    from flow_sdk.builtin.trigger import (
-        Trigger,
-        activate_flows_for_trigger,
-        dispatch_trigger_actions,
-    )
+    from flow_sdk.builtin.trigger import Trigger
     from flow_sdk.builtin.trigger_on_tag import emit_trigger_fired
     from flow_sdk.tags.envelope import target_of
 
@@ -232,7 +246,7 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # storm guard because a spent trigger should not consume a fire budget, and
     # recorded rather than silently dropped: "the rule is armed, the event
     # matched, and nothing happened" is the single most confusing non-fire in
-    # the design, which is exactly what the events screen exists to explain.
+    # the design, which is exactly what Automations › Runs exists to explain.
     if trigger.fire_once and trigger.counter >= 1:
         _suppressed(trigger, "already_fired",
                     f"rule is fire-once and already fired at {trigger.last_run}", event)
@@ -251,7 +265,7 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     if target_of("trigger", trigger_id) in event.ctx.scope:
         # Recorded, not merely logged: a self-loop drop is the most confusing
         # silent non-fire in the design — the rule looks armed, the event
-        # matched, and nothing happened. That is exactly what the events screen
+        # matched, and nothing happened. That is exactly what Automations › Runs
         # exists to explain, so it gets a row like every other declined fire.
         _suppressed(trigger, "self_loop",
                     f"{event.tag} already carries this rule in its scope chain "
@@ -290,21 +304,74 @@ async def _fire_tag_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
     # run — a wizard action runs an agent for MINUTES — and lost entirely if they
     # hang or the process dies. The counter said 1 while the log said nothing had
     # ever fired, which is the one question this row exists to answer.
-    _append_log(trigger.name or trigger_id, {
-        "hook_event": "tag_fire",
-        "trigger": True,
-        "reason": f"Tag {event.tag} on {event.target}",
+    await _run_tag_fire(trigger, event, event_id, is_test=False)
+
+
+async def _run_tag_fire(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str],
+                        *, is_test: bool) -> dict[str, Any]:
+    """Log, activate, dispatch, log the outcome — shared by a real fire and *Run once now*.
+
+    TWO rows per fire, joined on ``event_id``. The ``tag_fire`` row is written
+    BEFORE the work, for the same reason ``trigger.fired`` is emitted before it:
+    it means "this rule matched this envelope and dispatch has begun". Written
+    afterwards, the causal join is invisible for as long as the actions run — a
+    wizard action runs an agent for MINUTES — and lost entirely if they hang or
+    the process dies. The ``tag_fire_done`` row is the outcome: the run it
+    started, the error, how long it took. A run with no done row is still running
+    (or died with the process), which is itself the answer.
+    """
+    from flow_sdk.automations.fingerprint import spec_hash
+    from flow_sdk.builtin.trigger import activate_flows_for_trigger, run_trigger_actions
+    from flow_sdk.fs_store.operations.trigger_log import cap_cause_data
+
+    trigger_id = trigger.id or ""
+    name = trigger.name or trigger_id
+    common = {
         "rule_name": trigger.name,
         "trigger_id": trigger_id,
         "trigger_type": str(trigger.trigger_type),
         "event_id": event_id,
+        "is_test": is_test,
+        "spec_hash": spec_hash(trigger),
         **_cause_keys(event),
+    }
+    _append_log(name, {
+        "hook_event": "tag_fire",
+        "trigger": True,
+        "reason": f"Tag {event.tag} on {event.target}",
+        "cause_data": cap_cause_data(event.data or None),
         "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
+        **common,
     })
 
-    await activate_flows_for_trigger(trigger_id, trigger.name or trigger_id,
-                                     envelope=event, trigger=trigger)
-    await dispatch_trigger_actions(trigger, changes=[])
+    flow_error = await activate_flows_for_trigger(trigger_id, name, envelope=event, trigger=trigger)
+    outcome = await run_trigger_actions(trigger, changes=[])
+    error = "; ".join(e for e in (flow_error, outcome.error) if e) or None
+    _append_log(name, {
+        "hook_event": "tag_fire_done",
+        "trigger": True,
+        "reason": "Failed" if error else "Done",
+        "agentic_process_id": outcome.process_id,
+        "error": error,
+        "duration_ms": outcome.duration_ms,
+        **common,
+    })
+    return {"event_id": event_id, "agentic_process_id": outcome.process_id,
+            "error": error, "duration_ms": outcome.duration_ms}
+
+
+async def run_tag_test(trigger: "Trigger", event: "FlowEvent", event_id: Optional[str]) -> None:
+    """*Run once now* for a TAG rule: the real fire path with every guard off.
+
+    A test runs even when the rule is switched off and never spends what a real
+    fire spends — no counter bump (so ``fire_once`` stays unspent), no storm
+    budget, no confirm query. It takes the same per-trigger lock, so it cannot
+    interleave with a real fire's counter write. The caller emits the
+    ``trigger.fired`` envelope and passes its id; ``automations.run_once`` runs
+    this as a background task.
+    """
+    async with _locks.setdefault(trigger.id or "", asyncio.Lock()):
+        await _run_tag_fire(trigger, event, event_id, is_test=True)
 
 
 def _append_log(trigger_name: str, entry: dict[str, Any]) -> None:

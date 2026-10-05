@@ -103,9 +103,9 @@ class BrowserContextWatch:
         if not isinstance(context, dict) or not is_logged_in():
             return set()
 
-        from flow_sdk.tags.envelope import parse_target
         from flow_sdk.core.entity.entity_model import Entity
         from flow_sdk.server.routes._hub_reflect import _entity_type_enum
+        from flow_sdk.tags.envelope import parse_target
 
         keys: set[str] = set()
         seen: set[tuple[str, str]] = set()

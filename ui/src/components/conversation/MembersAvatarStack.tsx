@@ -51,6 +51,7 @@ import {
   participantLabel,
   participantRank,
   participantRoleLabel,
+  participantSubtitle,
   type ContactIdentity,
 } from './participant-display';
 
@@ -86,6 +87,20 @@ interface MembersAvatarStackProps {
   /** Roles the invite form may grant, e.g. ``['member', 'admin']`` for a
    *  project. Omitted = no picker, and the entity's own default role applies. */
   inviteRoles?: readonly string[];
+}
+
+/** A person's name with their email (when known) on a smaller line beneath. */
+function NameWithSubtitle({ name, subtitle }: { name: string; subtitle: string | null }) {
+  return (
+    <span className="flex min-w-0 flex-1 flex-col leading-tight">
+      <span className="truncate">{name}</span>
+      {subtitle && (
+        <span className="truncate text-[10px] text-muted-foreground" data-testid="member-subtitle">
+          {subtitle}
+        </span>
+      )}
+    </span>
+  );
 }
 
 /**
@@ -492,7 +507,7 @@ export function MembersAvatarStack({
             </AvatarFallback>
           )}
         </Avatar>
-        <span className="flex-1 truncate">{participantLabel(p)}</span>
+        <NameWithSubtitle name={participantLabel(p)} subtitle={participantSubtitle(p)} />
       </>
     );
     return (
@@ -802,12 +817,10 @@ export function MembersAvatarStack({
                                       {participantInitials(participant)}
                                     </AvatarFallback>
                                   </Avatar>
-                                  <span className="min-w-0 flex-1 truncate">{u.name || u.email || 'unknown'}</span>
-                                  {u.name && u.email && (
-                                    <span className="max-w-[45%] truncate text-[10px] text-muted-foreground">
-                                      {u.email}
-                                    </span>
-                                  )}
+                                  <NameWithSubtitle
+                                    name={u.name || u.email || 'unknown'}
+                                    subtitle={participantSubtitle(u)}
+                                  />
                                 </button>
                               );
                             })}
@@ -964,12 +977,7 @@ export function MembersAvatarStack({
                                   {participantInitials(p)}
                                 </AvatarFallback>
                               </Avatar>
-                              <span className="min-w-0 flex-1 truncate">
-                                {label}
-                                {p.name && p.email && (
-                                  <span className="ms-1.5 text-[10px] text-muted-foreground">{p.email}</span>
-                                )}
-                              </span>
+                              <NameWithSubtitle name={label} subtitle={participantSubtitle(p)} />
                               {offeredRoles.length > 0 && (
                                 <select
                                   aria-label={t`Invite ${label} as`}

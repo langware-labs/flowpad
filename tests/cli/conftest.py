@@ -17,6 +17,30 @@ import pytest
 import httpx
 
 
+@pytest.fixture(autouse=True)
+def _runner_carries_no_instance(monkeypatch):
+    """The process table a test scans must show only what the test spawned.
+
+    ``liveness.scan`` promotes every descendant of a ``FLOW_INSTANCE`` carrier to that
+    instance (``close_lineage``). Run from inside a Flowpad terminal, pytest and its
+    ancestors carry one (``prod``, ``oss``) — so every child a test spawns read as theirs,
+    and the tests failed only there, never in CI where nothing up the tree has it. Real
+    instances are spawned detached; the runner's own environment is not under test.
+    """
+    import psutil
+
+    runner = {os.getpid(), *(p.pid for p in psutil.Process().parents())}
+    real_environ = psutil.Process.environ
+
+    def environ(self):
+        env = real_environ(self)
+        if self.pid in runner:
+            env = {k: v for k, v in env.items() if k != "FLOW_INSTANCE"}
+        return env
+
+    monkeypatch.setattr(psutil.Process, "environ", environ)
+
+
 def is_port_in_use(port: int) -> bool:
     """Check if a port is already in use."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:

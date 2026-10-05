@@ -2027,13 +2027,19 @@ export class AgenticProcess extends APIEntity<AgenticProcess> {
       if (item.isOptimisticEcho && item.content === trimmed) return;
     }
 
-    const timestamp = new Date().toISOString();
+    // Ordered among host-clocked rows, so stamped with the host's latest time — the newest row,
+    // or the process's creation by the backend — never the browser's, which may run ahead
+    // of the host and sort the prompt below its own reply.
+    const created = this.created_date ? new Date(this.created_date).getTime() : NaN;
+    const latest = Math.max(this.flowDataStream.latestTimestampMs() ?? -Infinity, created || -Infinity);
+    const timestamp = new Date(Number.isFinite(latest) ? latest : Date.now()).toISOString();
     const userFlowData = FlowDataFactory.fromElementType(
       FlowElementTypes.USER_MESSAGE,
       trimmed,
       {
         role: 'user',
         t: timestamp,
+        [FlowDataAttribute.SUBMITTED_AT]: new Date().toISOString(),
         // A placeholder, not an observation — see `FlowData.isOptimisticEcho`.
         [FlowDataAttribute.OPTIMISTIC_ECHO]: 'true',
       },

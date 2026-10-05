@@ -16,6 +16,7 @@ import flow_sdk.builtin.compute_op  # noqa: F401
 import flow_sdk.builtin.consumer_position  # noqa: F401
 import flow_sdk.builtin.copilot_session  # noqa: F401
 import flow_sdk.builtin.data_source  # noqa: F401
+import flow_sdk.builtin.data_spec  # noqa: F401
 import flow_sdk.builtin.dataset  # noqa: F401
 import flow_sdk.builtin.deck  # noqa: F401
 import flow_sdk.builtin.deck_template  # noqa: F401
@@ -31,6 +32,7 @@ import flow_sdk.builtin.source_item  # noqa: F401
 import flow_sdk.builtin.spreadsheet  # noqa: F401
 import flow_sdk.builtin.subagent  # noqa: F401
 import flow_sdk.builtin.task  # noqa: F401
+import flow_sdk.builtin.trigger  # noqa: F401  — a trigger.json asset; unbound, /graph/trigger/* 422s in a fresh process
 import flow_sdk.builtin.whiteboard  # noqa: F401
 import flow_sdk.builtin.wizard  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_hook  # noqa: F401

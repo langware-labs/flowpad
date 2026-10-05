@@ -20,8 +20,8 @@ class AppPaths(BaseModel):
 
     root: str  # Filesystem root ("/" on Unix, "C:\\" on Windows)
     home: str  # User home directory ("Users/alice")
-    workspace: str  # FlowPad workspace folder ("Users/alice/Flowpad workspace")
-    skills: str  # Skills folder ("Users/alice/Flowpad workspace/.claude/skills")
+    workspace: str  # This instance's workspace ("Users/alice/Flowpad workspace" for prod, ".../Flowpad workspaces/<name>" otherwise)
+    skills: str  # Skills folder (<workspace>/.claude/skills)
     user_skills: str  # Personal skills folder ("Users/alice/.claude/skills")
     system_skills: str  # System skills folder ("Users/alice/Flowpad workspace/.flow/system_assets/skills")
     system_agents: str  # System agents folder ("Users/alice/Flowpad workspace/.flow/system_assets/agents")

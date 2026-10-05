@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "kind": "eval"
+  },
+  "data": {
+    "case": "5",
+    "category": "A.screen",
+    "tags": [
+      "alias",
+      "trap"
+    ],
+    "note": "alias trap: Credentials, not Data sources"
+  }
+}

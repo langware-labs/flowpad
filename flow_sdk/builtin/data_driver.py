@@ -24,6 +24,7 @@ from pydantic import PrivateAttr, computed_field
 
 from flow_sdk.api.api_types.api_field import APIField, Persist, Sharing
 from flow_sdk.core import Entity
+from flow_sdk.core import action as core_action
 from flow_sdk.core.named_lookup import NameNotFound
 from flow_sdk.ingest.driver_runtime import DRIVERS, DriverRuntime
 from flow_sdk.schema.data_spec.data_driver_spec import (
@@ -40,7 +41,6 @@ from flow_sdk.schema.data_spec.webhook_spec import DriverWebhookSpec
 from flow_sdk.schema.types import EntityType
 from flow_sdk.sources.base import Source
 from flow_sdk.sources.config import SourceConfig
-
 
 
 class DataDriverNotFound(NameNotFound):
@@ -88,6 +88,8 @@ class DataDriver(DriverRuntime, Entity):
     permissions: dict[str, PermissionMappingSpec] = APIField(default_factory=dict)
     webhook: Optional[DriverWebhookSpec] = APIField(default=None)
     setup_wizards: list[SetupStageSpec] = APIField(default_factory=list)
+    group: str = APIField(default="")
+    group_order: int = APIField(default=0)
     reflect: list[str] = APIField(default_factory=list)
     config: dict[str, FieldHints] = APIField(default_factory=dict)
     listed: bool = APIField(default=True)
@@ -143,6 +145,22 @@ class DataDriver(DriverRuntime, Entity):
         """The registered driver for ``name``, or None. An authored folder not loaded yet is a miss
         here; ``await DataDriver.get(name)`` loads it."""
         return DRIVERS.get_or_none(name or "")
+
+    @core_action.get(action_name="profile")
+    async def profile_action(self):
+        """GET /api/v1/graph/data_driver/{id}/profile — what this way of connecting looks like right now
+        (``Source.profile()``: a card's name, avatar, detail, availability), for the group's setup phase.
+        A driver that declares none answers ``{}``; one that cannot answer says why, never a 500."""
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        driver = await DataDriver.get(self.name or "")
+        profile = getattr(getattr(driver, "cls", None), "profile", None)
+        if profile is None:
+            return ApiSuccessResponse(data={})
+        try:
+            return ApiSuccessResponse(data=dict(await profile() or {}))
+        except Exception as exc:  # noqa: BLE001 — a card that cannot load says so; the picker still works
+            return ApiSuccessResponse(data={"available": False, "detail": f"unavailable: {exc}"})
 
     @classmethod
     async def get(cls, name: str) -> "DataDriver":

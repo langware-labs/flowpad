@@ -346,7 +346,7 @@ async function run($: (id: string) => HTMLElement, statusEl: HTMLElement): Promi
     labelled.clear();
     if (!dataset) return;
     try {
-      const out = await dataset.examples();
+      const out = await dataset.listExamples();
       for (const ex of out.examples ?? []) {
         if (ex.item_id) promoted.set(ex.item_id, ex.example_id);
         if (ex.annotated) labelled.add(ex.example_id);

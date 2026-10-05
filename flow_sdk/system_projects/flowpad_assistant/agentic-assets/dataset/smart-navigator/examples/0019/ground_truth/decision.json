@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "assets/list/skill"
+  },
+  "verb": "show",
+  "confidence": null
+}

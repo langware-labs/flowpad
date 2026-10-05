@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "entity",
+    "value": "task-8b3c4d5e-6f7a-4b2c-8d3e-4f5a6b7c8d9e"
+  },
+  "verb": "show",
+  "confidence": null
+}

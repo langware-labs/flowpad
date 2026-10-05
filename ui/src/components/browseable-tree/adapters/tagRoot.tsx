@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro';
 import React from 'react';
 import { GitFork, Sparkles, Trash2 } from 'lucide-react';
 import apiClient from '@sdk/client';
-import { Tag, RESERVED_TAG_ROOTS, config } from '@sdk';
+import { Tag, RESERVED_TAG_ROOTS, config, observedBusTags, type ObservedTag } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { Browseable, ToolbarAction } from '@src/components/browseable-tree/types';
@@ -38,12 +38,8 @@ interface BlessedTag {
   deprecated?: boolean;
 }
 
-interface ObservedStat {
-  count: number;
-  first_ts: string;
-  last_ts: string;
-  last_target: string;
-}
+/** What the bus has seen of one tag since boot — the SDK's shape. */
+type ObservedStat = ObservedTag;
 
 export interface TagRow {
   name: string;
@@ -86,10 +82,7 @@ async function fetchBlessed(): Promise<BlessedTag[]> {
 
 async function fetchObserved(): Promise<Record<string, ObservedStat>> {
   try {
-    const data = (await apiClient.get('/debug/observed_tags')) as {
-      observed?: Record<string, ObservedStat>;
-    } | null;
-    return data?.observed ?? {};
+    return await observedBusTags();
   } catch {
     return {};
   }

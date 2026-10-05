@@ -100,6 +100,12 @@ def is_system_project_path(path: str | Path) -> bool:
     return p.parent.name == SYSTEM_PROJECTS_DIRNAME and p.parent.parent.name == "flow_sdk"
 
 
+@lru_cache(maxsize=1)
+def _running_system_projects_root() -> str:
+    """The running install's resolved ``system_projects`` folder — fixed for the process."""
+    return os.path.normcase(str(system_projects_root().resolve()))
+
+
 def is_running_install_path(path: str | Path) -> bool:
     """True when ``path`` lies inside THIS running SDK's ``system_projects`` folder.
 
@@ -108,7 +114,7 @@ def is_running_install_path(path: str | Path) -> bool:
     an older install someone opened as a project — the running one is the copy to use: it is
     the code this backend actually is. Compared the way the OS compares paths.
     """
-    root = os.path.normcase(str(system_projects_root().resolve()))
+    root = _running_system_projects_root()
     try:
         candidate = os.path.normcase(str(Path(path).resolve()))
     except OSError:

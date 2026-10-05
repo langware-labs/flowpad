@@ -10,9 +10,12 @@ import { OrganizationPanel } from './organization-panel';
 
 interface AccountInfoProps {
   user: User;
+  /** Called when a button takes the user somewhere: the dialog closes, or it would stay on top of
+   *  the page it opened -- and opening the page already on screen would look like nothing happened. */
+  onNavigate?: () => void;
 }
 
-export function AccountInfo({ user }: AccountInfoProps) {
+export function AccountInfo({ user, onNavigate }: AccountInfoProps) {
   // Was `desktop_info != null` — a third spelling of "an app server answered",
   // which is what `isDesktop` means. One predicate, one source (runtime.kind).
   const isDesktop = dataContext.isDesktop;
@@ -42,7 +45,7 @@ export function AccountInfo({ user }: AccountInfoProps) {
       <TabsContent value="settings" className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 p-4">
           <SettingsSection />
-          {isDesktop && <LogsSection />}
+          {isDesktop && <LogsSection onNavigate={onNavigate} />}
         </div>
       </TabsContent>
 

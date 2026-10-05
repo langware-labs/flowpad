@@ -342,7 +342,19 @@ def test_user_use_posts_select_once_per_harness(recorder):
     assert posts[0][2] == {"harness": "claude", "kind": "endpoint", "scope": "user", "endpoint_typeid": EP}
 
 
-def test_user_use_narrowed_to_one_harness_writes_once(recorder):
+def test_user_use_never_touches_the_machines_harness_configs(recorder, tmp_path, monkeypatch):
+    """The selection is per instance; the harnesses' own config files belong to the machine."""
+    monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(llm_cmd, "_status", lambda project_id="": STATUS)
+        result = runner.invoke(app, ["llm", "user", "use", "1"])
+
+    assert result.exit_code == 0, result.output
+    assert list(tmp_path.rglob("*")) == []
+    assert not [call for call in recorder.calls if call[1].endswith("/binding")]
+
+
+def test_user_use_narrowed_to_one_harness_selects_once(recorder):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(llm_cmd, "_status", lambda project_id="": STATUS)
         result = runner.invoke(app, ["llm", "user", "use", "1", "codex"])
@@ -497,103 +509,66 @@ def test_set_is_an_alias_of_use(recorder):
     assert used.output == aliased.output
 
 
-# ── user scope writes the harness's own config ───────────────────────────────
-
-
-def test_a_json_merge_keeps_settings_the_user_wrote(tmp_path, monkeypatch):
-    """``~/.claude/settings.json`` is a file people hand-edit, and our variables share the
-    ``env`` block with theirs. Writing must not eat them."""
-    monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
-    settings = tmp_path / ".claude/settings.json"
-    settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"theme": "dark", "env": {"MY_OWN": "keep"}}))
-
-    llm_cmd._write_user_config("claude", {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}})
-
-    assert json.loads(settings.read_text()) == {"theme": "dark", "env": {"MY_OWN": "keep", "A": "1"}}
+# ── user clear removes what older versions wrote box-wide ─────────────────────
 
 
 def test_clearing_removes_our_leaves_and_nothing_else(tmp_path, monkeypatch):
-    """...and clearing gives the file back as if we had never written. Popping the whole ``env``
-    block would take the user's variables with it."""
+    """Clearing gives ``settings.json`` back as if we had never written. Popping the whole ``env``
+    block would take the user's own variables with it."""
     monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
     settings = tmp_path / ".claude/settings.json"
     settings.parent.mkdir(parents=True)
     settings.write_text(json.dumps({"theme": "dark", "env": {"MY_OWN": "keep", "A": "1"}}))
 
     spec = {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}}
-    llm_cmd._write_user_config("claude", spec, remove=True)
+    llm_cmd._remove_user_config("claude", spec)
 
     assert json.loads(settings.read_text()) == {"theme": "dark", "env": {"MY_OWN": "keep"}}
 
     # ...and with nothing of the user's left in it, the container goes too rather than lingering
     # as an empty block.
     settings.write_text(json.dumps({"env": {"A": "1"}}))
-    llm_cmd._write_user_config("claude", spec, remove=True)
+    llm_cmd._remove_user_config("claude", spec)
     assert json.loads(settings.read_text()) == {}
 
 
-def test_a_managed_block_rewrites_only_its_own_region(tmp_path, monkeypatch):
-    """A ``config.toml`` or a ``.profile`` belongs to the user; only what is between the markers
-    is ours. Re-running must replace that region, not append a second copy."""
-    monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
-    monkeypatch.setenv("SHELL", "/bin/sh")
-    profile = tmp_path / ".profile"
-    profile.write_text("export PATH=/mine\n")
-    spec = {"fmt": "profile", "path": ".profile", "lines": ["export A=1"]}
+def test_clearing_a_managed_block_keeps_the_rest_of_the_file(tmp_path, monkeypatch):
+    """A ``config.toml`` or a shell profile belongs to the user; only what is between the markers
+    is ours."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import apply_managed_block
 
-    llm_cmd._write_user_config("copilot", spec)
-    llm_cmd._write_user_config("copilot", {**spec, "lines": ["export A=2"]})
-
-    body = profile.read_text()
-    assert "export PATH=/mine" in body
-    assert body.count("export A=") == 1 and "export A=2" in body
-
-    llm_cmd._write_user_config("copilot", spec, remove=True)
-    assert profile.read_text().strip() == "export PATH=/mine"
-
-
-def test_a_harness_with_no_config_file_says_so(tmp_path, monkeypatch):
-    monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
-
-    line = llm_cmd._write_user_config("nope", {"note": "nope cannot be configured box-wide"})
-
-    assert "cannot be configured box-wide" in line
-
-
-def test_the_managed_toml_block_goes_first_so_its_keys_stay_root_level(tmp_path, monkeypatch):
-    """codex's config is dotted-key TOML, and a real ``~/.codex/config.toml`` commonly ends
-    inside a table. Appending our region there re-parents every key under that table — silently,
-    with no error and no funding. TOML cannot return to the root, so first is the only safe
-    place."""
     monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
     config = tmp_path / ".codex/config.toml"
     config.parent.mkdir(parents=True)
-    config.write_text('[tui]\ntheme = "dark"\n')
+    config.write_text(apply_managed_block('[tui]\ntheme = "dark"\n', ['model_provider = "flowpad"']))
 
-    llm_cmd._write_user_config(
-        "codex",
-        {"fmt": "block", "path": ".codex/config.toml", "lines": ['model_provider = "flowpad"']},
-    )
+    llm_cmd._remove_user_config("codex", {"fmt": "block", "path": ".codex/config.toml"})
 
-    body = config.read_text()
-    assert body.index("model_provider") < body.index("[tui]"), "our key landed under [tui]"
-    assert 'theme = "dark"' in body
+    assert config.read_text() == '[tui]\ntheme = "dark"\n'
 
 
-def test_the_profile_is_the_one_the_users_shell_actually_reads(tmp_path, monkeypatch):
-    """``~/.profile`` is the POSIX answer and the wrong one on a default macOS box: a non-login
-    zsh reads ``~/.zshrc`` and never sources it, so we would report success and fund nothing."""
+def test_clearing_leaves_a_missing_or_foreign_file_alone(tmp_path, monkeypatch):
+    """Nothing to remove is not a reason to create the file, and a JSON file we cannot parse is
+    the user's to fix -- never replaced."""
     monkeypatch.setattr(llm_cmd.Path, "home", staticmethod(lambda: tmp_path))
-    spec = {"fmt": "block", "path": ".profile", "lines": ["export A=1"]}
+    spec = {"fmt": "json", "path": ".claude/settings.json", "merge": {"env": {"A": "1"}}}
 
-    monkeypatch.setenv("SHELL", "/bin/zsh")
-    llm_cmd._write_user_config("copilot", spec)
-    assert "export A=1" in (tmp_path / ".zshrc").read_text()
+    llm_cmd._remove_user_config("claude", spec)
+    assert list(tmp_path.rglob("*")) == []
 
-    monkeypatch.setenv("SHELL", "/bin/bash")
-    llm_cmd._write_user_config("copilot", spec)
-    assert "export A=1" in (tmp_path / ".bashrc").read_text()
+    settings = tmp_path / ".claude/settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{ not json")
+    llm_cmd._remove_user_config("claude", spec)
+    assert settings.read_text() == "{ not json"
+
+
+def test_the_profile_is_the_one_the_users_shell_actually_reads(monkeypatch):
+    """``~/.profile`` is the POSIX answer and the wrong one on a default macOS box: a non-login
+    zsh reads ``~/.zshrc`` and never sources it."""
+    for shell, name in (("/bin/zsh", ".zshrc"), ("/bin/bash", ".bashrc"), ("/bin/sh", ".profile")):
+        monkeypatch.setenv("SHELL", shell)
+        assert llm_cmd._profile_name() == name
 
 
 # ------------------------------------------------------------------ `set auto`
@@ -774,7 +749,7 @@ def test_an_already_open_app_is_steered_rather_than_a_second_window_opened(monke
 
         @staticmethod
         def json():
-            return {"ok": True}
+            return {"status": "SUCCESS", "data": {"exit_code": 0, "delivered": True}}
 
     monkeypatch.setattr(llm_cmd, "_local_post", lambda url, **kw: posted.append((url, kw.get("json") or {})) or _Resp())
     monkeypatch.setattr("webbrowser.open", lambda _u: pytest.fail("a second window was opened"))
@@ -794,7 +769,7 @@ def test_no_listening_tab_falls_back_to_a_browser(monkeypatch):
 
         @staticmethod
         def json():
-            return {"ok": False, "error_code": "NO_ACTIVE_TAB"}
+            return {"status": "SUCCESS", "data": {"exit_code": 1, "delivered": False, "verdict": "no_browser"}}
 
     monkeypatch.setattr(llm_cmd, "_local_post", lambda url, **kw: _Refused())
     assert llm_cmd._steer_open_app(6060) is False

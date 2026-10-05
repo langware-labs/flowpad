@@ -89,29 +89,44 @@ def attach_machine_id(headers) -> None:
         pass
 
 
-async def _on_request(request: httpx.Request) -> None:
-    attach_machine_id(request.headers)
-    if "Authorization" in request.headers or _is_public_auth_path(request.url.path):
-        return
+async def resolve_hub_credential(request: httpx.Request | None = None) -> str | None:
+    """THE answer to "what does a hub call authenticate with" — None when nothing.
 
+    The instance ``cloud_api_key`` (headless / e2b) first, else this user's stored login.
+    The user record (``is_logged_in``) and the stored credential are separate, and they
+    disagree when the credential is missing or unreadable: the UI says signed in while every
+    call goes out bare. That disagreement signs the user out here, so the one record everyone
+    reads tells the truth. An expired credential also aborts the call before it reaches the
+    network (``HubAuthExpiredError``).
+    """
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     api_key = get_instance_settings().cloud_api_key
     if api_key:
-        request.headers["Authorization"] = f"Bearer {api_key}"
-        return
+        return api_key
 
     from flow_sdk.cli.auth.credentials import load_credentials  # lazy: cli imports cloud_client
+    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
 
     creds = load_credentials()
     if not creds:
-        return
+        if is_logged_in():
+            await invalidate_hub_login("credentials_missing")
+        return None
 
     if creds.is_expired(EXPIRY_LEEWAY_SECONDS):
         await invalidate_hub_login("expired")
         raise HubAuthExpiredError("hub auth expired", request=request)
+    return creds.api_key
 
-    request.headers["Authorization"] = f"Bearer {creds.api_key}"
+
+async def _on_request(request: httpx.Request) -> None:
+    attach_machine_id(request.headers)
+    if "Authorization" in request.headers or _is_public_auth_path(request.url.path):
+        return
+    credential = await resolve_hub_credential(request)
+    if credential:
+        request.headers["Authorization"] = f"Bearer {credential}"
 
 
 async def _on_response(response: httpx.Response) -> None:
@@ -128,6 +143,9 @@ async def _on_response(response: httpx.Response) -> None:
 
     if not passthrough:
         await response.aread()
+        # The one code that means the credential is dead (the hub sets it on nothing else).
+        if _error_code(response) == "unauthenticated":
+            await invalidate_hub_login("rejected")
     # Every hub 4xx/5xx — including 401/402/424 — is surfaced through the
     # error reporter so it becomes a HubClientErrorInfo warning in the UI
     # (createHubRequestFailedWarning), carrying method/path/status/message
@@ -145,6 +163,15 @@ async def _on_response(response: httpx.Response) -> None:
         # and the caller receives the hub's message verbatim in the proxied body.
         message=f"HTTP {status_code}" if passthrough else _response_message(response),
     )
+
+
+def _error_code(response: httpx.Response) -> str | None:
+    """The FAIL envelope's ``data.error_code``, or None."""
+    try:
+        data = (response.json() or {}).get("data")
+    except Exception:  # noqa: BLE001 — not JSON: a load balancer page carries no code
+        return None
+    return data.get("error_code") if isinstance(data, dict) else None
 
 
 async def _is_auth_failure_envelope(response: httpx.Response) -> bool:

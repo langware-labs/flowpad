@@ -35,25 +35,6 @@ export type ViewSlot = (typeof VIEW_SLOTS)[keyof typeof VIEW_SLOTS];
 export type ViewTypeValue = `${ViewType}`;
 
 /**
- * The merged Events screen and the three view types that are ALIASES of it.
- *
- * `triggers`, `signals` and `cron` used to be separate screens; they now render
- * the same body and the same navigator. They are kept as aliases rather than
- * deleted so bookmarked URLs and persisted tabs keep resolving — the pattern
- * `cron` already used for `triggers`.
- *
- * Anything that switches on "is this the events screen" must consult THIS set,
- * not `=== ViewType.EVENTS`, or old URLs silently lose their navigator, their
- * rail highlight, or their scope seeding.
- */
-export const EVENTS_VIEW_TYPES: ReadonlySet<ViewType> = new Set([
-  ViewType.EVENTS,
-  ViewType.TRIGGERS,
-  ViewType.SIGNALS,
-  ViewType.CRON,
-]);
-
-/**
  * Viewer metadata registry
  * Single source of truth for all viewer information
  */
@@ -436,18 +417,14 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
-  [ViewType.EVENTS]: {
-    title: msg`Events`,
-    iconName: 'RadioTower',
+  [ViewType.AUTOMATIONS]: {
+    title: msg`Automations`,
+    iconName: 'Zap',
     tabLocation: 'dedicated',
     canAddAsTab: true,
-  },
-  // Aliases of EVENTS — same screen, kept so old URLs and old tabs resolve.
-  [ViewType.TRIGGERS]: {
-    title: msg`Events`,
-    iconName: 'RadioTower',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
+    // The pointer is the place — the list, `runs`, `bus` (automations-pointer.ts) —
+    // so every level folds into one chip.
+    foldsPointer: true,
   },
   [ViewType.CAPABILITIES]: {
     title: msg`Capabilities`,
@@ -458,12 +435,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.GRAPH_WORKFLOWS]: {
     title: msg`Graph Workflows`,
     iconName: 'Workflow',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
-  [ViewType.SIGNALS]: {
-    title: msg`Events`,
-    iconName: 'RadioTower',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
@@ -503,12 +474,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'FileText',
     tabLocation: 'overview',
     canAddAsTab: false,
-  },
-  [ViewType.CRON]: {
-    title: msg`Events`,
-    iconName: 'RadioTower',
-    tabLocation: 'dedicated',
-    canAddAsTab: false, // Only accessible via direct URL /dock/cron
   },
   [ViewType.ASSETS]: {
     title: msg`Assets`,

@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "explorer"
+  },
+  "verb": "show",
+  "confidence": null
+}

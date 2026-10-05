@@ -25,6 +25,17 @@ export function participantLabel(participant: ConversationParticipant | null | u
   return participant?.name?.trim() || participant?.email?.trim() || 'unknown';
 }
 
+/** The second line under a person's name in a list: their email, when a name
+ *  is the label (else the email IS the label) and an email is known. The hub
+ *  never discloses another member's email, so a hub-only contact has none. */
+export function participantSubtitle(
+  participant: { name?: string | null; email?: string | null } | null | undefined,
+): string | null {
+  const name = participant?.name?.trim();
+  const email = participant?.email?.trim();
+  return name && email ? email : null;
+}
+
 /** Name-only display — never the full email. Falls back to the email's local
  *  part (before @) so compact surfaces show a name-ish token, not an address. */
 export function participantName(participant: ConversationParticipant | null | undefined): string {

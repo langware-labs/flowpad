@@ -1,0 +1,25 @@
+{
+  "type": "compute_op",
+  "id": "22774067-b964-434e-b24b-ec5fe7d13191",
+  "name": "flow-whatsapp-connect",
+  "label": "Connect WhatsApp",
+  "description": "A Connect code from the hub, and the WhatsApp link that sends it.",
+  "subkind": "cli",
+  "output_spec_kind": "source.setup_shown",
+  "exe_data": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connect --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connect --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE connect --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 60
+  },
+  "completion_check": {
+    "commands": {
+      "darwin": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connect --check --value",
+      "linux": "\"$FLOWPAD_FLOW\" source step \"$FLOWPAD_WIZARD_INPUT_SOURCE\" connect --check --value",
+      "win32": "& $env:FLOWPAD_FLOW source step $env:FLOWPAD_WIZARD_INPUT_SOURCE connect --check --value; exit $LASTEXITCODE"
+    },
+    "timeout_seconds": 30
+  }
+}

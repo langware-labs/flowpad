@@ -404,6 +404,10 @@ def hub_faked(_blob_storage, monkeypatch):
         posts.append((f"/graph/{etype}/{entity_id}/{action}", payload))
         return {}
 
+    async def fake_hub_request(method, entity_type, entity_id=None, action=None, *a, payload=None, **k):
+        assert method == "POST", f"unexpected hub {method}"
+        return await fake_hub_post(entity_type, payload, entity_id, action)
+
     async def fake_hub_put(entity_type, entity_id, payload, *a, **k):
         etype = getattr(entity_type, "value", entity_type)
         puts.append((f"/graph/{etype}/{entity_id}", payload))
@@ -418,9 +422,9 @@ def hub_faked(_blob_storage, monkeypatch):
     monkeypatch.setattr(creds_mod, "load_credentials", lambda *a, **k: _FakeCreds())
     monkeypatch.setattr(login_mod, "is_logged_in", lambda: True)
     # BOTH modules: the group fan-out reaches the hub through the primitive's
-    # ``ensure_task_on_hub`` / ``push_hub_fields`` as well as its own hub_post.
+    # ``ensure_task_on_hub`` / ``push_hub_fields`` (hub_request) as well as its own hub_post.
     monkeypatch.setattr(gta, "hub_post", fake_hub_post)
-    monkeypatch.setattr(taa, "hub_post", fake_hub_post)
+    monkeypatch.setattr(taa, "hub_request", fake_hub_request)
     monkeypatch.setattr(taa, "hub_put", fake_hub_put)
     monkeypatch.setattr(taa, "_local_mode_share_blocked", lambda: False)
     monkeypatch.setattr(Task, "share", fake_share)

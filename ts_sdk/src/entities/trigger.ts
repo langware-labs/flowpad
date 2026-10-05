@@ -6,6 +6,40 @@ import { HttpMethod } from '../models/ApiUrl';
 import { TypeId } from '../models/TypeId';
 import { HookEventData, TriggerAction, RelationshipSubAction } from './agent-hook-enums';
 import { AgentHook } from './agent-hook';
+import type {
+  BusMap,
+  AutomationCheck,
+  AutomationRun,
+  AutomationSample,
+  AutomationSummary,
+  PatternMatch,
+  AutomationTestEvent,
+  NextRuns,
+  RunOnceStarted,
+  RunsQuery,
+} from './automation-types';
+
+/** One raw trigger-log row (`fs_store/operations/trigger_log.py`). The Automations screen reads runs instead. */
+export interface TriggerLogRow {
+  id: string;
+  ts: string;
+  hook_event: string;
+  trigger: boolean;
+  reason: string;
+  is_test: boolean;
+  rule_name: string;
+  trigger_id?: string | null;
+  trigger_type?: string | null;
+  event_id?: string | null;
+  cause_event_id?: string | null;
+  cause_tag?: string | null;
+  cause_target?: string | null;
+  reason_code?: string | null;
+  agentic_process_id?: string | null;
+  error?: string | null;
+  actions?: string[];
+  [key: string]: unknown;
+}
 
 export interface ITrigger extends IEntity {
   name: string;
@@ -176,18 +210,154 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     return target.startsWith('agent-') ? target : null;
   }
 
+  // ── Automations (docs/automations.md) ──────────────────────────────────────
+  // The Automations screen reaches the backend only through these. Each wraps one
+  // `Trigger` action in `flow_sdk/builtin/trigger.py`; answers are the
+  // `automation.*` shapes in `./automation-types`.
+
+  /** Every automation as a sentence with its health — the whole list in one call. */
+  static async overview(options: { includeInactive?: boolean } = {}): Promise<AutomationSummary[]> {
+    const action = new ActionInfo('overview', Trigger.type, null, 'GET' as HttpMethod);
+    if (options.includeInactive) action.queryParameters = { include_inactive: 'true' };
+    return ((await dataManager.callAction<undefined, AutomationSummary[]>(action)) as AutomationSummary[]) ?? [];
+  }
+
+  /** When a schedule (saved or still being edited) fires next, and how it reads. */
+  static async nextRuns(
+    schedule: { expr: string; sched_trigger_type?: string | null; timezone?: string | null },
+    n = 5,
+  ): Promise<NextRuns> {
+    const action = new ActionInfo('next_runs', Trigger.type, null, 'GET' as HttpMethod);
+    action.queryParameters = {
+      expr: schedule.expr,
+      sched_trigger_type: schedule.sched_trigger_type || 'cron',
+      timezone: schedule.timezone || '',
+      n: String(n),
+    };
+    return (await dataManager.callAction<undefined, NextRuns>(action)) as NextRuns;
+  }
+
+  /** Runs newest first — one automation's, or every automation's. */
+  static async runs(query: RunsQuery = {}): Promise<AutomationRun[]> {
+    const action = new ActionInfo('runs', Trigger.type, null, 'GET' as HttpMethod);
+    const params: Record<string, string> = {};
+    if (query.triggerId) params.trigger_id = query.triggerId;
+    if (query.status) params.status = query.status;
+    if (query.includeTests === false) params.include_tests = 'false';
+    if (query.includeBuiltin === false) params.include_builtin = 'false';
+    if (query.limit) params.limit = String(query.limit);
+    action.queryParameters = params;
+    return ((await dataManager.callAction<undefined, AutomationRun[]>(action)) as AutomationRun[]) ?? [];
+  }
+
+  /** One run by its history row id, with its agent run's outcome. */
+  static async run(runId: string): Promise<AutomationRun> {
+    const action = new ActionInfo('run', Trigger.type, null, 'GET' as HttpMethod);
+    action.queryParameters = { id: runId };
+    return (await dataManager.callAction<undefined, AutomationRun>(action)) as AutomationRun;
+  }
+
   /**
-   * Fire this trigger immediately. For schedule triggers, runs the same
-   * code path APScheduler would run (incl. spawning the agentic process
-   * if `instruction` is set).
+   * *Run once now*: runs even when the automation is off and spends nothing a
+   * real fire spends. `event` picks what an event automation runs with. Answers
+   * at once; the run shows up in {@link Trigger.runs}.
    */
-  async runNow(): Promise<{ status: string; counter: number }> {
-    if (!this.id) {
-      throw new Error('Cannot run unsaved Trigger');
-    }
-    const action = new ActionInfo('test', Trigger.type, this.id, 'POST' as HttpMethod);
-    const response = await dataManager.callAction<undefined, { status: string; counter: number }>(action);
-    return response as { status: string; counter: number };
+  static async runOnce(triggerId: string, event?: AutomationTestEvent | null): Promise<RunOnceStarted> {
+    const action = new ActionInfo('test', Trigger.type, triggerId, 'POST' as HttpMethod);
+    action.bodyParameters = event ? { event: { ...event } } : {};
+    return (await dataManager.callAction<undefined, RunOnceStarted>(action)) as RunOnceStarted;
+  }
+
+  /** *Check* a saved automation — would it run, and what would it do. No side effects. */
+  static async check(triggerId: string, event?: AutomationTestEvent | null): Promise<AutomationCheck> {
+    const action = new ActionInfo('check', Trigger.type, triggerId, 'POST' as HttpMethod);
+    action.bodyParameters = event ? { event: { ...event } } : {};
+    return (await dataManager.callAction<undefined, AutomationCheck>(action)) as AutomationCheck;
+  }
+
+  /** *Check* an automation that is not saved yet, from the builder's fields. */
+  static async checkSpec(spec: Partial<ITrigger>, event?: AutomationTestEvent | null): Promise<AutomationCheck> {
+    const action = new ActionInfo('check_spec', Trigger.type, null, 'POST' as HttpMethod);
+    action.bodyParameters = { spec: { ...spec }, ...(event ? { event: { ...event } } : {}) } as Record<string, unknown>;
+    return (await dataManager.callAction<undefined, AutomationCheck>(action)) as AutomationCheck;
+  }
+
+  /** Recent real events to test a saved event automation with, newest first. */
+  static async samples(triggerId: string): Promise<AutomationSample[]> {
+    const action = new ActionInfo('samples', Trigger.type, triggerId, 'GET' as HttpMethod);
+    return ((await dataManager.callAction<undefined, AutomationSample[]>(action)) as AutomationSample[]) ?? [];
+  }
+
+  /** Recent forwarded events a pattern would receive — for an automation not saved yet. */
+  static async recentEvents(pattern: string, target?: string | null): Promise<AutomationSample[]> {
+    const action = new ActionInfo('recent_events', Trigger.type, null, 'GET' as HttpMethod);
+    action.queryParameters = { pattern, ...(target ? { target } : {}) };
+    return ((await dataManager.callAction<undefined, AutomationSample[]>(action)) as AutomationSample[]) ?? [];
+  }
+
+  /** The event bus as a map: every event type, its count since start, who listens, what they do. */
+  static async busMap(): Promise<BusMap> {
+    const action = new ActionInfo('bus_map', Trigger.type, null, 'GET' as HttpMethod);
+    return (await dataManager.callAction<undefined, BusMap>(action)) as BusMap;
+  }
+
+  /** The pattern sandbox: would `pattern` (and a target filter) receive this event. Saves nothing. */
+  static async matchPattern(
+    pattern: string,
+    event: { tag: string; target: string; scope?: string[] },
+    targetFilter?: string | null,
+  ): Promise<PatternMatch> {
+    const action = new ActionInfo('match_pattern', Trigger.type, null, 'POST' as HttpMethod);
+    action.bodyParameters = { pattern, event: { ...event }, ...(targetFilter ? { target_filter: targetFilter } : {}) };
+    return (await dataManager.callAction<undefined, PatternMatch>(action)) as PatternMatch;
+  }
+
+  /** Create an automation from its fields (`trigger_type`, `name`, the kind's fields, `actions`). */
+  static async createAutomation(fields: Partial<ITrigger> & { name: string }): Promise<Trigger> {
+    const action = new ActionInfo('create', Trigger.type, null, 'POST' as HttpMethod);
+    action.bodyParameters = { ...fields } as Record<string, unknown>;
+    return new Trigger((await dataManager.callAction<undefined, ITrigger>(action)) as ITrigger);
+  }
+
+  /** Change an automation's fields; the backend re-arms it. */
+  static async updateAutomation(triggerId: string, patch: Partial<ITrigger>): Promise<Trigger> {
+    const action = new ActionInfo('update', Trigger.type, triggerId, 'PATCH' as HttpMethod);
+    action.bodyParameters = { ...patch } as Record<string, unknown>;
+    return new Trigger((await dataManager.callAction<undefined, ITrigger>(action)) as ITrigger);
+  }
+
+  /** Switch an automation on or off. */
+  static async setEnabled(triggerId: string, enabled: boolean): Promise<Trigger> {
+    return Trigger.updateAutomation(triggerId, { enabled });
+  }
+
+  /** Delete an automation; the backend disarms it first. */
+  static async remove(triggerId: string): Promise<void> {
+    const action = new ActionInfo('delete', Trigger.type, triggerId, 'DELETE' as HttpMethod);
+    await dataManager.callAction(action);
+  }
+
+  /** An agent rule's `trigger.py`. Rejects (404) for any other kind. */
+  static async getCode(triggerId: string): Promise<string> {
+    const action = new ActionInfo('trigger-content', Trigger.type, triggerId, 'GET' as HttpMethod);
+    const data = (await dataManager.callAction<undefined, { content?: string }>(action)) as { content?: string } | null;
+    return data?.content ?? '';
+  }
+
+  static async setCode(triggerId: string, content: string): Promise<void> {
+    const action = new ActionInfo('trigger-content', Trigger.type, triggerId, 'PUT' as HttpMethod);
+    action.bodyParameters = { content };
+    await dataManager.callAction(action);
+  }
+
+  /** Raw history rows for one rule (by its name), newest first. Prefer {@link Trigger.runs}. */
+  static async log(triggerId: string, options: { limit?: number; triggeredOnly?: boolean } = {}): Promise<TriggerLogRow[]> {
+    const action = new ActionInfo('log', Trigger.type, triggerId, 'GET' as HttpMethod);
+    action.queryParameters = {
+      limit: String(options.limit ?? 500),
+      triggered_only: options.triggeredOnly ? 'true' : 'false',
+    };
+    return ((await dataManager.callAction<undefined, TriggerLogRow[]>(action)) as TriggerLogRow[]) ?? [];
   }
 
   /**

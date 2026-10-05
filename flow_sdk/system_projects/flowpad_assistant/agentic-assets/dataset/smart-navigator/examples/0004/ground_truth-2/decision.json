@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "view",
+    "value": "credentials/environment"
+  },
+  "verb": "show",
+  "confidence": null
+}

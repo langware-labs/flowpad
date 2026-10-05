@@ -59,7 +59,8 @@ def read(spec: type, root: Path) -> Any:
     files: dict[str, Path] = {}
 
     for name, place in placements(spec).items():
-        annotation = unwrap(spec.model_fields[name].rebuild_annotation())
+        field = spec.model_fields[name]
+        annotation = unwrap(field.rebuild_annotation())
 
         if place in (Placement.INLINE, Placement.FREE_SECTION):
             if name in document:
@@ -89,6 +90,11 @@ def read(spec: type, root: Path) -> Any:
                 # Sorted: the ordinal names were chosen so lexicographic order
                 # IS insertion order, and a named element sorts stably too.
                 fields[name] = [read(element, child) for child in sorted(folder.iterdir()) if child.is_dir()]
+            elif element is not None and field.is_required():
+                # An EMPTY list is an empty folder, and git (a wheel, a zip) does not keep an empty
+                # folder: on any clean checkout it is simply absent. Absent therefore reads as
+                # empty, or every row with no elements fails "field required" off the author's disk.
+                fields[name] = []
         elif place is Placement.DIR_DICT:
             valued = value_of(annotation)
             folder = root / name
@@ -96,6 +102,8 @@ def read(spec: type, root: Path) -> Any:
                 fields[name] = {
                     child.name: read(valued, child) for child in sorted(folder.iterdir()) if child.is_dir()
                 }
+            elif valued is not None and field.is_required():
+                fields[name] = {}  # same: an empty map is a folder nothing keeps
 
     return _located(spec.model_validate(fields), files)
 

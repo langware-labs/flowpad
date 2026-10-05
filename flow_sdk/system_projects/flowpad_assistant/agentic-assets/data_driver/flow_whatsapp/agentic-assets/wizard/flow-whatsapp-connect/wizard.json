@@ -1,0 +1,34 @@
+{
+  "name": "flow-whatsapp-connect",
+  "description": "Link your phone to Flow on WhatsApp — press Connect WhatsApp, send the message it opens, done.",
+  "version": 1,
+  "enabled": true,
+  "icon": "MessageCircle",
+  "steps": [
+    {
+      "id": "connect",
+      "label": "Connect WhatsApp",
+      "kind": "compute",
+      "ref": "flow-whatsapp-connect",
+      "bind": "connect"
+    },
+    {
+      "id": "ask-connected",
+      "label": "Send it from your phone",
+      "kind": "compute",
+      "ref": "flow-whatsapp-ask-connected"
+    },
+    {
+      "id": "agent",
+      "label": "Flow answers here",
+      "kind": "compute",
+      "ref": "flow-whatsapp-agent"
+    },
+    {
+      "id": "answered",
+      "label": "Flow running",
+      "kind": "compute",
+      "ref": "flow-whatsapp-answered"
+    }
+  ]
+}

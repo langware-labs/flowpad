@@ -31,7 +31,6 @@ WHY THE FIXTURES POPULATE EVERY FIELD
 
 from __future__ import annotations
 
-
 import datetime
 from typing import Any
 
@@ -297,7 +296,9 @@ def test_the_two_egress_seams_now_agree():
             # `sender` is the typed author, local only: the hub keeps the `sender_id` wire
             # string, so a hub refresh must never turn an agent's reply back into a person.
             # `reactions`: who reacted with what on a channel message, projected from the SourceItem.
-            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions"],
+            # `outbound` / `delivery_failure`: this machine's outbox — "I wrote this to send" and why
+            # the hub does not have it yet. Facts about this machine's sending, nowhere else.
+            ["origin_local", "source_item_id", "sent_at", "envelope", "sender", "reactions", "outbound", "delivery_failure"],
             # Per-device stream inbox state: travels outward, but a hub refresh must not reset it.
             [
                 "asset_occurrences",
@@ -316,9 +317,11 @@ def test_the_two_egress_seams_now_agree():
             # the LOCAL_ONLY assertion above, just not by the leak guard.
             # `origin` is a nested CloudOrigin model the filler leaves None —
             # the cloud record this message caches, absent on Flowpad-native ones.
+            # `delivery_failure` is a nested HubFailure, None until a send fails.
             [
                 "attachment",
                 "body_status",
+                "delivery_failure",
                 "env_vars",
                 "expand",
                 "fs_storage_provider",
@@ -386,8 +389,10 @@ def test_the_two_egress_seams_now_agree():
             # `address`/`started_at`/`ended_at`: who a channel conversation is with and when it ran —
             # stamped by the local projection from the channel's own messages.
             # `channel_provider`: the driver behind the channel (two drivers speak `whatsapp`) — local.
+            # `awaits_hub`/`origin_project_id`: an ask for help captured here for the hub, and the
+            # project it was asked from — this machine's bookkeeping until delivery.
             ["hub_updated_date", "message_ids", "owner", "channel_source_id", "is_unread", "unread_count", "channel_spec",
-             "address", "started_at", "ended_at", "channel_provider"],
+             "address", "started_at", "ended_at", "channel_provider", "awaits_hub", "origin_project_id"],
             BASE_LOCAL_ONLY,
             # `message_count`/`message_ids` are projections; Conversation's setattr
             # guard refuses them, which is itself the policy under test elsewhere.

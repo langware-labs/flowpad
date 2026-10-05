@@ -73,7 +73,12 @@ from flow_sdk.fs_store.indexer.auto_index import (
 )
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiResponseStatus, ApiSuccessResponse
-from flow_sdk.preferences import DEFAULT_SHARE_MESSAGE_STATUS, PREF_SHARE_MESSAGE_STATUS
+from flow_sdk.preferences import (
+    DEFAULT_SHARE_MESSAGE_STATUS,
+    DEFAULT_SMART_NAVIGATION_LOG,
+    PREF_SHARE_MESSAGE_STATUS,
+    PREF_SMART_NAVIGATION_LOG,
+)
 from flow_sdk.schema.data_spec.runtime_info_spec import DeferredDesktopInfo, DeferredInfo
 
 router = APIRouter()
@@ -433,6 +438,7 @@ def build_app_paths() -> AppPaths:
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
+    from flow_sdk.config import agent_workspace_root  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     root = get_os_root_path()
@@ -462,7 +468,9 @@ def build_app_paths() -> AppPaths:
         return norm.lstrip("/")
 
     home = _vfs_relative(str(get_instance_settings().user_home))
-    workspace = f"{home}/Flowpad workspace"
+    # This instance's workspace, not prod's: ``~/Flowpad workspace`` belongs to prod, every other instance has
+    # ``~/Flowpad workspaces/<name>`` (``workspace_root``). The UI places new projects and session cwds here.
+    workspace = _vfs_relative(str(agent_workspace_root()))
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
     user_agents = f"{home}/.claude/agents"
@@ -1997,6 +2005,7 @@ def setup_desktop_filesystem() -> None:
         "preferences.notifications.sound_enabled": False,
         "preferences.notifications.sound_key": "supershort-ping",
         PREF_SHARE_MESSAGE_STATUS: DEFAULT_SHARE_MESSAGE_STATUS,
+        PREF_SMART_NAVIGATION_LOG: DEFAULT_SMART_NAVIGATION_LOG,
         "preferences.advanced.scrollback_lines": 1000,
         "preferences.advanced.experimental_flags": {},
         # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via

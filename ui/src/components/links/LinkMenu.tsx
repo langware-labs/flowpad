@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { MediaLightbox, isLightboxMedia } from '@src/components/ui/media-lightbox';
+import { BrowserProfileItems } from './BrowserProfileItems';
 import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
 import { errorMessage } from '@src/lib/error-message';
 import type { LinkHandlers, LinkSource } from './link-events';
@@ -213,29 +214,11 @@ const LinkMenu = forwardRef<
             </DropdownMenuSubTrigger>
             <DropdownMenuPortal>
               <DropdownMenuSubContent className="max-w-xs">
-                {browsers.map((browser, i) => (
-                  <div key={browser.id} role="group" aria-label={browser.name}>
-                    {i > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-                      {browser.name}
-                    </DropdownMenuLabel>
-                    {browser.profiles.map((profile) => (
-                      <DropdownMenuItem
-                        key={profile.id}
-                        onSelect={() => onOpenInProfile(link, browser.id, profile.id)}
-                        data-testid={`link-menu-profile-${browser.id}-${profile.id}`}
-                        title={profile.email ?? profile.name}
-                      >
-                        <span className="truncate">
-                          {profile.name}
-                          {profile.email && profile.email !== profile.name && (
-                            <span className="text-muted-foreground"> — {profile.email}</span>
-                          )}
-                        </span>
-                      </DropdownMenuItem>
-                    ))}
-                  </div>
-                ))}
+                <BrowserProfileItems
+                  browsers={browsers}
+                  onSelect={(browser, profile) => onOpenInProfile(link, browser, profile)}
+                  testIdPrefix="link-menu-profile"
+                />
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
           </DropdownMenuSub>

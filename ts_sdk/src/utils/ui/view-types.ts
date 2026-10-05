@@ -95,20 +95,22 @@ export enum ViewType {
   PREFERENCES = 'preferences', // User preferences screen (registry-driven, category tabs)
   AGENTIC_PROCESS = 'agentic_process', // Process terminal view (Layer 3)
   SEARCH = 'search', // Record semantic search view
-  // The merged rules+events screen. TRIGGERS / SIGNALS / CRON are kept as
-  // ALIASES onto it (same body, same navigator) rather than redirects, so every
-  // bookmarked URL keeps working — the pattern CRON already used for TRIGGERS.
-  EVENTS = 'events', // Rules and the events they fire on - /dock/events[?rule=<id>]
-  TRIGGERS = 'triggers', // Alias of EVENTS (was: activation rules browser + editor)
+  // Automations — "when X, do Y": the list, the runs, the event bus.
+  // /dock/automations[/runs|/bus][?trigger=<id>&creating=<kind>&run=<id>&tag=<t>]
+  AUTOMATIONS = 'automations',
+  // RETIRED onto AUTOMATIONS (retired-views.ts) — kept decodable because saved
+  // tabs, bookmarks and sent links still name them.
+  EVENTS = 'events', // Retired → automations (was: the merged rules + events screen)
+  TRIGGERS = 'triggers', // Retired → automations
   CAPABILITIES = 'capabilities', // System capability checks/install/test
   GRAPH_WORKFLOWS = 'graph-workflows', // Flow-graph editor/observatory (GraphWorkflowManager) — dev mode
-  SIGNALS = 'signals', // Alias of EVENTS (was: global event-bus monitor + injector)
+  SIGNALS = 'signals', // Retired → automations/bus (was: global event-bus monitor + injector)
   DATA_SOURCES = 'data-sources', // Configured ingestion sources — /dock/data-sources
   RAG = 'rag', // Search indexes and the folders they cover — /dock/rag
   ASSET_LIST = 'asset-list', // One home counter's assets as a table — /dock/asset-list?group=<g>&counter=<c>
   PROCESS_RUNS = 'process-runs', // AgenticProcess execution history — /dock/process-runs[/<processId>]
   PLAN = 'plan', // Plan viewer with Milkdown editor
-  CRON = 'cron', // Scheduled cron jobs manager
+  CRON = 'cron', // Retired → automations (was: scheduled cron jobs manager)
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree
   PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
   AGENT = 'agent', // Agent-owned surfaces — /dock/agent/<agent-id>/stream_inbox
