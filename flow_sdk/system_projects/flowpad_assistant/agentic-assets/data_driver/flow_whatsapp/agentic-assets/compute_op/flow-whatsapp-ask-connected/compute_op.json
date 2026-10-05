@@ -5,7 +5,7 @@
   "label": "Send it from your phone",
   "description": "The phone sends its code; the hub validates it. Only a connected phone continues.",
   "subkind": "ask",
-  "output_spec_kind": "string",
+  "output_spec_kind": "confirm",
   "exe_data": {
     "prompt": "Open WhatsApp and send the message to {{connect.name}}",
     "detail": "Tap the link on your phone, or scan the code with its camera — WhatsApp opens with **link {{connect.code}}** already typed. Send it, wait for {{connect.name}}'s reply, then press Continue.\n\n[Open WhatsApp]({{connect.link}})\n\n![Scan with your phone]({{connect.qr}})\n\n{{connect.name}} · {{connect.number}}",
