@@ -31,6 +31,12 @@ export interface UseAssetTypesOptions {
    */
   vibeAsStandard?: boolean;
   /**
+   * Every browseable type, whatever the current view mode. For pickers whose
+   * candidates are a project's own assets (the home-page picker): the mode is a
+   * browsing skin, and must not decide which of the project's assets exist.
+   */
+  anyMode?: boolean;
+  /**
    * Fetch markdown ``vaults``. They are the ONLY runtime piece here — everything
    * else is synchronous from the registry — so a caller that never reads
    * ``vaults`` should pass false and skip the request entirely rather than issue
@@ -79,14 +85,24 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
  * The only runtime piece is markdown ``vaults`` (per-project doc roots): we still
  * fetch ``/assets/types`` but consume ONLY its vaults, merging them onto markdown.
  */
-export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: AssetTypeInfo[]; isLoading: boolean; error: Error | null; reload: () => Promise<unknown> } {
+export function useAssetTypes(options: UseAssetTypesOptions = {}): {
+  types: AssetTypeInfo[];
+  isLoading: boolean;
+  error: Error | null;
+  reload: () => Promise<unknown>;
+} {
   const currentMode = useViewMode();
-  const mode: ViewMode = options.vibeAsStandard && currentMode === UiViewMode.Vibe ? 'standard' : currentMode;
+  const mode: ViewMode = options.anyMode
+    ? 'dev'
+    : options.vibeAsStandard && currentMode === UiViewMode.Vibe
+      ? 'standard'
+      : currentMode;
   const withVaults = options.withVaults ?? true;
   const { data, isLoading, error, reload } = useLazyAsset(LazyAsset.AssetCatalog, undefined, {
-    enabled: withVaults, priority: 'background',
+    enabled: withVaults,
+    priority: 'background',
   });
-  const vaults = data?.types.find(t => t.type_name === 'markdown')?.vaults ?? NO_VAULTS;
+  const vaults = data?.types.find((t) => t.type_name === 'markdown')?.vaults ?? NO_VAULTS;
 
   // Re-derive the catalog whenever the view mode changes (live filtering) or the
   // runtime markdown vaults arrive; merge the vaults onto the markdown entry.
