@@ -75,13 +75,14 @@ test('browser stress: 10 rapid follow-ups + 3 thread prompts join the one open s
 
     // the one session settles with every turn answered
     const first = sessionCards(alice.page).first();
-    await expect(first).toContainText(new RegExp(`${TURNS} prompts · ${TURNS} repl`), { timeout: ALL_TURNS_BUDGET_MS });
+    await expect(first).toContainText(new RegExp(`${TURNS * 2} messages`), { timeout: ALL_TURNS_BUDGET_MS });
     console.log(`[stress] all ${TURNS} turns replied in ${Date.now() - t0} ms`);
     expect(await sessionCards(alice.page).count()).toBe(1);
     expect(await sessionCards(bob.page).count()).toBe(1);
     const threadTexts = await alice.page.locator('[data-testid^="message-bubble-"]').allInnerTexts();
     expect(threadTexts.filter((t) => /Prompt response:/.test(t))).toHaveLength(0);
-    expect(threadTexts.filter((t) => t.includes('SX-')).length).toBe(1);
+    // The session is ONE line in the chat: no prompt of it is drawn as a bubble.
+    expect(threadTexts.filter((t) => t.includes('SX-')).length).toBe(0);
 
     // first session view: replies in send order, one per prompt
     await first.click();

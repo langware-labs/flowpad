@@ -1220,7 +1220,7 @@ async def handle_start_live_session(conversation_id: str, body: dict, someone_ty
     host — it carries the ``session_start`` marker (so the host's desktop is
     notified, as for an opening prompt) and the snapshot (so the host's mirror
     materializes PENDING with its Approve request). The line is the session's
-    starting message: the one line the conversation shows for it.
+    first message: where the conversation shows its one line.
     """
     from flow_sdk.app.actions.execute_prompt import _peer_of, emit_session_event  # noqa: PLC0415
     from flow_sdk.builtin.flow_message import SESSION_START_MARKER_KEY  # noqa: PLC0415
@@ -1262,7 +1262,11 @@ async def handle_start_live_session(conversation_id: str, body: dict, someone_ty
     )
     session.mark_activity()
     await session.save(someone_typeid)
-    starting_id = await emit_session_event(
+    # No second save of this row: the host may already have approved it, and the
+    # snapshot that brought that here would be overwritten by this stale copy.
+    # The line anchors the session in the chat as its first message; the host
+    # records it as the starting message when the request lands.
+    await emit_session_event(
         session,
         "requested",
         someone_typeid,
@@ -1270,9 +1274,6 @@ async def handle_start_live_session(conversation_id: str, body: dict, someone_ty
         text=f"{sender_name or 'Your collaborator'} asks {host_name or 'the host'} for a live session",
         marker_extra={SESSION_START_MARKER_KEY: SessionStartSettings(reply_policy=reply_policy).model_dump()},
     )
-    if starting_id:
-        session.starting_message_id = starting_id
-        await session.save(someone_typeid)
     return ApiSuccessResponse(data=session.model_dump(mode="json"))
 
 
