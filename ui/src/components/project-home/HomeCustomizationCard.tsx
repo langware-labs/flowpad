@@ -65,8 +65,10 @@ export const HomeCustomizationCard: React.FC<HomeCustomizationCardProps> = ({ pr
   const { data: homePageAsset, notFound: homePageMissing } = useEntity(homePageTypeId);
   // The picker's own list is the backend's default staging set (what a session
   // can attach), which leaves agents out — and an agent is THE home page. So the
-  // card asks for the whole asset catalog, for this project, only while open.
-  const { types: assetTypes } = useAssetTypes({ withVaults: false });
+  // card asks for the whole asset catalog, for this project, only while open —
+  // in every view mode: Vibe browses no types, and an empty list fell back to
+  // that same agent-less default.
+  const { types: assetTypes } = useAssetTypes({ withVaults: false, anyMode: true });
   const homePageTypes = useMemo(() => assetTypes.map((type) => type.type_name), [assetTypes]);
   const homePageCandidates = useProcessAssets(null, {
     enabled: pickerOpen && !!project?.id,
