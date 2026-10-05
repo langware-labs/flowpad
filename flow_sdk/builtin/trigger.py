@@ -544,6 +544,12 @@ class Trigger(Entity):
     # ── Discovery ─────────────────────────────────────────────────────────────
 
     @classmethod
+    async def every(cls) -> list["Trigger"]:
+        """Every rule on this machine. The automations screen and the boot sweep of stale rows read
+        them all, and the set is small; this is the one walk over it."""
+        return await cls.get_all({})
+
+    @classmethod
     async def list_by_type(cls, trigger_type: "TriggerType") -> list["Trigger"]:
         """List all Trigger entities of the given type."""
         return await cls.get_all({"trigger_type": trigger_type.value})
@@ -1042,7 +1048,7 @@ class Trigger(Entity):
             rows = rows_for(trigger_id, row.name if row else None,
                             discover(None, limit=10_000, per_rule=limit * 2))
         elif str(params.get("include_builtin", "true")).lower() == "false":
-            builtin = {str(t.id) for t in await cls.get_all({}) if t.is_builtin}
+            builtin = {str(t.id) for t in await cls.every() if t.is_builtin}
             rows = [r for r in discover(None, limit=10_000, per_rule=limit * 2)
                     if r.get("trigger_id") not in builtin][: limit * 2]
         else:

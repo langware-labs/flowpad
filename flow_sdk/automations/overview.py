@@ -52,14 +52,9 @@ async def workflows_by_trigger() -> dict[str, list[str]]:
         return _workflows_cache[1]
     out: dict[str, list[str]] = {}
     try:
-        from flow_sdk.builtin.graph_workflow import GraphWorkflow  # noqa: PLC0415
         from flow_sdk.graph_workflow_manager import get_graph_workflow_manager  # noqa: PLC0415
 
-        manager = get_graph_workflow_manager()
-        for entity in await GraphWorkflow.get_all({}):
-            loaded = await manager.load_flow(entity.id, entity)
-            if not (loaded and loaded.enabled):
-                continue
+        for entity, loaded in await get_graph_workflow_manager().enabled_flows():
             for tid in loaded.doc.trigger_ids():
                 out.setdefault(tid, []).append(entity.name or entity.id)
     except Exception:  # noqa: BLE001 — workflows are one more line in the sentence, never a failure
@@ -112,7 +107,7 @@ async def overview(*, include_inactive: bool = False) -> list[AutomationSummary]
     from flow_sdk.builtin.trigger_arming import is_foreign_copy  # noqa: PLC0415
     from flow_sdk.fs_store.operations.trigger_log import discover  # noqa: PLC0415
 
-    triggers = [t for t in await Trigger.get_all({})
+    triggers = [t for t in await Trigger.every()
                 if include_inactive or not is_foreign_copy(t.asset_ref)]
     rows = RowIndex(discover(None, limit=ROWS_PER_RULE * max(1, len(triggers)), per_rule=ROWS_PER_RULE))
     catalog = event_catalog()
