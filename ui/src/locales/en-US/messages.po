@@ -4602,6 +4602,10 @@ msgstr "Collapse repeated error records into a single row."
 msgid "Collapse side window"
 msgstr "Collapse side window"
 
+#: src/i18n/pref-labels.ts
+msgid "Collect every smart-navigation decision (what you typed, where, what opened) as a row of your SmartNavigationData dataset, to review and train on."
+msgstr "Collect every smart-navigation decision (what you typed, where, what opened) as a row of your SmartNavigationData dataset, to review and train on."
+
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/color-picker.tsx
@@ -5372,6 +5376,10 @@ msgstr "Could not annotate view"
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Could not assign"
 msgstr "Could not assign"
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Could not assign the task."
+msgstr "Could not assign the task."
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 #~ msgid "Could not attach {0}"
@@ -20502,6 +20510,10 @@ msgstr "Slower. To wipe rows first, use Clear Index then Full."
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Small"
 msgstr "Small"
+
+#: src/i18n/pref-labels.ts
+msgid "Smart navigation log"
+msgstr "Smart navigation log"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkCard.tsx

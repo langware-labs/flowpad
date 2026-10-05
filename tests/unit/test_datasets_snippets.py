@@ -68,3 +68,10 @@ async def test_evaluate_the_navigator(monkeypatch):
     ns = await run_fence(fence_under(DOC, "4."), ns)
     precision, coverage, recall, confident_wrong = ns["scores"]
     assert recall == 1.0 and confident_wrong == 0 and precision == 1.0
+
+
+async def test_log_real_decisions_into_a_training_set(fresh_user_scope):
+    """No decision API in this tier: the decision is the prompt, logged and labelled as a row."""
+    ns = await run_fence(fence_under(DOC, "6."))
+    assert ns["logged"] == ("summarize the README", "agentic", "summarize the README")
+    assert ns["report"]["scored"] >= 1 and ns["report"]["agentic_recall"] == 1.0

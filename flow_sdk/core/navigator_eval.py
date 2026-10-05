@@ -19,21 +19,13 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from flow_sdk.core.navigator import MIN_CONFIDENCE, NavigatorRoute, route
+from flow_sdk.core.navigation_decision import decision_of
+from flow_sdk.core.navigator import MIN_CONFIDENCE, route
 from flow_sdk.datasets.score import golds, is_correct, matches, score
 
 SHIPPED = Path(__file__).resolve().parents[1] / (
     "system_projects/flowpad_assistant/agentic-assets/dataset/smart-navigator"
 )
-
-
-def decision_of(answer: NavigatorRoute) -> dict:
-    """A run's answer as a ``navigator.decision`` (its confidence kept; the reason is run detail)."""
-    out: dict[str, Any] = {"route": answer.route, "confidence": answer.confidence}
-    if answer.route == "quick" and answer.target is not None:
-        out["target"] = answer.target.model_dump(mode="json")
-        out["verb"] = answer.verb
-    return out
 
 
 def _expected_route(row: Any) -> Optional[str]:
@@ -71,13 +63,14 @@ def metrics(rows: list) -> dict:
     }
 
 
-async def evaluate(dataset: Any) -> dict:
-    """Run every ``eval`` row, score it, and return the metrics plus each row's output.
+async def evaluate(dataset: Any, *, kinds: tuple[str, ...] = ("eval",)) -> dict:
+    """Run every row of ``kinds`` (``eval`` by default; a SmartNavigationData log's rows are
+    ``train``), score it, and return the metrics plus each row's output.
 
     Nothing is written: a shipped dataset is read-only, and a run's outputs are a report, not a
     label. ``latency_ms`` is end to end per row (a rule hit costs ~0, a decision a round trip).
     """
-    rows = [r for r in dataset.read_rows() if r.kind.value == "eval"]
+    rows = [r for r in dataset.read_rows() if r.kind.value in kinds]
     out_type = dataset.output_shape
     timed, ran = [], []
     for row in rows:

@@ -34,6 +34,8 @@ export enum PrefKey {
   SCROLLBACK_LINES = 'preferences.advanced.scrollback_lines',
   EXPERIMENTAL_FLAGS = 'preferences.advanced.experimental_flags',
   INDEXER_BACKEND = 'preferences.advanced.indexer_backend',
+  /** SmartNavigationLog: collect every smart-navigation decision into the SmartNavigationData dataset. */
+  SMART_NAVIGATION_LOG = 'preferences.advanced.smart_navigation_log',
 
   // --- Auto-index a project on selection (the "Auto Index" tab) ---
   // Read backend-side via flow_sdk/fs_store/indexer/auto_index.py, which owns
@@ -286,6 +288,16 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: 'Let other participants see when messages are delivered or read.',
     dataType: PrefDataType.BOOL,
     defaultValue: true,
+  },
+  [PrefKey.SMART_NAVIGATION_LOG]: {
+    key: PrefKey.SMART_NAVIGATION_LOG,
+    surfaced: true,
+    category: 'advanced',
+    label: 'Smart navigation log',
+    description:
+      'Collect every smart-navigation decision (what you typed, where, what opened) as a row of your SmartNavigationData dataset, to review and train on.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
   },
   [PrefKey.SCROLLBACK_LINES]: {
     key: PrefKey.SCROLLBACK_LINES,
@@ -726,10 +738,7 @@ export function isPrefVisible(info: PrefInfo, read: (key: PrefKey) => unknown): 
 }
 
 /** Surfaced prefs for a category, minus rows hidden by an unmet `visibleWhen`. */
-export function visiblePrefsForCategory(
-  category: string,
-  read: (key: PrefKey) => unknown,
-): PrefInfo[] {
+export function visiblePrefsForCategory(category: string, read: (key: PrefKey) => unknown): PrefInfo[] {
   return prefsForCategory(category).filter((info) => isPrefVisible(info, read));
 }
 

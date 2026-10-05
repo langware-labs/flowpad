@@ -92,3 +92,33 @@ confident-wrong 0. Without a decision API every row is `agentic` (the navigator 
 A dataset opens in the app that edits it — its own nested editor, else one whose `webapp.json`
 `edits` names its kind, else the generic dataset editor (`GET /api/v1/editors/dataset-<id>`). The
 editor builds its forms from the kinds (`GET /api/v1/kinds/navigator.decision`).
+
+## 6. Log real decisions into a training set (SmartNavigationLog)
+
+With **Preferences → Advanced → Smart navigation log** on (off by default), every decision the
+magic line makes is appended to the user's own **SmartNavigationData** dataset
+(`<user asset root>/agentic-assets/dataset/smart-navigation-data/`, spec `navigator.dataset` —
+the same row kind as the shipped eval set). A row is `train`, carries what was typed and where,
+what was offered and decided, and what was done (`data.address` or `data.prompt`) — and no gold
+until someone reviews it.
+
+```python
+from flow_sdk.core import navigation_log, navigator_eval
+from flow_sdk.core.navigation_decision import decide_run
+from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
+
+write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
+request = {"utterance": "summarize the README", "here": {"view": "home"}}
+outcome, answer = await decide_run(request)      # what the navigation-decision action runs
+await navigation_log.log(request, outcome, answer)  # ...and then, after answering, this
+
+log = await navigation_log.dataset()               # SmartNavigationData
+row = log.read_rows()[-1]
+logged = (row.input.utterance, row.output.route, row.data["prompt"])  # (..., 'agentic', ...)
+await log.annotate(row.id, {"route": "agentic"})   # reviewed: asking was right
+report = await navigator_eval.evaluate(log, kinds=("train",))
+write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)
+```
+
+In the dataset editor the same review is one click: **Correct** labels a row with what the run
+did, and the **needs label** filter lists what is left.

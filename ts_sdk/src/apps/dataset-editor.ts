@@ -56,11 +56,11 @@ const MARKUP = `
   <span id="kind" class="mono muted" data-testid="dataset-editor-kind"></span>
   <span id="counts" class="muted small" data-testid="dataset-editor-counts"></span>
   <span style="flex:1"></span>
-  <select id="filter" data-testid="dataset-editor-filter"><option value="">all</option><option>train</option><option>eval</option><option>test</option></select>
+  <select id="filter" data-testid="dataset-editor-filter"><option value="">all</option><option value="needs-label">needs label</option><option>train</option><option>eval</option><option>test</option></select>
   <button type="button" id="validate" data-testid="dataset-editor-validate">Validate</button>
   <span id="status" class="small"></span>
 </header>
-<table><thead><tr><th>#</th><th>role</th><th>input</th><th>gold</th><th>output</th></tr></thead>
+<table><thead><tr><th>#</th><th>role</th><th>input</th><th>gold</th><th>output</th><th>did</th><th></th></tr></thead>
 <tbody id="rows" data-testid="dataset-editor-rows"></tbody></table>`;
 
 /** A one-line summary of a slot value: a request's utterance, a decision's route + target. */
@@ -75,6 +75,24 @@ export function summarize(value: unknown): string {
       ? `${v.route} → ${v.target.kind}:${v.target.value}${v.verb && v.verb !== 'show' ? ` (${v.verb})` : ''}`
       : v.route;
   return JSON.stringify(v);
+}
+
+/** A row a run answered and nobody has labelled yet -- what a reviewer works through. */
+export function needsLabel(row: { output?: unknown; ground_truth?: unknown }): boolean {
+  return row.output != null && row.ground_truth == null;
+}
+
+/** "This output was right": the output as a gold, minus what only a producer has (its confidence). */
+export function labelFromOutput(output: Record<string, any>): Record<string, any> {
+  const { confidence: _confidence, ...label } = output;
+  return Object.fromEntries(Object.entries(label).filter(([, v]) => v != null));
+}
+
+/** What a logged row's run did (`data.address` / `data.prompt`, as SmartNavigationLog writes them). */
+export function didSummary(data: Record<string, any> | null | undefined): string {
+  if (data?.address) return String(data.address);
+  if (data?.prompt != null) return '→ assistant';
+  return '';
 }
 
 const PRIMITIVES: ReadonlySet<string> = new Set(DATASET_FIELD_KINDS);
@@ -189,7 +207,9 @@ async function run($: (id: string) => HTMLElement): Promise<void> {
   const gold = goldKind ? await kindForm(goldKind) : null;
 
   const { rows }: { rows: any[] } = await dataset.rows(); // every example with its values, in one request
-  const counts = () => `${rows.length} examples · ${rows.filter((r) => r.ground_truth != null).length} labelled`;
+  const counts = () =>
+    `${rows.length} examples · ${rows.filter((r) => r.ground_truth != null).length} labelled · ` +
+    `${rows.filter(needsLabel).length} need a label`;
   $('counts').textContent = counts();
 
   const body = $('rows');
@@ -197,14 +217,29 @@ async function run($: (id: string) => HTMLElement): Promise<void> {
     const role = ($('filter') as HTMLSelectElement).value;
     body.replaceChildren();
     rows.forEach((r, n) => {
-      if (role && r.kind !== role) return;
+      if (role === 'needs-label' ? !needsLabel(r) : role && r.kind !== role) return;
       const tr = document.createElement('tr');
       tr.className = 'example';
       tr.dataset.testid = `dataset-editor-row-${n + 1}`;
-      tr.innerHTML = `<td class="mono">${n + 1}</td><td>${r.kind}</td><td></td><td></td><td class="muted"></td>`;
+      tr.innerHTML = `<td class="mono">${n + 1}</td><td>${r.kind}</td><td></td><td></td><td class="muted"></td><td class="mono muted small"></td><td></td>`;
       tr.children[2].textContent = summarize(r.input);
       tr.children[3].textContent = summarize(r.ground_truth);
       tr.children[4].textContent = summarize(r.output);
+      tr.children[5].textContent = didSummary(r.data);
+      if (needsLabel(r) && r.output && typeof r.output === 'object') {
+        // One click for the common review verdict: what the run did was right.
+        const ok = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Correct' });
+        ok.dataset.testid = `dataset-editor-correct-${n + 1}`;
+        ok.addEventListener('click', async (event) => {
+          event.stopPropagation();
+          const value = labelFromOutput(r.output);
+          await dataset.annotate(r.id, value);
+          r.ground_truth = value;
+          $('counts').textContent = counts();
+          render();
+        });
+        tr.children[6].append(ok);
+      }
       tr.addEventListener('click', () => void open(tr, r));
       body.append(tr);
     });
@@ -215,7 +250,7 @@ async function run($: (id: string) => HTMLElement): Promise<void> {
     const holder = document.createElement('tr');
     holder.className = 'editing';
     const td = document.createElement('td');
-    td.colSpan = 5;
+    td.colSpan = 7;
     const box = document.createElement('div');
     box.className = 'form';
     box.dataset.testid = 'dataset-editor-form';

@@ -73,7 +73,12 @@ from flow_sdk.fs_store.indexer.auto_index import (
 )
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiResponseStatus, ApiSuccessResponse
-from flow_sdk.preferences import DEFAULT_SHARE_MESSAGE_STATUS, PREF_SHARE_MESSAGE_STATUS
+from flow_sdk.preferences import (
+    DEFAULT_SHARE_MESSAGE_STATUS,
+    DEFAULT_SMART_NAVIGATION_LOG,
+    PREF_SHARE_MESSAGE_STATUS,
+    PREF_SMART_NAVIGATION_LOG,
+)
 from flow_sdk.schema.data_spec.runtime_info_spec import DeferredDesktopInfo, DeferredInfo
 
 router = APIRouter()
@@ -1868,6 +1873,7 @@ def setup_desktop_filesystem() -> None:
         "preferences.notifications.sound_enabled": False,
         "preferences.notifications.sound_key": "supershort-ping",
         PREF_SHARE_MESSAGE_STATUS: DEFAULT_SHARE_MESSAGE_STATUS,
+        PREF_SMART_NAVIGATION_LOG: DEFAULT_SMART_NAVIGATION_LOG,
         "preferences.advanced.scrollback_lines": 1000,
         "preferences.advanced.experimental_flags": {},
         # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via

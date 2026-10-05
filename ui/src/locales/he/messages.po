@@ -4602,6 +4602,10 @@ msgstr "כווץ רשומות שגיאה חוזרות לשורה אחת."
 msgid "Collapse side window"
 msgstr "כיווץ החלון הצדדי"
 
+#: src/i18n/pref-labels.ts
+msgid "Collect every smart-navigation decision (what you typed, where, what opened) as a row of your SmartNavigationData dataset, to review and train on."
+msgstr ""
+
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/agent-avatar-picker.tsx
 #: src/components/ui/color-picker.tsx
@@ -5372,6 +5376,10 @@ msgstr "לא ניתן להוסיף הערות לתצוגה"
 #: src/components/assets/editor/task/OwnerButton.tsx
 msgid "Could not assign"
 msgstr "לא ניתן להקצות"
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Could not assign the task."
+msgstr ""
 
 #: src/components/assets/editor/task/TaskAttachments.tsx
 #~ msgid "Could not attach {0}"
@@ -20502,6 +20510,10 @@ msgstr "איטי יותר. כדי למחוק שורות ראשית, השתמש �
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Small"
 msgstr "קטן"
+
+#: src/i18n/pref-labels.ts
+msgid "Smart navigation log"
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/project-activity-strip/BookmarkCard.tsx

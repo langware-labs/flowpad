@@ -160,9 +160,10 @@ answer = await route("open data sources", here={"view": "home", "address": "/doc
 answer.route, answer.target   # ('quick', NavigationTarget(kind='view', value='data-sources'))
 ```
 
-`navigator.route` is what the top bar asks before starting an assistant turn
-(`compute_node/@local/navigator-route`, which sends only the utterance -- the backend reads
-where the tab is as `navigation.here`, see `docs/navigation/navigation-spec.md`). Rules first (a
+`navigator.route` is the engine of **NavigationDecision** (`flow_sdk/core/navigation_decision.py`),
+which the top bar asks before starting an assistant turn (`compute_node/@local/navigation-decision`,
+sending only the utterance -- the backend reads where the tab is as `navigation.here`, and answers
+a dock to navigate OR the prompt; see `docs/navigation/navigation-spec.md`). Rules first (a
 URL, path, port, "search for X", an exact screen name or alias), then one decision over every
 place on the map, what is in context here and full-text candidates, acted on only at ≥ 0.85. **With no decision API on the hub it answers `agentic`
 for everything, rules included**, so the magic line behaves exactly as before. Measured
