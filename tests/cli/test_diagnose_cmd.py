@@ -19,6 +19,7 @@ from flow_sdk.cli.commands.diagnose_cmd import (
     _TerminalSink,
 )
 from flow_sdk.cli.flow_cli import app
+from flow_sdk.schema.data_spec.returned_value_spec import PromptResult
 
 runner = CliRunner()
 
@@ -47,6 +48,15 @@ def _isolate_cli_side_effects():
 # --------------------------------------------------------------------------- #
 # flow diagnose — message comes from stdin, never argv
 # --------------------------------------------------------------------------- #
+
+
+class _TakesTurns:
+    """``AgenticProcess.send_turn`` as the command calls it, answered as the
+    ``PromptResult`` the real method returns for an accepted turn. It never registers
+    in ``_PROMPT_WORKERS``, so a test that wants a live worker puts one there itself."""
+
+    async def send_turn(self, _text):
+        return PromptResult.satisfied("The turn was accepted.", executor=f"agentic_process-{self.id}")
 
 
 def _diagnosis_type_only(stand_in):
@@ -281,7 +291,7 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
         def transcript_path(self, _ap):
             return _tpath
 
-    class _FakeAP:
+    class _FakeAP(_TakesTurns):
         def __init__(self, **_kw):
             self.id = "fake-id"
             self.session_id = "fakesess"
@@ -289,9 +299,6 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
 
         def enable_assistant(self):
             pass
-
-        async def prompt(self, _text):
-            return None
 
         async def stream_transcript(self, timeout=0):
             # Narration, then report.py's result JSON via a tool_result, then never
@@ -357,7 +364,7 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
         def transcript_path(self, _ap):
             return _tpath
 
-    class _FakeAP:
+    class _FakeAP(_TakesTurns):
         def __init__(self, **_kw):
             self.id = "fake-id"
             self.session_id = "fakesess"
@@ -365,9 +372,6 @@ async def test_run_diagnose_posts_loaded_diagnosis_summary_when_cross_link_fails
 
         def enable_assistant(self):
             pass
-
-        async def prompt(self, _text):
-            return None
 
         async def stream_transcript(self, timeout=0):
             yield {
@@ -431,7 +435,7 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
         def transcript_path(self, _ap):
             return Path("does-not-exist-never-written.jsonl")
 
-    class _FakeAP:
+    class _FakeAP(_TakesTurns):
         def __init__(self, **_kw):
             self.id = "dead-worker-id"
             self.session_id = "fakesess"
@@ -439,11 +443,6 @@ async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
 
         def enable_assistant(self):
             pass
-
-        async def prompt(self, _text):
-            # Returns without ever registering in _PROMPT_WORKERS → the turn is
-            # already "ended" from warmup's perspective (the dead/never-started case).
-            return None
 
         async def stream_transcript(self, timeout=0):
             if False:  # pragma: no cover - never iterated; warmup fails first
@@ -493,7 +492,7 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
                 _tpath.write_bytes(b'{"type":"system"}\n')
             return _tpath
 
-    class _FakeAP:
+    class _FakeAP(_TakesTurns):
         def __init__(self, **_kw):
             self.id = "slow-worker-id"
             self.session_id = "fakesess"
@@ -501,9 +500,6 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
 
         def enable_assistant(self):
             pass
-
-        async def prompt(self, _text):
-            return None
 
         async def stream_transcript(self, timeout=0):
             yield {"message": {"role": "assistant", "content": [{"type": "text", "text": "working"}]}}
@@ -718,7 +714,7 @@ async def test_feed_card_always_appears(label, has_issue, expect_conversation):
         def transcript_path(self, _ap):
             return _tpath
 
-    class _FakeAP:
+    class _FakeAP(_TakesTurns):
         def __init__(self, **_kw):
             self.id = "card-worker-id"
             self.session_id = "fakesess"
@@ -726,9 +722,6 @@ async def test_feed_card_always_appears(label, has_issue, expect_conversation):
 
         def enable_assistant(self):
             pass
-
-        async def prompt(self, _text):
-            return None
 
         async def stream_transcript(self, timeout=0):
             # report.py prints its result JSON, then the stream ends cleanly so the
