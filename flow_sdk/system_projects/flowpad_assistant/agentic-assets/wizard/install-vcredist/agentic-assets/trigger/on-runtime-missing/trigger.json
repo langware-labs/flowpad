@@ -1,6 +1,6 @@
 {
-  "name": "Install the VC++ runtime (rag.runtime.missing)",
-  "description": "On Windows, Flowpad's search needs Microsoft's Visual C++ Runtime. If search finds it missing, this opens a short setup that offers to install it. It asks first, and if you say not now it waits until you use search again.",
+  "name": "Search setup on Windows",
+  "description": "On Windows, offers to install a small Microsoft component that search needs, if it's missing. It always asks first.",
   "tag": {
     "on": "rag.runtime.missing"
   },

@@ -131,10 +131,9 @@ async def _get_or_create_flow(name: str) -> tuple[GraphWorkflow | None, bool]:
 async def _seed_mini_analyzer() -> None:
     # The trigger's words are kept current on every boot, even when the flow is
     # left alone below — an install seeded before it had a description gets one.
-    from flow_sdk.builtin.trigger import Trigger
-
-    existing = await Trigger.get_one({"name": "Mini analyzer (manual)"})
-    if existing is not None and existing.description != MINI_TRIGGER_DESCRIPTION:
+    existing = await _find_mini_trigger()
+    if existing is not None and (existing.name, existing.description) != (MINI_TRIGGER_NAME, MINI_TRIGGER_DESCRIPTION):
+        existing.name = MINI_TRIGGER_NAME
         existing.description = MINI_TRIGGER_DESCRIPTION
         await existing.update()
 
@@ -161,19 +160,26 @@ async def _seed_mini_analyzer() -> None:
 
 
 #: What the Automations screen tells a person about the mini-analyzer's trigger.
-MINI_TRIGGER_DESCRIPTION = (
-    "A small daily self-check that Flowpad's workflows run: it counts the agent sessions that ran "
-    "today and writes a one-line summary to Flowpad's own log. Nothing leaves this computer."
-)
+MINI_TRIGGER_NAME = "Daily self-check"
+#: The name it was seeded under before it had a plain one — found by either.
+_MINI_TRIGGER_OLD_NAME = "Mini analyzer (manual)"
+MINI_TRIGGER_DESCRIPTION = "A quick daily check that Flowpad is working. It stays on this computer."
+
+
+async def _find_mini_trigger():
+    from flow_sdk.builtin.trigger import Trigger
+
+    return (await Trigger.get_one({"name": MINI_TRIGGER_NAME})
+            or await Trigger.get_one({"name": _MINI_TRIGGER_OLD_NAME}))
 
 
 async def _mini_trigger():
     from flow_sdk.builtin.trigger import Trigger
 
-    trigger = await Trigger.get_one({"name": "Mini analyzer (manual)"})
+    trigger = await _find_mini_trigger()
     if trigger is None:
         trigger = Trigger(
-            name="Mini analyzer (manual)",
+            name=MINI_TRIGGER_NAME,
             description=MINI_TRIGGER_DESCRIPTION,
             trigger_type="schedule",
             sched_trigger_type="interval",

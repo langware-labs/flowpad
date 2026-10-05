@@ -67,14 +67,15 @@ a request itself (`ui/tests/unit/triggers-view-url.test.ts` fails if one does).
 ## Flowpad's own automations
 
 Each built-in carries a `description` written for the person reading the
-Automations screen — what it does for them, why Flowpad needs it, and what it
-touches — never implementation detail (that lives in a code comment beside the
-spec). `tests/unit/automations/test_builtin_descriptions.py` holds every one to
+Automations screen — one or two calm sentences on what they get from it, saying
+it stays on their computer where that is true; never implementation detail (that
+lives in a code comment beside the spec) and never words that sound like
+watching them. `tests/unit/automations/test_builtin_descriptions.py` holds every one to
 that. Design notes that used to sit in those descriptions:
 
-- **LLM setup** (`wizard/llm-setup/…/on-tab-ready`) is `fire_once`: it never runs
+- **First-time setup** (`wizard/llm-setup/…/on-tab-ready`) is `fire_once`: it never runs
   on its own again; Settings → General → Run setup again runs the same two steps.
-- **Install the VC++ runtime** (`wizard/install-vcredist/…/on-runtime-missing`) is
+- **Search setup on Windows** (`wizard/install-vcredist/…/on-runtime-missing`) is
   deliberately NOT `fire_once`: search announces `rag.runtime.missing` at most once
   until a person acts (adds a folder, "index now"), so a "Not now" is not asked
   every tick, and a person who declined and later asks for search is asked again.
