@@ -122,21 +122,17 @@ async def test_navigation_decision_reads_where_the_active_tab_is(bootstrapped_cl
 
 
 @pytest.mark.asyncio
-async def test_navigation_decision_answers_then_logs_into_smart_navigation_data(
+async def test_navigation_decision_answers_then_logs_into_smart_navigation_log(
     bootstrapped_client, monkeypatch, tmp_path
 ):
     """With SmartNavigationLog on, the real action answers a dock and the decision lands as a row of
-    the user's SmartNavigationData dataset -- indexed, so the UI lists it, and found again (one
+    the instance's SmartNavigationLog dataset in Flowpad's temp folder -- indexed, so the UI lists it, and found again (one
     dataset) on the next decision."""
-    import flow_sdk.builtin.asset_placement as placement
-    from flow_sdk.assets.placement import Scope
+    from flow_sdk import config
     from flow_sdk.core import navigation_log
     from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
 
-    real = placement.root_for_scope
-    monkeypatch.setattr(
-        placement, "root_for_scope", lambda scope, **kw: tmp_path if scope == Scope.USER else real(scope, **kw)
-    )
+    monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path))
     import flow_sdk.decision as decision
 
     async def _endpoints(**kwargs):
@@ -151,8 +147,8 @@ async def test_navigation_decision_answers_then_logs_into_smart_navigation_data(
             assert body["data"]["address"] in ("/dock/data-sources", "/dock/preferences")
             assert body["data"]["dock"]["viewType"] in ("data-sources", "preferences")
         await navigation_log.drain()
-        listed = (await bootstrapped_client.get('/api/v1/graph/dataset?filter={"name":"SmartNavigationData"}')).json()
+        listed = (await bootstrapped_client.get('/api/v1/graph/dataset?filter={"name":"SmartNavigationLog"}')).json()
         [row] = listed["data"]
-        assert (row["title"], row["num_examples"]) == ("SmartNavigationData", 2)
+        assert (row["title"], row["num_examples"]) == ("SmartNavigationLog", 2)
     finally:
         write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)

@@ -96,8 +96,9 @@ editor builds its forms from the kinds (`GET /api/v1/kinds/navigator.decision`).
 ## 6. Log real decisions into a training set (SmartNavigationLog)
 
 With **Preferences → Advanced → Smart navigation log** on (off by default), every decision the
-magic line makes is appended to the user's own **SmartNavigationData** dataset
-(`<user asset root>/agentic-assets/dataset/smart-navigation-data/`, spec `navigator.dataset` —
+magic line makes is appended to the user's own **SmartNavigationLog** dataset
+(`<FLOWPAD_TEMP_DIR>/<instance>/agentic-assets/dataset/smart-navigation-log/` — Flowpad's temp
+folder, which the OS clears now and then, so copy rows worth keeping into a kept dataset; spec `navigator.dataset` —
 the same row kind as the shipped eval set). A row is `train`, carries what was typed and where,
 what was offered and decided, and what was done (`data.address` or `data.prompt`) — and no gold
 until someone reviews it.
@@ -112,7 +113,7 @@ request = {"utterance": "summarize the README", "here": {"view": "home"}}
 outcome, answer = await decide_run(request)      # what the navigation-decision action runs
 await navigation_log.log(request, outcome, answer)  # ...and then, after answering, this
 
-log = await navigation_log.dataset()               # SmartNavigationData
+log = await navigation_log.dataset()               # SmartNavigationLog
 row = log.read_rows()[-1]
 logged = (row.input.utterance, row.output.route, row.data["prompt"])  # (..., 'agentic', ...)
 await log.annotate(row.id, {"route": "agentic"})   # reviewed: asking was right

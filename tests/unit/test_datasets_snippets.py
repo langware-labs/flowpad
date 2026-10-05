@@ -70,8 +70,11 @@ async def test_evaluate_the_navigator(monkeypatch):
     assert recall == 1.0 and confident_wrong == 0 and precision == 1.0
 
 
-async def test_log_real_decisions_into_a_training_set(fresh_user_scope):
+async def test_log_real_decisions_into_a_training_set(tmp_path, monkeypatch):
     """No decision API in this tier: the decision is the prompt, logged and labelled as a row."""
+    from flow_sdk import config
+
+    monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path))
     ns = await run_fence(fence_under(DOC, "6."))
     assert ns["logged"] == ("summarize the README", "agentic", "summarize the README")
     assert ns["report"]["scored"] >= 1 and ns["report"]["agentic_recall"] == 1.0

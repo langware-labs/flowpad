@@ -64,7 +64,7 @@ def metrics(rows: list) -> dict:
 
 
 async def evaluate(dataset: Any, *, kinds: tuple[str, ...] = ("eval",)) -> dict:
-    """Run every row of ``kinds`` (``eval`` by default; a SmartNavigationData log's rows are
+    """Run every row of ``kinds`` (``eval`` by default; SmartNavigationLog rows are
     ``train``), score it, and return the metrics plus each row's output.
 
     Nothing is written: a shipped dataset is read-only, and a run's outputs are a report, not a

@@ -143,7 +143,7 @@ describe('useEntityBreadcrumbs', () => {
     } as never);
     vi.spyOn(ancestors, 'resolveAncestorChain').mockResolvedValue([]);
     vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: any) =>
-      String(typeId) === DATASET ? ({ displayName: 'SmartNavigationData' } as never) : (null as never),
+      String(typeId) === DATASET ? ({ displayName: 'SmartNavigationLog' } as never) : (null as never),
     );
     const onSubject = {
       pointer: APP.toString(),
@@ -156,7 +156,7 @@ describe('useEntityBreadcrumbs', () => {
     const { result } = renderHook(() => useEntityBreadcrumbs(onSubject));
 
     await waitFor(() =>
-      expect(result.current.crumbs.map((c) => c.label)).toEqual(['Acme', 'SmartNavigationData', 'Dataset editor']),
+      expect(result.current.crumbs.map((c) => c.label)).toEqual(['Acme', 'SmartNavigationLog', 'Dataset editor']),
     );
     expect(result.current.crumbs.map((c) => c.kind)).toEqual(['project', 'ancestor', 'current']);
   });

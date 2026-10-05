@@ -2,7 +2,7 @@
  * Smart navigation end to end — ./smart_navigation_e2e.md.
  *
  * The person: the magic line navigates a dock or asks the assistant the prompt. The data scientist:
- * with SmartNavigationLog on, each decision is a `train` row of SmartNavigationData, reviewed in
+ * with SmartNavigationLog on, each decision is a `train` row of SmartNavigationLog, reviewed in
  * the dataset editor ("Correct") into a labelled training set. Ground truth is read from the
  * backend and the disk (the instance's preferences.json, the dataset's rows), never from timing.
  *
@@ -26,7 +26,7 @@ function prefOn(): boolean {
 
 async function logDataset(): Promise<{ id: string } | null> {
   const api = await apiContext();
-  const res = await api.get(`/api/v1/graph/dataset?filter=${encodeURIComponent('{"name":"SmartNavigationData"}')}`);
+  const res = await api.get(`/api/v1/graph/dataset?filter=${encodeURIComponent('{"name":"SmartNavigationLog"}')}`);
   const [row] = ((await res.json()).data ?? []) as { id: string }[];
   return row ?? null;
 }

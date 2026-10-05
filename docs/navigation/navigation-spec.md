@@ -64,11 +64,13 @@ The magic line posts only the utterance to `compute_node/@local/navigation-decis
 builds `here` from the active tab), then navigates the dock or asks the assistant the prompt.
 See `docs/snippets/decisions.md` §7 for the cascade and its numbers.
 
-## The log — SmartNavigationLog → SmartNavigationData
+## The log — SmartNavigationLog
 
 An instance preference, **off by default** (`preferences.advanced.smart_navigation_log`,
 Preferences → Advanced). When on, every decision is appended — after the answer has gone out —
-to the user's **SmartNavigationData** dataset (`flow_sdk/core/navigation_log.py`): a `train` row
+to the instance's **SmartNavigationLog** dataset in Flowpad's temp folder
+(`<FLOWPAD_TEMP_DIR>/<instance>/…/smart-navigation-log/`, cleared by the OS now and then;
+`flow_sdk/core/navigation_log.py`): a `train` row
 of the same `navigator.dataset` kind as the shipped eval set, with the request as `input`, the
 offered candidates as `context`, the decision as `output` and what was done in `data`. A person
 reviews it in the dataset editor (**Correct**, or edit the label; the **needs label** filter),

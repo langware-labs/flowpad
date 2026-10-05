@@ -1,10 +1,12 @@
-"""SmartNavigationLog: every smart-navigation decision, collected as a row of SmartNavigationData.
+"""SmartNavigationLog: every smart-navigation decision, collected as a row of a dataset in temp.
 
 Off unless the instance preference ``preferences.advanced.smart_navigation_log`` is on. When it is, each
 ``navigation-decision`` answer is appended -- after the answer has gone out, so logging never
-slows a navigation -- to the user's own dataset:
+slows a navigation -- to this instance's log dataset:
 
-    <user asset root>/agentic-assets/dataset/smart-navigation-data/      spec: navigator.dataset
+    <FLOWPAD_TEMP_DIR>/<instance>/agentic-assets/dataset/smart-navigation-log/   spec: navigator.dataset
+
+Temp on purpose: the OS clears it now and then, so the log never grows without bound.
 
 The SAME row kind as the shipped SmartNavigator eval set, so everything that reads that one --
 the dataset editor, ``validate``, ``score``, ``navigator_eval.evaluate`` -- reads this one:
@@ -32,8 +34,8 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-NAME = "smart-navigation-data"
-TITLE = "SmartNavigationData"
+NAME = "smart-navigation-log"
+TITLE = "SmartNavigationLog"
 SPEC = "navigator.dataset"
 
 #: One writer per event loop: ``append`` numbers examples by what is on disk, and an asyncio lock
@@ -50,11 +52,17 @@ def _lock() -> asyncio.Lock:
 
 
 def folder() -> Path:
-    """Where this instance's SmartNavigationData lives (user scope, never a project)."""
-    from flow_sdk.assets.placement import AssetClass, Scope  # noqa: PLC0415
-    from flow_sdk.builtin.asset_placement import root_for_scope  # noqa: PLC0415
+    """Where this instance's SmartNavigationLog lives: Flowpad's TEMP folder, per instance.
 
-    return Path(root_for_scope(Scope.USER, asset_class=AssetClass.REPO)) / "agentic-assets" / "dataset" / NAME
+    A log, not a document: it sits under ``FLOWPAD_TEMP_DIR`` (``$TMPDIR/flowpad_temp``), which the
+    OS clears now and then (macOS: at reboot and files untouched for days). Rows worth keeping are
+    reviewed and copied into a kept dataset (``promote`` / ``append``) before they age out.
+    """
+    from flow_sdk import config  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    instance = get_instance_settings().instance_name
+    return Path(config.FLOWPAD_TEMP_DIR) / instance / "agentic-assets" / "dataset" / NAME
 
 
 def row_of(request: dict, outcome: Any, answer: Any) -> dict:
@@ -77,7 +85,7 @@ def row_of(request: dict, outcome: Any, answer: Any) -> dict:
 
 
 async def dataset() -> Any:
-    """The SmartNavigationData dataset, created on first use."""
+    """The SmartNavigationLog dataset, created on first use."""
     from flow_sdk.builtin.dataset import Dataset  # noqa: PLC0415
 
     where = folder()

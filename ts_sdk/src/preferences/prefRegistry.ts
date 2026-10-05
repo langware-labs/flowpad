@@ -37,7 +37,7 @@ export enum PrefKey {
   SCROLLBACK_LINES = 'preferences.advanced.scrollback_lines',
   EXPERIMENTAL_FLAGS = 'preferences.advanced.experimental_flags',
   INDEXER_BACKEND = 'preferences.advanced.indexer_backend',
-  /** SmartNavigationLog: collect every smart-navigation decision into the SmartNavigationData dataset. */
+  /** SmartNavigationLog: collect every smart-navigation decision into a dataset in Flowpad's temp folder. */
   SMART_NAVIGATION_LOG = 'preferences.advanced.smart_navigation_log',
 
   // --- Auto-index a project on selection (the "Auto Index" tab) ---
@@ -312,7 +312,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     category: 'advanced',
     label: 'Smart navigation log',
     description:
-      'Collect every smart-navigation decision (what you typed, where, what opened) as a row of your SmartNavigationData dataset, to review and train on.',
+      'Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then.',
     dataType: PrefDataType.BOOL,
     defaultValue: false,
   },

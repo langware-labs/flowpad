@@ -15,7 +15,7 @@ from typing import Any
 
 PREF_SHARE_MESSAGE_STATUS = "preferences.notifications.share_message_status"
 DEFAULT_SHARE_MESSAGE_STATUS = True
-#: SmartNavigationLog: append every smart-navigation decision to the SmartNavigationData dataset.
+#: SmartNavigationLog: append every smart-navigation decision to a dataset in Flowpad's temp folder.
 PREF_SMART_NAVIGATION_LOG = "preferences.advanced.smart_navigation_log"
 DEFAULT_SMART_NAVIGATION_LOG = False
 
