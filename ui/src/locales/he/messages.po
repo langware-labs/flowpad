@@ -720,6 +720,10 @@ msgstr ""
 #~ msgid "{baseTitle} · {environment}"
 #~ msgstr ""
 
+#: src/components/status-bar/GitPullButton.tsx
+msgid "{behind} new changes in the cloud — pull them"
+msgstr ""
+
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "{changedCount} changed"
 msgstr "{changedCount} השתנו"
@@ -1178,6 +1182,10 @@ msgstr "שעה אחת"
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "1 message"
 msgstr "הודעה אחת"
+
+#: src/components/status-bar/GitPullButton.tsx
+msgid "1 new change in the cloud — pull it"
+msgstr ""
 
 #: src/components/code-editor/SnippetView.tsx
 msgid "1 problem"
@@ -2336,6 +2344,10 @@ msgstr "כבר פעיל"
 
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Already signed in, launch sandbox"
+msgstr ""
+
+#: src/lib/publish-state.ts
+msgid "Already up to date"
 msgstr ""
 
 #: src/components/automations/blocks/ThenBlock.tsx
@@ -4013,6 +4025,7 @@ msgstr "בדוק הודעות חדשות"
 msgid "Check the address, or try opening it in your browser."
 msgstr ""
 
+#: src/lib/publish-state.ts
 #: src/lib/publish-state.ts
 msgid "Check your connection and try again."
 msgstr "יש לבדוק את החיבור ולנסות שוב."
@@ -6360,6 +6373,7 @@ msgid "Couldn’t reach the backend."
 msgstr "לא ניתן היה להגיע לשרת העורפי."
 
 #: src/lib/publish-state.ts
+#: src/lib/publish-state.ts
 msgid "Couldn't reach the server"
 msgstr "לא ניתן היה להגיע לשרת"
 
@@ -6413,6 +6427,11 @@ msgstr "לא ניתן להתחיל את החיבור ל-GitHub."
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "Couldn't start the GitHub connection."
 msgstr "לא ניתן היה להתחיל את החיבור ל-GitHub."
+
+#: src/lib/publish-state.ts
+#: src/lib/publish-state.ts
+msgid "Couldn't update"
+msgstr ""
 
 #: src/components/account/db-stats.tsx
 msgid "Count"
@@ -17712,6 +17731,7 @@ msgid "Published when you deploy"
 msgstr ""
 
 #: src/components/data-sources/DataSourceRow.tsx
+#: src/components/status-bar/GitPullButton.tsx
 msgid "Pull"
 msgstr ""
 
@@ -17737,6 +17757,10 @@ msgstr ""
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Pull failed."
 msgstr "משיכה נכשלה."
+
+#: src/lib/publish-state.ts
+msgid "Pull hit a conflict"
+msgstr ""
 
 #: src/components/conversation/AttachmentDownloadWarning.tsx
 msgid "pulled, but arrived short"
@@ -21550,6 +21574,7 @@ msgid "Someone"
 msgstr ""
 
 #: src/lib/publish-state.ts
+#: src/lib/publish-state.ts
 msgid "Someone else changed this too. Switch to Advanced view to merge."
 msgstr "מישהו אחר שינה את זה גם כן. יש לעבור לתצוגה המתקדמת כדי למזג."
 
@@ -21568,6 +21593,10 @@ msgstr "משהו השתבש בפתיחת הקישור. נסו שוב בעוד ר
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Something went wrong while loading this page."
 msgstr "משהו לא הלך כשורה בעת טעינת דף זה."
+
+#: src/lib/publish-state.ts
+msgid "Something went wrong. Please try again."
+msgstr ""
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"
@@ -23112,6 +23141,10 @@ msgstr "קיימים קונפליקטים בהיתוך ב-<0>{localPath}</0>. א
 msgid "There is nothing left to send — add a message first."
 msgstr ""
 
+#: src/lib/publish-state.ts
+msgid "There is nothing new in the cloud."
+msgstr ""
+
 #: src/components/project-home/VibeAgentsCard.tsx
 msgid "These agents are added on top of the standard vibe agent, in the order shown, every vibe session."
 msgstr "סוכנים אלה מתווספים לסוכן Vibe הסטנדרטי, לפי הסדר המוצג, בכל סשן Vibe."
@@ -24580,6 +24613,10 @@ msgstr "עדכן תכנית בהתאם לסעיפי <plan-note>"
 msgid "Update values"
 msgstr ""
 
+#: src/lib/publish-state.ts
+msgid "Updated"
+msgstr ""
+
 #. placeholder {0}: draft.name.trim()
 #. placeholder {0}: editing.name
 #: src/components/data-sources/DataSourceDialog.tsx
@@ -25850,6 +25887,10 @@ msgstr "יש לך גישה לפריט הזה."
 #: src/components/open-project-component/use-open-project.ts
 msgid "You must be logged in"
 msgstr "עליך להיות מחובר"
+
+#: src/lib/publish-state.ts
+msgid "You now have the latest changes from the cloud."
+msgstr ""
 
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
