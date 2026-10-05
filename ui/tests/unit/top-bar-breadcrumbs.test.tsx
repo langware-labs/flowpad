@@ -133,6 +133,34 @@ describe('useEntityBreadcrumbs', () => {
     expect(result.current.crumbs[2].label).toBe('index.html');
   });
 
+  it('addresses an app opened on a subject as project › subject › app', async () => {
+    const APP = new TypeId('micro_app', '77777777-7777-4777-8777-777777777777');
+    const DATASET = 'dataset-88888888-8888-4888-8888-888888888888';
+    vi.spyOn(Tab, 'resolveDockTarget').mockResolvedValue({
+      targetTypeId: APP,
+      target: { displayName: 'dataset-editor', title: 'Dataset editor', parent_type_id: null },
+      projectId: null,
+    } as never);
+    vi.spyOn(ancestors, 'resolveAncestorChain').mockResolvedValue([]);
+    vi.spyOn(dataManager, 'getByTypeId').mockImplementation(async (typeId: any) =>
+      String(typeId) === DATASET ? ({ displayName: 'SmartNavigationData' } as never) : (null as never),
+    );
+    const onSubject = {
+      pointer: APP.toString(),
+      tabHash: 'tab-1',
+      targetTypeId: APP,
+      viewType: 'app',
+      options: { subject: DATASET },
+    } as never;
+
+    const { result } = renderHook(() => useEntityBreadcrumbs(onSubject));
+
+    await waitFor(() =>
+      expect(result.current.crumbs.map((c) => c.label)).toEqual(['Acme', 'SmartNavigationData', 'Dataset editor']),
+    );
+    expect(result.current.crumbs.map((c) => c.kind)).toEqual(['project', 'ancestor', 'current']);
+  });
+
   it('uses the context entity for an instant label when it is the same thing', () => {
     ctx.activeEntityTypeId = DOC;
     ctx.activeEntity = { displayName: 'Design notes' };
