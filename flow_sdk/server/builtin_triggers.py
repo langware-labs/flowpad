@@ -471,7 +471,7 @@ async def reap_stale_trigger_rows() -> int:
     from flow_sdk.builtin.trigger_arming import disarm_trigger  # noqa: PLC0415
 
     try:
-        rows = await Trigger.get_all({})
+        rows = await Trigger.every()
     except Exception:
         _log.exception("Could not read triggers for the stale sweep")
         return 0
