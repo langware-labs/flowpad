@@ -58,3 +58,22 @@ async def test_project_assignment_materializes_and_delete_removes():
         }
     )
     assert await Project.get_one({"id": project_id}) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entity_type", sorted(MEMBERSHIP_MIRROR_TYPES))
+async def test_hub_row_delete_without_payload_removes_the_mirror(entity_type):
+    """The hub's row delete sends ``data: null``; the mirror must still go."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    bridge = HubWsBridge()
+    entity_id = mint_uuid()
+    cls = SchemaRegistry.get_entity_cls(entity_type)
+
+    await bridge._on_data_op(
+        {"op": "create", "to_entity": f"{entity_type}-{entity_id}", "data": {"id": entity_id, "name": "Doomed"}}
+    )
+    assert await cls.get_one({"id": entity_id}) is not None
+
+    await bridge._on_data_op({"op": "delete", "to_entity": f"{entity_type}-{entity_id}", "data": None})
+    assert await cls.get_one({"id": entity_id}) is None
