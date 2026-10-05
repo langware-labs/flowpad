@@ -19,7 +19,7 @@ import pytest
 from flow_sdk.assets import project_manifest as manifest
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.schema.data_spec.project_manifest_spec import ProjectManifestSpec
-from tests.unit.agent._seed import seed_agent as _agent, seed_project as _project
+from tests.unit.agent._seed import checkout_agent, seed_agent as _agent, seed_project as _project
 
 pytestmark = pytest.mark.timeout(10)  # do not increase timeout without approval
 
@@ -152,36 +152,14 @@ async def test_the_set_action_writes_the_manifest_and_refuses_a_foreign_asset(tm
     assert isinstance(cleared, ApiSuccessResponse) and cleared.data == {"home_page": None}
 
 
-# ── first open: what loads by itself is indexed before it is looked up ──────
 
-
-def _checkout_agent(root: Path, name: str, **fields) -> str:
-    """An agent folder as a fresh checkout brings it: files on disk, no row yet."""
-    folder = root / "agentic-assets" / "agent" / name
-    folder.mkdir(parents=True)
-    agent_id = str(uuid.uuid4())
-    (folder / "agent.json").write_text(json.dumps({"title": name, "id": agent_id, **fields}), encoding="utf-8")
-    return f"agent-{agent_id}"
+# ── first open: the home page is indexed before it is looked up ─────────────
 
 
 async def test_a_never_indexed_home_page_agent_resolves_on_the_first_open(tmp_path):
     root = tmp_path / "fresh"
     project = await _project(root)
-    typeid = _checkout_agent(root, "greeter")
+    typeid = checkout_agent(root, "greeter")
     _declare(root, typeid)
 
     assert await project.open_home_page() == {"asset": typeid, "type": "agent"}
-
-
-async def test_only_what_loads_by_itself_is_indexed(tmp_path):
-    from flow_sdk.core import Entity
-
-    root = tmp_path / "mixed"
-    project = await _project(root)
-    launched = _checkout_agent(root, "launcher", auto_launch=True)
-    plain = _checkout_agent(root, "plain")
-
-    await project.index_auto_loaded()
-
-    assert await Entity.get_by_typeid(launched) is not None
-    assert await Entity.get_by_typeid(plain) is None, "an agent nothing opens by itself waits for the walk"

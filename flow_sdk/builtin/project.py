@@ -1,6 +1,5 @@
 import asyncio
 import dataclasses
-import json
 import logging
 import ntpath
 import os
@@ -12,7 +11,7 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import TYPE_CHECKING, Any, List, Literal, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Literal, Optional
 
 from pydantic import (
     BaseModel,
@@ -64,12 +63,17 @@ from flow_sdk.schema.data_spec.share_result_spec import (
 )
 
 if TYPE_CHECKING:
+    from flow_sdk.assets.scanning import AssetCandidate
     from flow_sdk.fs_store.operations.project_cleanup import HarnessIndex
     from flow_sdk.schema.data_spec.git_share_spec import GitShare
     from flow_sdk.schema.data_spec.open_link_spec import ProjectOpenLinkSpec
     from flow_sdk.schema.data_spec.share_request_spec import ShareInvitee
 
 log = logging.getLogger(__name__)
+
+#: ``(project id, key)`` whose load-time assets one pass left with nothing missing
+#: (``Project.index_missing_assets``) — per process; later calls skip the scan.
+_LOAD_READY: set[tuple[str, str]] = set()
 
 
 def _now_iso() -> str:
@@ -691,68 +695,72 @@ class Project(Entity):
             return None
         return asset
 
-    async def index_auto_loaded(self) -> None:
-        """Index what opening this project loads by itself — its declared home page and
-        its ``auto_launch`` agents — when their rows do not exist yet.
+    async def index_missing_assets(
+        self, key: str, types: set[str], wanted: "Callable[[AssetCandidate], bool]"
+    ) -> None:
+        """Index the repo assets an open loads by itself — those of ``types`` that
+        ``wanted`` picks under this project's roots — when their rows are missing.
 
-        A project's first index runs detached (``activate``), so on the first open of a
-        folder both decisions (``open_home_page``, ``Agent.auto_launch_for``) would look
-        before those rows exist and land on the project page. Only those folders are
-        indexed, and only when missing: a project that declares nothing, or one already
-        indexed, waits for nothing. Never raises — the open goes on without them.
+        The project's first index runs detached (``activate``), so on the first open of a
+        folder a decision that reads these rows (the home page, agent auto-launch) would
+        look before they exist. This indexes only what ``wanted`` picks, and only when its
+        row is missing; once one pass under ``key`` leaves nothing missing, later calls
+        return at once. It follows the walk's rules — a protected folder only on consent
+        (an open is a foreground ask), a borrowed checkout read-only — and is deliberately
+        independent of the auto-index preference: the open itself needs these rows.
+        Never raises: the open goes on without them.
         """
+        if (self.id, key) in _LOAD_READY:
+            return
+        from flow_sdk.assets.scanning import scan_repo_tree  # noqa: PLC0415
         from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.special_folders import IndexDecision, gate_root  # noqa: PLC0415
-        from flow_sdk.fs_store.resolve import NotAnAsset, index_one, resolve_asset  # noqa: PLC0415
+        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-        home = self.home_page_typeid()
-        home_id = TypeId(home) if home else None
-        if home_id is not None and await Entity.get_by_typeid(home) is not None:
-            home_id = None
-        types = {"agent"} | ({home_id.type} if home_id is not None else set())
+        def picked() -> list[tuple[str, str]]:
+            infos = SchemaRegistry.repo_family_to_info()
+            return [
+                (root, str(candidate.path))
+                for root in self.direct_context_roots()
+                if gate_root(root, foreground=True) is IndexDecision.WALK
+                for candidate in scan_repo_tree(Path(root), infos, types=types).candidates
+                if candidate.included and wanted(candidate)
+            ]
 
-        def auto_loaded(type_name: str, entity_id: str, body: Path | None) -> bool:
-            if home_id is not None and (type_name, entity_id) == (home_id.type, home_id.id):
-                return True
-            if type_name != "agent" or body is None:
-                return False
-            try:
-                return json.loads(Path(body).read_text(encoding="utf-8")).get("auto_launch") is True
-            except (OSError, ValueError, AttributeError):
-                return False
+        try:
+            missing: dict[str, list[str]] = {}
+            for root, path in await asyncio.to_thread(picked):
+                if await Entity.get_by_asset_ref(path, resolve_containing=True, strict=True) is None:
+                    missing.setdefault(root, []).append(path)
+            borrowed = await Folder.borrowed_checkout_paths() if missing else set()
+            for root, paths in missing.items():
+                await reindex_paths(paths, write=root not in borrowed)
+            _LOAD_READY.add((self.id, key))
+        except Exception:  # noqa: BLE001 — an asset that cannot index never blocks the open
+            log.warning("load-time assets %s of project %s could not be indexed", key, self.id, exc_info=True)
 
-        borrowed = await Folder.borrowed_checkout_paths()
-        for root in self.direct_context_roots():
-            # The walk's own two rules: a protected folder only on consent (an open is a
-            # foreground ask), and a borrowed checkout read-only, so the id is the one the
-            # walk will reach too.
-            if gate_root(root, foreground=True) is not IndexDecision.WALK:
-                continue
-            write = root not in borrowed
-            for type_name in types:
-                subdir = SchemaRegistry.get(type_name).main_subdir
-                folder = Path(root) / subdir if subdir else None
-                if folder is None or not folder.is_dir():
-                    continue
-                for child in sorted(folder.iterdir()):
-                    try:
-                        found = await resolve_asset(str(child), write=False, known_unowned=True)
-                        if not auto_loaded(found.type_name, found.id, found.body):
-                            continue
-                        if await Entity.get_by_typeid(f"{found.type_name}-{found.id}") is not None:
-                            continue
-                        await index_one(await resolve_asset(str(child), write=write, known_unowned=True), notify=True)
-                    except NotAnAsset:
-                        continue
-                    except Exception:  # noqa: BLE001 — an asset that cannot index never blocks the open
-                        log.warning("auto-loaded asset %s could not be indexed", child, exc_info=True)
+    async def _index_home_page(self, typeid: str) -> None:
+        """``index_missing_assets`` for the declared home page, when its row is missing."""
+        from flow_sdk.fs_store.indexer.reconcile import reconcile  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        home = TypeId(typeid)
+        info = SchemaRegistry.get(home.type)
+        if info is None:
+            return
+        await self.index_missing_assets(
+            f"home_page:{typeid}",
+            {home.type},
+            lambda candidate: reconcile(info, candidate.layout, None, None, write=False) == home.id,
+        )
 
     async def open_home_page(self) -> dict[str, Any]:
         """The declared home page's ``{asset, type}``, only if it is this project's own
         (a cloned manifest must not point Home at another project's asset); else nulls."""
-        await self.index_auto_loaded()
         typeid = self.home_page_typeid()
+        if typeid:
+            await self._index_home_page(typeid)
         asset = await self._own_asset(typeid) if typeid else None
         if asset is None:
             return {"asset": None, "type": None}
