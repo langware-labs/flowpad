@@ -4759,7 +4759,11 @@ msgid "Collapse side window"
 msgstr "طيّ النافذة الجانبية"
 
 #: src/i18n/pref-labels.ts
-msgid "Collect every smart-navigation decision (what you typed, where, what opened) as a row of your SmartNavigationData dataset, to review and train on."
+#~ msgid "Collect every smart-navigation decision (what you typed, where, what opened) as a row of your SmartNavigationData dataset, to review and train on."
+#~ msgstr ""
+
+#: src/i18n/pref-labels.ts
+msgid "Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then."
 msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
