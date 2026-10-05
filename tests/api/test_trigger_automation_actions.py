@@ -104,3 +104,60 @@ async def test_runs_show_a_test_run_and_run_reads_it_back(bootstrapped_client):
 async def test_a_missing_run_is_404(bootstrapped_client):
     resp = await bootstrapped_client.get("/api/v1/graph/trigger/run", params={"id": "no-such-run"})
     assert resp.status_code == 404
+
+
+async def test_check_spec_dry_runs_an_unsaved_schedule(bootstrapped_client):
+    resp = await bootstrapped_client.post("/api/v1/graph/trigger/check_spec", json={
+        "spec": {"trigger_type": "schedule", "expr": "30 8 * * 1-5", "sched_trigger_type": "cron"},
+    })
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["when"]["text"] == "Every weekday at 08:30" and len(data["next_runs"]) == 5
+    assert any("does nothing yet" in f["message"] for f in data["findings"])
+
+
+async def test_check_on_a_saved_event_rule_against_an_event(bootstrapped_client):
+    client = bootstrapped_client
+    row = await _create(client, trigger_type="tag", tag_pattern="apicheck.*")
+    resp = await client.post(f"/api/v1/graph/trigger/{row['id']}/check",
+                             json={"event": {"tag": "other.x", "target": "task:1"}})
+    assert resp.status_code == 200
+    assert resp.json()["data"]["would_fire"] is False
+
+
+async def test_create_keeps_every_field_the_builder_sets(bootstrapped_client, tmp_path):
+    client = bootstrapped_client
+    row = await _create(client, trigger_type="fsop", watch_path=str(tmp_path), watch_glob="*.md", recursive=True,
+                        actions=[{"action_type": "run_script", "script_path": "/tmp/x.sh"}])
+    assert (row["watch_glob"], row["recursive"]) == ("*.md", True)
+    assert row["actions"][0]["action_type"] == "run_script"
+
+
+async def test_create_rejects_a_bad_schedule_with_422(bootstrapped_client):
+    resp = await bootstrapped_client.post("/api/v1/graph/trigger/create",
+                                          json={"name": _name("bad-cron"), "trigger_type": "schedule", "expr": "nope"})
+    assert resp.status_code == 422 and "can't be read" in resp.json()["message"]
+
+
+async def test_update_replaces_the_steps_and_keeps_action_in_step(bootstrapped_client):
+    client = bootstrapped_client
+    row = await _create(client, trigger_type="tag", tag_pattern="apiupd.*")
+    resp = await client.patch(f"/api/v1/graph/trigger/{row['id']}/update", json={
+        "actions": [{"action_type": "run_agent", "prompt": "Summarize"}], "timezone": "UTC"})
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["actions"][0]["prompt"] == "Summarize" and data["action"]["action_type"] == "run_agent"
+
+
+async def test_match_pattern_sandbox(bootstrapped_client):
+    resp = await bootstrapped_client.post("/api/v1/graph/trigger/match_pattern", json={
+        "pattern": "task.*", "target_filter": "task:*", "event": {"tag": "task.done", "target": "project:1"}})
+    data = resp.json()["data"]
+    assert data["matches"] is False and data["parts"] == {"tag": True, "target": False, "scope": True}
+
+
+async def test_samples_of_an_unarmed_rule_is_an_empty_list(bootstrapped_client):
+    client = bootstrapped_client
+    row = await _create(client, trigger_type="tag", tag_pattern="apisample.*", enabled=False)
+    resp = await client.get(f"/api/v1/graph/trigger/{row['id']}/samples")
+    assert resp.status_code == 200 and resp.json()["data"] == []

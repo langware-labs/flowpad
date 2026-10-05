@@ -164,6 +164,16 @@ def _parse_interval_expr(expr: str) -> int:
     return int(expr)
 
 
+def _schedule_problem(expr: str, sched_trigger_type: Optional[str], tz: Optional[str]) -> Optional[str]:
+    """Why a schedule can't be armed, in words — or None. Checked on save, so a bad
+    expression is a 422 rather than a row that silently never runs."""
+    try:
+        _parse_trigger(sched_trigger_type or "cron", expr, tz)
+    except Exception as exc:  # noqa: BLE001 — APScheduler raises ValueError, zoneinfo KeyError
+        return f"That schedule can't be read: {exc}"
+    return None
+
+
 def _scheduled_next_run(trigger_id: str) -> Optional[datetime]:
     """The scheduler's next run for this trigger's job, or None when it has none."""
     try:
@@ -697,44 +707,39 @@ class Trigger(Entity):
 
         trigger_type = body.get("trigger_type", "hook")
 
-        kwargs: dict[str, Any] = {
-            "name": name,
-            "description": body.get("description"),
-            "enabled": body.get("enabled", True),
-            "trigger_type": trigger_type,
-            "scope": body.get("scope", "user"),
-        }
+        # Every field a person sets (the builder sends them; `check_spec` reads the
+        # same list), so an automation created here is complete — not a schedule
+        # whose actions, timezone or watch glob were silently dropped.
+        from flow_sdk.automations.check import SPEC_FIELDS  # noqa: PLC0415
+
+        kwargs: dict[str, Any] = {k: body[k] for k in SPEC_FIELDS if k in body}
+        kwargs.update(name=name, trigger_type=trigger_type, enabled=body.get("enabled", True),
+                      scope=body.get("scope", "user"))
 
         if trigger_type == "tag":
             from flow_sdk.builtin.tag_triggers import validate_tag_trigger
             problem = validate_tag_trigger(body.get("tag_pattern"))
             if problem:
                 return ApiFailResponse(message=problem, status_code=422)
-            kwargs["tag_pattern"] = body["tag_pattern"]
-            for field in ("tag_target", "tag_scope", "max_fires_per_minute", "confirm"):
-                if field in body:
-                    kwargs[field] = body[field]
         if trigger_type == "schedule":
-            kwargs["expr"] = body.get("expr", "* * * * *")
-            kwargs["sched_trigger_type"] = body.get("sched_trigger_type", "cron")
-            if "instruction" in body:
-                kwargs["instruction"] = body["instruction"]
-            if "workdir" in body:
-                kwargs["workdir"] = body["workdir"]
-            if "project_id" in body:
-                kwargs["project_id"] = body["project_id"]
-        else:
-            if "mask" in body:
-                kwargs["mask"] = body["mask"]
-            if "action" in body:
-                action_data = body["action"]
-                kwargs["action"] = TriggerAction(**action_data) if isinstance(action_data, dict) else action_data
-            if "hook_events" in body:
-                kwargs["hook_events"] = body["hook_events"]
-            if "log_mode" in body:
-                kwargs["log_mode"] = body["log_mode"]
+            kwargs.setdefault("expr", "* * * * *")
+            kwargs.setdefault("sched_trigger_type", "cron")
+            problem = _schedule_problem(kwargs["expr"], kwargs["sched_trigger_type"], kwargs.get("timezone"))
+            if problem:
+                return ApiFailResponse(message=problem, status_code=422)
+        if trigger_type == "fsop":
+            try:
+                _validate_watch_path(kwargs.get("watch_path"))
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=422)
+        if "action" in body and "actions" not in body:
+            action_data = body["action"]
+            kwargs["action"] = TriggerAction(**action_data) if isinstance(action_data, dict) else action_data
 
-        entity = cls(**kwargs)
+        try:
+            entity = cls(**kwargs)
+        except ValueError as exc:  # pydantic ValidationError is a ValueError
+            return ApiFailResponse(message=f"That automation can't be saved: {exc}", status_code=422)
         await entity.save()
 
         if trigger_type == "schedule":
@@ -762,20 +767,29 @@ class Trigger(Entity):
         if not body:
             return ApiFailResponse(message="Request body required", status_code=422)
 
-        for field in ("name", "description", "enabled", "scope", "expr",
-                      "sched_trigger_type", "log_mode", "trigger_type",
-                      "instruction", "workdir", "project_id",
-                      "tag_pattern", "tag_target", "tag_scope",
-                      "max_fires_per_minute", "confirm"):
+        from flow_sdk.automations.check import SPEC_FIELDS  # noqa: PLC0415
+
+        for field in SPEC_FIELDS | {"scope", "log_mode"}:
             if field in body:
-                setattr(self, field, body[field])
-        if "mask" in body:
-            self.mask = body["mask"]
-        if "action" in body:
+                value = body[field]
+                if field == "actions":
+                    value = [TriggerAction(**a) if isinstance(a, dict) else a for a in value or []]
+                    # The validator that keeps legacy `action` = actions[0] runs only
+                    # at construction; an in-place edit has to keep them agreeing.
+                    self.action = value[0] if value else TriggerAction(action_type=ActionType.NOP)
+                setattr(self, field, value)
+        if "action" in body and "actions" not in body:
             action_data = body["action"]
             self.action = TriggerAction(**action_data) if isinstance(action_data, dict) else action_data
-        if "hook_events" in body:
-            self.hook_events = body["hook_events"]
+        if self.trigger_type == "schedule":
+            problem = _schedule_problem(self.expr or "", self.sched_trigger_type, self.timezone)
+            if problem:
+                return ApiFailResponse(message=problem, status_code=422)
+        if self.trigger_type == "fsop" and "watch_path" in body:
+            try:
+                _validate_watch_path(self.watch_path)
+            except ValueError as exc:
+                return ApiFailResponse(message=str(exc), status_code=422)
 
         if self.trigger_type == "tag":
             # Mirror create: a bad pattern must FAIL the update, not silently
@@ -931,6 +945,80 @@ class Trigger(Entity):
             "schedule": schedule.model_dump(mode="json"),
             "text": schedule_text(schedule),
         })
+
+    @core_action.post(action_name="check")
+    async def check_action(self, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/{id}/check — *Check*: would it run, and what would it do.
+
+        No side effects. Optional body ``{"event": {tag, target?, scope?}}``
+        checks an event automation against that event, field by field."""
+        from flow_sdk.automations.check import check  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        event = body.get("event") if isinstance(body, dict) else None
+        result = await check(self, event if isinstance(event, dict) else None)
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @core_action.post(action_name="check_spec")
+    async def check_spec_action(cls, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/check_spec — *Check* for an automation not saved yet.
+
+        Body ``{"spec": {<trigger fields>}, "event"?: {...}}``. Fields the entity
+        rejects are a 422 with the reason."""
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from flow_sdk.automations.check import check, trigger_from_spec  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        try:
+            draft = trigger_from_spec(body.get("spec") or {})
+        except (ValidationError, ValueError, TypeError) as exc:
+            return ApiFailResponse(message=f"That automation can't be read: {exc}", status_code=422)
+        event = body.get("event")
+        result = await check(draft, event if isinstance(event, dict) else None)
+        return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    @core_action.get(action_name="samples")
+    async def samples_action(self, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/{id}/samples — recent real events to test this automation with."""
+        from flow_sdk.automations.samples import samples_for  # noqa: PLC0415
+
+        return ApiSuccessResponse(data=samples_for(self))
+
+    @core_action.get(action_name="recent_events")
+    async def recent_events_action(cls, request: Request) -> ApiResponse:
+        """GET /api/v1/graph/trigger/recent_events?pattern=&target= — recent forwarded events a
+        pattern would receive (for an automation not saved yet)."""
+        from flow_sdk.automations.samples import forwarded_matching  # noqa: PLC0415
+
+        params = get_current_request_info().request_parameters or {}
+        pattern = str(params.get("pattern") or "")
+        if not pattern:
+            return ApiSuccessResponse(data=[])
+        return ApiSuccessResponse(data=forwarded_matching(pattern, str(params.get("target") or "") or None))
+
+    @core_action.post(action_name="match_pattern")
+    async def match_pattern_action(cls, request: Request) -> ApiResponse:
+        """POST /api/v1/graph/trigger/match_pattern — the pattern sandbox.
+
+        Body ``{"pattern", "target_filter"?, "event": {tag, target, scope?}}`` →
+        ``{"matches": bool, "parts": {tag, target, scope}, "problem"}``. Nothing is saved."""
+        from flow_sdk.tags.bus import explain_subscription_match  # noqa: PLC0415
+        from flow_sdk.tags.grammar import tag_pattern_problem  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = (await request_info.get_post_data() if request_info else None) or {}
+        pattern = str(body.get("pattern") or "")
+        problem = tag_pattern_problem(pattern) if pattern != "*" else None
+        event = body.get("event") or {}
+        parts = explain_subscription_match(pattern, str(event.get("tag") or ""), str(event.get("target") or ""),
+                                           target_filter=body.get("target_filter") or None,
+                                           scope_filter=body.get("scope_filter") or None,
+                                           scope=list(event.get("scope") or []))
+        return ApiSuccessResponse(data={"matches": problem is None and all(parts.values()),
+                                        "parts": parts, "problem": problem})
 
     @core_action.get(action_name="runs")
     async def runs_action(cls, request: Request) -> ApiResponse:

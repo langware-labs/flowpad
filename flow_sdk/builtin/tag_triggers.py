@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import deque
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -56,6 +57,12 @@ _subscriptions: dict[str, Callable[[], None]] = {}
 _locks: dict[str, "asyncio.Lock"] = {}
 # Per-trigger fire cap — the shared tags-owned guard shape.
 _storm_guard = FixedWindowStormGuard()
+#: How many recent matching envelopes each armed rule remembers.
+RECENT_MATCHES_PER_TRIGGER = 5
+# trigger id → its last matching envelopes, trimmed (newest last). What *Run once
+# now* offers to test with: a real event, not a sample. In memory only — the bus
+# keeps no history, and this is a convenience, never a record.
+_recent_matches: dict[str, "deque[dict[str, Any]]"] = {}
 
 
 def validate_tag_trigger(pattern: Optional[str]) -> Optional[str]:
@@ -79,6 +86,9 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     trigger_id = trigger.id
 
     async def _handler(event: "FlowEvent") -> None:
+        from flow_sdk.tags.ws_forward import _retainable
+
+        _recent_matches.setdefault(trigger_id, deque(maxlen=RECENT_MATCHES_PER_TRIGGER)).append(_retainable(event))
         await _fire_tag_trigger(trigger_id, event)
 
     _subscriptions[trigger_id] = event_bus.on(
@@ -89,6 +99,11 @@ def register_tag_trigger(trigger: "Trigger") -> None:
     )
     logger.info("TAG trigger %s armed: %s target=%s",
                 trigger.name, trigger.tag_pattern, trigger.tag_target or "*")
+
+
+def recent_matches(trigger_id: str) -> list[dict[str, Any]]:
+    """The last envelopes that matched this ARMED rule, newest first."""
+    return list(reversed(_recent_matches.get(trigger_id, ())))
 
 
 def unregister_tag_trigger(trigger_id: Optional[str]) -> None:
