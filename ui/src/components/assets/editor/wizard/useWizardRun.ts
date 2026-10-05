@@ -95,8 +95,11 @@ export const WAITING_FOR_PERSON = /waiting for you/i;
 /** How long a running step's own activity node can sit with no new tick before
  *  it is worth telling someone — a real install (`apt-get`) legitimately takes
  *  a while, but an agent call that has printed nothing for this long is the
- *  same shape as the rate-limit/network hangs this was written after seeing. */
-export const STUCK_AFTER_MS = 45_000;
+ *  same shape as the rate-limit/network hangs this was written after seeing.
+ *  Three minutes: a silent winget/MSI install prints nothing for 1–2 minutes and is
+ *  not stuck. A Windows permission prompt is not counted here at all — the backend
+ *  says "waiting for you" while one is open (`runner.py::_permission_prompt_open`). */
+export const STUCK_AFTER_MS = 180_000;
 
 /** How long a step in flight has gone without a tick, in ms — 0 when it is not in flight (it has
  *  answered, or has not started) or is waiting on a person, who is not a hang. Told apart from a

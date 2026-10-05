@@ -64,6 +64,27 @@ async def test_an_install_runs_in_a_fresh_process_even_when_checks_share_a_shell
     assert calls == [("shared", "have jq"), ("fresh", "install jq"), ("shared", "have jq")]
 
 
+@pytest.mark.asyncio
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX commands")
+async def test_an_install_is_told_its_process_id_and_gets_its_private_temp_folder(tmp_path):
+    """The install is the one command that runs in a process of its own, so it is the one whose windows can be
+    looked for (`on_spawn`) and whose temp folder can be watched for growth (`TEMP`/`TMP`/`TMPDIR`)."""
+    pids: list[int] = []
+
+    async with SharedShell() as shell:
+        answer = await shell(
+            'echo "$TMPDIR"',
+            timeout_seconds=5,
+            workdir=tmp_path,
+            extra_env={"TMPDIR": str(tmp_path)},
+            on_spawn=pids.append,
+            fresh=True,
+        )
+
+    assert answer.returncode == 0 and str(tmp_path) in answer.stdout
+    assert len(pids) == 1 and pids[0] > 0
+
+
 # ── the Windows host (real PowerShell) ───────────────────────────────────────
 
 

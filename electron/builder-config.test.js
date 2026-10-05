@@ -113,4 +113,26 @@ const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, msg); passed++; };
   eq(r.azure, null, 'not required + placeholder publisherName → unsigned (never signs with a placeholder identity)');
 }
 
+// ── every local module the app requires is packaged ──────────────────────────
+// `files` is an explicit allow-list: a new `require('./x')` that is not listed
+// works in `npm run dev` and every unit test, and crashes only the packaged app
+// at launch ("Cannot find module './x'").
+{
+  const fs = require('fs');
+  const shipped = new Set(committed.files.filter((f) => !f.startsWith('!')));
+  const seen = new Set();
+  const walk = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const src = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    for (const [, rel] of src.matchAll(/require\(\s*['"](\.\/[^'"]+)['"]\s*\)/g)) {
+      const resolved = path.relative(__dirname, require.resolve(path.join(__dirname, rel)));
+      if (resolved.endsWith('.json')) continue; // package.json is packaged by electron-builder itself
+      eq(shipped.has(resolved), true, `${file} requires ${rel} → "${resolved}" must be in electron-builder.json "files"`);
+      walk(resolved);
+    }
+  };
+  ['main.js', 'preload.js', 'loading-renderer.js'].forEach(walk);
+}
+
 console.log(`${path.basename(__filename)}: ${passed} assertions passed`);
