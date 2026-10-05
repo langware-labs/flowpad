@@ -40,6 +40,8 @@ EXAMPLE_META_ALIAS = "meta.json"       # back-compat alias (example.json wins)
 
 # IO_FOLDER per-example grammar.
 INPUT, OUTPUT, GROUND_TRUTH, CONTEXT = "input", "output", "ground_truth", "context"
+#: The gold label ``annotate`` writes inside ``ground_truth/`` -- shape-agnostic, so read by name.
+ANNOTATION_FILE = "label.json"
 SLOT_BASES = (INPUT, OUTPUT, GROUND_TRUTH, CONTEXT)
 EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto ground_truth
 TEXT_EXTS = {".txt", ".md"}            # a file naming one of these is text, not binary
@@ -397,13 +399,30 @@ def _declared_artifact(spec: type) -> dict[str, type]:
     return out
 
 
+def _typed_occurrence(shape: type, slot_dir: Path, main: str) -> Any:
+    """One typed slot occurrence, or None when this folder does not hold one.
+
+    The walker's own main document (``decision.json`` for ``navigator.decision``) is read by the
+    walker. A gold label written by ``annotate`` is ``label.json`` -- the one name ``annotate``
+    can write without knowing the shape -- and is the shape's JSON, so it validates directly.
+    Without that second arm an annotated example could never be read back typed.
+    """
+    from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe
+
+    if (slot_dir / main).is_file():
+        return _load(shape, slot_dir)
+    label = slot_dir / ANNOTATION_FILE
+    if label.is_file():
+        return shape.model_validate(load_json_dict(label))
+    return None
+
+
 class FolderLayout(DatasetLayout):
     """``examples/<name>/`` — slots are files or folders; sidecars annotate them."""
 
     name = DataLayoutEnum.IO_FOLDER.value
 
     def read(self, folder, spec, *, dataset_id, field_spec=None, delimiter=","):
-        from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe
 
         rows = []
         typed = _typed_slots(spec)
@@ -424,8 +443,19 @@ class FolderLayout(DatasetLayout):
                 # though its declared shape is a plain ``DataSpec``. Keying the
                 # read on the walker's own main document makes the two agree by
                 # looking, instead of by two rules that can drift.
-                if (ex_dir / base / mains[base]).is_file():
-                    row[base] = _load(shape, ex_dir / base)
+                #
+                # Every occurrence, not only the bare folder: N values are written as
+                # ``«slot»-1/``, ``«slot»-2/`` (a list of acceptable gold answers), and
+                # reading just ``«slot»/`` left those as raw folders that failed the
+                # typed validation below.
+                held = row.get(base)
+                if isinstance(held, list):
+                    loaded = [_typed_occurrence(shape, ex_dir / f"{base}-{n}", mains[base])
+                              for n in range(1, len(held) + 1)]
+                    if all(v is not None for v in loaded):
+                        row[base] = loaded
+                elif (value := _typed_occurrence(shape, ex_dir / base, mains[base])) is not None:
+                    row[base] = value
             # A slot the spec declares as a ``FileRef`` comes back as one, not
             # as the folder the scan saw it sitting in. The scan classifies
             # BYTES and is right about them; only the spec knows which was
@@ -576,8 +606,8 @@ class FolderLayout(DatasetLayout):
         ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
         if ex_dir is None:
             raise LookupError(f"no example {example_id_} in {folder}")
-        node = FolderSpec(path=GROUND_TRUTH, files={"label.json": FileRef(path=f"{GROUND_TRUTH}/label.json")})
-        self._write_node(ex_dir, None, node, {f"{GROUND_TRUTH}/label.json": ground_truth}, None)
+        node = FolderSpec(path=GROUND_TRUTH, files={ANNOTATION_FILE: FileRef(path=f"{GROUND_TRUTH}/{ANNOTATION_FILE}")})
+        self._write_node(ex_dir, None, node, {f"{GROUND_TRUTH}/{ANNOTATION_FILE}": ground_truth}, None)
         metadata, data = _load_example_meta(ex_dir)
         annotations = list(metadata.get("annotations") or [])
         annotations.append({"by": by, "at": datetime.now(timezone.utc).isoformat()})
