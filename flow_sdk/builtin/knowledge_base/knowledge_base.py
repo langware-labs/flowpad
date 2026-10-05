@@ -3,23 +3,26 @@ import base64
 import binascii
 import gzip
 import json
-from typing import ClassVar
 
 import numpy as np
 from fastapi import UploadFile
 from fastapi.responses import StreamingResponse
-from usearch.index import Index
 
-from flow_sdk.config import default_service_config
 from flow_sdk.api.api_types.api_field import APIField
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.knowledge_base.knowledge_data import KeyedEmbeddings, KnowledgeData, KnowledgeItem
+from flow_sdk.config import default_service_config
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.rag.runtime import import_usearch
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiSuccessResponse
-from .knowledge_engine.ontology import LabelInfo, Ontology
 from flow_sdk.utils import count_tokens
+
+from .knowledge_engine.ontology import LabelInfo, Ontology
+
+import_usearch()  # on a Windows without the C++ runtime, retries with the copy Flowpad ships (rag/vcruntime/)
+from usearch.index import Index  # noqa: E402
 
 
 class OntologyManager:

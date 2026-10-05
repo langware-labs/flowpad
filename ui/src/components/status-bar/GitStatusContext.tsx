@@ -5,6 +5,7 @@ interface GitStatusContextValue {
   computeNodeId: string | null;
   workdir: string | null;
   count: number | null;
+  ahead: number;
   hasRepo: boolean;
   branch: string | null;
   refresh: () => void;
@@ -23,10 +24,10 @@ export const GitStatusProvider: React.FC<{
   workdir: string | null;
   children: React.ReactNode;
 }> = ({ computeNodeId, workdir, children }) => {
-  const { count, hasRepo, branch, refresh } = useGitChangeCount(computeNodeId, workdir);
+  const { count, ahead, hasRepo, branch, refresh } = useGitChangeCount(computeNodeId, workdir);
   const value = useMemo<GitStatusContextValue>(
-    () => ({ computeNodeId, workdir, count, hasRepo, branch, refresh }),
-    [computeNodeId, workdir, count, hasRepo, branch, refresh],
+    () => ({ computeNodeId, workdir, count, ahead, hasRepo, branch, refresh }),
+    [computeNodeId, workdir, count, ahead, hasRepo, branch, refresh],
   );
   return <GitStatusContext.Provider value={value}>{children}</GitStatusContext.Provider>;
 };

@@ -408,6 +408,11 @@ class HubWsBridge:
         # conversation_id since the FlowMessage payload doesn't carry it.
         from_etype, from_eid = parse_target(message.get("from_entity"))
         data = message.get("data")
+        # The hub's row delete carries no payload (``data: null``) -- the row is
+        # already gone. Dropping it here left every mirror of a deleted team or
+        # organization behind, offered in pickers forever.
+        if op == "delete" and data is None and eid:
+            data = {"id": eid}
         if not etype or not eid or not isinstance(data, dict):
             logger.debug("hub_bridge: ignoring data_op_msg with missing parts: %s", message)
             return
@@ -759,9 +764,9 @@ class HubWsBridge:
             persist = asyncio.create_task(_persist_inbound())
             self._inbound_persists[fm_id] = persist
             persist.add_done_callback(
-                lambda t, _id=fm_id: self._inbound_persists.pop(_id, None)
-                if self._inbound_persists.get(_id) is t
-                else None
+                lambda t, _id=fm_id: (
+                    self._inbound_persists.pop(_id, None) if self._inbound_persists.get(_id) is t else None
+                )
             )
 
             # Eager bundle pull for asset-bearing FMs — see

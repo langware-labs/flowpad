@@ -2382,6 +2382,10 @@ msgstr "An error occurred"
 msgid "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
 msgstr "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
 
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
+msgid "An install failed or was cancelled, so Flowpad may be missing tools it needs."
+msgstr "An install failed or was cancelled, so Flowpad may be missing tools it needs."
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "an op name"
 msgstr "an op name"
@@ -5844,6 +5848,7 @@ msgid "Could not open link"
 msgstr "Could not open link"
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Could not open setup"
 msgstr "Could not open setup"
 
@@ -10373,7 +10378,6 @@ msgstr "Go to Console"
 msgid "Go to Home"
 msgstr "Go to Home"
 
-#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Go to homepage"
 msgstr "Go to homepage"
@@ -19287,6 +19291,7 @@ msgid "Run script"
 msgstr "Run script"
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Run setup again"
 msgstr "Run setup again"
 
@@ -20654,6 +20659,10 @@ msgstr "Setup"
 #~ msgid "Setup did not finish"
 #~ msgstr "Setup did not finish"
 
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
+msgid "Setup did not finish successfully"
+msgstr "Setup did not finish successfully"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Setup didn't finish successfully."
 msgstr "Setup didn't finish successfully."
@@ -21413,6 +21422,7 @@ msgid "Skills, agents, servers and documents published by projects you can read.
 msgstr "Skills, agents, servers and documents published by projects you can read."
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "Skip"
@@ -23012,6 +23022,7 @@ msgid "The session transcript could not be read."
 msgstr "The session transcript could not be read."
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "The setup wizard is not installed."
 msgstr "The setup wizard is not installed."
 

@@ -2382,6 +2382,10 @@ msgstr "حدث خطأ ما"
 msgid "An index covers the folders you add and everything beneath them. Covered folders wear a brain in the file tree, and a folder removed here loses it."
 msgstr ""
 
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
+msgid "An install failed or was cancelled, so Flowpad may be missing tools it needs."
+msgstr "فشل تثبيت أو أُلغي، لذلك قد تنقص Flowpad أدوات يحتاجها."
+
 #: src/components/assets/editor/wizard/WizardStepForm.tsx
 msgid "an op name"
 msgstr "اسم عملية"
@@ -5844,6 +5848,7 @@ msgid "Could not open link"
 msgstr ""
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Could not open setup"
 msgstr "تعذّر فتح الإعداد"
 
@@ -10373,7 +10378,6 @@ msgstr "الانتقال إلى وحدة التحكم"
 msgid "Go to Home"
 msgstr "الانتقال إلى الصفحة الرئيسية"
 
-#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/components/assets/editor/wizard/WizardViewer.tsx
 msgid "Go to homepage"
 msgstr "الانتقال إلى الصفحة الرئيسية"
@@ -19287,6 +19291,7 @@ msgid "Run script"
 msgstr "تشغيل البرنامج النصي"
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "Run setup again"
 msgstr "تشغيل الإعداد مرة أخرى"
 
@@ -20654,6 +20659,10 @@ msgstr "الإعداد"
 #~ msgid "Setup did not finish"
 #~ msgstr ""
 
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
+msgid "Setup did not finish successfully"
+msgstr "لم يكتمل الإعداد بنجاح"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Setup didn't finish successfully."
 msgstr "لم يكتمل الإعداد بنجاح."
@@ -21413,6 +21422,7 @@ msgid "Skills, agents, servers and documents published by projects you can read.
 msgstr ""
 
 #: src/components/assets/editor/wizard/wizard-texts.ts
+#: src/components/assets/editor/wizard/WizardViewer.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Skip"
 msgstr "تخطي"
@@ -23012,6 +23022,7 @@ msgid "The session transcript could not be read."
 msgstr "تعذّر قراءة نسخة الجلسة."
 
 #: src/components/account/settings-section.tsx
+#: src/components/setup-incomplete/use-setup-incomplete-warning.ts
 msgid "The setup wizard is not installed."
 msgstr "معالج الإعداد غير مثبّت."
 

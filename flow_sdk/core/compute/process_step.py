@@ -38,6 +38,9 @@ from flow_sdk.schema.data_spec.spec import DataSpec
 
 logger = logging.getLogger(__name__)
 
+#: What a step that needed an agent says when no LLM source could fund one (the ladder words its own report on it).
+NO_USABLE_LLM_SOURCE = "has no usable LLM source"
+
 
 class ProcessProgress(DataSpec):
     """One tick of a step's agent, in the wizard's vocabulary.
@@ -249,7 +252,7 @@ async def launch_step_process(
         refusal = await _unfunded(worker_type) if settled.ok else refusal
         if refusal is not None:
             return PromptResult.not_yet(
-                f"{getattr(worker_type, 'value', worker_type)} has no usable LLM source: {refusal}", ran=False
+                f"{getattr(worker_type, 'value', worker_type)} {NO_USABLE_LLM_SOURCE}: {refusal}", ran=False
             )
 
     try:
