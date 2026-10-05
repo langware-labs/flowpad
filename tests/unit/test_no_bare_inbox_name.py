@@ -65,6 +65,8 @@ PHRASES = {
     r"^flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/cloud_email/(source|tests/test_cloud_email_source)\.py$": ["inbox_typeid"],
     r"^flow_sdk/server/app\.py$|^tests/unit/test_fs_store/test_entity_type_enum\.py$": ['"inbox_manager"'],
     r"^docs/glossary\.md$": ['"inboxes"', '"inbox" is not a name'],
+    # the hub's own route (``whatsapp_link/inbox``), which this driver reads but does not name
+    r"^flow_sdk/system_projects/flowpad_assistant/agentic-assets/data_driver/flow_whatsapp/source\.py$": ["whatsapp_link/inbox", '"inbox", params='],
     # the agentmail driver's `inbox` config key, named in prose
     r"^docs/snippets/data-sources\.md$": ["`inbox`", "create_config(inbox="],
     r"^ui/tests/manual_regression/data-sources/credentialed_sources\.md(\.ts)?$": ["`inbox` field", "the inbox is account-bound"],
