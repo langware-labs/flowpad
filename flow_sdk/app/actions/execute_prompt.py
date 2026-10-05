@@ -62,7 +62,9 @@ def _context_entity_lines(typeids) -> list[str]:
         if not t or not i or t == "flow_message":
             continue
         label = t[:1].upper() + t[1:].replace("_", " ")
-        out.append(f"- {label}: {t}/{i}, read: {root}/{t}/{i}")
+        # A conversation's folder holds pointers only — its messages are read through the CLI.
+        read = f"`flow conversation show {t}/{i} --last 30`" if t == "conversation" else f"{root}/{t}/{i}"
+        out.append(f"- {label}: {t}/{i}, read: {read}")
     return out
 
 

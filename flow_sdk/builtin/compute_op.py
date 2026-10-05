@@ -74,6 +74,9 @@ class ComputeOp(Entity):
     status_check: Optional[str] = APIField(
         default=None, description="The completion check as a status fact (install:<harness>), answered in-process."
     )
+    isolated_shell: bool = APIField(
+        default=False, description="Run in a shell of its own instead of the run's shared one."
+    )
     attempts: list[Rung] = APIField(
         default_factory=list, description="Further rungs (cli/prompt/agent) tried in order at the same goal."
     )

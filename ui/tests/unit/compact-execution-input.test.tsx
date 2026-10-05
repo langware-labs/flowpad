@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useInputHistory } from '@src/hooks/use-input-history';
 import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
@@ -6,10 +6,11 @@ import { resetComposerDrafts, writeDraft } from '@src/components/entity-executio
 import { QueueChip } from '@src/components/entity-execution-panel/QueueChip';
 import type { AgenticProcess } from '@sdk';
 import { useEffect } from 'react';
+import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
 // The annotator popup stands in as "the user kept the image unchanged".
 vi.mock('@src/components/image-annotator/annotate-files', () => ({
-  annotateImageFiles: vi.fn((files: File[]) => Promise.resolve(files)),
+  annotateImageFiles: vi.fn((files: File[]) => Promise.resolve({ files, caption: '' })),
 }));
 
 function Harness({
@@ -20,6 +21,7 @@ function Harness({
   allowAttachments = false,
   saveDraft,
   draftScope,
+  onPasteImages,
 }: {
   running?: boolean;
   onStop?: () => void;
@@ -28,6 +30,7 @@ function Harness({
   allowAttachments?: boolean;
   saveDraft?: boolean;
   draftScope?: string;
+  onPasteImages?: (files: File[], options?: { initialCaption?: string }) => Promise<string[]>;
 }) {
   const history = useInputHistory();
   useEffect(() => {
@@ -43,6 +46,7 @@ function Harness({
       allowAttachments={allowAttachments}
       saveDraft={saveDraft}
       draftScope={draftScope}
+      onPasteImages={onPasteImages}
     />
   );
 }
@@ -179,7 +183,15 @@ describe('QueueChip', () => {
     const { rerender } = render(<QueueChip process={proc([])} />);
     expect(screen.queryByTestId('entity-execution-queue-chip')).toBeNull();
 
-    rerender(<QueueChip process={proc([{ id: '1', prompt: 'a' }, { id: '2', prompt: 'b' }, { id: '3', prompt: 'c' }])} />);
+    rerender(
+      <QueueChip
+        process={proc([
+          { id: '1', prompt: 'a' },
+          { id: '2', prompt: 'b' },
+          { id: '3', prompt: 'c' },
+        ])}
+      />,
+    );
     expect(screen.getByTestId('entity-execution-queue-count').textContent).toBe('3');
   });
 });
@@ -323,12 +335,35 @@ describe('CompactExecutionInput drafts across view modes', () => {
 describe('CompactExecutionInput image paste with no owner hook', () => {
   afterEach(cleanup);
 
-  const pasteImage = () => {
+  const pasteImage = (text = '') => {
     const png = new File(['png'], 'image.png', { type: 'image/png' });
     fireEvent.paste(input(), {
-      clipboardData: { items: [{ kind: 'file', type: 'image/png', getAsFile: () => png }], files: [] },
+      clipboardData: {
+        items: [{ kind: 'file', type: 'image/png', getAsFile: () => png }],
+        files: [],
+        getData: (type: string) => (type === 'text/plain' ? text : ''),
+      },
     });
   };
+
+  it("the annotator's caption lands in the message, on a line after what was typed", async () => {
+    vi.mocked(annotateImageFiles).mockImplementationOnce((files) =>
+      Promise.resolve({ files, caption: 'the button is cut off' }),
+    );
+    render(<Harness allowAttachments />);
+    fireEvent.change(input(), { target: { value: 'look:' } });
+    pasteImage();
+    await screen.findByText(/^screenshot-.*\.png$/);
+    expect((input() as HTMLTextAreaElement).value).toBe('look:\nthe button is cut off');
+  });
+
+  it('text pasted alongside the image prefills the caption', () => {
+    render(<Harness allowAttachments />);
+    pasteImage('from the clipboard');
+    expect(vi.mocked(annotateImageFiles)).toHaveBeenLastCalledWith(expect.any(Array), {
+      initialCaption: 'from the clipboard',
+    });
+  });
 
   it('an annotated pasted image becomes a chip that rides the next send', async () => {
     const onSend = vi.fn();
@@ -342,6 +377,16 @@ describe('CompactExecutionInput image paste with no owner hook', () => {
     const [text, files] = onSend.mock.calls[0];
     expect(text).toBe('what is this?');
     expect(files.map((f: File) => f.type)).toEqual(['image/png']);
+  });
+
+  it('an owner hook gets the clipboard text as the initial caption and its lines are spliced in', async () => {
+    const onPasteImages = vi.fn(() => Promise.resolve(['File a.png is available here: /in/a.png', 'my caption']));
+    render(<Harness onPasteImages={onPasteImages} />);
+    pasteImage('from the clipboard');
+    expect(onPasteImages).toHaveBeenCalledWith(expect.any(Array), { initialCaption: 'from the clipboard' });
+    await waitFor(() =>
+      expect((input() as HTMLTextAreaElement).value).toBe('File a.png is available here: /in/a.png\nmy caption'),
+    );
   });
 
   it('without attachments an image paste is left to the browser', () => {

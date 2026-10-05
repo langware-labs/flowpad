@@ -4,7 +4,8 @@
 process report into the one mechanism that Python producers reach through
 ``Activity.get(...)``. There is deliberately no separate create call: a verb on an
 address that nobody has touched creates it, because find-or-create is the whole
-addressing model and a two-step start would let a producer forget the first step.
+addressing model and a two-step start would let a producer forget the first step. Verbs
+that continue work are the exception — see :data:`_CONTINUING_VERBS`.
 
 Verbs are accepted in either spelling — ``inc_success`` from Python and the API's own
 conventions, ``incSuccess`` from the TypeScript side, ``inc-success`` from a shell. One
@@ -123,6 +124,12 @@ VERB_TABLE: "dict[str, Callable[[Activity, VerbBody], None]]" = {
 }
 
 
+#: Verbs that continue a node somebody already started. A finished root is evicted, so
+#: find-or-create would answer them with a fresh, unplanned, unlabelled root that nothing
+#: will ever end — the footer then shows it running forever. They are refused instead.
+_CONTINUING_VERBS = frozenset({"resume", "rerun"})
+
+
 @router.get("/api/v1/activity")
 async def list_activities(
     subject_entity: Optional[str] = Query(default=None),
@@ -152,16 +159,26 @@ async def get_activity(path: str, subject_entity: Optional[str] = Query(default=
 
 @router.post("/api/v1/activity/{path:path}/{verb}")
 async def report(path: str, verb: str, body: VerbBody = Body(default=VerbBody())):
-    """Apply one verb to the node at ``path``, creating it if this is its first touch."""
-    apply = VERB_TABLE.get(canonical_verb(verb))
+    """Apply one verb to the node at ``path``, creating it on first touch unless the verb continues work."""
+    name = canonical_verb(verb)
+    apply = VERB_TABLE.get(name)
     if apply is None:
         return _fail(
             "UNKNOWN_VERB", f"unknown activity verb {verb!r}; expected one of {', '.join(VERB_TABLE)}"
         )
-    try:
-        act = Activity.get(path, subject_entity=_subject(body.subject_entity))
-    except ValueError as exc:  # empty path, or past the depth cap
-        return _fail("BAD_PATH", str(exc))
+    subject_entity = _subject(body.subject_entity)
+    if name in _CONTINUING_VERBS:
+        act = monitor.node(path, subject_entity=subject_entity)
+        if act is None:
+            return _fail(
+                "NOT_LIVE",
+                f"no live activity at {path!r} to {name}: it has ended or never started — start it again",
+            )
+    else:
+        try:
+            act = Activity.get(path, subject_entity=subject_entity)
+        except ValueError as exc:  # empty path, or past the depth cap
+            return _fail("BAD_PATH", str(exc))
 
     try:
         apply(act, body)

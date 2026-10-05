@@ -42,14 +42,11 @@ SAMPLE_ASSET_NAMES: dict[str, tuple[str, ...]] = {
 
 AUTHORED_ASSETS: dict[str, int] = {t: len(names) for t, names in SAMPLE_ASSET_NAMES.items()}
 
-# What the MENU reports, which is one more markdown than we authored: README.md
-# sits at the repo root and is itself a document, so the indexer counts it.
-# (`.claude/plans` and `.claude/rules` are NOT counted as markdown — the walk
-# skips dot-directories — which is why only the README shows up here.)
-SAMPLE_CONTEXT_ASSETS: dict[str, int] = {
-    **AUTHORED_ASSETS,
-    "markdown": AUTHORED_ASSETS["markdown"] + 1,
-}
+# What the MENU reports: exactly what we authored. README.md sits at the repo
+# root, outside any ``docs``/``doc`` folder, so the indexer does not count it as
+# a document; ``.claude/plans`` and ``.claude/rules`` are claimed by their own
+# types, never double-counted as markdown.
+SAMPLE_CONTEXT_ASSETS: dict[str, int] = dict(AUTHORED_ASSETS)
 
 SAMPLE_CONTEXT_TOTAL = sum(SAMPLE_CONTEXT_ASSETS.values())
 
@@ -79,8 +76,8 @@ context folder can contribute. A project's own folder is indexed as a project
 root, but a context folder is indexed as a plain directory root, and the two
 resolve different asset types. Everything here is reachable from either.
 
-One of the documents is this README: it sits at the repository root and the
-indexer counts it like any other `.md`.
+This README is not one of them: it sits at the repository root, and only
+markdown inside a `docs/` (or `doc/`) folder is indexed as a document.
 
 ## Layout
 

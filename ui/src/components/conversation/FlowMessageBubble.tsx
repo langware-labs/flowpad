@@ -206,11 +206,13 @@ interface FlowMessageBubbleProps {
   /** Staged MessageAttachment rows for THIS message (parent-resolved via the
    *  conversation-wide query). Drive the dashed staged chips + review modal. */
   messageAttachments?: MessageAttachment[];
-  /** What the conversation's channel can do (`ChannelSpec` traits) — gates Reply and React. */
-  channelTraits?: { quotes?: boolean; reacts?: boolean } | null;
+  /** What the conversation's channel can do (`ChannelSpec` traits) — gates Reply and React.
+   *  `native`: Flowpad's own chat, where any sent message can be answered by its id; a channel
+   *  reply instead needs the message's source record (`fm.origin`). */
+  channelTraits?: { quotes?: boolean; reacts?: boolean; native?: boolean } | null;
   /** The message this one quotes, resolved by the parent from the loaded list. */
   quoted?: { sender: string; text: string; onJump?: () => void } | null;
-  /** Answer this message from the composer (a channel conversation). */
+  /** Answer this message from the composer — set only when the channel replies (`ChannelSpec.replies`). */
   onReply?: (fm: FlowMessage) => void;
   /** The task made from this message ("Task it"), resolved by the parent's one per-conversation query. */
   messageTask?: Task | null;
@@ -710,14 +712,6 @@ export function FlowMessageBubble({
         </p>
       ))}
       <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
-      {messageTask && (
-        <span className="mt-1.5 inline-flex" data-testid="message-task-chip">
-          <EntityChip
-            entity={{ typeId: messageTask.typeId, name: messageTask.title || t`Task` }}
-            projectId={attachmentProjectId}
-          />
-        </span>
-      )}
     </>
   );
 
@@ -754,6 +748,7 @@ export function FlowMessageBubble({
         message={message}
         flowMessageId={messageId}
         flowMessage={fm}
+        run={run}
         task={task ?? undefined}
         senderName={displayName}
         onSenderClick={agentSender ? () => navigation.openDock(agentSender.dockPointer) : undefined}
@@ -771,9 +766,9 @@ export function FlowMessageBubble({
         onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
         taskIt={
           messageTask
-            ? { onClick: () => navigation.openDock(messageTask.dockPointer), open: true }
+            ? { onClick: () => navigation.openDock(messageTask.dockPointer), task: messageTask }
             : onTaskIt && !fm.is_draft
-              ? { onClick: () => onTaskIt(fm), open: false }
+              ? { onClick: () => onTaskIt(fm) }
               : undefined
         }
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
@@ -785,7 +780,7 @@ export function FlowMessageBubble({
         quoted={quoted}
         reactions={reactions}
         onReact={channelTraits?.reacts && fm?.origin ? handleReact : undefined}
-        onReply={onReply && fm?.origin ? () => onReply(fm) : undefined}
+        onReply={onReply && fm && (channelTraits?.native ? !fm.is_draft : fm.origin) ? () => onReply(fm) : undefined}
         replyInThread={!channelTraits?.quotes}
       />
       {reactError && (

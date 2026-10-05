@@ -57,6 +57,28 @@ def classify_candidate(path: Path, info: TypeInfo, *, parent: Path | None = None
     return AssetCandidate(layout.root, info.type_name, layout, parent, included)
 
 
+# Folder names whose markdown is a project's documentation. Project markdown is
+# indexed ONLY under one of these — a README, CHANGELOG or a stray note at the
+# project root or inside ``src/`` is code-adjacent text, not a document.
+DOC_DIR_NAMES = frozenset({"docs", "doc"})
+
+
+def is_in_doc_dir(folder: Path, root: Path | None = None) -> bool:
+    """True when ``folder`` is a ``docs``/``doc`` dir or lies under one.
+
+    Only the segments from ``root`` down count (``root`` itself included), so a
+    project checked out under ``~/doc/`` doesn't make every folder in it a docs
+    folder. With no ``root`` every segment of ``folder`` counts.
+    """
+    parts = folder.parts
+    if root is not None:
+        try:
+            parts = (root.name, *folder.relative_to(root).parts)
+        except ValueError:
+            pass
+    return any(part.lower() in DOC_DIR_NAMES for part in parts)
+
+
 def is_appledouble(name: str) -> bool:
     return name.startswith("._")
 

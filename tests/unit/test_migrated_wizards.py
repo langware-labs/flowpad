@@ -12,6 +12,8 @@ A rename on either side breaks here rather than at a user's click.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from flow_sdk.assets.types.wizard import read_wizard
@@ -102,6 +104,13 @@ def test_every_shipped_wizard_is_reachable():
     # A harness CLI's own install wizard is run on request (`flow wizard run llm-setup-<h>`),
     # never by the unattended `llm-setup` -- the CLI is its surface (test_llm_setup_wizard).
     reachable |= {f"llm-setup-{v.key}" for v in VENDORS if v.install_bin_dirs} & set(specs)
+    # A shipped skill that needs a toolchain tells its agent to run the wizard
+    # (`flow wizard run browser-setup`) — the skill is its surface.
+    skills = WIZARD_ROOT.parents[1] / ".claude" / "skills"
+    for doc in skills.rglob("*"):
+        if doc.suffix in {".md", ".mjs", ".py", ".sh"} and doc.is_file():
+            named = re.findall(r"flow wizard run ([a-z0-9-]+)", doc.read_text(encoding="utf-8", errors="ignore"))
+            reachable |= {folder_of[n] for n in named if n in folder_of}
     # A step names its callee by `name`, which need not be its folder's.
     frontier = list(reachable)
     while frontier:
@@ -114,6 +123,6 @@ def test_every_shipped_wizard_is_reachable():
     unreachable = sorted(set(specs) - reachable)
     assert not unreachable, (
         f"these wizards can be neither launched nor triggered: {unreachable}. "
-        "Declare an `agent` (launched from a surface) or a trigger child asset "
-        "(run by the backend)."
+        "Declare an `agent` (launched from a surface), a trigger child asset "
+        "(run by the backend), or have a shipped skill run it (`flow wizard run <name>`)."
     )

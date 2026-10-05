@@ -103,6 +103,14 @@ FAMILY_TIERS: dict[str, dict[str, str]] = {
 }
 
 
+_TIER_VALUES = frozenset(tier.value for tier in ModelTier)
+
+
+def is_model_tier(model: str | None) -> bool:
+    """Whether *model* is a portable size (``sm``/``md``/``lg``) rather than a named model."""
+    return model in _TIER_VALUES
+
+
 def is_family_model(model: str | None) -> bool:
     """Whether *model* is ``<family>:<size>`` syntax for a known family (any size, even a bad
     one — so a typo'd size is reported, not sent as a literal slug)."""

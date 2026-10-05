@@ -1,21 +1,28 @@
-import { dataManager, FlowMessage, TypeId } from '@sdk';
+import { Conversation, dataManager, FlowMessage, TypeId } from '@sdk';
 
 /** Title-case the type slug for human-friendly type labels. */
 function humanType(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
 }
 
+/** How a worker reads a conversation: its record folder holds only pointers
+ *  (the message text lives in the DB row), so the reference is a command. */
+function conversationReadCommand(tid: TypeId): string {
+  return `flow conversation show ${tid.toUrlString()} --last 30`;
+}
+
 /**
  * Build the "context entities saved locally" lines for a list of TypeIds.
  *
- * Every Flowpad entity is mirrored on disk under `recordsRoot` as the folder
- * `<type>/<type>-@<id>/`; Claude can `Read` any file inside it (metadata.json,
- * data/*.json, the asset). When `recordsRoot` is unset (rare — server
- * bootstrap hasn't run yet) we fall back to the GET endpoint so the lines
- * still resolve to *something* readable.
+ * Most Flowpad entities are mirrored on disk under `recordsRoot` as the folder
+ * `<type>/<id>/` (metadata.json, the asset). Conversations and messages are
+ * not: their folders hold pointers only, so a conversation line names the
+ * `flow conversation show` command instead, and messages are skipped (they
+ * are read through their conversation). When `recordsRoot` is unset (hub /
+ * remote runtime) the TypeId alone is the reference.
  *
- * Format per line: `- <TypeName>: <type>/<id>, read: <folder-path>`. Caller is
- * expected to dedupe TypeIds before passing them in.
+ * Format per line: `- <TypeName>: <type>/<id>, read: <folder-path | command>`.
+ * Caller is expected to dedupe TypeIds before passing them in.
  */
 export function buildContextEntityLines(typeIds: readonly TypeId[]): string[] {
   const recordsRoot = dataManager.recordsRoot;
@@ -23,7 +30,9 @@ export function buildContextEntityLines(typeIds: readonly TypeId[]): string[] {
   for (const tid of typeIds) {
     if (!tid?.type || !tid?.id || tid.type === FlowMessage.type) continue;
     const label = humanType(tid.type);
-    if (recordsRoot) {
+    if (tid.type === Conversation.type) {
+      out.push(`- ${label}: ${tid.toUrlString()}, read: \`${conversationReadCommand(tid)}\``);
+    } else if (recordsRoot) {
       const recordPath = `${recordsRoot}/${tid.type}/${tid.id}`;
       out.push(`- ${label}: ${tid.toUrlString()}, read: ${recordPath}`);
     } else {
@@ -86,6 +95,8 @@ export function buildConversationStatusPrompt(conversationTypeId: TypeId): strin
   return (
     `Use Flowpad Assistant to read the Flowpad conversation ${conversationTypeId.toUrlString()} ` +
     'and report its latest status: what was discussed most recently, what is still open, and who is waiting on whom.\n\n' +
-    buildContextEntityLines([conversationTypeId]).join('\n')
+    `Read it with \`${conversationReadCommand(conversationTypeId)}\` (full messages, oldest first; ` +
+    'drop --last to read all of it). Open one message and its attachments with ' +
+    '`flow conversation message <message-id>`.'
   );
 }

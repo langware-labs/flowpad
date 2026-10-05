@@ -9,67 +9,66 @@ Two halves: **read** (below) and **send** (further down). Triggered for reading 
 message me about …". **A message the user says they received is a Flowpad conversation
 message — never go to Slack, Gmail or another connector unless the user names it.**
 
-## Read — Step 0: resolve the backend port, then check cloud login
+## Read — Step 0: check cloud login
 
 ```bash
-PORT=$(python3 -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); print(json.load(open(pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'))['port'])")
-BASE="http://localhost:$PORT/api/v1"
-curl -s --max-time 15 "$BASE/cloud/status" | python3 -c "import json,sys; d=json.load(sys.stdin)['data']; print(d.get('logged_in'), d.get('hub_ws_status'))"
+flow conversation list | python3 -c "import json,sys; d=json.load(sys.stdin); print('auth_required', d['auth_required'], 'hub_reachable', d['hub_reachable'])"
 ```
 
 Inbound messages only reach the local DB while the backend is cloud-logged-in and the
-hub websocket is connected. If `logged_in` is not `True`, **stop**: tell the user that
+hub websocket is connected. If `auth_required` is `true`, **stop**: tell the user that
 messages cannot be checked while logged out and ask them to sign in (Flowpad UI cloud
 sign-in, or `flow auth login`). Do not conclude "nothing was sent" from an empty result
 while logged out — the message may simply not have been fetched yet.
 
-## Read — Step 1: find the message by sender
+## Read — Step 1: find the conversation
 
-`conversation.participants` is usually empty on the local row, so do not resolve the
-sender through it. Filter `flow_message` by the sender's display name instead (the
-`filter` param is JSON — see `search.md`), and sort by date yourself:
-
-```bash
-curl -sG --max-time 15 "$BASE/graph/flow_message"   --data-urlencode 'limit=50'   --data-urlencode 'filter={"match":{"sender_name":"<Display Name>"}}' | python3 -c "
-import json,sys
-rows=json.load(sys.stdin)['data']
-for m in sorted(rows, key=lambda r: r.get('created_date') or '', reverse=True)[:10]:
-    print(m['created_date'], m['conversation_id'], m['id'], '|', (m.get('text') or '')[:80],
-          '| att:', [a.get('data') for a in m.get('attachment') or []])
-"
-```
-
-- Match `sender_name` on the full display name as Flowpad shows it (e.g. `Gadi Tunes`); a
-  first name alone will not match. If unsure, list the user's conversations with
-  `flow conversation list` and grep the JSON for the name/email, or search by topic
-  words with `flow record search` (it indexes conversation titles, not message bodies).
-- "The latest message from X" → the max `created_date` among the matches.
-
-Then print the whole conversation in order, with senders:
+You are often handed one already (`conversation/<uuid>` or `conversation-<uuid>`; every
+`flow conversation` verb takes either form or the bare uuid). Otherwise list them and pick
+by participant name / email / title:
 
 ```bash
-flow conversation summary <conversation-uuid>
+flow conversation list        # id, title, participants, message_count
 ```
 
-## Read — Step 2: open the attachment body
+Do not `Read` the conversation's records folder: it holds pointers only, never message text.
 
-Most inbound messages carry their payload as an attachment (`claude_session-<uuid>`,
-`prompt-<uuid>`, a file, …), and the text is empty.
-Those entities are usually **not** in the local graph (`GET /graph/claude_session/<id>`
-returns 404) — read them from the unpacked message body on disk instead:
+## Read — Step 2: read it
 
-```
-~/.flow/instances/<instance>/records_data/flow_message/<message-uuid>/unpacked/
-  flow_message.json                     # the message row as sent
-  attachment/<type>-<uuid>/…            # one folder per attachment
-  attachment/claude_session-<uuid>/agentic-assets/claude_session/<uuid>.jsonl
+```bash
+flow conversation show <conversation> --last 30     # full messages, oldest first
+flow conversation show <conversation> --since 2026-10-01T00:00:00Z
+flow conversation show <conversation> --json         # structured, for filtering
 ```
 
-`body_downloaded: true` / `body_status: ready` on the row means the folder is complete.
-If it is missing, the body has not been pulled yet (logged out, or hub still uploading) —
-report that, do not guess the content. A `.jsonl` transcript is Claude Code session
-format: print the `type == "user"` text turns for the questions asked and the
-`type == "assistant"` text blocks for the conclusions.
+Each message prints `── <ts> · <sender> (you|them) · <read|unread|delivery> · msg <id>`,
+then its **full** text, then one `📎` line per attachment with its local path, or
+`(not on this machine — body not downloaded)`. "What did X send me" = the newest `(them)`
+messages from X. (`flow conversation summary` is the one-line-per-message skim, cut to 80
+chars — don't answer from it.)
+
+**Threads.** A conversation can hold several threads (an email thread, a Slack thread, a reply
+chain in Flowpad's own chat). The header lists them (`🧵 <title> · N messages · thread <id>`),
+every message in one carries `🧵 <title>`, and a reply shows `reply to <msg-id>` (the quote).
+Read one thread with:
+
+```bash
+flow conversation show <conversation> --thread <thread-id | any message id in it>
+```
+
+## Read — Step 3: open one message and its attachments
+
+```bash
+flow conversation message <message-id>
+```
+
+Prints the message, its attachments and the files of its downloaded body
+(`…/records_data/flow_message/<id>/unpacked/`). Most inbound messages carry their payload as
+an attachment (`claude_session-<uuid>`, `prompt-<uuid>`, a file) with empty text — `Read` the
+paths it lists. A `.jsonl` transcript is Claude Code session format: print the
+`type == "user"` text turns for the questions asked and the `type == "assistant"` text blocks
+for the conclusions. If it says the body is not downloaded, report that (logged out, or the
+hub is still uploading) — do not guess the content.
 
 ---
 
@@ -138,6 +137,12 @@ One endpoint carries every kind of send; pick the payload keys for what you are 
 | `asset_references` | a Flowpad entity, referenced not uploaded | its TypeId, e.g. `markdown-<uuid>` |
 | `prompt_text` | a runnable prompt for the recipient | minted as a real `Prompt` entity, attached as a `type_id` with an inline `prompt_preview` |
 | `prompt_files` | prompt bodies read from files | text files become `Prompt` entities; images stay raw |
+| `reply_to_id` | the message this answers | quotes it and joins the thread rooted at it; must be a message of this conversation |
+| `thread_root_id` | a message whose thread to write into | joins that thread without quoting; ignored when `reply_to_id` is set |
+
+Text-only replies have a CLI form: `flow conversation send <conversation> "<text>" --reply-to <msg-id>`.
+On a source channel (email, Slack, WhatsApp …) answer through the channel instead:
+`flow conversation reply <conversation> "<text>" --reply-to <msg-id>`.
 
 Multipart when the send uploads files:
 

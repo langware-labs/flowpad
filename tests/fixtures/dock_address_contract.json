@@ -822,6 +822,15 @@
       "url": "/dock/conversation/6ba7b810-9dad-41d1-80b4-00c04fd430c8"
     },
     {
+      "name": "conversation opened on one thread (filter rides options, the tab stays the conversation's)",
+      "view_type": "conversation",
+      "pointer": "6ba7b810-9dad-41d1-80b4-00c04fd430c8",
+      "options": {
+        "thread": "9f1c2b0e-7a51-4c3e-9d0e-2b8f4a1c9e77"
+      },
+      "url": "/dock/conversation/6ba7b810-9dad-41d1-80b4-00c04fd430c8?thread=9f1c2b0e-7a51-4c3e-9d0e-2b8f4a1c9e77"
+    },
+    {
       "name": "entity pointer with a sub-segment",
       "view_type": "conversation",
       "pointer": "6ba7b810-9dad-41d1-80b4-00c04fd430c8/message/7c9e6679-7425-40de-944b-e07fc1f90ae7",
