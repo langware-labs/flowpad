@@ -73,4 +73,7 @@ of the same `navigator.dataset` kind as the shipped eval set, with the request a
 offered candidates as `context`, the decision as `output` and what was done in `data`. A person
 reviews it in the dataset editor (**Correct**, or edit the label; the **needs label** filter),
 and `navigator_eval.evaluate(dataset, kinds=("train",))` scores the navigator on the reviewed
-rows. See `docs/snippets/datasets.md` §6.
+rows — from a process that reaches the hub's decision API (an instance's env:
+`set -a; . ./.env.<instance>.local`), or every row re-runs as `agentic`. See
+`docs/snippets/datasets.md` §6; the end-to-end check is
+`ui/tests/manual_regression/smart-navigation/smart_navigation_e2e.md`.
