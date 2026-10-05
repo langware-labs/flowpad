@@ -142,17 +142,6 @@ async def handle_request(
     if request_info.action.lower() == "resetAvailableOnlyForLocalUserOnTesting".lower():
         return await handle_reset_action(request)
 
-    # A hub-only entity (an LLM endpoint) has no local row and no local handlers:
-    # a reflected call on one is answered by the hub, whatever the action.
-    from flow_sdk.server.routes._hub_reflect import is_hub_only_reflect, proxy_hub_only
-
-    if is_hub_only_reflect(
-        request_info.target_entity_typeid,
-        request_info.hub_reflect,
-        request_info.auth_result.target if request_info.auth_result is not None else None,
-    ):
-        return await proxy_hub_only(request)
-
     a = action.get_by_name(request_info.action, request_info.resource_type)
     if not a:
         raise HTTPException(status_code=400, detail=f"Unknown action: {request_info.action}")

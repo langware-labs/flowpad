@@ -80,6 +80,12 @@ def load_actions():
     except ImportError:
         pass  # Token plan action not available
 
+    # Import the LLM endpoint models read-through (desk → hub) to register it
+    try:
+        from flow_sdk.app.actions import llm_endpoint_models_action  # noqa: F401
+    except ImportError:
+        pass  # LLM endpoint models action not available
+
     # Import desktop-notify action to register it
     try:
         from flow_sdk.app.actions import desktop_notify_action  # noqa: F401

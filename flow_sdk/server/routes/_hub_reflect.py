@@ -177,34 +177,6 @@ def is_git_backed_remote_fs(entity: Entity | None, action_name: str | None) -> b
 async def proxy_git_backed_remote_fs(request: Request) -> Response:
     """Forward one standard entity-VFS request to Hub with full HTTP fidelity."""
 
-    return await _proxy_to_hub(request)
-
-
-def is_hub_only_reflect(target_typeid: Any, hub_reflect: bool, target: Entity | None) -> bool:
-    """Whether a reflected call addresses a hub-only entity this box holds no row for.
-
-    A ``_hub_only`` type (``LLMEndpoint``) is a projection of hub state: there is
-    no local row to load, so the call cannot take the entity-bound reflection
-    below, and there is no local handler to fall back to. Like the Git-backed
-    gate above, this does not require the caller to be logged in: an
-    unauthenticated attempt must fail at Hub.
-    """
-
-    if not hub_reflect or target is not None or target_typeid is None or not target_typeid.id:
-        return False
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    model = SchemaRegistry.get_entity_cls(target_typeid.type)
-    return bool(model is not None and model._hub_only and not is_local_mode())
-
-
-async def proxy_hub_only(request: Request) -> Response:
-    """Forward a hub-only entity's request to Hub verbatim; Hub's answer is the response."""
-
-    return await _proxy_to_hub(request)
-
-
-async def _proxy_to_hub(request: Request) -> Response:
     from flow_sdk.cloud_client import CloudProxy  # noqa: PLC0415
 
     try:

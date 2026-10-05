@@ -99,14 +99,7 @@ class RequestTransactionMiddleware:
                             registered_action
                             and registered_action.allow_missing_target
                         )
-                        # A reflected call on a hub-only type has no row here by
-                        # design; the dispatcher forwards it to the hub.
-                        from flow_sdk.server.routes._hub_reflect import is_hub_only_reflect  # noqa: PLC0415
-
-                        hub_only_reflect = is_hub_only_reflect(
-                            req_info.target_entity_typeid, req_info.hub_reflect, target_entity
-                        )
-                        if req_info.action == "open" or allow_missing_target or hub_only_reflect:
+                        if req_info.action == "open" or allow_missing_target:
                             logging.debug(
                                 "[Middleware] missing-target-capable action "
                                 f"{req_info.action!r} on "
