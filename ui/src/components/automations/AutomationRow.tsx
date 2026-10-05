@@ -68,6 +68,11 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
           <ArrowRight className="size-3.5 shrink-0 self-center text-muted-foreground" aria-hidden />
           <span className="min-w-0 break-words">{sentence.then}</span>
         </div>
+        {a.description && (
+          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground" title={a.description}>
+            {a.description}
+          </p>
+        )}
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <KindBadge kind={a.kind} />
           <button

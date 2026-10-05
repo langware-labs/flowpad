@@ -46,8 +46,12 @@ def transcript_watcher_trigger_specs(settings: Any) -> list[dict[str, Any]]:
         dict(
             uname="builtin_claude_transcript_watcher",
             name="Claude transcript watcher",
-            description="Watches ~/.claude/projects/ for JSONL file changes; "
-                        "routes deltas to the per-session TranscriptStreamer.",
+            # Dev: watches ~/.claude/projects/ for JSONL changes and routes each
+            # delta to the per-session TranscriptStreamer.
+            description="Lets Flowpad show your Claude Code chats as they happen. When Claude Code "
+                        "adds to a conversation on this computer, Flowpad reads the new lines so the "
+                        "chat, its progress and its results appear here. It only reads Claude Code's "
+                        "own conversation files, and reading them sends nothing anywhere.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.claude_projects_dir),
             recursive=True,
@@ -60,8 +64,12 @@ def transcript_watcher_trigger_specs(settings: Any) -> list[dict[str, Any]]:
         dict(
             uname="builtin_codex_transcript_watcher",
             name="Codex transcript watcher",
-            description="Watches ~/.codex/sessions/ for JSONL file changes; "
-                        "routes deltas to the per-session TranscriptStreamer.",
+            # Dev: watches ~/.codex/sessions/ for JSONL changes and routes each
+            # delta to the per-session TranscriptStreamer.
+            description="Lets Flowpad show your Codex chats as they happen. When Codex adds to a "
+                        "conversation on this computer, Flowpad reads the new lines so the chat, its "
+                        "progress and its results appear here. It only reads Codex's own conversation "
+                        "files, and reading them sends nothing anywhere.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.codex_sessions_dir),
             recursive=True,

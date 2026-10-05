@@ -63,3 +63,18 @@ a request itself (`ui/tests/unit/triggers-view-url.test.ts` fails if one does).
   gone (`builtin_triggers.reap_stale_trigger_rows`).
 - **Crontab weekdays**: `_parse_trigger` spells the day-of-week field out by name
   — APScheduler 3.x counts Monday as 0, so `1-5` used to fire Tuesday to Saturday.
+
+## Flowpad's own automations
+
+Each built-in carries a `description` written for the person reading the
+Automations screen — what it does for them, why Flowpad needs it, and what it
+touches — never implementation detail (that lives in a code comment beside the
+spec). `tests/unit/automations/test_builtin_descriptions.py` holds every one to
+that. Design notes that used to sit in those descriptions:
+
+- **LLM setup** (`wizard/llm-setup/…/on-tab-ready`) is `fire_once`: it never runs
+  on its own again; Settings → General → Run setup again runs the same two steps.
+- **Install the VC++ runtime** (`wizard/install-vcredist/…/on-runtime-missing`) is
+  deliberately NOT `fire_once`: search announces `rag.runtime.missing` at most once
+  until a person acts (adds a folder, "index now"), so a "Not now" is not asked
+  every tick, and a person who declined and later asks for search is asked again.

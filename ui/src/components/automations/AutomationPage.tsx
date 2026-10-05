@@ -228,6 +228,11 @@ export function AutomationPage({ route }: { route: AutomationsRoute }) {
             </Button>
           )}
         </div>
+        {!isNew && automation?.description && (
+          <p className="max-w-3xl text-sm" data-testid="automation-description">
+            {automation.description}
+          </p>
+        )}
         {!isNew && automation && !dirty && (
           <p className="text-sm text-muted-foreground" data-testid="automation-sentence">
             {sentenceText(words, automation.when, automation.then)}
