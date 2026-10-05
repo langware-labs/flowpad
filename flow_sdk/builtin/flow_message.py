@@ -583,11 +583,22 @@ class FlowMessage(Entity):
     thread_id: Optional[str] = APIField(
         None, sharing=Sharing.HUB_WRITE, description="MessageThread id; None = flat (no thread grouping)"
     )
-    # The local FlowMessage this replies to. Provenance for quoting and reply
-    # nesting — deliberately NOT how threading is decided (every channel worth
-    # supporting ships a native thread id; see MessageThread).
+    # The FlowMessage this replies to — the quote. On a channel the projection
+    # links it from the provider's in-reply-to; on Flowpad's own chat the sender
+    # sets it, and since native message ids are the hub's, it means the same
+    # message on every member's machine. Provenance for quoting only — a channel
+    # thread is decided by the provider's thread id (see MessageThread).
     reply_to_id: Optional[str] = APIField(
-        None, sharing=Sharing.HUB_WRITE, description="Local id of the message this one replies to"
+        None, sharing=Sharing.HUB_WRITE, description="Id of the message this one replies to (the quote)"
+    )
+    # Flowpad's own chat: the message whose thread this one is in — the wire
+    # fact a native thread travels as. Each member's machine resolves it to its
+    # own MessageThread row (``stream_inbox.native_threads``) and stamps
+    # ``thread_id``; a channel message never sets it (its thread comes from the
+    # provider). Fixed at creation, like ``reply_to_id``: HUB_WRITE, because a
+    # new row takes the hub payload whole and nothing may rewrite it later.
+    thread_root_id: Optional[str] = APIField(
+        None, sharing=Sharing.HUB_WRITE, description="Native thread root message id; None = not in a native thread"
     )
 
     # Who reacted with what, on a channel message — projected from ``SourceItem.reactions``
@@ -966,6 +977,7 @@ class FlowMessage(Entity):
             "delivery_status": self.delivery_status,
             "is_read": self.is_read,
             "reply_to_id": self.reply_to_id,
+            "thread_id": self.thread_id,
             "text": self.text or "",
             "attachments": out_atts,
             "body_downloaded": state["body_downloaded"],

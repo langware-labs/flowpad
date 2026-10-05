@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Boxes, ChevronDown, File as FileIcon, MonitorPlay, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
+import { Boxes, ChevronDown, File as FileIcon, MessagesSquare, MonitorPlay, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { SessionReplyPolicy } from '@sdk';
 import type { TaskableMessage } from '@sdk/entities/task';
@@ -58,10 +58,15 @@ interface MessageComposerProps {
   onAfterDiscard?: () => void;
   /** A channel send can carry files (`ChannelSpec.accepts_attachments`): the paperclip is live. */
   channelAcceptsFiles?: boolean;
-  /** The message the next channel send answers; `inThread` when the channel's replies only thread. */
+  /** The message the next send answers (it quotes it and joins its thread); `inThread` when the
+   *  channel's replies only thread. */
   replyTo?: { id: string; sender: string; text: string; inThread?: boolean } | null;
   /** Dismiss the reply banner (and fires after a send that answered it). */
   onClearReply?: () => void;
+  /** The thread this composer writes into (a `?thread=` view). A send with no explicit `replyTo`
+   *  lands in it: `rootId` joins a native thread without quoting; `answerId` answers a channel
+   *  thread's newest message, which is how an email/Slack reply finds its thread. */
+  threadTarget?: { title: string; rootId?: string | null; answerId?: string | null } | null;
   /** "Task it" on send: when set, the composer offers a toggle; a send with it on hands the sent
    *  message here (the same call the bubble's Task it makes). Plain conversation sends only. */
   onTaskIt?: (sent: TaskableMessage) => void;
@@ -159,6 +164,7 @@ export function MessageComposer({
   channelAcceptsFiles = false,
   replyTo = null,
   onClearReply,
+  threadTarget = null,
   onTaskIt,
 }: MessageComposerProps) {
   const { t } = useLingui();
@@ -317,6 +323,8 @@ export function MessageComposer({
     if (assetSelection.selectedTypeIds.length > 0) {
       extras.assetReferences = assetSelection.selectedTypeIds;
     }
+    // The message this send answers: the one the user picked, else the thread this view writes into.
+    const answering = replyTo?.id || threadTarget?.answerId || null;
     setSending(true);
     setError(null);
 
@@ -333,7 +341,7 @@ export function MessageComposer({
         // only — an early return here would have to restate the cleanup below,
         // and the first version of it restated one quarter of it.
         await sendToChannel(effectiveConversationId, messageBody, agentId, {
-          replyToId: replyTo?.id || null,
+          replyToId: answering,
           files: files.length > 0 ? files : undefined,
         });
         onChannelSent?.(messageBody || files.map((f) => f.name).join(', '));
@@ -362,12 +370,17 @@ export function MessageComposer({
           // SAME reply pipeline as a fresh send. Single code path beats forking
           // the upload/push plumbing for drafts.
           if (draft) await discardDraftFlowMessage(draft);
+          if (!isPromptSend) {
+            if (answering) extras.replyToId = answering;
+            else if (threadTarget?.rootId) extras.threadRootId = threadTarget.rootId;
+          }
           const sent = await sendReply(
             { conversationId: effectiveConversationId },
             messageBody,
             outgoingFiles,
             Object.keys(extras).length > 0 ? extras : undefined,
           );
+          if (answering) onClearReply?.();
           if (taskItOn && sent.id && !isPromptSend) {
             onTaskIt?.({
               id: sent.id,
@@ -737,6 +750,17 @@ export function MessageComposer({
 
   return (
     <div className="space-y-1.5">
+      {!replyTo && threadTarget && (
+        <div
+          className="flex items-center gap-2 rounded border-s-2 border-primary/40 bg-muted/30 px-2 py-1 text-xs text-muted-foreground"
+          data-testid="composer-thread-banner"
+        >
+          <MessagesSquare className="h-3 w-3 shrink-0" />
+          <span className="line-clamp-1 break-words">
+            <Trans>In thread</Trans> · {threadTarget.title || t`Thread`}
+          </span>
+        </div>
+      )}
       {replyTo && (
         <div
           className="flex items-start gap-2 rounded border-s-2 border-primary/60 bg-muted/40 px-2 py-1 text-xs"
