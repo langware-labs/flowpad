@@ -1,0 +1,8 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "app",
+    "value": "7e2f3a4b-5c6d-4e1f-9a2b-3c4d5e6f7a8b"
+  },
+  "verb": "show"
+}

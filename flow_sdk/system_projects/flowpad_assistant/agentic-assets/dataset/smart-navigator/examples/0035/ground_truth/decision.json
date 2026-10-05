@@ -1,0 +1,8 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "url",
+    "value": "https://linear.app"
+  },
+  "verb": "show"
+}

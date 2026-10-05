@@ -1,0 +1,8 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "webapp",
+    "value": "5173"
+  },
+  "verb": "show"
+}

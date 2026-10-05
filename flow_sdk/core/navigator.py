@@ -251,7 +251,15 @@ def options_for(utterance: str, context: dict[str, Any], candidates: list[dict[s
 # ── the route ────────────────────────────────────────────────────────────────
 
 
-async def route(utterance: str, *, page: str = "", context: Optional[dict[str, Any]] = None) -> NavigatorRoute:
+async def route(
+    utterance: str,
+    *,
+    page: str = "",
+    context: Optional[dict[str, Any]] = None,
+    candidates: Optional[list[dict[str, str]]] = None,
+) -> NavigatorRoute:
+    """``candidates``: the search matches to offer -- searched for when None. An eval passes the
+    ones its row recorded, so a run is judged on the same options the row was labelled against."""
     from flow_sdk.decision import DecisionError, DecisionSpec, decide, decision_endpoints  # noqa: PLC0415
 
     utterance = (utterance or "").strip()
@@ -264,7 +272,8 @@ async def route(utterance: str, *, page: str = "", context: Optional[dict[str, A
         return NavigatorRoute(route="quick", target=hit, verb=_verb(utterance), confidence=1.0, reason="rule")
 
     context = context or {}
-    candidates = await _candidates(utterance)
+    if candidates is None:
+        candidates = await _candidates(utterance)
     spec = DecisionSpec(
         state={
             "utterance": utterance,
