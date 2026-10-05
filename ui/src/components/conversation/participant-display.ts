@@ -190,10 +190,15 @@ export function grantableRoles(me: ConversationParticipant | null | undefined): 
 
 /** True when the caller may invite new members: the hub policy grants the
  *  mutating ``members`` action to admin and above (owner via the default
- *  ``owner: *`` policy). */
-export function canInviteMembers(me: ConversationParticipant | null | undefined): boolean {
+ *  ``owner: *`` policy). ``lowestInviter`` lowers that line for an entity whose
+ *  policy opens invites further down — ``editor`` on a project, ``member`` on a
+ *  DIRECT conversation (the hub lets a member invite a member there). */
+export function canInviteMembers(
+  me: ConversationParticipant | null | undefined,
+  lowestInviter: (typeof ROLE_LADDER)[number] = 'admin',
+): boolean {
   const rank = participantRank(me);
-  return rank !== null && rank <= (roleRank('admin') as number);
+  return rank !== null && rank <= (roleRank(lowestInviter) as number);
 }
 
 /** Initials of any display label — the avatar fallback for participants AND

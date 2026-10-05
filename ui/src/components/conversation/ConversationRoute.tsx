@@ -278,7 +278,7 @@ export function ConversationRoute() {
           <ConversationHeaderSession conversation={conversation} task={task} />
         )}
         {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
-        {cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} />}
+        {cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} showInviteButton />}
       </div>
     </div>
   );
