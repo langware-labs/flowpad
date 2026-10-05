@@ -45,7 +45,7 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
         }
       }}
       className={cn(
-        'group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 border-t border-border px-4 py-3 hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none md:grid-cols-[auto_minmax(0,1fr)_11rem_10rem_auto]',
+        'group grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-4 border-t border-border px-4 py-3 hover:bg-accent/50 focus-visible:bg-accent/50 focus-visible:outline-none',
         !a.enabled && 'opacity-70',
       )}
     >
@@ -59,15 +59,50 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
         />
       </div>
 
+      {/* Two lines, full width: the rule as a sentence, then one line of facts. */}
       <div className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 text-sm">
           <span className="font-medium">{sentence.when}</span>
           <ArrowRight className="size-3.5 shrink-0 self-center text-muted-foreground" aria-hidden />
           <span className="min-w-0 break-words">{sentence.then}</span>
         </div>
-        <div className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
           <KindBadge kind={a.kind} />
-          <span className="truncate">{a.name}</span>
+          <span className="max-w-[16rem] truncate">{a.name}</span>
+          <span className="inline-flex items-center gap-1.5" data-testid={`automation-last-${a.id}`}>
+            {a.last_run ? (
+              <>
+                <RunStatusPill status={a.last_run.status} />
+                <span>{words.at(a.last_run.ts)}</span>
+                {flaky && a.recent_runs > 1 && (
+                  <span>
+                    <Trans>
+                      {a.recent_failures} of last {a.recent_runs} failed
+                    </Trans>
+                  </span>
+                )}
+              </>
+            ) : (
+              <Trans>Never ran</Trans>
+            )}
+          </span>
+          {!a.tested && !a.read_only ? (
+            <span
+              data-testid={`automation-untested-${a.id}`}
+              className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5"
+            >
+              <FlaskConical className="size-3" aria-hidden />
+              <Trans>Not tested yet</Trans>
+            </span>
+          ) : a.enabled && a.next_run ? (
+            <span>
+              <Trans>Next: {words.at(a.next_run)}</Trans>
+            </span>
+          ) : !a.enabled ? (
+            <span>
+              <Trans>Off</Trans>
+            </span>
+          ) : null}
           {problem && (
             <span
               className="inline-flex items-center gap-1 rounded border border-amber-500/50 bg-amber-500/10 px-1.5 text-foreground"
@@ -78,49 +113,6 @@ export function AutomationRow({ automation: a, onOpen, onToggle, onRunOnce, busy
             </span>
           )}
         </div>
-      </div>
-
-      <div className="hidden text-xs md:block" data-testid={`automation-last-${a.id}`}>
-        {a.last_run ? (
-          <div className="flex flex-col items-start gap-0.5">
-            <RunStatusPill status={a.last_run.status} />
-            <span className="text-muted-foreground">
-              {words.at(a.last_run.ts)}
-              {flaky && a.recent_runs > 1 && (
-                <>
-                  {' · '}
-                  <Trans>
-                    {a.recent_failures} of last {a.recent_runs} failed
-                  </Trans>
-                </>
-              )}
-            </span>
-          </div>
-        ) : (
-          <span className="text-muted-foreground">
-            <Trans>Never ran</Trans>
-          </span>
-        )}
-      </div>
-
-      <div className="hidden text-xs md:block">
-        {!a.tested && !a.read_only ? (
-          <span
-            data-testid={`automation-untested-${a.id}`}
-            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-muted-foreground"
-          >
-            <FlaskConical className="size-3" aria-hidden />
-            <Trans>Not tested yet</Trans>
-          </span>
-        ) : a.enabled && a.next_run ? (
-          <span className="text-muted-foreground">
-            <Trans>Next: {words.at(a.next_run)}</Trans>
-          </span>
-        ) : !a.enabled ? (
-          <span className="text-muted-foreground">
-            <Trans>Off</Trans>
-          </span>
-        ) : null}
       </div>
 
       <div onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
