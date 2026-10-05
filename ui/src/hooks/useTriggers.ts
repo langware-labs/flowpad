@@ -9,9 +9,8 @@ const triggerQuery = new QueryRequest({
 });
 
 /**
- * Returns all Trigger entities from the SDK cache.
- * The loader prefetches via Trigger.query() so this hook reads without a
- * second network round-trip.
+ * Every Trigger row, as a live entity query — for a picker of raw triggers (a
+ * workflow's trigger node). The Automations screen reads `useAutomations`.
  */
 export function useTriggers() {
   const { data: triggers = [], isLoading } = useEntitiesQuery<Trigger>(triggerQuery);

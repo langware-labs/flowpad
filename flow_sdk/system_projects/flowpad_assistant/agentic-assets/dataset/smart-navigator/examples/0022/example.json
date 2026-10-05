@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "kind": "eval"
+  },
+  "data": {
+    "case": "22",
+    "category": "C.deeplink",
+    "tags": [
+      "pointer",
+      "this"
+    ],
+    "note": ""
+  }
+}

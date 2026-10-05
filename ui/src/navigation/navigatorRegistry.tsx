@@ -1,8 +1,8 @@
 import type { ComponentType } from 'react';
-import { EVENTS_VIEW_TYPES, ViewType } from '@src/types/ViewType';
+import { ViewType } from '@src/types/ViewType';
 import { DocsNavigator } from '@src/components/docs-viewer/DocsNavigator';
 import { AssetsNavigatorSwitch } from '@src/components/assets/AssetsNavigatorSwitch';
-import { TriggersNavigator } from '@src/components/triggers-view/TriggersNavigator';
+import { AutomationsNavigator } from '@src/components/automations/AutomationsNavigator';
 import { ChatsNavigator } from '@src/components/chats-navigator/ChatsNavigator';
 import { ExplorerNavigator } from '@src/components/explorer-view/ExplorerNavigator';
 import { GraphWorkflowsNavigator } from '@src/components/graph-workflows/GraphWorkflowsNavigator';
@@ -23,9 +23,7 @@ export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
   // view types and swaps in its own resource pane (AssetsNavigatorSwitch).
   [ViewType.ASSETS]: AssetsNavigatorSwitch,
   [ViewType.PROJECT]: AssetsNavigatorSwitch,
-  // The merged Events screen and its URL aliases, derived from the one set so
-  // adding or retiring an alias is a single edit.
-  ...Object.fromEntries([...EVENTS_VIEW_TYPES].map((v) => [v, TriggersNavigator])),
+  [ViewType.AUTOMATIONS]: AutomationsNavigator,
   [ViewType.SHELL]: ChatsNavigator,
   [ViewType.EXPLORER]: ExplorerNavigator,
   [ViewType.GRAPH_WORKFLOWS]: GraphWorkflowsNavigator,

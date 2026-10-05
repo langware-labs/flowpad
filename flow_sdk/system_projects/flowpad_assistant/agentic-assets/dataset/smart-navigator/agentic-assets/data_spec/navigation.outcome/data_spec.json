@@ -1,0 +1,29 @@
+{
+  "type": "data_spec",
+  "id": "dd6bdaa6-d9bb-40e9-8a3e-5e9f4bd6ef63",
+  "name": "navigation.outcome",
+  "fields": {
+    "decision": {
+      "shape": "navigator.decision",
+      "description": "What was decided: quick (with a target) or agentic."
+    },
+    "candidates": {
+      "shape": [
+        "navigator.candidate"
+      ],
+      "description": "The search matches that were offered beside the map."
+    },
+    "dock": {
+      "shape": "?dock.pointer",
+      "description": "The tab to open, when the target is one the backend can address (a screen, an entity, an app)."
+    },
+    "address": {
+      "shape": "?string",
+      "description": "The dock address navigated, query included: /dock/search?q=widget."
+    },
+    "prompt": {
+      "shape": "?string",
+      "description": "What the assistant is asked instead, when nothing is opened."
+    }
+  }
+}

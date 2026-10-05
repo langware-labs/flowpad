@@ -3,8 +3,7 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { CronForm } from '@src/components/cron-view/CronForm';
 import { useProject } from '@src/hooks/useProject';
-import { Agent, dataManager, QueryRequest, Trigger, TypeId, type ITrigger } from '@sdk';
-import { ActionInfo } from '@sdk';
+import { Agent, QueryRequest, Trigger, TypeId, type ITrigger } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Bot, History, Pencil, Play } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -12,14 +11,20 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { describeSchedule } from '@src/components/cron-view/describe-schedule';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { scopeColor } from './scope-colors';
+
+/** The scope chip's colours — the one place this editor shows a scope. */
+const SCOPE_CHIP: Record<string, string> = {
+  system: 'bg-muted text-muted-foreground',
+  user: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  project: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+};
 
 /** The agent a trigger runs, when it is a scheduled agent run: its `run_agent`
  *  action's target, else the agent it lives inside. */
-function runAgentTypeId(trigger: Trigger | null): string | null {
-  const action = (trigger?.actions ?? []).find((a) => a.action_type === 'run_agent');
+function runAgentTypeId(trigger: Trigger): string | null {
+  const action = (trigger.actions ?? []).find((a) => a.action_type === 'run_agent');
   if (!action) return null;
-  const target = action.target_type_id || trigger?.parent_type_id || '';
+  const target = action.target_type_id || trigger.parent_type_id || '';
   return target.startsWith('agent-') ? target : null;
 }
 
@@ -95,9 +100,8 @@ function AgentScheduleDetail({ trigger, agentTypeId }: { trigger: Trigger; agent
 }
 
 interface Props {
-  /** null = create mode */
-  trigger: Trigger | null;
-  onSaved: (trigger: ITrigger) => void;
+  trigger: Trigger;
+  onSaved: (trigger: Trigger) => void;
   onCancel?: () => void;
 }
 
@@ -107,8 +111,8 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [instruction, setInstruction] = useState(trigger?.instruction ?? '');
-  const [workdir, setWorkdir] = useState(trigger?.workdir ?? project?.fs_storage_mount_path ?? '');
+  const [instruction, setInstruction] = useState(trigger.instruction ?? '');
+  const [workdir, setWorkdir] = useState(trigger.workdir ?? project?.fs_storage_mount_path ?? '');
   const agentTypeId = runAgentTypeId(trigger);
 
   const handleSubmit = async (formData: {
@@ -121,47 +125,25 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
     setSaving(true);
     setError(null);
     try {
-      if (trigger?.id) {
-        // Update existing
-        const changed =
-          trigger.name !== formData.name ||
-          trigger.description !== formData.description ||
-          trigger.expr !== formData.expr ||
-          trigger.sched_trigger_type !== formData.trigger_type ||
-          trigger.enabled !== (formData.enabled ?? true) ||
-          (trigger.instruction ?? '') !== instruction ||
-          (trigger.workdir ?? '') !== workdir;
-        const action = new ActionInfo('update', 'trigger', trigger.id, 'PATCH');
-        action.bodyParameters = {
-          name: formData.name,
-          description: formData.description,
-          expr: formData.expr,
-          sched_trigger_type: formData.trigger_type, // CronForm returns trigger_type as 'cron'|'interval'|'date'
-          enabled: formData.enabled ?? true,
-          instruction: instruction || null,
-          workdir: workdir || null,
-        };
-        const updated = await dataManager.callAction<unknown, ITrigger>(action);
-        if (changed) Trigger.markEditById(trigger.id);
-        onSaved(updated as unknown as ITrigger);
-      } else {
-        // Create new
-        const action = new ActionInfo('create', 'trigger', null, 'POST');
-        action.bodyParameters = {
-          name: formData.name,
-          description: formData.description,
-          trigger_type: 'schedule',
-          expr: formData.expr,
-          sched_trigger_type: formData.trigger_type, // cron|interval|date
-          scope: project?.id ? 'project' : 'user',
-          project_id: project?.id ?? null,
-          enabled: formData.enabled ?? true,
-          instruction: instruction || null,
-          workdir: workdir || null,
-        };
-        const created = await dataManager.callAction<unknown, ITrigger>(action);
-        onSaved(created as unknown as ITrigger);
-      }
+      const changed =
+        trigger.name !== formData.name ||
+        trigger.description !== formData.description ||
+        trigger.expr !== formData.expr ||
+        trigger.sched_trigger_type !== formData.trigger_type ||
+        trigger.enabled !== (formData.enabled ?? true) ||
+        (trigger.instruction ?? '') !== instruction ||
+        (trigger.workdir ?? '') !== workdir;
+      const updated = await Trigger.updateAutomation(trigger.id, {
+        name: formData.name,
+        description: formData.description,
+        expr: formData.expr,
+        sched_trigger_type: formData.trigger_type as ITrigger['sched_trigger_type'], // CronForm: 'cron'|'interval'|'date'
+        enabled: formData.enabled ?? true,
+        instruction: instruction || undefined,
+        workdir: workdir || undefined,
+      });
+      if (changed) Trigger.markEditById(trigger.id);
+      onSaved(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : t`Save failed`);
     } finally {
@@ -170,11 +152,10 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
   };
 
   const handleRunNow = async () => {
-    if (!trigger?.id) return;
     setRunning(true);
     setError(null);
     try {
-      await new Trigger(trigger).runNow();
+      await Trigger.runOnce(trigger.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : t`Run failed`);
     } finally {
@@ -186,50 +167,39 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="flex items-center gap-2 border-b px-3 py-2">
-        {trigger ? (
-          <>
-            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${scopeColor(trigger.scope)}`}>
-              {trigger.scope || 'user'}
-            </span>
-            <span className="font-mono text-sm font-medium">{trigger.displayName}</span>
-            <Badge variant="outline" className="h-4 px-1 text-[9px]">
-              <Trans>schedule</Trans>
-            </Badge>
-            {/* A spent one-shot keeps its old next_run; only a future run is "next". */}
-            {trigger.next_run && new Date(trigger.next_run).getTime() > Date.now() && (
-              <span className="text-[10px] text-muted-foreground">
-                <Trans>next: {new Date(trigger.next_run).toLocaleString()}</Trans>
-              </span>
-            )}
-            <div className="ms-auto flex items-center gap-2">
-              {error && <span className="text-[10px] text-destructive">{error}</span>}
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                onClick={() => {
-                  void handleRunNow();
-                }}
-                disabled={running || saving || !trigger.id}
-                title={t`Fire this trigger immediately`}
-              >
-                <Play className="h-3 w-3" />
-                {running ? t`Running…` : t`Run now`}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            <span className="text-sm font-medium">
-              <Trans>New Schedule Trigger</Trans>
-            </span>
-            {error && <span className="ms-auto text-[10px] text-destructive">{error}</span>}
-          </>
+        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${SCOPE_CHIP[trigger.scope || 'user'] ?? SCOPE_CHIP.user}`}>
+          {trigger.scope || 'user'}
+        </span>
+        <span className="font-mono text-sm font-medium">{trigger.displayName}</span>
+        <Badge variant="outline" className="h-4 px-1 text-[9px]">
+          <Trans>schedule</Trans>
+        </Badge>
+        {/* A spent one-shot keeps its old next_run; only a future run is "next". */}
+        {trigger.next_run && new Date(trigger.next_run).getTime() > Date.now() && (
+          <span className="text-[10px] text-muted-foreground">
+            <Trans>next: {new Date(trigger.next_run).toLocaleString()}</Trans>
+          </span>
         )}
+        <div className="ms-auto flex items-center gap-2">
+          {error && <span className="text-[10px] text-destructive">{error}</span>}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 text-xs"
+            onClick={() => {
+              void handleRunNow();
+            }}
+            disabled={running || saving}
+            title={t`Fire this trigger immediately`}
+          >
+            <Play className="h-3 w-3" />
+            {running ? t`Running…` : t`Run now`}
+          </Button>
+        </div>
       </div>
 
       {/* Body */}
-      {trigger && agentTypeId ? (
+      {agentTypeId ? (
         <div className="flex-1 overflow-auto">
           <AgentScheduleDetail trigger={trigger} agentTypeId={agentTypeId} />
         </div>
@@ -260,16 +230,12 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
 
         {/* Cron schedule */}
         <CronForm
-          initial={
-            trigger
-              ? {
-                  name: trigger.name,
-                  description: trigger.description,
-                  expr: trigger.expr ?? '',
-                  trigger_type: trigger.sched_trigger_type ?? 'cron',
-                }
-              : {}
-          }
+          initial={{
+            name: trigger.name,
+            description: trigger.description,
+            expr: trigger.expr ?? '',
+            trigger_type: trigger.sched_trigger_type ?? 'cron',
+          }}
           defaultName={t`My Schedule`}
           onSubmit={handleSubmit}
           onCancel={onCancel ?? (() => {})}

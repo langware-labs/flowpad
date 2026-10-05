@@ -2,7 +2,7 @@
 content.
 
 Distinct from the ticket queue (``flow_message_action``'s
-``helpdesk-start-ticket`` / ``helpdesk-tickets-list``), which talks to the hub.
+``ask-for-help`` with a desk recipient / ``helpdesk-tickets-list``), which talks to the hub.
 A desk answers tickets on the hub AND publishes a portal repo that requesters
 clone locally; the two are configured separately and either may be absent.
 
@@ -21,9 +21,9 @@ from pathlib import Path
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
-from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.builtin.project import Project
 from flow_sdk.config import HELPDESK_PORTAL_UNAME, StorageProvider, helpdesk_project_dir
+from flow_sdk.fs_store.origin.git_origin import GitOrigin
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -207,9 +207,7 @@ async def helpdesk_ensure(project_id: str = "") -> ApiResponse:
         # the role, so the app-managed-project recipe saves AND then applies it.
         await proj.set_visitor_role("owner")
 
-    return ApiSuccessResponse(
-        data=_ensure_payload(target, project_id=proj.id, mount_path=canonical, cloned=cloned)
-    )
+    return ApiSuccessResponse(data=_ensure_payload(target, project_id=proj.id, mount_path=canonical, cloned=cloned))
 
 
 @action.post(action_name="helpdesk-refresh", types=None)

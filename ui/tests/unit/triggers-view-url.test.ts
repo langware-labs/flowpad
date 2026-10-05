@@ -11,16 +11,25 @@
  * This scans the DIRECTORIES rather than naming files. The previous version read
  * three filenames literally and would have thrown on `readFileSync` the moment
  * any of them was renamed — which is exactly what happened when the Triggers and
- * Signals screens merged into Events.
+ * Signals screens merged into Events, and again when Events became Automations.
+ *
+ * The Automations screen goes further: it is SDK-first end to end (UI → hook →
+ * TS SDK `Trigger` methods → REST action), so no component or hook there may
+ * build an `ActionInfo`, call `dataManager`, or touch `apiClient` at all.
  */
 import { readFileSync, readdirSync } from 'fs';
 import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 
 const ROOTS = [
-  resolve(__dirname, '../../src/components/events'),
+  resolve(__dirname, '../../src/components/automations'),
+  resolve(__dirname, '../../src/components/automations/blocks'),
   resolve(__dirname, '../../src/components/triggers-view'),
+  resolve(__dirname, '../../src/hooks/automations'),
 ];
+
+/** The SDK-first folders: everything goes through `Trigger.*` / the bus helpers in `@sdk`. */
+const SDK_ONLY = ['/components/automations', '/hooks/automations'];
 
 function sourceFiles(): { path: string; src: string }[] {
   const out: { path: string; src: string }[] = [];
@@ -49,6 +58,14 @@ describe('rule/event component fetch URLs', () => {
   it('no component fetches a bare relative /api/v1/ URL', () => {
     const offenders = sourceFiles()
       .filter(({ src }) => /fetch\s*\(\s*['"`]\/api\/v1\//.test(src))
+      .map(({ path }) => path);
+    expect(offenders).toEqual([]);
+  });
+
+  it('the Automations screen reaches the backend only through the TS SDK', () => {
+    const offenders = sourceFiles()
+      .filter(({ path }) => SDK_ONLY.some((dir) => path.includes(dir)))
+      .filter(({ src }) => /new ActionInfo\(|dataManager\.|apiClient|from '@sdk\/client'/.test(src))
       .map(({ path }) => path);
     expect(offenders).toEqual([]);
   });

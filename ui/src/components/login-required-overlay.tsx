@@ -1,6 +1,10 @@
 import { cloudManager } from '@sdk';
 import { LockKeyhole, LogIn } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { BrowserProfileItems } from '@src/components/links/BrowserProfileItems';
 import { Button } from '@src/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
+import { fetchBrowserProfiles, type Browser } from '@src/lib/browser-profiles';
 import { trackEvent } from '@src/utils/analytics';
 import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
 import { guardCloudAction } from '@src/services/privacy-guard';
@@ -24,13 +28,23 @@ export function LoginRequiredOverlay({
   description = 'Sign in to your Flowpad Cloud account to view and send conversations.',
 }: LoginRequiredOverlayProps) {
   const { isLocal } = usePrivacyMode();
+  // The browser profiles of this machine; empty off it (hub), which hides the picker.
+  const [browsers, setBrowsers] = useState<Browser[]>([]);
+  useEffect(() => {
+    if (isLocal) return;
+    let live = true;
+    void fetchBrowserProfiles().then((list) => live && setBrowsers(list));
+    return () => {
+      live = false;
+    };
+  }, [isLocal]);
 
-  const handleLogin = () => {
+  const handleLogin = (browserProfile?: { browser: string; profile: string }) => {
     // Defensive: the button is hidden in Local mode, but route through the
     // single guard so a stray call still surfaces the standardized notice.
     if (!guardCloudAction('login')) return;
     trackEvent({ event: 'login_clicked', event_source: 'login_required_overlay' });
-    void cloudManager.login();
+    void cloudManager.login({ browserProfile });
   };
 
   return (
@@ -54,7 +68,7 @@ export function LoginRequiredOverlay({
         </div>
         {!isLocal && (
           <Button
-            onClick={handleLogin}
+            onClick={() => handleLogin()}
             size="sm"
             className="w-full justify-center"
             title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
@@ -63,6 +77,26 @@ export function LoginRequiredOverlay({
             <LogIn className="me-2 h-4 w-4" />
             Login
           </Button>
+        )}
+        {!isLocal && browsers.length > 0 && (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="-mt-2 self-end text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                data-testid="login-required-overlay-profile"
+              >
+                Select Chrome profile
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-w-xs">
+              <BrowserProfileItems
+                browsers={browsers}
+                onSelect={(browser, profile) => handleLogin({ browser, profile })}
+                testIdPrefix="login-required-overlay-profile"
+              />
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
     </div>

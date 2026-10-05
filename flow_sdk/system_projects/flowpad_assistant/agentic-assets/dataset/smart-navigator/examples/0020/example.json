@@ -1,0 +1,14 @@
+{
+  "metadata": {
+    "kind": "eval"
+  },
+  "data": {
+    "case": "20",
+    "category": "C.deeplink",
+    "tags": [
+      "alias",
+      "trap"
+    ],
+    "note": "appearance is a Preferences alias, not Claude settings"
+  }
+}

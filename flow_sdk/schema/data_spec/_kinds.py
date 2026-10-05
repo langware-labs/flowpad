@@ -58,6 +58,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.activity_spec  # noqa: F401  — registers ``activity.progress`` / ``activity.error``
     import flow_sdk.schema.data_spec.agent_spec  # noqa: F401  — registers ``agent.place``
     import flow_sdk.schema.data_spec.api_endpoint_spec  # noqa: F401  — registers ``api_endpoint.offer``
+    import flow_sdk.schema.data_spec.automation_spec  # noqa: F401  — registers ``automation.*``
     import flow_sdk.schema.data_spec.channel_spec  # noqa: F401  — registers ``conversation.channel``
     import flow_sdk.schema.data_spec.choice_spec  # noqa: F401  — registers ``ingest.choice`` / ``ingest.choice_set``
     import flow_sdk.schema.data_spec.compute_op_spec  # noqa: F401  — registers ``compute_op`` / ``compute_op.cli`` / ``compute_op.prompt`` / ``compute_op.agent`` / ``compute_op.ask``
@@ -71,6 +72,8 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.folder_change_spec  # noqa: F401  — registers ``ingest.folder_change``
     import flow_sdk.schema.data_spec.git_share_spec  # noqa: F401  — registers ``project.git_share``
     import flow_sdk.schema.data_spec.health_spec  # noqa: F401  — registers ``health.endpoint`` / ``health.node``
+    import flow_sdk.schema.data_spec.help_request_spec  # noqa: F401  — registers ``help.recipient`` / ``help.request``
+    import flow_sdk.schema.data_spec.hub_failure_spec  # noqa: F401  — registers ``hub.failure``
     import flow_sdk.schema.data_spec.icon_spec  # noqa: F401  — registers ``icon`` / ``icon.pack``
     import flow_sdk.schema.data_spec.llm_source_spec  # noqa: F401  — registers ``llm.source``
     import flow_sdk.schema.data_spec.mcp_spec  # noqa: F401  — registers ``mcp.server``
@@ -96,7 +99,7 @@ def register_builtin_kinds() -> None:
     import flow_sdk.schema.data_spec.webhook_spec  # noqa: F401
     import flow_sdk.schema.data_spec.wizard_spec  # noqa: F401  — registers ``wizard`` / ``wizard.step`` / ``wizard.issue`` / ``wizard.validation`` / ``wizard.run_detail``
     import flow_sdk.secrets  # noqa: F401  — registers ``secrets.store_ref`` / ``secrets.vault``
-    import flow_sdk.sources.setup_steps  # noqa: F401  — registers ``source.setup_update``
+    import flow_sdk.sources.setup_steps  # noqa: F401  — registers ``source.setup_update`` / ``source.setup_shown``
     import flow_sdk.sources.values  # noqa: F401  — registers ``source.*`` and ``ingest.file`` / ``ingest.profile`` / ``ingest.message``
 
     # An asset defines its own payload kinds (``ingest.message.whatsapp``) in code the registry
@@ -115,6 +118,10 @@ def _load_value_kinds(ns: "str | None") -> None:
     from flow_sdk.ingest import driver_registry  # noqa: PLC0415
 
     if ns is None:
+        # Kinds a FOLDER defines first: a driver's code may name them, never the other way round.
+        from flow_sdk.schema.data_spec import declared  # noqa: PLC0415
+
+        declared.ensure_shipped()
         driver_registry.load_driver_value_kinds()
     else:
         driver_registry.load_namespace_value_kinds(ns)

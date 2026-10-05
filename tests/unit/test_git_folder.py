@@ -491,6 +491,30 @@ async def test_token_never_appears_in_the_command_line(git_remote):
     assert any("credential.helper=" in arg for argv in seen for arg in argv)
 
 
+async def test_a_machine_credential_helper_never_answers_for_us(tmp_path: Path):
+    """Git for Windows configures Git Credential Manager machine-wide, and ``-c
+    credential.helper`` only APPENDS: the machine's helper ran first, waited for a
+    sign-in nobody saw (the "Checking access…" hang) and stored our token. A helper in
+    the global config stands in for it; ``git credential fill`` is the real lookup."""
+    import subprocess  # noqa: PLC0415
+
+    from flow_sdk.utils.git import _git_token_auth  # noqa: PLC0415
+
+    machine = tmp_path / "gitconfig"
+    machine.write_text("[credential]\n\thelper = \"!f() { echo username=machine; echo password=machine-secret; }; f\"\n")
+    args, env = _git_token_auth("s3cret-token")
+    env = {**env, "GIT_CONFIG_GLOBAL": str(machine), "GIT_CONFIG_NOSYSTEM": "1"}
+
+    filled = subprocess.run(
+        ["git", *args, "credential", "fill"], input="protocol=https\nhost=github.com\n\n",
+        env=env, capture_output=True, text=True, timeout=10,
+    )
+
+    assert "password=s3cret-token" in filled.stdout and "machine-secret" not in filled.stdout
+    # Without a token the machine's helper does run, so it must not be allowed to prompt.
+    assert _git_token_auth(None)[1]["GCM_INTERACTIVE"] == "never"
+
+
 async def test_the_raw_git_seam_still_works(git_remote):
     """``git()`` stays public on purpose: the FaaS git panel issues ~17
     subcommands and needs the raw (stdout, stderr, rc)."""

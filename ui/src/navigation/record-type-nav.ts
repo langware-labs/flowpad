@@ -8,7 +8,17 @@ import { DockPointer } from './DockPointer';
 import { openNewChat } from './open-new-chat';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { AgenticProcess, Artifact, dataContext, dataManager, editorForType, isTypeId, RecordType, TypeId } from '@sdk';
+import {
+  AgenticProcess,
+  Artifact,
+  dataContext,
+  dataManager,
+  editorForType,
+  editorsFor,
+  isTypeId,
+  RecordType,
+  TypeId,
+} from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 import { openArtifact } from '@src/components/artifacts/open-artifact';
@@ -115,9 +125,7 @@ function assetEditorPointer(assetType: string, r: SearchRow): DockPointer | null
  * becoming inert search/recent-activity rows just because this dispatcher was
  * not updated in lockstep with the editor registry. */
 function registeredAssetPointer(result: SearchRow): DockPointer | null {
-  return editorForType(result.record_type)
-    ? assetEditorPointer(result.record_type, result)
-    : null;
+  return editorForType(result.record_type) ? assetEditorPointer(result.record_type, result) : null;
 }
 
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
@@ -159,6 +167,21 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
             message: t`Session ${sessionId} is not in Claude, Codex, or Copilot history.`,
           });
       }
+    },
+  },
+  // A dataset opens in the app that edits it: its own nested editor, else one matching its
+  // declared kind, else the generic dataset editor (`flow_sdk/builtin/faas/editors.py`). No editor at
+  // all falls back to the folder, like any asset without an editor.
+  dataset: {
+    primaryAction: async (r, navigation) => {
+      const subject = `dataset-${r.record_id}`;
+      const [best] = await editorsFor(subject);
+      if (best) {
+        navigation.openDock(DockPointer.forAppEntity(new TypeId(best.typeid), { subject }));
+        return;
+      }
+      const fallback = registeredAssetPointer(r);
+      if (fallback) navigation.openDock(fallback);
     },
   },
   bookmark: {
@@ -213,7 +236,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   trigger: {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
-      return tid ? DockPointer.forEvents(tid.id) : null;
+      return tid ? DockPointer.forAutomations({ trigger: tid.id }) : null;
     },
   },
   conversation: {
@@ -406,8 +429,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
 
 /** Returns the primary DockPointer for a result, or null if the type has no navigation */
 export function getDockPointerForResult(result: SearchRow): DockPointer | null {
-  return RECORD_TYPE_NAV[result.record_type]?.dockPointer?.(result)
-    ?? registeredAssetPointer(result);
+  return RECORD_TYPE_NAV[result.record_type]?.dockPointer?.(result) ?? registeredAssetPointer(result);
 }
 
 /** Returns true if the result actually has a reachable target — not merely that

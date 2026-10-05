@@ -12,7 +12,7 @@ now holds a serialized `TypeId` (e.g. `"trigger-<uuid>"`) rather than a raw UUID
 The schedule-trigger fire path (`flow_sdk/builtin/trigger.py::_fire_schedule_job`)
 now sets `target_typeid_str=str(entity.typeid)` on the spawned `AgenticProcess`.
 
-The UI `TriggerInvocationsPanel` builds the target string with
+The UI builds the target string with
 `new TypeId(Trigger.type, trigger.id).toString()` and queries via
 `useProcessesForTarget`, which issues a `QueryFilter.match` on
 `target_typeid_str`.
@@ -20,7 +20,7 @@ The UI `TriggerInvocationsPanel` builds the target string with
 This scenario verifies both sides of the rename:
 1. The backend persists `target_typeid_str = "trigger-<trigger.id>"` on the process.
 2. The filtered list endpoint returns the spawned process for that key.
-3. The UI `TriggerInvocationsPanel` renders a row for the spawned process.
+3. The automation's Runs tab renders a row for the spawned process.
 
 Hub: `http://localhost:9008`  (backend)
 UI:  `http://localhost:4098`  (Vite dev)
@@ -42,10 +42,10 @@ UI:  `http://localhost:4098`  (Vite dev)
    Re-run the filtered query from step 2. The response must now contain at least one
    `agentic_process` whose `target_typeid_str === "trigger-<TRIGGER_ID>"`.
 
-5. **Verify `TriggerInvocationsPanel` shows the invocation row.**
-   - Navigate the UI to `/dock/triggers`.
+5. **Verify the automation's Runs tab shows the run.**
+   - Navigate the UI to `/dock/automations?trigger=<id>&tab=runs`.
    - Select the trigger `qa-target-typeid-str` in the left list.
-   - The right "Invocations" panel must show at least one entry labelled `Scheduled`
+   - The runs list must show at least one entry labelled `Scheduled`
      (coming from `TriggerLogRecord`). A link icon to open the spawned process
      should be present when the process entity is found by `useProcessesForTarget`.
 
@@ -55,5 +55,5 @@ UI:  `http://localhost:4098`  (Vite dev)
 
 - Step 4 returns ≥ 1 row whose `target_typeid_str` exactly equals
   `"trigger-<TRIGGER_ID>"`.
-- Step 5 shows an Invocations row (UI assertion — soft if browser MCP unavailable,
+- Step 5 shows a Scheduled run (UI assertion — soft if browser MCP unavailable,
   in which case step 4 is sufficient for pass).

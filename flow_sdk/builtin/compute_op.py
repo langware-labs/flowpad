@@ -31,6 +31,7 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
     AgentOp,
     AskOp,
     CliOp,
+    NavigateOp,
     OpSubkind,
     PromptOp,
     Rung,
@@ -63,8 +64,8 @@ class ComputeOp(Entity):
     label: str = APIField(default="", description="What a person calls this goal.")
     description: str = APIField(default="")
     asset_ref: str = APIField(default="", sharing=Sharing.PRIVATE)
-    subkind: OpSubkind = APIField(default=OpSubkind.CLI, description="Who does the work: cli, prompt, agent or ask.")
-    exe_data: Union[CliOp, PromptOp, AgentOp, AskOp] = APIField(
+    subkind: OpSubkind = APIField(default=OpSubkind.CLI, description="Who does the work: navigate, cli, prompt, agent or ask.")
+    exe_data: Union[NavigateOp, CliOp, PromptOp, AgentOp, AskOp] = APIField(
         default=None, description="The one call, shaped by the subkind."
     )
     output_spec_kind: Optional[str] = APIField(default=None, description="The kind this op returns.")

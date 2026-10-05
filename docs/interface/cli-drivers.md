@@ -276,8 +276,9 @@ tier→slug map ⊕ the harness's `Capability.model_map`. A missing key raises
 The same binding also has to reach a **person at a prompt**, which is what
 `flow llm` spends: `shell_binding` renders it for one terminal (exports, plus a
 generated file and the variable that points at it for codex and opencode, which
-honour no base-URL variable at all), and `user_binding` renders it into the file
-each harness reads by default so every terminal is funded. Both are thin over the
+honour no base-URL variable at all). `user_binding` renders what older versions
+wrote into the file each harness reads by default; nothing writes it any more, and
+`flow llm user clear` reads it only to take those writes back out. Both are thin over the
 same `WorkerApiAuth`, and the per-harness facts they need — `prompt_model_env_vars`
 (the model var a surface with no argv must set), `pointer_env`/`pointer_is_dir`,
 `config_filename`, `user_config_path`/`user_config_fmt`/`user_config_note` — live on

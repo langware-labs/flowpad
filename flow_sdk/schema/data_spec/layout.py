@@ -22,6 +22,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, ClassVar, Optional, Sequence, Union, get_args, get_origin
 
+from pydantic import ValidationError
+
 from flow_sdk.schema.data_spec.dataset_spec import (
     DataLayoutEnum,
     ExampleKind,
@@ -40,6 +42,8 @@ EXAMPLE_META_ALIAS = "meta.json"       # back-compat alias (example.json wins)
 
 # IO_FOLDER per-example grammar.
 INPUT, OUTPUT, GROUND_TRUTH, CONTEXT = "input", "output", "ground_truth", "context"
+#: The gold label ``annotate`` writes inside ``ground_truth/`` -- shape-agnostic, so read by name.
+ANNOTATION_FILE = "label.json"
 SLOT_BASES = (INPUT, OUTPUT, GROUND_TRUTH, CONTEXT)
 EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto ground_truth
 TEXT_EXTS = {".txt", ".md"}            # a file naming one of these is text, not binary
@@ -138,7 +142,8 @@ class DatasetLayout:
     def append_many(self, folder, rows: "Sequence[tuple]", *, dataset_id: str) -> list[str]:
         raise NotImplementedError("append is io_folder only — a CSV dataset is rewritten whole")
 
-    def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "") -> Path:
+    def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "",
+                 main: str = ANNOTATION_FILE) -> Path:
         raise NotImplementedError("annotate is io_folder only — a CSV dataset is rewritten whole")
 
     def index(self, folder, *, dataset_id: str) -> list[dict[str, Any]]:
@@ -397,48 +402,112 @@ def _declared_artifact(spec: type) -> dict[str, type]:
     return out
 
 
+def _in_slot(exc: Any, slot: str, title: str) -> Any:
+    """``exc`` -- a ``ValidationError`` from loading ONE slot -- with the slot on every location
+    (``ground_truth.route``, not ``route``), so a report names where the bad value is."""
+    details = [
+        {"type": e["type"], "loc": (slot, *e["loc"]), "input": e.get("input"), **({"ctx": e["ctx"]} if e.get("ctx") else {})}
+        for e in exc.errors(include_url=False)
+    ]
+    return ValidationError.from_exception_data(title, details)
+
+
+def _typed_occurrence(shape: type, slot_dir: Path, main: str) -> Any:
+    """One typed slot occurrence, or None when this folder does not hold one.
+
+    The walker's own main document (``decision.json`` for ``navigator.decision``) is read by the
+    walker. A gold label written by ``annotate`` is ``label.json`` -- the one name ``annotate``
+    can write without knowing the shape -- and is the shape's JSON, returned as-is for the row's
+    own validation to check.
+    Without that second arm an annotated example could never be read back typed.
+    """
+    from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe
+
+    if (slot_dir / main).is_file():
+        return _load(shape, slot_dir)
+    label = slot_dir / ANNOTATION_FILE
+    if label.is_file():
+        # The raw JSON: the row's own validation checks it, so an error names its slot
+        # (``ground_truth.route``), not just the field inside it.
+        return load_json_dict(label)
+    return None
+
+
+class _ReadShape:
+    """What reading rows of ``spec`` needs from it -- pure functions of the shape, so computed
+    once per read, never once per example."""
+
+    __slots__ = ("typed", "mains", "artifact")
+
+    def __init__(self, typed: dict, mains: dict, artifact: dict) -> None:
+        self.typed, self.mains, self.artifact = typed, mains, artifact
+
+    @classmethod
+    def of(cls, spec: type) -> "_ReadShape":
+        typed = _typed_slots(spec)
+        return cls(typed, {base: _main_document(shape) for base, shape in typed.items()}, _declared_artifact(spec))
+
+
 class FolderLayout(DatasetLayout):
     """``examples/<name>/`` — slots are files or folders; sidecars annotate them."""
 
     name = DataLayoutEnum.IO_FOLDER.value
 
     def read(self, folder, spec, *, dataset_id, field_spec=None, delimiter=","):
-        from flow_sdk.schema.data_spec.io import load as _load  # noqa: PLC0415 — cycle-safe
-
+        shape = _ReadShape.of(spec)
         rows = []
-        typed = _typed_slots(spec)
-        # Pure functions of the shape — hoisted out of the per-example loop.
-        mains = {base: _main_document(shape) for base, shape in typed.items()}
-        artifact = _declared_artifact(spec)
         for ex_dir in _example_dirs(folder):
-            row = self.read_example(ex_dir)
-            if row is None:
-                continue  # no input DATA in any form → not an example
-            # A slot whose declared shape is an ordinary ``DataSpec`` was
-            # written by the generic walker, so it is read by the same one.
-            # ``read_example`` classifies bytes on disk and cannot know the
-            # declared type; this is the one place that does.
-            for base, shape in typed.items():
-                # A2: read what was WRITTEN. The write side decides per value,
-                # so a slot holding an artifact went down the artifact path even
-                # though its declared shape is a plain ``DataSpec``. Keying the
-                # read on the walker's own main document makes the two agree by
-                # looking, instead of by two rules that can drift.
-                if (ex_dir / base / mains[base]).is_file():
-                    row[base] = _load(shape, ex_dir / base)
-            # A slot the spec declares as a ``FileRef`` comes back as one, not
-            # as the folder the scan saw it sitting in. The scan classifies
-            # BYTES and is right about them; only the spec knows which was
-            # meant, and without asking it `write` → `read` was not identity.
-            for base in artifact:
-                held = row.get(base)
-                if isinstance(held, FolderSpec) and len(held.files) == 1:
-                    (only,) = held.files.values()
-                    if isinstance(only, FileRef):
-                        row[base] = only
-            row["id"] = example_id(dataset_id, ex_dir.name)
-            rows.append(spec.model_validate(row))
+            row = self.read_typed(ex_dir, spec, dataset_id=dataset_id, shape=shape)
+            if row is not None:
+                rows.append(row)
         return rows
+
+    def read_typed(self, ex_dir: Path, spec: type, *, dataset_id: str, shape: "Optional[_ReadShape]" = None) -> Any:
+        """ONE example as ``spec``; None when the folder holds no input data. A row that does not
+        fit the spec raises its ``ValidationError``, so a caller can say which row and why."""
+        shape = shape or _ReadShape.of(spec)
+        typed, mains, artifact = shape.typed, shape.mains, shape.artifact
+        row = self.read_example(ex_dir)
+        if row is None:
+            return None  # no input DATA in any form → not an example
+        # A slot whose declared shape is an ordinary ``DataSpec`` was
+        # written by the generic walker, so it is read by the same one.
+        # ``read_example`` classifies bytes on disk and cannot know the
+        # declared type; this is the one place that does.
+        for base, shape in typed.items():
+            # A2: read what was WRITTEN. The write side decides per value,
+            # so a slot holding an artifact went down the artifact path even
+            # though its declared shape is a plain ``DataSpec``. Keying the
+            # read on the walker's own main document makes the two agree by
+            # looking, instead of by two rules that can drift.
+            #
+            # Every occurrence, not only the bare folder: N values are written as
+            # ``«slot»-1/``, ``«slot»-2/`` (a list of acceptable gold answers), and
+            # reading just ``«slot»/`` left those as raw folders that failed the
+            # typed validation below.
+            held = row.get(base)
+            try:
+                if isinstance(held, list):
+                    loaded = [_typed_occurrence(shape, ex_dir / f"{base}-{n}", mains[base])
+                              for n in range(1, len(held) + 1)]
+                    if all(v is not None for v in loaded):
+                        row[base] = loaded
+                elif (value := _typed_occurrence(shape, ex_dir / base, mains[base])) is not None:
+                    row[base] = value
+            except ValidationError as exc:
+                raise _in_slot(exc, base, spec.__name__) from exc
+        # A slot the spec declares as a ``FileRef`` comes back as one, not
+        # as the folder the scan saw it sitting in. The scan classifies
+        # BYTES and is right about them; only the spec knows which was
+        # meant, and without asking it `write` → `read` was not identity.
+        for base in artifact:
+            held = row.get(base)
+            if isinstance(held, FolderSpec) and len(held.files) == 1:
+                (only,) = held.files.values()
+                if isinstance(only, FileRef):
+                    row[base] = only
+        row["id"] = example_id(dataset_id, ex_dir.name)
+        return spec.model_validate(row)
 
     @staticmethod
     def _scan(ex_dir: Path) -> tuple[dict[str, dict[Optional[int], Path]], list[Path]]:
@@ -568,7 +637,8 @@ class FolderLayout(DatasetLayout):
         lookup table."""
         return next((p for p in _example_dirs(folder) if example_id(dataset_id, p.name) == example_id_), None)
 
-    def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "") -> Path:
+    def annotate(self, folder, example_id_: str, ground_truth: Any, *, dataset_id: str, by: str = "",
+                 main: str = ANNOTATION_FILE) -> Path:
         """Write the gold answer of one example — ``ground_truth/label.json`` —
         and record who did it in ``example.json`` (``metadata.annotations``).
         A folder slot, so the layout reads it back as data (a bare ``.json`` at
@@ -576,8 +646,18 @@ class FolderLayout(DatasetLayout):
         ex_dir = self.example_dir(folder, example_id_, dataset_id=dataset_id)
         if ex_dir is None:
             raise LookupError(f"no example {example_id_} in {folder}")
-        node = FolderSpec(path=GROUND_TRUTH, files={"label.json": FileRef(path=f"{GROUND_TRUTH}/label.json")})
-        self._write_node(ex_dir, None, node, {f"{GROUND_TRUTH}/label.json": ground_truth}, None)
+        # The gold is REPLACED, never added to: a typed reader prefers the slot's main document,
+        # so a label written beside an older gold was silently lost on the next read.
+        for old in [ex_dir / GROUND_TRUTH, *ex_dir.glob(f"{GROUND_TRUTH}-*")]:
+            if old.is_dir():
+                shutil.rmtree(old)
+        # ``main`` is the shape's own main document (``decision.json``) when the caller knows the
+        # shape, so the slot reads back exactly as the walker writes it; ``label.json`` otherwise.
+        values = ground_truth if isinstance(ground_truth, list) and main != ANNOTATION_FILE else [ground_truth]
+        for n, value in enumerate(values, 1):
+            slot = GROUND_TRUTH if len(values) == 1 else f"{GROUND_TRUTH}-{n}"
+            node = FolderSpec(path=slot, files={main: FileRef(path=f"{slot}/{main}")})
+            self._write_node(ex_dir, None, node, {f"{slot}/{main}": value}, None)
         metadata, data = _load_example_meta(ex_dir)
         annotations = list(metadata.get("annotations") or [])
         annotations.append({"by": by, "at": datetime.now(timezone.utc).isoformat()})

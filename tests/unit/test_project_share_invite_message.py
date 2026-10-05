@@ -12,6 +12,7 @@ sent: the message moved to the client.
 Only the network hops are stubbed: ``FlowpadClient.request`` and
 ``flow_sdk.utils.hub.hub_post`` (the message body upload).
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -46,7 +47,14 @@ def _ok(data) -> _FakeResponse:
 
 
 def _user(user_id: str, *, email: str | None = None, status: str = "approved", name: str = "Someone") -> dict:
-    return {"type": "user", "user_id": user_id, "user_email": email, "user_name": name, "role": "member", "status": status}
+    return {
+        "type": "user",
+        "user_id": user_id,
+        "user_email": email,
+        "user_name": name,
+        "role": "member",
+        "status": status,
+    }
 
 
 def _team(team_id: str, name: str = "A team") -> dict:
@@ -78,6 +86,8 @@ def hub(monkeypatch):
     calls.refuse = {}
 
     async def fake_request(self, method, path, **kwargs):
+        # The shared hub client sends full URLs; the rest of these stubs speak graph paths.
+        path = "/graph/" + path.split("/graph/", 1)[1] if "/graph/" in path else path
         body = kwargs.get("json")
         calls.append((method, path, body))
         for suffix, status in calls.refuse.items():
@@ -103,9 +113,10 @@ def hub(monkeypatch):
 
     monkeypatch.setattr(
         "flow_sdk.cli.auth.credentials.load_credentials",
-        lambda *a, **k: SimpleNamespace(api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}),
+        lambda *a, **k: SimpleNamespace(
+            api_key="test-key", user={"id": SHARER, "email": "sharer@example.com"}, is_expired=lambda *_: False
+        ),
     )
-    monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: None))
     monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient.request", fake_request)
     monkeypatch.setattr("flow_sdk.utils.hub.hub_post", fake_hub_post)
     # The invite message takes the generic send, which reaches the hub only for
@@ -116,9 +127,9 @@ def hub(monkeypatch):
 
 def _project(hub: _Hub, name: str, roster: list[dict] | None = None) -> Project:
     proj = Project(name=name)
-    hub.rosters[f"/graph/project/{proj.id}/members"] = roster if roster is not None else [
-        _user(SHARER, email="sharer@example.com", name="Sharer") | {"role": "owner"}
-    ]
+    hub.rosters[f"/graph/project/{proj.id}/members"] = (
+        roster if roster is not None else [_user(SHARER, email="sharer@example.com", name="Sharer") | {"role": "owner"}]
+    )
     return proj
 
 
@@ -178,14 +189,23 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
     (conversation_target,) = person_conv["invitation_targets"]
     assert conversation_target["typeid"].startswith("conversation-") and conversation_target["role"] == "member"
     assert person_conv["notify_by_email"] is False
-    assert person_conv_path == f"/graph/conversation/{conversation_target['typeid'][len('conversation-'):]}/members"
+    assert person_conv_path == f"/graph/conversation/{conversation_target['typeid'][len('conversation-') :]}/members"
 
-    assert _group_grants(hub, proj) == [
-        {"principal": f"team-{ZSCHOOL}", "invitation_targets": [{"typeid": f"project-{proj.id}", "role": "member"}]}
-    ]
+    # The team's project grant is the one the hub emails to each of its people, so it
+    # carries the note and the project landing exactly like the person invite.
+    (team_grant,) = _group_grants(hub, proj)
+    assert team_grant["principal"] == f"team-{ZSCHOOL}"
+    assert team_grant["invitation_targets"] == [{"typeid": f"project-{proj.id}", "role": "member"}]
+    assert team_grant["message"] == "Welcome aboard"
+    assert team_grant["callback_override"] == person["callback_override"]
+    assert "notify_by_email" not in team_grant
     ((path, team_conv_grant),) = [(p, b) for p, b in _conversation_grants(hub) if "principal" in b]
     assert team_conv_grant["principal"] == f"team-{ZSCHOOL}"
-    assert path == f"/graph/conversation/{team_conv_grant['invitation_targets'][0]['typeid'][len('conversation-'):]}/members"
+    assert team_conv_grant["notify_by_email"] is False
+    assert (
+        path
+        == f"/graph/conversation/{team_conv_grant['invitation_targets'][0]['typeid'][len('conversation-') :]}/members"
+    )
 
     assert not [p for m, p, _ in hub if m == "GET" and p.startswith("/graph/team/")]
     assert len(_conversation_creates(hub)) == 2
@@ -193,7 +213,7 @@ async def test_person_invite_carries_the_conversation_and_a_team_is_one_group_gr
 
     result = proj.last_share_result
     assert [r.user_id for r in result.invited] == [ISHAY]
-    assert result.invited[0].conversation_id == conversation_target["typeid"][len("conversation-"):]
+    assert result.invited[0].conversation_id == conversation_target["typeid"][len("conversation-") :]
     assert [(t.team, t.conversation_id is not None) for t in result.granted_teams] == [(f"team-{ZSCHOOL}", True)]
     assert result.skipped_teams == [] and result.failed_teams == [] and result.failed == []
 
@@ -228,7 +248,9 @@ async def test_a_team_already_on_the_roster_is_skipped_without_any_call(hub):
 
     assert _group_grants(hub, proj) == [] and _conversation_creates(hub) == []
     result = proj.last_share_result
-    assert [(t.team, t.name, t.reason) for t in result.skipped_teams] == [(f"team-{ZSCHOOL}", "zschool", "already_granted")]
+    assert [(t.team, t.name, t.reason) for t in result.skipped_teams] == [
+        (f"team-{ZSCHOOL}", "zschool", "already_granted")
+    ]
     assert result.granted_teams == []
 
 
@@ -432,12 +454,8 @@ async def test_share_action_carries_teams_and_note_and_returns_the_result(hub, m
     monkeypatch.setattr(share_action, "get_current_request_info", lambda: _Req())
     monkeypatch.setattr(Project, "get_one", classmethod(fake_get_one))
     monkeypatch.setattr(Project, "save", fake_save)
-    monkeypatch.setattr(
-        "flow_sdk.app.actions.project_publish.assert_project_publishable", fake_publishable
-    )
-    monkeypatch.setattr(
-        "flow_sdk.app.actions.flow_message_action._learn_address_book", lambda entries: _noop()
-    )
+    monkeypatch.setattr("flow_sdk.app.actions.project_publish.assert_project_publishable", fake_publishable)
+    monkeypatch.setattr("flow_sdk.app.actions.flow_message_action._learn_address_book", lambda entries: _noop())
 
     resp = await share_action.share_entity()
 
@@ -486,9 +504,7 @@ async def test_share_action_on_a_published_project_invites_without_publishing(hu
     monkeypatch.setattr(Project, "get_one", classmethod(fake_get_one))
     monkeypatch.setattr(Project, "save", fake_save)
     monkeypatch.setattr("flow_sdk.app.actions.project_publish.assert_project_publishable", refuse_publish)
-    monkeypatch.setattr(
-        "flow_sdk.app.actions.flow_message_action._learn_address_book", lambda entries: _noop()
-    )
+    monkeypatch.setattr("flow_sdk.app.actions.flow_message_action._learn_address_book", lambda entries: _noop())
 
     resp = await share_action.share_entity()
 

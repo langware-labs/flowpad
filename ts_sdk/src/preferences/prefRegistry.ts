@@ -31,9 +31,14 @@ export enum PrefKey {
   SOUND_ENABLED = 'preferences.notifications.sound_enabled',
   SOUND_KEY = 'preferences.notifications.sound_key',
   SHARE_MESSAGE_STATUS = 'preferences.notifications.share_message_status',
+  /** Signed out, a search-line request asks whether to sign in for smart navigation: 'ask' | 'skip'.
+   *  The prompt's "Don't ask again" writes 'skip' (ui/src/navigation/smart-ask.ts). */
+  SMART_NAVIGATION_SIGNIN = 'preferences.notifications.smart_navigation_signin',
   SCROLLBACK_LINES = 'preferences.advanced.scrollback_lines',
   EXPERIMENTAL_FLAGS = 'preferences.advanced.experimental_flags',
   INDEXER_BACKEND = 'preferences.advanced.indexer_backend',
+  /** SmartNavigationLog: collect every smart-navigation decision into a dataset in Flowpad's temp folder. */
+  SMART_NAVIGATION_LOG = 'preferences.advanced.smart_navigation_log',
 
   // --- Auto-index a project on selection (the "Auto Index" tab) ---
   // Read backend-side via flow_sdk/fs_store/indexer/auto_index.py, which owns
@@ -287,6 +292,30 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     dataType: PrefDataType.BOOL,
     defaultValue: true,
   },
+  [PrefKey.SMART_NAVIGATION_SIGNIN]: {
+    key: PrefKey.SMART_NAVIGATION_SIGNIN,
+    surfaced: true,
+    category: 'notifications',
+    label: 'Sign-in prompt for smart navigation',
+    description:
+      'When you are signed out, ask whether to sign in so the search line can open screens directly.',
+    dataType: PrefDataType.STRING,
+    defaultValue: 'ask',
+    options: [
+      { value: 'ask', label: 'Ask every time' },
+      { value: 'skip', label: "Don't ask" },
+    ],
+  },
+  [PrefKey.SMART_NAVIGATION_LOG]: {
+    key: PrefKey.SMART_NAVIGATION_LOG,
+    surfaced: true,
+    category: 'advanced',
+    label: 'Smart navigation log',
+    description:
+      "Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then.",
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
+  },
   [PrefKey.SCROLLBACK_LINES]: {
     key: PrefKey.SCROLLBACK_LINES,
     surfaced: true,
@@ -357,7 +386,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description:
       'Project create indexes once, as the project is created. First selection indexes the first time you open a project. Every selection re-indexes on each switch into it — note that even a Fast run still walks the whole project, so this is the expensive option on large trees.',
     dataType: PrefDataType.STRING,
-    defaultValue: 'first_selection',
+    defaultValue: 'every_selection',
     options: AUTO_INDEX_TRIGGER_OPTIONS,
   },
   [PrefKey.AUTO_INDEX_FUNCTION]: {
@@ -726,10 +755,7 @@ export function isPrefVisible(info: PrefInfo, read: (key: PrefKey) => unknown): 
 }
 
 /** Surfaced prefs for a category, minus rows hidden by an unmet `visibleWhen`. */
-export function visiblePrefsForCategory(
-  category: string,
-  read: (key: PrefKey) => unknown,
-): PrefInfo[] {
+export function visiblePrefsForCategory(category: string, read: (key: PrefKey) => unknown): PrefInfo[] {
   return prefsForCategory(category).filter((info) => isPrefVisible(info, read));
 }
 

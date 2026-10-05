@@ -1,0 +1,17 @@
+{
+  "utterance": "\u05e4\u05ea\u05d7 \u05d0\u05ea \u05d4\u05de\u05e9\u05d9\u05de\u05d5\u05ea",
+  "here": {
+    "view": "home",
+    "pointer": null,
+    "page": "desk",
+    "address": "/dock/home",
+    "project": {
+      "typeid": "project-6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b",
+      "title": "flowpad-oss",
+      "path": "/Users/dana/Flowpad workspace/flowpad-oss"
+    },
+    "process": null,
+    "entity": null,
+    "last_shown": null
+  }
+}

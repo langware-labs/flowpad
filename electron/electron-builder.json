@@ -11,6 +11,7 @@
     "main.js",
     "preload.js",
     "shutdown.js",
+    "quit-gate.js",
     "backend-wait.js",
     "startup-error.js",
     "zip-writer.js",

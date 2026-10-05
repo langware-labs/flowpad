@@ -268,7 +268,7 @@ def test_defaults_when_preferences_json_is_empty():
     cfg = ai.read_auto_index_config()
     assert cfg.enabled is True
     assert cfg.index_type is ai.IndexType.FAST
-    assert cfg.trigger is ai.IndexTrigger.FIRST_SELECTION
+    assert cfg.trigger is ai.IndexTrigger.EVERY_SELECTION
     assert cfg.force is False
 
 
@@ -281,7 +281,7 @@ def test_unrecognized_stored_values_fall_back_to_defaults():
     write_instance_pref(ai.PREF_AUTO_INDEX_TRIGGER, "Every Selection")
     write_instance_pref(ai.PREF_AUTO_INDEX_TYPE, "banana")
     cfg = ai.read_auto_index_config()
-    assert cfg.trigger is ai.IndexTrigger.FIRST_SELECTION
+    assert cfg.trigger is ai.IndexTrigger(ai.DEFAULT_AUTO_INDEX_TRIGGER)
     assert cfg.index_type is ai.IndexType.FAST
 
 

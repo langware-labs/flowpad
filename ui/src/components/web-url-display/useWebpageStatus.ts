@@ -25,6 +25,16 @@ function check(url: string, fresh: boolean): Promise<WebpageStatus | null> {
   return pending;
 }
 
+/**
+ * Drop `url`'s cached check, so the next look asks the backend again. Synchronous on
+ * purpose: when the backend shows the page again (a repaired server), the display is
+ * often remounted by that same show, and a re-check queued in the old instance's state
+ * dies with it — the new instance would read the stale "unreachable" from here.
+ */
+export function forgetWebpageStatus(url: string): void {
+  checks.delete(url);
+}
+
 /** Test seam: the cache is module-level, so each test starts from nothing. */
 export function clearWebpageStatusCache(): void {
   checks.clear();

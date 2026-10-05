@@ -5,6 +5,8 @@ import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useContext, useWarnings } from '@sdk/react/hooks';
+import { useSetupIncompleteWarning } from '@src/components/setup-incomplete/use-setup-incomplete-warning';
+import { useSharedProjectWarnings } from '@src/components/task-receive/use-shared-project-warnings';
 import { openProjectSetup } from '@src/components/project-setup/project-setup-store';
 import { notificationText, runAction, runCommand, useAlertStore } from '@src/notifications';
 import type { NotificationData, NotificationLevel } from '@src/notifications';
@@ -24,7 +26,7 @@ import {
   WifiOff,
   X,
 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 // Map icon names to Lucide components
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -120,6 +122,8 @@ function CopyButton({ text }: { text: string }) {
 interface WarningItemProps {
   warning: UserWarning;
   onClick: () => void;
+  /** The warning's own button (`warning.action`), already wired to close the popover. */
+  onAction: () => void;
 }
 
 /**
@@ -127,21 +131,35 @@ interface WarningItemProps {
  * (cloud down, no harness, sniffer on). Deliberately NOT dismissible: it goes
  * away when the condition does. Only the logged alerts below can be dismissed.
  */
-function WarningItem({ warning, onClick }: WarningItemProps) {
+function WarningItem({ warning, onClick, onAction }: WarningItemProps) {
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
 
   return (
     <div className={`${ITEM_CLASS} ${colors.border}`} data-testid="warnings-popover-warning">
-      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 items-start gap-3 text-start">
-        <div className={`rounded-md p-1.5 ${colors.bg}`}>
-          <Icon className={`h-4 w-4 ${colors.text}`} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium">{warning.message}</p>
-          {warning.description && <p className="mt-0.5 text-xs text-muted-foreground">{warning.description}</p>}
-        </div>
-      </button>
+      <div className="min-w-0 flex-1">
+        <button type="button" onClick={onClick} className="flex w-full items-start gap-3 text-start">
+          <div className={`rounded-md p-1.5 ${colors.bg}`}>
+            <Icon className={`h-4 w-4 ${colors.text}`} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{warning.message}</p>
+            {warning.description && <p className="mt-0.5 text-xs text-muted-foreground">{warning.description}</p>}
+          </div>
+        </button>
+        {/* Beside the row's own click target, not inside it: a button never nests in a button. The
+            start margin is the icon's width plus the gap, so it lines up under the text. */}
+        {warning.action && (
+          <button
+            type="button"
+            onClick={onAction}
+            className="ms-10 mt-2 rounded bg-primary px-2 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+            data-testid="warnings-popover-warning-action"
+          >
+            {warning.action.label}
+          </button>
+        )}
+      </div>
       <div className="flex shrink-0 items-start gap-0.5">
         <CopyButton text={warning.description ? `${warning.message}\n${warning.description}` : warning.message} />
         {/* Everything in this popover is a warning by construction, so a derived
@@ -215,7 +233,13 @@ function AlertItem({ alert, onDismiss }: { alert: NotificationData; onDismiss: (
 }
 
 export function WarningsPopover() {
-  const { warnings } = useWarnings();
+  const { warnings: derivedWarnings } = useWarnings();
+  const setupWarning = useSetupIncompleteWarning();
+  const sharedProjectWarnings = useSharedProjectWarnings();
+  const warnings = useMemo(
+    () => [...derivedWarnings, ...(setupWarning ? [setupWarning] : []), ...sharedProjectWarnings],
+    [derivedWarnings, setupWarning, sharedProjectWarnings],
+  );
   const alerts = useAlertStore((s) => s.alerts);
   const dismissAlert = useAlertStore((s) => s.dismiss);
   const dismissAllAlerts = useAlertStore((s) => s.dismissAll);
@@ -307,7 +331,15 @@ export function WarningsPopover() {
         </div>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
           {warnings.map((warning) => (
-            <WarningItem key={warning.id} warning={warning} onClick={() => handleWarningClick(warning)} />
+            <WarningItem
+              key={warning.id}
+              warning={warning}
+              onClick={() => handleWarningClick(warning)}
+              onAction={() => {
+                warning.action?.onClick();
+                setOpen(false);
+              }}
+            />
           ))}
           {alerts.map((alert) => (
             <AlertItem key={alert.id} alert={alert} onDismiss={() => dismissAlert(alert.id)} />

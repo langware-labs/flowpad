@@ -2,6 +2,7 @@ import { t } from '@lingui/core/macro';
 import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager, tabManager } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
 import { notify } from './notify';
+import { settleAsk } from './pending-asks';
 import type { NotificationAction } from './types';
 
 /**
@@ -20,6 +21,14 @@ export function registerCommand(name: string, fn: CommandHandler): void {
   registry.set(name, fn);
 }
 
+// The answer to an `askNotification` button. Built in here rather than registered by ask.ts as it
+// loads: ask.ts can load while THIS module is still loading (notify → the toast UI → … → the
+// notifications index → ask.ts), and a registration then reaches `registry` before it exists.
+registry.set('notification.answer', (args, ctx) => {
+  settleAsk(ctx.id, { value: String(args.value), remember: args.remember === true });
+  notify.dismiss(ctx.id);
+});
+
 export function runCommand(name: string, args: CommandArgs, ctx: { id: string }): void {
   const fn = registry.get(name);
   if (fn) fn(args, ctx);
@@ -36,9 +45,10 @@ export function navigateTo(href: string): void {
   else window.location.assign(href);
 }
 
-/** Run a notification action: imperative `command`, else URL-first `href`. */
-export function runAction(action: NotificationAction, id: string): void {
-  if (action.command) runCommand(action.command, action.args ?? {}, { id });
+/** Run a notification action: imperative `command`, else URL-first `href`. `extra` is merged into
+ *  the command's args — what the toast itself knows at click time (the `remember` box). */
+export function runAction(action: NotificationAction, id: string, extra?: CommandArgs): void {
+  if (action.command) runCommand(action.command, { ...action.args, ...extra }, { id });
   else if (action.href) navigateTo(action.href);
 }
 
@@ -53,12 +63,14 @@ registerCommand('terminal.terminate', (args) => {
   if (args.typeId) void tabManager.closeTarget(String(args.typeId));
 });
 
-// `Resolve` on a failed-push toast: launch an agentic process in the current
-// project, seeded with a conflict-resolution prompt for the given branch. Uses
+// `Resolve` on a failed push/pull toast: launch an agentic process in the current
+// project, seeded with a conflict-resolution prompt for the given branch
+// (`origin: 'pull'` finishes the rebase without pushing). Uses
 // dataContext.project/computeNode (AgenticProcess.openTab default).
 registerCommand('git.resolve-conflict', (args) => {
   const branch = String(args.branch ?? '');
-  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch)).catch((e: unknown) => {
+  const origin = args.origin === 'pull' ? 'pull' : 'push';
+  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch, origin)).catch((e: unknown) => {
     notify.error({ title: t`Could not start resolver`, message: String(e) });
   });
 });

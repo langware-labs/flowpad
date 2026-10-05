@@ -30,12 +30,6 @@ def test_navigation_skill_description_covers_file_followups():
 # is checked against the catalogue it claims to mirror — otherwise it rots the same
 # way, silently, while the suite stays green.
 
-#: `triggers` / `signals` / `cron` decode to the same screen as `events`. The table
-#: names the canonical one and folds these into its "also called" column, so an
-#: agent is never offered four addresses for one destination.
-EVENTS_TWINS = {ViewType.TRIGGERS, ViewType.SIGNALS, ViewType.CRON}
-
-
 def _table_rows() -> dict[str, tuple[str, set[str]]]:
     """`{address slug: (screen label, aliases)}` parsed out of the skill."""
     source = SKILL_PATH.read_text(encoding="utf-8")
@@ -55,7 +49,7 @@ def test_the_table_covers_every_destination():
     expected = {
         view.value
         for view, meta in VIEW_META.items()
-        if meta.addressable and view not in EVENTS_TWINS
+        if meta.addressable
     }
     assert set(_table_rows()) == expected
 
@@ -72,8 +66,6 @@ def test_the_table_prints_the_catalogue_label_and_aliases():
         meta = VIEW_META[ViewType(slug)]
         assert label == meta.label, f"{slug}: table says {label!r}, catalogue says {meta.label!r}"
         expected = set(meta.aliases)
-        if slug == ViewType.EVENTS.value:
-            expected |= {twin.value for twin in EVENTS_TWINS}
         assert aliases == expected, f"{slug}: aliases drifted"
 
 
@@ -81,7 +73,7 @@ def test_pointer_bearing_screens_are_shown_with_their_pointer():
     """`flow show view helpdesk` is an error; the table must not imply otherwise."""
     source = SKILL_PATH.read_text(encoding="utf-8")
     for view, meta in VIEW_META.items():
-        if not meta.addressable or view in EVENTS_TWINS:
+        if not meta.addressable:
             continue
         wanted = f"`{view.value}/{meta.pointer_form}`" if meta.pointer is PointerRequirement.REQUIRED else f"`{view.value}`"
         assert wanted in source, f"{view.value} should appear as {wanted}"

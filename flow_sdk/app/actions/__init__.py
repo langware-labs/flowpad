@@ -4,6 +4,7 @@
 from . import (  # noqa: F401
     add_translation_action,
     address_book_action,
+    ask_for_help_action,
     context_resolve_action,
     context_share_action,
     diagnose_action,
@@ -14,6 +15,7 @@ from . import (  # noqa: F401
     group_task_action,
     helpdesk_action,
     icons_action,
+    llm_endpoint_models_action,
     machine_enroll_action,
     members_action,
     message_attachment_action,

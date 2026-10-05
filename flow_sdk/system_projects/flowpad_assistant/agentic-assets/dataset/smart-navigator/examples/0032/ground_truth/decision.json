@@ -1,0 +1,9 @@
+{
+  "route": "quick",
+  "target": {
+    "kind": "entity",
+    "value": "project-6d1e2f3a-4b5c-4d0e-8f1a-2b3c4d5e6f7a"
+  },
+  "verb": "navigate",
+  "confidence": null
+}

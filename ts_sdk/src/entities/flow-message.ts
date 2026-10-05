@@ -25,11 +25,13 @@ export enum AttachmentType {
  *  - NA        : no body needed (text-only, or inline-only attachments).
  *  - UPLOADING : sender is staging the body; receivers must wait.
  *  - READY     : body is available at fs/download/<BODY_FILENAME>.
- *  Transitions are hub-enforced: NA is terminal; UPLOADING → READY only. */
+ *  - FAILED    : an upload attempt failed; the sender's outbox retries it (receivers wait).
+ *  NA is terminal; UPLOADING / FAILED → READY. */
 export enum BodyStatus {
   NA = 'na',
   UPLOADING = 'uploading',
   READY = 'ready',
+  FAILED = 'failed',
 }
 
 /** Discriminator for special FlowMessage kinds. Mirrors
@@ -120,11 +122,12 @@ export function isAttachmentMissing(
 
 /** Delivery receipt. Mirrors the hub-side schema. Monotonic transitions only:
  *  created → sent → delivered → received.
+ *  - pending_send: composed while signed out; held locally until a login sends it (🕐 Pending)
  *  - created:   local only, hub has not accepted it (🕐 Pending)
  *  - sent:      accepted/stored on the hub (✓)
  *  - delivered: recipient's client pulled it (✓✓)
  *  - received:  recipient read it (✓✓ blue) */
-export type DeliveryStatus = 'created' | 'sent' | 'delivered' | 'received';
+export type DeliveryStatus = 'pending_send' | 'created' | 'sent' | 'delivered' | 'received';
 
 /** Named event types emitted by ``Conversation`` and ``FlowMessage``. Use
  *  these instead of bare strings so call sites are typo-proof:
@@ -178,6 +181,10 @@ export interface IFlowMessage extends IEntity {
    *  Invitation as the first row of a conversation. The invitation TypeId
    *  lives in ``context_entities``. */
   kind?: FlowMessageKind;
+  /** This machine wrote it to send (the outbox's "mine"). Local only. */
+  outbound?: boolean;
+  /** Why the hub does not have it yet — set on a failed attempt, cleared when it lands. Local only. */
+  delivery_failure?: import('./help-request').HubFailure | null;
   /** Body-bundle lifecycle on the hub. Defaults to NA when the message has
    *  no body. Stamped UPLOADING at hub add_message time when the incoming
    *  attachments require a packed body; sender flips to READY after upload.
@@ -263,6 +270,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   is_draft?: boolean;
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
+  outbound?: boolean;
+  delivery_failure?: import('./help-request').HubFailure | null;
   body_downloaded?: boolean;
   body_missing_attachments?: AttachmentReference[];
   body_unpacked?: boolean;
@@ -301,6 +310,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
+    this.outbound = entity.outbound ?? false;
+    this.delivery_failure = entity.delivery_failure ?? null;
     this.body_downloaded = entity.body_downloaded ?? false;
     this.body_missing_attachments = entity.body_missing_attachments ?? [];
     this.body_unpacked = entity.body_unpacked ?? false;

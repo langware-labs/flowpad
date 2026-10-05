@@ -38,8 +38,8 @@ export type RailItemId =
   /** OAuth connections, API-key credentials and the FlowPad login — one screen. */
   | 'credentials'
   | 'discover'
-  /** Rules and the events they fire on — replaced `triggers` + `signals`. */
-  | 'events'
+  /** Automations — "when X, do Y": the list, their runs, the event bus. Was `events`. */
+  | 'automations'
   | 'hooks'
   | 'llm-sources'
   | 'capabilities'
@@ -75,22 +75,11 @@ export type RailPlacement =
   /** Behind the chevron expander (revealed on hover, or when active). */
   | 'overflow';
 
-/**
- * A content gate: the item is only worth a rail slot once the thing it opens
- * actually exists. Answered by the component (which owns the live queries) and
- * passed into {@link resolveRail}, so this module stays pure and testable.
- */
-export type RailGate =
-  /** At least one Conversation exists. */
-  'conversations';
-
 export type RailSpec = {
   id: RailItemId;
   /** Earliest mode this item appears in; inherited by every fuller mode. */
   from: ViewMode;
   placement: RailPlacement;
-  /** When set, the item also requires this gate to be satisfied. */
-  gate?: RailGate;
 };
 
 /** The mode hierarchy, simplest → fullest. Membership accumulates along it. */
@@ -111,7 +100,11 @@ export const MODE_CHAIN = [ViewMode.Vibe, ViewMode.Standard, ViewMode.Advanced, 
  */
 export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'chats', from: ViewMode.Vibe, placement: 'top' },
-  { id: 'stream_inbox', from: ViewMode.Vibe, placement: 'top', gate: 'conversations' },
+  // Ungated, like every slot: it used to need "a conversation exists", but a
+  // logout purges the hub's conversations — so the icon vanished in exactly the
+  // state where its screen says "Login required", the only way back in. An
+  // empty or signed-out stream inbox is a state the screen renders, not a missing room.
+  { id: 'stream_inbox', from: ViewMode.Vibe, placement: 'top' },
   // Vibe, beside the stream inbox rather than down with `hooks` and `llm-sources`:
   // connecting Gmail or Slack is what makes a source or an agent work at all, so
   // it is not a settings destination you visit once. Ungated for the same reason
@@ -128,11 +121,10 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'rag', from: ViewMode.Advanced, placement: 'top' },
   { id: 'discover', from: ViewMode.Dev, placement: 'top' },
   { id: 'graph-workflows', from: ViewMode.Dev, placement: 'top' },
-  // Rules and the events they fire on, merged. Took BOTH the old `signals`
-  // (Dev/top) and `triggers` (Advanced/overflow) slots: Advanced because
-  // dropping to Dev would have removed rules from a mode that already had
-  // them, top because a screen you operate does not belong behind a chevron.
-  { id: 'events', from: ViewMode.Advanced, placement: 'top' },
+  // Automations (was Events, which took the old `signals` and `triggers` slots):
+  // Advanced because dropping to Dev would remove rules from a mode that already
+  // had them, top because a screen you operate does not belong behind a chevron.
+  { id: 'automations', from: ViewMode.Advanced, placement: 'top' },
   // Advanced, not Dev: 'what did my agent produce' is an ordinary question,
   // and the answer was previously unreachable for any run without a
   // spawning entity to browse to.
@@ -145,16 +137,11 @@ export const RAIL_ITEMS: readonly RailSpec[] = [
   { id: 'capabilities', from: ViewMode.Dev, placement: 'overflow' },
 ];
 
-/** All gates false — the shape callers build on. */
-export const NO_GATES: Record<RailGate, boolean> = {
-  conversations: false,
-};
-
 /**
- * The rail for `mode`, in {@link RAIL_ITEMS} order, with unsatisfied gates
- * dropped. Callers partition the result by `placement`; they must NOT re-sort it.
+ * The rail for `mode`, in {@link RAIL_ITEMS} order. Callers partition the result
+ * by `placement`; they must NOT re-sort it.
  */
-export function resolveRail(mode: ViewMode, gates: Record<RailGate, boolean>): readonly RailSpec[] {
+export function resolveRail(mode: ViewMode): readonly RailSpec[] {
   const reach = MODE_CHAIN.indexOf(mode);
-  return RAIL_ITEMS.filter((item) => MODE_CHAIN.indexOf(item.from) <= reach && (!item.gate || gates[item.gate]));
+  return RAIL_ITEMS.filter((item) => MODE_CHAIN.indexOf(item.from) <= reach);
 }

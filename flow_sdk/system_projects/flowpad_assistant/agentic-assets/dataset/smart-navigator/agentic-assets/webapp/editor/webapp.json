@@ -1,0 +1,7 @@
+{
+  "name": "editor",
+  "title": "SmartNavigator \u2014 editor",
+  "description": "Browse a dataset's examples and label them -- forms built from the dataset's declared kinds.",
+  "kind": "application.web.editor",
+  "build": "."
+}

@@ -14,6 +14,7 @@ from flow_sdk.schema.data_spec.api_endpoint_spec import APIEndpointOffer
 from flow_sdk.schema.data_spec.decision_spec import ChoiceAnswer, DecisionResult
 
 PATH = "/api/v1/graph/compute_node/@local/decision"
+DECIDE = "/api/v1/graph/compute_node/@local/navigation-decision"
 SPEC = {
     "state": {"utterance": "open data sources"},
     "questions": {"target": {"type": "choice", "instructions": "?", "options": {"a": "A", "agentic": "else"}}},
@@ -83,3 +84,71 @@ async def test_a_failure_carries_its_closed_reason(bootstrapped_client, hub, rea
     assert body["status"] == "FAIL"
     assert body["data"] == {"reason": reason}
     assert (body.get("status_code") or r.status_code) == status
+
+
+@pytest.mark.asyncio
+async def test_navigation_decision_reads_where_the_active_tab_is(bootstrapped_client, monkeypatch):
+    """The magic line sends only what was typed; the route reads the tab's own browser context as
+    ``navigation.here`` -- its address, and the entity open there."""
+    import flow_sdk.decision as decision
+    from flow_sdk.server.routes import websocket
+
+    specs: list = []
+
+    async def _decide(spec, *, endpoint=None):
+        specs.append(spec)
+        return DecisionResult(answers={"target": ChoiceAnswer(choice="agentic", confidence=0.99)})
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decide", _decide)
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    asset = "markdown-0d5e6f7a-8b9c-4d4e-8f5a-6b7c8d9e0f1a"
+    url = f"/dock/assets/{asset}?viewMode=edit"
+    monkeypatch.setattr(
+        websocket,
+        "_active_connections",
+        {
+            "tab-1": websocket.ConnectionInfo(
+                ws=object(), is_tab=True, browser_context={"CurrentUrl": url, "CurrentActiveEntityTypeId": asset}
+            )
+        },
+    )
+    body = (await bootstrapped_client.post(DECIDE, json={"utterance": "summarize this doc"})).json()
+    assert (body["data"]["decision"]["route"], body["data"]["prompt"]) == ("agentic", "summarize this doc")
+    assert specs[0].state["page"] == url and specs[0].state["context"]["entity"]["typeid"] == asset
+    assert f"entity:{asset}" in specs[0].questions["target"].options, "what is open is offered as 'this'"
+
+
+@pytest.mark.asyncio
+async def test_navigation_decision_answers_then_logs_into_smart_navigation_log(
+    bootstrapped_client, monkeypatch, tmp_path
+):
+    """With SmartNavigationLog on, the real action answers a dock and the decision lands as a row of
+    the instance's SmartNavigationLog dataset in Flowpad's temp folder -- indexed, so the UI lists it, and found again (one
+    dataset) on the next decision."""
+    from flow_sdk import config
+    from flow_sdk.core import navigation_log
+    from flow_sdk.preferences import PREF_SMART_NAVIGATION_LOG, write_instance_pref
+
+    monkeypatch.setattr(config, "FLOWPAD_TEMP_DIR", str(tmp_path))
+    import flow_sdk.decision as decision
+
+    async def _endpoints(**kwargs):
+        return [OFFER]
+
+    monkeypatch.setattr(decision, "decision_endpoints", _endpoints)
+    write_instance_pref(PREF_SMART_NAVIGATION_LOG, True)
+    try:
+        here = {"view": "home", "address": "/dock/home"}
+        for utterance in ("open data sources", "take me to preferences"):
+            body = (await bootstrapped_client.post(DECIDE, json={"utterance": utterance, "here": here})).json()
+            assert body["data"]["address"] in ("/dock/data-sources", "/dock/preferences")
+            assert body["data"]["dock"]["viewType"] in ("data-sources", "preferences")
+        await navigation_log.drain()
+        listed = (await bootstrapped_client.get('/api/v1/graph/dataset?filter={"name":"SmartNavigationLog"}')).json()
+        [row] = listed["data"]
+        assert (row["title"], row["num_examples"]) == ("SmartNavigationLog", 2)
+    finally:
+        write_instance_pref(PREF_SMART_NAVIGATION_LOG, False)

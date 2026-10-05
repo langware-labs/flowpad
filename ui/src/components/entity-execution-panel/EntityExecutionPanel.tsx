@@ -124,8 +124,10 @@ interface EntityExecutionPanelProps {
    */
   historyOnLeft?: boolean;
   /** Optional content rendered immediately after the (left-placed) history
-   *  trigger — e.g. Vibe's "Collaborate" button next to the "Recent" pill. */
-  afterHistorySlot?: React.ReactNode;
+   *  trigger — e.g. Vibe's "Collaborate" button next to the "Recent" pill. The
+   *  function form receives the chat on screen (the assistant's help button
+   *  offers it as the ask's transcript). */
+  afterHistorySlot?: React.ReactNode | ((state: { activeProcess: AgenticProcess | null }) => React.ReactNode);
   /**
    * Opt in to a PROJECT-scoped history list (`useProcessesForProject`) instead
    * of the default target-scoped one. For a project-level composer — Vibe —
@@ -918,7 +920,7 @@ export function EntityExecutionPanel({
         historyTriggerLabel={historyTriggerLabel}
         historyOnLeft={historyOnLeft}
         onHistoryOpen={() => setHistoryRequested(true)}
-        afterHistorySlot={afterHistorySlot}
+        afterHistorySlot={typeof afterHistorySlot === 'function' ? afterHistorySlot({ activeProcess }) : afterHistorySlot}
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={

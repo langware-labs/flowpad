@@ -34,7 +34,8 @@ from flow_sdk.app.actions.share_action import (
 )
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import normalize_email
-from flow_sdk.cloud_client.transport.hub_http import hub_post, hub_put
+from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.cloud_client.transport.hub_http import hub_put, hub_request
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.enums.auth_enums import HubRole
 from flow_sdk.request_context.methods import get_current_request_info
@@ -44,15 +45,16 @@ from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 logger = logging.getLogger(__name__)
 
 
-def assignee_invite_body(email: str, task: Task, message: str | None = None) -> dict:
-    """The ``MembershipRequest`` that hands ``task`` to ``email`` as its assignee.
+def assignee_invite_body(email: str | None, task: Task, message: str | None = None, *, user_id: str | None = None) -> dict:
+    """The ``MembershipRequest`` that hands ``task`` to its assignee — by email, or by hub user id
+    for a person the hub knows but whose address we do not.
 
     ONE target, ``editor`` on the task itself. The group flow's two-target form
     (editor-on-child + guest-on-parent) exists only because it has a child; a
     single-target internal invite auto-grants just the same.
     """
     return {
-        "recipient_email": email,
+        **({"recipient_email": email} if email else {"recipient_user_id": user_id}),
         "invitation_targets": [{"typeid": f"task-{task.id}", "role": HubRole.EDITOR.value}],
         "message": message or f'You have been assigned the task "{task.title}"',
     }
@@ -174,19 +176,32 @@ async def assign_task() -> ApiResponse:
         await task.save(request_info.someone_typeid)
         return ApiSuccessResponse(data={"self": True, "assignee": email})
 
+    try:
+        await assign_on_hub(task, email=email, message=message, someone_typeid=request_info.someone_typeid)
+    except HubError as e:
+        return e.fail_response("Could not assign the task")
+    return ApiSuccessResponse(data={"self": False, "assignee": email})
+
+
+async def assign_on_hub(
+    task: Task, *, email: str | None, someone_typeid, message: str | None = None, user_id: str | None = None
+) -> None:
+    """Put ``task`` on the hub and give it to its assignee. Safe to repeat: the share is once-only,
+    and the hub answers an invite the assignee already holds as done (hub f9ff57ace) — so a retry
+    after any failure goes through instead of 400ing forever. Raises ``HubError``."""
     # A first share POSTs the full field body (stamps included) and persists the
     # row, so only a RE-assign needs the extra save + field push — a server-side
     # save never hub-reflects.
-    if not await ensure_task_on_hub(task, request_info.someone_typeid):
-        await task.save(request_info.someone_typeid)
+    if not await ensure_task_on_hub(task, someone_typeid):
+        await task.save(someone_typeid)
         await push_hub_fields(task, ("assignee", "reporter"))
-    await hub_post(
+    await hub_request(
+        "POST",
         BuiltinEntityType.TASK,
-        assignee_invite_body(email, task, message),
         task.id,
         "members",
+        payload=assignee_invite_body(email, task, message, user_id=user_id),
     )
-    return ApiSuccessResponse(data={"self": False, "assignee": email})
 
 
 @action.post(action_name="link-conversation", types=["task"])

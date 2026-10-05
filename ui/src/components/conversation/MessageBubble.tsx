@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Check, CheckCheck, Clock } from 'lucide-react';
-import type { AgenticProcess, FlowMessage } from '@sdk';
+import { resendConversation, type AgenticProcess, type FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import { Task, type ITask } from '@sdk/entities/task';
@@ -88,10 +88,55 @@ interface MessageBubbleProps {
  *
  * Renders nothing for incoming messages.
  */
-function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
+/** A message of mine the hub does not have yet, and why — with the person's Retry when waiting
+ *  will not fix it. Tinted row + border, never red text (the reason sits in the tooltip). */
+function NotDelivered({ message }: { message: FlowMessage }) {
   const { t } = useLingui();
+  const [retrying, setRetrying] = useState(false);
+  const failure = message.delivery_failure!;
+  const label =
+    failure.kind === 'signed_out'
+      ? t`Waiting for sign-in`
+      : failure.kind === 'offline' || failure.kind === 'server_error'
+        ? t`Not sent yet`
+        : t`Not sent`;
+  const retry = async () => {
+    if (!message.conversation_id) return;
+    setRetrying(true);
+    try {
+      await resendConversation(message.conversation_id);
+    } finally {
+      setRetrying(false);
+    }
+  };
+  return (
+    <span
+      title={failure.message}
+      className="inline-flex items-center gap-1 rounded border border-destructive/60 bg-destructive/10 px-1.5 text-[10px] text-foreground"
+      data-testid="message-not-delivered"
+    >
+      {label}
+      {failure.kind !== 'signed_out' && (
+        <button
+          type="button"
+          onClick={() => void retry()}
+          disabled={retrying}
+          className="underline disabled:opacity-60"
+          data-testid="message-retry-delivery"
+        >
+          {retrying ? t`Retrying…` : t`Retry`}
+        </button>
+      )}
+    </span>
+  );
+}
+
+function DeliveryReceipt({ status, message }: { status: DeliveryStatus | undefined; message?: FlowMessage }) {
+  const { t } = useLingui();
+  const owed = status === 'created' || status === 'pending_send' || message?.body_status === 'failed';
+  if (message?.outbound && message.delivery_failure && owed) return <NotDelivered message={message} />;
   if (!status) return null;
-  if (status === 'created') {
+  if (status === 'created' || status === 'pending_send') {
     // `created` = written to the local store, NOT yet accepted by the hub.
     // Show a clock ("Pending"), not a ✓ — a single check here would give false
     // confidence the recipient got it when the outbound hub push may have failed.
@@ -160,11 +205,22 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
 function MessageBody({ content, isBot, links }: { content: string; isBot: boolean; links: LinkHandlers | null }) {
   const bodyClass = `whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
   // Markdown links take the same click and menu as the plain-text ones.
-  const components = useMemo<Partial<Components> | undefined>(() => links ? {
-    a: ({ href, children }) => href
-      ? <a href={href} className={MARKDOWN_LINK_CLASS} {...linkEventProps(links, href)}>{children}</a>
-      : <>{children}</>,
-  } : undefined, [links]);
+  const components = useMemo<Partial<Components> | undefined>(
+    () =>
+      links
+        ? {
+            a: ({ href, children }) =>
+              href ? (
+                <a href={href} className={MARKDOWN_LINK_CLASS} {...linkEventProps(links, href)}>
+                  {children}
+                </a>
+              ) : (
+                <>{children}</>
+              ),
+          }
+        : undefined,
+    [links],
+  );
   const claudeQuote = parseClaudeQuote(content);
   if (claudeQuote) {
     // The executed reply renders as real Markdown (bold, lists, code fences,
@@ -318,7 +374,7 @@ export function MessageBubble({
               {ago && <span className="ms-1 opacity-70">· {ago}</span>}
             </span>
           )}
-          {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
+          {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} message={flowMessage} />}
           {!editing && (
             <span className="self-center">
               <MessageActionsMenu
@@ -339,7 +395,9 @@ export function MessageBubble({
           )}
         </div>
         {quoted && <QuotedMessage sender={quoted.sender} text={quoted.text} onJump={quoted.onJump} />}
-        {message.content && <MessageBody content={message.content} isBot={isBot} links={flowMessage ? links.handlers : null} />}
+        {message.content && (
+          <MessageBody content={message.content} isBot={isBot} links={flowMessage ? links.handlers : null} />
+        )}
         {links.menu}
         {showPromptRow && (
           <AttachmentActionsRow

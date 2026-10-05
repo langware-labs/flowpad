@@ -47,7 +47,10 @@ def sent_body(monkeypatch):
 
         @staticmethod
         def json() -> dict:
-            return {"ok": True, "mode": "vfs", "path": captured.get("path")}
+            return {
+                "status": "SUCCESS",
+                "data": {"exit_code": 0, "delivered": True, "value": {"kind": "vfs", "path": captured.get("path")}},
+            }
 
     def _fake_post(url, json=None, timeout=None, **kwargs):
         captured.update(json or {})
@@ -116,3 +119,26 @@ def test_an_empty_path_still_exits_2(sent_body) -> None:
     """Control — the pre-existing argument contract is unchanged."""
     assert _navigate("   ").exit_code == navigate_cmd.EXIT_INVALID_ARG
     assert "path" not in sent_body, "a rejected argument must not reach the wire"
+
+
+@pytest.mark.parametrize(
+    ("code", "verdict"), [(0, "ok"), (1, "not_running"), (1, "no_browser"), (4, "not_found"), (7, "frame_blocked")]
+)
+def test_the_exit_code_is_the_answers(monkeypatch, tmp_path, code, verdict):
+    """`flow navigate` exits with the NavigateResult's own exit_code and prints it as one JSON line."""
+    import json as _json
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json() -> dict:
+            return {"status": "SUCCESS", "data": {"exit_code": code, "verdict": verdict, "detail": "why"}}
+
+    monkeypatch.setattr(navigate_cmd, "_discover_port", lambda: 9999)
+    monkeypatch.setattr(navigate_cmd, "_local_post", lambda *a, **k: _Resp())
+    result = runner.invoke(app, ["navigate", "file", str(tmp_path / "x.html")])
+
+    assert result.exit_code == code
+    line = _json.loads(result.stdout.strip().splitlines()[-1])
+    assert line["ok"] is (code == 0) and line["verdict"] == verdict

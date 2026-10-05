@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, FrozenSet, List, NamedTuple, Optional
@@ -12,9 +13,11 @@ from flow_sdk.builtin.conversation_channel import HOME_CHANNEL, channel_spec
 from flow_sdk.builtin.user import normalize_email, recipient_user_id
 from flow_sdk.core import Entity
 from flow_sdk.core.entity.projected_fields import PROJECTION_SENTINEL, ProjectedFields
-from flow_sdk.db.drivers.db_base_record import TypeId
+from flow_sdk.core.urls.service_urls import build_hub_url
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.schema.data_spec.channel_spec import ChannelSpec
 from flow_sdk.schema.types import MEMBERSHIP_CONTAINER_TYPES, EntityType
+from flow_sdk.stream_inbox._locks import keyed_loop_lock, new_registry
 from flow_sdk.tags.envelope import parse_target
 
 
@@ -148,6 +151,21 @@ def _coerce_context_typeid(ref) -> Optional[TypeId]:
     return None
 
 
+_ROW_LOCKS = new_registry()
+_DELIVERY_LOCKS = new_registry()
+
+
+def conversation_row_lock(conversation_id: str) -> asyncio.Lock:
+    """The lock every create-or-merge of one conversation's local row holds.
+
+    Two writers materialize the same row: a ticket opened HERE (``ensure_conversation_entity``)
+    and the hub's push of it back (``hub_bridge._handle_conversation_op``). Each read "no row"
+    and saved a whole new one, the later save winning — the hub's untitled row over the local
+    title. Held across the read and the save, the second writer sees the first's row and merges.
+    """
+    return keyed_loop_lock(_ROW_LOCKS, conversation_id)
+
+
 class Conversation(ProjectedFields, Entity):
     """A conversation composed into a Task (or other parent entity).
 
@@ -216,6 +234,12 @@ class Conversation(ProjectedFields, Entity):
     ended_at: Optional[datetime] = APIField(default=None, sharing=Sharing.PRIVATE)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
+    # A conversation written here FOR the hub, not there yet — an ask for help captured before
+    # delivery (``ask-for-help``). ``Conversation.deliver`` creates it there first, then clears this.
+    # And the project the person was in when they asked, so the ask lists with it (a ticket lives
+    # under the desk's project, not theirs). Both PRIVATE: this machine's bookkeeping.
+    awaits_hub: bool = APIField(default=False, sharing=Sharing.PRIVATE)
+    origin_project_id: Optional[str] = APIField(None, sharing=Sharing.PRIVATE)
     message_count: int = APIField(0, sharing=Sharing.PRIVATE)
     # The roster's hub WIRE key is ``participants`` (hub contract); the local
     # read cache is the generic ``members``. Declared once here so every
@@ -263,7 +287,9 @@ class Conversation(ProjectedFields, Entity):
     #: Projected beside ``is_unread`` by the same recompute, so the two never disagree.
     unread_count: int = APIField(default=0, sharing=Sharing.PRIVATE)
     projected_fields: ClassVar[FrozenSet[str]] = _PROJECTED_FIELDS
-    projection_writer: ClassVar[str] = "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count)"
+    projection_writer: ClassVar[str] = (
+        "ConversationRecord.sync_to_db (message_ids/message_count) or stream_inbox.recompute_unread (is_unread/unread_count)"
+    )
 
     @classmethod
     def hub_clock_moved(cls, local: "Conversation", hub_updated: Optional[datetime]) -> bool:
@@ -284,6 +310,7 @@ class Conversation(ProjectedFields, Entity):
         if hub_updated is None:
             return False
         return cls._as_datetime(local.hub_updated_date) != hub_updated
+
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
     # (auto-revive on new activity). The stream inbox ignores this field entirely.
@@ -336,7 +363,9 @@ class Conversation(ProjectedFields, Entity):
         if self.channel_spec.transport == ChannelTransport.FLOWPAD:
             if files:
                 raise ValueError("files on Flowpad's own chat ride add_message's attachments, not send()")
-            return await self._send_native(body, reply_to_id=reply_id, thread_root_id=thread.thread_key if thread else None)
+            return await self._send_native(
+                body, reply_to_id=reply_id, thread_root_id=thread.thread_key if thread else None
+            )
 
         from flow_sdk.stream_inbox.outbound import (  # noqa: PLC0415
             outgoing_files,
@@ -355,41 +384,34 @@ class Conversation(ProjectedFields, Entity):
             newest = (await self.messages(thread=thread.id))[-1:]
             if newest:
                 target = await quoting(target, newest[0])
-        return await send_to(str(self.id), target, body, files=outgoing_files(target, files), quote=reply_id is not None)
+        return await send_to(
+            str(self.id), target, body, files=outgoing_files(target, files), quote=reply_id is not None
+        )
 
     async def _thread_of(self, ref) -> "MessageThread":
-        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
-
-        thread_id = await self.resolve_thread_id(str(getattr(ref, "id", ref) or ""))
-        thread = await MessageThread.get_one({"id": thread_id}) if thread_id else None
+        thread = await self.resolve_thread(ref)
         if thread is None:
             raise ValueError(f"no thread {ref!r} in this conversation")
         return thread
 
     async def _send_native(self, body: str, *, reply_to_id: Optional[str], thread_root_id: Optional[str]):
-        """Flowpad's own chat: the same handler the composer's send reaches (``add_message``),
-        queued as ``pending_send`` while there is no cloud login, refused in Local mode."""
+        """Flowpad's own chat: the same handler and gate the composer's send reaches
+        (``add_message``) — queued as ``pending_send`` without cloud login, refused in Local mode."""
         from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
-        from flow_sdk.app.actions.share_action import (  # noqa: PLC0415
-            LOCAL_MODE_SHARE_MESSAGE,
-            _local_mode_share_blocked,
-        )
+        from flow_sdk.app.actions.share_action import add_message_gate  # noqa: PLC0415
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
-        from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
-        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
-        if _local_mode_share_blocked():
-            raise PermissionError(LOCAL_MODE_SHARE_MESSAGE)
         request: dict = {"conversation_id": str(self.id), "text": body}
         if reply_to_id:
             request["reply_to_id"] = reply_to_id
         elif thread_root_id:
             request["thread_root_id"] = thread_root_id
-        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
-
+        blocked, pending_send = add_message_gate(request)
+        if blocked:
+            raise PermissionError(blocked)
         me = await get_or_create_local_user()
-        someone = str(TypeId(type="user", id=me.id))
-        response = await handle_add_message(request, someone, pending_send=not is_logged_in())
+        response = await handle_add_message(request, str(me.typeid), pending_send=pending_send)
         if getattr(response, "status", "") != "SUCCESS":
             raise ValueError(getattr(response, "message", None) or "send refused")
         return await FlowMessage.get_one({"id": response.data["flow_message_id"]})
@@ -398,13 +420,14 @@ class Conversation(ProjectedFields, Entity):
         """This conversation's messages, oldest first — only one thread's with ``thread`` (a
         ``MessageThread`` or its id, or a message in it)."""
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
         match: dict = {"conversation_id": str(self.id)}
         if thread is not None:
-            thread_id = await self.resolve_thread_id(str(getattr(thread, "id", thread) or ""))
-            if thread_id is None:
+            resolved = thread if isinstance(thread, MessageThread) else await self.resolve_thread(thread)
+            if resolved is None:
                 return []
-            match["thread_id"] = thread_id
+            match["thread_id"] = resolved.id
         rows = await FlowMessage.get_all({"match": match})
         # Event time first (a backfill lands in message time), then arrival.
         return sorted(rows, key=lambda m: str(m.sent_at or m.created_date or ""))
@@ -506,6 +529,7 @@ class Conversation(ProjectedFields, Entity):
         *,
         principals: Optional[List[str]] = None,
         notify_by_email: bool = True,
+        deliver_messages: bool = True,
     ) -> "Conversation":
         """Push to hub + admit people via the standard hub pattern.
 
@@ -570,7 +594,7 @@ class Conversation(ProjectedFields, Entity):
             # row. Local context linking, pending-message delivery, and asset
             # sharing can all block or fail, so none may sit in this ownership
             # gap and leave an undeletable conversation behind.
-            await client.post(f"/graph/conversation/{self.id}/join", {})
+            await client.post(build_hub_url(self, action="join"), {})
 
             # Link each shared-context doc to this conversation locally (the hub
             # doesn't host doc types). This makes the doc effective-remote so a
@@ -581,7 +605,10 @@ class Conversation(ProjectedFields, Entity):
             # local. Flush them through the same send pipeline a normal reply
             # uses, BEFORE inviting, so the invitation's callback_override and
             # the recipient's first fetch resolve.
-            await self.deliver_pending_messages()
+            # (``deliver_messages=False`` when ``deliver`` itself is opening this conversation.)
+            if deliver_messages:
+                await self.deliver(bodies=False)
+                self.kick_delivery()
 
             # Post-accept landing: point at the conversation's first FlowMessage
             # on the hub. Falls back to None (hub default = entity URL) when the
@@ -619,7 +646,7 @@ class Conversation(ProjectedFields, Entity):
                 if not email:
                     continue
                 await client.post(
-                    f"/graph/conversation/{self.id}/members",
+                    build_hub_url(self, action="members"),
                     _membership_body(recipient_email=email),
                 )
 
@@ -629,14 +656,14 @@ class Conversation(ProjectedFields, Entity):
                 if not user_id:
                     continue
                 await client.post(
-                    f"/graph/conversation/{self.id}/members",
+                    build_hub_url(self, action="members"),
                     _membership_body(recipient_user_id=user_id),
                 )
             # One grant per group principal (a team).
             for principal in principals or []:
                 if principal:
                     await client.post(
-                        f"/graph/conversation/{self.id}/members",
+                        build_hub_url(self, action="members"),
                         _membership_body(principal=principal),
                     )
         return self
@@ -737,27 +764,77 @@ class Conversation(ProjectedFields, Entity):
                 logging.warning("[conv.share] host asset %s failed (non-fatal): %s", tid, e)
         return targets
 
-    async def deliver_pending_messages(self) -> None:
-        """Push messages of this conversation that are not on the hub yet.
+    @property
+    def hub_bound(self) -> bool:
+        """Whether this conversation's messages are meant for the hub (so the outbox delivers them)."""
+        return bool(self.remote or self.awaits_hub)
 
-        Two callers, because there are two ways to end up holding one: ``share()``
-        below, when a local conversation first gets its hub row, and
-        ``flow_sdk.stream_inbox.catchup`` on every hub-session transition (its module
-        docstring explains why both are needed).
+    async def deliver(self, *, bodies: bool = True, force: bool = False, **upload_options) -> None:
+        """Hand the hub every message of mine this conversation still owes it — in order.
 
-        Reuses the SAME send pipeline a normal reply uses — there is no separate
-        push path. ``_send_conversation_message_header`` is the hub-side create
-        that ``handle_add_message`` calls for every reply; ``_upload_body_and_
-        finalize`` is its body-bundle step. We read the on-disk pointer index
-        (the source of truth, so this works on the transient entity the share
-        action builds) and run each not-yet-remote message through that pipeline.
-        Best-effort per message: a failed push is logged and the row left local,
-        so a later re-share retries it."""
+        THE delivery path: a fresh send, a resend the person asked for, and every hub-session
+        transition (startup, login, reconnect, the hub answering again) all come through here,
+        so there is one way a message reaches the hub. What is owed is ``FlowMessage.owes_delivery``
+        — never "not remote", which a slow-path send never set and a peer's row does not have.
+
+        Headers go in conversation order (the on-disk pointer index), one at a time, and stop at
+        the first that fails: a later message must not land before an earlier one. Each attempt
+        records its outcome on the message (SENT, or ``delivery_failure``). Bodies follow, each
+        under its own lock (``FlowMessage._upload_body_inflight``), so a large upload never holds
+        this conversation's headers back.
+
+        A message the hub REFUSED waits for the person (``force``, the Retry): asking again
+        unchanged is the same no.
+        """
         from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
             _send_conversation_message_header,
             _upload_body_and_finalize,
         )
-        from flow_sdk.builtin.flow_message import BodyStatus, FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.flow_message import BodyStatus, DeliveryStatus, delivery_rank  # noqa: PLC0415
+
+        owed_bodies = []
+        async with keyed_loop_lock(_DELIVERY_LOCKS, self.id):
+            if self.awaits_hub and not await self._open_on_hub(force=force):
+                return
+            for fm in await self._owed_messages(force=force):
+                if delivery_rank(fm.delivery_status) < delivery_rank(DeliveryStatus.SENT):
+                    # Announce a body bundle so the hub expects the upload that follows.
+                    if fm.has_body() and fm.body_status not in (BodyStatus.UPLOADING, BodyStatus.FAILED):
+                        fm.body_status = BodyStatus.UPLOADING
+                    failure = await _send_conversation_message_header(self, fm)
+                    if failure is not None:
+                        await fm.record_delivery_failure(failure)
+                        break
+                    await fm.mark_sent()
+                if fm.has_body() and fm.body_status in (BodyStatus.UPLOADING, BodyStatus.FAILED):
+                    owed_bodies.append(fm)
+        if bodies:
+            for fm in owed_bodies:
+                await _upload_body_and_finalize(fm, self.id, **upload_options)
+
+    async def _open_on_hub(self, *, force: bool) -> bool:
+        """Stage 0: a conversation captured here for the hub (an ask for help) is created there
+        first. False when it could not be — the reason is on its opening message."""
+        from flow_sdk.app.actions.ask_for_help_action import open_on_hub  # noqa: PLC0415
+
+        owed = await self._owed_messages(force=force)
+        if not owed:
+            return False
+        failure = await open_on_hub(self, owed[0])
+        if failure is not None:
+            await owed[0].record_delivery_failure(failure)
+            return False
+        return True
+
+    def kick_delivery(self, **upload_options) -> None:
+        """``deliver()`` off the caller's path. Losing this task loses nothing: what is owed is on
+        the rows, and the next transition delivers it."""
+        asyncio.create_task(self.deliver(**upload_options))
+
+    async def _owed_messages(self, *, force: bool = False) -> list:
+        """My messages here the hub does not fully have, in conversation order — less the ones it
+        refused, unless the person asked again (``force``)."""
+        from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
         from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
             default_jsonl_path,
             from_jsonl,
@@ -765,34 +842,24 @@ class Conversation(ProjectedFields, Entity):
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-        rec = from_jsonl(
-            default_jsonl_path(self.id),
-            parent_id="",
-            record_id=self.id,
-            parent_type=RecordType.PROJECT,
-        )
+        rec = from_jsonl(default_jsonl_path(self.id), parent_id="", record_id=self.id, parent_type=RecordType.PROJECT)
+        owed = []
         for ptr in message_pointers(rec):
             fm = await FlowMessage.get_one({"id": ptr.id})
-            if fm is None or getattr(fm, "remote", False):
-                continue  # missing row, or already on the hub — nothing to do
-            # Mirror handle_add_message: a message carrying a body bundle is
-            # announced as UPLOADING so the hub expects the bundle we upload next.
-            if fm.has_body() and fm.body_status != BodyStatus.UPLOADING:
-                fm.body_status = BodyStatus.UPLOADING
-                await fm.save()
-            if not await _send_conversation_message_header(self, fm):
-                continue  # push failed (already logged) — leave local for retry
-            fm.remote = True
-            await fm.save()
-            if fm.body_status == BodyStatus.UPLOADING:
-                await _upload_body_and_finalize(fm, self.id)
+            if fm is None or not fm.owes_delivery:
+                continue
+            refused = fm.delivery_failure is not None and not fm.delivery_failure.kind.stays_owed
+            if refused and not force:
+                continue
+            owed.append(fm)
+        return owed
 
     async def discard_invite_conversation(self, client) -> None:
         """Delete an invite conversation whose share failed — the hub row (the
         sharer owns it once joined) and the local row — so a refused invite leaves
         no empty conversation behind. Best-effort on each side."""
         try:
-            response = await client.request("DELETE", f"/graph/conversation/{self.id}")
+            response = await client.request("DELETE", build_hub_url(self))
             if response.status_code >= 400:
                 logging.warning("[invite] hub delete of conversation %s answered %s", self.id, response.status_code)
         except Exception as e:  # noqa: BLE001
@@ -1003,20 +1070,27 @@ class Conversation(ProjectedFields, Entity):
         rows = await MessageThread.get_all({"match": {"conversation_id": self.id}})
         return sorted(rows, key=lambda t: str(t.created_date or ""))
 
-    async def resolve_thread_id(self, ref: str) -> Optional[str]:
-        """The id of the thread ``ref`` names in this conversation: a thread id, or the id of a
-        message in it (its root, for a native thread). None when neither."""
+    async def resolve_thread(self, ref) -> Optional["MessageThread"]:
+        """The thread ``ref`` names in this conversation: a thread (or its id), or a message in
+        it (its root, for a native thread). None when neither."""
         from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+        from flow_sdk.builtin.message_thread import MessageThread  # noqa: PLC0415
 
-        ref = (ref or "").strip()
+        ref = str(getattr(ref, "id", ref) or "").strip()
         if not ref:
             return None
-        if any(t.id == ref for t in await self.threads()):
-            return ref
+        thread = await MessageThread.get_one({"id": ref, "conversation_id": str(self.id)})
+        if thread is not None:
+            return thread
         fm = await FlowMessage.get_one({"id": ref})
-        if fm is not None and fm.conversation_id == self.id and fm.thread_id:
-            return fm.thread_id
-        return None
+        if fm is None or fm.conversation_id != self.id or not fm.thread_id:
+            return None
+        return await MessageThread.get_one({"id": fm.thread_id})
+
+    async def resolve_thread_id(self, ref: str) -> Optional[str]:
+        """The id of the thread ``ref`` names in this conversation (``resolve_thread``)."""
+        thread = await self.resolve_thread(ref)
+        return thread.id if thread else None
 
     async def transcript(
         self,
@@ -1031,7 +1105,9 @@ class Conversation(ProjectedFields, Entity):
         ``thread_id`` keeps one thread; ``since`` keeps messages at/after that instant;
         ``last`` then keeps the newest N. Local reads only — the same residence ``summary`` reads."""
         if thread_id:
-            msgs = [m for m in await self._messages_oldest_first(since=since) if m.thread_id == thread_id]
+            msgs = await self.messages(thread=thread_id)
+            if since is not None:
+                msgs = [m for m in msgs if (m.sent_at or m.created_date) and (m.sent_at or m.created_date) >= since]
             if last is not None:
                 msgs = msgs[-last:] if last > 0 else []
         else:
@@ -1094,15 +1170,10 @@ class Conversation(ProjectedFields, Entity):
         hub FM, and the uploaded ``body.flowmsg`` bundle all share one key —
         ``FlowMessage.upload_body()`` then targets the same id.
         """
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+        from flow_sdk.cloud_client.transport.hub_http import hub_request  # noqa: PLC0415
 
         if not self.id:
             raise RuntimeError("Conversation.id is required")
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            raise RuntimeError("Cloud login required before add_message()")
         body: dict = {"text": text}
         if flow_message_id:
             body["id"] = flow_message_id
@@ -1135,9 +1206,9 @@ class Conversation(ProjectedFields, Entity):
         if thread_root_id:
             body["thread_root_id"] = thread_root_id
         body["conversation_id"] = self.id
-        path = build_hub_url(self, action="add_message")
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            data = await client.post(path, body)
+        # The one hub seam: every way this fails raises a classified ``HubError`` (signed out
+        # before anything is sent, offline, refused, broken) that delivery records as is.
+        data = await hub_request("POST", BuiltinEntityType.CONVERSATION, self.id, "add_message", payload=body)
         # Some hub deployments do not echo conversation_id on the FlowMessage
         # payload even though the add_message route is scoped to this
         # conversation. Preserve the known parent locally so callers that pack
@@ -1158,7 +1229,6 @@ class Conversation(ProjectedFields, Entity):
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         if not self.id:
             raise RuntimeError("Conversation.id is required")

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Plus } from 'lucide-react';
-import type { TypeId } from '@sdk';
+import type { HelpOrigin, TypeId } from '@sdk';
 import { FlowIcon } from '@sdk/react/FlowIcon';
 import { NavBadge } from '@src/components/ui/nav-badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -9,7 +9,7 @@ import { useMyVibeTasks, type VibeTaskRow } from '@src/hooks/use-my-vibe-tasks';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { VibeAssignTaskDialog } from './VibeAssignTaskDialog';
+import { AskForHelpDialog } from '@src/components/help/AskForHelpDialog';
 import { workspaceToolbarButton } from './workspace-toolbar-button';
 
 /**
@@ -27,10 +27,13 @@ import { workspaceToolbarButton } from './workspace-toolbar-button';
 export function VibeAssignTaskButton({
   projectId,
   sessionTypeId,
+  origin = 'vibe',
 }: {
   projectId: string | null;
   /** Active vibe session — supplies the optional transcript. */
   sessionTypeId: TypeId | null;
+  /** Where the ask is made from — the Flowpad Assistant reuses this button. */
+  origin?: HelpOrigin;
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -112,11 +115,12 @@ export function VibeAssignTaskButton({
       )}
 
       {dialogOpen && (
-        <VibeAssignTaskDialog
+        <AskForHelpDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           projectId={projectId}
           sessionTypeId={sessionTypeId}
+          origin={origin}
           openTasks={rows}
           onOpenExisting={(row) => {
             setDialogOpen(false);

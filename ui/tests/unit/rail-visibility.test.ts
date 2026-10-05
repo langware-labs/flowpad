@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import {
   MODE_CHAIN,
-  NO_GATES,
   RAIL_ITEMS,
   resolveRail,
-  type RailGate,
   type RailItemId,
 } from '@src/components/collapsed-sidebar/rail-visibility';
 
@@ -20,10 +18,7 @@ import {
  * coming back.
  */
 
-const ALL_GATES: Record<RailGate, boolean> = { conversations: true };
-
-const idsFor = (mode: ViewMode, gates = ALL_GATES): RailItemId[] =>
-  resolveRail(mode, gates).map((item) => item.id);
+const idsFor = (mode: ViewMode): RailItemId[] => resolveRail(mode).map((item) => item.id);
 
 /** Is `sub` a subsequence of `full` (same relative order, gaps allowed)? */
 function isSubsequence<T>(sub: readonly T[], full: readonly T[]): boolean {
@@ -49,13 +44,13 @@ describe('resolveRail — modes are strictly additive', () => {
   });
 
   it('each mode adds the items declared at it', () => {
-    // `events` merged the old `triggers` (Advanced) and `signals` (Dev) items.
+    // `automations` (was `events`, which merged the old `triggers` and `signals` items).
     // It stays at Advanced, not Dev: dropping to Dev would have removed rules
     // from a mode that already had them, which is a subtraction the additive
     // chain above forbids.
-    expect(idsFor(ViewMode.Advanced)).toContain('events');
+    expect(idsFor(ViewMode.Advanced)).toContain('automations');
     expect(idsFor(ViewMode.Advanced)).toContain('hooks');
-    expect(idsFor(ViewMode.Standard)).not.toContain('events');
+    expect(idsFor(ViewMode.Standard)).not.toContain('automations');
     // The merged ids are gone, not merely relocated.
     expect(idsFor(ViewMode.Dev)).not.toContain('triggers');
     expect(idsFor(ViewMode.Dev)).not.toContain('signals');
@@ -77,12 +72,6 @@ describe('resolveRail — modes are strictly additive', () => {
       expect(ids[ids.indexOf('credentials') - 1]).toBe('stream_inbox');
     }
   });
-
-  it('keeps its slot when the stream inbox gate drops the item above it', () => {
-    const ids = idsFor(ViewMode.Vibe, { conversations: false });
-    expect(ids).not.toContain('stream_inbox');
-    expect(ids).toContain('credentials');
-  });
 });
 
 describe('resolveRail — order is the same in every mode', () => {
@@ -94,47 +83,20 @@ describe('resolveRail — order is the same in every mode', () => {
     });
   }
 
-  it('holds when gates drop items out of the middle', () => {
-    const gated = idsFor(ViewMode.Dev, { conversations: false });
-    expect(isSubsequence(gated, specOrder)).toBe(true);
-    expect(gated).not.toContain('stream_inbox');
-    expect(gated).toContain('chats');
-  });
-
   it('places the top rail in the agreed order', () => {
-    const top = resolveRail(ViewMode.Vibe, ALL_GATES)
+    const top = resolveRail(ViewMode.Vibe)
       .filter((item) => item.placement === 'top')
       .map((item) => item.id);
     expect(top).toEqual(['chats', 'stream_inbox', 'credentials']);
   });
 });
 
-describe('resolveRail — content gates', () => {
-  it('drops gated items when their gate is unsatisfied', () => {
-    const none = idsFor(ViewMode.Dev, NO_GATES);
-    expect(none).not.toContain('stream_inbox');
-    // Ungated neighbours survive — including data-sources, which must NOT be
-    // gated on "a source exists": this screen is where the first one is made.
-    expect(none).toEqual(expect.arrayContaining(['chats', 'data-sources']));
-  });
-
-  it('gates only the item they name', () => {
-    const convsOnly = idsFor(ViewMode.Vibe, { conversations: true });
-    expect(convsOnly).toContain('stream_inbox');
-
-    const neither = idsFor(ViewMode.Vibe, NO_GATES);
-    expect(neither).not.toContain('stream_inbox');
-    expect(neither).toContain('chats');
-  });
-
-  it('a fresh instance shows exactly Chats and Connections', () => {
-    // Home, the project, Files and Bookmarks all used to sit here; each moved to
-    // the top navigation bar. Connections stays because it is ungated: a fresh
-    // instance is precisely when you need to connect something.
-    const top = resolveRail(ViewMode.Vibe, { conversations: false })
-      .filter((item) => item.placement === 'top')
-      .map((item) => item.id);
-    expect(top).toEqual(['chats', 'credentials']);
+describe('resolveRail — Stream Inbox is always reachable', () => {
+  it('is on the rail in every mode, with or without conversations', () => {
+    // It used to be gated on "a conversation exists". A logout purges the hub's
+    // conversations, so the icon vanished in exactly the state where its screen
+    // says "Login required" — the only way back in.
+    for (const mode of MODE_CHAIN) expect(idsFor(mode)).toContain('stream_inbox');
   });
 
   it('leaves Home, project, Files and Bookmarks to the top navigation bar', () => {

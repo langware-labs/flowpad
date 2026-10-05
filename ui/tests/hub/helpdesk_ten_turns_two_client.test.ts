@@ -6,7 +6,7 @@
  *   SHARE_INST_2 = the HELPER   (a member of the deployment's desk, answers)
  *
  * Every hop is the SDK call the product makes:
- *   - the requester opens the ticket with `startHelpdeskTicket` and follows
+ *   - the requester opens the ticket with `askForHelp` (to a desk) and follows
  *     up with `sendReply` — the composer on a hub-mirrored conversation;
  *   - the helper reads the ticket through a `helpdesk` DataSource (the "+"
  *     on the channels line) and answers with `sendToChannel` — the composer
@@ -20,7 +20,7 @@
  * hold the same twenty hub messages, one row each.
  *
  * Uses the deployment's canonical desk (`/health/version`), because a
- * requester's `startHelpdeskTicket` resolves the desk server-side; the helper
+ * requester's `askForHelp` resolves the desk server-side; the helper
  * must therefore be on `HELPDESK_STAFF_EMAILS`. Set HELPDESK_KEEP=1 to leave
  * the helper's source (and so the projected rows) in place for a look in the
  * browser afterwards.
@@ -155,7 +155,7 @@ describe('a ten-turn support conversation', () => {
 
       // Requester: open the ticket, then follow up in it.
       if (turn === 1) {
-        convId = (await requester.sdk.startHelpdeskTicket(ask)).conversation_id;
+        convId = (await requester.sdk.askForHelp({ recipient: { kind: 'desk' }, text: ask })).conversation_id;
       } else {
         expect(convId, 'the ticket exists').toBeTruthy();
         await requester.sdk.sendReply({ conversationId: convId }, ask);

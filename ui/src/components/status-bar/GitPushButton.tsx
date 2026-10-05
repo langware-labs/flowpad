@@ -6,7 +6,8 @@ import { useGitStatus } from './GitStatusContext';
 
 /**
  * One-click "non-tech" push for the current project, shown next to the pending
- * pill. Hidden unless there are pending changes. Reads the shared
+ * pill. Hidden unless there is something to push: uncommitted changes, or local
+ * commits not yet pushed (an asset save the backend auto-committed). Reads the shared
  * GitStatusContext and refreshes it after a push so the pill updates too.
  */
 export const GitPushButton: React.FC = () => {
@@ -16,7 +17,8 @@ export const GitPushButton: React.FC = () => {
   const { push, busy } = useGitPush(computeNodeId, workdir, status?.refresh);
   const { t } = useLingui();
 
-  if (!status || !status.hasRepo || !status.count || status.count <= 0 || !computeNodeId || !workdir) {
+  const pending = (status?.count ?? 0) > 0 || (status?.ahead ?? 0) > 0;
+  if (!status || !status.hasRepo || !pending || !computeNodeId || !workdir) {
     return null;
   }
 

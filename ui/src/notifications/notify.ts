@@ -4,6 +4,8 @@ import type { NotificationData, NotificationInput, NotificationLevel } from './t
 import { useAlertStore } from './alerts-store';
 import { useBadgeStore } from './store';
 import { renderToast } from './NotificationOutlet';
+import { settleAsk } from './pending-asks';
+import { useCenterStore } from './center-store';
 
 /**
  * The single notification dispatcher for the whole UI.
@@ -27,6 +29,9 @@ import { renderToast } from './NotificationOutlet';
  * for the case where the alert is the only feedback that an action the user just
  * took did nothing — a silent no-op reads as a broken button. Don't reach for it
  * to make an alert louder; that is how everyone ends up drowning again.
+ *
+ * `transient` is for an alert about one click rather than a standing condition:
+ * it toasts once in every mode, times out, and never enters the warnings log.
  */
 
 const DEFAULT_DURATION_MS: Record<NotificationLevel, number | null> = {
@@ -35,6 +40,9 @@ const DEFAULT_DURATION_MS: Record<NotificationLevel, number | null> = {
   warning: 8000,
   error: null, // sticky until dismissed/replaced
 };
+
+/** A `transient` alert never sticks — not even an error — since it is never logged either. */
+const TRANSIENT_DURATION_MS = 8000;
 
 /** Tiny synchronous string hash (djb2) for auto-derived ids. */
 function djb2(s: string): string {
@@ -58,12 +66,18 @@ function dispatch(input: NotificationInput): string {
     return id;
   }
 
+  // A centered notification is a blocking dialog, never a toast (NotificationOutlet draws it).
+  if (data.location === 'center') {
+    useCenterStore.getState().show(data);
+    return id;
+  }
+
   // Alerts are logged for the footer warnings popover in every mode, and are
   // toasted only in Dev. The explicit dismiss on suppression matters: an alert
   // commonly REPLACES a sticky `notify.busy` toast under the same id (see
   // AssetManagerPopover), so silently skipping the emit would leave that
   // spinner running forever.
-  if (isAlertLevel(data.level)) {
+  if (isAlertLevel(data.level) && !data.transient) {
     useAlertStore.getState().push(data);
     if (!data.forceToast && getEffectiveViewMode() !== ViewMode.Dev) {
       sonnerToast.dismiss(id);
@@ -72,16 +86,32 @@ function dispatch(input: NotificationInput): string {
   }
 
   // Transient toast via sonner.
-  const ms = data.busy ? Infinity : data.durationMs === undefined ? DEFAULT_DURATION_MS[data.level] : data.durationMs;
+  const ms = data.busy
+    ? Infinity
+    : data.durationMs !== undefined
+      ? data.durationMs
+      : data.transient
+        ? TRANSIENT_DURATION_MS
+        : DEFAULT_DURATION_MS[data.level];
   sonnerToast.custom((toastId) => renderToast(data, String(toastId)), {
     id,
     duration: ms === null ? Infinity : ms,
+    // However the toast goes — its ×, a swipe, a timer — a question in it is answered "no answer".
+    onDismiss: () => settleAsk(id),
   });
   return id;
 }
 
-function dismiss(id: string): void {
+/** Take `id` off whichever surface shows it (toast or centered dialog) and answer any question in
+ *  it with "no answer" — but leave the badge feed and the alert log alone. */
+export function closeShown(id: string): void {
+  settleAsk(id);
   sonnerToast.dismiss(id);
+  useCenterStore.getState().remove(id);
+}
+
+function dismiss(id: string): void {
+  closeShown(id);
   useBadgeStore.getState().remove(id);
   useAlertStore.getState().dismiss(id);
 }

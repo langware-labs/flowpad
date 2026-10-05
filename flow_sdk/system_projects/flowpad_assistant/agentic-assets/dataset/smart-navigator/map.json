@@ -1,0 +1,973 @@
+{
+  "places": [
+    {
+      "view": "home",
+      "label": "Home",
+      "aliases": [
+        "landing",
+        "start"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "system_profile",
+      "label": "System Profile",
+      "aliases": [
+        "claude code status",
+        "live status"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "shell",
+      "label": "Worker",
+      "aliases": [
+        "chats",
+        "terminal"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [
+        "process"
+      ],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "editor",
+      "label": "Code Editor",
+      "aliases": [
+        "edit file"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "web-app",
+      "label": "Web App",
+      "aliases": [
+        "web apps"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "artifacts",
+      "label": "Artifacts",
+      "aliases": [
+        "deliverables"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "diff",
+      "label": "Diff Viewer",
+      "aliases": [
+        "changes"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [
+        "agentic_process"
+      ],
+      "subplaces": []
+    },
+    {
+      "view": "markdown",
+      "label": "Markdown",
+      "aliases": [
+        "document"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "docs",
+      "label": "Docs",
+      "aliases": [
+        "documentation"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "assistance",
+      "label": "Assistance",
+      "aliases": [
+        "expert assistance"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "survey",
+      "label": "Survey",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "hooks",
+      "label": "Hooks",
+      "aliases": [
+        "claude hooks"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "machine",
+      "label": "Machine",
+      "aliases": [
+        "system",
+        "this machine"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": [
+        {
+          "pointer": "processes",
+          "label": "Machine > running processes"
+        },
+        {
+          "pointer": "network",
+          "label": "Machine > network / ports"
+        },
+        {
+          "pointer": "secrets",
+          "label": "Machine > machine secrets"
+        }
+      ]
+    },
+    {
+      "view": "explorer",
+      "label": "Files",
+      "aliases": [
+        "file tree",
+        "folders"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "ai-config",
+      "label": "AI Configuration",
+      "aliases": [
+        "ai config",
+        "llm apis",
+        "models",
+        "clis"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": [
+        {
+          "pointer": "llm-apis",
+          "label": "AI Configuration > LLM APIs tab"
+        },
+        {
+          "pointer": "clis",
+          "label": "AI Configuration > CLIs tab"
+        }
+      ]
+    },
+    {
+      "view": "show",
+      "label": "Show",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "ask",
+      "label": "Ask",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "apps",
+      "label": "Skill apps",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "graph",
+      "label": "Graph",
+      "aliases": [
+        "dep graph",
+        "dependency graph"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [
+        "entity"
+      ],
+      "opens": [
+        "project"
+      ],
+      "subplaces": []
+    },
+    {
+      "view": "worldview",
+      "label": "WorldView",
+      "aliases": [
+        "world",
+        "org graph"
+      ],
+      "pages": [
+        "desk",
+        "hub"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [
+        "entity"
+      ],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "organization",
+      "label": "Organization",
+      "aliases": [
+        "people",
+        "teams",
+        "members"
+      ],
+      "pages": [
+        "hub"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "tag",
+      "label": "Tag Graph",
+      "aliases": [
+        "tags",
+        "taxonomy"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "subgraph",
+      "label": "Subgraph",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "k-browser",
+      "label": "Knowledge Browser",
+      "aliases": [
+        "docs browser"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "lens",
+      "label": "Lens",
+      "aliases": [
+        "transcript"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [
+        "agentic_process"
+      ],
+      "subplaces": []
+    },
+    {
+      "view": "tasks",
+      "label": "Tasks",
+      "aliases": [
+        "todo"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [
+        "entity"
+      ],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "settings",
+      "label": "Settings",
+      "aliases": [
+        "claude settings"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "preferences",
+      "label": "Preferences",
+      "aliases": [
+        "my preferences",
+        "appearance"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "agentic_process",
+      "label": "Process",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [
+        "entity",
+        "process"
+      ],
+      "opens": [
+        "agentic_process"
+      ],
+      "subplaces": []
+    },
+    {
+      "view": "search",
+      "label": "Search",
+      "aliases": [
+        "find"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "none",
+      "pointer_form": null,
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "automations",
+      "label": "Automations",
+      "aliases": [
+        "events",
+        "triggers",
+        "rules",
+        "schedules",
+        "scheduled jobs",
+        "cron",
+        "trigger history"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": [
+        {
+          "pointer": "runs",
+          "label": "Automations > Runs (every time one fired, with errors)"
+        },
+        {
+          "pointer": "bus",
+          "label": "Automations > Event bus (events, who listens, live stream)"
+        }
+      ]
+    },
+    {
+      "view": "capabilities",
+      "label": "Capabilities",
+      "aliases": [
+        "checks",
+        "system checks"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "none",
+      "pointer_form": null,
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "graph-workflows",
+      "label": "Graph Workflows",
+      "aliases": [
+        "workflows"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "data-sources",
+      "label": "Data sources",
+      "aliases": [
+        "connectors",
+        "integrations",
+        "ingestion",
+        "sources"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "rag",
+      "label": "Search indexes",
+      "aliases": [
+        "embeddings",
+        "knowledge index",
+        "vector index"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "none",
+      "pointer_form": null,
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "asset-list",
+      "label": "Asset list",
+      "aliases": [
+        "counter assets"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "none",
+      "pointer_form": null,
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "process-runs",
+      "label": "Runs",
+      "aliases": [
+        "history"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "plan",
+      "label": "Plan",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "assets",
+      "label": "Assets",
+      "aliases": [
+        "library",
+        "docs tree"
+      ],
+      "pages": [
+        "desk",
+        "hub"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [
+        "entity"
+      ],
+      "opens": [],
+      "subplaces": [
+        {
+          "pointer": "list/skill",
+          "label": "Assets filtered to skills"
+        },
+        {
+          "pointer": "list/agent",
+          "label": "Assets filtered to agents"
+        },
+        {
+          "pointer": "list/prompt",
+          "label": "Assets filtered to prompts"
+        }
+      ]
+    },
+    {
+      "view": "project",
+      "label": "Collaboration",
+      "aliases": [
+        "room"
+      ],
+      "pages": [
+        "desk",
+        "hub"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "agent",
+      "label": "Agent stream inbox",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>/stream_inbox",
+      "provides": [
+        "entity"
+      ],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "stream_inbox",
+      "label": "Stream Inbox",
+      "aliases": [
+        "messages"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "none",
+      "pointer_form": null,
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "conversation",
+      "label": "Conversation",
+      "aliases": [],
+      "pages": [
+        "desk",
+        "hub"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [
+        "entity"
+      ],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "spec",
+      "label": "Spec",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "graph_context",
+      "label": "Context",
+      "aliases": [
+        "frozen context"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "diagnosis",
+      "label": "Diagnosis",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "desktop",
+      "label": "Desktop",
+      "aliases": [
+        "favorites"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "none",
+      "pointer_form": null,
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "live_session",
+      "label": "Live Session",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "helpdesk",
+      "label": "Help desk",
+      "aliases": [
+        "support"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [
+        "project"
+      ],
+      "subplaces": []
+    },
+    {
+      "view": "records",
+      "label": "Records",
+      "aliases": [
+        "hub records"
+      ],
+      "pages": [
+        "hub"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "entity",
+      "label": "Entity",
+      "aliases": [
+        "hub entity"
+      ],
+      "pages": [
+        "hub"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "credentials",
+      "label": "Credentials",
+      "aliases": [
+        "connections",
+        "secrets",
+        "api keys",
+        "keys",
+        "env vars"
+      ],
+      "pages": [
+        "desk",
+        "hub"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": [
+        {
+          "pointer": "connections",
+          "label": "Credentials > Connections (OAuth accounts) tab"
+        }
+      ]
+    },
+    {
+      "view": "app",
+      "label": "App",
+      "aliases": [],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "required",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "llm-endpoints",
+      "label": "LLM Endpoints",
+      "aliases": [
+        "endpoints"
+      ],
+      "pages": [
+        "hub"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "token-plan",
+      "label": "Token plan",
+      "aliases": [
+        "budget",
+        "token budget"
+      ],
+      "pages": [
+        "hub"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": [
+        {
+          "pointer": "me",
+          "label": "Hub token plan > my budget"
+        },
+        {
+          "pointer": "team",
+          "label": "Hub token plan > team budget"
+        }
+      ]
+    },
+    {
+      "view": "llm-sources",
+      "label": "LLM sources",
+      "aliases": [
+        "harness funding"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "optional",
+      "pointer_form": "<id>",
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "llm-setup",
+      "label": "Set up LLM",
+      "aliases": [
+        "llm setup",
+        "choose llm",
+        "connect llm"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "none",
+      "pointer_form": null,
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    },
+    {
+      "view": "assistant",
+      "label": "Flowpad Assistant",
+      "aliases": [
+        "assistant chat",
+        "help chat"
+      ],
+      "pages": [
+        "desk"
+      ],
+      "pointer": "none",
+      "pointer_form": null,
+      "provides": [],
+      "opens": [],
+      "subplaces": []
+    }
+  ]
+}

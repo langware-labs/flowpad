@@ -5,7 +5,7 @@ import { ActionInfo } from '../models/ActionInfo';
  * Help-desk PORTAL lifecycle — the local checkout of the desk's help content.
  *
  * Distinct from the ticket queue (see `conversation.ts`
- * `startHelpdeskTicket` / `listHelpdeskTickets`): a desk answers tickets on the
+ * `askForHelp` to a desk / `listHelpdeskTickets`): a desk answers tickets on the
  * hub, and separately publishes a portal repo that requesters clone and browse
  * locally. A desk may have either, or both.
  *

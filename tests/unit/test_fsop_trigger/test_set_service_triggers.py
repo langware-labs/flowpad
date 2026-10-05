@@ -91,7 +91,7 @@ async def test_creates_system_heartbeat_trigger(initialize_test_db):
 
 
 async def test_creates_transcript_watchers(initialize_test_db):
-    """T5: Claude + Codex transcript watcher triggers are installed by set_service_triggers."""
+    """T5: Claude Code / Codex chats triggers are installed by set_service_triggers."""
     settings = get_instance_settings()
     await set_service_triggers()
 
