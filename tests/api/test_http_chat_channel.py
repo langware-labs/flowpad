@@ -165,6 +165,38 @@ async def test_with_no_loop_running_the_request_says_no_reply_yet(worker, user, 
         await agent.delete()
 
 
+async def test_asking_about_a_message_whose_turn_failed_says_so_at_once(worker, user, bootstrapped_client, monkeypatch):
+    """The loop never re-runs a failed turn, so a caller waiting on its reply would wait out a 504 on
+    every ask. It hears ``turn_failed`` instead -- the cue to tell the person, who decides to resend."""
+    import flow_sdk.server.routes.service_channel as route
+    from flow_sdk.builtin.agent_serve import FAILED, TURNS, turn_key
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    monkeypatch.setattr(route, "REPLY_DEADLINE_SECONDS", 0.3)
+    agent = Agent(name=f"failed-turn-{time.monotonic_ns()}", worker_type="claude")
+    await agent.save()
+    try:
+        deployment = await agent.run_locally()
+        chat = await ServiceEndpoint.find_existing(str(deployment.typeid), "chat")
+        ask = {"text": "do the thing", "message_id": "wamid.BROKEN"}
+        first = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json=ask)
+        assert first.status_code == 504, first.text
+        conversation_id = first.json()["data"]["conversation_id"]
+        (item,) = await SourceItem.get_all({"data_source_id": chat.backend.data_source_id})
+        session = AgenticProcess(name="session", deployment_id=deployment.id,
+                                 context_data={TURNS: {turn_key(item): {"status": FAILED, "text": ""}}})
+        await session.save()
+
+        again = await bootstrapped_client.post(
+            f"/api/v1/graph/agent/{agent.id}/ask", json={**ask, "conversation_id": conversation_id}
+        )
+
+        assert again.status_code == 422, again.text
+        assert again.json()["data"]["type"] == "turn_failed"
+    finally:
+        await agent.delete()
+
+
 async def test_the_supervisor_makes_the_chat_of_a_running_deployment(worker, user):
     """In the test tier the supervisor starts no process, but a running deployment still gets its chat."""
     agent = Agent(name=f"served-agent-{time.monotonic_ns()}", worker_type="claude")
