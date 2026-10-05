@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "hub/organization"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

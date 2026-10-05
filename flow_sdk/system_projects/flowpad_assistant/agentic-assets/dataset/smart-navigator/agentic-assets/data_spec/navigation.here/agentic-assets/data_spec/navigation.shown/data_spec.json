@@ -1,7 +1,7 @@
 {
   "type": "data_spec",
   "id": "05265604-7403-4760-bb93-375775a5af7b",
-  "name": "navigator.shown",
+  "name": "navigation.shown",
   "fields": {
     "kind": {
       "shape": "string",

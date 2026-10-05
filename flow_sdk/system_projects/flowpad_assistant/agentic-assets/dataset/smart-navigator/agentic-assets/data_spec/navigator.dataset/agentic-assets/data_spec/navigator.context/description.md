@@ -1,3 +1,3 @@
 # navigator.context
 
-What was current when the request was typed, and what search found. Field names are the context keys the navigator reads.
+Mechanism: a row's context -- the search matches offered beside the map. Recorded, so a run is judged on the options the row was labelled against.

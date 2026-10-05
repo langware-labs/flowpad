@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "events"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

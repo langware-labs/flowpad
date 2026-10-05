@@ -4,5 +4,6 @@
     "kind": "entity",
     "value": "data_source-0d5e6f7a-8b9c-4d4e-8f5a-6b7c8d9e0f1a"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

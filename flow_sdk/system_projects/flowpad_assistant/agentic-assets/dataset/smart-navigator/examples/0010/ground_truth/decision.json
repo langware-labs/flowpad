@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "explorer"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

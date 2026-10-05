@@ -288,7 +288,8 @@ async def get_browser_context(connection_id: Optional[str] = None):
     return that exact connection's context — or 404 if it isn't open.
 
     Response:
-        {ok: true, connection_id, context: { CurrentProjectTypeId: "...", ... }}
+        {ok: true, connection_id, context: { CurrentProjectTypeId: "...", ... },
+         here: { view, pointer, page, address, project, process, entity, last_shown }}
     """
     if connection_id:
         info = get_connection_infos().get(connection_id)
@@ -298,18 +299,23 @@ async def get_browser_context(connection_id: Optional[str] = None):
                 "CONNECTION_NOT_FOUND",
                 f"Connection not found: {connection_id}",
             )
-        return {
-            "ok": True,
-            "connection_id": connection_id,
-            "context": await _with_project_path(info.browser_context or {}),
-        }
+        return await _context_body(connection_id, info.browser_context or {})
 
     active = get_active_connection_info()
     if active is None:
         return _error(409, "NO_ACTIVE_TAB", "No active tab")
     cid, info = active
+    return await _context_body(cid, info.browser_context or {})
+
+
+async def _context_body(connection_id: str, ctx: dict) -> dict:
+    """The raw slots, and ``here`` -- where the tab is, keeping only the context its screen
+    provides (``flow_sdk.core.navigation.here_from``)."""
+    from flow_sdk.core.navigation import here_from  # noqa: PLC0415
+
     return {
         "ok": True,
-        "connection_id": cid,
-        "context": await _with_project_path(info.browser_context or {}),
+        "connection_id": connection_id,
+        "context": await _with_project_path(ctx),
+        "here": (await here_from(ctx)).model_dump(mode="json", exclude_none=True),
     }

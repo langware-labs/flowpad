@@ -4,5 +4,6 @@
     "kind": "view",
     "value": "shell"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }

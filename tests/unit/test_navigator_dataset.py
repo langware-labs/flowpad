@@ -95,7 +95,7 @@ async def test_evaluate_runs_every_row_on_its_own_context(shipped, monkeypatch):
     seen: list = []
 
     async def decide(spec, *, endpoint=None):
-        seen.append(spec.state["candidates"])
+        seen.append(spec.state)
         return DecisionResult(
             answers={
                 "target": ChoiceAnswer(choice="agentic", confidence=0.99),
@@ -109,4 +109,6 @@ async def test_evaluate_runs_every_row_on_its_own_context(shipped, monkeypatch):
     assert report["scored"] == 50 and len(report["outputs"]) == 50
     assert report["agentic_recall"] == 1.0 and report["confident_wrong"] == 0
     assert report["precision"] == 1.0, "only exact rule hits opened anything, and they were right"
-    assert any(c for c in seen), "rows offered their recorded candidates, not this machine's search"
+    assert any(st["candidates"] for st in seen), "rows offered their recorded candidates, not this machine's search"
+    session = next(st for st in seen if st["page"].startswith("/dock/agentic_process/"))
+    assert session["context"]["process"]["title"] == "refactor session", "each row runs where it was typed"

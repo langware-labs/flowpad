@@ -4,5 +4,6 @@
     "kind": "file",
     "value": "~/notes/plan.md"
   },
-  "verb": "show"
+  "verb": "show",
+  "confidence": null
 }
