@@ -236,7 +236,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   trigger: {
     dockPointer: (r) => {
       const tid = resultTypeId(r);
-      return tid ? DockPointer.forEvents(tid.id) : null;
+      return tid ? DockPointer.forAutomations({ trigger: tid.id }) : null;
     },
   },
   conversation: {

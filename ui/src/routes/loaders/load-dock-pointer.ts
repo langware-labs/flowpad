@@ -317,13 +317,9 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
       case ViewType.LIVE_SESSION:
         loadLiveSessionRoute(dock.pointer);
         break;
-      // The merged Events screen and its three URL aliases: context only. The
-      // rules list is the navigator's own data (`useTriggers`), fetched by the
-      // mounted view — a query here repeated on every visit (dock-loading I3).
-      case ViewType.EVENTS:
-      case ViewType.TRIGGERS:
-      case ViewType.SIGNALS:
-      case ViewType.CRON:
+      // Automations: context only. The list is the mounted view's own data
+      // (`useAutomations`) — a query here would repeat on every visit (dock-loading I3).
+      case ViewType.AUTOMATIONS:
         await adoptScopeProject(dock);
         break;
       case ViewType.PLAN:

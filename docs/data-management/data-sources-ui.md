@@ -68,7 +68,7 @@ performs is in `SourceMenu`, and each item is a single
 `navigation.openDock(DockPointer…)` call:
 
 - `DockPointer.forAppEntity(app.typeId, { source: source.id })` for each editor app shipped as a child asset of the spec (`useAssetApps(spec?.typeId)`); the app reads the source id off its own query string.
-- `DockPointer.forEvents(undefined, { target: 'data_source:<id>' })` — the Events view narrowed to this source.
+- `DockPointer.forAutomations({ place: 'bus', target: 'data_source:<id>' })` — the event bus narrowed to this source.
 - `DockPointer.forProcessRuns({ data_source_id })` — the Runs view.
 
 `useAttentionPolling` reads the URL the same way (`DockPointer.fromUrl(location)`)

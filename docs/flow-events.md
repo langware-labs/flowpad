@@ -580,23 +580,25 @@ envelope has to hold always. `emit`/`deliver` are unchanged.
 **Forwarding: nothing new joins the allowlist.** By ws_forward's own admission
 test, FSOp fires ride a user-tunable `debounce_ms` and hook fires are per tool
 use, so `trigger.*` fails AS A FAMILY, and a family is admitted whole. The app
-reads fires over REST (`trigger/fires`, new class action) until **per-connection
+reads fires over REST (`trigger/runs`, folded by `flow_sdk/automations/runs.py`) until **per-connection
 tag subscriptions** (phase 8b/9) make `target: trigger:<id>` a bounded lane —
 the same blocker `entity.*` and `data_op_msg` already wait on. Pinned by
 `test_trigger_family_is_not_forwarded_because_fsop_and_hook_are_per_item`, whose
 deletion is the only way to add the pattern.
 
-**Still outstanding:** HOOK writes no trigger-log row (only `trigger.fired`), and
-the four fire paths still emit at four call sites rather than through one
-`record_trigger_outcome` seam — FSOp and HOOK inline their own copies of
-`activate_flows_for_trigger` / `dispatch_trigger_actions`. Consolidating means
-newly giving every hook rule a log row, which is a visible behavior change worth
-its own review (and `log_mode` is enforced nowhere today).
+**Still outstanding:** the fire paths still emit at their own call sites rather
+than through one `record_trigger_outcome` seam — each kind calls
+`activate_flows_for_trigger` / `run_trigger_actions` itself, and only TAG writes a
+start row plus a `tag_fire_done` row (schedule and FSOp write one row after the
+work). A matched HOOK fire now writes a row (2026-10-05, docs/automations.md).
 
 ### Log
 - 2026-08-05 — shipped. Adapter + bus primitive + log-key alignment + the
   self-loop brake; emissions at all four fire paths. UI: Triggers + Signals
   merged into `/dock/events` (`triggers`/`signals`/`cron` kept as aliases).
+- 2026-10-05 — the Events screen became Automations (`/dock/automations`, its
+  Runs and its Event bus); `events`/`triggers`/`cron`/`signals` are retired and
+  forward to it. See docs/automations.md.
   Live drill on dev-1: `trigger.fired` observed in `/debug/observed_tags`, a
   50-file batch yields exactly one envelope, log rows carry `event_id`, and
   "Run now" on a schedule rule lands a row in the feed within one poll.

@@ -2,20 +2,10 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import { cn } from '@src/lib/utils';
-import { ActionInfo, dataManager } from '@sdk';
+import { Trigger, type TriggerLogRow } from '@sdk';
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-interface TriggerLogEntry {
-  id: string;
-  ts: string;
-  hook_event: string;
-  trigger: boolean;
-  reason: string;
-  is_test: boolean;
-  rule_name: string;
-  actions: string[];
-}
 
 function timeAgo(iso: string): string {
   return formatTimeAgo(iso) || 'just now';
@@ -26,20 +16,15 @@ interface Props {
 }
 
 export function TriggerLogViewer({ triggerId }: Props) {
-  const [entries, setEntries] = useState<TriggerLogEntry[]>([]);
+  const [entries, setEntries] = useState<TriggerLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [triggeredOnly, setTriggeredOnly] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchEntries = useCallback(async () => {
     try {
-      const action = new ActionInfo('log', 'trigger', triggerId, 'GET');
-      action.queryParameters = {
-        limit: '500',
-        ...(triggeredOnly ? { triggered_only: 'true' } : {}),
-      };
-      const data = await dataManager.callAction<undefined, TriggerLogEntry[]>(action);
-      if (Array.isArray(data)) setEntries(data);
+      const data = await Trigger.log(triggerId, { limit: 500, triggeredOnly });
+      setEntries(data);
     } catch {
       // ignore
     } finally {
@@ -143,9 +128,9 @@ export function TriggerLogViewer({ triggerId }: Props) {
               </span>
 
               {/* Actions */}
-              {entry.actions.length > 0 && (
+              {(entry.actions ?? []).length > 0 && (
                 <div className="flex gap-1">
-                  {entry.actions.map((a, i) => (
+                  {(entry.actions ?? []).map((a, i) => (
                     <Badge key={i} variant="secondary" className="h-4 px-1 text-[9px]">
                       {a}
                     </Badge>

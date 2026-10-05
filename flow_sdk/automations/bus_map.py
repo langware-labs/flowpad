@@ -22,13 +22,13 @@ async def bus_map() -> BusMap:
     from flow_sdk.schema.data_spec.trigger_types import TriggerType  # noqa: PLC0415
     from flow_sdk.tags import event_bus  # noqa: PLC0415
     from flow_sdk.tags.bus import explain_subscription_match  # noqa: PLC0415
-    from flow_sdk.tags.grammar import tag_matches  # noqa: PLC0415
+    from flow_sdk.tags.grammar import tag_matches, tag_tree  # noqa: PLC0415
     from flow_sdk.tags.ws_forward import FORWARDED_TAG_PATTERNS  # noqa: PLC0415
 
     catalog = event_catalog()
     observed: dict[str, Any] = event_bus.observed_tags()
     names = set(catalog) | set(observed)
-    families = {n for n in names if any(other.startswith(n + ".") for other in names)}
+    families = {parent for parent in tag_tree(sorted(names)) if parent}
 
     names_cache = _Names()
     listeners: list[BusListener] = []

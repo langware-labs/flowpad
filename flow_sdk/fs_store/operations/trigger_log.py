@@ -98,7 +98,7 @@ def append_entry(rule_name: str, entry_dict: dict[str, Any]) -> None:
         # What a run detail needs to answer "what happened": the plain error
         # when an action or the flow activation failed, how long dispatch took,
         # a SHORT excerpt of the causing data (capped by `cap_cause_data` — this
-        # file is rewritten on every append and polled, so never a payload), and
+        # file is polled, so never a payload), and
         # the hash of the rule's spec at fire time ("Not tested yet" compares it).
         "error": entry_dict.get("error"),
         "duration_ms": entry_dict.get("duration_ms"),
@@ -106,17 +106,36 @@ def append_entry(rule_name: str, entry_dict: dict[str, Any]) -> None:
         "spec_hash": entry_dict.get("spec_hash"),
     }
 
-    entries: list[str] = []
-    if log_file.exists():
+    line = json.dumps(entry) + "\n"
+    count = _line_counts.get(log_file)
+    if count is None:
+        count = _count_lines(log_file)
+    if count >= MAX_ENTRIES:
+        # At the cap: drop the oldest DROP_COUNT in one rewrite, then append again
+        # for the next DROP_COUNT rows. Rewriting on every append (what this used
+        # to do) read and wrote up to 1000 rows per fire, on the event loop.
         try:
-            entries = [ln for ln in log_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
+            kept = [ln for ln in log_file.read_text(encoding="utf-8").splitlines() if ln.strip()][DROP_COUNT:]
         except OSError:
-            entries = []
+            kept = []
+        log_file.write_text("".join(f"{ln}\n" for ln in kept) + line, encoding="utf-8")
+        _line_counts[log_file] = len(kept) + 1
+        return
+    with log_file.open("a", encoding="utf-8") as fh:
+        fh.write(line)
+    _line_counts[log_file] = count + 1
 
-    if len(entries) >= MAX_ENTRIES:
-        entries = entries[DROP_COUNT:]
-    entries.append(json.dumps(entry))
-    log_file.write_text("\n".join(entries) + "\n", encoding="utf-8")
+
+#: Rows per log file, counted once per process and kept in step with appends.
+_line_counts: dict[Path, int] = {}
+
+
+def _count_lines(log_file: Path) -> int:
+    try:
+        with log_file.open("rb") as fh:
+            return sum(1 for ln in fh if ln.strip())
+    except OSError:
+        return 0
 
 
 #: How much of the tail to read when only the newest `limit` rows are wanted.
@@ -129,7 +148,7 @@ _TAIL_BYTES = 256 * 1024
 def _read_tail_lines(log_file: Path, limit: int) -> list[str]:
     """The last `limit` non-empty lines, without reading the whole file.
 
-    These files run to ~1 MB (MAX_ENTRIES rows) and the events screen polls them
+    These files run to ~1 MB (MAX_ENTRIES rows) and the Automations screen polls them
     every few seconds; `read_text()` on the whole file to keep `lines[-limit:]`
     threw away most of what it read. The first line of a tail read is usually
     partial, so it is dropped — unless we reached byte 0, where it is genuine.
@@ -166,11 +185,13 @@ def _discover_rule(rule_name: str, limit: int = 500) -> list[dict[str, Any]]:
     return result
 
 
-def discover(rule_name: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+def discover(rule_name: str | None = None, limit: int = 500, *, per_rule: int | None = None) -> list[dict[str, Any]]:
     """Read newest-first entries.
 
     When ``rule_name`` is given, returns entries for that rule. Otherwise
-    returns entries across all rules.
+    returns entries across all rules — reading at most ``per_rule`` rows of
+    each file (default ``limit``), so a caller that needs only each rule's
+    recent rows does not parse every file whole.
     """
     if rule_name is not None:
         return _discover_rule(rule_name, limit)
@@ -180,7 +201,7 @@ def discover(rule_name: str | None = None, limit: int = 500) -> list[dict[str, A
     results: list[dict[str, Any]] = []
     for rule_dir in log_dir.iterdir():
         if rule_dir.is_dir():
-            results.extend(_discover_rule(rule_dir.name, limit))
+            results.extend(_discover_rule(rule_dir.name, per_rule or limit))
     # The all-rules branch concatenates per-rule blocks, so it has to sort to
     # honour this function's "newest-first" contract — otherwise every
     # cross-rule caller repeats the sort or silently gets grouped-by-rule rows.

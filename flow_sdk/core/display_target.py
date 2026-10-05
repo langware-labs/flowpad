@@ -17,7 +17,7 @@ Resolution policy (the ``flow navigate file`` behaviour):
              an endpoint by the caller first — ``register_dev_endpoint``);
   * dock   → a SCREEN, addressed as ``<viewType>[/<pointer>][?<opts>]`` — the
              one address form that reaches a view with no entity behind it
-             (Events, Preferences, Assets, …). Validated against the
+             (Automations, Preferences, Assets, …). Validated against the
              ``flow_sdk.core.dock_address`` table, which is pinned to the
              frontend's own vocabulary by a contract fixture.
 """
@@ -257,7 +257,7 @@ async def dock_target(address: str) -> dict:
     address — the screen form.
 
     This is the only target kind that can name a view with no entity behind it,
-    which is what lets an agent open Events or Preferences at all. Validation is
+    which is what lets an agent open Automations or Preferences at all. Validation is
     entirely ``dock_address``'s table (pinned to the frontend by
     ``tests/fixtures/dock_address_contract.json``), so the rules cannot drift
     from what the UI will actually accept:
@@ -274,7 +274,7 @@ async def dock_target(address: str) -> dict:
       to the Home landing — a wrong screen reported as a success;
     * a pointer shaped like a TypeId is looked up, so ``conversation/<bogus>``
       fails here instead of opening a dock that renders a load error. A
-      grammar-only view (``events``) never touches the DB.
+      grammar-only view (``automations``) never touches the DB.
 
     The address is carried as the FRONTEND's own field names (``view_type`` /
     ``pointer`` / ``options`` / ``page``) so the client builds its DockPointer

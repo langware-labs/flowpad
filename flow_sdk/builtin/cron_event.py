@@ -24,36 +24,12 @@ def _require_desktop():
 
 
 def _parse_trigger(trigger_type: str, expr: str):
-    """Parse trigger_type + expr into an APScheduler trigger object."""
-    if trigger_type == "interval":
-        # expr like "30s", "5m", "2h"
-        from apscheduler.triggers.interval import IntervalTrigger
-        seconds = _parse_interval_expr(expr)
-        return IntervalTrigger(seconds=seconds)
-    elif trigger_type == "date":
-        from apscheduler.triggers.date import DateTrigger
-        run_date = datetime.fromisoformat(expr)
-        return DateTrigger(run_date=run_date)
-    else:
-        # Default: cron — through the Trigger parser, which reads the crontab
-        # day-of-week the crontab way (APScheduler 3.x counts Monday as 0).
-        from flow_sdk.builtin.trigger import _parse_trigger as _parse_crontab
+    """Parse trigger_type + expr into an APScheduler trigger — THE Trigger parser,
+    so a cron event and a schedule read cron, intervals and dates identically
+    (including the crontab day-of-week fix)."""
+    from flow_sdk.builtin.trigger import _parse_trigger as _parse  # noqa: PLC0415
 
-        return _parse_crontab("cron", expr)
-
-
-def _parse_interval_expr(expr: str) -> int:
-    """Convert interval expression like '30s', '5m', '2h' to seconds."""
-    expr = expr.strip().lower()
-    if expr.endswith("s"):
-        return int(expr[:-1])
-    elif expr.endswith("m"):
-        return int(expr[:-1]) * 60
-    elif expr.endswith("h"):
-        return int(expr[:-1]) * 3600
-    elif expr.endswith("d"):
-        return int(expr[:-1]) * 86400
-    return int(expr)
+    return _parse(trigger_type, expr)
 
 
 async def _fire_cron_job(cron_event_id: str):

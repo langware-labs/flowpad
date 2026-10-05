@@ -1,3 +1,4 @@
+import { automationsOptions, automationsPointer, type AutomationsRoute } from '@src/components/automations/automations-pointer';
 import { pointerForWebUrl, webUrlFromPointer } from '@sdk';
 import {
   Agent,
@@ -794,34 +795,14 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Events dock — the merged rules + activity screen. The selected rule id (and
-   * the transient "creating" mode) ride in OPTIONS, never `pointer`, so the
-   * tabHash stays `events|` — selection/creation are URL-addressable +
-   * reload-safe but stay in ONE tab (the same rule the scope filter follows
-   * here). Pair with the `trigger` / `creating` option keys read by the
-   * events view and the rules navigator.
+   * Automations — the list, one automation, its runs, the event bus. The place
+   * rides the pointer (`runs`, `bus`); what is selected rides OPTIONS, so every
+   * level is URL-addressable and reload-safe in ONE tab (`foldsPointer`). The
+   * grammar lives in `automations-pointer.ts`; this only builds the pointer.
    */
-  static forEvents(
-    ruleId?: string,
-    opts?: { creating?: string; system?: boolean; target?: string },
-    layout: Layout = Layout.DOCK,
-  ): DockPointer {
-    const options: Record<string, string> = {};
-    if (ruleId) options.trigger = ruleId;
-    if (opts?.creating) options.creating = opts.creating;
-    // `target` narrows the feed to one subject, in the colon form a FlowEvent
-    // already uses (`data_source:<id>`, `graph_workflow:<id>`, …) — so "show me
-    // what this thing produced" is a link from anywhere that holds an entity,
-    // not a search the user has to retype.
-    if (opts?.target) options.target = opts.target;
-    // `system` rides the URL rather than component state because BOTH panes
-    // need it: the ScopeFilter shape is `{mode, user, projects}` and cannot
-    // carry `system`, so system-scoped rules have always ridden a separate
-    // toggle. Once the feed had to honour the same rule as the rules list,
-    // keeping that toggle local to the navigator would have meant the body
-    // silently dropping every system rule's activity.
-    if (opts?.system) options.system = '1';
-    return new DockPointer(ViewType.EVENTS, undefined, options, layout);
+  static forAutomations(route: Partial<AutomationsRoute> = {}, layout: Layout = Layout.DOCK): DockPointer {
+    const full: AutomationsRoute = { place: 'list', ...route };
+    return new DockPointer(ViewType.AUTOMATIONS, automationsPointer(full.place), automationsOptions(full), layout);
   }
 
   /**
@@ -841,7 +822,7 @@ export class DockPointer implements IDockPointer {
    *   /dock/process-runs?flow_id=…&node_id=…        narrowed
    *
    * Everything rides OPTIONS and the pointer stays empty — the same call
-   * {@link forEvents} makes, and for the same reason: `tabHash` folds to
+   * {@link forAutomations} makes, and for the same reason: `tabHash` folds to
    * `process-runs|`, so selecting a run is addressable and reload-safe without
    * minting a tab per run. The scope keys are the backend's `SCOPES`
    * vocabulary verbatim, so a new scope is one entry on each side.
@@ -2011,7 +1992,7 @@ export class DockPointer implements IDockPointer {
     const pointer = sub?.messageId ? `${conversationId}/message/${sub.messageId}` : conversationId;
     // `thread` rides OPTIONS, not the path: opening a thread is a filter over
     // the same conversation, so `tabHash` must stay `conversation|<id>` and
-    // never mint a second tab. Same call `forEvents` and `forProcessRuns`
+    // never mint a second tab. Same call `forAutomations` and `forProcessRuns`
     // make, for the same reason.
     const options: Record<string, string> = {};
     if (sub?.thread) options[THREAD_PARAM] = sub.thread;

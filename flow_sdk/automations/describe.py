@@ -9,6 +9,7 @@ callback name or a TypeId means.
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from typing import Any, Optional
 
 from flow_sdk.schema.data_spec.automation_spec import (
@@ -40,8 +41,9 @@ def kind_of(trigger: Any) -> AutomationKind:
     return KIND_OF.get(str(trigger.trigger_type), "agent_hook")
 
 
+@lru_cache(maxsize=1)
 def event_catalog() -> dict[str, tuple[str, str]]:
-    """tag name → (title, description), from the shipped tag vocabulary."""
+    """tag name → (title, description), from the shipped tag vocabulary (fixed per process)."""
     from flow_sdk.builtin.tag import SYSTEM_TAG_SEED  # noqa: PLC0415
 
     return {name: (title, description) for name, title, description in SYSTEM_TAG_SEED}
@@ -92,14 +94,10 @@ class _Names:
             return self._cache[typeid]
         found: Optional[str] = None
         try:
-            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-            from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+            from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
 
-            tid = TypeId(typeid)
-            info = SchemaRegistry.get(tid.type)
-            cls = getattr(info, "entity_cls", None) if info else None
-            row = await cls.get_by_id(tid.id) if cls is not None else None
-            found = getattr(row, "name", None) or getattr(row, "title", None) if row else None
+            row = await Entity.get_by_typeid(typeid)  # resolves `type-<id>` and `type-@uname`
+            found = (getattr(row, "name", None) or getattr(row, "title", None)) if row else None
         except Exception:  # noqa: BLE001 — a name is display sugar; never fail the list over it
             logger.debug("could not resolve %s", typeid, exc_info=True)
         self._cache[typeid] = found

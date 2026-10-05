@@ -16,13 +16,12 @@ _MAX_DRAIN_ROUNDS = 50
 async def settle() -> None:
     """Await every task the bus, a test run, or a tag fire scheduled — never a sleep."""
     from flow_sdk.automations import run_once
-    from flow_sdk.builtin import tag_triggers
     from flow_sdk.tags.bus import _INFLIGHT
 
     current = asyncio.current_task()
     for _ in range(_MAX_DRAIN_ROUNDS):
         pending = [
-            t for t in (*_INFLIGHT, *run_once._inflight, *tag_triggers._test_runs)
+            t for t in (*_INFLIGHT, *run_once._inflight)
             if t is not current and not t.done()
         ]
         if not pending:

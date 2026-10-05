@@ -385,7 +385,7 @@ async def test_navigate_view_no_active_tab_returns_409():
     from flow_sdk.server.app import app
 
     with TestClient(app) as client:
-        resp = client.post("/api/v1/agent/navigate/view", json={"view": "events"})
+        resp = client.post("/api/v1/agent/navigate/view", json={"view": "automations"})
         assert resp.status_code == 409
         assert resp.json()["error_code"] == "NO_ACTIVE_TAB"
 
@@ -403,16 +403,16 @@ async def test_navigate_view_sends_navigate_dock_to_the_active_tab():
             )
             _flush(ws)
 
-            resp = client.post("/api/v1/agent/navigate/view", json={"view": "events"})
+            resp = client.post("/api/v1/agent/navigate/view", json={"view": "automations"})
             assert resp.status_code == 200
             body = resp.json()
             assert body["ok"] is True
             assert body["mode"] == "dock"
-            assert body["view_type"] == "events"
+            assert body["view_type"] == "automations"
 
             msg = _receive_ui_command(ws)
             assert msg["kind"] == "navigate_dock"
-            assert msg["view_type"] == "events"
+            assert msg["view_type"] == "automations"
             # A pointerless view omits the key rather than sending null (the
             # payload shape; see `dock_target`). The frontend reads it with `??`.
             assert msg.get("pointer") is None

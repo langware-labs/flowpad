@@ -19,7 +19,6 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { isValidIdentifier } from '@sdk/models/TypeId';
-import { EVENTS_VIEW_TYPES } from '@src/types/ViewType';
 import { getViewMode, rememberedDockViewMode, VIEW_MODE_SWITCH_STATE, ViewMode } from '@src/contexts/view-mode-context';
 import { CAPABILITY_PARAM, DockPointer, JOURNEY_PARAM, JOURNEY_STEP_PARAM, NODE_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
@@ -125,12 +124,6 @@ function ownerProjectId(dock: DockPointer): string | null {
 
 export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.ASSETS,
-  // Events (+ its aliases): ONE ScopeFilter drives both halves of the screen —
-  // which rules the navigator lists and which events the feed shows. The old
-  // Signals screen was deliberately global; folding it in trades that for the
-  // filter the user already knows, with `all` scope still available from the
-  // scope bar when an instance-wide view is wanted.
-  ...EVENTS_VIEW_TYPES,
   ViewType.EXPLORER,
   ViewType.SHELL,
 ]);

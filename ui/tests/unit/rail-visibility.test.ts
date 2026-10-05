@@ -49,13 +49,13 @@ describe('resolveRail — modes are strictly additive', () => {
   });
 
   it('each mode adds the items declared at it', () => {
-    // `events` merged the old `triggers` (Advanced) and `signals` (Dev) items.
+    // `automations` (was `events`, which merged the old `triggers` and `signals` items).
     // It stays at Advanced, not Dev: dropping to Dev would have removed rules
     // from a mode that already had them, which is a subtraction the additive
     // chain above forbids.
-    expect(idsFor(ViewMode.Advanced)).toContain('events');
+    expect(idsFor(ViewMode.Advanced)).toContain('automations');
     expect(idsFor(ViewMode.Advanced)).toContain('hooks');
-    expect(idsFor(ViewMode.Standard)).not.toContain('events');
+    expect(idsFor(ViewMode.Standard)).not.toContain('automations');
     // The merged ids are gone, not merely relocated.
     expect(idsFor(ViewMode.Dev)).not.toContain('triggers');
     expect(idsFor(ViewMode.Dev)).not.toContain('signals');

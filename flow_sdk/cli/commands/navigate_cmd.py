@@ -133,14 +133,14 @@ def navigate_entity(
     help=(
         "Navigate the active browser tab to a SCREEN by dock address, "
         "'viewType' plus an optional '/pointer' and '?opts'. Examples: "
-        "'events', 'assets/list/skill', 'preferences/appearance'. "
+        "'automations', 'assets/list/skill', 'preferences/appearance'. "
         "Run `flow schema views`."
     ),
 )
 def navigate_view(
     address: Annotated[
         str,
-        typer.Argument(help="Dock address, e.g. 'events' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."),
+        typer.Argument(help="Dock address, e.g. 'automations' or \"tag/graph/eng.db?view=tree\" (quote it if it has a ?)."),
     ],
     connection_id: Annotated[
         Optional[str],

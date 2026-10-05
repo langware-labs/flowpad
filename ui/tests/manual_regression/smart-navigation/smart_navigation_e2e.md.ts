@@ -81,7 +81,7 @@ test.describe.serial('smart navigation', () => {
     test.skip(prefOn(), 'the log is already on for this instance — turn it off to run this leg');
     // One count across both legs: a decision logged while OFF would make the total +4, not +3.
     const before = (await logRows()).length;
-    await page.goto('/dock/events');
+    await page.goto('/dock/automations');
     await ask(page, 'open data sources');
     await expect(page).toHaveURL(/\/dock\/data-sources$/);
 

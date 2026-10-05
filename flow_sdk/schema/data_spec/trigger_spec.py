@@ -61,7 +61,7 @@ class TriggerActionSpec(DataSpec):
     """One thing to do when the trigger fires.
 
     Replaces the bare ``TriggerAction(BaseModel)``: an action travels — into a
-    seed dict, onto a row, over the wire to the Events screen — and every value
+    seed dict, onto a row, over the wire to the Automations screen — and every value
     that travels is a ``DataSpec``.
 
     **Launching a wizard is a NAMED action, not a callback with a magic string.**
@@ -71,7 +71,7 @@ class TriggerActionSpec(DataSpec):
     and which is ``Sharing.PRIVATE``, so a shared trigger loses its target
     entirely. Three consequences, all of which this fixes: nothing can validate
     the target is a wizard, nothing can find the triggers that launch a given
-    wizard without string-matching a Python function name, and the Events screen
+    wizard without string-matching a Python function name, and the Automations screen
     cannot say what a trigger DOES beyond "callback".
     """
 
