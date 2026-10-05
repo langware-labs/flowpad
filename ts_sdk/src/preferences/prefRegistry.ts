@@ -312,7 +312,7 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     category: 'advanced',
     label: 'Smart navigation log',
     description:
-      'Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then.',
+      "Collect every smart-navigation decision (what you typed, where, what opened) in the SmartNavigationLog dataset, to review and train on. It lives in Flowpad's temp folder, which is cleared now and then.",
     dataType: PrefDataType.BOOL,
     defaultValue: false,
   },
