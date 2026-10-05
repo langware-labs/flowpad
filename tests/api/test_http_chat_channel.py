@@ -194,3 +194,30 @@ async def test_a_box_reports_an_agent_placements_chat(deployed, bootstrapped_cli
 
     assert resp.status_code == 200, resp.text
     assert [e["id"] for e in resp.json()["data"]["endpoints"]] == [chat.id]
+
+
+async def test_ask_is_one_message_and_its_answer_continuing_one_conversation(deployed, bootstrapped_client, worker):
+    """``POST agent/<id>/ask`` — what a hub calls on the box it placed the agent on: the message lands on
+    the agent's own chat channel and the loop's answer comes back in the ordinary envelope."""
+    agent, _deployment, _chat = deployed
+    first = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "hello there"})
+    assert first.status_code == 200, first.text
+    data = first.json()["data"]
+    assert data["answer"].startswith("Mock reply") and data["conversation_id"]
+
+    again = await bootstrapped_client.post(
+        f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "and again", "conversation_id": data["conversation_id"]}
+    )
+    assert again.status_code == 200, again.text
+    assert again.json()["data"]["conversation_id"] == data["conversation_id"]
+    assert worker.received_prompts == ["hello there", "and again"]
+
+
+async def test_ask_refuses_no_text_and_a_disabled_agent(deployed, bootstrapped_client):
+    agent, _deployment, _chat = deployed
+    empty = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "  "})
+    assert empty.status_code == 400
+    agent.enabled = False
+    await agent.save()
+    off = await bootstrapped_client.post(f"/api/v1/graph/agent/{agent.id}/ask", json={"text": "hi"})
+    assert off.status_code == 409 and "disabled" in off.text
