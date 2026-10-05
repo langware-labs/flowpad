@@ -13680,12 +13680,12 @@ msgstr ""
 
 #: src/components/assets/AssetListView.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
+#: src/components/entity-execution-panel/NewSessionPill.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/QuickCreateTile.tsx
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr "جديد"
@@ -13738,6 +13738,7 @@ msgid "New build"
 msgstr "إصدار جديد"
 
 #: src/components/assets/editor/agent-profile/DeployedAgentChatPanel.tsx
+#: src/components/floating-chat/AssistantChat.tsx
 #: src/components/floating-chat/AssistantChat.tsx
 msgid "New chat"
 msgstr "محادثة جديدة"
@@ -18055,6 +18056,7 @@ msgstr "تعزيز الحداثة"
 msgid "Recency Factor (k)"
 msgstr "معامل الحداثة (k)"
 
+#: src/components/floating-chat/AssistantChat.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/pages/flow-page/vibe-chat-pane.tsx
 msgid "Recent"
