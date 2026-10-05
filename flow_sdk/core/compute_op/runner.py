@@ -70,13 +70,16 @@ from flow_sdk.schema.data_spec.compute_op_spec import (
     AskOp,
     CliOp,
     ComputeOpSpec,
+    NavigateOp,
     PromptOp,
     fields_of_kind,
 )
+from flow_sdk.schema.data_spec.dock_pointer_spec import DockPointerSpec
 from flow_sdk.schema.data_spec.returned_value_spec import (
     AskResult,
     CliResult,
     ExitCode,
+    NavigateResult,
     PromptResult,
     ReturnedValue,
 )
@@ -86,6 +89,23 @@ VALUE_KEY = "value"
 
 Shell = Callable[..., Awaitable[CliResult]]
 Launch = Callable[..., Awaitable[PromptResult]]
+Navigate = Callable[..., Awaitable[NavigateResult]]
+
+#: The wizard input a target-less ``navigate`` op opens (``input_env``'s name for ``pointer``).
+POINTER_INPUT_ENV = "FLOWPAD_WIZARD_INPUT_POINTER"
+
+
+async def navigate_for_subject(target: DockPointerSpec, *, subject: str = "", show: bool = True) -> NavigateResult:
+    """The default ``navigate`` seam: a session subject (``agentic_process-<id>``) gets
+    the place as its display; anything else, the active browser tab."""
+    from flow_sdk.core.navigate import navigate  # noqa: PLC0415
+
+    process = None
+    if subject.startswith("agentic_process-"):
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+
+        process = await AgenticProcess.get_by_id(subject.split("-", 1)[1])
+    return await navigate(target, process=process, show=show)
 
 
 @dataclass
@@ -194,6 +214,7 @@ async def run_op(
     ask_timeout: Optional[float] = None,
     shell: Optional[Shell] = None,
     launch: Launch = launch_step_process,
+    navigate: Navigate = navigate_for_subject,
     on_status: Optional[Callable[[str], None]] = None,
     wizard_id: str = "",
     #: Report the goal's current state and stop — never ask, never run a
@@ -213,6 +234,13 @@ async def run_op(
             return refused_for(spec)
         workdir = Path(workdir) if workdir else Path.cwd()
         say = _say(on_status)
+
+        if isinstance(exe, NavigateOp):
+            seams = _Seams(
+                workdir=workdir, platform=platform, env=env, subject=subject, ask_timeout=ask_timeout,
+                shell=shell, launch=launch, say=say, wizard_id=wizard_id,
+            )
+            return await _run_navigate(spec, seams=seams, navigate=navigate, check_only=check_only)
 
         say(f"checking {spec.display_label}")
         before = await _check(spec, workdir=workdir, platform=platform, env=env, shell=shell)
@@ -266,6 +294,104 @@ async def run_op(
             # one line each rather than nesting a "(after ...)" inside a "(after ...)".
             history.append(f"{tried_as}: {rescued.detail}")
         return answer
+
+
+def _navigate_target(exe: NavigateOp, env: Optional[dict]) -> DockPointerSpec | NavigateResult:
+    """The op's own target, else the ``pointer`` a wizard step bound."""
+    if exe.target is not None:
+        return exe.target
+    raw = (env or {}).get(POINTER_INPUT_ENV)
+    if not raw:
+        return NavigateResult.not_found("This navigate op names no target, and no `pointer` input was given.")
+    try:
+        return DockPointerSpec.model_validate_json(raw)
+    except ValueError as exc:
+        return NavigateResult.not_found(f"The `pointer` input is not a dock pointer: {exc}")
+
+
+def _navigate_bar(target: DockPointerSpec, answer: NavigateResult) -> str:
+    """What a repair rung is told: where Flowpad tries to go, what it found, and the bar."""
+    from flow_sdk.core.navigate import web_url_from_pointer  # noqa: PLC0415
+
+    place = web_url_from_pointer(target.pointer) or f"{target.viewType}/{target.pointer}".rstrip("/")
+    return (
+        f"\n\nFlowpad is trying to open {place} and cannot use it yet: {answer.detail or answer.verdict}. "
+        f"You are done only when {place} can be opened — Flowpad opens it again after you stop, "
+        "and that is the verdict."
+    )
+
+
+def _navigate_still_fails(answer: NavigateResult) -> str:
+    """The retry prompt for a navigate op's agent rung: what opening it again found."""
+    return (
+        f"Flowpad opened it again and it is still not usable: {answer.detail or answer.verdict} "
+        f"(verdict: {answer.verdict}). Find out why and fix it, then check it yourself before you stop."
+    )
+
+
+async def _run_navigate(
+    spec: ComputeOpSpec,
+    *,
+    seams: _Seams,
+    navigate: Navigate,
+    check_only: bool,
+) -> NavigateResult:
+    """A ``navigate`` op: the fast lane is the navigation itself; while it answers
+    ``NOT_YET`` each rung of ``attempts`` gets its turn (an agent repairs what the
+    navigation found — a server that is down), and navigating AGAIN after it is the
+    check. An agent rung's ``retries`` are further turns in its session, told what the
+    last navigation found. Never raises.
+
+    Its own path rather than ``_attempt``'s, because the check here is not a shell
+    command: a ``CliResult``-shaped re-check would have to pretend to be one.
+    """
+    exe = spec.exe_data
+    label = spec.display_label or "navigate"
+    target = _navigate_target(exe, seams.env)
+    if isinstance(target, NavigateResult):
+        return target
+
+    async def go() -> NavigateResult:
+        return await navigate(target, subject=seams.subject, show=not check_only)
+
+    seams.say(f"{label}: navigate")
+    answer = await go()
+    if check_only:
+        return answer
+    history = [f"navigate: {answer.detail or answer.verdict}"]
+    for rung in spec.attempts:
+        if answer.exit_code is not ExitCode.NOT_YET:
+            break
+        seams.say(f"{label}: {rung.subkind}")
+        rung_exe = rung.exe_data
+        if isinstance(rung_exe, (AgentOp, PromptOp)):
+            rung_exe = rung_exe.model_copy(
+                update={"prompt": _earlier_attempts(history) + rung_exe.prompt + _navigate_bar(target, answer)}
+            )
+        # Promoted with no check of its own, so the call's word comes back as is: the
+        # verdict is the navigation that follows it.
+        promoted = spec.model_copy(update={"subkind": rung.subkind, "exe_data": rung_exe, "attempts": []})
+        call = await _call_and_check(promoted, None, executor=None, seams=seams)
+        answer = await go()
+        turns_left = rung_exe.retries if isinstance(rung_exe, AgentOp) else 0
+        while turns_left and answer.exit_code is ExitCode.NOT_YET and call.ran and call.executor and not call.timed_out:
+            turns_left -= 1
+            seams.say(f"{label}: agent, again")
+            told = rung_exe.model_copy(update={"prompt": _navigate_still_fails(answer)})
+            call = await _call_and_check(
+                promoted.model_copy(update={"exe_data": told}), None, executor=call.executor, seams=seams
+            )
+            answer = await go()
+        history.append(f"{rung.subkind}: {call.detail}")
+        if answer.exit_code is ExitCode.OK:
+            answer = answer.model_copy(
+                update={"detail": f"{label}: opened after the {rung.subkind} attempt.", "executor": call.executor}
+            )
+        else:
+            answer = answer.model_copy(
+                update={"detail": f"{answer.detail} (after the {rung.subkind} attempt: {call.detail})"}
+            )
+    return answer
 
 
 def _adopt_installed_path() -> None:
