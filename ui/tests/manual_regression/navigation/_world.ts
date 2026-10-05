@@ -255,8 +255,9 @@ export async function navigateTo(page: Page, address: string, expectPath: string
   // The request `flow navigate view` makes, without the CLI around it: a Python process per steer
   // cost ~1 s of a spec's wall clock on CI, ten times over in a spec — none of it the app's.
   const res = await post('agent/navigate/view', { view: address });
-  const verdict = (await res.json()) as { ok?: boolean; error?: string };
-  expect(verdict.ok, `navigate view ${address} → ${JSON.stringify(verdict)}`).toBe(true);
+  // A NavigateResult in the standard envelope: shown is exit_code 0, handed to a tab.
+  const verdict = ((await res.json()) as { data?: { exit_code?: number; delivered?: boolean } }).data;
+  expect(verdict?.exit_code === 0 && verdict.delivered, `navigate view ${address} → ${JSON.stringify(verdict)}`).toBe(true);
   await expect.poll(() => decodeURIComponent(new URL(page.url()).pathname), { timeout: 15_000 }).toContain(expectPath);
   if (committedBefore === null) return; // tab_switch tracing is off on this page: the URL is all there is
   await expect
