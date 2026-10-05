@@ -224,3 +224,53 @@ class AutomationCheck(DataSpec):
     then: list[ThenPart] = Field(default_factory=list)
     #: ISO times, for a schedule.
     next_runs: list[str] = Field(default_factory=list)
+
+
+# ── The event bus, for experts ────────────────────────────────────────────────
+
+
+class BusListener(DataSpec):
+    """An automation listening for an event type, and what it does."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.bus.listener"
+
+    id: str
+    name: str
+    pattern: str
+    enabled: bool
+    group: AutomationGroup
+    #: False for a copy from another install — listed, never armed.
+    active: bool = True
+    then: list[ThenPart] = Field(default_factory=list)
+
+
+class BusEventType(DataSpec):
+    """One event type: what it is called, how often it happened, who listens."""
+
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.bus.event_type"
+
+    name: str
+    title: str = ""
+    description: str = ""
+    #: A family root ("task") rather than an event ("task.assigned").
+    family: bool = False
+    #: A listener's pattern no event has matched yet ("drill.*").
+    pattern_only: bool = False
+    #: Times seen since the app started, and when last.
+    count: int = 0
+    last_ts: Optional[str] = None
+    last_target: Optional[str] = None
+    #: Reaches the app's live stream (the forwarded families).
+    forwarded: bool = False
+    listeners: list[BusListener] = Field(default_factory=list)
+
+
+class BusMap(DataSpec):
+    model_config = ConfigDict(frozen=True)
+    spec_kind: ClassVar[str] = "automation.bus.map"
+
+    event_types: list[BusEventType] = Field(default_factory=list)
+    #: The tag patterns forwarded to the app (what the live stream can show).
+    forwarded_patterns: list[str] = Field(default_factory=list)
