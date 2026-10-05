@@ -12,7 +12,7 @@ from .test_flow_whatsapp_source import PHONE, FlowWhatsAppSource, _Hub
 def case(monkeypatch, tmp_path):
     fake = _Hub()
     fake.links["L1"] = {"id": "L1", "status": "connected", "code": "AB2CD3", "wa_id": PHONE}
-    fake.messages.append({"wamid": "wamid.IN1", "wa_id": PHONE, "direction": "in", "text": "hello Flow", "profile_name": "Dana", "at": time.time()})
+    fake.stored.append({"wamid": "wamid.IN1", "wa_id": PHONE, "direction": "in", "text": "hello Flow", "profile_name": "Dana", "at": time.time()})
     monkeypatch.setattr(FlowWhatsAppSource, "build", classmethod(lambda cls, binding: cls(binding, hub=fake)))
     yield {
         "config": {"link_id": "L1", "wa_id": PHONE},

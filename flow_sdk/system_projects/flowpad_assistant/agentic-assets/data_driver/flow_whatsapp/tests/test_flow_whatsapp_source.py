@@ -32,7 +32,7 @@ class _Hub:
     def __init__(self, *, available=True):
         self.profile_ = {**PROFILE, "available": available}
         self.links: dict = {}
-        self.messages: list = []
+        self.stored: list = []
         self.sent: list = []
 
     async def profile(self):
@@ -46,8 +46,8 @@ class _Hub:
     async def link(self, link_id):
         return dict(self.links[link_id]) if link_id in self.links else None
 
-    async def received(self, since):
-        return [m for m in self.messages if m["at"] > since]
+    async def messages(self, since):
+        return [m for m in self.stored if m["at"] > since]
 
     async def send(self, wa_id, text, reply_to):
         self.sent.append((wa_id, text, reply_to))
@@ -101,7 +101,7 @@ async def test_the_gate_passes_only_once_the_hub_validated_the_phone():
 
 async def test_what_the_phone_sent_is_read_after_the_cursor():
     hub = _Hub()
-    hub.messages = [
+    hub.stored = [
         {"wamid": "wamid.IN1", "wa_id": PHONE, "direction": "in", "text": "hi", "profile_name": "Dana", "at": 100.0},
         {"wamid": "wamid.OUT1", "wa_id": PHONE, "direction": "out", "text": "hello", "reply_to": "wamid.IN1", "at": 101.0},
     ]
@@ -110,7 +110,7 @@ async def test_what_the_phone_sent_is_read_after_the_cursor():
         assert [i.data.text for i in first.items] == ["hi", "hello"]
         assert first.items[0].data.sender.name == "Dana" and first.items[1].data.in_reply_to.key == "wamid.IN1"
 
-        hub.messages.append({"wamid": "wamid.IN2", "wa_id": PHONE, "direction": "in", "text": "more", "at": 102.0})
+        hub.stored.append({"wamid": "wamid.IN2", "wa_id": PHONE, "direction": "in", "text": "more", "at": 102.0})
         later = await source.fetch(first.resume_cursor)
         assert [i.data.text for i in later.items] == ["more"]
 
