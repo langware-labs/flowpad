@@ -447,3 +447,23 @@ def test_only_prod_keeps_repo_assets_in_the_users_home(tmp_path, monkeypatch):
         assert not is_protected_path(own / "agentic-assets" / "spec" / "x")
     reset_instance_settings()
     get_instance_settings()
+
+
+def test_the_bootstrap_offers_this_instances_workspace_not_prods(monkeypatch):
+    """The UI places a new project (and a session with no project) at ``desktop_info.paths.workspace``. It was
+    a literal ``~/Flowpad workspace`` — prod's — so every dev and test instance offered prod's folder."""
+    import dataclasses
+
+    import flow_sdk.instance_settings as instance_settings
+    from flow_sdk.instance_settings.base_settings import BaseInstanceSettings
+    from flow_sdk.server.routes.bootstrap import build_app_paths
+
+    current = instance_settings.get_instance_settings()
+    fields = {f.name: getattr(current, f.name) for f in dataclasses.fields(current)}
+    home = str(current.user_home).lstrip("/")
+
+    for name, expected in (("prod", f"{home}/Flowpad workspace"), ("fsvc-7", f"{home}/Flowpad workspaces/fsvc-7")):
+        settings = BaseInstanceSettings(**{**fields, "instance_name": name})
+        monkeypatch.setattr(instance_settings, "get_instance_settings", lambda s=settings: s)
+        paths = build_app_paths()
+        assert (paths.workspace, paths.skills) == (expected, f"{expected}/.claude/skills"), name
