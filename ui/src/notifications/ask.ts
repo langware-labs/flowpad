@@ -1,6 +1,5 @@
 import { notify } from './notify';
-import { registerCommand } from './commands';
-import { holdAsk, settleAsk, type AskAnswer } from './pending-asks';
+import { holdAsk, type AskAnswer } from './pending-asks';
 import type { NotificationInput } from './types';
 
 /**
@@ -9,8 +8,8 @@ import type { NotificationInput } from './types';
  *
  *   const { value, remember } = await askNotification({ id, title, choices, remember: { label } });
  *
- * The toast stays serializable — each button is the `notification.answer` command carrying its
- * value — so remembering is the CALLER's business: it writes the answer into the preference the
+ * The toast stays serializable — each button is the `notification.answer` command (built into
+ * `commands.ts`) carrying its value — so remembering is the CALLER's business: it writes the answer into the preference the
  * question belongs to, which is what makes "don't ask again" a setting the person can see and undo.
  */
 export type AskInput = Pick<NotificationInput, 'title' | 'message' | 'remember' | 'location'> & {
@@ -30,10 +29,5 @@ export function askNotification(input: AskInput): Promise<AskAnswer> {
     });
   });
 }
-
-registerCommand('notification.answer', (args, ctx) => {
-  settleAsk(ctx.id, { value: String(args.value), remember: args.remember === true });
-  notify.dismiss(ctx.id);
-});
 
 export type { AskAnswer };
