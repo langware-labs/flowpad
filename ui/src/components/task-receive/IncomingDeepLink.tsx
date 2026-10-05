@@ -1,14 +1,16 @@
 import { isCompleteGitOrigin, Project } from '@sdk';
 import { isGitOrigin, type ProjectOrigin, projectOriginOf } from '@sdk/models/FSOrigin';
 import { t } from '@lingui/core/macro';
+import { useAuth } from '@sdk/react/hooks';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { consumeInboundParams, inboundParams } from '@src/navigation/inbound-link';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { withHomePage } from '@src/project-home-page/home-page-state';
-import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
+import { type IncomingProjectParams, useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IncomingProjectDialog } from './IncomingProjectDialog';
 import { IncomingTaskDialog } from './IncomingTaskDialog';
 
@@ -59,10 +61,67 @@ function claimHydrateHop(projectId: string): boolean {
   }
 }
 
+/**
+ * A project shared while this desktop had no FlowPad (or was signed out) reaches
+ * no push and no deep link — installing FlowPad from the invite opens it on its
+ * home. So once a session is signed in, ask the backend for the hub projects it
+ * has never seen (in the background: nothing at startup waits on the hub) and
+ * offer each one's set-up, one dialog at a time. A project already offered this
+ * session — by a deep link too — is not offered again.
+ */
+function useOfferNewCloudProjects() {
+  const { cloudUser } = useAuth();
+  const { pendingProject, setPendingProject } = useIncomingProjectStore();
+  const [queue, setQueue] = useState<IncomingProjectParams[]>([]);
+  const sweptFor = useRef<string | null>(null);
+  const offered = useRef(new Set<string>());
+
+  const userId = cloudUser?.id ?? null;
+  useEffect(() => {
+    if (!userId || isHubOnly() || sweptFor.current === userId) return;
+    sweptFor.current = userId;
+    void Project.newFromHub()
+      .then((links) => {
+        const found: IncomingProjectParams[] = [];
+        for (const link of links) {
+          let gitOrigin: ProjectOrigin | null = null;
+          try {
+            gitOrigin = projectOriginOf({ git_origin: JSON.parse(link.git_origin) });
+          } catch {
+            gitOrigin = null;
+          }
+          if (!gitOrigin) continue;
+          found.push({
+            gitOrigin,
+            projectName: link.title || 'Shared',
+            senderName: 'Someone',
+            projectId: link.project_id,
+          });
+        }
+        if (found.length) setQueue((q) => [...q, ...found]);
+      })
+      .catch(() => {
+        /* the hub is unreachable — the next sign-in or start asks again */
+      });
+  }, [userId]);
+
+  useEffect(() => {
+    if (pendingProject) {
+      if (pendingProject.projectId) offered.current.add(pendingProject.projectId);
+      return;
+    }
+    if (!queue.length) return;
+    const rest = queue.filter((p) => !p.projectId || !offered.current.has(p.projectId));
+    setQueue(rest.slice(1));
+    if (rest.length) setPendingProject(rest[0]);
+  }, [pendingProject, queue, setPendingProject]);
+}
+
 export function IncomingDeepLink() {
   const { navigation } = useDockNavigation();
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   const { pendingProject, setPendingProject } = useIncomingProjectStore();
+  useOfferNewCloudProjects();
 
   useEffect(() => {
     const params = inboundParams();
