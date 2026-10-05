@@ -26,8 +26,9 @@ import httpx
 
 from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient
 from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError
-from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code, _extract_reason
+from flow_sdk.cloud_client.shared.errors import HubError, _extract_error_code, _extract_reason, classify_hub_failure
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.schema.data_spec.hub_failure_spec import HubFailureKind
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,81 @@ async def close_hub_client() -> None:
 # An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
 # bytes_total is 0 when the size is unknown (no Content-Length on a download).
 ProgressCallback = Callable[[int, int], Awaitable[None]]
+
+
+async def _send(
+    method: str,
+    url: str,
+    *,
+    payload: Any = None,
+    files: dict | None = None,
+    params: dict[str, str] | None = None,
+    timeout: httpx.Timeout | float = httpx.Timeout(10),
+    strict: bool = False,
+) -> dict[str, Any]:
+    """Send ONE hub request and answer its ``data`` — or raise ``HubError`` classified once.
+
+    Every typed helper below goes through here, so a failure is read one way everywhere:
+    no answer is ``offline``, a dead credential ``signed_out``, a load balancer's HTML page a
+    ``server_error`` that never echoes its body. ``strict`` additionally refuses a 200 whose
+    envelope says FAIL (the help paths need that; older callers still take ``{}``).
+    """
+    try:
+        async with _hub_client() as client:
+            logger.info("[hub] %s %s", method, url)
+            if files:
+                resp = await client.request(method, url, files=files, params=params or None, timeout=timeout)
+            else:
+                resp = await client.request(method, url, json=payload, params=params or None, timeout=timeout)
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] %s %s auth expired: %s", method, url, e)
+        raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub] %s %s transport error: %s", method, url, e)
+        raise HubError(0, str(e)) from e
+    if resp.status_code != 200:
+        logger.warning("[hub] %s %s returned %s: %s", method, url, resp.status_code, resp.text[:200])
+        raise HubError(resp.status_code, _extract_reason(resp), code=_extract_error_code(resp))
+    try:
+        body = resp.json()
+    except ValueError as e:
+        raise HubError(200, "HTTP 200 with a body that is not JSON", kind=HubFailureKind.SERVER_ERROR) from e
+    if not isinstance(body, dict):
+        return {}
+    if strict and str(body.get("status") or "").upper() == "FAIL":
+        code = _extract_error_code(resp)
+        raise HubError(200, str(body.get("message") or "the hub refused"), code=code, kind=classify_hub_failure(400, code))
+    return body.get("data") or {}
+
+
+async def hub_request(
+    method: str,
+    entity_type: BuiltinEntityType | str,
+    entity_id: str | None = None,
+    action: str | None = None,
+    sub_path: str | None = None,
+    *,
+    payload: Any = None,
+    files: dict | None = None,
+    params: dict[str, str] | None = None,
+    scope: list[tuple[str, str]] | None = None,
+) -> dict[str, Any]:
+    """The hub call that never answers None: every way it can fail raises a classified ``HubError``.
+
+    Unlike ``hub_post`` (None when no hub is configured), this raises ``not_configured``; with
+    no credential it raises ``signed_out`` before anything is sent.
+    """
+    from flow_sdk.cloud_client.client_hooks import resolve_hub_credential  # noqa: PLC0415
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
+    if not url:
+        raise HubError(0, "no hub configured", kind=HubFailureKind.NOT_CONFIGURED)
+    try:
+        credential = await resolve_hub_credential()
+    except HubAuthExpiredError as e:
+        raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
+    if not credential:
+        raise HubError(0, "signed out", kind=HubFailureKind.SIGNED_OUT)
+    return await _send(method, url, payload=payload, files=files, params=params, strict=True)
 
 
 def rows_of(payload: Any) -> list[dict]:
@@ -341,22 +417,8 @@ async def hub_get_or_raise(
     """
     url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
-        raise HubError(0, "hub not configured")
-    try:
-        async with _hub_client() as client:
-            logger.info("[hub] GET %s params=%s", url, params)
-            resp = await client.request("GET", url, params=params or {}, timeout=httpx.Timeout(10))
-    except HubAuthExpiredError as e:
-        logger.warning("[hub] GET %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[hub] GET %s transport error: %s", url, e)
-        raise HubError(0, str(e))
-    if resp.status_code == 200:
-        return resp.json().get("data") or {}
-    reason = _extract_reason(resp)
-    logger.warning("[hub] GET %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+        raise HubError(0, "hub not configured", kind=HubFailureKind.NOT_CONFIGURED)
+    return await _send("GET", url, params=params)
 
 
 # Result of a status-aware hub existence probe (see ``hub_resolve_by_typeid``):
@@ -447,29 +509,7 @@ async def hub_post(
     timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
     if files and on_progress is not None:
         return await _hub_post_streamed_upload(url, files, timeout, on_progress)
-    try:
-        async with _hub_client() as client:
-            logger.info(
-                "[hub] POST %s files=%s payload_keys=%s",
-                url,
-                bool(files),
-                list(payload.keys()) if not files and payload else None,
-            )
-            if files:
-                resp = await client.request("POST", url, files=files, params=params or {}, timeout=timeout)
-            else:
-                resp = await client.request("POST", url, json=payload, params=params or {}, timeout=timeout)
-    except HubAuthExpiredError as e:
-        logger.warning("[hub] POST %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
-    except Exception as e:
-        logger.warning("[hub] POST %s transport error: %s", url, e)
-        raise HubError(0, str(e))
-    if resp.status_code == 200:
-        return resp.json().get("data") or {}
-    reason = _extract_reason(resp)
-    logger.warning("[hub] POST %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+    return await _send("POST", url, payload=None if files else payload, files=files, params=params, timeout=timeout)
 
 
 async def hub_invoke_raw(
@@ -498,7 +538,7 @@ async def hub_invoke_raw(
         async with _hub_client() as client:
             resp = await client.request(method, url, json=payload, timeout=httpx.Timeout(10))
     except HubAuthExpiredError as e:
-        raise HubError(401, "auth expired") from e
+        raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT) from e
     except Exception as e:
         logger.warning("[hub] invoke %s transport error: %s", url, e)
         raise HubError(0, str(e)) from e
@@ -572,7 +612,7 @@ async def _hub_post_streamed_upload(
             )
     except HubAuthExpiredError as e:
         logger.warning("[hub] POST (stream) %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
+        raise HubError(401, "auth expired", kind=HubFailureKind.SIGNED_OUT)
     except Exception as e:  # noqa: BLE001
         logger.warning("[hub] POST (stream) %s transport error: %s", url, e)
         raise HubError(0, str(e))
@@ -609,27 +649,7 @@ async def hub_delete(
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping DELETE %s/%s", entity_type, entity_id)
         return None
-    try:
-        async with _hub_client() as client:
-            logger.info("[hub] DELETE %s payload=%s", url, payload)
-            resp = await client.request(
-                "DELETE",
-                url,
-                json=payload or {},
-                params=params or None,
-                timeout=httpx.Timeout(10),
-            )
-    except HubAuthExpiredError as e:
-        logger.warning("[hub] DELETE %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
-    except Exception as e:
-        logger.warning("[hub] DELETE %s transport error: %s", url, e)
-        raise HubError(0, str(e))
-    if resp.status_code == 200:
-        return resp.json().get("data") or {}
-    reason = _extract_reason(resp)
-    logger.warning("[hub] DELETE %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+    return await _send("DELETE", url, payload=payload or {}, params=params)
 
 
 async def hub_put(
@@ -652,25 +672,7 @@ async def hub_put(
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
         return None
-    try:
-        async with _hub_client() as client:
-            logger.info(
-                "[hub] PUT %s payload_keys=%s",
-                url,
-                list(payload.keys()) if payload else None,
-            )
-            resp = await client.request("PUT", url, json=payload, timeout=10)
-    except HubAuthExpiredError as e:
-        logger.warning("[hub] PUT %s auth expired: %s", url, e)
-        raise HubError(401, "auth expired")
-    except Exception as e:
-        logger.warning("[hub] PUT %s transport error: %s", url, e)
-        raise HubError(0, str(e))
-    if resp.status_code == 200:
-        return resp.json().get("data") or {}
-    reason = _extract_reason(resp)
-    logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
-    raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+    return await _send("PUT", url, payload=payload)
 
 
 async def hub_upload_entity_file(

@@ -28,7 +28,7 @@ from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.team import Team
 from flow_sdk.builtin.user import User, normalize_email
-from flow_sdk.cloud_client.transport.hub_http import rows_of
+from flow_sdk.cloud_client.transport.hub_http import hub_request, rows_of
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.conversation import (
@@ -1487,37 +1487,6 @@ async def conversation_create() -> ApiResponse:
 # ---------------------------------------------------------------------------
 
 
-async def _hub_action(method: str, path: str, body: Optional[dict] = None, timeout: float = 10.0) -> Optional[dict]:
-    """Authenticated HTTP call to a hub action; returns the parsed ApiResponse
-    envelope (``{"status","message","data"}``) or ``None`` on transport failure.
-
-    Help-desk queue/ticket actions are request/response project actions — HTTP is
-    a better fit (and more robust) than the message-fanout WS bridge, which is
-    reserved for the add_message fast-path. Mirrors the authed-httpx pattern in
-    ``notification_action._hub_knows_conversation``."""
-    try:
-        import httpx  # noqa: PLC0415
-
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        from flow_sdk.cloud_client.client import ApiConfig  # noqa: PLC0415
-
-        creds = load_credentials()
-        if not creds or not creds.api_key:
-            return None
-        url = ApiConfig.from_env()._get_full_url(path)
-        headers = {
-            "Authorization": f"Bearer {creds.api_key}",
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-        async with httpx.AsyncClient(timeout=timeout) as h:
-            r = await h.request(method, url, headers=headers, json=None if method == "GET" else (body or {}))
-            return r.json()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[helpdesk] hub %s %s failed: %s", method, path, e)
-        return None
-
-
 class HelpdeskTarget(NamedTuple):
     """Which help desk a request should be routed to.
 
@@ -1805,15 +1774,12 @@ async def helpdesk_start_ticket() -> ApiResponse:
         if excerpt:
             hub_body["text"] = f"{text}\n\n--- agent session (last {TICKET_TRANSCRIPT_CHARS} chars) ---\n{excerpt}"
 
-        resp = await _hub_action("POST", f"/graph/project/{helpdesk_id}/start_guest_conversation", hub_body)
-        if not resp or resp.get("status") != "SUCCESS":
-            msg = (resp or {}).get("message") or "hub unreachable"
-            # 502, not the default 500: the failure is the UPSTREAM hub rejecting
-            # or not resolving the helpdesk project (e.g. an unseeded hub
-            # returns 401 "Entity project-<id> not found") — our backend is
-            # healthy, so a 500 Internal Server Error misattributes it to us.
-            return ApiFailResponse(message=f"Could not open support ticket: {msg}", status_code=502)
-        conv_data = resp.get("data") or {}
+        try:
+            conv_data = await hub_request(
+                "POST", BuiltinEntityType.PROJECT, helpdesk_id, "start_guest_conversation", payload=hub_body
+            )
+        except HubError as e:
+            return e.fail_response("Could not open support ticket")
         conv_id = conv_data.get("id")
         if not conv_id:
             return ApiFailResponse(message="Hub did not return a conversation")
@@ -1891,10 +1857,10 @@ async def conversation_pickup() -> ApiResponse:
         if not conv_id:
             return ApiFailResponse(message="conversation_id is required")
 
-        resp = await _hub_action("POST", f"/graph/conversation/{conv_id}/pickup", {})
-        if not resp or resp.get("status") != "SUCCESS":
-            msg = (resp or {}).get("message") or "hub unreachable"
-            return ApiFailResponse(message=f"Could not pick up conversation: {msg}")
+        try:
+            await hub_request("POST", BuiltinEntityType.CONVERSATION, conv_id, "pickup", payload={})
+        except HubError as e:
+            return e.fail_response("Could not pick up conversation")
 
         from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
 
@@ -1910,8 +1876,7 @@ async def conversation_pickup() -> ApiResponse:
         # metadata seam every other sync path uses (mirrors invitation-accept:
         # join → fetch → upsert).
         try:
-            hub_conv = await _hub_action("GET", f"/graph/conversation/{conv_id}")
-            data = (hub_conv or {}).get("data")
+            data = await hub_request("GET", BuiltinEntityType.CONVERSATION, conv_id)
             if isinstance(data, dict) and data.get("id"):
                 await _upsert_hub_conversation_metadata(data, someone_typeid)
         except Exception as e:  # noqa: BLE001
@@ -1952,16 +1917,16 @@ async def conversation_settle() -> ApiResponse:
         if verb not in ("close", "reopen"):
             return ApiFailResponse(message="verb must be 'close' or 'reopen'")
 
-        resp = await _hub_action("POST", f"/graph/conversation/{conv_id}/{verb}", {})
-        if not resp or resp.get("status") != "SUCCESS":
-            msg = (resp or {}).get("message") or "hub unreachable"
-            return ApiFailResponse(message=f"Could not {verb} ticket: {msg}")
+        try:
+            settled_data = await hub_request("POST", BuiltinEntityType.CONVERSATION, conv_id, verb, payload={})
+        except HubError as e:
+            return e.fail_response(f"Could not {verb} ticket")
 
         # The write response IS the settled conversation (the hub action returns
         # `data=self`), so there is nothing to re-read — and mirroring what the
         # hub actually stored beats mapping the verb back to a status ourselves,
         # which would be a second copy of the hub's own rule.
-        data = (resp or {}).get("data")
+        data = settled_data
         status = None
         if isinstance(data, dict) and data.get("id"):
             status = data.get("status")
@@ -2016,19 +1981,12 @@ async def helpdesk_tickets_list() -> ApiResponse:
                 return ApiFailResponse(message="Help desk is unavailable on this hub")
             helpdesk_id = target.project_id
 
-        resp = await _hub_action("GET", f"/graph/project/{helpdesk_id}/helpdesk_conversations")
-        # Propagate a hub authorization/transport failure instead of synthesizing
-        # an empty success. A non-staff caller gets a FAIL envelope here ("no
-        # valid access for role ['guest']"); collapsing that to {tickets: []}
-        # makes "unauthorized" indistinguishable from "empty queue" — it hid a
-        # real staff-UI robustness gap and defeated the helpdesk_two_client
-        # skip-guard (its try/catch never fired on a non-staff hub).
-        if not resp or resp.get("status") != "SUCCESS":
-            msg = (resp or {}).get("message") or "hub unreachable"
-            # 502: upstream hub rejected/could not resolve the helpdesk queue
-            # (non-staff caller → "no valid access"), not an internal error here.
-            return ApiFailResponse(message=f"Could not list help desk tickets: {msg}", status_code=502)
-        rows = resp.get("data") or []
+        # A hub refusal stays a refusal, never an empty queue: a non-staff caller is told
+        # "no valid access", which is what lets the staff UI tell the two apart.
+        try:
+            rows = await hub_request("GET", BuiltinEntityType.PROJECT, helpdesk_id, "helpdesk_conversations")
+        except HubError as e:
+            return e.fail_response("Could not list help desk tickets")
         if not isinstance(rows, list):
             rows = []
         return ApiSuccessResponse(data={"tickets": rows, "project_id": helpdesk_id})
