@@ -5,6 +5,7 @@ import { useAlertStore } from './alerts-store';
 import { useBadgeStore } from './store';
 import { renderToast } from './NotificationOutlet';
 import { settleAsk } from './pending-asks';
+import { useCenterStore } from './center-store';
 
 /**
  * The single notification dispatcher for the whole UI.
@@ -59,6 +60,12 @@ function dispatch(input: NotificationInput): string {
     return id;
   }
 
+  // A centered notification is a blocking dialog, never a toast (NotificationOutlet draws it).
+  if (data.location === 'center') {
+    useCenterStore.getState().show(data);
+    return id;
+  }
+
   // Alerts are logged for the footer warnings popover in every mode, and are
   // toasted only in Dev. The explicit dismiss on suppression matters: an alert
   // commonly REPLACES a sticky `notify.busy` toast under the same id (see
@@ -84,6 +91,7 @@ function dispatch(input: NotificationInput): string {
 function dismiss(id: string): void {
   settleAsk(id); // a question closed without an answer resolves, never hangs
   sonnerToast.dismiss(id);
+  useCenterStore.getState().remove(id);
   useBadgeStore.getState().remove(id);
   useAlertStore.getState().dismiss(id);
 }

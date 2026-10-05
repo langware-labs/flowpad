@@ -9,6 +9,7 @@ import { ViewType } from '@src/types/ViewType';
  * off a WS signal — no callbacks, no JSX. See `notify.ts` for the dispatcher.
  */
 export type NotificationLevel = 'info' | 'success' | 'warning' | 'error';
+export type NotificationLocation = 'corner' | 'center';
 
 /** A single call-to-action. Either navigates (`href`) or runs a registered `command`. */
 export interface NotificationAction {
@@ -41,6 +42,10 @@ export interface NotificationData {
   durationMs?: number | null;
   /** Spinner + no auto-dismiss (loading / in-flight). */
   busy?: boolean;
+  /** Where it shows. `corner` (default): the bottom-right toast. `center`: a blocking dialog in the
+   *  middle of the window — no ×, Escape does not close it — for a question the person must answer
+   *  before what they asked for can go on. Ignored for a sidebar badge (`category`). */
+  location?: NotificationLocation;
   /** Present → rendered as a persistent badge under this sidebar view (not a toast). */
   category?: ViewType;
   /** Alerts (`warning`/`error`) only pop as a toast in Dev mode. Set this on the

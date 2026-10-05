@@ -70,7 +70,11 @@ describe('smartAskOrOpen', () => {
     answer('continue');
     await smartAskOrOpen('open data sources', handlers);
     expect(askNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Smart navigation requires sign-in', remember: expect.anything() }),
+      expect.objectContaining({
+        title: 'Smart navigation requires sign-in',
+        remember: expect.anything(),
+        location: 'center',
+      }),
     );
     expect(login).not.toHaveBeenCalled();
     expect(prefSet).not.toHaveBeenCalled();

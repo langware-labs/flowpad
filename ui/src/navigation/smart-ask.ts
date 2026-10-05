@@ -50,6 +50,8 @@ export async function smartAskOrOpen(text: string, handlers: Handlers): Promise<
       { value: 'continue', label: t`Continue without smart navigation` },
     ],
     remember: { label: t`Don't ask again` },
+    // The request waits on this answer, so it is asked where it cannot be missed.
+    location: 'center',
   });
   if (remember) instancePreferences.set(PrefKey.SMART_NAVIGATION_SIGNIN, 'skip');
   if (value === 'login') {
