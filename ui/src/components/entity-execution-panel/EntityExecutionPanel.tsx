@@ -472,12 +472,14 @@ export function EntityExecutionPanel({
   // dir is resolved lazily on paste (not on mount) so this shared chat surface
   // doesn't fire a per-mount GET for a rarely-used feature.
   const handlePasteImages = useCallback(
-    async (incoming: File[]): Promise<string[]> => {
+    async (incoming: File[], { initialCaption }: { initialCaption?: string } = {}): Promise<string[]> => {
       const procId = activeProcess?.id;
       if (!procId || !incoming.length) return [];
-      const files = await annotateImageFiles(incoming);
+      const { files, caption } = await annotateImageFiles(incoming, { initialCaption });
       if (!files.length) return [];
-      return uploadFilesToProcessInputDir(procId, files);
+      const refs = await uploadFilesToProcessInputDir(procId, files);
+      // The caption is the user's own prompt text — it follows the refs as-is.
+      return caption ? [...refs, caption] : refs;
     },
     [activeProcess],
   );

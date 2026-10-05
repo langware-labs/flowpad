@@ -819,6 +819,10 @@ msgstr "{left} of {limit} requests left {windowText}"
 msgid "{listed} to invite"
 msgstr "{listed} to invite"
 
+#: src/components/conversation/ThreadHeader.tsx
+msgid "{messageCount, plural, one {# message} other {# messages}}"
+msgstr "{messageCount, plural, one {# message} other {# messages}}"
+
 #: src/components/agents/AgentAvatar.tsx
 msgid "{name} avatar"
 msgstr "{name} avatar"
@@ -1466,6 +1470,10 @@ msgstr "Activity"
 msgid "Add"
 msgstr "Add"
 
+#: src/components/image-annotator/ImageAnnotator.tsx
+msgid "Add a caption…"
+msgstr "Add a caption…"
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Add a comment..."
 msgstr "Add a comment..."
@@ -1495,10 +1503,14 @@ msgstr "Add a machine"
 msgid "Add a message to send without it."
 msgstr "Add a message to send without it."
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Add a note to the running session"
+msgstr "Add a note to the running session"
+
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
-msgid "Add a note to the running session about this message"
-msgstr "Add a note to the running session about this message"
+#~ msgid "Add a note to the running session about this message"
+#~ msgstr "Add a note to the running session about this message"
 
 #~ msgid "Add a personal note..."
 #~ msgstr "Add a personal note..."
@@ -1715,6 +1727,7 @@ msgstr "Add tag…"
 msgid "Add this key under Connections"
 msgstr "Add this key under Connections"
 
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Add to favorites"
@@ -1729,7 +1742,7 @@ msgstr "Add to Private Context"
 msgid "Add to project"
 msgstr "Add to project"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "Add to queue"
 msgstr "Add to queue"
@@ -1738,7 +1751,7 @@ msgstr "Add to queue"
 msgid "Add to Queue"
 msgstr "Add to Queue"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Add to the running session"
 msgstr "Add to the running session"
 
@@ -1992,6 +2005,7 @@ msgstr "Align start (left in LTR, right in RTL)"
 msgid "all"
 msgstr "all"
 
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/cost-dashboard/constants.ts
 #: src/components/explorer-view/ExplorerNavigator.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
@@ -2057,6 +2071,10 @@ msgstr "All hooks"
 #: src/components/locale/LocalePicker.tsx
 msgid "All languages"
 msgstr "All languages"
+
+#: src/components/conversation/ThreadHeader.tsx
+msgid "All messages"
+msgstr "All messages"
 
 #: src/components/credentials/CredentialDialog.tsx
 msgid "All my projects"
@@ -2533,7 +2551,7 @@ msgstr "App secrets are stored in your operating system keychain. Enable to allo
 msgid "App version"
 msgstr "App version"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Appended to the current worker's prompt queue, tagged with this message."
 msgstr "Appended to the current worker's prompt queue, tagged with this message."
 
@@ -2998,6 +3016,7 @@ msgstr "auto-login off"
 
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/MessageComposer.tsx
 msgid "Auto-send"
 msgstr "Auto-send"
 
@@ -3007,6 +3026,10 @@ msgstr "Auto-updates check hourly."
 
 #~ msgid "Automatic"
 #~ msgstr "Automatic"
+
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "available"
+msgstr "available"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -3067,6 +3090,10 @@ msgstr "AWS region for Bedrock"
 #: src/journey/JourneyTray.tsx
 msgid "Back"
 msgstr "Back"
+
+#: src/components/conversation/ThreadHeader.tsx
+msgid "Back to every message in this conversation"
+msgstr "Back to every message in this conversation"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Back to full graph"
@@ -3678,6 +3705,10 @@ msgstr "Capabilities unavailable. Retry"
 msgid "Capability"
 msgstr "Capability"
 
+#: src/components/image-annotator/ImageAnnotator.tsx
+msgid "Caption"
+msgstr "Caption"
+
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Carries"
 msgstr "Carries"
@@ -3790,6 +3821,11 @@ msgstr "Chats"
 #: src/components/assets/editor/wizard/WizardStepInspector.tsx
 msgid "check"
 msgstr "check"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "check again"
+msgstr "check again"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -4258,7 +4294,7 @@ msgstr "Click to view full prompt"
 msgid "Clipboard not updated"
 msgstr "Clipboard not updated"
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Clipboard unavailable"
 msgstr "Clipboard unavailable"
 
@@ -4819,6 +4855,14 @@ msgstr "Connect GitHub"
 msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr "Connect GitHub and the gh CLI with a guided setup."
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Connect GitHub in FlowPad cloud first:"
+msgstr "Connect GitHub in FlowPad cloud first:"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#~ msgid "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
+#~ msgstr "Connect GitHub in FlowPad cloud, so it can check you administer {repo}."
+
 #~ msgid "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 #~ msgstr "Connect GitHub on the publishing desk and re-publish to put the document on the hub."
 
@@ -5087,10 +5131,10 @@ msgstr "Copilot tab"
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
+#: src/components/links/LinkMenu.tsx
 #: src/components/markdown-view.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/ui/media-lightbox.tsx
 #: src/pages/entry/entry-shell.tsx
@@ -5197,6 +5241,15 @@ msgstr "Copy link"
 #: src/components/assets/useAssetsModel.tsx
 msgid "Copy links"
 msgstr "Copy links"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Copy members' clone URL"
+msgstr "Copy members' clone URL"
+
+#: src/components/tabs/TabTooltipName.tsx
+msgid "Copy name"
+msgstr "Copy name"
 
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
@@ -5370,7 +5423,7 @@ msgstr "Could not check sign-in"
 msgid "Could not connect to {displayName}."
 msgstr "Could not connect to {displayName}."
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Could not copy link"
 msgstr "Could not copy link"
 
@@ -6543,6 +6596,10 @@ msgstr "Debug logging"
 #~ msgid "DEBUG: remove 6 tools"
 #~ msgstr "DEBUG: remove 6 tools"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "Decision API"
+msgstr "Decision API"
+
 #: src/i18n/type-labels.ts
 msgid "Deck Template"
 msgstr "Deck Template"
@@ -6877,8 +6934,7 @@ msgstr "Delete key"
 msgid "Delete machine"
 msgstr "Delete machine"
 
-#: src/components/conversation/MessageBubble.tsx
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Delete message"
 msgstr "Delete message"
 
@@ -7614,7 +7670,7 @@ msgstr "Download failed"
 msgid "Download file"
 msgstr "Download file"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Download message"
 msgstr "Download message"
@@ -7644,8 +7700,12 @@ msgid "Drag to pan · scroll to zoom · click a node to read"
 msgstr "Drag to pan · scroll to zoom · click a node to read"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
-msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
-msgstr "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
+msgid "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
+msgstr "Draw with the pen or arrow, add text boxes, add a caption, then Save to attach the annotated copy."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
+#~ msgstr "Draw with the pen or arrow, add text boxes, then Save to attach the annotated copy."
 
 #: src/components/llm-endpoints/SourcePicker.tsx
 msgid "Draws from"
@@ -7759,6 +7819,10 @@ msgstr "Each selected project's folder is added as a context folder."
 msgid "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 msgstr "Each stage is a guided run. Close it any time — running it again picks up where it stopped."
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Earlier message"
+msgstr "Earlier message"
+
 #~ msgid "earlier output dropped — this is the tail"
 #~ msgstr "earlier output dropped — this is the tail"
 
@@ -7833,7 +7897,7 @@ msgstr "Edit in agent"
 msgid "Edit link"
 msgstr "Edit link"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Edit name"
 msgstr "Edit name"
 
@@ -9193,6 +9257,10 @@ msgstr "Find machine"
 msgid "Find or type an organization…"
 msgstr "Find or type an organization…"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Finish installing the FlowPad GitHub App on {repo}, then"
+msgstr "Finish installing the FlowPad GitHub App on {repo}, then"
+
 #: src/components/assets/editor/wizard/wizard-texts.ts
 msgid "Finish setting up Flowpad"
 msgstr "Finish setting up Flowpad"
@@ -9512,24 +9580,25 @@ msgid "Forking…"
 msgstr "Forking…"
 
 #: src/components/account/system-diagnoses.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 msgid "Forward"
 msgstr "Forward"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward message"
-msgstr "Forward message"
+#~ msgid "Forward message"
+#~ msgstr "Forward message"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "Forward to another conversation"
-msgstr "Forward to another conversation"
+#~ msgid "Forward to another conversation"
+#~ msgstr "Forward to another conversation"
 
 #: src/components/conversation/MessageBubble.tsx
-msgid "forwarded"
-msgstr "forwarded"
+#~ msgid "forwarded"
+#~ msgstr "forwarded"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Forwarded from another conversation"
 msgstr "Forwarded from another conversation"
 
@@ -10252,7 +10321,6 @@ msgstr "History of {scopeLabel}’s budget"
 
 #: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/components/top-nav-bar/TopNavBar.tsx
 #: src/components/top-nav-bar/use-entity-breadcrumbs.ts
 #: src/types/ViewType.ts
@@ -10665,6 +10733,10 @@ msgstr "in this project"
 #: src/components/token-plan/token-plan-math.ts
 msgid "in this window"
 msgstr "in this window"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "In thread"
+msgstr "In thread"
 
 #: src/components/token-plan/token-plan-math.ts
 msgid "in total"
@@ -11522,6 +11594,10 @@ msgstr "Leave conversation"
 msgid "Leave empty to keep"
 msgstr "Leave empty to keep"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Leave live session mode"
+msgstr "Leave live session mode"
+
 #: src/components/stream-inbox-view/StreamInboxView.tsx
 msgid "Leave this conversation?"
 msgstr "Leave this conversation?"
@@ -11653,13 +11729,17 @@ msgid "Lines"
 msgstr "Lines"
 
 #: src/components/conversation/MembersAvatarStack.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Link copied"
 msgstr "Link copied"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
 msgstr "Link copied to clipboard"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Link the project to the cloud first: its members are the cloud project's members."
+msgstr "Link the project to the cloud first: its members are the cloud project's members."
 
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
 #: src/components/entity-actions/CloudAssetPublishButton.tsx
@@ -11755,9 +11835,17 @@ msgstr "Live Session"
 msgid "Live session not found"
 msgstr "Live session not found"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Live session on {hostName}'s machine"
+msgstr "Live session on {hostName}'s machine"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Live session with {guestName} on your machine · {status}"
 msgstr "Live session with {guestName} on your machine · {status}"
+
+#: src/components/conversation/MessageComposer.tsx
+msgid "Live session: run a prompt on {hostName}'s machine"
+msgstr "Live session: run a prompt on {hostName}'s machine"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -12547,6 +12635,10 @@ msgstr "Members are unavailable in Local mode."
 msgid "Members assigned, but some messages failed"
 msgstr "Members assigned, but some messages failed"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
+msgstr "Members clone and push this repo through FlowPad with their FlowPad login. No GitHub access needed. Readers can pull, editors can push. Uncheck to stop at any time; your GitHub repo is never changed."
+
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
 #: src/components/machine-overview/metrics-chart.tsx
@@ -12571,6 +12663,7 @@ msgstr "Merge conflicts"
 
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/AttachmentDownloadWarning.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/share-to-conversation/DownloadMessageForm.tsx
 msgid "Message"
@@ -12578,6 +12671,11 @@ msgstr "Message"
 
 #~ msgid "Message (optional)"
 #~ msgstr "Message (optional)"
+
+#: src/components/conversation/MessageActionsMenu.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Message actions"
+msgstr "Message actions"
 
 #: src/i18n/type-labels.ts
 msgid "Message Attachment"
@@ -13845,6 +13943,10 @@ msgstr "No narrowing — everything the roots allow."
 msgid "No one added yet"
 msgstr "No one added yet"
 
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "No open tasks."
+msgstr "No open tasks."
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "No Operation (Trace Only)"
 msgstr "No Operation (Trace Only)"
@@ -14198,6 +14300,10 @@ msgstr "No Task Selected"
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "No tasks found for this session."
 msgstr "No tasks found for this session."
+
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "No tasks yet — \"Task it\" on a message makes one."
+msgstr "No tasks yet — \"Task it\" on a message makes one."
 
 #: src/components/token-plan/TokenPlanView.tsx
 msgid "No team budget yet"
@@ -14846,6 +14952,7 @@ msgstr "Only people you share with can view this agent."
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/SessionCard.tsx
 #: src/components/conversation/task-it.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -14972,6 +15079,10 @@ msgstr "Open command in external terminal"
 msgid "Open comment"
 msgstr "Open comment"
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Open connections"
+msgstr "Open connections"
+
 #: src/tabs/useTerminalStripController.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open Context"
@@ -15071,7 +15182,7 @@ msgstr "Open GitHub settings"
 msgid "Open help desk"
 msgstr "Open help desk"
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Open in"
 msgstr "Open in"
 
@@ -15085,8 +15196,8 @@ msgstr "Open in a new browser tab"
 msgid "Open in a new tab"
 msgstr "Open in a new tab"
 
+#: src/components/links/LinkMenu.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
 #: src/components/web-url-display/WebUrlDisplay.tsx
 #: src/components/webapp-viewer.tsx
 #: src/components/webapp-viewer.tsx
@@ -15126,7 +15237,7 @@ msgstr "Open in Files"
 msgid "Open in Finder/Explorer"
 msgstr "Open in Finder/Explorer"
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Open in Flowpad"
 msgstr "Open in Flowpad"
 
@@ -15277,6 +15388,7 @@ msgstr "Open Spec Session"
 msgid "Open tabs"
 msgstr "Open tabs"
 
+#: src/components/conversation/ConversationTasksPanel.tsx
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Open task"
@@ -15340,6 +15452,10 @@ msgstr "Open the live session"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Open the message this replies to"
+msgstr "Open the message this replies to"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Open the page again"
@@ -15684,6 +15800,15 @@ msgstr "Overwrite"
 #: src/components/git/RepoPicker.tsx
 msgid "Owner"
 msgstr "Owner"
+
+#: src/components/conversation/MessageBubble.tsx
+#~ msgid "Owner: {0}"
+#~ msgstr "Owner: {0}"
+
+#: src/components/conversation/task-it.tsx
+#: src/components/conversation/task-it.tsx
+msgid "Owner: {owner}"
+msgstr "Owner: {owner}"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "pacing"
@@ -16414,6 +16539,7 @@ msgstr "project"
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/scope-filter/ScopeFilterBar.tsx
 #: src/components/scope-filter/ScopeFilterIconBar.tsx
+#: src/components/top-nav-bar/RuntimeChip.tsx
 #: src/i18n/type-labels.ts
 #: src/pages/discover-page/DiscoverRow.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -16605,8 +16731,8 @@ msgid "Prompt Library — click a prompt to add it to the queue"
 msgstr "Prompt Library — click a prompt to add it to the queue"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Prompt mode: this text opens a live session on {hostName}'s machine"
-msgstr "Prompt mode: this text opens a live session on {hostName}'s machine"
+#~ msgid "Prompt mode: this text opens a live session on {hostName}'s machine"
+#~ msgstr "Prompt mode: this text opens a live session on {hostName}'s machine"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -16741,6 +16867,10 @@ msgstr "PTY Viewer"
 #: src/components/assets/editor/agent-profile/AgentVisibilitySection.tsx
 msgid "Public access removed"
 msgstr "Public access removed"
+
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Public repos are already open to everyone."
+msgstr "Public repos are already open to everyone."
 
 #: src/components/assets/editor/agent-profile/AgentDeployChecklist.tsx
 #: src/components/assets/editor/PublishedToggle.tsx
@@ -16923,6 +17053,10 @@ msgstr "Queued messages"
 msgid "Quick create"
 msgstr "Quick create"
 
+#: src/components/llm-sources/LlmSourcesView.tsx
+msgid "quick requests open without an assistant turn"
+msgstr "quick requests open without an assistant turn"
+
 #: src/components/asset-counters/AssetListView.tsx
 #: src/components/asset-counters/AssetListView.tsx
 msgid "Quick search"
@@ -16974,8 +17108,7 @@ msgstr "Re-scan"
 msgid "Re-scan now"
 msgstr "Re-scan now"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "React"
 msgstr "React"
 
@@ -17430,6 +17563,10 @@ msgstr "Remove folder"
 msgid "Remove from {0}?"
 msgstr "Remove from {0}?"
 
+#: src/components/conversation/MessageActionsMenu.tsx
+msgid "Remove from favorites"
+msgstr "Remove from favorites"
+
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
 msgid "Remove from folder"
 msgstr "Remove from folder"
@@ -17663,7 +17800,7 @@ msgstr "Replies wait as drafts until {hostName} sends them."
 msgid "Replies:"
 msgstr "Replies:"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply"
 msgstr "Reply"
 
@@ -17676,7 +17813,7 @@ msgstr "Reply awaiting your review"
 msgid "Reply in {0}"
 msgstr "Reply in {0}"
 
-#: src/components/conversation/ChannelMessageExtras.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Reply in thread"
 msgstr "Reply in thread"
 
@@ -18108,6 +18245,10 @@ msgstr "Review each attached asset and choose how to install it."
 msgid "Review prompts"
 msgstr "Review prompts"
 
+#: src/components/conversation/MessageComposer.tsx
+msgid "Review replies"
+msgstr "Review replies"
+
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Review the shared project and install it."
 msgstr "Review the shared project and install it."
@@ -18281,8 +18422,8 @@ msgid "Run from your terminal, then restart Flowpad:"
 msgstr "Run from your terminal, then restart Flowpad:"
 
 #: src/components/version-popover/version-popover.tsx
-msgid "Run from your terminal:"
-msgstr "Run from your terminal:"
+#~ msgid "Run from your terminal:"
+#~ msgstr "Run from your terminal:"
 
 #: src/components/code-block-run-button.tsx
 #: src/components/code-block-run-button.tsx
@@ -18303,8 +18444,8 @@ msgid "Run now (spawns a process)"
 msgstr "Run now (spawns a process)"
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Run on {hostName}'s machine"
-msgstr "Run on {hostName}'s machine"
+#~ msgid "Run on {hostName}'s machine"
+#~ msgstr "Run on {hostName}'s machine"
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "Run script"
@@ -18343,8 +18484,8 @@ msgid "Run this agent on its own, at a time you pick. Runs are headless and show
 msgstr "Run this agent on its own, at a time you pick. Runs are headless and show up in the run history."
 
 #: src/components/conversation/MessageComposer.tsx
-msgid "Run this as a prompt on {hostName}'s machine"
-msgstr "Run this as a prompt on {hostName}'s machine"
+#~ msgid "Run this as a prompt on {hostName}'s machine"
+#~ msgstr "Run this as a prompt on {hostName}'s machine"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -19661,6 +19802,11 @@ msgstr "Share by name or email…"
 msgid "Share code {0} to invite."
 msgstr "Share code {0} to invite."
 
+#: src/components/project-home/ProjectGitShareToggle.tsx
+#: src/components/project-home/ProjectGitShareToggle.tsx
+msgid "Share git with project members"
+msgstr "Share git with project members"
+
 #: src/i18n/pref-labels.ts
 msgid "Share message status"
 msgstr "Share message status"
@@ -19939,6 +20085,10 @@ msgstr "Show system projects"
 #: src/i18n/pref-labels.ts
 msgid "Show system skills"
 msgstr "Show system skills"
+
+#: src/components/conversation/ConversationTasksPanel.tsx
+msgid "Show the message it was made from"
+msgstr "Show the message it was made from"
 
 #: src/components/entity-execution-panel/TurnFilesChips.tsx
 msgid "Show the other files this turn touched"
@@ -20746,6 +20896,7 @@ msgstr "Stats"
 #: src/components/asset-counters/agent-counters.tsx
 #: src/components/assets/editor/task/DelegationBlock.tsx
 #: src/components/connections-manager.tsx
+#: src/components/conversation/task-it.tsx
 #: src/components/data-sources/DataSourceDetail.tsx
 #: src/components/data-sources/DataSourcesView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -21238,7 +21389,8 @@ msgstr "target e.g. usage_report:abc"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/conversation/FlowMessageBubble.tsx
+#: src/components/conversation/ConversationTasksPanel.tsx
+#: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/quick-create/registry.ts
 #: src/i18n/type-labels.ts
@@ -21254,7 +21406,7 @@ msgstr "Task assigned"
 msgid "Task created"
 msgstr "Task created"
 
-#: src/components/conversation/MessageBubble.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "Task it"
 msgstr "Task it"
 
@@ -21280,10 +21432,15 @@ msgstr "Tasked"
 msgid "Tasked: {0}"
 msgstr "Tasked: {0}"
 
+#: src/components/conversation/ConversationPanel.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/types/ViewType.ts
 msgid "Tasks"
 msgstr "Tasks"
+
+#: src/components/conversation/ConversationPanel.tsx
+msgid "Tasks {openTaskCount}"
+msgstr "Tasks {openTaskCount}"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -21817,8 +21974,8 @@ msgid "The task is now a folder in the project."
 msgstr "The task is now a folder in the project."
 
 #: src/navigation/NavigationActions.ts
-msgid "The terminal is not ready yet"
-msgstr "The terminal is not ready yet"
+#~ msgid "The terminal is not ready yet"
+#~ msgstr "The terminal is not ready yet"
 
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 msgid "The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project."
@@ -22134,6 +22291,10 @@ msgstr "This link doesn't point at an agent."
 #: src/navigation/NavigationActions.ts
 msgid "This link has no available viewer"
 msgstr "This link has no available viewer"
+
+#: src/navigation/NavigationActions.ts
+msgid "This link has no source yet"
+msgstr "This link has no source yet"
 
 #: src/pages/entry/OpenSandboxLanding.tsx
 msgid "This link is missing the sandbox it should open."
@@ -22527,6 +22688,8 @@ msgid "This worker has no session to view yet."
 msgstr "This worker has no session to view yet."
 
 #: src/components/assets/editor/agent-profile/deployment/AgentDeploymentPage.tsx
+#: src/components/conversation/MessageComposer.tsx
+#: src/components/conversation/ThreadHeader.tsx
 #: src/i18n/pref-labels.ts
 msgid "Thread"
 msgstr "Thread"
@@ -23718,7 +23881,7 @@ msgstr "Via"
 msgid "via hub login"
 msgstr "via hub login"
 
-#: src/components/terminal/interactive-terminal/TerminalLinkMenu.tsx
+#: src/components/links/LinkMenu.tsx
 msgid "Vibe"
 msgstr "Vibe"
 
@@ -23983,6 +24146,7 @@ msgid "What do you need help with?"
 msgstr "What do you need help with?"
 
 #: src/components/top-nav-bar/AddressAskField.tsx
+#: src/components/top-nav-bar/AddressField.tsx
 msgid "What do you want to do?"
 msgstr "What do you want to do?"
 
@@ -24058,7 +24222,7 @@ msgstr "What should issue your LLM calls?"
 msgid "What should the agent do each time it runs?"
 msgstr "What should the agent do each time it runs?"
 
-#: src/components/conversation/chips/MessageChips.tsx
+#: src/components/conversation/MessageActionsMenu.tsx
 msgid "What should the worker do with this message?"
 msgstr "What should the worker do with this message?"
 
@@ -24544,8 +24708,12 @@ msgid "Your help requests"
 msgstr "Your help requests"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
-msgid "Your markup on this image will be lost."
-msgstr "Your markup on this image will be lost."
+msgid "Your markup and caption on this image will be lost."
+msgstr "Your markup and caption on this image will be lost."
+
+#: src/components/image-annotator/ImageAnnotator.tsx
+#~ msgid "Your markup on this image will be lost."
+#~ msgstr "Your markup on this image will be lost."
 
 #: src/components/api-keys-view/use-user-api-keys.ts
 msgid "Your new API key has been created. Please save it securely."

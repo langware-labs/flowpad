@@ -11,6 +11,7 @@ async def process_asset_sources(process):
     pairs, seen = [], set()
     settings = get_instance_settings()
     add_source_dir(pairs, seen, settings.user_home, AssetSource.USER_DIR)
+    add_source_dir(pairs, seen, settings.user_asset_root, AssetSource.USER_DIR)
     if process.project_id:
         if process.__dict__.get("_asset_inventory_snapshot"):
             # A live worker's mounted directories were frozen at launch.

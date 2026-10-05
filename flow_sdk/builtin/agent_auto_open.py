@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Optional
 
 from flow_sdk.api.api_types.vfs_path import VFSPath
 from flow_sdk.fs_store.type_id import TypeId
-from flow_sdk.schema.data_spec.dock_pointer_spec import PROJECT_VFS, DockPointerSpec
+from flow_sdk.schema.data_spec.dock_pointer_spec import PROJECT_VFS, DockPointerSpec, tab_pointer_json
 from flow_sdk.schema.types import EntityType
 
 if TYPE_CHECKING:
@@ -30,6 +30,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: The named id the frontend's file pointers use (``LOCAL_COMPUTE_NODE`` in
+#: ``ui/src/.../asset-doc-types.ts``): a rebased pointer must match the tab the UI
+#: would write for the same file byte for byte, or the two are different tabs.
 LOCAL_COMPUTE_NODE = TypeId(type=EntityType.COMPUTE_NODE.value, id="@local")
 
 
@@ -75,8 +78,7 @@ def rebase_auto_open(entries: list[DockPointerSpec] | None, *, roots: dict[str, 
         pointer = f"{spec.pointer[:found.start()]}{found.group(1)}vfs/{local.abs_path}"
         # Plain JSON, not a DockPointerSpec: the rebased pointer names THIS machine,
         # which is exactly what a declared (travelling) pointer is refused for.
-        rebased = json.dumps({"viewType": spec.viewType, "pointer": pointer}, separators=(",", ":"))
-        tabs.append(AutoOpenTab(pointer=rebased, path=path))
+        tabs.append(AutoOpenTab(pointer=tab_pointer_json(spec.viewType, pointer), path=path))
     return tabs
 
 
@@ -91,7 +93,7 @@ async def open_auto_tabs(process: "AgenticProcess", tabs: list[AutoOpenTab]) -> 
     # The session's own tab FIRST: a child whose parent row does not exist yet is
     # orphaned by the next tab-list read (the dangling-parent sweep).
     anchor = await ensure_tab(
-        json.dumps({"viewType": "shell", "pointer": f"{process.get_type()}-{process.id}"}, separators=(",", ":")),
+        tab_pointer_json("shell", f"{process.get_type()}-{process.id}"),
         target_type=process.get_type(),
         target_id=str(process.id),
         project_id=process.project_id,

@@ -4,7 +4,7 @@ Folder layout::
 
     <scope>/agentic-assets/helpdesk/<name>/
         helpdesk.json   # {display_name, desk_project_id, welcome_message?, avatar_url?}
-    <guides…>.md        # ordinary markdown, indexed as itself
+    docs/<guides…>.md   # ordinary markdown, indexed as itself (only doc folders are)
 
 A repo becomes a help desk by shipping that manifest. So "add a help desk from
 git" is not its own flow — it is the ordinary "add a context folder from git",

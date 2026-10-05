@@ -24,6 +24,7 @@ import {
   type RequestInstallResult,
 } from '../models';
 import { DockPointerData } from '../models/DockPointer';
+import { type GitShare, gitShareFrom } from '../models/GitShare';
 import type { AssetSource } from '../process/asset-descriptor';
 import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
@@ -545,6 +546,36 @@ export class Project extends APIEntity<Project> {
     actionInfo.queryParameters = queryParameters;
     const response = await dataManager.callAction<void, AssetScanResult>(actionInfo);
     return response ?? { assets: [] };
+  }
+
+  /**
+   * Whether this project's private GitHub repo is shared with its members through
+   * the hub (`GET project/<id>/git_share`). Mirrors `Project.git_share`.
+   */
+  async gitShare(): Promise<GitShare> {
+    const info = new ActionInfo('git_share', Project.type, this.typeId.id, 'GET');
+    return gitShareFrom(await dataManager.callAction<void, unknown>(info));
+  }
+
+  /**
+   * Let this project's members clone and push its private GitHub repo through the
+   * hub, by project role (`POST project/<id>/git_share`). When GitHub needs a step
+   * first the answer says which (`install_required` with `install_url`, or
+   * `github_connect_required`); take it and call again. Mirrors `Project.share_git`.
+   */
+  async shareGit(): Promise<GitShare> {
+    const info = new ActionInfo('git_share', Project.type, this.typeId.id, 'POST');
+    info.bodyParameters = {};
+    return gitShareFrom(await dataManager.callAction<Record<string, never>, unknown>(info));
+  }
+
+  /**
+   * Stop sharing (`DELETE project/<id>/git_share`): members lose access; their
+   * clones and the GitHub repo are untouched. Mirrors `Project.unshare_git`.
+   */
+  async unshareGit(): Promise<GitShare> {
+    const info = new ActionInfo('git_share', Project.type, this.typeId.id, 'DELETE');
+    return gitShareFrom(await dataManager.callAction<void, unknown>(info));
   }
 
   /**

@@ -372,3 +372,46 @@ describe('the arrival refresh', () => {
     expect(screen.getByTestId('llm-source-signin-claude')).toBeTruthy();
   });
 });
+
+describe('the decision API is shown beside the harnesses', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('names the endpoint when one is marked decision', async () => {
+    h.status.mockReturnValue({
+      ...funding(),
+      decision: {
+        available: true,
+        endpoint: 'api_endpoint-72575461-9352-4cdb-b2e7-a53be3e3d6e3',
+        name: 'Jev (TypeSafe)',
+        host: 'api.typesafe.ai',
+        reason: '',
+      },
+    });
+    renderPage();
+    const row = await screen.findByTestId('llm-sources-decision');
+    expect(row.textContent).toContain('Jev (TypeSafe)');
+    expect(row.textContent).toContain('api.typesafe.ai');
+    expect(screen.getByTestId('llm-sources-decision-available')).toBeTruthy();
+  });
+
+  it("states the backend's reason verbatim when there is none", async () => {
+    h.status.mockReturnValue({
+      ...funding(),
+      decision: {
+        available: false,
+        endpoint: '',
+        name: '',
+        host: '',
+        reason: 'No hub API endpoint is marked as a decision API',
+      },
+    });
+    renderPage();
+    expect((await screen.findByTestId('llm-sources-decision-reason')).textContent).toBe(
+      'No hub API endpoint is marked as a decision API',
+    );
+    expect(screen.queryByTestId('llm-sources-decision-available')).toBeNull();
+  });
+});

@@ -82,18 +82,15 @@ def _status_facts(monkeypatch):
 
     Funding no longer derives these itself -- it asks ``core.status`` -- and this file tests
     the ladder, not the facts: every CLI reads installed (not "whatever this machine has"),
-    the hub reads signed in exactly when a hub key is stored (the hub's own verification is
-    pinned in ``test_status_layer.py``), and the spawn-time probe of an unchecked login is
-    off so a test's ``login_state`` is the verdict it gets. A test that is ABOUT one of these
-    overrides it.
+    and the spawn-time probe of an unchecked login is off so a test's ``login_state`` is the
+    verdict it gets. A test that is ABOUT one of these overrides it. A hub budget is NOT
+    faked: it is spendable exactly when a hub key is stored, which is the real rule.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers import llm_source
-    from flow_sdk.cli.auth.hub_login import resolve_hub_api_key
     from flow_sdk.core import status
     from flow_sdk.core.status import InstallState
 
     monkeypatch.setattr(status, "harness_install", lambda worker: InstallState.INSTALLED)
-    monkeypatch.setattr(llm_source, "_hub_signed_in", lambda: bool(resolve_hub_api_key()))
 
     async def no_probe(worker_type):
         return None
@@ -585,11 +582,15 @@ async def test_the_sweeps_login_probe_does_not_undo_a_source_picked_while_it_ran
         return WorkerAuthResult(status=WorkerAuthStatus.LOGGED_OUT)
 
     monkeypatch.setattr(cli_drivers, "get_driver", lambda _w: SimpleNamespace(auth_probe=probe_while_the_user_picks))
-    await discovery._resolve_login_states({kind: CapabilityValue(kind=kind, value={"path": "/bin"}, value_type="fs_ref")})
+    await discovery._resolve_login_states(
+        {kind: CapabilityValue(kind=kind, value={"path": "/bin"}, value_type="fs_ref")}
+    )
 
     after = await Capability.get_by_kind(kind)
     assert after.login_state == DeviceLoginState.IDLE, "the probe's verdict landed"
-    assert (after.auth_mode, after.api_provider) == ("api", "openrouter"), "the sweep undid the source picked while it ran"
+    assert (after.auth_mode, after.api_provider) == ("api", "openrouter"), (
+        "the sweep undid the source picked while it ran"
+    )
 
 
 # ── a binding the hub no longer honours ──────────────────────────────────────────
@@ -1284,6 +1285,7 @@ async def test_the_llm_endpoints_page_runs_in_order(monkeypatch, tmp_path):
             async def chunks():
                 for piece in ("3", None):
                     yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=piece))])
+
             return chunks()
 
     class _OpenAI:
@@ -1380,3 +1382,37 @@ async def test_a_harness_that_is_not_installed_is_funded_by_nothing(env, monkeyp
     assert view.blocked == "claude is not installed"
     assert _by_kind(view.offers, "hub"), "the budget is still listed -- only not spendable here"
     assert not any(c.source.eligible for c in view.offers)
+
+
+async def test_a_hub_token_funds_a_process_that_never_opened_the_hub_socket(env, monkeypatch) -> None:
+    """An SDK script holds the hub token but never opens the hub socket, so the socket's "who am
+    I" never answers there. Funding is the token's question, not the socket's: the bound budget
+    and a pinned one both fund the spawn, and the hub authorizes each invoke itself."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+    from flow_sdk.cloud_client.ws_client import hub_ws_manager
+    from flow_sdk.core.status import HubLogin, hub_status
+
+    _bind(monkeypatch)
+    assert not hub_ws_manager.is_connected and hub_status().login is not HubLogin.SIGNED_IN
+
+    _, bound = await resolve_llm_endpoint(_process())
+    _, pinned = await resolve_llm_endpoint(_process(endpoint=EP1))
+    assert (bound.eligible, bound.endpoint_typeid) == (True, EP1)
+    assert (pinned.eligible, pinned.endpoint_typeid) == (True, EP1)
+
+
+async def test_a_hub_token_the_hub_rejected_funds_nothing(env, monkeypatch) -> None:
+    from flow_sdk.builtin.agentic_process.cli_drivers.llm_source import resolve_llm_endpoint
+    from flow_sdk.cli.app_config import clear_user, set_user
+    from flow_sdk.cloud_client.auth_status import HubConnectionStatus
+    from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+    _bind(monkeypatch)
+    set_user({"id": "u1", "email": "a@b.c"})  # a real login writes the user beside the key
+    await hub_ws_manager._set_state(HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error="401")
+    try:
+        with pytest.raises(Exception, match="not logged in to the hub"):
+            await resolve_llm_endpoint(_process(endpoint=EP1))
+    finally:
+        await hub_ws_manager._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False)
+        clear_user()

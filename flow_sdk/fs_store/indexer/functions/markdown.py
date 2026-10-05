@@ -14,8 +14,9 @@ Discovery has two halves:
       Per-FOLDER emitter. Receives FOLDER refs from
       ``project_folder_walker_fn`` (which already pruned via gitignore +
       _WALK_IGNORED) and emits the direct ``*.md`` children of every
-      walked folder. Register on FOLDER. Gitignore is the only filter —
-      every ``.md`` in a project (or system project) is indexed.
+      walked folder that is (or lies under) a ``docs``/``doc`` folder. Register
+      on FOLDER. Markdown elsewhere in a project — a root README, notes in
+      ``src/`` — is not a document and is not indexed.
 
 ``parse_markdown_text`` is exported so other consumers (e.g.
 ``extract_markdown_index``) can share the frontmatter+body parse.
@@ -26,7 +27,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from flow_sdk.assets.placement import AGENTIC_ASSETS_DIR
-from flow_sdk.assets.scanning import first_seen, is_appledouble
+from flow_sdk.assets.scanning import first_seen, is_appledouble, is_in_doc_dir
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -78,6 +79,9 @@ def markdown_in_folder_fn(
     gitignore + ``_WALK_IGNORED``; this function only emits — no glob
     recursion needed (use ``glob`` not ``rglob``).
 
+    Only folders at or under a ``docs``/``doc`` dir (relative to the walked
+    project root) emit — see ``is_in_doc_dir``.
+
     Folders under a typed-record dir (see ``_typed_record_dirs``) are skipped so
     a SKILL.md / agent .md / rules .md isn't double-indexed as MARKDOWN.
 
@@ -92,6 +96,10 @@ def markdown_in_folder_fn(
         if node.record_type != RecordType.FOLDER:
             continue
         folder_path = Path(node.path)
+        # The FOLDER's parent is the project root the walker started from.
+        root = node._parent
+        if not is_in_doc_dir(folder_path, Path(root.path) if root is not None else None):
+            continue
         if _has_typed_ancestor(folder_path, typed_dirs):
             continue
         try:

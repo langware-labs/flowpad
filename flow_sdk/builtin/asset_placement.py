@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flow_sdk.assets.placement import LAYOUT_REGISTRY, HarnessType, Scope, coerce_harness, family_subdir
+from flow_sdk.assets.placement import LAYOUT_REGISTRY, AssetClass, HarnessType, Scope, coerce_harness, family_subdir
 
 
 async def resolve_default_harness() -> "HarnessType":
@@ -26,19 +26,26 @@ async def resolve_default_harness() -> "HarnessType":
     return coerce_harness(os.environ.get("FLOWPAD_DEFAULT_WORKER")) or HarnessType.CLAUDE
 
 
-def root_for_scope(scope: str, *, project_mount: str | Path | None = None) -> Path | None:
+def root_for_scope(
+    scope: str,
+    *,
+    project_mount: str | Path | None = None,
+    asset_class: AssetClass | None = None,
+) -> Path | None:
     """The single scope-root resolver — collapses ``_user_scope_root`` (receive)
     and ``_resolve_scope_root`` (create) into one.
 
-    USER → the per-instance ``user_home``. PROJECT → the project's mount path.
-    Returns None when a project scope has no mount (nothing to write under).
+    USER → the per-instance ``user_home``, or ``user_asset_root`` for a REPO
+    asset (another instance's ``agentic-assets`` is not prod's). PROJECT → the
+    project's mount path. Returns None when a project scope has no mount.
     """
     if scope == Scope.PROJECT:
         return Path(project_mount) if project_mount else None
     if scope == Scope.USER:
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-        return get_instance_settings().user_home
+        settings = get_instance_settings()
+        return settings.user_asset_root if asset_class == AssetClass.REPO else settings.user_home
     return None  # SYSTEM is never a write destination
 
 
@@ -68,5 +75,5 @@ def resolve_destination(
     subdir = family_subdir(asset_class, harness, family, default_worker=default_worker)
     if subdir is None or not LAYOUT_REGISTRY[asset_class].supports(scope):
         return None
-    root = root_for_scope(scope, project_mount=project_mount)
+    root = root_for_scope(scope, project_mount=project_mount, asset_class=asset_class)
     return root / subdir if root is not None else None

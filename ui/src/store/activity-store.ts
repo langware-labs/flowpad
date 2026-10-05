@@ -205,11 +205,22 @@ export function getActivity(path: string, subject_entity?: string | null): Activ
   return specs.get(`${subject_entity ?? ''}::${path}`) ?? null;
 }
 
+/**
+ * Fetched lists already fed to the store. The list is cached for the session, so every
+ * consumer that mounts later sees the SAME array — and a row in it is only as true as the
+ * moment it was fetched. Once a job that was running then has finished and been evicted,
+ * nothing is left for the `seq` guard to compare against, and re-feeding that row would
+ * revive a finished job as running forever (the 22-minute "Indexing" footer).
+ */
+const ingestedLists = new WeakSet<ReadonlyArray<ActivityProgressSpec>>();
+
 /** Snapshot hydration is lazy; live events continue through the existing sequence guard. */
 function useActivityHydration(): void {
   const { data } = useLazyAsset(LazyAsset.Activities, undefined, { priority: 'background' });
   useEffect(() => {
-    for (const row of data ?? []) handleActivitySnapshot(row);
+    if (!data || ingestedLists.has(data)) return;
+    ingestedLists.add(data);
+    for (const row of data) handleActivitySnapshot(row);
   }, [data]);
 }
 

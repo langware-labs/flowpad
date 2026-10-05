@@ -135,7 +135,10 @@ def test_every_step_names_something_that_ships():
                 assert _op(step.ref).name == step.ref
 
 
-@pytest.mark.parametrize("name", ["git-on-path", "node-on-path", "npm-on-path", "python-on-path"])
+@pytest.mark.parametrize(
+    "name",
+    ["git-on-path", "node-on-path", "npm-on-path", "python-on-path", "chrome-devtools-on-path", "browser-on-path"],
+)
 def test_an_install_op_is_a_convergent_cli_call_whose_check_proves_the_tool_runs(name):
     """`command -v git` passes on a dangling symlink; `git --version` does not."""
     op = _op(name)
@@ -145,7 +148,7 @@ def test_an_install_op_is_a_convergent_cli_call_whose_check_proves_the_tool_runs
     assert "--version" in op.completion_check.command_for("linux")
 
 
-@pytest.mark.parametrize("name", ["git", "node", "npm", "python"])
+@pytest.mark.parametrize("name", ["git", "node", "npm", "python", "chrome-devtools", "browser"])
 def test_a_question_op_asks_only_when_the_tool_is_missing(name):
     """The question's own check is the tool's: a machine that has it is not asked."""
     op = _op(f"ask-install-{name}")
@@ -154,7 +157,10 @@ def test_a_question_op_asks_only_when_the_tool_is_missing(name):
     assert "--version" in op.completion_check.command_for("linux")
 
 
-@pytest.mark.parametrize("name", ["git-on-path", "node-on-path", "npm-on-path", "python-on-path"])
+@pytest.mark.parametrize(
+    "name",
+    ["git-on-path", "node-on-path", "npm-on-path", "python-on-path", "chrome-devtools-on-path", "browser-on-path"],
+)
 def test_every_op_says_how_a_person_would_do_it(name):
     assert _op(name).setup.strip()
 

@@ -4,6 +4,7 @@ import { ProjectGitChecksDialog } from '@src/components/project-home/ProjectGitC
 import { ProjectGitChip, type GitCheck } from '@src/components/project-home/ProjectGitChip';
 import { GitTargetDialog, type GitTarget } from '@src/components/git/GitTargetDialog';
 import { ProjectCloudLinkButton } from '@src/components/project-home/ProjectCloudLinkButton';
+import { ProjectGitShareToggle } from '@src/components/project-home/ProjectGitShareToggle';
 import { ProjectPublishedButton } from '@src/components/project-home/ProjectPublishedButton';
 import { PublishProjectDialog } from '@src/components/project-home/PublishProjectDialog';
 import { ProjectUploadMessageButton } from '@src/components/project-home/ProjectUploadMessageButton';
@@ -217,6 +218,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
               <>
                 <ProjectGitChip projectTypeId={projectTypeId} onChecked={setGitChecks} />
                 {project && <ProjectCloudLinkButton project={project} />}
+                {project && <ProjectGitShareToggle project={project} />}
                 <ProjectPublishedButton projectId={projectTypeId.id} />
                 <ProjectUploadMessageButton projectId={projectTypeId.id} />
               </>

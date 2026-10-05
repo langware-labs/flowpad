@@ -61,7 +61,7 @@ def home(folder_db, sod_env, tmp_path, monkeypatch):
     root.mkdir()
     real = placement.root_for_scope
 
-    def root_for_scope(scope, *, project_mount=None):
+    def root_for_scope(scope, *, project_mount=None, asset_class=None):
         return root if scope == Scope.USER else real(scope, project_mount=project_mount)
 
     monkeypatch.setattr(placement, "root_for_scope", root_for_scope)

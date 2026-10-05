@@ -1,6 +1,11 @@
 import { cn } from '@src/lib/utils';
 import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
-import { AttachFilesButton, PickedFileList, useAnnotatedImagePaste, usePickedFiles } from '@src/components/conversation/FileAttachmentPicker';
+import {
+  AttachFilesButton,
+  PickedFileList,
+  useAnnotatedImagePaste,
+  usePickedFiles,
+} from '@src/components/conversation/FileAttachmentPicker';
 import { Send, Square } from 'lucide-react';
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from 'react';
 import { useLingui } from '@lingui/react/macro';
@@ -35,9 +40,11 @@ interface CompactExecutionInputProps {
    * Handle pasted image files (upload to the process input dir, open the Files
    * side tab, etc). Returns one reference line per uploaded image — these are
    * inserted into the composer at the caret so they ride along with the next
-   * send, mirroring the PTY paste behaviour. Omit to leave paste as plain text.
+   * send, mirroring the PTY paste behaviour; a caption typed in the annotator
+   * comes back as a trailing line. `initialCaption` is the text that came on the
+   * clipboard with the image. Omit to leave paste as plain text.
    */
-  onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
+  onPasteImages?: (files: File[], options?: { initialCaption?: string }) => Promise<string[] | void> | string[] | void;
   /**
    * Opt-in attachments mode: a "+" picker button, drag-and-drop onto the
    * composer, and file chips. Picked files are held locally and handed to
@@ -240,7 +247,10 @@ export function CompactExecutionInput({
 
   // With no owner hook but attachments on (no process to upload into yet),
   // pasted images take the shared path: annotate, then chips sent with the text.
-  const pasteAsChips = useAnnotatedImagePaste(picker.addFiles, { enabled: allowAttachments && !disabled });
+  const pasteAsChips = useAnnotatedImagePaste(picker.addFiles, {
+    enabled: allowAttachments && !disabled,
+    setText: setValue,
+  });
 
   // Image paste: hand the image files to the owner (upload + open Files tab),
   // then splice the returned reference line(s) into the textarea at the caret.
@@ -258,7 +268,8 @@ export function CompactExecutionInput({
       const ta = e.currentTarget;
       const start = ta.selectionStart ?? value.length;
       const end = ta.selectionEnd ?? start;
-      void Promise.resolve(onPasteImages(images)).then((refs) => {
+      const initialCaption = e.clipboardData.getData('text/plain');
+      void Promise.resolve(onPasteImages(images, { initialCaption })).then((refs) => {
         const insert = refs && refs.length > 0 ? refs.join('\n') : null;
         if (insert !== null) {
           setValue((prev) => `${prev.slice(0, start)}${insert}${prev.slice(end)}`);

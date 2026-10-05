@@ -22,6 +22,7 @@ Values travel ask → the run's values → the environment of ``flow credentials
 from __future__ import annotations
 
 import asyncio
+import functools
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -309,10 +310,18 @@ async def start_setup(project: "Project", *, ai: bool = True) -> str:
             return Resolved(ops[name], True) if name in ops else None
 
         mount = str(getattr(project, "fs_storage_mount_path", "") or "")
-        task = asyncio.create_task(execute_wizard(
-            SETUP_WIZARD_ID, wizard, "", trusted=True, subject_entity=f"project-{pid}", target=pid,
-            resolve_op=resolve, cwd=Path(mount) if mount else None, shell=_setup_shell,
-        ))
+        async def run_setup():
+            # The run's shell: what the setup does not answer itself runs here, one start per run.
+            from flow_sdk.core.compute.shared_shell import SharedShell  # noqa: PLC0415
+
+            async with SharedShell() as base:
+                return await execute_wizard(
+                    SETUP_WIZARD_ID, wizard, "", trusted=True, subject_entity=f"project-{pid}", target=pid,
+                    resolve_op=resolve, cwd=Path(mount) if mount else None,
+                    shell=functools.partial(_setup_shell, inner=base),
+                )
+
+        task = asyncio.create_task(run_setup())
         task.add_done_callback(_log_failure)
         _RUNS[pid] = task
     return setup_run_address(pid)
@@ -336,7 +345,8 @@ def _own_check(command: str) -> Optional[tuple[str, str, str]]:
 
 
 async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, extra_env: Optional[dict] = None,
-                       platform: str = "", stop: Optional[asyncio.Event] = None, on_output=None):
+                       platform: str = "", stop: Optional[asyncio.Event] = None, on_output=None,
+                       fresh: bool = False, inner=None):
     """The setup's shell: its own credential checks answered here, everything else run as usual.
 
     Every step checks its goal before it asks, and ``flow credentials check`` as a process imports
@@ -344,7 +354,7 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
     measured. The setup runs inside the instance the check would ask, so it asks the same
     ``credentials_status`` directly: same row (the project's own before the user's), same verdict
     (``connected`` is ready), same exit codes. Windows builds the command differently, so it keeps
-    the process."""
+    the process. Everything else goes to *inner*, the run's shell."""
     import json  # noqa: PLC0415
     import sys  # noqa: PLC0415
     import time  # noqa: PLC0415
@@ -353,8 +363,9 @@ async def _setup_shell(command: str, *, timeout_seconds: float, workdir: Path, e
 
     own = _own_check(command) if (platform or sys.platform) != "win32" else None
     if own is None:
-        return await run_shell(command, timeout_seconds=timeout_seconds, workdir=workdir, extra_env=extra_env,
-                               platform=platform, stop=stop, on_output=on_output)
+        return await (inner or run_shell)(command, timeout_seconds=timeout_seconds, workdir=workdir,
+                                          extra_env=extra_env, platform=platform, stop=stop,
+                                          on_output=on_output, fresh=fresh)
     from flow_sdk.builtin.credential_status import credentials_status  # noqa: PLC0415
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.schema.data_spec.returned_value_spec import CliResult, ExitCode  # noqa: PLC0415
