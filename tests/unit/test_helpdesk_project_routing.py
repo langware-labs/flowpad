@@ -15,6 +15,8 @@ from flow_sdk.app.actions.flow_message_action import HelpdeskTarget
 from flow_sdk.app.helpdesk_resolver import resolve_adopted_helpdesk
 from flow_sdk.builtin.helpdesk import Helpdesk
 from flow_sdk.builtin.project import Project
+from flow_sdk.cloud_client.shared.errors import HubError
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.responses.response import ApiResponseStatus
 from tests.unit._project_names import unique_project_name
 
@@ -58,7 +60,7 @@ async def _desk(root: Path, name: str, queue_id: str) -> Helpdesk:
 async def test_start_ticket_posts_to_target_projects_adopted_queue(tmp_path: Path) -> None:
     target = await _project(tmp_path / "customer")
     await _desk(tmp_path / "customer", "cloudnsite", ROOT_QUEUE)
-    hub = AsyncMock(return_value={"status": "FAIL", "message": "stop after route assertion"})
+    hub = AsyncMock(side_effect=HubError(400, "stop after route assertion"))
 
     with (
         patch.object(
@@ -72,7 +74,7 @@ async def test_start_ticket_posts_to_target_projects_adopted_queue(tmp_path: Pat
             ),
         ),
         patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback,
-        patch.object(fma, "_hub_action", hub),
+        patch.object(fma, "hub_request", hub),
     ):
         response = await fma.helpdesk_start_ticket()
 
@@ -80,8 +82,8 @@ async def test_start_ticket_posts_to_target_projects_adopted_queue(tmp_path: Pat
     # Route only. The body grows as tickets carry more context (project /
     # session ids, a transcript excerpt); pinning it whole here would make a
     # ROUTING test fail for a payload change it does not care about.
-    method, path, body = hub.await_args.args
-    assert (method, path) == ("POST", f"/graph/project/{ROOT_QUEUE}/start_guest_conversation")
+    assert hub.await_args.args == ("POST", BuiltinEntityType.PROJECT, ROOT_QUEUE, "start_guest_conversation")
+    body = hub.await_args.kwargs["payload"]
     assert body["text"].startswith("Need help")
     fallback.assert_not_awaited()
 
@@ -112,7 +114,7 @@ async def test_desk_attached_by_path_still_routes_without_a_project_of_its_own(
     # it must not take the queue down with it.
     assert adopted.portal_project_id is None
 
-    hub = AsyncMock(return_value={"status": "FAIL", "message": "stop after route assertion"})
+    hub = AsyncMock(side_effect=HubError(400, "stop after route assertion"))
     with (
         patch.object(
             fma,
@@ -120,15 +122,11 @@ async def test_desk_attached_by_path_still_routes_without_a_project_of_its_own(
             return_value=_request_info({"text": "Need help", "project_id": target.id}),
         ),
         patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback,
-        patch.object(fma, "_hub_action", hub),
+        patch.object(fma, "hub_request", hub),
     ):
         await fma.helpdesk_start_ticket()
 
-    method, path, _ = hub.await_args.args
-    assert (method, path) == (
-        "POST",
-        f"/graph/project/{FIRST_CONTEXT_QUEUE}/start_guest_conversation",
-    )
+    assert hub.await_args.args == ("POST", BuiltinEntityType.PROJECT, FIRST_CONTEXT_QUEUE, "start_guest_conversation")
     fallback.assert_not_awaited(), "must not fall through to somebody else's desk"
 
 
@@ -163,7 +161,7 @@ async def test_ticket_list_uses_direct_context_order_not_desk_row_order(tmp_path
     await _desk(second_root, "a-second-row", SECOND_CONTEXT_QUEUE)
     await _desk(first_root, "z-first-context", FIRST_CONTEXT_QUEUE)
     target = await _project(tmp_path / "customer", contexts=[first_root, second_root])
-    hub = AsyncMock(return_value={"status": "SUCCESS", "data": []})
+    hub = AsyncMock(return_value=[])
 
     with (
         patch.object(
@@ -172,16 +170,13 @@ async def test_ticket_list_uses_direct_context_order_not_desk_row_order(tmp_path
             return_value=_request_info({"project_id": target.id}),
         ),
         patch.object(fma, "_hub_default_helpdesk", AsyncMock()) as fallback,
-        patch.object(fma, "_hub_action", hub),
+        patch.object(fma, "hub_request", hub),
     ):
         response = await fma.helpdesk_tickets_list()
 
     assert response.status == ApiResponseStatus.SUCCESS.value
     assert response.data["project_id"] == FIRST_CONTEXT_QUEUE
-    hub.assert_awaited_once_with(
-        "GET",
-        f"/graph/project/{FIRST_CONTEXT_QUEUE}/helpdesk_conversations",
-    )
+    hub.assert_awaited_once_with("GET", BuiltinEntityType.PROJECT, FIRST_CONTEXT_QUEUE, "helpdesk_conversations")
     fallback.assert_not_awaited()
 
 
@@ -225,7 +220,7 @@ async def test_same_root_uses_canonical_path_then_id_as_stable_tiebreaker(tmp_pa
 async def test_valid_project_without_desk_posts_to_hub_default_queue(tmp_path: Path) -> None:
     target = await _project(tmp_path / "customer")
     default = HelpdeskTarget(DEFAULT_QUEUE, None)
-    hub = AsyncMock(return_value={"status": "FAIL", "message": "stop after route assertion"})
+    hub = AsyncMock(side_effect=HubError(400, "stop after route assertion"))
 
     with (
         patch.object(
@@ -239,11 +234,11 @@ async def test_valid_project_without_desk_posts_to_hub_default_queue(tmp_path: P
             ),
         ),
         patch.object(fma, "_hub_default_helpdesk", AsyncMock(return_value=default)) as fallback,
-        patch.object(fma, "_hub_action", hub),
+        patch.object(fma, "hub_request", hub),
     ):
         await fma.helpdesk_start_ticket()
 
     fallback.assert_awaited_once_with()
-    method, path, body = hub.await_args.args
-    assert (method, path) == ("POST", f"/graph/project/{DEFAULT_QUEUE}/start_guest_conversation")
+    assert hub.await_args.args == ("POST", BuiltinEntityType.PROJECT, DEFAULT_QUEUE, "start_guest_conversation")
+    body = hub.await_args.kwargs["payload"]
     assert body["text"].startswith("Fallback request")
